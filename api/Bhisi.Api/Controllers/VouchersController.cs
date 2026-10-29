@@ -647,6 +647,7 @@ namespace Bhisi.Api.Controllers
             }
 
             bool rdClosureRolledBack = false;
+            bool rdInstallmentRolledBack = false;
             try
             {
                 rdClosureRolledBack = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
@@ -655,6 +656,16 @@ namespace Bhisi.Api.Controllers
                     dto.Reason,
                     dto.UserID,
                     !string.IsNullOrWhiteSpace(dto.Username) ? dto.Username : $"User-{dto.UserID}");
+
+                if (!rdClosureRolledBack)
+                {
+                    rdInstallmentRolledBack = await Helpers.RdInstallmentCollectionRollbackHelper.RollbackRdInstallmentCollectionByVoucherAsync(
+                        _context,
+                        voucher,
+                        dto.Reason,
+                        dto.UserID,
+                        !string.IsNullOrWhiteSpace(dto.Username) ? dto.Username : $"User-{dto.UserID}");
+                }
             }
             catch (InvalidOperationException rdEx)
             {
@@ -683,12 +694,15 @@ namespace Bhisi.Api.Controllers
             }
             else if (!string.IsNullOrEmpty(voucher.VoucherNo))
             {
-                if (!rdClosureRolledBack)
+                if (!rdClosureRolledBack && !rdInstallmentRolledBack)
                 {
                     await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "DELETED");
                 }
-                var savingTxs = await _context.SavingTransactions.Where(st => st.VoucherNo == voucher.VoucherNo).ToListAsync();
-                foreach (var st in savingTxs) st.VoucherNo = null;
+                if (!rdInstallmentRolledBack)
+                {
+                    var savingTxs = await _context.SavingTransactions.Where(st => st.VoucherNo == voucher.VoucherNo).ToListAsync();
+                    foreach (var st in savingTxs) st.VoucherNo = null;
+                }
             }
 
             var assetPurchases = await _context.AssetPurchases.Where(ap => ap.VoucherID == id).ToListAsync();
@@ -901,12 +915,17 @@ namespace Bhisi.Api.Controllers
             voucher.ApprovedOn = DateTime.Now;
             voucher.RejectionReason = dto.Reason;
 
-            // Automatically reverse linked saving transactions if any
+            // Automatically reverse linked RD / saving transactions if any
             bool rdRejHandled;
             try
             {
                 rdRejHandled = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
                     _context, voucher, dto.Reason, rejecterId, User.GetUsername() ?? $"User-{rejecterId}");
+                if (!rdRejHandled)
+                {
+                    rdRejHandled = await Helpers.RdInstallmentCollectionRollbackHelper.RollbackRdInstallmentCollectionByVoucherAsync(
+                        _context, voucher, dto.Reason, rejecterId, User.GetUsername() ?? $"User-{rejecterId}");
+                }
             }
             catch (InvalidOperationException rdEx)
             {
@@ -942,7 +961,7 @@ namespace Bhisi.Api.Controllers
             voucher.Status = "Cancelled";
             voucher.RejectionReason = dto.Reason;
 
-            // Automatically reverse linked saving transactions if any
+            // Automatically reverse linked RD / saving transactions if any
             int cancelCheckUserId = User.GetUserId();
             if (cancelCheckUserId <= 0 && dto.RejectedBy > 0) cancelCheckUserId = dto.RejectedBy;
             bool rdCanHandled;
@@ -950,6 +969,11 @@ namespace Bhisi.Api.Controllers
             {
                 rdCanHandled = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
                     _context, voucher, dto.Reason, cancelCheckUserId, User.GetUsername() ?? $"User-{cancelCheckUserId}");
+                if (!rdCanHandled)
+                {
+                    rdCanHandled = await Helpers.RdInstallmentCollectionRollbackHelper.RollbackRdInstallmentCollectionByVoucherAsync(
+                        _context, voucher, dto.Reason, cancelCheckUserId, User.GetUsername() ?? $"User-{cancelCheckUserId}");
+                }
             }
             catch (InvalidOperationException rdEx)
             {

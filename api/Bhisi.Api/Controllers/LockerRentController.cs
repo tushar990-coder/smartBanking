@@ -39,6 +39,14 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(a => a.BranchID == branchId.Value);
             }
 
+            var today = DateTime.Today;
+            var allSavingSchemes = await _context.SavingInterestSettings
+                .AsNoTracking()
+                .OrderByDescending(s => s.EffectiveDate <= today)
+                .ThenByDescending(s => s.EffectiveDate)
+                .ThenByDescending(s => s.SettingID)
+                .ToListAsync();
+
             var list = await query
                 .OrderBy(a => a.ExpiryDate)
                 .ToListAsync();
@@ -58,6 +66,26 @@ namespace Bhisi.Api.Controllers
                 decimal subTotal = baseRent + lateFee;
                 decimal gstAmount = Math.Round((subTotal * gstRate) / 100, 2);
                 decimal totalPayable = subTotal + gstAmount;
+
+                decimal sbCurrent = a.LinkedSavingAccount?.CurrentBalance ?? 0m;
+                decimal sbLien = a.LinkedSavingAccount?.LienAmount ?? 0m;
+                SavingInterestSetting? matchedSbScheme = null;
+                if (a.LinkedSavingAccount != null)
+                {
+                    matchedSbScheme = (a.LinkedSavingAccount.SavingSchemeID.HasValue && a.LinkedSavingAccount.SavingSchemeID.Value > 0
+                        ? allSavingSchemes.FirstOrDefault(s => s.SettingID == a.LinkedSavingAccount.SavingSchemeID.Value)
+                        : null)
+                        ?? (a.LinkedSavingAccount.LedgerID > 0
+                            ? allSavingSchemes.FirstOrDefault(s => s.SavingLiabilityLedgerID == a.LinkedSavingAccount.LedgerID || s.LedgerID == a.LinkedSavingAccount.LedgerID)
+                            : null)
+                        ?? (allSavingSchemes.Count == 1 ? allSavingSchemes[0] : null);
+                }
+                decimal sbMinBal = a.LinkedSavingAccount != null
+                    ? Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalance(a.LinkedSavingAccount, matchedSbScheme)
+                    : 0m;
+                decimal sbAvailBal = a.LinkedSavingAccount != null
+                    ? Math.Max(0m, sbCurrent - sbLien - sbMinBal)
+                    : 0m;
 
                 return new
                 {
@@ -88,7 +116,10 @@ namespace Bhisi.Api.Controllers
                     a.LinkedSavingAccountID,
                     LinkedSavingAccountNo = a.LinkedSavingAccount?.AccountNo ?? "",
                     a.IsAutoDebitEnabled,
-                    SavingsBalance = a.LinkedSavingAccount?.CurrentBalance ?? 0
+                    SavingsBalance = sbCurrent,
+                    SavingsMinimumBalance = sbMinBal,
+                    SavingsLienAmount = sbLien,
+                    AvailableSavingsBalance = sbAvailBal
                 };
             });
 
@@ -125,9 +156,10 @@ namespace Bhisi.Api.Controllers
             // If paying through Savings Account, deduct from savings
             if (dto.PaymentMode == "SavingDebit" && allotment.LinkedSavingAccount != null)
             {
-                if (allotment.LinkedSavingAccount.CurrentBalance < dto.TotalAmount)
+                var (availSbBal, effSbMinBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, allotment.LinkedSavingAccount);
+                if (availSbBal < dto.TotalAmount)
                 {
-                    return BadRequest(new { message = $"बचत खात्यात पुरेसे शिल्लक नाही. उपलब्ध शिल्लक: ₹{allotment.LinkedSavingAccount.CurrentBalance:N2}" });
+                    return BadRequest(new { message = $"बचत खात्यात पुरेशी वर्गपात्र शिल्लक नाही. किमान शिल्लक (₹{effSbMinBal:N2}) व तारण वगळता उपलब्ध शिल्लक: ₹{availSbBal:N2}" });
                 }
 
                 allotment.LinkedSavingAccount.CurrentBalance -= dto.TotalAmount;
@@ -255,7 +287,11 @@ namespace Bhisi.Api.Controllers
             {
                 string holderName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.LastName}" : (a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.LastName}" : "Member");
 
-                if (a.LinkedSavingAccount == null || a.LinkedSavingAccount.CurrentBalance < a.AnnualRent)
+                decimal autoAvailSb = a.LinkedSavingAccount != null
+                    ? (await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, a.LinkedSavingAccount)).AvailableBalance
+                    : 0m;
+
+                if (a.LinkedSavingAccount == null || autoAvailSb < a.AnnualRent)
                 {
                     failedCount++;
                     details.Add(new
@@ -263,7 +299,7 @@ namespace Bhisi.Api.Controllers
                         a.LockerAccountNo,
                         MemberName = holderName,
                         Status = "Failed",
-                        Reason = "अपुरे शिल्लक (Insufficient Balance)"
+                        Reason = $"अपुरी वर्गपात्र शिल्लक (किमान शिल्लक व तारण वगळता उपलब्ध: ₹{autoAvailSb:N2})"
                     });
                     continue;
                 }

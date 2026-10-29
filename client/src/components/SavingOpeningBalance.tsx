@@ -166,7 +166,8 @@ const SavingOpeningBalance: React.FC = () => {
         setFormData(prev => ({
           ...prev,
           settingID: defaultScheme.settingID,
-          interestRate: defaultScheme.interestRate || 4.0,
+          interestRate: defaultScheme.interestRate ?? 4.0,
+          minimumBalance: Number(defaultScheme.minimumBalance ?? 0),
           ledgerID: mappedLedgerId
         }));
       } else {
@@ -174,6 +175,7 @@ const SavingOpeningBalance: React.FC = () => {
           ...prev,
           settingID: -1,
           interestRate: 4.0,
+          minimumBalance: 0,
           ledgerID: 7
         }));
       }
@@ -265,7 +267,8 @@ const SavingOpeningBalance: React.FC = () => {
       setFormData(prev => ({
         ...prev,
         settingID: sId,
-        interestRate: selectedScheme.interestRate || 4.0,
+        interestRate: selectedScheme.interestRate ?? 4.0,
+        minimumBalance: Number(selectedScheme.minimumBalance ?? 0),
         ledgerID: mappedLedgerId
       }));
     }
@@ -288,9 +291,9 @@ const SavingOpeningBalance: React.FC = () => {
       accountType: account.accountType || 'Personal',
       openingDate: account.openingDate ? account.openingDate.split('T')[0] : '',
       ledgerID: account.ledgerID || 7,
-      openingBalance: account.openingBalance || 0,
-      interestRate: account.interestRate || 4.0,
-      minimumBalance: account.minimumBalance || 500,
+      openingBalance: Number(account.openingBalance ?? 0),
+      interestRate: Number(account.interestRate ?? 4.0),
+      minimumBalance: Number(account.minimumBalance ?? 0),
       status: account.status || 'Active',
       nomineeName: account.nomineeName || '',
       nomineeRelation: account.nomineeRelation || '',
@@ -345,8 +348,9 @@ const SavingOpeningBalance: React.FC = () => {
       ...initialFormState,
       branchID: targetBranchId,
       settingID: schemes.length > 0 ? schemes[0].settingID : -1,
-      interestRate: schemes.length > 0 ? schemes[0].interestRate : 4.0,
-      ledgerID: schemes.length > 0 ? (schemes[0].savingLiabilityLedgerID || 7) : 7
+      interestRate: schemes.length > 0 ? (schemes[0].interestRate ?? 4.0) : 4.0,
+      minimumBalance: schemes.length > 0 ? Number(schemes[0].minimumBalance ?? 0) : 0,
+      ledgerID: schemes.length > 0 ? (schemes[0].savingLiabilityLedgerID || schemes[0].ledgerID || 7) : 7
     });
     fetchNextAccountNo(targetBranchId);
     setError('');
@@ -419,7 +423,7 @@ const SavingOpeningBalance: React.FC = () => {
         ledgerID: Number(formData.ledgerID),
         openingBalance: parseFloat(formData.openingBalance.toString()) || 0,
         interestRate: parseFloat(formData.interestRate.toString()) || 0,
-        minimumBalance: parseFloat(formData.minimumBalance.toString()) || 500,
+        minimumBalance: (formData.minimumBalance as any) === '' ? 0 : (Number.isNaN(Number(formData.minimumBalance)) ? 0 : Number(formData.minimumBalance)),
         status: formData.status,
         nomineeName: formData.nomineeName,
         nomineeRelation: formData.nomineeRelation,
@@ -466,9 +470,9 @@ const SavingOpeningBalance: React.FC = () => {
         'सह-खातेदार (Joint Holders)': jointNames || '-',
         'बचत योजना': schemeObj?.schemeName || (acc.settingID ? `योजना #${acc.settingID}` : 'डिफॉल्ट दर'),
         'लेजर खातावणी': ledgerObj ? `${ledgerObj.ledgerID} - ${ledgerObj.ledgerName}` : (acc.ledgerName || 'बचत ठेव (7)'),
-        'सुरुवातीची शिल्लक (₹)': acc.openingBalance || 0,
-        'व्याजदर (%)': `${acc.interestRate || 4}%`,
-        'किमान शिल्लक (₹)': acc.minimumBalance || 500,
+        'सुरुवातीची शिल्लक (₹)': Number(acc.openingBalance ?? 0),
+        'व्याजदर (%)': `${acc.interestRate ?? 4}%`,
+        'किमान शिल्लक (₹)': Number(acc.minimumBalance ?? 0),
         'मागील व्याज जमा दिनांक': acc.lastInterestPostingDate ? acc.lastInterestPostingDate.split('T')[0] : '-',
         'वारसदाराचे नाव': acc.nomineeName || '-',
         'वारसदाराशी नाते': acc.nomineeRelation || '-',
@@ -920,7 +924,7 @@ const SavingOpeningBalance: React.FC = () => {
                   ) : (
                     schemes.map((s) => (
                       <option key={s.settingID} value={s.settingID}>
-                        {s.schemeName || `व्याजदर सेटिंग #${s.settingID}`} ({s.interestRate}%)
+                        {s.schemeName || `व्याजदर सेटिंग #${s.settingID}`} ({s.interestRate}% | किमान: ₹{Number(s.minimumBalance ?? 0)})
                       </option>
                     ))
                   )}
@@ -1301,8 +1305,8 @@ const SavingOpeningBalance: React.FC = () => {
 
                           {/* 8. Interest Rate & Min Balance */}
                           <td className="px-2 py-2 border-r border-gray-200 text-center font-mono">
-                            <div className="font-bold text-gray-900">{acc.interestRate || 4}% p.a.</div>
-                            <div className="text-[10px] text-gray-500">किमान: ₹{acc.minimumBalance || 500}</div>
+                            <div className="font-bold text-gray-900">{acc.interestRate ?? 4}% p.a.</div>
+                            <div className="text-[10px] text-gray-500">किमान: ₹{Number(acc.minimumBalance ?? 0)}</div>
                           </td>
 
                           {/* 9. Last Interest Posting Date */}

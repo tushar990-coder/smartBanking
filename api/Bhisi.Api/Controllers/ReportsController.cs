@@ -5334,6 +5334,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.Customer)
                     .ThenInclude(c => c!.MemberProfile)
                 .Include(a => a.Ledger)
+                .Include(a => a.SavingScheme)
                 .FirstOrDefaultAsync(a => a.SavingAccountID == accountId);
 
             if (account == null)
@@ -5462,6 +5463,12 @@ namespace Bhisi.Api.Controllers
 
             string memberCode = account.Customer?.MemberProfile?.MemberCode ?? "";
             string cifNo = account.Customer?.CIFNo ?? "";
+            var matchedScheme = await SavingLedgerHelper.ResolveSavingSchemeAsync(_context, account);
+            decimal effectiveMinBal = SavingLedgerHelper.ResolveEffectiveMinimumBalance(account, matchedScheme);
+            decimal availableBal = Math.Max(0m, account.CurrentBalance - account.LienAmount - effectiveMinBal);
+            string resolvedSchemeName = !string.IsNullOrWhiteSpace(matchedScheme?.SchemeName)
+                ? matchedScheme.SchemeName
+                : (account.Ledger?.LedgerName ?? "बचत ठेव");
 
             var report = new SavingKhatavaniReportDto
             {
@@ -5474,9 +5481,13 @@ namespace Bhisi.Api.Controllers
                 MemberName = holderName,
                 AccountType = account.AccountType,
                 LedgerName = account.Ledger?.LedgerName ?? "बचत ठेव",
+                SchemeName = resolvedSchemeName,
                 OpeningDate = account.OpeningDate,
                 OpeningBalance = account.OpeningBalance,
                 CurrentBalance = account.CurrentBalance,
+                MinimumBalance = effectiveMinBal,
+                LienAmount = account.LienAmount,
+                AvailableBalance = availableBal,
                 InterestRate = account.InterestRate,
                 PeriodOpeningBalance = periodOpeningBal,
                 PeriodTotalDebit = periodTotalDr,

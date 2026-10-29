@@ -1373,6 +1373,16 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE [SavingAccountJointHolders] ADD [MemberID] int NULL;
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingInterestSettings')
+            BEGIN
+                IF COL_LENGTH('SavingInterestSettings', 'MinimumBalance') IS NULL
+                BEGIN
+                    ALTER TABLE [dbo].[SavingInterestSettings]
+                    ADD [MinimumBalance] decimal(18,2) NOT NULL
+                    CONSTRAINT [DF_SavingInterestSettings_MinimumBalance] DEFAULT 500.00;
+                END
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdSchemes')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdSchemes]') AND name = 'FdLiabilityLedgerID')

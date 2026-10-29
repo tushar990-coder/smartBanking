@@ -748,15 +748,12 @@ namespace Bhisi.Api.Controllers
                         return BadRequest(new { message = $"बचत खाते (#{sourceSavingAcc.AccountNo}) आधीच बंद (Closed) झालेले आहे." });
                     }
 
-                    decimal savingBalance = sourceSavingAcc.CurrentBalance;
-                    decimal lienAmt = sourceSavingAcc.LienAmount;
-                    decimal minBal = sourceSavingAcc.MinimumBalance;
-                    decimal availableSavingBal = Math.Max(0, savingBalance - lienAmt - minBal);
+                    var (availableSavingBal, minBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, sourceSavingAcc);
 
                     decimal totalReqAmt = collection.TotalAmountReceived + (collection.Fees?.Sum(f => f.Amount) ?? 0);
                     if (totalReqAmt > availableSavingBal + 0.01m)
                     {
-                        return BadRequest(new { message = $"बचत खात्यात शिल्लक कमी आहे! उपलब्ध शिल्लक: ₹{availableSavingBal:N2}" });
+                        return BadRequest(new { message = $"बचत खात्यात शिल्लक कमी आहे! किमान शिल्लक (₹{minBal:N2}) व तारण वगळता उपलब्ध शिल्लक: ₹{availableSavingBal:N2}" });
                     }
 
                     collection.SourceSavingAccountID = sourceSavingAcc.SavingAccountID;

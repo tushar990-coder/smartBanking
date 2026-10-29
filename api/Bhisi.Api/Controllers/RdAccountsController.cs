@@ -625,9 +625,10 @@ namespace Bhisi.Api.Controllers
                             return BadRequest("ऑटो-डेबिटसाठी निवडलेले बचत खाते सापडले नाही किंवा सक्रिय नाही.");
                         }
 
-                        if (sbAcc.CurrentBalance < account.InstallmentAmount)
+                        var (availableSbBal, effectiveSbMinBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, sbAcc);
+                        if (availableSbBal < account.InstallmentAmount)
                         {
-                            return BadRequest($"बचत खात्यात अपुरी शिल्लक आहे! आवश्यक: ₹{account.InstallmentAmount:N2}, उपलब्ध: ₹{sbAcc.CurrentBalance:N2}");
+                            return BadRequest($"बचत खात्यात अपुरी शिल्लक आहे! आवश्यक: ₹{account.InstallmentAmount:N2}, किमान शिल्लक (₹{effectiveSbMinBal:N2}) व तारण वगळता उपलब्ध: ₹{availableSbBal:N2}");
                         }
 
                         int resolvedSbLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);
@@ -856,30 +857,14 @@ namespace Bhisi.Api.Controllers
                 _context.RdTransactions.Add(intTx);
             }
 
-            // Generate Amortization Schedule for Migrated Account
-            var scheds = new List<RdInstallmentSchedule>();
-            for (int i = 1; i <= account.DurationMonths; i++)
-            {
-                bool isPaid = i <= account.TotalPaidInstallments;
-                scheds.Add(new RdInstallmentSchedule
-                {
-                    RdAccountID = account.RdAccountID,
-                    InstallmentNo = i,
-                    DueDate = account.OpeningDate.AddMonths(i - 1),
-                    GraceDate = account.OpeningDate.AddMonths(i - 1).AddDays(5),
-                    ExpectedAmount = account.InstallmentAmount,
-                    Status = isPaid ? "Paid" : "Pending",
-                    PaidDate = isPaid ? account.OpeningDate : null,
-                    PaidAmount = isPaid ? account.InstallmentAmount : 0,
-                    OverdueDays = 0,
-                    PenaltyCharged = 0,
-                    PenaltyWaived = 0,
-                    VoucherID = isPaid ? dummyVoucher.VoucherID : null
-                });
-            }
-            _context.RDInstallmentSchedules.AddRange(scheds);
-
             await _context.SaveChangesAsync();
+
+            // Generate / Reconcile Amortization Schedule for Migrated Account (supports > DurationMonths & partial balances)
+            await Helpers.RdInstallmentCollectionRollbackHelper.ReconcileRdSchedulesWithDepositedAmountAsync(
+                _context,
+                account,
+                deletedVoucherIds: null,
+                fallbackPaidDate: account.OpeningDate);
 
             // Automatically sync with CustomerOpeningBalances & Ledgers (Taleband / Financial Statements)
             try
@@ -1071,7 +1056,8 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? sourceSavingAccountId = null,
             [FromQuery] int? sourcePigmyAccountId = null,
             [FromQuery] string? chequeNo = null,
-            [FromQuery] decimal? depositAmount = null)
+            [FromQuery] decimal? depositAmount = null,
+            [FromQuery] bool allowPostMaturity = false)
         {
             var account = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -1082,25 +1068,34 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Account is closed or invalid.");
             }
 
-            int currentPaid = account.TotalPaidInstallments;
-            int totalDuration = account.DurationMonths;
+            int totalDuration = account.DurationMonths > 0 ? account.DurationMonths : 12;
+            DateTime effDate = collectionDate?.Date ?? DateTime.Today;
 
-            decimal totalMaxRemaining = Math.Max(0, (totalDuration * account.InstallmentAmount) - account.TotalDepositedAmount);
+            decimal totalContractTarget = totalDuration * account.InstallmentAmount;
+            decimal totalMaxRemaining = Math.Max(0m, totalContractTarget - account.TotalDepositedAmount);
             decimal totalInstallmentPrincipal = (depositAmount.HasValue && depositAmount.Value > 0)
-                ? depositAmount.Value
-                : (account.InstallmentAmount * (count > 0 ? count : 1));
+                ? Math.Round(depositAmount.Value, 2, MidpointRounding.AwayFromZero)
+                : Math.Round(account.InstallmentAmount * (count > 0 ? count : 1), 2, MidpointRounding.AwayFromZero);
 
             if (totalInstallmentPrincipal <= 0)
             {
                 return BadRequest("हप्ता मुद्दल रक्कम शून्य किंवा उणे असू शकत नाही.");
             }
 
-            if (totalInstallmentPrincipal > totalMaxRemaining + 0.01m)
-            {
-                return BadRequest($"कमाल ठेव मर्यादा ओलांडली आहे. या खात्यात कमाल ₹{totalMaxRemaining:N2} जमा करता येतील.");
-            }
+            bool isTenureCompleted = string.Equals(account.Status, "Matured", StringComparison.OrdinalIgnoreCase)
+                || account.TotalPaidInstallments >= totalDuration
+                || account.TotalDepositedAmount >= totalContractTarget - 0.01m
+                || (account.MaturityDate != default && effDate.Date >= account.MaturityDate.Date);
+            bool exceedsContractLimit = totalInstallmentPrincipal > totalMaxRemaining + 0.01m;
 
-            DateTime effDate = collectionDate?.Date ?? DateTime.Today;
+            if ((isTenureCompleted || exceedsContractLimit) && !allowPostMaturity)
+            {
+                return BadRequest(new
+                {
+                    code = "POST_MATURITY_CONFIRMATION_REQUIRED",
+                    message = "ठेव कालावधी पूर्ण झाला आहे, तरीही पुढील हप्ता घ्यायचा आहे का?"
+                });
+            }
 
             // Core Banking Date Safeguards: Prevent future dating and transactions in closed financial years
             if (effDate.Date > DateTime.Today)
@@ -1119,13 +1114,19 @@ namespace Bhisi.Api.Controllers
             {
                 try
                 {
-                    decimal totalReceived = totalInstallmentPrincipal + penaltyAmount;
+                    decimal totalReceived = Math.Round(totalInstallmentPrincipal + penaltyAmount, 2, MidpointRounding.AwayFromZero);
 
-                    // Update account state
-                    account.TotalDepositedAmount += totalInstallmentPrincipal;
-                    await _context.SaveChangesAsync();
+                    // Pre-sync / self-heal existing schedule rows against pre-transaction TotalDepositedAmount
+                    // (ensures legacy migrated accounts e.g. 30/24 installments or partial balances are aligned before new waterfall allocation)
+                    await Helpers.RdInstallmentCollectionRollbackHelper.ReconcileRdSchedulesWithDepositedAmountAsync(
+                        _context,
+                        account);
+
+                    int currentPaid = account.TotalPaidInstallments;
 
                     var currentUser = HttpContext.User;
+                    int makerUserId = currentUser.GetUserId();
+                    if (makerUserId <= 0) makerUserId = 1;
                     int userBranchId = currentUser.GetOperatingBranchId();
                     bool isHO = currentUser.IsHeadOfficeAdmin();
 
@@ -1180,38 +1181,61 @@ namespace Bhisi.Api.Controllers
                         {
                             sourceSavingAcc = await _context.SavingAccountMasters
                                 .Include(s => s.SavingScheme)
+                                .Include(s => s.JointHolders)
                                 .FirstOrDefaultAsync(s => s.SavingAccountID == sourceSavingAccountId.Value);
                         }
                         else
                         {
                             sourceSavingAcc = await _context.SavingAccountMasters
                                 .Include(s => s.SavingScheme)
-                                .FirstOrDefaultAsync(s => s.CustomerID == account.CustomerID && s.Status == "Active");
+                                .Include(s => s.JointHolders)
+                                .FirstOrDefaultAsync(s => (s.CustomerID == account.CustomerID || s.JointHolders.Any(jh => jh.CustomerID == account.CustomerID)) &&
+                                                          s.BranchID == collectingBranchId &&
+                                                          s.Status == "Active");
                         }
 
                         if (sourceSavingAcc == null)
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest("वर्ग करण्यासाठी सभासदाचे बचत खाते सापडले नाही.");
                         }
-                        if (sourceSavingAcc.Status == "Closed")
+                        if (string.Equals(sourceSavingAcc.Status, "Closed", StringComparison.OrdinalIgnoreCase))
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest($"बचत खाते (#{sourceSavingAcc.AccountNo}) बंद झालेले आहे.");
                         }
 
-                        decimal availableSavingBal = Math.Max(0, sourceSavingAcc.CurrentBalance - sourceSavingAcc.LienAmount - sourceSavingAcc.MinimumBalance);
+                        bool isSameOrJointOwner = sourceSavingAcc.CustomerID == account.CustomerID ||
+                                                  (sourceSavingAcc.JointHolders != null && sourceSavingAcc.JointHolders.Any(jh => jh.CustomerID == account.CustomerID));
+                        if (!isSameOrJointOwner)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"निवडलेले बचत खाते (#{sourceSavingAcc.AccountNo}) या आरडी खातेदाराशी संलग्न नाही.");
+                        }
+
+                        if (sourceSavingAcc.BranchID > 0 && sourceSavingAcc.BranchID != collectingBranchId)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"निवडलेले बचत खाते (#{sourceSavingAcc.AccountNo}) वेगळ्या शाखेचे आहे. कृपया सध्याच्या शाखेतील बचत खाते निवडा.");
+                        }
+
+                        var (availableSavingBal, effectiveSavingMinBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, sourceSavingAcc);
                         if (totalReceived > availableSavingBal + 0.01m)
                         {
-                            return BadRequest($"बचत खात्यात अपुरी शिल्लक आहे! आवश्यक: ₹{totalReceived:N2}, उपलब्ध: ₹{availableSavingBal:N2}");
+                            await transaction.RollbackAsync();
+                            return BadRequest($"बचत खात्यात अपुरी शिल्लक आहे! आवश्यक: ₹{totalReceived:N2}, किमान शिल्लक (₹{effectiveSavingMinBal:N2}) व तारण वगळता उपलब्ध: ₹{availableSavingBal:N2}");
                         }
 
                         int savingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sourceSavingAcc);
                         if (savingLedgerId <= 0)
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest(Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(sourceSavingAcc.AccountNo));
                         }
 
                         debitLedgerId = savingLedgerId;
                         modeNarration = $"बचत खात्यातून वर्ग ({sourceSavingAcc.AccountNo})";
+                        normalizedMode = "Saving";
                     }
                     else if (normalizedMode.Equals("Pigmy", StringComparison.OrdinalIgnoreCase) || normalizedMode.Equals("Pigmy Transfer", StringComparison.OrdinalIgnoreCase))
                     {
@@ -1231,10 +1255,12 @@ namespace Bhisi.Api.Controllers
 
                         if (sourcePigmyAcc == null)
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest("वर्ग करण्यासाठी सभासदाचे पिग्मी खाते सापडले नाही.");
                         }
-                        if (sourcePigmyAcc.Status == "Closed")
+                        if (string.Equals(sourcePigmyAcc.Status, "Closed", StringComparison.OrdinalIgnoreCase))
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest($"पिग्मी खाते (#{sourcePigmyAcc.AccountNo}) बंद झालेले आहे.");
                         }
 
@@ -1242,6 +1268,7 @@ namespace Bhisi.Api.Controllers
                         decimal availablePigmyBal = Math.Max(0, pigmyBal - (sourcePigmyAcc.LienAmount ?? 0m));
                         if (totalReceived > availablePigmyBal + 0.01m)
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest($"पिग्मी खात्यात अपुरी शिल्लक आहे! आवश्यक: ₹{totalReceived:N2}, उपलब्ध: ₹{availablePigmyBal:N2}");
                         }
 
@@ -1260,13 +1287,19 @@ namespace Bhisi.Api.Controllers
 
                         debitLedgerId = pigmyLedgerId > 0 ? pigmyLedgerId : branchCashId;
                         modeNarration = $"पिग्मी खात्यातून वर्ग ({sourcePigmyAcc.AccountNo})";
+                        normalizedMode = "Pigmy";
                     }
                     else
                     {
                         finalVoucherType = "Receipt";
                         debitLedgerId = branchCashId;
                         modeNarration = "रोख";
+                        normalizedMode = "Cash";
                     }
+
+                    // Update account principal after all mode validations succeed
+                    account.TotalDepositedAmount = Math.Round(account.TotalDepositedAmount + totalInstallmentPrincipal, 2, MidpointRounding.AwayFromZero);
+                    await _context.SaveChangesAsync();
 
                     string narration = $"आरडी हप्ता भरणा ({modeNarration}) - रक्कम: ₹{totalInstallmentPrincipal:N2}, दंड: ₹{penaltyAmount}";
                     if (account.BranchID > 0 && account.BranchID != collectingBranchId)
@@ -1278,14 +1311,19 @@ namespace Bhisi.Api.Controllers
                     bool isCrossBranchTxn = (collectingBranchId != homeBranchId);
 
                     int finalVoucherId;
+                    string primaryDebitVoucherNo;
 
                     if (!isCrossBranchTxn)
                     {
-                        var (vStatusColl, appByColl, appOnColl) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, totalReceived, 1);
+                        primaryDebitVoucherNo = await Helpers.RdInstallmentCollectionRollbackHelper.GenerateUniqueRdCollVoucherNoAsync(
+                            _context,
+                            $"JV-RD-COLL-{account.AccountNo}-{currentPaid + 1}");
+
+                        var (vStatusColl, appByColl, appOnColl) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, totalReceived, makerUserId);
                         var voucher = new Voucher
                         {
                             BranchID = collectingBranchId,
-                            VoucherNo = $"JV-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
+                            VoucherNo = primaryDebitVoucherNo,
                             VoucherDate = effDate,
                             VoucherType = finalVoucherType,
                             Status = vStatusColl,
@@ -1293,7 +1331,7 @@ namespace Bhisi.Api.Controllers
                             ApprovedOn = appOnColl,
                             TotalAmount = totalReceived,
                             Narration = narration,
-                            CreatedBy = 1,
+                            CreatedBy = makerUserId,
                             CreatedOn = DateTime.Now
                         };
                         _context.Vouchers.Add(voucher);
@@ -1304,7 +1342,7 @@ namespace Bhisi.Api.Controllers
 
                         // Dr Cash / Bank / Saving / Pigmy
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = totalReceived, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                        
+
                         // Cr RD Liability
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalInstallmentPrincipal, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
@@ -1320,16 +1358,24 @@ namespace Bhisi.Api.Controllers
                     {
                         // CBS Dual-Voucher IBT Engine for Cross-Branch RD Collection
                         int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, collectingBranchId, homeBranchId);
-                        var (vStatusColl, appByColl, appOnColl) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, totalReceived, 1);
+                        var (vStatusColl, appByColl, appOnColl) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, totalReceived, makerUserId);
 
                         var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
                         int? linkedMemberId = linkedMember?.MemberID;
+
+                        primaryDebitVoucherNo = await Helpers.RdInstallmentCollectionRollbackHelper.GenerateUniqueRdCollVoucherNoAsync(
+                            _context,
+                            $"RV-{collectingBranchId}-{effDate:yyMMdd}-RD-COLL-{account.AccountNo}-{currentPaid + 1}");
+
+                        string homeVoucherNo = await Helpers.RdInstallmentCollectionRollbackHelper.GenerateUniqueRdCollVoucherNoAsync(
+                            _context,
+                            $"JV-RD-COLL-{account.AccountNo}-{currentPaid + 1}");
 
                         // 1. Counter Voucher (Branch A): Dr Cash/Bank/Saving/Pigmy, Cr IBT
                         var counterVoucher = new Voucher
                         {
                             BranchID = collectingBranchId,
-                            VoucherNo = $"RV-{collectingBranchId}-{effDate:yyyyMMdd}-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
+                            VoucherNo = primaryDebitVoucherNo,
                             VoucherDate = effDate,
                             VoucherType = finalVoucherType,
                             Status = vStatusColl,
@@ -1337,7 +1383,7 @@ namespace Bhisi.Api.Controllers
                             ApprovedOn = appOnColl,
                             TotalAmount = totalReceived,
                             Narration = $"[आंतर-शाखा आरडी हप्ता भरणा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) - रक्कम: ₹{totalInstallmentPrincipal:N2}, दंड: ₹{penaltyAmount} ({modeNarration})",
-                            CreatedBy = 1,
+                            CreatedBy = makerUserId,
                             CreatedOn = DateTime.Now,
                             IsIbtVoucher = true,
                             TargetBranchID = homeBranchId
@@ -1354,7 +1400,7 @@ namespace Bhisi.Api.Controllers
                         var homeVoucher = new Voucher
                         {
                             BranchID = homeBranchId,
-                            VoucherNo = $"JV-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
+                            VoucherNo = homeVoucherNo,
                             VoucherDate = effDate,
                             VoucherType = "Journal",
                             Status = vStatusColl,
@@ -1362,7 +1408,7 @@ namespace Bhisi.Api.Controllers
                             ApprovedOn = appOnColl,
                             TotalAmount = totalReceived,
                             Narration = $"[आंतर-शाखा आरडी हप्ता जमा] काऊंटर शाखा #{collectingBranchId} वरून हप्ता भरणा प्राप्त (खाते: {account.AccountNo}, रक्कम: ₹{totalInstallmentPrincipal:N2}, दंड: ₹{penaltyAmount}, {modeNarration})",
-                            CreatedBy = 1,
+                            CreatedBy = makerUserId,
                             CreatedOn = DateTime.Now,
                             IsIbtVoucher = true,
                             TargetBranchID = collectingBranchId,
@@ -1387,26 +1433,19 @@ namespace Bhisi.Api.Controllers
                         finalVoucherId = counterVoucher.VoucherID;
                     }
 
-                    // Auto-debit member's Saving Account if Saving Transfer
+                    // Auto-debit member's Saving Account if Saving Transfer (maintains chronological BalanceAfterTxn & exact VoucherNo link)
                     if (sourceSavingAcc != null)
                     {
-                        sourceSavingAcc.CurrentBalance -= totalReceived;
-                        _context.Entry(sourceSavingAcc).State = EntityState.Modified;
-
-                        var savingTxn = new SavingTransaction
-                        {
-                            SavingAccountID = sourceSavingAcc.SavingAccountID,
-                            CustomerID = sourceSavingAcc.CustomerID,
-                            BranchID = collectingBranchId,
-                            TransactionDate = effDate,
-                            TransactionType = "Withdrawal",
-                            Amount = totalReceived,
-                            BalanceAfterTxn = sourceSavingAcc.CurrentBalance,
-                            PaymentMode = "Transfer",
-                            VoucherNo = $"JV-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
-                            Narration = $"आरडी हप्ता भरणा वर्ग (RD A/C: {account.AccountNo}, रक्कम: ₹{totalInstallmentPrincipal:N2})"
-                        };
-                        _context.SavingTransactions.Add(savingTxn);
+                        string savingNarration = $"आरडी हप्ता भरणा वर्ग (RD A/C: {account.AccountNo}, रक्कम: ₹{totalInstallmentPrincipal:N2}{(penaltyAmount > 0 ? $", दंड: ₹{penaltyAmount:N2}" : "")})";
+                        await Helpers.RdInstallmentCollectionRollbackHelper.InsertSavingTransferDebitWithPassbookSyncAsync(
+                            _context,
+                            sourceSavingAcc,
+                            collectingBranchId,
+                            effDate,
+                            totalReceived,
+                            primaryDebitVoucherNo,
+                            savingNarration,
+                            makerUserId);
                     }
 
                     // Auto-debit member's Pigmy Account if Pigmy Transfer
@@ -1427,15 +1466,15 @@ namespace Bhisi.Api.Controllers
                             CrAmount = 0,
                             BalanceAmount = remainingPigmyBal,
                             Narration = $"आरडी हप्ता भरणा वर्ग ₹{totalReceived:N2} (RD A/C: {account.AccountNo})",
-                            ReferenceId = $"RD-COLL-{account.AccountNo}-{currentPaid + 1}",
-                            MakerId = 1,
+                            ReferenceId = primaryDebitVoucherNo,
+                            MakerId = makerUserId,
                             PostedOn = DateTime.Now
                         };
                         _context.PigmyTransactions.Add(pigmyTxn);
                     }
 
-                    // Update RD Amortization Installment Schedules with Waterfall Allocation
-                    // Priority rule: Settle previous unpaid / partial installments first, then allocate to subsequent ones
+                    // Update RD Amortization Installment Schedules with FIFO Waterfall Allocation
+                    // Priority rule: Settle previous unpaid / partial installments first, then allocate to subsequent ones (and dynamically extend beyond DurationMonths when allowPostMaturity == true)
                     var pendingSchedules = await _context.RDInstallmentSchedules
                         .Where(s => s.RdAccountID == id && s.Status != "Paid")
                         .OrderBy(s => s.InstallmentNo)
@@ -1447,11 +1486,11 @@ namespace Bhisi.Api.Controllers
 
                     for (int idx = 0; idx < pendingSchedules.Count; idx++)
                     {
-                        if (remainingToAllocate <= 0) break;
+                        if (remainingToAllocate <= 0.009m) break;
 
                         var s = pendingSchedules[idx];
-                        decimal needed = Math.Max(0, s.ExpectedAmount - s.PaidAmount);
-                        if (needed <= 0) continue;
+                        decimal needed = Math.Round(Math.Max(0m, s.ExpectedAmount - s.PaidAmount), 2, MidpointRounding.AwayFromZero);
+                        if (needed <= 0.009m) continue;
 
                         coveredScheduleCount++;
                         s.PaidDate = effDate;
@@ -1461,20 +1500,78 @@ namespace Bhisi.Api.Controllers
                             ? (int)(effDate - s.DueDate).TotalDays 
                             : 0;
 
-                        if (remainingToAllocate >= needed)
+                        if (remainingToAllocate >= needed - 0.01m)
                         {
-                            s.PaidAmount += needed;
+                            s.PaidAmount = s.ExpectedAmount;
                             s.Status = "Paid";
-                            remainingToAllocate -= needed;
+                            remainingToAllocate = Math.Round(Math.Max(0m, remainingToAllocate - needed), 2, MidpointRounding.AwayFromZero);
                             impactedScheduleDetails.Add($"हप्ता क्र. {s.InstallmentNo} (पूर्ण ₹{s.ExpectedAmount:N2})");
                         }
                         else
                         {
-                            s.PaidAmount += remainingToAllocate;
+                            s.PaidAmount = Math.Round(s.PaidAmount + remainingToAllocate, 2, MidpointRounding.AwayFromZero);
                             s.Status = "Partial";
-                            decimal remainingPending = Math.Max(0, s.ExpectedAmount - s.PaidAmount);
-                            impactedScheduleDetails.Add($"हप्ता क्र. {s.InstallmentNo} (अंशतः जमा: ₹{s.PaidAmount:N2}/{s.ExpectedAmount:N2}, थकीत: ₹{remainingPending:N2})");
-                            remainingToAllocate = 0;
+                            decimal remainingPending = Math.Round(Math.Max(0m, s.ExpectedAmount - s.PaidAmount), 2, MidpointRounding.AwayFromZero);
+                            impactedScheduleDetails.Add($"हप्ता क्र. {s.InstallmentNo} (अंशतः जमा: ₹{s.PaidAmount:N2}/{s.ExpectedAmount:N2}, बाकी: ₹{remainingPending:N2})");
+                            remainingToAllocate = 0m;
+                        }
+                    }
+
+                    // Dynamically append post-maturity / over-duration installment rows (#25, #26...) if remainingToAllocate > 0
+                    if (remainingToAllocate > 0.009m && account.InstallmentAmount > 0)
+                    {
+                        int maxInstNo = await _context.RDInstallmentSchedules
+                            .Where(s => s.RdAccountID == id)
+                            .Select(s => (int?)s.InstallmentNo)
+                            .MaxAsync() ?? 0;
+
+                        if (pendingSchedules.Any())
+                        {
+                            maxInstNo = Math.Max(maxInstNo, pendingSchedules.Max(s => s.InstallmentNo));
+                        }
+
+                        int graceDays = account.RdScheme?.GracePeriodDays ?? 5;
+
+                        while (remainingToAllocate > 0.009m)
+                        {
+                            maxInstNo++;
+                            DateTime dueDate = account.OpeningDate.AddMonths(maxInstNo - 1);
+                            DateTime graceDate = dueDate.AddDays(graceDays);
+                            decimal exp = account.InstallmentAmount;
+                            decimal alloc = Math.Round(Math.Min(exp, remainingToAllocate), 2, MidpointRounding.AwayFromZero);
+                            remainingToAllocate = Math.Round(Math.Max(0m, remainingToAllocate - alloc), 2, MidpointRounding.AwayFromZero);
+                            bool isFull = alloc >= exp - 0.01m;
+
+                            var extendedSched = new RdInstallmentSchedule
+                            {
+                                RdAccountID = id,
+                                InstallmentNo = maxInstNo,
+                                DueDate = dueDate,
+                                GraceDate = graceDate,
+                                ExpectedAmount = exp,
+                                PaidDate = effDate,
+                                PaidAmount = isFull ? exp : alloc,
+                                Status = isFull ? "Paid" : "Partial",
+                                PaymentMode = normalizedMode,
+                                VoucherID = finalVoucherId,
+                                OverdueDays = (effDate > graceDate) ? (int)(effDate - dueDate).TotalDays : 0,
+                                PenaltyCharged = 0m,
+                                PenaltyWaived = 0m
+                            };
+
+                            _context.RDInstallmentSchedules.Add(extendedSched);
+                            pendingSchedules.Add(extendedSched);
+                            coveredScheduleCount++;
+
+                            if (isFull)
+                            {
+                                impactedScheduleDetails.Add($"हप्ता क्र. {maxInstNo} (वाढीव हप्ता पूर्ण ₹{exp:N2})");
+                            }
+                            else
+                            {
+                                decimal remPending = Math.Round(Math.Max(0m, exp - alloc), 2, MidpointRounding.AwayFromZero);
+                                impactedScheduleDetails.Add($"हप्ता क्र. {maxInstNo} (वाढीव हप्ता अंशतः: ₹{alloc:N2}/₹{exp:N2}, बाकी: ₹{remPending:N2})");
+                            }
                         }
                     }
 
@@ -1485,15 +1582,14 @@ namespace Bhisi.Api.Controllers
                         targetPenaltySchedule.PenaltyCharged += penaltyAmount;
                     }
 
+                    await _context.SaveChangesAsync();
+
                     // Update fully paid installment count and account maturity
                     int fullyPaidCount = await _context.RDInstallmentSchedules
                         .CountAsync(s => s.RdAccountID == id && s.Status == "Paid");
-                    // Include any in-memory paid transitions
-                    fullyPaidCount = pendingSchedules.Count(s => s.Status == "Paid") + 
-                                     await _context.RDInstallmentSchedules.CountAsync(s => s.RdAccountID == id && s.Status == "Paid" && !pendingSchedules.Select(p => p.ScheduleID).Contains(s.ScheduleID));
 
                     account.TotalPaidInstallments = fullyPaidCount;
-                    if (account.TotalPaidInstallments >= totalDuration)
+                    if (account.TotalPaidInstallments >= totalDuration && !account.IsLegacyAccount)
                     {
                         account.Status = "Matured";
                     }
@@ -1514,7 +1610,7 @@ namespace Bhisi.Api.Controllers
                         InterestAmount = 0,
                         BalanceAfterTxn = runningBal,
                         Narration = $"आरडी हप्ता भरणा ({modeNarration}) - जमा ₹{totalInstallmentPrincipal:N2} [{string.Join(", ", impactedScheduleDetails)}]: {account.AccountNo}",
-                        CreatedBy = 1
+                        CreatedBy = makerUserId
                     };
                     _context.RdTransactions.Add(tx);
 
@@ -1526,6 +1622,7 @@ namespace Bhisi.Api.Controllers
                         NewTotalPaid = account.TotalPaidInstallments, 
                         TotalDeposited = account.TotalDepositedAmount,
                         Status = account.Status,
+                        VoucherNo = primaryDebitVoucherNo,
                         Allocation = impactedScheduleDetails
                     });
                 }
@@ -1541,62 +1638,27 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}/schedule")]
         public async Task<ActionResult<IEnumerable<object>>> GetRdSchedule(int id)
         {
-            var schedules = await _context.RDInstallmentSchedules
-                .Include(s => s.Voucher)
-                .Where(s => s.RdAccountID == id)
-                .OrderBy(s => s.InstallmentNo)
-                .ToListAsync();
+            var account = await _context.RdAccounts
+                .Include(r => r.RdScheme)
+                .FirstOrDefaultAsync(r => r.RdAccountID == id);
 
-            if (schedules == null || schedules.Count == 0)
+            List<RdInstallmentSchedule> schedules;
+            if (account != null)
             {
-                var account = await _context.RdAccounts
-                    .Include(r => r.RdScheme)
-                    .FirstOrDefaultAsync(r => r.RdAccountID == id);
-
-                if (account != null)
-                {
-                    int duration = account.DurationMonths > 0 ? account.DurationMonths : 12;
-                    int gracePeriod = account.RdScheme?.GracePeriodDays ?? 5;
-                    DateTime openingDate = account.OpeningDate;
-                    var generatedList = new List<RdInstallmentSchedule>();
-
-                    for (int i = 1; i <= duration; i++)
-                    {
-                        DateTime dueDate = openingDate.AddMonths(i - 1);
-                        bool isPaid = i <= account.TotalPaidInstallments;
-
-                        var sched = new RdInstallmentSchedule
-                        {
-                            RdAccountID = account.RdAccountID,
-                            InstallmentNo = i,
-                            DueDate = dueDate,
-                            GraceDate = dueDate.AddDays(gracePeriod),
-                            ExpectedAmount = account.InstallmentAmount,
-                            Status = isPaid ? "Paid" : (dueDate.Date < DateTime.Today ? "Overdue" : "Pending"),
-                            PaidDate = isPaid ? dueDate : null,
-                            PaidAmount = isPaid ? account.InstallmentAmount : 0,
-                            OverdueDays = (!isPaid && dueDate.Date < DateTime.Today) ? (int)(DateTime.Today - dueDate.Date).TotalDays : 0,
-                            PenaltyCharged = 0,
-                            PenaltyWaived = 0,
-                            VoucherID = null
-                        };
-                        generatedList.Add(sched);
-                    }
-
-                    try
-                    {
-                        _context.RDInstallmentSchedules.AddRange(generatedList);
-                        await _context.SaveChangesAsync();
-                        schedules = generatedList;
-                    }
-                    catch
-                    {
-                        // In case of any DB constraint issue, fall back to in-memory list
-                        schedules = generatedList;
-                    }
-                }
+                schedules = await Helpers.RdInstallmentCollectionRollbackHelper.ReconcileRdSchedulesWithDepositedAmountAsync(
+                    _context,
+                    account);
+            }
+            else
+            {
+                schedules = await _context.RDInstallmentSchedules
+                    .Include(s => s.Voucher)
+                    .Where(s => s.RdAccountID == id)
+                    .OrderBy(s => s.InstallmentNo)
+                    .ToListAsync();
             }
 
+            int baseDuration = account?.DurationMonths ?? 0;
             var result = (schedules ?? new List<RdInstallmentSchedule>()).Select(s => new
             {
                 s.ScheduleID,
@@ -1606,6 +1668,7 @@ namespace Bhisi.Api.Controllers
                 s.GraceDate,
                 s.ExpectedAmount,
                 PendingAmount = Math.Max(0, s.ExpectedAmount - s.PaidAmount),
+                IsExtended = baseDuration > 0 && s.InstallmentNo > baseDuration,
                 s.Status,
                 s.PaidDate,
                 s.PaidAmount,
@@ -2859,7 +2922,7 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
             }
 
-            // 1. Try finding RdTransaction with this VoucherID
+            // 1. Try finding RdTransaction with this VoucherID (or cross-branch sibling RelatedVoucherID)
             var tx = await _context.RdTransactions
                 .Include(t => t.RdAccount)
                     .ThenInclude(a => a!.Customer)
@@ -2867,20 +2930,25 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(a => a!.RdScheme)
                 .Include(t => t.RdAccount)
                     .ThenInclude(a => a!.Branch)
-                .FirstOrDefaultAsync(t => t.VoucherID == voucherId && t.TransactionType == "Installment");
+                .FirstOrDefaultAsync(t => (t.VoucherID == voucherId || (voucher.RelatedVoucherID.HasValue && t.VoucherID == voucher.RelatedVoucherID.Value)) &&
+                                          t.TransactionType == "Installment");
 
             RdAccount? account = tx?.RdAccount;
 
-            // 2. Try parsing AccountNo from VoucherNo (e.g. JV-RD-COLL-00150100000001-2)
+            // 2. Try parsing AccountNo from VoucherNo (supports formatted 14-digit CBS e.g. JV-RD-COLL-001-502-0000003-5-31 or -P2)
             if (account == null)
             {
                 string vNo = voucher.VoucherNo ?? "";
-                if (vNo.StartsWith("JV-RD-COLL-"))
+                int markerIdx = vNo.IndexOf("RD-COLL-", StringComparison.OrdinalIgnoreCase);
+                if (markerIdx >= 0)
                 {
-                    var parts = vNo.Substring("JV-RD-COLL-".Length).Split('-');
-                    if (parts.Length > 0)
+                    string afterMarker = vNo.Substring(markerIdx + "RD-COLL-".Length).Trim();
+                    // Strip optional -P2 suffix and trailing -installmentSeq
+                    afterMarker = System.Text.RegularExpressions.Regex.Replace(afterMarker, @"-P\d+$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    int lastDash = afterMarker.LastIndexOf('-');
+                    if (lastDash > 0)
                     {
-                        string accNo = parts[0].Trim();
+                        string accNo = afterMarker.Substring(0, lastDash).Trim();
                         account = await _context.RdAccounts
                             .Include(a => a.Customer)
                             .Include(a => a.RdScheme)
@@ -2911,17 +2979,53 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = $"सदर आरडी हप्ता भरणा व्हाउचरशी (ID: {voucherId}) संबंधित खाते सापडले नाही." });
             }
 
+            var lookupVoucherIds = new List<int> { voucherId };
+            if (voucher.RelatedVoucherID.HasValue && voucher.RelatedVoucherID.Value > 0)
+            {
+                lookupVoucherIds.Add(voucher.RelatedVoucherID.Value);
+            }
+
             var schedules = await _context.RDInstallmentSchedules
-                .Where(s => s.VoucherID == voucherId)
+                .Where(s => s.VoucherID.HasValue && lookupVoucherIds.Contains(s.VoucherID.Value))
                 .OrderBy(s => s.InstallmentNo)
                 .ToListAsync();
 
             int installmentCount = schedules.Count > 0 ? schedules.Count : 1;
-            decimal penalty = schedules.Sum(s => s.PenaltyCharged);
+            decimal penalty = tx != null ? tx.PenaltyAmount : schedules.Sum(s => s.PenaltyCharged);
+            decimal principalDeposit = tx != null && tx.PrincipalAmount > 0
+                ? tx.PrincipalAmount
+                : Math.Max(0m, voucher.TotalAmount - penalty);
+
+            var lookupVoucherNos = new List<string>();
+            if (!string.IsNullOrWhiteSpace(voucher.VoucherNo)) lookupVoucherNos.Add(voucher.VoucherNo);
+            if (voucher.RelatedVoucherID.HasValue)
+            {
+                string? sibNo = await _context.Vouchers
+                    .Where(v => v.VoucherID == voucher.RelatedVoucherID.Value)
+                    .Select(v => v.VoucherNo)
+                    .FirstOrDefaultAsync();
+                if (!string.IsNullOrWhiteSpace(sibNo)) lookupVoucherNos.Add(sibNo);
+            }
+
+            var linkedSavingTx = lookupVoucherNos.Any()
+                ? await _context.SavingTransactions
+                    .AsNoTracking()
+                    .Include(st => st.SavingAccount)
+                    .FirstOrDefaultAsync(st => st.VoucherNo != null && lookupVoucherNos.Contains(st.VoucherNo))
+                : null;
+
             string instPayMode = "Cash";
             int? instBankLedgerId = null;
+            int? sourceSavingAccountId = linkedSavingTx?.SavingAccountID;
+            string? sourceSavingAccountNo = linkedSavingTx?.SavingAccount?.AccountNo;
+            int? sourcePigmyAccountId = null;
+
             var instDebitDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr");
-            if (instDebitDetail?.Ledger != null && BankLedgerHelper.IsBankAccountType(instDebitDetail.Ledger.AccountType))
+            if (linkedSavingTx != null)
+            {
+                instPayMode = "Saving";
+            }
+            else if (instDebitDetail?.Ledger != null && BankLedgerHelper.IsBankAccountType(instDebitDetail.Ledger.AccountType))
             {
                 instPayMode = "Bank";
                 instBankLedgerId = instDebitDetail.LedgerID;
@@ -2929,6 +3033,19 @@ namespace Bhisi.Api.Controllers
             else if (instDebitDetail != null && await Helpers.SavingLedgerHelper.IsConfiguredSavingLiabilityLedgerAsync(_context, instDebitDetail.LedgerID))
             {
                 instPayMode = "Saving";
+            }
+            else if ((voucher.Narration != null && (voucher.Narration.Contains("पिग्मी") || voucher.Narration.Contains("Pigmy"))) ||
+                     (instDebitDetail?.Ledger?.LedgerName != null && (instDebitDetail.Ledger.LedgerName.Contains("पिग्मी") || instDebitDetail.Ledger.LedgerName.Contains("Pigmy"))))
+            {
+                instPayMode = "Pigmy";
+                var pigmyRefCandidates = lookupVoucherNos
+                    .SelectMany(n => new[] { n, n.StartsWith("JV-") ? n.Substring(3) : n })
+                    .Distinct()
+                    .ToList();
+                var linkedPigmyTx = await _context.PigmyTransactions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(pt => pt.TransactionType == "RD_TRANSFER" && pt.ReferenceId != null && pigmyRefCandidates.Contains(pt.ReferenceId));
+                sourcePigmyAccountId = linkedPigmyTx?.PigmyAccountID;
             }
 
             return Ok(new
@@ -2955,11 +3072,15 @@ namespace Bhisi.Api.Controllers
                 installmentDetails = new
                 {
                     InstallmentCount = installmentCount,
+                    DepositAmount = principalDeposit,
                     PenaltyAmount = penalty,
                     TotalAmount = voucher.TotalAmount,
                     CollectionDate = voucher.VoucherDate,
                     PaymentMode = instPayMode,
                     BankLedgerID = instBankLedgerId,
+                    SourceSavingAccountID = sourceSavingAccountId,
+                    SourceSavingAccountNo = sourceSavingAccountNo,
+                    SourcePigmyAccountID = sourcePigmyAccountId,
                     Narration = voucher.Narration
                 },
                 voucher = new

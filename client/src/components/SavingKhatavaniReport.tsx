@@ -205,7 +205,7 @@ export default function SavingKhatavaniReport() {
 
   // Account Summary Banner
   const summaryBanner = reportData ? (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center text-xs">
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-center text-xs">
       <div>
         <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">बचत खाते क्र.</span>
         <strong className="text-primary font-mono text-[11px]">{reportData.accountNo}</strong>
@@ -224,12 +224,21 @@ export default function SavingKhatavaniReport() {
       <div>
         <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">योजना / व्याजदर</span>
         <strong className="text-slate-900 text-[11px] truncate block">
-          {reportData.ledgerName || 'बचत ठेव'}{reportData.interestRate > 0 ? ` (${reportData.interestRate}%)` : ''}
+          {reportData.schemeName || reportData.ledgerName || 'बचत ठेव'}{reportData.interestRate > 0 ? ` (${reportData.interestRate}%)` : ''}
+        </strong>
+      </div>
+      <div>
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">किमान शिल्लक मर्यादा</span>
+        <strong className="text-indigo-800 font-mono text-[11px]">
+          ₹ {fmtCurrency(reportData.minimumBalance ?? 0)}
         </strong>
       </div>
       <div className="sm:text-right">
-        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">सध्याची बचत बाकी</span>
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">सध्याची / काढता येणारी बाकी</span>
         <strong className="text-emerald-700 font-mono text-xs">₹ {fmtCurrency(latestBalance)}</strong>
+        <span className="block text-[9.5px] font-mono text-slate-600 font-semibold">
+          उपलब्ध: ₹ {fmtCurrency(Math.max(0, Number(latestBalance ?? 0) - Number(reportData.lienAmount ?? 0) - Number(reportData.minimumBalance ?? 0)))}
+        </span>
       </div>
     </div>
   ) : null;

@@ -82,7 +82,7 @@ namespace Bhisi.Api.Models
         public decimal? LastInterestAmount { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal MinimumBalance { get; set; } = 500;
+        public decimal MinimumBalance { get; set; } = 0m;
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal LienAmount { get; set; } = 0;

@@ -208,7 +208,7 @@ namespace Bhisi.Api.Controllers
             }
             if (customerId.HasValue && customerId.Value > 0)
             {
-                query = query.Where(s => s.CustomerID == customerId.Value);
+                query = query.Where(s => s.CustomerID == customerId.Value || s.JointHolders.Any(jh => jh.CustomerID == customerId.Value));
             }
 
             if (!string.IsNullOrWhiteSpace(search))
@@ -233,14 +233,37 @@ namespace Bhisi.Api.Controllers
 
             query = query.OrderBy(s => s.AccountNo);
 
-            var accounts = await query
+            var today = DateTime.Today;
+            var allSchemes = await _context.SavingInterestSettings
+                .AsNoTracking()
+                .OrderByDescending(s => s.EffectiveDate <= today)
+                .ThenByDescending(s => s.EffectiveDate)
+                .ThenByDescending(s => s.SettingID)
+                .ToListAsync();
+
+            var rawAccounts = await query
                 .Include(s => s.Customer)
                 .Include(s => s.Branch)
                 .Include(s => s.Ledger)
                 .Include(s => s.SavingScheme)
                 .Include(s => s.JointHolders)
                     .ThenInclude(jh => jh.Customer)
-                .Select(s => new {
+                .ToListAsync();
+
+            var accounts = rawAccounts.Select(s => {
+                var matchedScheme = s.SavingScheme
+                    ?? (s.SavingSchemeID.HasValue && s.SavingSchemeID.Value > 0
+                        ? allSchemes.FirstOrDefault(x => x.SettingID == s.SavingSchemeID.Value)
+                        : null)
+                    ?? (s.LedgerID > 0
+                        ? allSchemes.FirstOrDefault(x => x.SavingLiabilityLedgerID == s.LedgerID || x.LedgerID == s.LedgerID)
+                        : null)
+                    ?? (allSchemes.Count == 1 ? allSchemes[0] : null);
+
+                decimal effectiveMinBal = Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalance(s, matchedScheme);
+                decimal availableBal = Math.Max(0m, s.CurrentBalance - s.LienAmount - effectiveMinBal);
+
+                return new {
                     s.SavingAccountID,
                     s.BranchID,
                     BranchName = s.Branch != null ? s.Branch.BranchName : "",
@@ -248,8 +271,10 @@ namespace Bhisi.Api.Controllers
                     s.AccountNo,
                     FormattedAccountNo = LuhnHelper.Format14Digit(s.AccountNo),
                     PreviousAccountNo = s.OldAccountNo,
-                    s.SavingSchemeID,
-                    SchemeName = s.SavingScheme != null ? s.SavingScheme.SchemeName : "सर्वसाधारण बचत ठेव",
+                    SavingSchemeID = matchedScheme != null ? (int?)matchedScheme.SettingID : s.SavingSchemeID,
+                    SchemeName = matchedScheme != null && !string.IsNullOrWhiteSpace(matchedScheme.SchemeName)
+                        ? matchedScheme.SchemeName
+                        : "सर्वसाधारण बचत ठेव",
                     s.CustomerID,
                     CIFNo = s.Customer != null ? s.Customer.CIFNo : "",
                     CustomerName = s.Customer != null 
@@ -271,7 +296,8 @@ namespace Bhisi.Api.Controllers
                     s.OpeningBalance,
                     s.CurrentBalance,
                     s.InterestRate,
-                    s.MinimumBalance,
+                    MinimumBalance = effectiveMinBal,
+                    AvailableBalance = availableBal,
                     s.LienAmount,
                     s.LienReason,
                     s.Status,
@@ -289,8 +315,8 @@ namespace Bhisi.Api.Controllers
                             : "",
                         MobileNo = jh.Customer != null ? (jh.Customer.MobileNo ?? "") : ""
                     }).ToList()
-                })
-                .ToListAsync();
+                };
+            }).ToList();
 
             return Ok(accounts);
         }
@@ -309,6 +335,8 @@ namespace Bhisi.Api.Controllers
             var s = await _context.SavingAccountMasters
                 .Include(sa => sa.Customer)
                 .Include(sa => sa.Branch)
+                .Include(sa => sa.Ledger)
+                .Include(sa => sa.SavingScheme)
                 .Include(sa => sa.JointHolders)
                     .ThenInclude(jh => jh.Customer)
                 .FirstOrDefaultAsync(m => m.SavingAccountID == id);
@@ -318,6 +346,10 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
+            var matchedScheme = await Helpers.SavingLedgerHelper.ResolveSavingSchemeAsync(_context, s);
+            decimal effectiveMinBal = Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalance(s, matchedScheme);
+            decimal availableBal = Math.Max(0m, s.CurrentBalance - s.LienAmount - effectiveMinBal);
+
             return new {
                 s.SavingAccountID,
                 s.BranchID,
@@ -326,8 +358,10 @@ namespace Bhisi.Api.Controllers
                 s.AccountNo,
                 FormattedAccountNo = LuhnHelper.Format14Digit(s.AccountNo),
                 PreviousAccountNo = s.OldAccountNo,
-                s.SavingSchemeID,
-                SchemeName = s.SavingScheme != null ? s.SavingScheme.SchemeName : "सर्वसाधारण बचत ठेव",
+                SavingSchemeID = matchedScheme != null ? (int?)matchedScheme.SettingID : s.SavingSchemeID,
+                SchemeName = matchedScheme != null && !string.IsNullOrWhiteSpace(matchedScheme.SchemeName)
+                    ? matchedScheme.SchemeName
+                    : "सर्वसाधारण बचत ठेव",
                 s.CustomerID,
                 CIFNo = s.Customer != null ? s.Customer.CIFNo : "",
                 CustomerName = s.Customer != null 
@@ -349,7 +383,8 @@ namespace Bhisi.Api.Controllers
                 s.OpeningBalance,
                 s.CurrentBalance,
                 s.InterestRate,
-                s.MinimumBalance,
+                MinimumBalance = effectiveMinBal,
+                AvailableBalance = availableBal,
                 s.LienAmount,
                 s.LienReason,
                 s.Status,
@@ -387,7 +422,7 @@ namespace Bhisi.Api.Controllers
             public string? InitialPaymentMode { get; set; } = "Cash";
             public int? BankLedgerID { get; set; }
             public decimal InterestRate { get; set; } = 0;
-            public decimal MinimumBalance { get; set; } = 500;
+            public decimal? MinimumBalance { get; set; }
             public decimal LienAmount { get; set; } = 0;
             public string? LienReason { get; set; }
             public string Status { get; set; } = "Active";
@@ -443,23 +478,32 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage());
             }
 
+            var matchedScheme = await Helpers.SavingLedgerHelper.ResolveSavingSchemeAsync(
+                _context,
+                explicitSchemeId: targetSchemeId,
+                explicitLedgerId: targetLedgerId);
+
+            if ((!targetSchemeId.HasValue || targetSchemeId.Value <= 0) && matchedScheme != null)
+            {
+                targetSchemeId = matchedScheme.SettingID;
+            }
+
             // Auto-sync interest rate from active SavingInterestSetting if interest rate is not provided
             if (dto.InterestRate <= 0)
             {
-                var schemeSetting = await _context.SavingInterestSettings
-                    .Where(s => s.SavingLiabilityLedgerID == targetLedgerId || s.LedgerID == targetLedgerId || s.InterestExpenseLedgerID == targetLedgerId)
-                    .OrderByDescending(s => s.EffectiveDate)
-                    .FirstOrDefaultAsync();
-
-                if (schemeSetting != null && schemeSetting.InterestRate > 0)
+                if (matchedScheme != null && matchedScheme.InterestRate > 0)
                 {
-                    dto.InterestRate = schemeSetting.InterestRate;
+                    dto.InterestRate = matchedScheme.InterestRate;
                 }
                 else
                 {
                     dto.InterestRate = 4.0m;
                 }
             }
+
+            decimal resolvedMinBalance = dto.MinimumBalance.HasValue
+                ? Math.Max(0m, dto.MinimumBalance.Value)
+                : Math.Max(0m, matchedScheme?.MinimumBalance ?? 0m);
 
             var (customer, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.BranchID);
             if (!string.IsNullOrEmpty(errorMsg) || customer == null)
@@ -570,7 +614,7 @@ namespace Bhisi.Api.Controllers
             {
                 BranchID = dto.BranchID,
                 AccountNo = finalAccountNo,
-                SavingSchemeID = targetSchemeId ?? 1,
+                SavingSchemeID = matchedScheme?.SettingID ?? targetSchemeId,
                 CustomerID = customer.CustomerID,
                 AccountType = dto.AccountType,
                 OpeningDate = dto.OpeningDate,
@@ -581,7 +625,7 @@ namespace Bhisi.Api.Controllers
                 OpeningBalance = dto.OpeningBalance,
                 CurrentBalance = dto.OpeningBalance,
                 InterestRate = dto.InterestRate,
-                MinimumBalance = dto.MinimumBalance,
+                MinimumBalance = resolvedMinBalance,
                 LienAmount = dto.LienAmount,
                 LienReason = dto.LienReason,
                 Status = dto.Status,
@@ -703,6 +747,25 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage() });
             }
 
+            var matchedMigrateScheme = await Helpers.SavingLedgerHelper.ResolveSavingSchemeAsync(
+                _context,
+                explicitSchemeId: targetSchemeId,
+                explicitLedgerId: targetLedgerId);
+
+            if ((!targetSchemeId.HasValue || targetSchemeId.Value <= 0) && matchedMigrateScheme != null)
+            {
+                targetSchemeId = matchedMigrateScheme.SettingID;
+            }
+
+            if (dto.InterestRate <= 0 && matchedMigrateScheme != null && matchedMigrateScheme.InterestRate > 0)
+            {
+                dto.InterestRate = matchedMigrateScheme.InterestRate;
+            }
+
+            decimal resolvedMigrateMinBal = dto.MinimumBalance.HasValue
+                ? Math.Max(0m, dto.MinimumBalance.Value)
+                : Math.Max(0m, matchedMigrateScheme?.MinimumBalance ?? 0m);
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -712,7 +775,7 @@ namespace Bhisi.Api.Controllers
                 {
                     BranchID = dto.BranchID,
                     AccountNo = generatedAccountNo,
-                    SavingSchemeID = targetSchemeId ?? 1,
+                    SavingSchemeID = matchedMigrateScheme?.SettingID ?? targetSchemeId,
                     CustomerID = customer.CustomerID,
                     AccountType = string.IsNullOrWhiteSpace(dto.AccountType) ? "Personal" : dto.AccountType,
                     OpeningDate = dto.OpeningDate != default ? dto.OpeningDate : DateTime.Today,
@@ -723,7 +786,7 @@ namespace Bhisi.Api.Controllers
                     OpeningBalance = dto.OpeningBalance,
                     CurrentBalance = dto.OpeningBalance,
                     InterestRate = dto.InterestRate,
-                    MinimumBalance = dto.MinimumBalance,
+                    MinimumBalance = resolvedMigrateMinBal,
                     LienAmount = dto.LienAmount,
                     LienReason = dto.LienReason,
                     Status = string.IsNullOrWhiteSpace(dto.Status) ? "Active" : dto.Status,
@@ -855,7 +918,7 @@ namespace Bhisi.Api.Controllers
             public string? LegacyAccountNumber { get; set; }
             public int LedgerID { get; set; }
             public decimal InterestRate { get; set; } = 0;
-            public decimal MinimumBalance { get; set; } = 500;
+            public decimal? MinimumBalance { get; set; }
             public decimal LienAmount { get; set; } = 0;
             public string? LienReason { get; set; }
             public string Status { get; set; } = "Active";
@@ -863,6 +926,7 @@ namespace Bhisi.Api.Controllers
             public string? NomineeRelation { get; set; }
             public string? NomineeAddress { get; set; }
             public int? SettingID { get; set; }
+            public int? SavingSchemeID { get; set; }
             public DateTime? LastInterestPostingDate { get; set; }
             public decimal? LastInterestAmount { get; set; }
             public List<int>? JointHolderCustomerIDs { get; set; }
@@ -1109,8 +1173,38 @@ namespace Bhisi.Api.Controllers
                     existing.OpeningDate = dto.OpeningDate != default ? dto.OpeningDate : existing.OpeningDate;
                 }
 
+                int? requestedSchemeId = dto.SavingSchemeID ?? dto.SettingID;
+                if (!existing.IsLegacyAccount && (dto.LedgerID > 0 || requestedSchemeId.HasValue))
+                {
+                    int resolvedLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
+                        _context,
+                        existing,
+                        explicitLedgerId: dto.LedgerID > 0 ? dto.LedgerID : null,
+                        explicitSchemeId: requestedSchemeId);
+                    if (resolvedLedgerId > 0)
+                    {
+                        existing.LedgerID = resolvedLedgerId;
+                    }
+                }
+
+                var updatedScheme = await Helpers.SavingLedgerHelper.ResolveSavingSchemeAsync(
+                    _context,
+                    existing,
+                    explicitSchemeId: requestedSchemeId,
+                    explicitLedgerId: existing.LedgerID);
+                if (updatedScheme != null)
+                {
+                    existing.SavingSchemeID = updatedScheme.SettingID;
+                }
+                else if (requestedSchemeId.HasValue && requestedSchemeId.Value > 0)
+                {
+                    existing.SavingSchemeID = requestedSchemeId.Value;
+                }
+
                 existing.CustomerID = resolvedCustomerId;
-                existing.MinimumBalance = dto.MinimumBalance;
+                existing.MinimumBalance = dto.MinimumBalance.HasValue
+                    ? Math.Max(0m, dto.MinimumBalance.Value)
+                    : existing.MinimumBalance;
                 existing.InterestRate = dto.InterestRate;
                 existing.LienAmount = dto.LienAmount;
                 existing.LienReason = dto.LienReason;

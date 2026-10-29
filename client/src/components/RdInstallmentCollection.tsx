@@ -43,6 +43,7 @@ interface RdAccount {
   durationMonths: number;
   status: string;
   openingDate: string;
+  maturityDate?: string;
   customerID?: number;
   customerId?: number;
   memberID?: number;
@@ -63,6 +64,7 @@ export interface RdScheduleRow {
   paidDate?: string | null;
   paidAmount: number;
   pendingAmount?: number;
+  isExtended?: boolean;
   paymentMode?: string;
   overdueDays: number;
   penaltyCharged: number;
@@ -70,6 +72,9 @@ export interface RdScheduleRow {
   voucherID?: number | null;
   voucherNo?: string | null;
 }
+
+const normalizeNumericInput = (val: string): string =>
+  val.replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x0966));
 
 export interface RdInstallmentCollectionProps {
   voucherId?: number;
@@ -127,6 +132,7 @@ export default function RdInstallmentCollection({
   const [isBulk, setIsBulk] = useState(false);
   const [count, setCount] = useState(1);
   const [depositAmount, setDepositAmount] = useState<number | ''>('');
+  const [depositInputRaw, setDepositInputRaw] = useState<string | null>(null);
   const [isCustomAmount, setIsCustomAmount] = useState<boolean>(false);
   const [penaltyAmount, setPenaltyAmount] = useState(0);
   const [payMode, setPayMode] = useState('Cash');
@@ -152,6 +158,19 @@ export default function RdInstallmentCollection({
   const [loadingPigmyAccounts, setLoadingPigmyAccounts] = useState(false);
   const [selectedPigmyAccountId, setSelectedPigmyAccountId] = useState<number | ''>('');
 
+  // Post-Maturity / Over-Duration Confirmation Popup State
+  const [postMaturityConfirmModal, setPostMaturityConfirmModal] = useState<{
+    mode: 'single' | 'bulk';
+    accountsInfo: Array<{
+      accountNo: string;
+      legacyNo?: string;
+      memberName: string;
+      durationMonths: number;
+      paidInstallments: number;
+      depositAmount: number;
+    }>;
+  } | null>(null);
+
   // Fetch GL Ledgers on mount for BankLedgerSelect
   useEffect(() => {
     let isMounted = true;
@@ -168,7 +187,7 @@ export default function RdInstallmentCollection({
     };
   }, []);
 
-  const loadCustomerLinkedAccounts = (cId?: number) => {
+  const loadCustomerLinkedAccounts = (cId?: number, preferredSavingId?: number | null, preferredPigmyId?: number | null) => {
     if (!cId) {
       setCustomerSavingAccounts([]);
       setSelectedSavingAccountId('');
@@ -181,9 +200,14 @@ export default function RdInstallmentCollection({
     axios.get(`/api/SavingAccounts?customerId=${cId}`)
       .then(res => {
         const list = Array.isArray(res.data) ? res.data : [];
-        const active = list.filter((s: any) => s.status === 'Active');
+        const active = list.filter((s: any) => {
+          const st = String(s.status ?? 'Active').trim().toLowerCase();
+          return st === 'active' || (preferredSavingId && Number(s.savingAccountID) === Number(preferredSavingId));
+        });
         setCustomerSavingAccounts(active);
-        if (active.length > 0) {
+        if (preferredSavingId && active.some((s: any) => Number(s.savingAccountID) === Number(preferredSavingId))) {
+          setSelectedSavingAccountId(Number(preferredSavingId));
+        } else if (active.length > 0) {
           setSelectedSavingAccountId(active[0].savingAccountID);
         } else {
           setSelectedSavingAccountId('');
@@ -201,9 +225,14 @@ export default function RdInstallmentCollection({
     axios.get(`/api/PigmyAccounts/Customer/${cId}`)
       .then(res => {
         const list = Array.isArray(res.data) ? res.data : [];
-        const active = list.filter((p: any) => p.status === 'Active' || (p.totalDepositedAmount || 0) > 0);
+        const active = list.filter((p: any) => {
+          const st = String(p.status ?? 'Active').trim().toLowerCase();
+          return st === 'active' || (p.totalDepositedAmount || 0) > 0 || (preferredPigmyId && Number(p.pigmyAccountID) === Number(preferredPigmyId));
+        });
         setCustomerPigmyAccounts(active);
-        if (active.length > 0) {
+        if (preferredPigmyId && active.some((p: any) => Number(p.pigmyAccountID) === Number(preferredPigmyId))) {
+          setSelectedPigmyAccountId(Number(preferredPigmyId));
+        } else if (active.length > 0) {
           setSelectedPigmyAccountId(active[0].pigmyAccountID);
         } else {
           setSelectedPigmyAccountId('');
@@ -248,6 +277,7 @@ export default function RdInstallmentCollection({
     setSelectedAcc(acc);
     setCount(1);
     setDepositAmount(acc.installmentAmount || '');
+    setDepositInputRaw(null);
     setIsCustomAmount(false);
     fetchSchedule(acc.rdAccountID);
 
@@ -571,12 +601,34 @@ export default function RdInstallmentCollection({
       setPassingVoucherData(voucher);
 
       if (rdAccount) {
+        const normalizedRd: RdAccount = {
+          ...rdAccount,
+          memberName: rdAccount.memberName || rdAccount.customerName || ''
+        };
         setSelectedAccId(rdAccount.rdAccountID.toString());
-        setSelectedAcc(rdAccount);
+        setSelectedAcc(normalizedRd);
+        fetchSchedule(rdAccount.rdAccountID);
+        loadCustomerLinkedAccounts(
+          rdAccount.customerID || rdAccount.customerId,
+          installmentDetails?.sourceSavingAccountID,
+          installmentDetails?.sourcePigmyAccountID
+        );
       }
       if (installmentDetails) {
-        setCount(installmentDetails.installmentCount || 1);
+        const instCnt = installmentDetails.installmentCount || 1;
+        setCount(instCnt);
         setPenaltyAmount(installmentDetails.penaltyAmount || 0);
+        if (installmentDetails.collectionDate) {
+          setCollectionDate(String(installmentDetails.collectionDate).split('T')[0]);
+        }
+        if (typeof installmentDetails.depositAmount === 'number' && installmentDetails.depositAmount > 0) {
+          setDepositAmount(installmentDetails.depositAmount);
+          const expectedStd = (rdAccount?.installmentAmount || 0) * instCnt;
+          setIsCustomAmount(Math.abs(installmentDetails.depositAmount - expectedStd) > 0.01);
+        } else if (rdAccount?.installmentAmount) {
+          setDepositAmount(rdAccount.installmentAmount * instCnt);
+          setIsCustomAmount(false);
+        }
         if (installmentDetails.paymentMode) {
           setPayMode(installmentDetails.paymentMode);
         }
@@ -597,7 +649,11 @@ export default function RdInstallmentCollection({
     if (!window.confirm('आपण खात्रीपूर्वक हे आरडी हप्ता व्हाउचर मंजूर व पास करू इच्छिता?')) return;
     setPassingActionLoading(true);
     try {
-      await axios.post('/api/VoucherPosting/Post', [voucherId]);
+      const approverId = Number((user as any)?.userID || (user as any)?.userId || 1);
+      await axios.post('/api/VoucherPosting/Post', {
+        voucherIds: [voucherId],
+        approvedBy: approverId > 0 ? approverId : 1
+      });
       alert('व्हाउचर यशस्वीरीत्या मंजूर व पास करण्यात आले!');
       if (onNavigate) {
         onNavigate('voucher-posting');
@@ -605,7 +661,10 @@ export default function RdInstallmentCollection({
         window.location.href = '/?tab=voucher-posting';
       }
     } catch (err: any) {
-      alert('व्हाउचर पास करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+      const msg = typeof err.response?.data === 'string'
+        ? err.response.data
+        : (err.response?.data?.message || err.message);
+      alert('व्हाउचर पास करताना त्रुटी: ' + msg);
     } finally {
       setPassingActionLoading(false);
     }
@@ -619,7 +678,15 @@ export default function RdInstallmentCollection({
     }
     setPassingActionLoading(true);
     try {
-      await axios.delete(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
+      const rejectUserId = Number((user as any)?.userID || (user as any)?.userId || 1);
+      await axios.delete(`/api/VoucherPosting/${voucherId}`, {
+        data: {
+          reason: rejectReason.trim(),
+          userID: rejectUserId > 0 ? rejectUserId : 1,
+          username: user?.username || (user as any)?.fullName || 'Checker',
+          userRole: user?.role || 'Admin'
+        }
+      });
       alert('व्हाउचर यशस्वीरित्या नामंजूर / रद्द करण्यात आले!');
       setRejectModalOpen(false);
       if (onNavigate) {
@@ -628,7 +695,10 @@ export default function RdInstallmentCollection({
         window.location.href = '/?tab=voucher-posting';
       }
     } catch (err: any) {
-      alert('व्हाउचर रद्द करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+      const msg = typeof err.response?.data === 'string'
+        ? err.response.data
+        : (err.response?.data?.message || err.message);
+      alert('व्हाउचर रद्द करताना त्रुटी: ' + msg);
     } finally {
       setPassingActionLoading(false);
     }
@@ -638,28 +708,16 @@ export default function RdInstallmentCollection({
     const val = e?.target?.value ?? e;
     setSelectedAccId(val);
     const acc = accounts.find((a) => a.rdAccountID === parseInt(val, 10)) || null;
-    setSelectedAcc(acc);
-    setCount(1);
-
     if (acc) {
-      fetchSchedule(acc.rdAccountID);
-      loadCustomerLinkedAccounts(acc.customerID || acc.customerId);
-      // Auto-penalty calculation rules: compare OpeningDate + Paid Months vs Today
-      const start = new Date(acc.openingDate);
-      start.setMonth(start.getMonth() + acc.totalPaidInstallments);
-      const today = new Date();
-
-      const diffMonths = (today.getFullYear() - start.getFullYear()) * 12 + today.getMonth() - start.getMonth();
-      if (diffMonths > 0) {
-        // 2% penalty per overdue month
-        const p = Math.round(acc.installmentAmount * 0.02 * diffMonths);
-        setPenaltyAmount(p);
-      } else {
-        setPenaltyAmount(0);
-      }
+      selectRdAccount(acc);
     } else {
+      setSelectedAcc(null);
+      setCount(1);
+      setDepositAmount('');
+      setIsCustomAmount(false);
       setSchedule([]);
       setPenaltyAmount(0);
+      loadCustomerLinkedAccounts(undefined);
     }
   };
 
@@ -710,29 +768,151 @@ export default function RdInstallmentCollection({
     const pending = schedule
       .filter(s => s.status !== 'Paid')
       .sort((a, b) => a.installmentNo - b.installmentNo);
-    
-    if (pending.length === 0) return null;
-    
+
     let rem = depositAmount;
-    const allocations: { instNo: number; exp: number; currentlyPaid: number; thisAlloc: number; newTotalPaid: number; newStatus: string }[] = [];
-    
+    const allocations: { instNo: number; exp: number; currentlyPaid: number; thisAlloc: number; newTotalPaid: number; newStatus: string; isExtended?: boolean }[] = [];
+
     for (const s of pending) {
-      if (rem <= 0) break;
-      const dueForThis = Math.max(0, (s.expectedAmount || selectedAcc.installmentAmount) - (s.paidAmount || 0));
+      if (rem <= 0.009) break;
+      const expAmt = s.expectedAmount || selectedAcc.installmentAmount;
+      const dueForThis = Math.max(0, expAmt - (s.paidAmount || 0));
+      if (dueForThis <= 0.009) continue;
       const alloc = Math.min(rem, dueForThis);
-      rem -= alloc;
-      const newTotal = (s.paidAmount || 0) + alloc;
-      const newStatus = (newTotal >= (s.expectedAmount || selectedAcc.installmentAmount) - 0.01) ? 'Paid' : 'Partial';
+      rem = Math.max(0, Number((rem - alloc).toFixed(2)));
+      const newTotal = Number(((s.paidAmount || 0) + alloc).toFixed(2));
+      const newStatus = (newTotal >= expAmt - 0.01) ? 'Paid' : 'Partial';
       allocations.push({
         instNo: s.installmentNo,
-        exp: s.expectedAmount || selectedAcc.installmentAmount,
+        exp: expAmt,
         currentlyPaid: s.paidAmount || 0,
         thisAlloc: alloc,
         newTotalPaid: newTotal,
-        newStatus
+        newStatus,
+        isExtended: s.installmentNo > (selectedAcc.durationMonths || 0)
       });
     }
+
+    // Preview dynamically appended post-maturity / over-duration installments (#25, #26...) if rem > 0
+    if (rem > 0.009 && selectedAcc.installmentAmount > 0) {
+      let nextInstNo = schedule.length > 0
+        ? Math.max(...schedule.map(s => s.installmentNo))
+        : Math.max(selectedAcc.totalPaidInstallments || 0, selectedAcc.durationMonths || 0);
+
+      let safetyGuard = 0;
+      while (rem > 0.009 && safetyGuard < 120) {
+        safetyGuard++;
+        nextInstNo++;
+        const expAmt = selectedAcc.installmentAmount;
+        const alloc = Math.min(rem, expAmt);
+        rem = Math.max(0, Number((rem - alloc).toFixed(2)));
+        const newStatus = (alloc >= expAmt - 0.01) ? 'Paid' : 'Partial';
+        allocations.push({
+          instNo: nextInstNo,
+          exp: expAmt,
+          currentlyPaid: 0,
+          thisAlloc: alloc,
+          newTotalPaid: alloc,
+          newStatus,
+          isExtended: nextInstNo > (selectedAcc.durationMonths || 0)
+        });
+      }
+    }
+
+    if (allocations.length === 0) return null;
     return { allocations, remainingUnallocated: rem };
+  };
+
+  const isAccountOverMaturityOrDuration = (acc: RdAccount, addPrincipal: number, effCollDate: string): boolean => {
+    const duration = acc.durationMonths || 0;
+    const instAmt = acc.installmentAmount || 0;
+    const contractTarget = duration * instAmt;
+    const currentDeposited = typeof acc.totalDepositedAmount === 'number'
+      ? acc.totalDepositedAmount
+      : (schedule.length > 0
+          ? schedule.reduce((sum, s) => sum + (s.paidAmount || 0), 0)
+          : (acc.totalPaidInstallments || 0) * instAmt);
+
+    if (String(acc.status || '').toLowerCase() === 'matured') return true;
+    if (duration > 0 && (acc.totalPaidInstallments || 0) >= duration) return true;
+    if (contractTarget > 0 && (currentDeposited + addPrincipal) > contractTarget + 0.01) return true;
+    if (acc.maturityDate && effCollDate) {
+      const matDateStr = acc.maturityDate.split('T')[0];
+      if (matDateStr && effCollDate >= matDateStr) return true;
+    }
+    return false;
+  };
+
+  const executeSingleCollection = async (allowPostMaturity: boolean) => {
+    if (!selectedAcc) return;
+    const effectivePrincipal = (typeof depositAmount === 'number' && depositAmount > 0)
+      ? depositAmount
+      : (selectedAcc.installmentAmount * count);
+
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const qParams = new URLSearchParams({
+        count: count.toString(),
+        penaltyAmount: penaltyAmount.toString(),
+        payMode: payMode,
+        collectionDate: collectionDate || activeBusinessDate,
+        depositAmount: effectivePrincipal.toString(),
+        allowPostMaturity: allowPostMaturity ? 'true' : 'false'
+      });
+      if (payMode === 'Bank' && Number(selectedBankLedgerId) > 0) {
+        qParams.append('bankLedgerId', String(selectedBankLedgerId));
+        if (chequeNo.trim()) qParams.append('chequeNo', chequeNo.trim());
+      } else if (payMode === 'Saving' && selectedSavingAccountId) {
+        qParams.append('sourceSavingAccountId', selectedSavingAccountId.toString());
+      } else if (payMode === 'Pigmy' && selectedPigmyAccountId) {
+        qParams.append('sourcePigmyAccountId', selectedPigmyAccountId.toString());
+      }
+
+      const res = await axios.post(
+        `/api/RdAccounts/${selectedAcc.rdAccountID}/CollectInstallment?${qParams.toString()}`
+      );
+      const allocList = res.data?.allocation || res.data?.Allocation;
+      const allocInfo = Array.isArray(allocList) && allocList.length > 0
+        ? ` [${allocList.join(' | ')}]`
+        : '';
+      setSuccess(`✅ आरडी हप्ता यशस्वीरीत्या जमा झाला! खाते क्रमांक: ${selectedAcc.accountNo} (${payMode === 'Cash' ? 'रोख' : payMode === 'Bank' ? 'बँक ट्रान्सफर' : payMode === 'Saving' ? 'बचत वर्ग' : 'पिग्मी वर्ग'})${allocInfo}`);
+
+      setPostMaturityConfirmModal(null);
+      setSelectedAccId('');
+      setSelectedAcc(null);
+      setSchedule([]);
+      setCount(1);
+      setDepositAmount('');
+      setDepositInputRaw(null);
+      setIsCustomAmount(false);
+      setPenaltyAmount(0);
+      setChequeNo('');
+      setCustomerSavingAccounts([]);
+      setSelectedSavingAccountId('');
+      setCustomerPigmyAccounts([]);
+      setSelectedPigmyAccountId('');
+      fetchAccounts();
+    } catch (err: any) {
+      if (err.response?.data?.code === 'POST_MATURITY_CONFIRMATION_REQUIRED' && selectedAcc) {
+        setPostMaturityConfirmModal({
+          mode: 'single',
+          accountsInfo: [{
+            accountNo: selectedAcc.accountNo,
+            legacyNo: selectedAcc.legacyAccountNumber || (selectedAcc as any).LegacyAccountNumber,
+            memberName: selectedAcc.memberName || selectedAcc.customerName || '-',
+            durationMonths: selectedAcc.durationMonths,
+            paidInstallments: selectedAcc.totalPaidInstallments,
+            depositAmount: effectivePrincipal
+          }]
+        });
+        return;
+      }
+      const errText = typeof err.response?.data === 'string' ? err.response.data : err.response?.data?.message || 'हप्ता संकलन करताना त्रुटी आली.';
+      setError(errText);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSingleSubmit = async (e: React.FormEvent) => {
@@ -783,42 +963,64 @@ export default function RdInstallmentCollection({
       }
     }
 
+    const effCollDate = collectionDate || activeBusinessDate;
+    if (isAccountOverMaturityOrDuration(selectedAcc, effectivePrincipal, effCollDate)) {
+      setError('');
+      setPostMaturityConfirmModal({
+        mode: 'single',
+        accountsInfo: [{
+          accountNo: selectedAcc.accountNo,
+          legacyNo: selectedAcc.legacyAccountNumber || (selectedAcc as any).LegacyAccountNumber,
+          memberName: selectedAcc.memberName || selectedAcc.customerName || '-',
+          durationMonths: selectedAcc.durationMonths,
+          paidInstallments: selectedAcc.totalPaidInstallments,
+          depositAmount: effectivePrincipal
+        }]
+      });
+      return;
+    }
+
+    await executeSingleCollection(false);
+  };
+
+  const executeBulkCollection = async (allowPostMaturity: boolean) => {
+    const selectedIds = Object.keys(bulkRows)
+      .map(Number)
+      .filter((id) => bulkRows[id]?.selected);
+
+    if (selectedIds.length === 0) return;
+
     setLoading(true);
     setError('');
     setSuccess('');
     try {
-      const qParams = new URLSearchParams({
-        count: count.toString(),
-        penaltyAmount: penaltyAmount.toString(),
-        payMode: payMode,
-        collectionDate: collectionDate,
-        depositAmount: effectivePrincipal.toString()
-      });
-      if (payMode === 'Bank' && Number(selectedBankLedgerId) > 0) {
-        qParams.append('bankLedgerId', String(selectedBankLedgerId));
-        if (chequeNo.trim()) qParams.append('chequeNo', chequeNo.trim());
-      } else if (payMode === 'Saving' && selectedSavingAccountId) {
-        qParams.append('sourceSavingAccountId', selectedSavingAccountId.toString());
-      } else if (payMode === 'Pigmy' && selectedPigmyAccountId) {
-        qParams.append('sourcePigmyAccountId', selectedPigmyAccountId.toString());
+      let successCount = 0;
+      for (const id of selectedIds) {
+        const row = bulkRows[id];
+        const qParams = new URLSearchParams({
+          count: String(row.count),
+          penaltyAmount: String(row.penalty),
+          payMode: bulkPayMode,
+          collectionDate: collectionDate || activeBusinessDate,
+          allowPostMaturity: allowPostMaturity ? 'true' : 'false'
+        });
+        if (bulkPayMode === 'Bank' && Number(bulkBankLedgerId) > 0) {
+          qParams.append('bankLedgerId', String(bulkBankLedgerId));
+          if (bulkChequeNo.trim()) {
+            qParams.append('chequeNo', bulkChequeNo.trim());
+          }
+        }
+        await axios.post(
+          `/api/RdAccounts/${id}/CollectInstallment?${qParams.toString()}`
+        );
+        successCount++;
       }
-
-      await axios.post(
-        `/api/RdAccounts/${selectedAcc.rdAccountID}/CollectInstallment?${qParams.toString()}`
-      );
-      setSuccess(`✅ आरडी हप्ता यशस्वीरीत्या जमा झाला! खाते क्रमांक: ${selectedAcc.accountNo} (${payMode === 'Cash' ? 'रोख' : payMode === 'Bank' ? 'बँक ट्रान्सफर' : payMode === 'Saving' ? 'बचत वर्ग' : 'पिग्मी वर्ग'})`);
-
-      fetchSchedule(selectedAcc.rdAccountID);
-      setSelectedAccId('');
-      setSelectedAcc(null);
-      setCount(1);
-      setDepositAmount('');
-      setIsCustomAmount(false);
-      setPenaltyAmount(0);
-      setChequeNo('');
+      setPostMaturityConfirmModal(null);
+      setSuccess(`✅ एकत्रित संकलन यशस्वी! ${successCount} खात्यांचे हप्ते (${bulkPayMode === 'Bank' ? 'बँक ट्रान्सफर' : 'रोख'}) जमा झाले.`);
+      setBulkChequeNo('');
       fetchAccounts();
     } catch (err: any) {
-      const errText = typeof err.response?.data === 'string' ? err.response.data : err.response?.data?.message || 'हप्ता संकलन करताना त्रुटी आली.';
+      const errText = typeof err.response?.data === 'string' ? err.response.data : err.response?.data?.message || 'एकत्रित संकलन करताना त्रुटी आली.';
       setError(errText);
     } finally {
       setLoading(false);
@@ -840,39 +1042,42 @@ export default function RdInstallmentCollection({
       return;
     }
 
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    try {
-      let successCount = 0;
-      for (const id of selectedIds) {
+    const effCollDate = collectionDate || activeBusinessDate;
+    const maturedInBatch = selectedIds
+      .map((id) => {
+        const acc = accounts.find((a) => a.rdAccountID === id);
+        if (!acc) return null;
         const row = bulkRows[id];
-        const qParams = new URLSearchParams({
-          count: String(row.count),
-          penaltyAmount: String(row.penalty),
-          payMode: bulkPayMode,
-          collectionDate: collectionDate,
-        });
-        if (bulkPayMode === 'Bank' && Number(bulkBankLedgerId) > 0) {
-          qParams.append('bankLedgerId', String(bulkBankLedgerId));
-          if (bulkChequeNo.trim()) {
-            qParams.append('chequeNo', bulkChequeNo.trim());
-          }
-        }
-        await axios.post(
-          `/api/RdAccounts/${id}/CollectInstallment?${qParams.toString()}`
-        );
-        successCount++;
-      }
-      setSuccess(`✅ एकत्रित संकलन यशस्वी! ${successCount} खात्यांचे हप्ते (${bulkPayMode === 'Bank' ? 'बँक ट्रान्सफर' : 'रोख'}) जमा झाले.`);
-      setBulkChequeNo('');
-      fetchAccounts();
-    } catch (err: any) {
-      const errText = typeof err.response?.data === 'string' ? err.response.data : err.response?.data?.message || 'एकत्रित संकलन करताना त्रुटी आली.';
-      setError(errText);
-    } finally {
-      setLoading(false);
+        const addPrin = (acc.installmentAmount || 0) * (row?.count || 1);
+        if (!isAccountOverMaturityOrDuration(acc, addPrin, effCollDate)) return null;
+        return {
+          accountNo: acc.accountNo,
+          legacyNo: acc.legacyAccountNumber || (acc as any).LegacyAccountNumber,
+          memberName: acc.memberName || acc.customerName || '-',
+          durationMonths: acc.durationMonths,
+          paidInstallments: acc.totalPaidInstallments,
+          depositAmount: addPrin
+        };
+      })
+      .filter(Boolean) as Array<{
+        accountNo: string;
+        legacyNo?: string;
+        memberName: string;
+        durationMonths: number;
+        paidInstallments: number;
+        depositAmount: number;
+      }>;
+
+    if (maturedInBatch.length > 0) {
+      setError('');
+      setPostMaturityConfirmModal({
+        mode: 'bulk',
+        accountsInfo: maturedInBatch
+      });
+      return;
     }
+
+    await executeBulkCollection(false);
   };
 
   const labelClass = "block text-xs font-semibold text-slate-700 mb-1.5";
@@ -1148,10 +1353,15 @@ export default function RdInstallmentCollection({
                   </div>
 
                   {/* Quick summary badges */}
-                  <div className="flex items-center gap-1.5 text-[10px]">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
                     <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold px-2 py-0.5 rounded">
                       🟢 जमा: {schedule.filter((s) => s.status === 'Paid').length}
                     </span>
+                    {schedule.filter((s) => s.status === 'Partial').length > 0 && (
+                      <span className="bg-orange-100 text-orange-900 border border-orange-300 font-bold px-2 py-0.5 rounded">
+                        🟠 अंशतः बाकी (Pending): {schedule.filter((s) => s.status === 'Partial').length}
+                      </span>
+                    )}
                     <span className="bg-amber-100 text-amber-800 border border-amber-200 font-bold px-2 py-0.5 rounded">
                       🟡 बाकी: {schedule.filter((s) => s.status !== 'Paid').length}
                     </span>
@@ -1193,6 +1403,8 @@ export default function RdInstallmentCollection({
                             const isPaid = s.status === 'Paid';
                             const isPartial = s.status === 'Partial';
                             const isOverdue = s.status === 'Overdue';
+                            const remDue = Math.max(0, (s.expectedAmount || 0) - (s.paidAmount || 0));
+                            const isExt = s.isExtended || s.installmentNo > (selectedAcc.durationMonths || 0);
                             return (
                               <tr
                                 key={s.installmentNo}
@@ -1200,19 +1412,22 @@ export default function RdInstallmentCollection({
                                   !isPaid && !isOverdue && !isPartial && s.installmentNo === (selectedAcc.totalPaidInstallments + 1)
                                     ? 'bg-amber-50/70 font-semibold'
                                     : isPartial
-                                    ? 'bg-orange-50/70 font-semibold'
+                                    ? 'bg-orange-50/80 font-semibold'
                                     : ''
                                 }`}
                               >
                                 <td className="py-1 px-2 text-center font-bold text-slate-800">
                                   #{s.installmentNo}
+                                  {isExt && (
+                                    <span className="block text-[8.5px] text-purple-700 font-sans font-bold">वाढीव</span>
+                                  )}
                                 </td>
                                 <td className="py-1 px-2 text-center text-slate-700">
                                   {s.dueDate ? new Date(s.dueDate).toLocaleDateString('en-GB') : '-'}
                                 </td>
                                 <td className="py-1 px-2 text-right font-bold text-slate-800">
                                   {isPartial ? (
-                                    <span title={`अपेक्षित: ₹${s.expectedAmount}`}>
+                                    <span title={`अपेक्षित: ₹${s.expectedAmount} | बाकी: ₹${remDue}`}>
                                       ₹{Number(s.paidAmount || 0).toLocaleString('en-IN')} <span className="text-[9px] text-slate-500 font-normal">/ ₹{Number(s.expectedAmount || 0).toLocaleString('en-IN')}</span>
                                     </span>
                                   ) : (
@@ -1231,13 +1446,13 @@ export default function RdInstallmentCollection({
                                       isPaid
                                         ? 'bg-emerald-100 text-emerald-800'
                                         : isPartial
-                                        ? 'bg-orange-100 text-orange-800'
+                                        ? 'bg-orange-100 text-orange-900 border border-orange-300'
                                         : isOverdue
                                         ? 'bg-rose-100 text-rose-800'
                                         : 'bg-amber-100 text-amber-800'
                                     }`}
                                   >
-                                    {isPaid ? '🟢 जमा' : isPartial ? '🟠 अंशतः' : isOverdue ? '🔴 थकीत' : '🟡 देय'}
+                                    {isPaid ? '🟢 जमा' : isPartial ? `🟠 बाकी ₹${remDue.toLocaleString('en-IN')} (Pending)` : isOverdue ? '🔴 थकीत' : '🟡 देय'}
                                   </span>
                                 </td>
                               </tr>
@@ -1364,9 +1579,11 @@ export default function RdInstallmentCollection({
                     <option value="">-- बचत खाते निवडा --</option>
                     {customerSavingAccounts.map((s) => {
                       const avail = Math.max(0, (s.currentBalance || 0) - (s.lienAmount || 0) - (s.minimumBalance || 0));
+                      const legSb = String(s.legacyAccountNumber || s.oldAccountNo || '').trim();
+                      const dispNo = s.formattedAccountNo || s.accountNo;
                       return (
                         <option key={s.savingAccountID} value={s.savingAccountID}>
-                          {s.accountNo} ({s.schemeName || 'बचत'}) - उपलब्ध: ₹{avail.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {dispNo}{legSb ? ` [🏷️ जुने बचत: ${legSb}]` : ''} ({s.schemeName || 'बचत'}) - उपलब्ध: ₹{avail.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </option>
                       );
                     })}
@@ -1378,7 +1595,7 @@ export default function RdInstallmentCollection({
                     const avail = Math.max(0, (sAcc?.currentBalance || 0) - (sAcc?.lienAmount || 0) - (sAcc?.minimumBalance || 0));
                     const curPrincipal = (typeof depositAmount === 'number' && depositAmount > 0) ? depositAmount : (selectedAcc ? selectedAcc.installmentAmount * count : 0);
                     const totalPayable = curPrincipal + penaltyAmount;
-                    const isShort = totalPayable > avail;
+                    const isShort = !isPassingMode && totalPayable > avail;
                     return (
                       <div className={`text-xs p-2.5 rounded-lg flex justify-between items-center ${isShort ? 'bg-rose-100 text-rose-800 border border-rose-300 font-bold' : 'bg-emerald-100 text-emerald-900 border border-emerald-300 font-medium'}`}>
                         <span>बचत खात्यातील उपलब्ध शिल्लक:</span>
@@ -1426,7 +1643,7 @@ export default function RdInstallmentCollection({
                     const avail = Math.max(0, (pAcc?.totalDepositedAmount || 0) - (pAcc?.totalWithdrawnAmount || 0) - (pAcc?.lienAmount || 0));
                     const curPrincipal = (typeof depositAmount === 'number' && depositAmount > 0) ? depositAmount : (selectedAcc ? selectedAcc.installmentAmount * count : 0);
                     const totalPayable = curPrincipal + penaltyAmount;
-                    const isShort = totalPayable > avail;
+                    const isShort = !isPassingMode && totalPayable > avail;
                     return (
                       <div className={`text-xs p-2.5 rounded-lg flex justify-between items-center ${isShort ? 'bg-rose-100 text-rose-800 border border-rose-300 font-bold' : 'bg-purple-100 text-purple-900 border border-purple-300 font-medium'}`}>
                         <span>पिग्मी खात्यातील उपलब्ध शिल्लक:</span>
@@ -1446,10 +1663,12 @@ export default function RdInstallmentCollection({
                   name="count"
                   value={count}
                   onChange={(e) => {
-                    const newCount = Math.max(1, parseInt(e.target.value, 10) || 1);
+                    const cleanVal = normalizeNumericInput(e.target.value);
+                    const newCount = Math.max(1, parseInt(cleanVal, 10) || 1);
                     setCount(newCount);
                     if (!isCustomAmount && selectedAcc) {
                       setDepositAmount(selectedAcc.installmentAmount * newCount);
+                      setDepositInputRaw(null);
                     }
                   }}
                   className={inputClass}
@@ -1464,14 +1683,17 @@ export default function RdInstallmentCollection({
                   type="number"
                   name="penaltyAmount"
                   value={penaltyAmount}
-                  onChange={(e) => setPenaltyAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                  onChange={(e) => {
+                    const cleanVal = normalizeNumericInput(e.target.value);
+                    setPenaltyAmount(Math.max(0, parseFloat(cleanVal) || 0));
+                  }}
                   className={inputClass}
                   min="0"
                 />
               </div>
             </div>
 
-            {/* Deposit Principal Amount (Allows Partial Amount) */}
+            {/* Deposit Principal Amount (Allows Partial Amount & FIFO Waterfall Carry-Forward) */}
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
               <div className="flex items-center justify-between">
                 <label className={labelClass + " mb-0"}>
@@ -1482,12 +1704,13 @@ export default function RdInstallmentCollection({
                     <span className="text-[11px] text-slate-500">
                       अपेक्षित: <strong>₹{(selectedAcc.installmentAmount * count).toLocaleString('en-IN')}</strong>
                     </span>
-                    {isCustomAmount && (
+                    {isCustomAmount && !isPassingMode && (
                       <button
                         type="button"
                         onClick={() => {
                           setIsCustomAmount(false);
                           setDepositAmount(selectedAcc.installmentAmount * count);
+                          setDepositInputRaw(null);
                         }}
                         className="text-[10px] text-indigo-600 hover:text-indigo-800 underline font-semibold cursor-pointer"
                       >
@@ -1498,22 +1721,71 @@ export default function RdInstallmentCollection({
                 )}
               </div>
 
+              {/* Existing Partial / Pending Installment Hint Banner */}
+              {selectedAcc && !isPassingMode && (() => {
+                const activePartial = schedule.find(s => s.status === 'Partial');
+                if (!activePartial) return null;
+                const remOnPartial = Math.max(0, (activePartial.expectedAmount || selectedAcc.installmentAmount) - (activePartial.paidAmount || 0));
+                if (remOnPartial <= 0) return null;
+                return (
+                  <div className="p-2 bg-orange-50 border border-orange-300 rounded-lg text-[11px] text-orange-950 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-semibold">
+                        🟠 मागील <strong>हप्ता #{activePartial.installmentNo}</strong> अंशतः बाकी (Pending): जमा ₹{Number(activePartial.paidAmount || 0).toLocaleString('en-IN')} / ₹{Number(activePartial.expectedAmount || selectedAcc.installmentAmount).toLocaleString('en-IN')} — <strong>बाकी: ₹{remOnPartial.toLocaleString('en-IN')}</strong>
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDepositAmount(remOnPartial);
+                            setDepositInputRaw(null);
+                            setIsCustomAmount(true);
+                          }}
+                          className="px-2 py-0.5 bg-white hover:bg-orange-100 text-orange-900 border border-orange-300 rounded font-bold text-[10px] cursor-pointer"
+                        >
+                          बाकी ₹{remOnPartial.toLocaleString('en-IN')} पूर्ण करा
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDepositAmount(selectedAcc.installmentAmount * count);
+                            setDepositInputRaw(null);
+                            setIsCustomAmount(false);
+                          }}
+                          className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-[10px] cursor-pointer"
+                        >
+                          नियमित ₹{(selectedAcc.installmentAmount * count).toLocaleString('en-IN')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <input
-                type="number"
-                step="any"
-                value={depositAmount}
+                type="text"
+                inputMode="decimal"
+                value={depositInputRaw !== null ? depositInputRaw : depositAmount}
                 onChange={(e) => {
-                  const val = e.target.value === '' ? '' : parseFloat(e.target.value);
-                  setDepositAmount(val);
+                  const rawClean = normalizeNumericInput(e.target.value).replace(/[^0-9.]/g, '');
+                  const parts = rawClean.split('.');
+                  const normalized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : rawClean;
+                  setDepositInputRaw(normalized);
+                  if (normalized === '' || normalized === '.') {
+                    setDepositAmount('');
+                  } else {
+                    const parsed = parseFloat(normalized);
+                    setDepositAmount(Number.isNaN(parsed) ? '' : parsed);
+                  }
                   setIsCustomAmount(true);
                 }}
+                onBlur={() => setDepositInputRaw(null)}
                 placeholder={selectedAcc ? `उदा. ${(selectedAcc.installmentAmount * count)}` : '0.00'}
                 className={`${inputClass} font-mono font-bold text-sm ${
                   isCustomAmount && selectedAcc && typeof depositAmount === 'number' && depositAmount < (selectedAcc.installmentAmount * count)
                     ? 'border-amber-400 bg-amber-50/40 text-amber-950 focus:border-amber-500'
                     : ''
                 }`}
-                min="1"
                 required
               />
 
@@ -1522,7 +1794,7 @@ export default function RdInstallmentCollection({
                 <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 flex items-start gap-1.5 font-medium">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <span><strong>अंशतः हप्ता भरणा (Partial Deposit):</strong> अपेक्षित हप्त्यापेक्षा कमी रक्कम (₹{depositAmount.toLocaleString('en-IN')}) जमा होत आहे. उर्वरित शिल्लक <strong>₹{((selectedAcc.installmentAmount * count) - depositAmount).toLocaleString('en-IN')}</strong> चालू हप्त्यात थकीत राहील व पुढील हप्ता भरताना प्रथम वसूल केली जाईल.</span>
+                    <span><strong>अंशतः हप्ता भरणा (Partial Deposit):</strong> अपेक्षित हप्त्यापेक्षा कमी रक्कम (₹{depositAmount.toLocaleString('en-IN')}) जमा होत आहे. उर्वरित शिल्लक <strong>₹{((selectedAcc.installmentAmount * count) - depositAmount).toLocaleString('en-IN')}</strong> संबंधित हप्त्यात बाकी (Pending) राहील व पुढील हप्ता भरताना प्रथम समायोजित केली जाईल.</span>
                   </div>
                 </div>
               )}
@@ -1535,20 +1807,21 @@ export default function RdInstallmentCollection({
                   <div className="mt-2 p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-lg text-xs space-y-1.5">
                     <div className="text-[11px] font-bold text-indigo-900 flex items-center justify-between">
                       <span>📊 हप्ता वाटप तपशील (Waterfall Allocation Preview):</span>
-                      <span className="text-[10px] text-indigo-700">FIFO नियमानुसार आधीचे थकीत हप्ते प्रथम जमा</span>
+                      <span className="text-[10px] text-indigo-700">FIFO नियमानुसार आधीचे बाकी हप्ते प्रथम पूर्ण</span>
                     </div>
                     <div className="divide-y divide-indigo-100 bg-white rounded border border-indigo-100 overflow-hidden text-[11px]">
                       {preview.allocations.map((alloc) => (
-                        <div key={alloc.instNo} className="p-1.5 px-2.5 flex justify-between items-center">
+                        <div key={alloc.instNo} className="p-1.5 px-2.5 flex justify-between items-center gap-2">
                           <span className="font-semibold text-slate-800">
-                            हप्ता #{alloc.instNo} (अपेक्षित: ₹{alloc.exp.toLocaleString('en-IN')}):
+                            हप्ता #{alloc.instNo}{alloc.isExtended ? ' (वाढीव हप्ता)' : ''} (अपेक्षित: ₹{alloc.exp.toLocaleString('en-IN')}
+                            {alloc.currentlyPaid > 0 ? `, आधी जमा: ₹${alloc.currentlyPaid.toLocaleString('en-IN')}` : ''}):
                           </span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 shrink-0">
                             <span className="font-bold text-emerald-700 font-mono">+₹{alloc.thisAlloc.toLocaleString('en-IN')}</span>
                             <span className={`px-1.5 py-0.2 rounded text-[9.5px] font-bold ${
-                              alloc.newStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
+                              alloc.newStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-orange-100 text-orange-900 border border-orange-300'
                             }`}>
-                              {alloc.newStatus === 'Paid' ? 'पूर्ण जमा (Paid)' : `अंशतः जमा (शिल्लक ₹${(alloc.exp - alloc.newTotalPaid).toLocaleString('en-IN')})`}
+                              {alloc.newStatus === 'Paid' ? '🟢 पूर्ण जमा (Paid)' : `🟠 बाकी ₹${(alloc.exp - alloc.newTotalPaid).toLocaleString('en-IN')} (Pending)`}
                             </span>
                           </div>
                         </div>
@@ -2063,13 +2336,13 @@ export default function RdInstallmentCollection({
               </div>
 
               <div className="bg-white p-2.5 rounded-lg border border-amber-200 shadow-2xs">
-                <span className="text-amber-800 text-[10.5px] block font-semibold">चालू देय हप्ता (Due)</span>
+                <span className="text-amber-800 text-[10.5px] block font-semibold">चालू देय / अंशतः बाकी (Due)</span>
                 <div className="flex items-baseline justify-between mt-1">
                   <span className="text-sm font-bold text-amber-900">
                     {schedule.filter((s) => s.status !== 'Paid' && s.status !== 'Overdue').length} हप्ते
                   </span>
                   <span className="text-[11px] font-mono font-semibold text-amber-800">
-                    ₹ {schedule.filter((s) => s.status !== 'Paid' && s.status !== 'Overdue').reduce((acc, c) => acc + (c.expectedAmount || 0), 0).toLocaleString('en-IN')}
+                    ₹ {schedule.filter((s) => s.status !== 'Paid' && s.status !== 'Overdue').reduce((acc, c) => acc + Math.max(0, (c.expectedAmount || 0) - (c.paidAmount || 0)), 0).toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
@@ -2110,12 +2383,14 @@ export default function RdInstallmentCollection({
                       const isPartial = s.status === 'Partial';
                       const isOverdue = s.status === 'Overdue';
                       const isCurrentNext = !isPaid && !isOverdue && !isPartial && s.installmentNo === (selectedAcc.totalPaidInstallments + 1);
+                      const isExt = s.isExtended || s.installmentNo > (selectedAcc.durationMonths || 0);
+                      const remDue = Math.max(0, (s.expectedAmount || 0) - (s.paidAmount || 0));
 
                       return (
                         <tr
                           key={s.installmentNo}
                           className={`hover:bg-indigo-50/50 transition-colors ${
-                            isCurrentNext ? 'bg-amber-50/80 font-bold' : isPaid ? 'bg-emerald-50/20' : isPartial ? 'bg-orange-50/40' : ''
+                            isCurrentNext ? 'bg-amber-50/80 font-bold' : isPaid ? 'bg-emerald-50/20' : isPartial ? 'bg-orange-50/50' : ''
                           }`}
                         >
                           <td className="py-2 px-2.5 text-center font-bold text-slate-900 border-r border-slate-200">
@@ -2123,6 +2398,11 @@ export default function RdInstallmentCollection({
                             {isCurrentNext && (
                               <span className="block text-[9px] text-amber-700 uppercase font-sans font-extrabold">
                                 चालू हप्ता
+                              </span>
+                            )}
+                            {isExt && (
+                              <span className="block text-[9px] text-purple-700 font-sans font-extrabold">
+                                वाढीव हप्ता
                               </span>
                             )}
                           </td>
@@ -2140,8 +2420,8 @@ export default function RdInstallmentCollection({
                               <span className={isPaid ? "text-emerald-700" : "text-orange-700"}>
                                 ₹ {Number(s.paidAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                 {isPartial && (
-                                  <span className="block text-[10px] text-slate-500 font-normal">
-                                    बाकी: ₹ {Number((s.expectedAmount || 0) - (s.paidAmount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  <span className="block text-[10px] text-orange-800 font-semibold">
+                                    बाकी: ₹ {Number(remDue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                   </span>
                                 )}
                               </span>
@@ -2174,13 +2454,13 @@ export default function RdInstallmentCollection({
                                 isPaid
                                   ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                   : isPartial
-                                  ? 'bg-orange-100 text-orange-800 border border-orange-300'
+                                  ? 'bg-orange-100 text-orange-900 border border-orange-300'
                                   : isOverdue
                                   ? 'bg-rose-100 text-rose-800 border border-rose-300'
                                   : 'bg-amber-100 text-amber-900 border border-amber-300'
                               }`}
                             >
-                              {isPaid ? '🟢 जमा (Paid)' : isPartial ? '🟠 अंशतः (Partial)' : isOverdue ? '🔴 थकीत (Overdue)' : '🟡 देय (Pending)'}
+                              {isPaid ? '🟢 जमा (Paid)' : isPartial ? `🟠 अंशतः बाकी / Pending (₹${remDue.toLocaleString('en-IN')})` : isOverdue ? '🔴 थकीत (Overdue)' : '🟡 देय (Pending)'}
                             </span>
                           </td>
                         </tr>
@@ -2246,6 +2526,86 @@ export default function RdInstallmentCollection({
                 className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg transition-colors cursor-pointer"
               >
                 बंद करा (Close)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Post-Maturity / Over-Duration Continuation Confirmation Modal */}
+      {postMaturityConfirmModal && (
+        <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border-2 border-amber-400">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-white shrink-0" />
+                <h3 className="font-bold text-sm">ठेव कालावधी पूर्ण झाल्याची सूचना</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => !loading && setPostMaturityConfirmModal(null)}
+                disabled={loading}
+                className="text-white/90 hover:text-white p-1 rounded cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs text-slate-800">
+              <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg font-bold text-sm text-amber-950 leading-relaxed">
+                ठेव कालावधी पूर्ण झाला आहे, तरीही पुढील हप्ता घ्यायचा आहे का?
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-2">
+                {postMaturityConfirmModal.accountsInfo.map((info, idx) => (
+                  <div key={idx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-mono font-bold text-indigo-800">{info.accountNo}</span>
+                      {info.legacyNo && (
+                        <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[10px]">
+                          🏷️ जुने आरडी: {info.legacyNo}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] font-semibold text-slate-900">
+                      खातेदार: {info.memberName}
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-600 pt-1 border-t border-slate-200/70">
+                      <span>भरलेले हप्ते: <strong className="text-slate-900">{info.paidInstallments} / {info.durationMonths} महिने</strong></span>
+                      <span>आता जमा मुद्दल: <strong className="text-emerald-700 font-mono">₹{info.depositAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[11px] text-slate-500">
+                <strong>&apos;होय&apos;</strong> निवडल्यास पुढील वाढीव हप्ता वेळापत्रकात जोडून व्यवहार सुरक्षितपणे सेव्ह केला जाईल.
+              </p>
+            </div>
+
+            <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPostMaturityConfirmModal(null)}
+                disabled={loading}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg text-xs cursor-pointer transition-colors disabled:opacity-50"
+              >
+                नाही, रद्द करा (No)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (postMaturityConfirmModal.mode === 'single') {
+                    executeSingleCollection(true);
+                  } else {
+                    executeBulkCollection(true);
+                  }
+                }}
+                disabled={loading}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>{loading ? 'जमा होत आहे...' : 'होय, पुढील हप्ता जमा करा (Yes)'}</span>
               </button>
             </div>
           </div>

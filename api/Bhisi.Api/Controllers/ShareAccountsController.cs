@@ -384,10 +384,10 @@ namespace Bhisi.Api.Controllers
                         return BadRequest($"बचत खाते {savingAccount.Status} (फ्रीझ/सुप्त) असल्याने यातून हस्तांतरण करता येणार नाही.");
                     }
 
-                    decimal availableBalance = savingAccount.CurrentBalance - savingAccount.LienAmount - savingAccount.MinimumBalance;
+                    var (availableBalance, effectiveMinBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, savingAccount);
                     if (availableBalance < totalAmount)
                     {
-                        return BadRequest($"बचत खात्यामध्ये अपुरी शिल्लक आहे. (उपलब्ध शिल्लक: ₹{availableBalance:N2}, आवश्यक रक्कम: ₹{totalAmount:N2})");
+                        return BadRequest($"बचत खात्यामध्ये अपुरी शिल्लक आहे. (किमान शिल्लक ₹{effectiveMinBal:N2} वगळता उपलब्ध शिल्लक: ₹{availableBalance:N2}, आवश्यक रक्कम: ₹{totalAmount:N2})");
                     }
 
                     // Deduct from saving account

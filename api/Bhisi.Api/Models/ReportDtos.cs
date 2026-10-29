@@ -550,9 +550,13 @@ namespace Bhisi.Api.Models
         public string MemberName { get; set; } = string.Empty;
         public string AccountType { get; set; } = string.Empty;
         public string LedgerName { get; set; } = string.Empty;
+        public string SchemeName { get; set; } = string.Empty;
         public DateTime OpeningDate { get; set; }
         public decimal OpeningBalance { get; set; }
         public decimal CurrentBalance { get; set; }
+        public decimal MinimumBalance { get; set; }
+        public decimal LienAmount { get; set; }
+        public decimal AvailableBalance { get; set; }
         public decimal InterestRate { get; set; }
         public decimal PeriodOpeningBalance { get; set; }
         public decimal PeriodTotalDebit { get; set; }

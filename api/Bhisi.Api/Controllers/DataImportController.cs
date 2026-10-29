@@ -257,8 +257,8 @@ namespace Bhisi.Api.Controllers
             public DateTime? OpeningDate { get; set; }
             public string AccountType { get; set; } = "Personal";
             public decimal OpeningBalance { get; set; }
-            public decimal InterestRate { get; set; } = 4.0m;
-            public decimal MinimumBalance { get; set; } = 500m;
+            public decimal? InterestRate { get; set; }
+            public decimal? MinimumBalance { get; set; }
         }
 
         [HttpPost("SavingAccounts")]
@@ -269,10 +269,14 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "No data provided." });
             }
 
-            var activeSetting = await _context.SavingInterestSettings
-                .Where(s => s.EffectiveDate <= DateTime.Today)
-                .OrderByDescending(s => s.EffectiveDate)
-                .FirstOrDefaultAsync();
+            var allSchemes = await _context.SavingInterestSettings
+                .AsNoTracking()
+                .OrderByDescending(s => s.EffectiveDate <= DateTime.Today)
+                .ThenByDescending(s => s.EffectiveDate)
+                .ThenByDescending(s => s.SettingID)
+                .ToListAsync();
+
+            var activeSetting = allSchemes.FirstOrDefault();
 
             int defaultLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
                 _context,
@@ -318,23 +322,51 @@ namespace Bhisi.Api.Controllers
                 }
 
                 int rowLedgerId = defaultLedgerId;
+                SavingInterestSetting? matchedRowScheme = null;
+
                 if (!string.IsNullOrWhiteSpace(row.SchemeName))
                 {
-                    var schemeLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.ToLower() == row.SchemeName.ToLower());
-                    if (schemeLedger != null) rowLedgerId = schemeLedger.LedgerID;
-                    else { errors.Add($"Row {rowNum}: Scheme '{row.SchemeName}' not found."); continue; }
+                    string cleanSchemeName = row.SchemeName.Trim();
+                    matchedRowScheme = allSchemes.FirstOrDefault(s =>
+                        (!string.IsNullOrWhiteSpace(s.SchemeName) && s.SchemeName.Trim().Equals(cleanSchemeName, StringComparison.OrdinalIgnoreCase)) ||
+                        (!string.IsNullOrWhiteSpace(s.SchemeCode) && s.SchemeCode.Trim().Equals(cleanSchemeName, StringComparison.OrdinalIgnoreCase)));
+
+                    if (matchedRowScheme != null && (matchedRowScheme.SavingLiabilityLedgerID ?? matchedRowScheme.LedgerID ?? 0) > 0)
+                    {
+                        rowLedgerId = matchedRowScheme.SavingLiabilityLedgerID ?? matchedRowScheme.LedgerID ?? defaultLedgerId;
+                    }
+                    else
+                    {
+                        var schemeLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.ToLower() == cleanSchemeName.ToLower());
+                        if (schemeLedger != null) rowLedgerId = schemeLedger.LedgerID;
+                        else { errors.Add($"Row {rowNum}: Scheme '{row.SchemeName}' not found."); continue; }
+                    }
                 }
+
+                matchedRowScheme ??= await Helpers.SavingLedgerHelper.ResolveSavingSchemeAsync(
+                    _context,
+                    explicitLedgerId: rowLedgerId,
+                    preloadedSchemes: allSchemes) ?? activeSetting;
+
+                decimal resolvedRate = (row.InterestRate.HasValue && row.InterestRate.Value > 0)
+                    ? row.InterestRate.Value
+                    : (matchedRowScheme?.InterestRate ?? 4.0m);
+
+                decimal resolvedMinBalance = row.MinimumBalance.HasValue
+                    ? Math.Max(0m, row.MinimumBalance.Value)
+                    : Math.Max(0m, matchedRowScheme?.MinimumBalance ?? 0m);
                 
                 var newAccount = new SavingAccountMaster
                 {
                     CustomerID = member.CustomerID ?? 1,
                     AccountNo = accountNo,
+                    SavingSchemeID = matchedRowScheme?.SettingID,
                     AccountType = row.AccountType,
                     OpeningDate = row.OpeningDate ?? DateTime.Today,
                     OpeningBalance = row.OpeningBalance,
                     CurrentBalance = row.OpeningBalance,
-                    InterestRate = row.InterestRate,
-                    MinimumBalance = row.MinimumBalance,
+                    InterestRate = resolvedRate,
+                    MinimumBalance = resolvedMinBalance,
                     LedgerID = rowLedgerId,
                     BranchID = branchId, // Selected branch
                     Status = "Active"

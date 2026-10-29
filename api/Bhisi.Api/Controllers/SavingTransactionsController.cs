@@ -166,11 +166,10 @@ namespace Bhisi.Api.Controllers
                         return BadRequest($"हे खाते {account.Status} (फ्रीझ/सुप्त) असल्याने यावरून पैसे काढता येणार नाहीत!");
                     }
 
-                    decimal availableBalance = account.CurrentBalance - account.LienAmount - account.MinimumBalance;
+                    var (availableBalance, effectiveMinBalance) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, account);
                     if (availableBalance < txn.Amount)
                     {
-                        decimal maxWithdraw = availableBalance > 0 ? availableBalance : 0;
-                        return BadRequest($"अपुऱ्या शिल्लकेमुळे रक्कम काढता येणार नाही! खात्यात तारण होल्ड (₹{account.LienAmount:N2}) व किमान शिल्लक सोडून फक्त ₹{maxWithdraw:N2} उपलब्ध आहेत.");
+                        return BadRequest($"अपुऱ्या शिल्लकेमुळे रक्कम काढता येणार नाही! खात्यात तारण होल्ड (₹{account.LienAmount:N2}) व किमान शिल्लक मर्यादा (₹{effectiveMinBalance:N2}) सोडून फक्त ₹{availableBalance:N2} काढता येतील.");
                     }
                     account.CurrentBalance -= txn.Amount;
 
@@ -185,9 +184,15 @@ namespace Bhisi.Api.Controllers
 
                     if (targetAccount != null)
                     {
-                        if (targetAccount.CurrentBalance - txn.Amount < targetAccount.MinimumBalance)
+                        if (targetAccount.Status == "Frozen" || targetAccount.Status == "Dormant")
                         {
-                            return BadRequest($"टार्गेट खात्यामध्ये अपुरी शिल्लक असल्याने हस्तांतरण करता येत नाही.");
+                            return BadRequest($"टार्गेट बचत खाते (#{targetAccount.AccountNo}) {targetAccount.Status} असल्याने त्यावरून रक्कम वर्ग करता येणार नाही.");
+                        }
+
+                        var (targetAvailable, targetEffectiveMin) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, targetAccount);
+                        if (targetAvailable < txn.Amount)
+                        {
+                            return BadRequest($"टार्गेट खात्यामध्ये (#{targetAccount.AccountNo}) अपुरी शिल्लक असल्याने हस्तांतरण करता येत नाही! तारण होल्ड (₹{targetAccount.LienAmount:N2}) व किमान शिल्लक मर्यादा (₹{targetEffectiveMin:N2}) वगळता फक्त ₹{targetAvailable:N2} उपलब्ध आहेत.");
                         }
                         targetAccount.CurrentBalance -= txn.Amount;
                     }
@@ -758,6 +763,13 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = "सदर व्हाउचरशी जोडलेला बचत व्यवहार सापडला नाही." });
             }
 
+            decimal effectiveSavingMin = txn.SavingAccount != null
+                ? await Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalanceAsync(_context, txn.SavingAccount)
+                : 0m;
+            decimal effectiveTargetMin = txn.TargetSavingAccount != null
+                ? await Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalanceAsync(_context, txn.TargetSavingAccount)
+                : 0m;
+
             return Ok(new
             {
                 txn.TransactionID,
@@ -782,7 +794,10 @@ namespace Bhisi.Api.Controllers
                 {
                     txn.SavingAccount.SavingAccountID,
                     txn.SavingAccount.AccountNo,
+                    txn.SavingAccount.OpeningBalance,
                     txn.SavingAccount.CurrentBalance,
+                    txn.SavingAccount.LienAmount,
+                    MinimumBalance = effectiveSavingMin,
                     txn.SavingAccount.Status,
                     Customer = txn.SavingAccount.Customer != null ? new
                     {
@@ -796,7 +811,11 @@ namespace Bhisi.Api.Controllers
                 {
                     txn.TargetSavingAccount.SavingAccountID,
                     txn.TargetSavingAccount.AccountNo,
+                    txn.TargetSavingAccount.OpeningBalance,
                     txn.TargetSavingAccount.CurrentBalance,
+                    txn.TargetSavingAccount.LienAmount,
+                    MinimumBalance = effectiveTargetMin,
+                    txn.TargetSavingAccount.Status,
                     Customer = txn.TargetSavingAccount.Customer != null ? new
                     {
                         txn.TargetSavingAccount.Customer.CustomerID,

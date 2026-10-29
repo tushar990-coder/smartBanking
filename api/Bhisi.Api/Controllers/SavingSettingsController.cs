@@ -37,6 +37,7 @@ namespace Bhisi.Api.Controllers
                         s.SchemeCode,
                         s.SchemeName,
                         s.InterestRate,
+                        s.MinimumBalance,
                         s.CalculationMethod,
                         s.PostingFrequency,
                         s.EffectiveDate,
@@ -77,6 +78,7 @@ namespace Bhisi.Api.Controllers
                         s.SchemeCode,
                         s.SchemeName,
                         s.InterestRate,
+                        s.MinimumBalance,
                         s.CalculationMethod,
                         s.PostingFrequency,
                         s.EffectiveDate,
@@ -135,6 +137,11 @@ namespace Bhisi.Api.Controllers
             if (liabId <= 0)
             {
                 return BadRequest("बचत ठेव देयता लेजर (Saving Liability Ledger) निवडणे सक्तीचे आहे.");
+            }
+
+            if (setting.MinimumBalance < 0)
+            {
+                return BadRequest("किमान शिल्लक मर्यादा (Minimum Balance) उणे (Negative) असू शकत नाही. झिरो-बॅलन्स योजनेसाठी 0 टाका.");
             }
 
             var liabExists = await _context.Ledgers.AnyAsync(l => l.LedgerID == liabId);
@@ -203,6 +210,8 @@ namespace Bhisi.Api.Controllers
             _context.SavingInterestSettings.Add(setting);
             await _context.SaveChangesAsync();
 
+            await SyncLinkedSavingAccountsMinimumBalanceAsync(setting);
+
             return Ok(setting);
         }
 
@@ -226,6 +235,11 @@ namespace Bhisi.Api.Controllers
             if (liabId <= 0)
             {
                 return BadRequest("बचत ठेव देयता लेजर (Saving Liability Ledger) निवडणे सक्तीचे आहे.");
+            }
+
+            if (setting.MinimumBalance < 0)
+            {
+                return BadRequest("किमान शिल्लक मर्यादा (Minimum Balance) उणे (Negative) असू शकत नाही. झिरो-बॅलन्स योजनेसाठी 0 टाका.");
             }
 
             var liabExists = await _context.Ledgers.AnyAsync(l => l.LedgerID == liabId);
@@ -266,6 +280,7 @@ namespace Bhisi.Api.Controllers
             }
 
             existing.InterestRate = setting.InterestRate;
+            existing.MinimumBalance = Math.Max(0m, setting.MinimumBalance);
             existing.CalculationMethod = setting.CalculationMethod;
             existing.PostingFrequency = setting.PostingFrequency;
             existing.EffectiveDate = setting.EffectiveDate;
@@ -275,6 +290,7 @@ namespace Bhisi.Api.Controllers
             existing.InterestPayableLedgerID = (setting.InterestPayableLedgerID.HasValue && setting.InterestPayableLedgerID.Value > 0) ? setting.InterestPayableLedgerID : null;
 
             await _context.SaveChangesAsync();
+            await SyncLinkedSavingAccountsMinimumBalanceAsync(existing);
             return NoContent();
         }
 
@@ -291,6 +307,32 @@ namespace Bhisi.Api.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        private async Task SyncLinkedSavingAccountsMinimumBalanceAsync(SavingInterestSetting scheme)
+        {
+            int mappedLiabId = scheme.SavingLiabilityLedgerID ?? scheme.LedgerID ?? 0;
+            int totalSchemes = await _context.SavingInterestSettings.CountAsync();
+
+            var linkedAccounts = await _context.SavingAccountMasters
+                .Where(a => a.SavingSchemeID == scheme.SettingID ||
+                            (mappedLiabId > 0 && a.LedgerID == mappedLiabId) ||
+                            (totalSchemes == 1 && (!a.SavingSchemeID.HasValue || a.SavingSchemeID.Value <= 0)))
+                .ToListAsync();
+
+            if (linkedAccounts.Count > 0)
+            {
+                decimal normalizedMin = Math.Max(0m, scheme.MinimumBalance);
+                foreach (var acc in linkedAccounts)
+                {
+                    acc.MinimumBalance = normalizedMin;
+                    if (!acc.SavingSchemeID.HasValue || acc.SavingSchemeID.Value <= 0)
+                    {
+                        acc.SavingSchemeID = scheme.SettingID;
+                    }
+                }
+                await _context.SaveChangesAsync();
+            }
         }
 
         private bool SavingInterestSettingExists(int id)

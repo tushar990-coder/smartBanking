@@ -711,9 +711,10 @@ namespace Bhisi.Api.Controllers
                             return BadRequest("निवडलेले बचत खाते आढळले नाही.");
                         }
 
-                        if (sbAcc.CurrentBalance < account.DepositAmount)
+                        var (availableSbBal, effectiveSbMinBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, sbAcc);
+                        if (availableSbBal < account.DepositAmount)
                         {
-                            return BadRequest($"अपुऱ्या शिल्लकेमुळे वर्ग करता येणार नाही! बचत खात्यात फक्त ₹{sbAcc.CurrentBalance:N2} शिल्लक आहेत (हवी असलेली रक्कम ₹{account.DepositAmount:N2}).");
+                            return BadRequest($"अपुऱ्या शिल्लकेमुळे बचत खात्यातून वर्ग करता येणार नाही! तारण रक्कम (₹{sbAcc.LienAmount:N2}) व किमान शिल्लक मर्यादा (₹{effectiveSbMinBal:N2}) वगळता फक्त ₹{availableSbBal:N2} वर्गपात्र शिल्लक आहेत (हवी असलेली रक्कम ₹{account.DepositAmount:N2}).");
                         }
 
                         int savingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);
@@ -1283,9 +1284,10 @@ namespace Bhisi.Api.Controllers
                     return BadRequest(new { message = "निवडलेले बचत खाते आढळले नाही." });
                 }
 
-                if (sbAcc.CurrentBalance < req.TotalAmount)
+                var (bulkAvailableSbBal, bulkEffectiveSbMinBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, sbAcc);
+                if (bulkAvailableSbBal < req.TotalAmount)
                 {
-                    return BadRequest(new { message = $"अपुऱ्या शिल्लकेमुळे वर्ग करता येणार नाही! बचत खात्यात फक्त ₹{sbAcc.CurrentBalance:N2} शिल्लक आहेत (हवी असलेली एकूण रक्कम ₹{req.TotalAmount:N2})." });
+                    return BadRequest(new { message = $"अपुऱ्या शिल्लकेमुळे बचत खात्यातून वर्ग करता येणार नाही! तारण रक्कम (₹{sbAcc.LienAmount:N2}) व किमान शिल्लक मर्यादा (₹{bulkEffectiveSbMinBal:N2}) वगळता फक्त ₹{bulkAvailableSbBal:N2} वर्गपात्र शिल्लक आहेत (हवी असलेली एकूण रक्कम ₹{req.TotalAmount:N2})." });
                 }
 
                 int savingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);

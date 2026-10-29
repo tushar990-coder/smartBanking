@@ -46,6 +46,9 @@ interface PendingRenewal {
   linkedSavingAccountNo?: string;
   isAutoDebitEnabled: boolean;
   savingsBalance: number;
+  savingsMinimumBalance?: number;
+  savingsLienAmount?: number;
+  availableSavingsBalance?: number;
 }
 
 export interface LockerRentRenewalProps {
@@ -277,11 +280,24 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
     fetchRenewals();
   }, []);
 
+  const getAvailableSavingsBalance = (item: PendingRenewal) => {
+    if (item.availableSavingsBalance !== undefined && item.availableSavingsBalance !== null) {
+      return Number(item.availableSavingsBalance);
+    }
+    return Math.max(
+      0,
+      Number(item.savingsBalance ?? 0) -
+        Number(item.savingsLienAmount ?? 0) -
+        Number(item.savingsMinimumBalance ?? 0)
+    );
+  };
+
   const openPayModal = (item: PendingRenewal) => {
     setSelectedAllotment(item);
+    const availSb = getAvailableSavingsBalance(item);
     setPayData({
       paymentDate: user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0],
-      paymentMode: item.linkedSavingAccountID && item.savingsBalance >= item.totalPayable ? 'SavingDebit' : 'Cash',
+      paymentMode: item.linkedSavingAccountID && availSb >= item.totalPayable ? 'SavingDebit' : 'Cash',
       bankLedgerID: 0,
       referenceNo: '',
       rentAmount: item.baseRent,
@@ -299,6 +315,16 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
     if ((payData.paymentMode === 'Bank' || payData.paymentMode === 'Transfer') && (!payData.bankLedgerID || Number(payData.bankLedgerID) <= 0)) {
       showMsg('बँक ट्रान्सफरसाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.', 'error');
       return;
+    }
+
+    if (payData.paymentMode === 'SavingDebit') {
+      const availSb = getAvailableSavingsBalance(selectedAllotment);
+      const minSb = Number(selectedAllotment.savingsMinimumBalance ?? 0);
+      const reqTotal = Number(payData.totalAmount || 0);
+      if (reqTotal > availSb) {
+        showMsg(`संलग्न बचत खात्यात अपुरी वर्गपात्र शिल्लक! (किमान शिल्लक ₹${minSb.toFixed(2)} वगळून उपलब्ध: ₹${availSb.toFixed(2)}, देय भाडे: ₹${reqTotal.toFixed(2)})`, 'error');
+        return;
+      }
     }
 
     const payload = {
@@ -693,7 +719,9 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
                           <span className="text-purple-700 font-bold flex items-center gap-0.5">
                             <Sparkles size={11} /> {r.linkedSavingAccountNo}
                           </span>
-                          <span className="text-[10px] text-slate-500">शिल्लक: ₹{r.savingsBalance?.toFixed(2)}</span>
+                          <span className="text-[10px] text-slate-500 block">
+                            शिल्लक: ₹{Number(r.savingsBalance ?? 0).toFixed(2)} | वर्गपात्र: ₹{getAvailableSavingsBalance(r).toFixed(2)}
+                          </span>
                         </div>
                       ) : (
                         <span className="text-slate-400 text-[10px]">रोख / मॅन्युअल</span>
@@ -766,7 +794,7 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
                     <option value="Cash">💵 रोख (Cash)</option>
                     {selectedAllotment.linkedSavingAccountID && (
                       <option value="SavingDebit">
-                        💳 बचत खात्यातून कपात (A/c: {selectedAllotment.linkedSavingAccountNo})
+                        💳 बचत खात्यातून कपात (A/c: {selectedAllotment.linkedSavingAccountNo} | वर्गपात्र: ₹{getAvailableSavingsBalance(selectedAllotment).toFixed(2)})
                       </option>
                     )}
                     <option value="Bank">🏦 बँक ट्रान्सफर (Bank Account)</option>

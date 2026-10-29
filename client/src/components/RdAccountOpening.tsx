@@ -71,8 +71,13 @@ interface PigmyAgent {
 
 interface SavingAccountItem {
   savingAccountID: number;
-  accountNumber: string;
-  balance: number;
+  accountNo?: string;
+  accountNumber?: string;
+  currentBalance?: number;
+  balance?: number;
+  minimumBalance?: number;
+  lienAmount?: number;
+  availableBalance?: number;
 }
 
 interface RdAccountItem {
@@ -642,9 +647,25 @@ export default function RdAccountOpening({
       setError('कृपया संयुक्त खातेदाराची निवड करा.');
       return;
     }
-    if (formData.paymentMode === 'AutoDebit_Saving' && !formData.savingAccountID) {
-      setError('ऑटो-डेबिटसाठी कृपया खातेदाराचे बचत खाते निवडा.');
-      return;
+    if (formData.paymentMode === 'AutoDebit_Saving') {
+      if (!formData.savingAccountID) {
+        setError('ऑटो-डेबिटसाठी कृपया खातेदाराचे बचत खाते निवडा.');
+        return;
+      }
+      const selSb = (Array.isArray(savingAccounts) ? savingAccounts : []).find(
+        (s) => Number(s.savingAccountID) === Number(formData.savingAccountID)
+      );
+      const firstInstAmt = parseFloat(formData.installmentAmount as any) || 0;
+      if (selSb && firstInstAmt > 0) {
+        const curBal = Number(selSb.currentBalance ?? selSb.balance ?? 0);
+        const minBal = Number(selSb.minimumBalance ?? 0);
+        const lienAmt = Number(selSb.lienAmount ?? 0);
+        const availBal = Math.max(0, curBal - lienAmt - minBal);
+        if (firstInstAmt > availBal) {
+          setError(`संलग्न बचत खात्यात पहिल्या हप्त्यासाठी अपुरी वर्गपात्र शिल्लक! (किमान शिल्लक ₹${minBal.toFixed(2)} व तारण ₹${lienAmt.toFixed(2)} वगळून उपलब्ध: ₹${availBal.toFixed(2)}, आवश्यक हप्ता: ₹${firstInstAmt.toFixed(2)})`);
+          return;
+        }
+      }
     }
     if (formData.paymentMode === 'Bank' && (!formData.bankLedgerID || Number(formData.bankLedgerID) <= 0)) {
       setError('बँक ट्रान्सफरसाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
@@ -1120,11 +1141,18 @@ export default function RdAccountOpening({
                           <label className={labelClass}>संलग्न बचत खाते (Linked SB Account) <span className="text-red-500">*</span></label>
                           <select name="savingAccountID" value={formData.savingAccountID} onChange={handleChange} className={inputClass} required>
                             <option value="">--- बचत खाते निवडा ---</option>
-                            {(Array.isArray(savingAccounts) ? savingAccounts : []).map((s, idx) => (
-                              <option key={`sav-${s.savingAccountID ?? '0'}-${idx}`} value={s.savingAccountID}>
-                                {s.accountNumber} (शिल्लक: ₹{(s.balance ?? 0).toLocaleString('en-IN')})
-                              </option>
-                            ))}
+                            {(Array.isArray(savingAccounts) ? savingAccounts : []).map((s, idx) => {
+                              const curBal = Number(s.currentBalance ?? s.balance ?? 0);
+                              const minBal = Number(s.minimumBalance ?? 0);
+                              const lienAmt = Number(s.lienAmount ?? 0);
+                              const availBal = Math.max(0, curBal - lienAmt - minBal);
+                              const accLabel = s.accountNo || s.accountNumber || `SB#${s.savingAccountID}`;
+                              return (
+                                <option key={`sav-${s.savingAccountID ?? '0'}-${idx}`} value={s.savingAccountID}>
+                                  {accLabel} (शिल्लक: ₹{curBal.toLocaleString('en-IN')} | वर्गपात्र: ₹{availBal.toLocaleString('en-IN')} | किमान: ₹{minBal})
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                       ) : formData.paymentMode === 'Bank' ? (

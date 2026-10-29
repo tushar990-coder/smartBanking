@@ -150,7 +150,11 @@ export default function SavingAccountListReport() {
 
   // Filter items
   const filteredData = data.filter((item) => {
-    if (statusFilter !== 'सर्व' && item.status !== statusFilter) {
+    if (statusFilter === 'BelowMin') {
+      if (item.status !== 'Active' || Number(item.currentBalance ?? 0) >= Number(item.minimumBalance ?? 0)) {
+        return false;
+      }
+    } else if (statusFilter !== 'सर्व' && item.status !== statusFilter) {
       return false;
     }
     if (!searchTerm.trim()) return true;
@@ -181,6 +185,7 @@ export default function SavingAccountListReport() {
         'CIF क्र.': getCifNo(a),
         'खातेदाराचे नाव': getCustomerName(a),
         'खाते उघडल्याचा दिनांक': formatDisplayDate(a.openingDate),
+        'किमान शिल्लक (₹)': Number(a.minimumBalance ?? 0),
         'सध्याची शिल्लक (₹)': a.currentBalance || 0,
         'स्थिती': a.status
       });
@@ -191,9 +196,9 @@ export default function SavingAccountListReport() {
       'बचत खाते नं. (CBS)': '',
       'जुने खाते नं.': '',
       'CIF क्र.': '',
-      'सभासद कोड': '',
       'खातेदाराचे नाव': 'एकूण बचत शिल्लक (Grand Total):',
       'खाते उघडल्याचा दिनांक': '',
+      'किमान शिल्लक (₹)': '',
       'सध्याची शिल्लक (₹)': totalBalance,
       'स्थिती': ''
     });
@@ -261,6 +266,7 @@ export default function SavingAccountListReport() {
               className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:border-primary"
             >
               <option value="Active">सक्रिय (Active)</option>
+              <option value="BelowMin">किमान शिल्लकेपेक्षा कमी (Below Min. Balance)</option>
               <option value="Closed">बंद (Closed)</option>
               <option value="सर्व">सर्व (All)</option>
             </select>
@@ -365,60 +371,68 @@ export default function SavingAccountListReport() {
             <thead>
               <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
                 <th className="border border-gray-900 py-1.5 px-1 w-[5%] text-center">अ.क्र.</th>
-                <th className="border border-gray-900 py-1.5 px-2 w-[17%] text-center">बचत खाते नं.</th>
-                <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-center font-mono">CIF क्र.</th>
-                <th className="border border-gray-900 py-1.5 px-3 w-[35%] text-left">खातेदाराचे नाव</th>
-                <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-center">उघडल्याचा दिनांक</th>
-                <th className="border border-gray-900 py-1.5 px-3 w-[15%] text-right font-extrabold">शिल्लक रक्कम (₹)</th>
+                <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-center">बचत खाते नं.</th>
+                <th className="border border-gray-900 py-1.5 px-2 w-[13%] text-center font-mono">CIF क्र.</th>
+                <th className="border border-gray-900 py-1.5 px-3 w-[30%] text-left">खातेदाराचे नाव</th>
+                <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-center">उघडल्याचा दिनांक</th>
+                <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-right">किमान शिल्लक (₹)</th>
+                <th className="border border-gray-900 py-1.5 px-3 w-[13%] text-right font-extrabold">शिल्लक रक्कम (₹)</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                  <td colSpan={7} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                     माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
                   </td>
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                  <td colSpan={7} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                     कोणतीही बचत खाते नोंद आढळली नाही.
                   </td>
                 </tr>
               ) : (
-                filteredData.map((acc, idx) => (
-                  <tr key={acc.savingAccountID || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
-                    <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">
-                      {idx + 1}
-                    </td>
-                    <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">
-                      <div>{acc.accountNo}</div>
-                      {(acc.oldAccountNo || acc.legacyAccountNumber) && (
-                        <div className="text-[10px] text-amber-950 font-bold bg-amber-100/80 border border-amber-300 rounded px-1 mt-0.5 inline-block print:text-black">
-                          जुने: {acc.oldAccountNo || acc.legacyAccountNumber}
-                        </div>
-                      )}
-                    </td>
-                    <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-primary print:text-black">
-                      {getCifNo(acc)}
-                    </td>
-                    <td className="border border-gray-900 py-1 px-3 font-medium">
-                      <div className="font-bold text-gray-900 leading-snug">{getCustomerName(acc)}</div>
-                    </td>
-                    <td className="border border-gray-900 py-1 px-2 text-center font-mono text-gray-700">
-                      {formatDisplayDate(acc.openingDate)}
-                    </td>
-                    <td className="border border-gray-900 py-1 px-3 text-right font-mono font-bold text-gray-950">
-                      {fmtCurrency(acc.currentBalance)}
-                    </td>
-                  </tr>
-                ))
+                filteredData.map((acc, idx) => {
+                  const minBal = Number(acc.minimumBalance ?? 0);
+                  const isBelowMin = acc.status === 'Active' && Number(acc.currentBalance ?? 0) < minBal;
+                  return (
+                    <tr key={acc.savingAccountID || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
+                      <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">
+                        {idx + 1}
+                      </td>
+                      <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">
+                        <div>{acc.accountNo}</div>
+                        {(acc.oldAccountNo || acc.legacyAccountNumber) && (
+                          <div className="text-[10px] text-amber-950 font-bold bg-amber-100/80 border border-amber-300 rounded px-1 mt-0.5 inline-block print:text-black">
+                            जुने: {acc.oldAccountNo || acc.legacyAccountNumber}
+                          </div>
+                        )}
+                      </td>
+                      <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-primary print:text-black">
+                        {getCifNo(acc)}
+                      </td>
+                      <td className="border border-gray-900 py-1 px-3 font-medium">
+                        <div className="font-bold text-gray-900 leading-snug">{getCustomerName(acc)}</div>
+                      </td>
+                      <td className="border border-gray-900 py-1 px-2 text-center font-mono text-gray-700">
+                        {formatDisplayDate(acc.openingDate)}
+                      </td>
+                      <td className="border border-gray-900 py-1 px-2 text-right font-mono font-semibold text-gray-700">
+                        {fmtCurrency(minBal)}
+                      </td>
+                      <td className={`border border-gray-900 py-1 px-3 text-right font-mono font-bold ${isBelowMin ? 'text-rose-700 print:text-black' : 'text-gray-950'}`}>
+                        {fmtCurrency(acc.currentBalance)}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
             {filteredData.length > 0 && (
               <tfoot>
                 <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
-                  <td colSpan={5} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                  <td colSpan={6} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
                     एकूण बचत शिल्लक बेरीज:
                   </td>
                   <td className="border border-gray-900 py-1.5 px-3 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">

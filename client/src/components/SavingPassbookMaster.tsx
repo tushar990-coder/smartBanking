@@ -53,6 +53,9 @@ interface SavingAccountFullDetails {
   openingDate?: string;
   currentBalance?: number;
   openingBalance?: number;
+  minimumBalance?: number;
+  lienAmount?: number;
+  availableBalance?: number;
   interestRate?: number;
   status?: string;
   nomineeName?: string;
@@ -308,6 +311,7 @@ const SavingPassbookMaster: React.FC = () => {
         { 'तपशील (Particular)': 'उघडल्याचा दिनांक', 'माहिती (Details)': formatDisplayDate(accountDetails.openingDate) },
         { 'तपशील (Particular)': 'योजना', 'माहिती (Details)': accountDetails.schemeName || 'बचत ठेव' },
         { 'तपशील (Particular)': 'व्याजदर', 'माहिती (Details)': `${accountDetails.interestRate || 0}%` },
+        { 'तपशील (Particular)': 'किमान शिल्लक मर्यादा', 'माहिती (Details)': `₹ ${fmtCurrency(accountDetails.minimumBalance ?? 0)}` },
         { 'तपशील (Particular)': 'वारसदाराचे नाव', 'माहिती (Details)': accountDetails.nomineeName || '-' },
         { 'तपशील (Particular)': 'वारसदार नाते', 'माहिती (Details)': accountDetails.nomineeRelation || '-' },
         { 'तपशील (Particular)': 'सध्याची शिल्लक', 'माहिती (Details)': `₹ ${fmtCurrency(accountDetails.currentBalance)}` }
@@ -765,6 +769,12 @@ const SavingPassbookMaster: React.FC = () => {
                       <td className="py-1 font-bold text-slate-900">
                         {accountDetails.schemeName || 'सर्वसाधारण बचत ठेव'}
                         {accountDetails.interestRate ? ` (${accountDetails.interestRate}% प्रति वर्ष)` : ''}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="py-1 font-bold text-slate-600">किमान शिल्लक मर्यादा:</td>
+                      <td className="py-1 font-bold text-slate-900 font-mono">
+                        ₹ {fmtCurrency(accountDetails.minimumBalance ?? 0)}
                       </td>
                     </tr>
                     <tr className="border-b border-slate-200">

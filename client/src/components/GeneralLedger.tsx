@@ -40,7 +40,7 @@ export default function GeneralLedger() {
       const engPart = l.ledgerNameEnglish ? ` (${l.ledgerNameEnglish})` : '';
       const groupPart = l.accountGroup?.groupName ? ` - ${l.accountGroup.groupName}` : '';
       return {
-        value: l.ledgerID.toString(),
+        value: (l.ledgerID ?? '').toString(),
         label: `${l.ledgerID} - ${l.ledgerName}${engPart}${legacyPart}${groupPart}`
       };
     })
@@ -74,10 +74,10 @@ export default function GeneralLedger() {
         axios.get('/api/FinancialYears')
       ]);
 
-      setLedgers(ledgersRes.data || []);
-      setBranches(branchesRes.data || []);
+      setLedgers(Array.isArray(ledgersRes.data) ? ledgersRes.data : []);
+      setBranches(Array.isArray(branchesRes.data) ? branchesRes.data : []);
 
-      const fyList = fyRes.data || [];
+      const fyList = Array.isArray(fyRes.data) ? fyRes.data : [];
       const activeFy = fyList.find((f: any) => f.isActive);
       if (activeFy && activeFy.startDate) {
         setFromDate(activeFy.startDate.split('T')[0]);
@@ -118,10 +118,11 @@ export default function GeneralLedger() {
     }
   };
 
-  const selectedLedgerName = ledgers.find(l => l.ledgerID.toString() === selectedLedgerId)?.ledgerName || '';
+  const selectedLedgerName = ledgers.find(l => l.ledgerID?.toString() === selectedLedgerId)?.ledgerName || '';
+  const transactions = Array.isArray(reportData?.transactions) ? reportData.transactions : [];
 
   const handleExportExcel = () => {
-    if (!reportData || !reportData.transactions || reportData.transactions.length === 0) {
+    if (!reportData) {
       alert('एक्सपोर्ट करण्यासाठी माहिती नाही.');
       return;
     }
@@ -133,17 +134,17 @@ export default function GeneralLedger() {
       'पावती / व्हाउचर क्र.': '-',
       'नावे रक्कम (Debit ₹)': 0,
       'जमा रक्कम (Credit ₹)': 0,
-      'शिल्लक (Balance ₹)': `${fmtCurrency(reportData.openingBalance)} ${reportData.openingType}`
+      'शिल्लक (Balance ₹)': `${fmtCurrency(reportData.openingBalance)} ${reportData.openingType || ''}`.trim()
     });
 
-    reportData.transactions.forEach((tx: any) => {
+    transactions.forEach((tx: any) => {
       excelData.push({
         'तारीख': formatDisplayDate(tx.date),
         'तपशील': tx.narration,
         'पावती / व्हाउचर क्र.': tx.voucherNo || '-',
         'नावे रक्कम (Debit ₹)': tx.debit || 0,
         'जमा रक्कम (Credit ₹)': tx.credit || 0,
-        'शिल्लक (Balance ₹)': `${fmtCurrency(tx.balance)} ${tx.balanceType}`
+        'शिल्लक (Balance ₹)': `${fmtCurrency(tx.balance)} ${tx.balanceType || ''}`.trim()
       });
     });
 
@@ -153,7 +154,7 @@ export default function GeneralLedger() {
       'पावती / व्हाउचर क्र.': '',
       'नावे रक्कम (Debit ₹)': reportData.totalDebit || 0,
       'जमा रक्कम (Credit ₹)': reportData.totalCredit || 0,
-      'शिल्लक (Balance ₹)': `${fmtCurrency(reportData.closingBalance)} ${reportData.closingType}`
+      'शिल्लक (Balance ₹)': `${fmtCurrency(reportData.closingBalance)} ${reportData.closingType || ''}`.trim()
     });
 
     const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -182,7 +183,7 @@ export default function GeneralLedger() {
         >
           <option value="all">सर्व शाखा (All)</option>
           {branches.map((b: any) => (
-            <option key={b.branchID} value={b.branchID.toString()}>
+            <option key={b.branchID} value={b.branchID?.toString()}>
               {b.branchName}
             </option>
           ))}
@@ -260,74 +261,76 @@ export default function GeneralLedger() {
         </div>
       }
     >
-      <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
-        <thead>
-          <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 text-center font-bold">
-            <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-center">तारीख</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-center">पावती / व्हाउचर क्र.</th>
-            <th className="border border-slate-900 py-1.5 px-3 w-[40%] text-left">तपशील (Narration)</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-right">नावे रक्कम (Dr ₹)</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-right">जमा रक्कम (Cr ₹)</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-right font-extrabold">शिल्लक रक्कम (₹)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {/* Opening Balance */}
-          <tr className="bg-amber-50/60 font-bold text-slate-900 text-[11px]">
-            <td className="border border-slate-900 py-1 px-2 text-center font-mono">{formatDisplayDate(fromDate)}</td>
-            <td className="border border-slate-900 py-1 px-2 text-center font-mono">-</td>
-            <td className="border border-slate-900 py-1 px-3 italic text-primary">
-              आरंभीची शिल्लक (Opening Balance)
-            </td>
-            <td className="border border-slate-900 py-1 px-2 text-right font-mono">-</td>
-            <td className="border border-slate-900 py-1 px-2 text-right font-mono">-</td>
-            <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-bal font-bold text-indigo-950">
-              {fmtCurrency(reportData.openingBalance)} {reportData.openingType}
-            </td>
-          </tr>
-
-          {reportData.transactions.map((t: any, idx: number) => (
-            <tr key={idx} className="hover:bg-slate-50 text-slate-900 text-[11px]">
-              <td className="border border-slate-900 py-1 px-2 text-center font-mono">{formatDisplayDate(t.date)}</td>
-              <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold">{t.voucherNo || '-'}</td>
-              <td className="border border-slate-900 py-1 px-3 text-left">{t.narration}</td>
-              <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-dr">
-                {t.debit > 0 ? fmtCurrency(t.debit) : '-'}
+      {reportData && (
+        <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
+          <thead>
+            <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 text-center font-bold">
+              <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-center">तारीख</th>
+              <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-center">पावती / व्हाउचर क्र.</th>
+              <th className="border border-slate-900 py-1.5 px-3 w-[40%] text-left">तपशील (Narration)</th>
+              <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-right">नावे रक्कम (Dr ₹)</th>
+              <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-right">जमा रक्कम (Cr ₹)</th>
+              <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-right font-extrabold">शिल्लक रक्कम (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Opening Balance */}
+            <tr className="bg-amber-50/60 font-bold text-slate-900 text-[11px]">
+              <td className="border border-slate-900 py-1 px-2 text-center font-mono">{formatDisplayDate(fromDate)}</td>
+              <td className="border border-slate-900 py-1 px-2 text-center font-mono">-</td>
+              <td className="border border-slate-900 py-1 px-3 italic text-primary">
+                आरंभीची शिल्लक (Opening Balance)
               </td>
-              <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-cr font-bold">
-                {t.credit > 0 ? fmtCurrency(t.credit) : '-'}
-              </td>
-              <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-bal font-bold">
-                {fmtCurrency(t.balance)} {t.balanceType}
+              <td className="border border-slate-900 py-1 px-2 text-right font-mono">-</td>
+              <td className="border border-slate-900 py-1 px-2 text-right font-mono">-</td>
+              <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-bal font-bold text-indigo-950">
+                {fmtCurrency(reportData?.openingBalance)} {reportData?.openingType || ''}
               </td>
             </tr>
-          ))}
 
-          {reportData.transactions.length === 0 && (
-            <tr>
-              <td colSpan={6} className="py-6 text-center text-slate-500 font-semibold border border-slate-900">
-                या कालावधीत कोणतेही व्यवहार आढळले नाहीत.
+            {transactions.map((t: any, idx: number) => (
+              <tr key={idx} className="hover:bg-slate-50 text-slate-900 text-[11px]">
+                <td className="border border-slate-900 py-1 px-2 text-center font-mono">{formatDisplayDate(t.date)}</td>
+                <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold">{t.voucherNo || '-'}</td>
+                <td className="border border-slate-900 py-1 px-3 text-left">{t.narration}</td>
+                <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-dr">
+                  {t.debit > 0 ? fmtCurrency(t.debit) : '-'}
+                </td>
+                <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-cr font-bold">
+                  {t.credit > 0 ? fmtCurrency(t.credit) : '-'}
+                </td>
+                <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-bal font-bold">
+                  {fmtCurrency(t.balance)} {t.balanceType || ''}
+                </td>
+              </tr>
+            ))}
+
+            {transactions.length === 0 && (
+              <tr>
+                <td colSpan={6} className="py-6 text-center text-slate-500 font-semibold border border-slate-900">
+                  या कालावधीत कोणतेही व्यवहार आढळले नाहीत.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-900 text-xs">
+              <td colSpan={3} className="border border-slate-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                एकूण व्यवहार / अखेर शिल्लक:
+              </td>
+              <td className="border border-slate-900 py-1.5 px-2 cbs-num-cell cbs-amt-dr font-bold">
+                ₹ {fmtCurrency(reportData?.totalDebit)}
+              </td>
+              <td className="border border-slate-900 py-1.5 px-2 cbs-num-cell cbs-amt-cr font-bold">
+                ₹ {fmtCurrency(reportData?.totalCredit)}
+              </td>
+              <td className="border border-slate-900 py-1.5 px-2 cbs-num-cell cbs-amt-bal font-black text-primary bg-primary/10">
+                ₹ {fmtCurrency(reportData?.closingBalance)} {reportData?.closingType || ''}
               </td>
             </tr>
-          )}
-        </tbody>
-        <tfoot>
-          <tr className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-900 text-xs">
-            <td colSpan={3} className="border border-slate-900 py-1.5 px-3 text-right uppercase tracking-wider">
-              एकूण व्यवहार / अखेर शिल्लक:
-            </td>
-            <td className="border border-slate-900 py-1.5 px-2 cbs-num-cell cbs-amt-dr font-bold">
-              ₹ {fmtCurrency(reportData.totalDebit)}
-            </td>
-            <td className="border border-slate-900 py-1.5 px-2 cbs-num-cell cbs-amt-cr font-bold">
-              ₹ {fmtCurrency(reportData.totalCredit)}
-            </td>
-            <td className="border border-slate-900 py-1.5 px-2 cbs-num-cell cbs-amt-bal font-black text-primary bg-primary/10">
-              ₹ {fmtCurrency(reportData.closingBalance)} {reportData.closingType}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+          </tfoot>
+        </table>
+      )}
     </CbsReportLayout>
   );
 }

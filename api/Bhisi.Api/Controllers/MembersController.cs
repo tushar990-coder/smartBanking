@@ -1003,11 +1003,11 @@ namespace Bhisi.Api.Controllers
                             return BadRequest(new { message = $"बचत खाते {savingAcc.Status} असल्याने यातून हस्तांतरण करता येणार नाही." });
                         }
 
-                        decimal availBal = savingAcc.CurrentBalance - savingAcc.LienAmount - savingAcc.MinimumBalance;
+                        var (availBal, effectiveMinBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, savingAcc);
                         if (availBal < totalAmount)
                         {
                             await dbTransaction.RollbackAsync();
-                            return BadRequest(new { message = $"बचत खात्यामध्ये अपुरी शिल्लक आहे. (उपलब्ध: ₹{availBal:N2}, आवश्यक: ₹{totalAmount:N2})" });
+                            return BadRequest(new { message = $"बचत खात्यामध्ये अपुरी शिल्लक आहे. (किमान शिल्लक ₹{effectiveMinBal:N2} वगळता उपलब्ध: ₹{availBal:N2}, आवश्यक: ₹{totalAmount:N2})" });
                         }
 
                         // Deduct from saving account

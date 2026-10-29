@@ -589,9 +589,26 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
       return;
     }
 
-    if (paymentMode === 'Transfer' && !selectedSavingAccountId) {
-      setMessage({ text: '⚠️ कृपया रक्कम वर्ग करण्यासाठी बचत खाते निवडा.', type: 'error' });
-      return;
+    if (paymentMode === 'Transfer') {
+      if (!selectedSavingAccountId) {
+        setMessage({ text: '⚠️ कृपया रक्कम वर्ग करण्यासाठी बचत खाते निवडा.', type: 'error' });
+        return;
+      }
+      const reqShareAmt = Number(numberOfShares) * Number(faceValue || 0);
+      const selSb: any = memberSavingAccounts.find((a: any) => Number(a.savingAccountID) === Number(selectedSavingAccountId));
+      if (selSb && reqShareAmt > 0) {
+        const curBal = Number(selSb.currentBalance ?? 0);
+        const minBal = Number(selSb.minimumBalance ?? 0);
+        const lienAmt = Number(selSb.lienAmount ?? 0);
+        const availBal = Math.max(0, curBal - lienAmt - minBal);
+        if (reqShareAmt > availBal) {
+          setMessage({
+            text: `⚠️ बचत खात्यात अपुरी वर्गपात्र शिल्लक! (किमान शिल्लक ₹${minBal.toFixed(2)} व तारण ₹${lienAmt.toFixed(2)} वगळून उपलब्ध: ₹${availBal.toFixed(2)}, आवश्यक रक्कम: ₹${reqShareAmt.toFixed(2)})`,
+            type: 'error'
+          });
+          return;
+        }
+      }
     }
     if (paymentMode === 'Bank' && (!selectedBankLedgerId || Number(selectedBankLedgerId) <= 0)) {
       setMessage({ text: '⚠️ कृपया वैध बँक खाते लेजर निवडा.', type: 'error' });
@@ -1270,11 +1287,17 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                       className={inputClass}
                       required
                     >
-                      {memberSavingAccounts.map((acc: any) => (
-                        <option key={acc.savingAccountID} value={acc.savingAccountID}>
-                          {acc.accountNo} (शिल्लक: ₹{acc.currentBalance.toFixed(2)})
-                        </option>
-                      ))}
+                      {memberSavingAccounts.map((acc: any) => {
+                        const curBal = Number(acc.currentBalance ?? 0);
+                        const minBal = Number(acc.minimumBalance ?? 0);
+                        const lienAmt = Number(acc.lienAmount ?? 0);
+                        const availBal = Math.max(0, curBal - lienAmt - minBal);
+                        return (
+                          <option key={acc.savingAccountID} value={acc.savingAccountID}>
+                            {acc.accountNo} (शिल्लक: ₹{curBal.toFixed(2)} | वर्गपात्र: ₹{availBal.toFixed(2)} | किमान: ₹{minBal.toFixed(0)})
+                          </option>
+                        );
+                      })}
                     </select>
                   ) : (
                     <div className="text-[10px] text-rose-600 font-bold bg-rose-50 p-1.5 rounded border border-rose-200">

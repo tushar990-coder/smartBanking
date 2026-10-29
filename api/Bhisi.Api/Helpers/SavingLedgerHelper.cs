@@ -355,6 +355,131 @@ namespace Bhisi.Api.Helpers
                 .AnyAsync(s => s.LedgerID == ledgerId);
         }
 
+        /// <summary>
+        /// Dynamically resolves the SavingInterestSetting (बचत व्याजदर योजना) linked to a SavingAccountMaster
+        /// or explicit SchemeID / LedgerID.
+        /// </summary>
+        public static async Task<SavingInterestSetting?> ResolveSavingSchemeAsync(
+            AppDbContext context,
+            SavingAccountMaster? savingAccount = null,
+            int? explicitSchemeId = null,
+            int? explicitLedgerId = null,
+            List<SavingInterestSetting>? preloadedSchemes = null)
+        {
+            var today = DateTime.Today;
+            var schemes = preloadedSchemes ?? await context.SavingInterestSettings
+                .AsNoTracking()
+                .OrderByDescending(s => s.EffectiveDate <= today)
+                .ThenByDescending(s => s.EffectiveDate)
+                .ThenByDescending(s => s.SettingID)
+                .ToListAsync();
+
+            if (schemes.Count == 0)
+            {
+                return null;
+            }
+
+            if (explicitSchemeId.HasValue && explicitSchemeId.Value > 0)
+            {
+                var byExplicitId = schemes.FirstOrDefault(s => s.SettingID == explicitSchemeId.Value);
+                if (byExplicitId != null) return byExplicitId;
+            }
+
+            if (savingAccount != null)
+            {
+                if (savingAccount.SavingScheme != null)
+                {
+                    return savingAccount.SavingScheme;
+                }
+
+                if (savingAccount.SavingSchemeID.HasValue && savingAccount.SavingSchemeID.Value > 0)
+                {
+                    var byAccSchemeId = schemes.FirstOrDefault(s => s.SettingID == savingAccount.SavingSchemeID.Value);
+                    if (byAccSchemeId != null) return byAccSchemeId;
+                }
+            }
+
+            int targetLedgerId = explicitLedgerId.HasValue && explicitLedgerId.Value > 0
+                ? explicitLedgerId.Value
+                : (savingAccount?.LedgerID ?? 0);
+
+            if (targetLedgerId > 0)
+            {
+                var byLiabilityLedger = schemes.FirstOrDefault(s => s.SavingLiabilityLedgerID == targetLedgerId);
+                if (byLiabilityLedger != null) return byLiabilityLedger;
+
+                var byPrimaryLedger = schemes.FirstOrDefault(s => s.LedgerID == targetLedgerId);
+                if (byPrimaryLedger != null) return byPrimaryLedger;
+            }
+
+            // If only a single saving scheme exists in the institution, fall back to it
+            if (schemes.Count == 1)
+            {
+                return schemes[0];
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Resolves the effective Minimum Balance (किमान शिल्लक मर्यादा) for a Saving Account.
+        /// Supports ₹0 (Zero-Balance accounts) as well as any positive configured amount.
+        /// </summary>
+        public static decimal ResolveEffectiveMinimumBalance(
+            SavingAccountMaster? savingAccount,
+            SavingInterestSetting? resolvedScheme)
+        {
+            if (savingAccount == null)
+            {
+                return Math.Max(0m, resolvedScheme?.MinimumBalance ?? 0m);
+            }
+
+            // If the account still carries the untouched legacy hardcoded 500 default while its scheme specifies a different policy, honor the scheme policy
+            if (resolvedScheme != null &&
+                !savingAccount.UpdatedOn.HasValue &&
+                savingAccount.MinimumBalance == 500m &&
+                resolvedScheme.MinimumBalance != 500m)
+            {
+                return Math.Max(0m, resolvedScheme.MinimumBalance);
+            }
+
+            return Math.Max(0m, savingAccount.MinimumBalance);
+        }
+
+        /// <summary>
+        /// Async convenience overload to resolve the effective Minimum Balance for a Saving Account from DB.
+        /// </summary>
+        public static async Task<decimal> ResolveEffectiveMinimumBalanceAsync(
+            AppDbContext context,
+            SavingAccountMaster? savingAccount,
+            List<SavingInterestSetting>? preloadedSchemes = null)
+        {
+            if (savingAccount == null)
+            {
+                return 0m;
+            }
+
+            var scheme = await ResolveSavingSchemeAsync(
+                context,
+                savingAccount: savingAccount,
+                preloadedSchemes: preloadedSchemes);
+
+            return ResolveEffectiveMinimumBalance(savingAccount, scheme);
+        }
+
+        /// <summary>
+        /// Calculates the net withdrawable / transferable balance of a Saving Account after deducting LienAmount and effective MinimumBalance.
+        /// </summary>
+        public static async Task<(decimal AvailableBalance, decimal EffectiveMinimumBalance)> ResolveAvailableBalanceAsync(
+            AppDbContext context,
+            SavingAccountMaster savingAccount,
+            List<SavingInterestSetting>? preloadedSchemes = null)
+        {
+            decimal effectiveMin = await ResolveEffectiveMinimumBalanceAsync(context, savingAccount, preloadedSchemes);
+            decimal available = Math.Max(0m, savingAccount.CurrentBalance - savingAccount.LienAmount - effectiveMin);
+            return (available, effectiveMin);
+        }
+
         private static async Task<HashSet<int>> GetBranchCashAndIbtLedgerIdsAsync(AppDbContext context)
         {
             var protectedIds = new HashSet<int>();

@@ -15,6 +15,9 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(5,2)")]
         public decimal InterestRate { get; set; }
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal MinimumBalance { get; set; } = 500m;
+
         [MaxLength(100)]
         public string? SchemeName { get; set; }
 

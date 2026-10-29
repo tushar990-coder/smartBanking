@@ -212,7 +212,10 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
           setSelectedAccount({
             savingAccountID: d.savingAccount.savingAccountID,
             accountNo: d.savingAccount.accountNo,
-            currentBalance: d.savingAccount.currentBalance,
+            openingBalance: Number(d.savingAccount.openingBalance ?? 0),
+            currentBalance: Number(d.savingAccount.currentBalance ?? 0),
+            minimumBalance: Number(d.savingAccount.minimumBalance ?? 0),
+            lienAmount: Number(d.savingAccount.lienAmount ?? 0),
             customerName: d.savingAccount.customer?.fullName || '',
             cifNo: d.savingAccount.customer?.cifNo || '',
             status: d.savingAccount.status
@@ -222,7 +225,10 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
           setSelectedTargetAccount({
             savingAccountID: d.targetSavingAccount.savingAccountID,
             accountNo: d.targetSavingAccount.accountNo,
-            currentBalance: d.targetSavingAccount.currentBalance,
+            currentBalance: Number(d.targetSavingAccount.currentBalance ?? 0),
+            minimumBalance: Number(d.targetSavingAccount.minimumBalance ?? 0),
+            lienAmount: Number(d.targetSavingAccount.lienAmount ?? 0),
+            status: d.targetSavingAccount.status,
             customerName: d.targetSavingAccount.customer?.fullName || ''
           } as any);
         }
@@ -563,6 +569,27 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       return;
     }
 
+    const reqAmt = parseFloat(formData.amount) || 0;
+    if (formData.transactionType === 'Withdrawal' && selectedAccount) {
+      const srcMin = Number(selectedAccount.minimumBalance ?? 0);
+      const srcLien = Number(selectedAccount.lienAmount ?? 0);
+      const srcAvail = Math.max(0, Number(selectedAccount.currentBalance ?? 0) - srcLien - srcMin);
+      if (reqAmt > srcAvail) {
+        setError(`बचत खात्यात अपुरी शिल्लक! (किमान शिल्लक ₹${srcMin.toFixed(2)} व तारण ₹${srcLien.toFixed(2)} वगळून काढता येणारी रक्कम: ₹${srcAvail.toFixed(2)})`);
+        return;
+      }
+    }
+
+    if (formData.transactionType === 'Deposit' && formData.paymentMode === 'Transfer' && selectedTargetAccount) {
+      const tgtMin = Number(selectedTargetAccount.minimumBalance ?? 0);
+      const tgtLien = Number(selectedTargetAccount.lienAmount ?? 0);
+      const tgtAvail = Math.max(0, Number(selectedTargetAccount.currentBalance ?? 0) - tgtLien - tgtMin);
+      if (reqAmt > tgtAvail) {
+        setError(`टार्गेट बचत खात्यात (${selectedTargetAccount.accountNo}) अपुरी शिल्लक! (किमान शिल्लक ₹${tgtMin.toFixed(2)} व तारण ₹${tgtLien.toFixed(2)} वगळून जास्तीत जास्त ₹${tgtAvail.toFixed(2)} वर्ग करता येतील.)`);
+        return;
+      }
+    }
+
     setLoading(true);
     setError('');
     setSuccess('');
@@ -771,11 +798,16 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
   // Live Real-Time Projected Balance Calculations
   const txnAmountNum = parseFloat(formData.amount) || 0;
-  const currentBalNum = selectedAccount?.currentBalance || 0;
-  const openingBalNum = selectedAccount?.openingBalance || 0;
-  const lienNum = selectedAccount?.lienAmount || 0;
-  const minBalNum = selectedAccount?.minimumBalance || 500;
+  const currentBalNum = Number(selectedAccount?.currentBalance ?? 0);
+  const openingBalNum = Number(selectedAccount?.openingBalance ?? 0);
+  const lienNum = Number(selectedAccount?.lienAmount ?? 0);
+  const minBalNum = Number(selectedAccount?.minimumBalance ?? 0);
   const availableToWithdraw = Math.max(0, currentBalNum - lienNum - minBalNum);
+
+  const targetCurrentBalNum = Number(selectedTargetAccount?.currentBalance ?? 0);
+  const targetLienNum = Number(selectedTargetAccount?.lienAmount ?? 0);
+  const targetMinBalNum = Number(selectedTargetAccount?.minimumBalance ?? 0);
+  const targetAvailableToWithdraw = Math.max(0, targetCurrentBalNum - targetLienNum - targetMinBalNum);
 
   let simulatedBalance = currentBalNum;
   if (formData.transactionType === 'Deposit') {
@@ -784,6 +816,11 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     simulatedBalance = currentBalNum - txnAmountNum;
   }
   const isInsufficient = formData.transactionType === 'Withdrawal' && txnAmountNum > availableToWithdraw;
+  const isTargetInsufficient =
+    formData.transactionType === 'Deposit' &&
+    formData.paymentMode === 'Transfer' &&
+    Boolean(selectedTargetAccount) &&
+    txnAmountNum > targetAvailableToWithdraw;
 
   // KPI Calculations
   const todayStr = new Date().toISOString().split('T')[0];
@@ -1277,13 +1314,26 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                   </div>
 
                   {selectedTargetAccount ? (
-                    <div className="md:col-span-1 bg-emerald-50 border border-emerald-300 rounded-sm px-3 py-1.5 flex flex-col justify-center shadow-2xs">
-                      <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
+                    <div className={`md:col-span-1 border rounded-sm px-3 py-1.5 flex flex-col justify-center shadow-2xs ${
+                      isTargetInsufficient ? 'bg-rose-50 border-rose-300' : 'bg-emerald-50 border-emerald-300'
+                    }`}>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                        isTargetInsufficient ? 'text-rose-800' : 'text-emerald-800'
+                      }`}>
                         👤 खातेदार: {selectedTargetAccount.customerName}
                       </span>
-                      <span className="text-xs font-black text-emerald-950">
-                        💳 शिल्लक: ₹ {selectedTargetAccount.currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      <span className={`text-xs font-black ${
+                        isTargetInsufficient ? 'text-rose-950' : 'text-emerald-950'
+                      }`}>
+                        💳 शिल्लक: ₹ {targetCurrentBalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </span>
+                      {formData.transactionType === 'Deposit' && (
+                        <span className={`text-[10px] font-bold ${
+                          isTargetInsufficient ? 'text-rose-700' : 'text-emerald-700'
+                        }`}>
+                          वर्गपात्र: ₹ {targetAvailableToWithdraw.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (किमान: ₹{targetMinBalNum.toFixed(0)})
+                        </span>
+                      )}
                     </div>
                   ) : (
                     <div className="md:col-span-1 text-[11px] text-slate-400 italic flex items-center">
@@ -1329,7 +1379,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
               ) : (
                 <button
                   type="submit"
-                  disabled={loading || isInsufficient}
+                  disabled={loading || isInsufficient || isTargetInsufficient}
                   className={`px-6 py-2 rounded-sm font-bold text-xs text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
                     formData.transactionType === 'Deposit'
                       ? 'bg-emerald-600 hover:bg-emerald-700'

@@ -33,6 +33,7 @@ interface SavingInterestSetting {
   schemeCode?: string | null;
   schemeName?: string | null;
   interestRate: number;
+  minimumBalance?: number;
   calculationMethod: string;
   postingFrequency: string;
   effectiveDate: string;
@@ -86,6 +87,7 @@ const SavingInterestSettingMaster: React.FC = () => {
     schemeCode: '',
     schemeName: '',
     interestRate: '4.0',
+    minimumBalance: '500',
     calculationMethod: 'Daily Product',
     postingFrequency: 'Yearly',
     effectiveDate: getTodayStr(),
@@ -164,6 +166,7 @@ const SavingInterestSettingMaster: React.FC = () => {
       schemeCode: nextCode,
       schemeName: '',
       interestRate: '4.0',
+      minimumBalance: '500',
       calculationMethod: 'Daily Product',
       postingFrequency: 'Yearly',
       effectiveDate: getTodayStr(),
@@ -187,6 +190,7 @@ const SavingInterestSettingMaster: React.FC = () => {
       schemeCode: setting.schemeCode || '',
       schemeName: setting.schemeName || '',
       interestRate: setting.interestRate !== undefined ? String(setting.interestRate) : '4.0',
+      minimumBalance: setting.minimumBalance !== undefined && setting.minimumBalance !== null ? String(setting.minimumBalance) : '0',
       calculationMethod: setting.calculationMethod || 'Daily Product',
       postingFrequency: setting.postingFrequency || 'Yearly',
       effectiveDate: setting.effectiveDate ? setting.effectiveDate.split('T')[0] : getTodayStr(),
@@ -241,6 +245,12 @@ const SavingInterestSettingMaster: React.FC = () => {
       return;
     }
 
+    const minBal = formData.minimumBalance === '' ? 0 : Number(formData.minimumBalance);
+    if (Number.isNaN(minBal) || minBal < 0) {
+      setError('किमान शिल्लक मर्यादा (Minimum Balance) ० किंवा त्यापेक्षा जास्त असावी.');
+      return;
+    }
+
     if (!formData.schemeCode.trim()) {
       setError('कृपया योजना कोड टाका.');
       return;
@@ -262,6 +272,7 @@ const SavingInterestSettingMaster: React.FC = () => {
         schemeCode: formData.schemeCode.trim(),
         schemeName: formData.schemeName.trim() || null,
         interestRate: rate,
+        minimumBalance: minBal,
         calculationMethod: formData.calculationMethod,
         postingFrequency: formData.postingFrequency,
         effectiveDate: formData.effectiveDate,
@@ -276,10 +287,10 @@ const SavingInterestSettingMaster: React.FC = () => {
           settingID: editingId,
           ...payload
         });
-        setSuccess(`बचत ठेव व्याजदर योजना '${formData.schemeName || formData.schemeCode}' यशस्वीरीत्या अद्ययावत केली!`);
+        setSuccess(`बचत ठेव व्याजदर योजना '${formData.schemeName || formData.schemeCode}' (किमान शिल्लक: ₹${minBal.toFixed(2)}) यशस्वीरीत्या अद्ययावत केली व संबंधित बचत खात्यांना लागू झाली!`);
       } else {
         await axios.post(API_URL, payload);
-        setSuccess(`नवीन बचत ठेव व्याजदर योजना '${formData.schemeName || formData.schemeCode}' यशस्वीरीत्या जतन झाली!`);
+        setSuccess(`नवीन बचत ठेव व्याजदर योजना '${formData.schemeName || formData.schemeCode}' (किमान शिल्लक: ₹${minBal.toFixed(2)}) यशस्वीरीत्या जतन झाली!`);
       }
 
       resetForm();
@@ -299,6 +310,7 @@ const SavingInterestSettingMaster: React.FC = () => {
       'योजना कोड': s.schemeCode || s.settingID,
       'योजनेचे नाव': s.schemeName || '-',
       'व्याजदर (%)': `${s.interestRate}%`,
+      'किमान शिल्लक (₹)': Number(s.minimumBalance ?? 0),
       'गणना पद्धत': s.calculationMethod,
       'वारंवारता': s.postingFrequency,
       'लागू दिनांक': formatDateForDisplay(s.effectiveDate),
@@ -539,14 +551,14 @@ const SavingInterestSettingMaster: React.FC = () => {
             </div>
           </div>
 
-          {/* Section 2: Interest Rates & Posting Frequency */}
+          {/* Section 2: Interest Rates, Minimum Balance & Posting Frequency */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
               <Percent className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">२. व्याजदर, गणना व जमा वारंवारता (Rate & Calculation Rules)</h2>
+              <h2 className="text-xs font-bold text-primary">२. व्याजदर, किमान शिल्लक व जमा वारंवारता (Rate, Min. Balance & Calculation Rules)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
               <div>
                 <label className={labelClass}>
                   वार्षिक व्याजदर (% p.a.) <span className="text-red-500">*</span>
@@ -561,6 +573,27 @@ const SavingInterestSettingMaster: React.FC = () => {
                   className={`${inputClass} font-bold text-emerald-700 font-mono`}
                   required
                 />
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  किमान शिल्लक मर्यादा (Min. Balance ₹) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  name="minimumBalance"
+                  value={formData.minimumBalance}
+                  onChange={handleInputChange}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="उदा. 0, 100, 500"
+                  className={`${inputClass} font-bold text-indigo-800 font-mono`}
+                  required
+                />
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  ० = झिरो-बॅलन्स; ठेव नावे व ट्रान्सफर वेळी ही मर्यादा लागू होईल.
+                </span>
               </div>
 
               <div>
@@ -748,6 +781,7 @@ const SavingInterestSettingMaster: React.FC = () => {
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना कोड & नाव</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">किमान शिल्लक (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">गणना पद्धत & वारंवारता</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड देयता खाते</th>
                       <th className="px-2 py-1.5 text-center w-24">लागू तारीख</th>
@@ -785,6 +819,9 @@ const SavingInterestSettingMaster: React.FC = () => {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold text-emerald-700 font-mono">
                           {s.interestRate}% p.a.
                         </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-indigo-800 font-mono whitespace-nowrap">
+                          ₹{Number(s.minimumBalance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
                           <div className="font-bold text-gray-800">{s.calculationMethod}</div>
                           <div className="text-[10px] text-gray-500">{s.postingFrequency}</div>
@@ -805,7 +842,7 @@ const SavingInterestSettingMaster: React.FC = () => {
                     ))}
                     {filteredSettings.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-6 py-10 text-center text-gray-400 font-bold">
+                        <td colSpan={7} className="px-6 py-10 text-center text-gray-400 font-bold">
                           कोणतीही बचत ठेव व्याजदर योजना सापडली नाही.
                         </td>
                       </tr>

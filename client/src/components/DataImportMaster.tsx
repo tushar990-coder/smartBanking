@@ -83,7 +83,8 @@ const DataImportMaster: React.FC = () => {
         Old_CIF_No: 'M001',
         Old_Saving_Account_No: 'SAV001',
         Scheme_Name: 'बचत ठेव',
-        Balance_As_On_31_03: 5000
+        Balance_As_On_31_03: 5000,
+        Minimum_Balance: ''
       }];
       fileName = 'Saving_Balance_Import_Template.xlsx';
     } else if (selectedModule === 'shareBalances') {
@@ -232,6 +233,20 @@ const DataImportMaster: React.FC = () => {
           if (newRow.schemename !== undefined) newRow.SchemeName = toStringOrEmpty(newRow.schemename);
           if (newRow.balanceason3103 !== undefined) newRow.OpeningBalance = Number(newRow.balanceason3103);
           if (newRow.AccountNo !== undefined) newRow.AccountNo = toStringOrEmpty(newRow.AccountNo);
+          const rawMinBal = newRow.minimumbalance ?? newRow.minbalance ?? newRow.Minimum_Balance ?? newRow.MinimumBalance;
+          if (rawMinBal !== undefined && rawMinBal !== null && String(rawMinBal).trim() !== '') {
+            const parsedMinBal = Number(rawMinBal);
+            if (!Number.isNaN(parsedMinBal) && parsedMinBal >= 0) {
+              newRow.MinimumBalance = parsedMinBal;
+            } else {
+              delete newRow.MinimumBalance;
+            }
+          } else {
+            delete newRow.MinimumBalance;
+          }
+          delete newRow.minimumbalance;
+          delete newRow.minbalance;
+          delete newRow.Minimum_Balance;
 
           // Loan mappings
           if (newRow.oldloanaccountno !== undefined) newRow.LoanAccountNo = toStringOrEmpty(newRow.oldloanaccountno);

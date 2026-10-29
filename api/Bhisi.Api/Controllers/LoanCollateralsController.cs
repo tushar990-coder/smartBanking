@@ -163,12 +163,27 @@ namespace Bhisi.Api.Controllers
             else if (category.Equals("SavingDeposit", StringComparison.OrdinalIgnoreCase) || category.Contains("Saving") || category.Contains("बचत"))
             {
                 var savings = await _context.SavingAccountMasters
+                    .Include(s => s.SavingScheme)
                     .Where(s => s.CustomerID == customerId && s.Status == "Active")
                     .OrderByDescending(s => s.OpeningDate)
                     .ToListAsync();
 
+                var allSchemes = await _context.SavingInterestSettings
+                    .AsNoTracking()
+                    .OrderByDescending(s => s.EffectiveDate <= DateTime.Today)
+                    .ThenByDescending(s => s.EffectiveDate)
+                    .ThenByDescending(s => s.SettingID)
+                    .ToListAsync();
+
                 foreach (var s in savings)
                 {
+                    var matchedScheme = await Helpers.SavingLedgerHelper.ResolveSavingSchemeAsync(
+                        _context,
+                        savingAccount: s,
+                        preloadedSchemes: allSchemes);
+                    decimal effectiveMinBal = Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalance(s, matchedScheme);
+                    decimal pledgeableBalance = Math.Max(0m, s.CurrentBalance - s.LienAmount - effectiveMinBal);
+
                     results.Add(new EligibleDepositDto
                     {
                         DepositType = "SavingDeposit",
@@ -183,8 +198,10 @@ namespace Bhisi.Api.Controllers
                         IsLienMarked = s.LienAmount > 0,
                         LienLoanAccountNo = s.LienReason,
                         LienAmount = s.LienAmount,
-                        MaxEligibleLoan = Math.Round(s.CurrentBalance * ltvFactor, 2),
-                        SchemeName = "बचत ठेव खाते"
+                        MaxEligibleLoan = Math.Round(pledgeableBalance * ltvFactor, 2),
+                        SchemeName = matchedScheme != null && !string.IsNullOrWhiteSpace(matchedScheme.SchemeName)
+                            ? $"{matchedScheme.SchemeName} (किमान शिल्लक: ₹{effectiveMinBal:N0})"
+                            : $"बचत ठेव खाते (किमान शिल्लक: ₹{effectiveMinBal:N0})"
                     });
                 }
             }

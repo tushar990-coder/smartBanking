@@ -1225,9 +1225,15 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       }
       const requiredTotal = entryMode === 'bulk' ? (Number(totalDepositAmount) || 0) : (parseFloat(formData.depositAmount as any) || 0);
       const selectedSb = customerSavingsAccounts.find(a => (a.savingAccountID || a.savingAccountId) === selectedSavingAccountID);
-      if (selectedSb && Number(selectedSb.currentBalance || 0) < requiredTotal) {
-        setError(`अपुऱ्या शिल्लकेमुळे बचत खात्यातून वर्ग करता येणार नाही! निवडलेल्या बचत खात्यात फक्त ₹${Number(selectedSb.currentBalance).toLocaleString('en-IN', {minimumFractionDigits: 2})} शिल्लक आहेत (हवी असलेली एकूण रक्कम ₹${requiredTotal.toLocaleString('en-IN', {minimumFractionDigits: 2})}).`);
-        return;
+      if (selectedSb) {
+        const curBal = Number(selectedSb.currentBalance ?? 0);
+        const lienAmt = Number(selectedSb.lienAmount ?? 0);
+        const minBal = Number(selectedSb.minimumBalance ?? 0);
+        const availBal = Math.max(0, curBal - lienAmt - minBal);
+        if (requiredTotal > availBal) {
+          setError(`अपुऱ्या वर्गपात्र शिल्लकेमुळे बचत खात्यातून वर्ग करता येणार नाही! निवडलेल्या बचत खात्यात (किमान शिल्लक ₹${minBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} व तारण ₹${lienAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })} वगळून) फक्त ₹${availBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} वर्गपात्र शिल्लक आहे (हवी असलेली एकूण रक्कम ₹${requiredTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}).`);
+          return;
+        }
       }
     }
 
@@ -2321,10 +2327,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         >
                           {customerSavingsAccounts.map((acc: any) => {
                             const accId = acc.savingAccountID || acc.savingAccountId;
-                            const bal = Number(acc.currentBalance || 0);
+                            const bal = Number(acc.currentBalance ?? 0);
+                            const minBal = Number(acc.minimumBalance ?? 0);
+                            const lienAmt = Number(acc.lienAmount ?? 0);
+                            const availBal = Math.max(0, bal - lienAmt - minBal);
                             return (
                               <option key={accId} value={accId}>
-                                {acc.accountNo} - {acc.customerName || acc.memberName || 'बचत खाते'} | उपलब्ध शिल्लक: ₹ {bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                {acc.accountNo} - {acc.customerName || acc.memberName || 'बचत खाते'} | शिल्लक: ₹{bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} | वर्गपात्र: ₹{availBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (किमान: ₹{minBal.toFixed(0)})
                               </option>
                             );
                           })}

@@ -63,6 +63,8 @@ namespace Bhisi.Api.Controllers
                          !v.VoucherNo.StartsWith("JV-RD-CLOSE-") &&
                          !v.VoucherNo.StartsWith("JV-RD-PRECLOSE-") &&
                          !v.VoucherNo.StartsWith("JV-RD-REN-") &&
+                         !v.VoucherNo.StartsWith("JV-RD-COLL-") &&
+                         !v.VoucherNo.Contains("-RD-COLL-") &&
                          !v.VoucherNo.Contains("-RD-CLOSE-") &&
                          !v.VoucherNo.Contains("-RD-PRECLOSE-")) ||
                         (v.Narration != null && (
@@ -128,6 +130,8 @@ namespace Bhisi.Api.Controllers
                              v.VoucherNo.StartsWith("JV-RD-CLOSE-") ||
                              v.VoucherNo.StartsWith("JV-RD-PRECLOSE-") ||
                              v.VoucherNo.StartsWith("JV-RD-REN-") ||
+                             v.VoucherNo.StartsWith("JV-RD-COLL-") ||
+                             v.VoucherNo.Contains("-RD-COLL-") ||
                              v.VoucherNo.Contains("-RD-CLOSE-") ||
                              v.VoucherNo.Contains("-RD-PRECLOSE-")) &&
                             !(v.Narration != null && (
@@ -185,6 +189,8 @@ namespace Bhisi.Api.Controllers
                              v.VoucherNo.StartsWith("JV-RD-CLOSE-") ||
                              v.VoucherNo.StartsWith("JV-RD-PRECLOSE-") ||
                              v.VoucherNo.StartsWith("JV-RD-REN-") ||
+                             v.VoucherNo.StartsWith("JV-RD-COLL-") ||
+                             v.VoucherNo.Contains("-RD-COLL-") ||
                              v.VoucherNo.Contains("-RD-CLOSE-") ||
                              v.VoucherNo.Contains("-RD-PRECLOSE-")) &&
                             !(v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration"))))
@@ -869,15 +875,31 @@ namespace Bhisi.Api.Controllers
             }
             catch { }
 
-            // 4. Savings Module Reversal & Cascade Deletion (skip FD closure/renewal/opening vouchers whose SavingTransactions are reversed in Block 5)
+            // 3.9 Recurring Deposit Installment Collection Rollback (restores RdAccount, FIFO Partial/Pending Schedules, Saving/Pigmy transfers & IBT sibling voucher)
+            bool rdInstallmentRolledBack = false;
             try
             {
-                bool isFdLinkedForSaving = !string.IsNullOrEmpty(voucher.VoucherNo) && (
+                rdInstallmentRolledBack = await Helpers.RdInstallmentCollectionRollbackHelper.RollbackRdInstallmentCollectionByVoucherAsync(
+                    _context,
+                    voucher,
+                    reason,
+                    userId,
+                    username);
+            }
+            catch (InvalidOperationException rdCollEx)
+            {
+                throw new InvalidOperationException(rdCollEx.Message);
+            }
+
+            // 4. Savings Module Reversal & Cascade Deletion (skip FD closure/renewal/opening & RD closure/installment vouchers whose SavingTransactions are already reversed cleanly)
+            try
+            {
+                bool isFdLinkedForSaving = rdInstallmentRolledBack || (!string.IsNullOrEmpty(voucher.VoucherNo) && (
                     Helpers.FdRenewalRollbackHelper.IsFdRenewalVoucher(voucher) ||
                     voucher.VoucherNo.Contains("-FD-CLOSE-") ||
                     voucher.VoucherNo.Contains("-FD-PRECLOSE-") ||
                     voucher.VoucherNo.Contains("-FD-OP-") ||
-                    Helpers.RdClosureSettlementHelper.IsRdClosureOrRenewalVoucher(voucher));
+                    Helpers.RdClosureSettlementHelper.IsRdClosureOrRenewalVoucher(voucher)));
 
                 if (!string.IsNullOrEmpty(voucher.VoucherNo) && !isFdLinkedForSaving)
                 {

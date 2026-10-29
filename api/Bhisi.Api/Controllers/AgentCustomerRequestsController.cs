@@ -303,7 +303,7 @@ namespace Bhisi.Api.Controllers
                                 VoucherNo = uniqueVoucherNo,
                                 VoucherDate = DateTime.Today,
                                 VoucherType = "Receipt",
-                                Status = "Approved",
+                                Status = "Pending",
                                 Narration = $"Pigmy Initial Opening Deposit for A/C {createdPigmyAccount.AccountNo} - {customer.FirstName} {customer.LastName}",
                                 TotalAmount = dto.PigmyData.OpeningBalance
                             };

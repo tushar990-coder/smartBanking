@@ -48,9 +48,9 @@ namespace Bhisi.Api.Models
 
         public bool IsMigrationLocked { get; set; } = false;
 
-        public bool AutoPostVouchers { get; set; } = true;
+        public bool AutoPostVouchers { get; set; } = false;
 
-        public decimal AutoPostVoucherLimit { get; set; } = 50000m;
+        public decimal AutoPostVoucherLimit { get; set; } = 0m;
 
         public bool IsMobileCompulsory { get; set; } = true; // मोबाईल नंबर अनिवार्य
 

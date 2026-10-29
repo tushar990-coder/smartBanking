@@ -835,10 +835,10 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
-                bool autoPost = sanstha?.AutoPostVouchers ?? true;
-                decimal autoPostLimit = sanstha?.AutoPostVoucherLimit ?? 50000m;
+                // Strict 100% Maker-Checker policy (auto-post removed)
+                // All loan collection vouchers require Manager/Checker passing
                 decimal totalVoucherAmt = totalReceiptAmount + totalWaiverAmount;
-                string vStatus = (autoPost && totalVoucherAmt <= autoPostLimit) ? "Approved" : "Pending";
+                var (vStatus, _, _) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, totalVoucherAmt, collection.ApprovedByUserID ?? userId);
 
                 string borrowerName = loanAccFetched?.Customer != null 
                     ? $"{loanAccFetched.Customer.FirstName} {loanAccFetched.Customer.LastName}".Trim() 
@@ -1269,7 +1269,7 @@ namespace Bhisi.Api.Controllers
                 if (voucher != null)
                 {
                     voucher.VoucherDate = updatedData.CollectionDate;
-                    voucher.Status = "Approved";
+                    if (voucher.Status == "Approved") return BadRequest(new { message = "मंजूर (Approved) वसुली पावतीत बदल करण्यापूर्वी कृपया व्हाउचर पासिंगमधून ती अन-पास (Unpass) करा." });
                     _context.Entry(voucher).State = EntityState.Modified;
 
                     if (!isMinorPigmy && !isMinorSaving && voucher.VoucherDetails != null)

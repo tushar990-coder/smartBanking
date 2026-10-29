@@ -65,6 +65,15 @@ const formatDateForDisplay = (dateStr?: string) => {
   return dateStr;
 };
 
+const normalizeNumericStr = (val: string | number): string => {
+  const str = String(val ?? '');
+  const devanagariConverted = str.replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x0966));
+  return devanagariConverted.replace(/[^0-9.]/g, '');
+};
+
+const isAbortErr = (err: any) =>
+  axios.isCancel(err) || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
+
 const SavingInterestSettingMaster: React.FC = () => {
   const [settings, setSettings] = useState<SavingInterestSetting[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -78,6 +87,8 @@ const SavingInterestSettingMaster: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showListModal, setShowListModal] = useState(false);
 
+  const isMountedRef = useRef(true);
+  const topBannerRef = useRef<HTMLDivElement>(null);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const schemeNameInputRef = useRef<HTMLInputElement>(null);
 
@@ -116,46 +127,64 @@ const SavingInterestSettingMaster: React.FC = () => {
     return String(nextNum).padStart(3, '0');
   };
 
-  const fetchLedgers = async () => {
+  const fetchLedgers = async (signal?: AbortSignal) => {
     try {
-      const response = await axios.get('/api/Ledgers');
+      const response = await axios.get('/api/Ledgers', { signal });
+      if (!isMountedRef.current || signal?.aborted) return;
       setLedgers(response.data || []);
     } catch (err) {
+      if (isAbortErr(err)) return;
       console.error('Error fetching ledgers', err);
     }
   };
 
-  const fetchSettings = async () => {
+  const fetchSettings = async (signal?: AbortSignal, preserveEdit = false) => {
+    if (!isMountedRef.current || signal?.aborted) return;
     setLoading(true);
-    setError('');
     try {
-      const response = await axios.get(API_URL);
+      const response = await axios.get(API_URL, { signal });
+      if (!isMountedRef.current || signal?.aborted) return;
       const fetched: SavingInterestSetting[] = response.data || [];
       setSettings(fetched);
 
-      if (!isEditMode) {
+      if (!isEditMode && !preserveEdit) {
         const nextCode = generateSchemeCode(fetched);
         setFormData((prev) => ({ ...prev, schemeCode: nextCode }));
       }
     } catch (err: any) {
+      if (isAbortErr(err) || !isMountedRef.current) return;
       console.error('Error fetching settings', err);
       setError('व्याज दर सेटिंग लोड करताना त्रुटी आली.');
     } finally {
-      setLoading(false);
+      if (isMountedRef.current && !signal?.aborted) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchSettings();
-    fetchLedgers();
+    isMountedRef.current = true;
+    const controller = new AbortController();
+    fetchSettings(controller.signal);
+    fetchLedgers(controller.signal);
+    return () => {
+      isMountedRef.current = false;
+      controller.abort();
+    };
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name?: string; value: string | number } }) => {
     const { name, value } = e.target;
     if (!name) return;
+    const nextValue =
+      name.endsWith('ID')
+        ? (parseInt(value as string, 10) || 0)
+        : (name === 'minimumBalance' || name === 'interestRate')
+          ? normalizeNumericStr(value)
+          : value;
     setFormData((prev) => ({
       ...prev,
-      [name]: name.endsWith('ID') ? (parseInt(value as string, 10) || 0) : value
+      [name]: nextValue
     }));
   };
 
@@ -234,35 +263,42 @@ const SavingInterestSettingMaster: React.FC = () => {
     }
   };
 
+  const showValidationError = (msg: string) => {
+    setError(msg);
+    topBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    const rate = parseFloat(formData.interestRate);
+    const normalizedRateStr = normalizeNumericStr(formData.interestRate);
+    const rate = parseFloat(normalizedRateStr);
     if (isNaN(rate) || rate < 0 || rate > 100) {
-      setError('कृपया योग्य व्याजदर टाका (उदा. 4.0).');
+      showValidationError('कृपया योग्य व्याजदर टाका (उदा. 4.0).');
       return;
     }
 
-    const minBal = formData.minimumBalance === '' ? 0 : Number(formData.minimumBalance);
+    const normalizedMinStr = normalizeNumericStr(formData.minimumBalance);
+    const minBal = normalizedMinStr === '' ? 0 : Number(normalizedMinStr);
     if (Number.isNaN(minBal) || minBal < 0) {
-      setError('किमान शिल्लक मर्यादा (Minimum Balance) ० किंवा त्यापेक्षा जास्त असावी.');
+      showValidationError('किमान शिल्लक मर्यादा (Minimum Balance) ० किंवा त्यापेक्षा जास्त असावी.');
       return;
     }
 
     if (!formData.schemeCode.trim()) {
-      setError('कृपया योजना कोड टाका.');
+      showValidationError('कृपया योजना कोड टाका.');
       return;
     }
 
     if (!formData.savingLiabilityLedgerID || formData.savingLiabilityLedgerID <= 0) {
-      setError('कृपया १. बचत ठेव देयता खाते (Saving Liability Ledger) निवडा.');
+      showValidationError('कृपया १. बचत ठेव देयता खाते (Saving Liability Ledger) निवडा.');
       return;
     }
 
-    if (!formData.interestExpenseLedgerID || formData.interestExpenseLedgerID <= 0) {
-      setError('कृपया २. बचत व्याज खर्च खाते (Interest Expense Ledger) निवडा.');
+    if (!isEditMode && (!formData.interestExpenseLedgerID || formData.interestExpenseLedgerID <= 0)) {
+      showValidationError('कृपया २. बचत व्याज खर्च खाते (Interest Expense Ledger) निवडा.');
       return;
     }
 
@@ -282,24 +318,44 @@ const SavingInterestSettingMaster: React.FC = () => {
         interestPayableLedgerID: formData.interestPayableLedgerID > 0 ? formData.interestPayableLedgerID : null
       };
 
+      const schemeDisplayLabel = formData.schemeName.trim() || formData.schemeCode.trim();
+      let successMsg = '';
+
       if (isEditMode && editingId) {
-        await axios.put(`${API_URL}/${editingId}`, {
+        const res = await axios.put(`${API_URL}/${editingId}`, {
           settingID: editingId,
           ...payload
         });
-        setSuccess(`बचत ठेव व्याजदर योजना '${formData.schemeName || formData.schemeCode}' (किमान शिल्लक: ₹${minBal.toFixed(2)}) यशस्वीरीत्या अद्ययावत केली व संबंधित बचत खात्यांना लागू झाली!`);
+        const savedMin = res?.data?.minimumBalance !== undefined ? Number(res.data.minimumBalance) : minBal;
+        setSettings((prev) =>
+          prev.map((item) =>
+            item.settingID === editingId ? { ...item, ...payload, minimumBalance: savedMin } : item
+          )
+        );
+        successMsg = `बचत ठेव व्याजदर योजना '${schemeDisplayLabel}' (किमान शिल्लक: ₹${savedMin.toFixed(2)}) यशस्वीरीत्या अद्ययावत केली व संबंधित बचत खात्यांना लागू झाली!`;
       } else {
-        await axios.post(API_URL, payload);
-        setSuccess(`नवीन बचत ठेव व्याजदर योजना '${formData.schemeName || formData.schemeCode}' (किमान शिल्लक: ₹${minBal.toFixed(2)}) यशस्वीरीत्या जतन झाली!`);
+        const res = await axios.post(API_URL, payload);
+        const savedMin = res?.data?.minimumBalance !== undefined ? Number(res.data.minimumBalance) : minBal;
+        successMsg = `नवीन बचत ठेव व्याजदर योजना '${schemeDisplayLabel}' (किमान शिल्लक: ₹${savedMin.toFixed(2)}) यशस्वीरीत्या जतन झाली!`;
       }
 
+      if (!isMountedRef.current) return;
       resetForm();
-      fetchSettings();
+      setSuccess(successMsg);
+      await fetchSettings();
+      topBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err: any) {
+      if (!isMountedRef.current) return;
       console.error('Error saving setting:', err);
-      setError(err?.response?.data?.message || 'व्याज दर सेटिंग जतन करताना त्रुटी आली.');
+      const apiMsg =
+        typeof err?.response?.data === 'string'
+          ? err.response.data
+          : (err?.response?.data?.message || 'व्याज दर सेटिंग जतन करताना त्रुटी आली.');
+      showValidationError(apiMsg);
     } finally {
-      setSaving(false);
+      if (isMountedRef.current) {
+        setSaving(false);
+      }
     }
   };
 
@@ -353,7 +409,7 @@ const SavingInterestSettingMaster: React.FC = () => {
     <div className="p-2 sm:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
       
       {/* Top Sleek CBS Header Banner */}
-      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
+      <div ref={topBannerRef} className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
             <Percent size={18} className="stroke-[2.5]" />
@@ -509,11 +565,11 @@ const SavingInterestSettingMaster: React.FC = () => {
                   type="text"
                   required
                   readOnly={!allowManualCode}
-                  placeholder="उदा. 101, 102"
-                  maxLength={3}
+                  placeholder="उदा. 101, SAV001"
+                  maxLength={20}
                   name="schemeCode"
                   value={formData.schemeCode}
-                  onChange={(e) => setFormData({ ...formData, schemeCode: e.target.value.replace(/\D/g, '').slice(0, 3) })}
+                  onChange={(e) => setFormData({ ...formData, schemeCode: e.target.value.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20) })}
                   className={`${inputClass} font-mono font-bold ${
                     allowManualCode ? 'bg-amber-50 text-amber-900 border-amber-400' : 'bg-slate-100 text-primary cursor-not-allowed'
                   }`}
@@ -564,8 +620,8 @@ const SavingInterestSettingMaster: React.FC = () => {
                   वार्षिक व्याजदर (% p.a.) <span className="text-red-500">*</span>
                 </label>
                 <input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   name="interestRate"
                   value={formData.interestRate}
                   onChange={handleInputChange}
@@ -580,9 +636,8 @@ const SavingInterestSettingMaster: React.FC = () => {
                   किमान शिल्लक मर्यादा (Min. Balance ₹) <span className="text-red-500">*</span>
                 </label>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   name="minimumBalance"
                   value={formData.minimumBalance}
                   onChange={handleInputChange}

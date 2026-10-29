@@ -2642,9 +2642,9 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Journal",
                     Narration = $"बॅच कर्ज व्याज आकारणी (Loan Interest Run): {request.PostingDate:dd/MM/yyyy} - एकूण खाती: {processedCount} {(request.PostingMode == "ForceCapitalize" ? "[सर्व मुद्दलात]" : (request.PostingMode == "ForceSeparate" ? "[सर्व स्वतंत्र येणे व्याजात]" : "[योजनेनुसार स्वयंचलित]"))}",
                     TotalAmount = totalBatchInterest,
-                    Status = "Approved",
-                    ApprovedBy = 1,
-                    ApprovedOn = DateTime.Now
+                    Status = "Pending",
+                    ApprovedBy = null,
+                    ApprovedOn = null
                 };
                 _context.Vouchers.Add(voucher);
                 await _context.SaveChangesAsync();

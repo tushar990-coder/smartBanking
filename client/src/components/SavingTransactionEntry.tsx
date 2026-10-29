@@ -156,6 +156,10 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     customerId: number;
   } | null>(null);
   const [noAccountFoundAlert, setNoAccountFoundAlert] = useState<string | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+
+  const isAbortError = (err: any) =>
+    axios.isCancel(err) || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
 
   const API_URL = '/api';
 
@@ -180,18 +184,26 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   }, [user?.businessDate]);
 
   useEffect(() => {
-    fetchAccounts();
-    fetchTransactions();
+    isMountedRef.current = true;
+    const controller = new AbortController();
+    fetchAccounts(undefined, controller.signal);
+    fetchTransactions(controller.signal);
+    return () => {
+      isMountedRef.current = false;
+      controller.abort();
+    };
   }, []);
 
   // Voucher Passing Mode: Fetch transaction details linked to voucher
   useEffect(() => {
     if (!isPassingMode || !voucherIdFromUrl) return;
+    const controller = new AbortController();
 
     const loadPassingTxn = async () => {
       setLoading(true);
       try {
-        const res = await axios.get(`${API_URL}/SavingTransactions/by-voucher/${voucherIdFromUrl}`);
+        const res = await axios.get(`${API_URL}/SavingTransactions/by-voucher/${voucherIdFromUrl}`, { signal: controller.signal });
+        if (!isMountedRef.current || controller.signal.aborted) return;
         const d = res.data;
         if (!d) return;
 
@@ -233,14 +245,19 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
           } as any);
         }
       } catch (err) {
+        if (isAbortError(err)) return;
+        if (!isMountedRef.current || controller.signal.aborted) return;
         console.error('Failed to load saving transaction for passing:', err);
         setError('बचत व्हाउचर नोंद लोड करताना त्रुटी आली.');
       } finally {
-        setLoading(false);
+        if (isMountedRef.current && !controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     loadPassingTxn();
+    return () => controller.abort();
   }, [isPassingMode, voucherIdFromUrl]);
 
   const parseBankLedgers = (allLedgers: any[]) => {
@@ -248,7 +265,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     setBankLedgers(filterBankAccountLedgers(allLedgers));
   };
 
-  const fetchAccounts = async (preserveAccountId?: number) => {
+  const fetchAccounts = async (preserveAccountId?: number, signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams(window.location.search);
       let cifStr = params.get('cifNo') || params.get('cif');
@@ -289,10 +306,17 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         try {
           let fastRes: any = null;
           if (accountIdStr) {
-            fastRes = await axios.get(`${API_URL}/SavingAccounts/${accountIdStr}`).catch(() => null);
+            fastRes = await axios.get(`${API_URL}/SavingAccounts/${accountIdStr}`, { signal }).catch((err) => {
+              if (isAbortError(err)) throw err;
+              return null;
+            });
           } else if (customerIdStr) {
-            fastRes = await axios.get(`${API_URL}/SavingAccounts?customerId=${customerIdStr}`).catch(() => null);
+            fastRes = await axios.get(`${API_URL}/SavingAccounts?customerId=${customerIdStr}`, { signal }).catch((err) => {
+              if (isAbortError(err)) throw err;
+              return null;
+            });
           }
+          if (!isMountedRef.current || signal?.aborted) return;
           if (fastRes?.data) {
             const matchedList: SavingAccount[] = Array.isArray(fastRes.data) ? fastRes.data : [fastRes.data];
             if (matchedList.length === 1) {
@@ -317,16 +341,25 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             }
           }
         } catch (fastErr) {
+          if (isAbortError(fastErr)) return;
           console.error('Fast target lookup error, falling back to full list', fastErr);
         }
       }
 
       // Concurrently load full accounts, interest settings, and ledgers (single call for ledgers)
       const [accRes, interestRes, ledgersRes] = await Promise.all([
-        axios.get(`${API_URL}/SavingAccounts`),
-        axios.get(`${API_URL}/SavingSettings/Interest`).catch(() => ({ data: [] })),
-        axios.get(`${API_URL}/Ledgers`).catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/SavingAccounts`, { signal }),
+        axios.get(`${API_URL}/SavingSettings/Interest`, { signal }).catch((err) => {
+          if (isAbortError(err)) throw err;
+          return { data: [] };
+        }),
+        axios.get(`${API_URL}/Ledgers`, { signal }).catch((err) => {
+          if (isAbortError(err)) throw err;
+          return { data: [] };
+        })
       ]);
+
+      if (!isMountedRef.current || signal?.aborted) return;
 
       const accData: SavingAccount[] = accRes.data || [];
       setAccounts(accData);
@@ -459,11 +492,13 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         }
       }
     } catch (err) {
+      if (isAbortError(err)) return;
       console.error('Error fetching accounts or interest settings', err);
     }
   };
 
   const applySelectedAccount = (acc: SavingAccount, overrideType?: string | null) => {
+    if (!isMountedRef.current) return;
     setSelectedLedgerID(acc.ledgerID || 0);
     setFormData((prev) => ({
       ...prev,
@@ -473,7 +508,9 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     setSelectedAccount(acc);
     setError('');
     setTimeout(() => {
-      amountInputRef.current?.focus();
+      if (isMountedRef.current) {
+        amountInputRef.current?.focus();
+      }
     }, 150);
   };
 
@@ -482,11 +519,13 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     setShowMultiAccountModal(false);
   };
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (signal?: AbortSignal) => {
     try {
-      const response = await axios.get(`${API_URL}/SavingTransactions?page=1&pageSize=30`);
+      const response = await axios.get(`${API_URL}/SavingTransactions?page=1&pageSize=30`, { signal });
+      if (!isMountedRef.current || signal?.aborted) return;
       setTransactions(response.data || []);
     } catch (err) {
+      if (isAbortError(err)) return;
       console.error('Error fetching transactions', err);
     }
   };

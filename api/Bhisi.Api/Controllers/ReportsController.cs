@@ -8839,12 +8839,12 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Payment",
                     Narration = narrFrom,
                     TotalAmount = request.SettlementAmount,
-                    Status = "Approved",
+                    Status = "Pending",
                     IsIbtVoucher = true,
                     TargetBranchID = request.ToBranchID,
                     CreatedBy = request.CreatedBy ?? 1,
-                    ApprovedBy = request.CreatedBy ?? 1,
-                    ApprovedOn = DateTime.Now
+                    ApprovedBy = null,
+                    ApprovedOn = null
                 };
                 _context.Vouchers.Add(vFrom);
                 await _context.SaveChangesAsync();
@@ -8881,12 +8881,12 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Receipt",
                     Narration = narrTo,
                     TotalAmount = request.SettlementAmount,
-                    Status = "Approved",
+                    Status = "Pending",
                     IsIbtVoucher = true,
                     TargetBranchID = request.FromBranchID,
                     CreatedBy = request.CreatedBy ?? 1,
-                    ApprovedBy = request.CreatedBy ?? 1,
-                    ApprovedOn = DateTime.Now,
+                    ApprovedBy = null,
+                    ApprovedOn = null,
                     RelatedVoucherID = vFrom.VoucherID
                 };
                 _context.Vouchers.Add(vTo);

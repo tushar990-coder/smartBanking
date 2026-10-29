@@ -60,6 +60,7 @@ interface FdAccount {
   status: string;
   nomineeName: string;
   paymentMode?: string;
+  isLegacyAccount?: boolean;
 }
 
 export interface FdAccountOpeningProps {
@@ -988,9 +989,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     setListError('');
     setListSuccess('');
     try {
-      const url = bId && bId > 0 ? `${API_URL}/FdAccounts?branchId=${bId}` : `${API_URL}/FdAccounts`;
-      const response = await axios.get(url);
-      setFdList(Array.isArray(response.data) ? response.data : []);
+      const params = new URLSearchParams({ excludeOpeningBalance: 'true' });
+      if (bId && bId > 0) {
+        params.set('branchId', String(bId));
+      }
+      const response = await axios.get(`${API_URL}/FdAccounts?${params.toString()}`);
+      const rawList = Array.isArray(response.data) ? response.data : [];
+      setFdList(rawList.filter((fd: any) => !fd.isLegacyAccount));
     } catch (err) {
       console.error('Error fetching FD list', err);
     } finally {

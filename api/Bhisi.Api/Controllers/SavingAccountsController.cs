@@ -258,6 +258,7 @@ namespace Bhisi.Api.Controllers
                     ?? (s.LedgerID > 0
                         ? allSchemes.FirstOrDefault(x => x.SavingLiabilityLedgerID == s.LedgerID || x.LedgerID == s.LedgerID)
                         : null)
+                    ?? allSchemes.FirstOrDefault(x => x.InterestRate == s.InterestRate)
                     ?? (allSchemes.Count == 1 ? allSchemes[0] : null);
 
                 decimal effectiveMinBal = Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalance(s, matchedScheme);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
@@ -150,13 +150,23 @@ const SavingAccountMaster: React.FC = () => {
   const [selectedJointCustomerID, setSelectedJointCustomerID] = useState<number>(0);
   const [autoAccountNo, setAutoAccountNo] = useState<string>('');
   const [isCustomAccountNo, setIsCustomAccountNo] = useState<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
+
+  const isAbortError = (err: any) =>
+    axios.isCancel(err) || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
 
   useEffect(() => {
-    fetchAccounts();
-    fetchCustomers();
-    fetchLedgers();
-    fetchBranches();
-    fetchNextAccountNo();
+    isMountedRef.current = true;
+    const controller = new AbortController();
+    fetchAccounts(controller.signal);
+    fetchCustomers(controller.signal);
+    fetchLedgers(undefined, undefined, undefined, undefined, controller.signal);
+    fetchBranches(controller.signal);
+    fetchNextAccountNo(undefined, undefined, controller.signal);
+    return () => {
+      isMountedRef.current = false;
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -186,20 +196,23 @@ const SavingAccountMaster: React.FC = () => {
     }
   }, [customers]);
 
-  const fetchBranches = async () => {
+  const fetchBranches = async (signal?: AbortSignal) => {
     try {
-      const response = await axios.get(`${API_URL}/Branches`);
+      const response = await axios.get(`${API_URL}/Branches`, { signal });
+      if (!isMountedRef.current || signal?.aborted) return;
       setBranches(response.data);
     } catch (err) {
+      if (isAbortError(err)) return;
       console.error('Error fetching branches', err);
     }
   };
 
-  const fetchNextAccountNo = async (bId?: number, sId?: number) => {
+  const fetchNextAccountNo = async (bId?: number, sId?: number, signal?: AbortSignal) => {
     try {
       const selectedBranchId = bId || formData.branchID || 1;
       const selectedSchemeId = sId || formData.savingSchemeID || 1;
-      const response = await axios.get(`${API_URL}/SavingAccounts/next-account-no?branchId=${selectedBranchId}&schemeId=${selectedSchemeId}`);
+      const response = await axios.get(`${API_URL}/SavingAccounts/next-account-no?branchId=${selectedBranchId}&schemeId=${selectedSchemeId}`, { signal });
+      if (!isMountedRef.current || signal?.aborted) return;
       if (response.data) {
         const nextNo = typeof response.data === 'string'
           ? response.data
@@ -216,6 +229,7 @@ const SavingAccountMaster: React.FC = () => {
         }
       }
     } catch (err) {
+      if (isAbortError(err)) return;
       console.error('Error fetching next account no', err);
     }
   };
@@ -242,30 +256,45 @@ const SavingAccountMaster: React.FC = () => {
     }));
   };
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = async (signal?: AbortSignal) => {
     try {
-      const response = await axios.get(`${API_URL}/SavingAccounts`);
+      const response = await axios.get(`${API_URL}/SavingAccounts`, { signal });
+      if (!isMountedRef.current || signal?.aborted) return;
       setAccounts(response.data);
     } catch (err) {
+      if (isAbortError(err)) return;
       console.error('Error fetching accounts', err);
     }
   };
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (signal?: AbortSignal) => {
     try {
-      const response = await axios.get(`${API_URL}/Customers`);
+      const response = await axios.get(`${API_URL}/Customers`, { signal });
+      if (!isMountedRef.current || signal?.aborted) return;
       setCustomers(response.data);
     } catch (err) {
+      if (isAbortError(err)) return;
       console.error('Error fetching customers', err);
     }
   };
 
-  const fetchLedgers = async (autoSelectLedgerId?: number, autoSelectRate?: number, autoSelectMinBal?: number, autoSelectSchemeId?: number) => {
+  const fetchLedgers = async (
+    autoSelectLedgerId?: number,
+    autoSelectRate?: number,
+    autoSelectMinBal?: number,
+    autoSelectSchemeId?: number,
+    signal?: AbortSignal
+  ) => {
     try {
       const [ledgersRes, interestRes] = await Promise.all([
-        axios.get(`${API_URL}/Ledgers`),
-        axios.get(`${API_URL}/SavingSettings/Interest`).catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/Ledgers`, { signal }),
+        axios.get(`${API_URL}/SavingSettings/Interest`, { signal }).catch((err) => {
+          if (isAbortError(err)) throw err;
+          return { data: [] };
+        })
       ]);
+
+      if (!isMountedRef.current || signal?.aborted) return;
 
       const allLedgersList: Ledger[] = Array.isArray(ledgersRes.data) ? ledgersRes.data : [];
       setAllGlLedgers(allLedgersList);
@@ -328,6 +357,7 @@ const SavingAccountMaster: React.FC = () => {
         }));
       }
     } catch (err) {
+      if (isAbortError(err)) return;
       console.error('Error fetching ledgers', err);
     }
   };

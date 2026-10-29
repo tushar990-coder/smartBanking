@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
   Building2, RefreshCw, CheckCircle2, ShieldCheck, MapPin, FileBadge, 
-  RotateCcw, CheckSquare, Coins, IndianRupee, Phone, Mail, Calendar, 
+  RotateCcw, CheckSquare, IndianRupee, Phone, Mail, Calendar, 
   FileText, Shield, Sparkles
 } from 'lucide-react';
 
@@ -34,7 +34,7 @@ interface SansthaDetail {
 export default function SansthaMaster() {
   const [sansthaDetails, setSansthaDetails] = useState<SansthaDetail[]>([]);
   const [formData, setFormData] = useState<Partial<SansthaDetail>>({
-    sansthaName: '', address: '', village: '', taluka: '', district: '', state: '', pinCode: '', contactNo: '', email: '', registrationNo: '', registrationDate: '', gstNo: '', logoPath: '', autoPostVouchers: true, autoPostVoucherLimit: 50000,
+    sansthaName: '', address: '', village: '', taluka: '', district: '', state: '', pinCode: '', contactNo: '', email: '', registrationNo: '', registrationDate: '', gstNo: '', logoPath: '', autoPostVouchers: false, autoPostVoucherLimit: 0,
     isMobileCompulsory: true, isAadhaarCompulsory: true, isPanCompulsory: false
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -167,8 +167,8 @@ export default function SansthaMaster() {
         registrationDate: normalizeDateForApi(formData.registrationDate),
         gstNo: formData.gstNo ? formData.gstNo.trim() : null,
         logoPath: formData.logoPath || null,
-        autoPostVouchers: formData.autoPostVouchers ?? true,
-        autoPostVoucherLimit: Number(formData.autoPostVoucherLimit) || 50000,
+        autoPostVouchers: false,
+        autoPostVoucherLimit: 0,
         isMobileCompulsory: formData.isMobileCompulsory ?? true,
         isAadhaarCompulsory: formData.isAadhaarCompulsory ?? true,
         isPanCompulsory: formData.isPanCompulsory ?? false,
@@ -214,7 +214,7 @@ export default function SansthaMaster() {
               <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Sanstha Profile & Core Banking Configurations)</span>
             </h1>
             <p className="text-[11px] text-gray-500 font-medium">
-              पतसंस्थेची अधिकृत माहिती, नोंदणी तपशील, पत्ता, केवायसी अनिवार्यतेचे नियम व ऑटो-व्हाउचर मर्यादा व्यवस्थापन
+              पतसंस्थेची अधिकृत माहिती, नोंदणी तपशील, पत्ता व केवायसी अनिवार्यतेचे नियम व्यवस्थापन
             </p>
           </div>
         </div>
@@ -280,13 +280,13 @@ export default function SansthaMaster() {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-amber-50 text-amber-700 border border-amber-200 rounded">
-            <Coins className="w-4 h-4" />
+          <div className="p-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
+            <CheckCircle2 className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">ऑटो-व्हाउचर मर्यादा</div>
-            <div className="text-xs font-black text-amber-800 font-mono">
-              ₹{(Number(formData.autoPostVoucherLimit) || 50000).toLocaleString('en-IN')}
+            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">व्हाउचर पासिंग नियम</div>
+            <div className="text-xs font-black text-emerald-800">
+              १००% मॅनेजर मंजुरी
             </div>
           </div>
         </div>
@@ -516,60 +516,6 @@ export default function SansthaMaster() {
                 </span>
               </div>
             </label>
-          </div>
-        </div>
-
-        {/* SECTION 4: दैनंदिन व्हाउचर ऑटो-पोस्ट नियम */}
-        <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
-          <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
-            <div className="flex items-center gap-1.5">
-              <Coins className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">४. दैनंदिन व्हाउचर ऑटो-पोस्ट नियम (Daily Voucher Auto-Posting & Limit)</h2>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input 
-                type="checkbox" 
-                id="autoPostVouchers" 
-                name="autoPostVouchers" 
-                checked={formData.autoPostVouchers !== false} 
-                onChange={handleChange}
-                className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded cursor-pointer" 
-              />
-              <span className="text-xs font-bold text-gray-900">
-                व्हाउचर सेव्ह केल्यावर आपोआप पोस्ट करा (Auto-Post Vouchers)
-              </span>
-            </label>
-
-            {formData.autoPostVouchers !== false && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center pt-2 border-t border-gray-100 animate-in fade-in duration-200">
-                <div>
-                  <label className={labelClass}>
-                    ऑटो पोस्ट व्हाउचर मर्यादा (रक्कम ₹) / Auto-Post Limit (₹) <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-2.5 top-1.5 text-xs text-gray-500 font-bold">₹</span>
-                    <input 
-                      type="number" 
-                      name="autoPostVoucherLimit" 
-                      value={formData.autoPostVoucherLimit ?? 50000} 
-                      onChange={handleChange} 
-                      onFocus={(e) => e.target.select()} 
-                      min="0" 
-                      step="1000"
-                      className={`${inputClass} pl-6 font-bold font-mono text-primary`} 
-                      placeholder="उदा. 50000" 
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-blue-50/70 border border-blue-200 p-2 rounded-sm text-[10.5px] text-gray-700 leading-relaxed">
-                  💡 <strong>नियम:</strong> या मर्यादेपर्यंतचे (उदा. <strong>₹{(formData.autoPostVoucherLimit ?? 50000).toLocaleString('en-IN')}</strong>) व्हाउचर सेव्ह करताच आपोआप मंजूर (Approved/Posted) होतील. यापेक्षा जास्त रक्कमेचे व्हाउचर मॅनेजर मंजुरीसाठी पेंडिंग (Pending) राहतील.
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

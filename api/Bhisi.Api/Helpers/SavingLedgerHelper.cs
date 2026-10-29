@@ -412,6 +412,12 @@ namespace Bhisi.Api.Helpers
                 if (byPrimaryLedger != null) return byPrimaryLedger;
             }
 
+            if (savingAccount != null)
+            {
+                var byInterestRate = schemes.FirstOrDefault(s => s.InterestRate == savingAccount.InterestRate);
+                if (byInterestRate != null) return byInterestRate;
+            }
+
             // If only a single saving scheme exists in the institution, fall back to it
             if (schemes.Count == 1)
             {
@@ -424,23 +430,20 @@ namespace Bhisi.Api.Helpers
         /// <summary>
         /// Resolves the effective Minimum Balance (किमान शिल्लक मर्यादा) for a Saving Account.
         /// Supports ₹0 (Zero-Balance accounts) as well as any positive configured amount.
+        /// Always prioritizes the linked Saving Scheme's live MinimumBalance policy when resolved.
         /// </summary>
         public static decimal ResolveEffectiveMinimumBalance(
             SavingAccountMaster? savingAccount,
             SavingInterestSetting? resolvedScheme)
         {
-            if (savingAccount == null)
-            {
-                return Math.Max(0m, resolvedScheme?.MinimumBalance ?? 0m);
-            }
-
-            // If the account still carries the untouched legacy hardcoded 500 default while its scheme specifies a different policy, honor the scheme policy
-            if (resolvedScheme != null &&
-                !savingAccount.UpdatedOn.HasValue &&
-                savingAccount.MinimumBalance == 500m &&
-                resolvedScheme.MinimumBalance != 500m)
+            if (resolvedScheme != null)
             {
                 return Math.Max(0m, resolvedScheme.MinimumBalance);
+            }
+
+            if (savingAccount == null)
+            {
+                return 0m;
             }
 
             return Math.Max(0m, savingAccount.MinimumBalance);

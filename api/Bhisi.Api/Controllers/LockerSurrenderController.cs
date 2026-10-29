@@ -37,7 +37,8 @@ namespace Bhisi.Api.Controllers
 
             var list = await query
                 .OrderByDescending(s => s.SurrenderDate)
-                .Select(s => new {
+                .Select(s => new
+                {
                     s.SurrenderID,
                     s.BranchID,
                     s.AllotmentID,
@@ -52,7 +53,7 @@ namespace Bhisi.Api.Controllers
                     s.DamagePenaltyDeduction,
                     s.NetRefundAmount,
                     s.RefundPaymentMode,
-                BankLedgerID = (s.RefundPaymentMode == "BankTransfer" || s.RefundPaymentMode == "Bank") && s.Voucher != null ? (s.Voucher.VoucherDetails.Where(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank")).Select(d => (int?)d.LedgerID).FirstOrDefault() ?? 0) : 0,
+                    BankLedgerID = (s.RefundPaymentMode == "BankTransfer" || s.RefundPaymentMode == "Bank") && s.Voucher != null ? (s.Voucher.VoucherDetails.Where(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank")).Select(d => (int?)d.LedgerID).FirstOrDefault() ?? 0) : 0,
                     s.VoucherID,
                     VoucherNo = s.Voucher != null ? s.Voucher.VoucherNo : "",
                     s.Remarks,
@@ -86,7 +87,8 @@ namespace Bhisi.Api.Controllers
                     return NotFound(new { message = "व्हाउचर नोंद सापडली नाही." });
                 }
 
-                return Ok(new {
+                return Ok(new
+                {
                     SurrenderID = 0,
                     BranchID = voucher.BranchID,
                     AllotmentID = 0,
@@ -106,7 +108,8 @@ namespace Bhisi.Api.Controllers
                     NetRefundAmount = voucher.TotalAmount,
                     RefundPaymentMode = voucher.VoucherType == "Journal" ? "SavingCredit" : "Cash",
                     Remarks = voucher.Narration,
-                    Voucher = new {
+                    Voucher = new
+                    {
                         voucher.VoucherID,
                         voucher.VoucherNo,
                         voucher.VoucherDate,
@@ -114,7 +117,8 @@ namespace Bhisi.Api.Controllers
                         voucher.TotalAmount,
                         voucher.Narration,
                         voucher.Status,
-                        Details = voucher.VoucherDetails.Select(d => new {
+                        Details = voucher.VoucherDetails.Select(d => new
+                        {
                             d.VoucherDetailID,
                             d.LedgerID,
                             LedgerName = d.Ledger != null ? d.Ledger.LedgerName : "",
@@ -125,7 +129,8 @@ namespace Bhisi.Api.Controllers
                 });
             }
 
-            return Ok(new {
+            return Ok(new
+            {
                 s.SurrenderID,
                 s.BranchID,
                 s.AllotmentID,
@@ -134,15 +139,15 @@ namespace Bhisi.Api.Controllers
                 CabinetNo = s.Allotment != null && s.Allotment.Locker != null ? s.Allotment.Locker.CabinetNo : "",
                 KeyNo = s.Allotment != null && s.Allotment.Locker != null ? s.Allotment.Locker.KeyNo : "",
                 LockerTypeName = s.Allotment != null && s.Allotment.Locker != null && s.Allotment.Locker.LockerType != null ? s.Allotment.Locker.LockerType.TypeName : "",
-                MemberName = s.Allotment != null && s.Allotment.Customer != null 
-                    ? $"{s.Allotment.Customer.FirstName} {s.Allotment.Customer.LastName}" 
-                    : (s.Allotment != null && s.Allotment.Member != null && s.Allotment.Member.Customer != null 
-                        ? $"{s.Allotment.Member.Customer.FirstName} {s.Allotment.Member.Customer.LastName}" 
+                MemberName = s.Allotment != null && s.Allotment.Customer != null
+                    ? $"{s.Allotment.Customer.FirstName} {s.Allotment.Customer.LastName}"
+                    : (s.Allotment != null && s.Allotment.Member != null && s.Allotment.Member.Customer != null
+                        ? $"{s.Allotment.Member.Customer.FirstName} {s.Allotment.Member.Customer.LastName}"
                         : ""),
-                CustomerCode = s.Allotment != null && s.Allotment.Customer != null 
-                    ? (s.Allotment.Customer.CIFNo ?? "") 
-                    : (s.Allotment != null && s.Allotment.Member != null && s.Allotment.Member.Customer != null 
-                        ? (s.Allotment.Member.Customer.CIFNo ?? "") 
+                CustomerCode = s.Allotment != null && s.Allotment.Customer != null
+                    ? (s.Allotment.Customer.CIFNo ?? "")
+                    : (s.Allotment != null && s.Allotment.Member != null && s.Allotment.Member.Customer != null
+                        ? (s.Allotment.Member.Customer.CIFNo ?? "")
                         : ""),
                 s.SurrenderDate,
                 s.KeyReceived,
@@ -154,7 +159,8 @@ namespace Bhisi.Api.Controllers
                 s.RefundPaymentMode,
                 BankLedgerID = (s.RefundPaymentMode == "BankTransfer" || s.RefundPaymentMode == "Bank") && s.Voucher != null ? (s.Voucher.VoucherDetails.Where(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank")).Select(d => (int?)d.LedgerID).FirstOrDefault() ?? 0) : 0,
                 s.Remarks,
-                Voucher = s.Voucher != null ? new {
+                Voucher = s.Voucher != null ? new
+                {
                     s.Voucher.VoucherID,
                     s.Voucher.VoucherNo,
                     s.Voucher.VoucherDate,
@@ -162,7 +168,8 @@ namespace Bhisi.Api.Controllers
                     s.Voucher.TotalAmount,
                     s.Voucher.Narration,
                     s.Voucher.Status,
-                    Details = s.Voucher.VoucherDetails.Select(d => new {
+                    Details = s.Voucher.VoucherDetails.Select(d => new
+                    {
                         d.VoucherDetailID,
                         d.LedgerID,
                         LedgerName = d.Ledger != null ? d.Ledger.LedgerName : "",
@@ -247,24 +254,26 @@ namespace Bhisi.Api.Controllers
                     VoucherType = dto.RefundPaymentMode == "SavingCredit" ? "Journal" : "Payment",
                     TotalAmount = dto.DepositAmount,
                     Narration = $"Locker Surrender & Security Deposit Refund: {allotment.LockerAccountNo} (Locker: {allotment.Locker?.LockerNo}) - {holderName}. Net Refund: ₹{dto.NetRefundAmount:N2}",
-                    Status = "Approved",
+                    Status = "Pending",
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>()
                 };
 
                 // Debit Locker Deposit Liability Ledger
-                voucher.VoucherDetails.Add(new VoucherDetail { 
-                    LedgerID = allotment.Locker!.LockerType!.DepositLiabilityLedgerID!.Value, 
-                    DrCr = "Dr", 
+                voucher.VoucherDetails.Add(new VoucherDetail
+                {
+                    LedgerID = allotment.Locker!.LockerType!.DepositLiabilityLedgerID!.Value,
+                    DrCr = "Dr",
                     Amount = dto.DepositAmount,
                     CustomerID = allotmentCustomerId,
                     MemberID = allotment.MemberID
                 });
 
                 // Credit Cash or Dynamically Resolved Saving Liability Ledger for Net Refund
-                voucher.VoucherDetails.Add(new VoucherDetail { 
-                    LedgerID = refundCreditLedgerId, 
-                    DrCr = "Cr", 
+                voucher.VoucherDetails.Add(new VoucherDetail
+                {
+                    LedgerID = refundCreditLedgerId,
+                    DrCr = "Cr",
                     Amount = dto.NetRefundAmount,
                     CustomerID = creditCustomerId,
                     MemberID = dto.RefundPaymentMode == "SavingCredit" ? null : allotment.MemberID
@@ -273,9 +282,10 @@ namespace Bhisi.Api.Controllers
                 // Credit Deductions to Rent / Penalty if any
                 if (dto.UnpaidRentDeduction > 0 && allotment.Locker?.LockerType?.RentIncomeLedgerID.HasValue == true)
                 {
-                    voucher.VoucherDetails.Add(new VoucherDetail { 
-                        LedgerID = allotment.Locker!.LockerType!.RentIncomeLedgerID!.Value, 
-                        DrCr = "Cr", 
+                    voucher.VoucherDetails.Add(new VoucherDetail
+                    {
+                        LedgerID = allotment.Locker!.LockerType!.RentIncomeLedgerID!.Value,
+                        DrCr = "Cr",
                         Amount = dto.UnpaidRentDeduction,
                         CustomerID = allotmentCustomerId,
                         MemberID = allotment.MemberID
@@ -283,9 +293,10 @@ namespace Bhisi.Api.Controllers
                 }
                 if (dto.DamagePenaltyDeduction > 0 && allotment.Locker?.LockerType?.LateFeeIncomeLedgerID.HasValue == true)
                 {
-                    voucher.VoucherDetails.Add(new VoucherDetail { 
-                        LedgerID = allotment.Locker!.LockerType!.LateFeeIncomeLedgerID!.Value, 
-                        DrCr = "Cr", 
+                    voucher.VoucherDetails.Add(new VoucherDetail
+                    {
+                        LedgerID = allotment.Locker!.LockerType!.LateFeeIncomeLedgerID!.Value,
+                        DrCr = "Cr",
                         Amount = dto.DamagePenaltyDeduction,
                         CustomerID = allotmentCustomerId,
                         MemberID = allotment.MemberID
@@ -338,7 +349,8 @@ namespace Bhisi.Api.Controllers
             _context.LockerSurrenders.Add(surrender);
             await _context.SaveChangesAsync();
 
-            return Ok(new {
+            return Ok(new
+            {
                 message = "लॉकर यशस्वीरीत्या समर्पित (Surrender) करण्यात आला व डिपॉझिट परतावा नोंद सेव्ह झाली.",
                 surrenderID = surrender.SurrenderID,
                 voucherId

@@ -996,7 +996,7 @@ namespace Bhisi.Api.Controllers
                     VoucherNo = vNo,
                     VoucherDate = expenseDate,
                     VoucherType = isBankMode ? "Payment" : "Journal",
-                    Status = "Approved",
+                    Status = "Pending",
                     Narration = finalNarration,
                     TotalAmount = amount,
                     CreatedBy = 1,

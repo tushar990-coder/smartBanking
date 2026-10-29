@@ -195,7 +195,7 @@ namespace Bhisi.Api.Controllers
                     VoucherType = dto.PaymentMode == "SavingDebit" ? "Journal" : "Receipt",
                     TotalAmount = dto.TotalAmount,
                     Narration = $"Locker Rent Renewal: {allotment.LockerAccountNo} (Locker No: {allotment.Locker?.LockerNo}) for period {fromDate:dd/MM/yyyy} to {toDate:dd/MM/yyyy}. Member: {holderName}",
-                    Status = "Approved",
+                    Status = "Pending",
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>()
                 };

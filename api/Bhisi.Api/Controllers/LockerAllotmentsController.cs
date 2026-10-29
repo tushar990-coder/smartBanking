@@ -290,7 +290,7 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Receipt",
                     TotalAmount = dto.SecurityDepositAmount,
                     Narration = $"Locker Security Deposit: {lockerAccountNo} (Locker No: {locker.LockerNo}) - {accountHolderName}",
-                    Status = "Approved",
+                    Status = "Pending",
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>
                     {
@@ -315,7 +315,7 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Receipt",
                     TotalAmount = dto.AdvanceRentPaid,
                     Narration = $"Locker Advance Rent: {lockerAccountNo} (Locker No: {locker.LockerNo}) - {accountHolderName}",
-                    Status = "Approved",
+                    Status = "Pending",
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>
                     {

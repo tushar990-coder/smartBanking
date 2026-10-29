@@ -58,7 +58,7 @@ namespace Bhisi.Api.Controllers
                     existing = await _context.SansthaDetails.FirstOrDefaultAsync();
                     if (existing == null)
                     {
-                        _context.SansthaDetails.Add(sansthaDetail);
+                        sansthaDetail.AutoPostVouchers = false; sansthaDetail.AutoPostVoucherLimit = 0m; _context.SansthaDetails.Add(sansthaDetail);
                         await _context.SaveChangesAsync();
                         return Ok(sansthaDetail);
                     }
@@ -77,8 +77,8 @@ namespace Bhisi.Api.Controllers
                 existing.RegistrationDate = sansthaDetail.RegistrationDate;
                 existing.GSTNo = sansthaDetail.GSTNo;
                 existing.LogoPath = sansthaDetail.LogoPath;
-                existing.AutoPostVouchers = sansthaDetail.AutoPostVouchers;
-                existing.AutoPostVoucherLimit = sansthaDetail.AutoPostVoucherLimit;
+                existing.AutoPostVouchers = false;
+                existing.AutoPostVoucherLimit = 0m;
                 existing.IsMobileCompulsory = sansthaDetail.IsMobileCompulsory;
                 existing.IsAadhaarCompulsory = sansthaDetail.IsAadhaarCompulsory;
                 existing.IsPanCompulsory = sansthaDetail.IsPanCompulsory;
@@ -115,8 +115,8 @@ namespace Bhisi.Api.Controllers
                     existing.RegistrationDate = sansthaDetail.RegistrationDate;
                     existing.GSTNo = sansthaDetail.GSTNo;
                     existing.LogoPath = sansthaDetail.LogoPath;
-                    existing.AutoPostVouchers = sansthaDetail.AutoPostVouchers;
-                    existing.AutoPostVoucherLimit = sansthaDetail.AutoPostVoucherLimit;
+                    existing.AutoPostVouchers = false;
+                    existing.AutoPostVoucherLimit = 0m;
                     existing.IsMobileCompulsory = sansthaDetail.IsMobileCompulsory;
                     existing.IsAadhaarCompulsory = sansthaDetail.IsAadhaarCompulsory;
                     existing.IsPanCompulsory = sansthaDetail.IsPanCompulsory;
@@ -125,7 +125,7 @@ namespace Bhisi.Api.Controllers
                     return Ok(existing);
                 }
 
-                _context.SansthaDetails.Add(sansthaDetail);
+                sansthaDetail.AutoPostVouchers = false; sansthaDetail.AutoPostVoucherLimit = 0m; _context.SansthaDetails.Add(sansthaDetail);
                 await _context.SaveChangesAsync();
 
                 return CreatedAtAction("GetSansthaDetail", new { id = sansthaDetail.SansthaID }, sansthaDetail);

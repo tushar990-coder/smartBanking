@@ -313,11 +313,11 @@ namespace Bhisi.Api.Controllers
 
             // 4. Maker-Checker Approval Policy
             var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
-            bool autoPost = sanstha?.AutoPostVouchers ?? true;
-            decimal autoPostLimit = sanstha?.AutoPostVoucherLimit ?? 50000m;
+            bool autoPost = false;
+            decimal autoPostLimit = 0m;
 
             // Vouchers up to autoPostLimit are automatically approved; vouchers above require Manager Approval
-            if (autoPost && voucher.TotalAmount <= autoPostLimit)
+            if (autoPost && voucher.TotalAmount < autoPostLimit)
             {
                 voucher.Status = "Approved";
                 voucher.ApprovedBy = voucher.CreatedBy;

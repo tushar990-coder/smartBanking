@@ -31,186 +31,186 @@ try
 
     builder.Host.UseSerilog();
 
-builder.WebHost.ConfigureKestrel(serverOptions =>
-{
-    serverOptions.Limits.MaxRequestBodySize = 524288000; // 500 MB
-});
-
-builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
-{
-    options.MultipartBodyLengthLimit = 524288000; // 500 MB
-});
-
-// Add services to the container.
-builder.Services.AddControllers().AddJsonOptions(options =>
-{
-    options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
-    options.JsonSerializerOptions.Converters.Add(new SafeNullableDateTimeConverter());
-    options.JsonSerializerOptions.Converters.Add(new SafeDateTimeConverter());
-});
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-builder.Services.AddMemoryCache();
-
-// Global Authorization — सर्व API ला login आवश्यक (AllowAnonymous ने override करता येतो)
-builder.Services.AddAuthorization(options =>
-{
-    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .Build();
-});
-
-// Configure JWT Authentication
-var keyStr = builder.Configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
-var key = System.Text.Encoding.ASCII.GetBytes(keyStr);
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.RequireHttpsMetadata = false;
-    options.SaveToken = true;
-    options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+    builder.WebHost.ConfigureKestrel(serverOptions =>
     {
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key),
-        ValidateIssuer = false,
-        ValidateAudience = false,
-        ClockSkew = TimeSpan.Zero
-    };
-});
+        serverOptions.Limits.MaxRequestBodySize = 524288000; // 500 MB
+    });
 
-// Configure Entity Framework with Standard Enterprise Core Banking Connection
-var rawConnStr = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? builder.Configuration.GetConnectionString("MainConnection")
-    ?? builder.Configuration.GetConnectionString("LocalDB")
-    ?? builder.Configuration.GetConnectionString("OnlineDB")
-    ?? (builder.Configuration["ActiveDatabase"] != null ? builder.Configuration.GetConnectionString(builder.Configuration["ActiveDatabase"]!) : null)
-    ?? "Server=.;Database=SmartBanking_Bambawade;User Id=Admin;Password=Mindspace@;Trusted_Connection=False;TrustServerCertificate=True;MultipleActiveResultSets=true;Connect Timeout=60;";
-
-var resolvedConnStr = ResolveWorkingConnectionString(rawConnStr);
-
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(
-        resolvedConnStr,
-        sqlServerOptionsAction: sqlOptions =>
-        {
-            sqlOptions.CommandTimeout(60);
-        })
-        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
-
-// Register Services
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<Bhisi.Api.Services.IAgentLockService, Bhisi.Api.Services.AgentLockService>();
-builder.Services.AddScoped<Bhisi.Api.Services.IPigmySyncService, Bhisi.Api.Services.PigmySyncService>();
-builder.Services.AddScoped<Bhisi.Api.Services.NpaEngineService>();
-builder.Services.AddScoped<Bhisi.Api.Services.IEodBodService, Bhisi.Api.Services.EodBodService>();
-builder.Services.AddScoped<Bhisi.Api.Services.IYearEndService, Bhisi.Api.Services.YearEndService>();
-builder.Services.AddScoped<Bhisi.Api.Services.IBackupService, Bhisi.Api.Services.BackupService>();
-builder.Services.AddScoped<Bhisi.Api.Services.INotificationEngineService, Bhisi.Api.Services.NotificationEngineService>();
-builder.Services.AddSingleton<Bhisi.Api.Services.ILicenseService, Bhisi.Api.Services.LicenseService>();
-builder.Services.AddScoped<Bhisi.Api.Services.ISystemUpdateService, Bhisi.Api.Services.SystemUpdateService>();
-
-// Configure CORS for React client
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowReactApp",
-        policy =>
-        {
-            policy.AllowAnyOrigin()
-                  .AllowAnyHeader()
-                  .AllowAnyMethod();
-        });
-});
-
-var app = builder.Build();
-
-// Automatically apply database migrations and schema on startup
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    
-    // Check if core tables exist (Users, Branches, Roles)
-    bool tablesExist = false;
-    try
+    builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
     {
-        var count = db.Database.SqlQueryRaw<int>("SELECT COUNT(*) as Value FROM sys.tables WHERE name IN ('Users', 'Branches', 'Roles')").AsEnumerable().FirstOrDefault();
-        tablesExist = count >= 3;
-    }
-    catch { }
+        options.MultipartBodyLengthLimit = 524288000; // 500 MB
+    });
 
-    if (!tablesExist)
+    // Add services to the container.
+    builder.Services.AddControllers().AddJsonOptions(options =>
     {
-        Log.Information("Core tables not found in database. Initializing database schema...");
-        
-        // 1. Try applying Full Deploy SQL file if present in app directory
-        string[] candidateSqlPaths = new[]
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.Converters.Add(new SafeNullableDateTimeConverter());
+        options.JsonSerializerOptions.Converters.Add(new SafeDateTimeConverter());
+    });
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen();
+    builder.Services.AddMemoryCache();
+
+    // Global Authorization — सर्व API ला login आवश्यक (AllowAnonymous ने override करता येतो)
+    builder.Services.AddAuthorization(options =>
+    {
+        options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build();
+    });
+
+    // Configure JWT Authentication
+    var keyStr = builder.Configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
+    var key = System.Text.Encoding.ASCII.GetBytes(keyStr);
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = false;
+        options.SaveToken = true;
+        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
         {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key),
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
+    // Configure Entity Framework with Standard Enterprise Core Banking Connection
+    var rawConnStr = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? builder.Configuration.GetConnectionString("MainConnection")
+        ?? builder.Configuration.GetConnectionString("LocalDB")
+        ?? builder.Configuration.GetConnectionString("OnlineDB")
+        ?? (builder.Configuration["ActiveDatabase"] != null ? builder.Configuration.GetConnectionString(builder.Configuration["ActiveDatabase"]!) : null)
+        ?? "Server=.;Database=SmartBanking_Bambawade;User Id=Admin;Password=Mindspace@;Trusted_Connection=False;TrustServerCertificate=True;MultipleActiveResultSets=true;Connect Timeout=60;";
+
+    var resolvedConnStr = ResolveWorkingConnectionString(rawConnStr);
+
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseSqlServer(
+            resolvedConnStr,
+            sqlServerOptionsAction: sqlOptions =>
+            {
+                sqlOptions.CommandTimeout(60);
+            })
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
+
+    // Register Services
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<Bhisi.Api.Services.IAgentLockService, Bhisi.Api.Services.AgentLockService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.IPigmySyncService, Bhisi.Api.Services.PigmySyncService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.NpaEngineService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.IEodBodService, Bhisi.Api.Services.EodBodService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.IYearEndService, Bhisi.Api.Services.YearEndService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.IBackupService, Bhisi.Api.Services.BackupService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.INotificationEngineService, Bhisi.Api.Services.NotificationEngineService>();
+    builder.Services.AddSingleton<Bhisi.Api.Services.ILicenseService, Bhisi.Api.Services.LicenseService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.ISystemUpdateService, Bhisi.Api.Services.SystemUpdateService>();
+
+    // Configure CORS for React client
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("AllowReactApp",
+            policy =>
+            {
+                policy.AllowAnyOrigin()
+                      .AllowAnyHeader()
+                      .AllowAnyMethod();
+            });
+    });
+
+    var app = builder.Build();
+
+    // Automatically apply database migrations and schema on startup
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Check if core tables exist (Users, Branches, Roles)
+        bool tablesExist = false;
+        try
+        {
+            var count = db.Database.SqlQueryRaw<int>("SELECT COUNT(*) as Value FROM sys.tables WHERE name IN ('Users', 'Branches', 'Roles')").AsEnumerable().FirstOrDefault();
+            tablesExist = count >= 3;
+        }
+        catch { }
+
+        if (!tablesExist)
+        {
+            Log.Information("Core tables not found in database. Initializing database schema...");
+
+            // 1. Try applying Full Deploy SQL file if present in app directory
+            string[] candidateSqlPaths = new[]
+            {
             Path.Combine(AppContext.BaseDirectory, "SmartBanking_Clean_Master_Deploy.sql"),
             Path.Combine(Directory.GetCurrentDirectory(), "SmartBanking_Clean_Master_Deploy.sql"),
             Path.Combine(AppContext.BaseDirectory, "SmartBanking_Gurudev_Full_Deploy.sql"),
             Path.Combine(Directory.GetCurrentDirectory(), "SmartBanking_Gurudev_Full_Deploy.sql")
         };
 
-        foreach (var sqlPath in candidateSqlPaths)
-        {
-            if (File.Exists(sqlPath))
+            foreach (var sqlPath in candidateSqlPaths)
             {
-                try
+                if (File.Exists(sqlPath))
                 {
-                    string fullSql = File.ReadAllText(sqlPath);
-                    var batches = System.Text.RegularExpressions.Regex.Split(fullSql, @"(?im)^\s*GO\s*$", System.Text.RegularExpressions.RegexOptions.Multiline);
-                    foreach (var batch in batches)
+                    try
                     {
-                        var trimmed = batch.Trim();
-                        if (!string.IsNullOrWhiteSpace(trimmed))
+                        string fullSql = File.ReadAllText(sqlPath);
+                        var batches = System.Text.RegularExpressions.Regex.Split(fullSql, @"(?im)^\s*GO\s*$", System.Text.RegularExpressions.RegexOptions.Multiline);
+                        foreach (var batch in batches)
                         {
-                            try { db.Database.ExecuteSqlRaw(trimmed); } catch { }
+                            var trimmed = batch.Trim();
+                            if (!string.IsNullOrWhiteSpace(trimmed))
+                            {
+                                try { db.Database.ExecuteSqlRaw(trimmed); } catch { }
+                            }
                         }
+                        Log.Information("Full Database Schema applied successfully from {SqlPath}!", sqlPath);
+                        break;
                     }
-                    Log.Information("Full Database Schema applied successfully from {SqlPath}!", sqlPath);
-                    break;
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Failed to apply full deploy SQL script.");
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Failed to apply full deploy SQL script.");
-                }
+            }
+
+            // 2. Also run EF Core Migrate to ensure all latest schema is present
+            try
+            {
+                db.Database.Migrate();
+                Log.Information("EF Core Database migrations applied successfully!");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("EF Core migrate warning: {Message}", ex.Message);
             }
         }
 
-        // 2. Also run EF Core Migrate to ensure all latest schema is present
         try
         {
-            db.Database.Migrate();
-            Log.Information("EF Core Database migrations applied successfully!");
-        }
-        catch (Exception ex)
-        {
-            Log.Warning("EF Core migrate warning: {Message}", ex.Message);
-        }
-    }
-
-    try
-    {
-        db.Database.ExecuteSqlRaw(@"
+            db.Database.ExecuteSqlRaw(@"
             IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_LoanRates_LoanType' AND object_id = OBJECT_ID('dbo.LoanRates'))
             BEGIN
                 DROP INDEX [IX_LoanRates_LoanType] ON [dbo].[LoanRates];
             END
         ");
-        Log.Information("IX_LoanRates_LoanType drop verified successfully.");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning("Could not drop IX_LoanRates_LoanType: {Message}", ex.Message);
-    }
+            Log.Information("IX_LoanRates_LoanType drop verified successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("Could not drop IX_LoanRates_LoanType: {Message}", ex.Message);
+        }
 
-    // CRITICAL CORE SCHEMA SELF-HEAL: Ensure Branches and BranchLedgerOpeningBalances exist BEFORE any controllers or queries
-    try
-    {
-        db.Database.ExecuteSqlRaw(@"
+        // CRITICAL CORE SCHEMA SELF-HEAL: Ensure Branches and BranchLedgerOpeningBalances exist BEFORE any controllers or queries
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
             IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Branches')
             BEGIN
                 IF COL_LENGTH('Branches', 'DefaultIbtLedgerID') IS NULL
@@ -261,16 +261,16 @@ using (var scope = app.Services.CreateScope())
                 ON [dbo].[BranchLedgerOpeningBalances] ([LedgerID], [BranchID], [FinancialYearID]);
             END
         ");
-        Log.Information("Branches core columns & BranchLedgerOpeningBalances self-heal verified successfully.");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning("Branches core columns self-heal warning: {Message}", ex.Message);
-    }
+            Log.Information("Branches core columns & BranchLedgerOpeningBalances self-heal verified successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("Branches core columns self-heal warning: {Message}", ex.Message);
+        }
 
-    try
-    {
-        db.Database.ExecuteSqlRaw(@"
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
             SET ANSI_NULLS ON;
             SET QUOTED_IDENTIFIER ON;
 
@@ -951,9 +951,9 @@ using (var scope = app.Services.CreateScope())
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'AutoPostVoucherLimit')
                 BEGIN
-                    ALTER TABLE [SansthaDetails] ADD [AutoPostVoucherLimit] decimal(18,2) NOT NULL DEFAULT 50000.00;
+                    ALTER TABLE [SansthaDetails] ADD [AutoPostVoucherLimit] decimal(18,2) NOT NULL DEFAULT 0.00;
                 END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'IsMobileCompulsory')
+                UPDATE [SansthaDetails] SET [AutoPostVouchers] = 0, [AutoPostVoucherLimit] = 0.00 WHERE [AutoPostVouchers] <> 0 OR [AutoPostVoucherLimit] <> 0; IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'IsMobileCompulsory')
                 BEGIN
                     ALTER TABLE [SansthaDetails] ADD [IsMobileCompulsory] bit NOT NULL DEFAULT 1;
                 END
@@ -2786,15 +2786,15 @@ using (var scope = app.Services.CreateScope())
                 VALUES ('1.0.0', GETDATE(), 'Initial Master Release', 'SUCCESS', 'Base system initialized', 'System');
             END
         ");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to check or add auto-migrations columns");
-    }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to check or add auto-migrations columns");
+        }
 
-    try
-    {
-        db.Database.ExecuteSqlRaw(@"
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AgentCustomerRequests')
             BEGIN
                 CREATE TABLE [AgentCustomerRequests] (
@@ -2847,16 +2847,16 @@ using (var scope = app.Services.CreateScope())
                 );
             END
         ");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to create AgentCustomerRequests table");
-    }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to create AgentCustomerRequests table");
+        }
 
-    try
-    {
-        // FD & RD CustomerID-First Schema Migration Auto-Sync
-        db.Database.ExecuteSqlRaw(@"
+        try
+        {
+            // FD & RD CustomerID-First Schema Migration Auto-Sync
+            db.Database.ExecuteSqlRaw(@"
             -- 1. FdAccounts CIF-First Migration
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')
             BEGIN
@@ -2945,16 +2945,16 @@ using (var scope = app.Services.CreateScope())
                     EXEC('CREATE NONCLUSTERED INDEX [IX_RdAccounts_JointCustomerID] ON [RdAccounts]([JointCustomerID]);');
             END
         ");
-        Log.Information("FD and RD CustomerID-First schema auto-migration verified.");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to apply FD/RD CustomerID-First auto-migrations");
-    }
+            Log.Information("FD and RD CustomerID-First schema auto-migration verified.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to apply FD/RD CustomerID-First auto-migrations");
+        }
 
-    try
-    {
-        db.Database.ExecuteSqlRaw(@"
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
             IF OBJECT_ID(N'[dbo].[PigmySchemeInterestSlabs]', N'U') IS NULL
             BEGIN
                 CREATE TABLE [dbo].[PigmySchemeInterestSlabs] (
@@ -3051,50 +3051,50 @@ using (var scope = app.Services.CreateScope())
                 CREATE NONCLUSTERED INDEX [IX_PigmyWithdrawals_WithdrawalDate] ON [dbo].[PigmyWithdrawals]([WithdrawalDate]);
             END
         ");
-        Log.Information("Pigmy Dynamic Slabs & Partial Withdrawal schema auto-migration verified.");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to apply Pigmy Dynamic Slabs auto-migrations");
-    }
-
-    try
-    {
-        // Auto-heal database identity gaps and synchronize triggers across all tables
-        db.Database.ExecuteSqlRaw("IF OBJECT_ID('[dbo].[sp_SyncDatabaseIdentities]', 'P') IS NOT NULL EXEC [dbo].[sp_SyncDatabaseIdentities];");
-        Log.Information("Database identity synchronization and self-healing triggers verified.");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to run sp_SyncDatabaseIdentities");
-    }
-
-    try
-    {
-        // Core Banking Share Scheme & Voucher Mapping Startup Auto-Sync
-        var activeShareScheme = db.ShareSchemes
-            .OrderByDescending(s => s.IsActive)
-            .ThenByDescending(s => s.EffectiveDate)
-            .FirstOrDefault();
-
-        if (activeShareScheme != null)
-        {
-            Bhisi.Api.Helpers.ShareLedgerHelper.SyncSchemeToVoucherMappingsAsync(db, activeShareScheme).GetAwaiter().GetResult();
+            Log.Information("Pigmy Dynamic Slabs & Partial Withdrawal schema auto-migration verified.");
         }
-        else
+        catch (Exception ex)
         {
-            Bhisi.Api.Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(db).GetAwaiter().GetResult();
+            Log.Warning(ex, "Failed to apply Pigmy Dynamic Slabs auto-migrations");
         }
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to auto-sync ShareScheme mappings on startup");
-    }
 
-    try
-    {
-        // Core Banking Multi-Branch & IBT Schema DDL Verification (Vouchers, LoanCollections, BranchLedgerOpeningBalances)
-        db.Database.ExecuteSqlRaw(@"
+        try
+        {
+            // Auto-heal database identity gaps and synchronize triggers across all tables
+            db.Database.ExecuteSqlRaw("IF OBJECT_ID('[dbo].[sp_SyncDatabaseIdentities]', 'P') IS NOT NULL EXEC [dbo].[sp_SyncDatabaseIdentities];");
+            Log.Information("Database identity synchronization and self-healing triggers verified.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to run sp_SyncDatabaseIdentities");
+        }
+
+        try
+        {
+            // Core Banking Share Scheme & Voucher Mapping Startup Auto-Sync
+            var activeShareScheme = db.ShareSchemes
+                .OrderByDescending(s => s.IsActive)
+                .ThenByDescending(s => s.EffectiveDate)
+                .FirstOrDefault();
+
+            if (activeShareScheme != null)
+            {
+                Bhisi.Api.Helpers.ShareLedgerHelper.SyncSchemeToVoucherMappingsAsync(db, activeShareScheme).GetAwaiter().GetResult();
+            }
+            else
+            {
+                Bhisi.Api.Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(db).GetAwaiter().GetResult();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to auto-sync ShareScheme mappings on startup");
+        }
+
+        try
+        {
+            // Core Banking Multi-Branch & IBT Schema DDL Verification (Vouchers, LoanCollections, BranchLedgerOpeningBalances)
+            db.Database.ExecuteSqlRaw(@"
             IF OBJECT_ID(N'[Vouchers]', N'U') IS NOT NULL
             BEGIN
                 IF COL_LENGTH('Vouchers', 'IsIbtVoucher') IS NULL
@@ -3145,270 +3145,270 @@ using (var scope = app.Services.CreateScope())
                 ON [dbo].[BranchLedgerOpeningBalances] ([LedgerID] ASC, [BranchID] ASC, [FinancialYearID] ASC);
             END
         ");
-        Log.Information("Core Banking Multi-Branch & IBT Schema DDL verified successfully.");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to verify or apply Multi-Branch & IBT schema DDL");
-    }
-
-    try
-    {
-        // Core Banking Inter-Branch Transfer (IBT) Startup Auto-Sync & Historical Self-Healing
-        Bhisi.Api.Helpers.IbtLedgerHelper.EnsureIbtLedgerProvisionedAsync(db).GetAwaiter().GetResult();
-        int repaired = Bhisi.Api.Helpers.IbtLedgerHelper.RepairHistoricalCrossBranchCollectionsAsync(db).GetAwaiter().GetResult();
-        Log.Information("Core Banking Inter-Branch Transfer (IBT) ledger provisioned. Repaired historical cross-branch collections: {RepairedCount}", repaired);
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to auto-provision IBT ledger or repair historical cross-branch collections on startup");
-    }
-
-    try
-    {
-        // Core Banking Loan Opening Balance to GL Auto-Sync Startup Initialization
-        var loanRatesWithLedgers = db.LoanRates
-            .Where(r => r.LoanLedgerID.HasValue && r.LoanLedgerID.Value > 0)
-            .ToList();
-
-        foreach (var rate in loanRatesWithLedgers)
-        {
-            int loanLedgerId = rate.LoanLedgerID!.Value;
-            var ledger = db.Ledgers.Find(loanLedgerId);
-            if (ledger != null)
-            {
-                var mappedRateIds = db.LoanRates
-                    .Where(r => r.LoanLedgerID == loanLedgerId)
-                    .Select(r => r.LoanRateID)
-                    .ToList();
-
-                decimal totalPrincipal = db.LoanAccounts
-                    .Where(a => mappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
-                    .Sum(a => a.PrincipalBalance);
-
-                if (totalPrincipal > 0 || ledger.OpeningBalance != totalPrincipal)
-                {
-                    ledger.OpeningBalance = totalPrincipal;
-                    ledger.OpeningBalanceType = "Dr";
-                }
-            }
+            Log.Information("Core Banking Multi-Branch & IBT Schema DDL verified successfully.");
         }
-        db.SaveChanges();
-        Log.Information("Loan Schemes GL Opening Balances auto-synchronized with sub-ledger on startup.");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to auto-sync Loan Schemes GL Opening Balances on startup");
-    }
-
-    try
-    {
-        // Core Banking Pigmy Opening Balance to GL Auto-Sync Startup Initialization
-        var pigmySchemes = db.PigmySchemes.ToList();
-
-        foreach (var scheme in pigmySchemes)
+        catch (Exception ex)
         {
-            int liabilityLedgerId = 0;
-            if (scheme.PigmyLiabilityLedgerID.HasValue && scheme.PigmyLiabilityLedgerID.Value > 0)
-            {
-                liabilityLedgerId = scheme.PigmyLiabilityLedgerID.Value;
-            }
-            else
-            {
-                var fallback = db.Ledgers.FirstOrDefault(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"));
-                if (fallback != null)
-                {
-                    liabilityLedgerId = fallback.LedgerID;
-                    scheme.PigmyLiabilityLedgerID = liabilityLedgerId;
-                }
-            }
+            Log.Warning(ex, "Failed to verify or apply Multi-Branch & IBT schema DDL");
+        }
 
-            if (liabilityLedgerId > 0)
+        try
+        {
+            // Core Banking Inter-Branch Transfer (IBT) Startup Auto-Sync & Historical Self-Healing
+            Bhisi.Api.Helpers.IbtLedgerHelper.EnsureIbtLedgerProvisionedAsync(db).GetAwaiter().GetResult();
+            int repaired = Bhisi.Api.Helpers.IbtLedgerHelper.RepairHistoricalCrossBranchCollectionsAsync(db).GetAwaiter().GetResult();
+            Log.Information("Core Banking Inter-Branch Transfer (IBT) ledger provisioned. Repaired historical cross-branch collections: {RepairedCount}", repaired);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to auto-provision IBT ledger or repair historical cross-branch collections on startup");
+        }
+
+        try
+        {
+            // Core Banking Loan Opening Balance to GL Auto-Sync Startup Initialization
+            var loanRatesWithLedgers = db.LoanRates
+                .Where(r => r.LoanLedgerID.HasValue && r.LoanLedgerID.Value > 0)
+                .ToList();
+
+            foreach (var rate in loanRatesWithLedgers)
             {
-                var ledger = db.Ledgers.Find(liabilityLedgerId);
+                int loanLedgerId = rate.LoanLedgerID!.Value;
+                var ledger = db.Ledgers.Find(loanLedgerId);
                 if (ledger != null)
                 {
-                    var mappedSchemeIds = db.PigmySchemes
-                        .Where(s => s.PigmyLiabilityLedgerID == liabilityLedgerId)
-                        .Select(s => s.PigmySchemeID)
-                        .ToList();
-                    if (!mappedSchemeIds.Contains(scheme.PigmySchemeID))
-                    {
-                        mappedSchemeIds.Add(scheme.PigmySchemeID);
-                    }
-
-                    var accounts = db.PigmyAccounts
-                        .Where(a => mappedSchemeIds.Contains(a.PigmySchemeID) && a.Status == "Active")
-                        .Select(a => a.PigmyAccountID)
+                    var mappedRateIds = db.LoanRates
+                        .Where(r => r.LoanLedgerID == loanLedgerId)
+                        .Select(r => r.LoanRateID)
                         .ToList();
 
-                    decimal totalOpeningCr = 0;
-                    if (accounts.Any())
-                    {
-                        totalOpeningCr = db.PigmyOpeningBalances
-                            .Where(o => accounts.Contains(o.PigmyAccountID))
-                            .GroupBy(o => o.PigmyAccountID)
-                            .Select(g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).Select(x => x.MigratedBalanceAmount).FirstOrDefault())
-                            .Sum();
-                    }
+                    decimal totalPrincipal = db.LoanAccounts
+                        .Where(a => mappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
+                        .Sum(a => a.PrincipalBalance);
 
-                    if (totalOpeningCr > 0 || ledger.OpeningBalance != totalOpeningCr)
+                    if (totalPrincipal > 0 || ledger.OpeningBalance != totalPrincipal)
                     {
-                        ledger.OpeningBalance = totalOpeningCr;
-                        ledger.OpeningBalanceType = "Cr";
+                        ledger.OpeningBalance = totalPrincipal;
+                        ledger.OpeningBalanceType = "Dr";
                     }
                 }
             }
+            db.SaveChanges();
+            Log.Information("Loan Schemes GL Opening Balances auto-synchronized with sub-ledger on startup.");
         }
-        db.SaveChanges();
-        Log.Information("Pigmy Schemes GL Opening Balances auto-synchronized with sub-ledger on startup.");
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Failed to auto-sync Pigmy Schemes GL Opening Balances on startup");
-    }
-}
-
-// Enable Swagger UI for easy testing
-app.UseSwagger();
-app.UseSwaggerUI(c =>
-{
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Bhisi API v1");
-});
-
-// Global Exception Handler — catches ALL unhandled exceptions (including SqlNullValueException)
-// and returns a clean JSON error response with full logging
-app.UseExceptionHandler(exApp =>
-{
-    exApp.Run(async context =>
-    {
-        context.Response.StatusCode = 500;
-        context.Response.ContentType = "application/json";
-
-        var exFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
-        if (exFeature != null)
+        catch (Exception ex)
         {
-            var ex = exFeature.Error;
-            Log.Error(ex, "Unhandled exception on {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+            Log.Warning(ex, "Failed to auto-sync Loan Schemes GL Opening Balances on startup");
+        }
 
-            var errorResponse = new
+        try
+        {
+            // Core Banking Pigmy Opening Balance to GL Auto-Sync Startup Initialization
+            var pigmySchemes = db.PigmySchemes.ToList();
+
+            foreach (var scheme in pigmySchemes)
             {
-                status = 500,
-                message = "सर्व्हरवर त्रुटी आली (Internal Server Error)",
-                detail = app.Environment.IsDevelopment() ? ex.ToString() : ex.Message,
-                path = context.Request.Path.Value
-            };
+                int liabilityLedgerId = 0;
+                if (scheme.PigmyLiabilityLedgerID.HasValue && scheme.PigmyLiabilityLedgerID.Value > 0)
+                {
+                    liabilityLedgerId = scheme.PigmyLiabilityLedgerID.Value;
+                }
+                else
+                {
+                    var fallback = db.Ledgers.FirstOrDefault(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"));
+                    if (fallback != null)
+                    {
+                        liabilityLedgerId = fallback.LedgerID;
+                        scheme.PigmyLiabilityLedgerID = liabilityLedgerId;
+                    }
+                }
 
-            await context.Response.WriteAsJsonAsync(errorResponse);
+                if (liabilityLedgerId > 0)
+                {
+                    var ledger = db.Ledgers.Find(liabilityLedgerId);
+                    if (ledger != null)
+                    {
+                        var mappedSchemeIds = db.PigmySchemes
+                            .Where(s => s.PigmyLiabilityLedgerID == liabilityLedgerId)
+                            .Select(s => s.PigmySchemeID)
+                            .ToList();
+                        if (!mappedSchemeIds.Contains(scheme.PigmySchemeID))
+                        {
+                            mappedSchemeIds.Add(scheme.PigmySchemeID);
+                        }
+
+                        var accounts = db.PigmyAccounts
+                            .Where(a => mappedSchemeIds.Contains(a.PigmySchemeID) && a.Status == "Active")
+                            .Select(a => a.PigmyAccountID)
+                            .ToList();
+
+                        decimal totalOpeningCr = 0;
+                        if (accounts.Any())
+                        {
+                            totalOpeningCr = db.PigmyOpeningBalances
+                                .Where(o => accounts.Contains(o.PigmyAccountID))
+                                .GroupBy(o => o.PigmyAccountID)
+                                .Select(g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).Select(x => x.MigratedBalanceAmount).FirstOrDefault())
+                                .Sum();
+                        }
+
+                        if (totalOpeningCr > 0 || ledger.OpeningBalance != totalOpeningCr)
+                        {
+                            ledger.OpeningBalance = totalOpeningCr;
+                            ledger.OpeningBalanceType = "Cr";
+                        }
+                    }
+                }
+            }
+            db.SaveChanges();
+            Log.Information("Pigmy Schemes GL Opening Balances auto-synchronized with sub-ledger on startup.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to auto-sync Pigmy Schemes GL Opening Balances on startup");
+        }
+    }
+
+    // Enable Swagger UI for easy testing
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Bhisi API v1");
+    });
+
+    // Global Exception Handler — catches ALL unhandled exceptions (including SqlNullValueException)
+    // and returns a clean JSON error response with full logging
+    app.UseExceptionHandler(exApp =>
+    {
+        exApp.Run(async context =>
+        {
+            context.Response.StatusCode = 500;
+            context.Response.ContentType = "application/json";
+
+            var exFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+            if (exFeature != null)
+            {
+                var ex = exFeature.Error;
+                Log.Error(ex, "Unhandled exception on {Method} {Path}",
+                    context.Request.Method, context.Request.Path);
+
+                var errorResponse = new
+                {
+                    status = 500,
+                    message = "सर्व्हरवर त्रुटी आली (Internal Server Error)",
+                    detail = app.Environment.IsDevelopment() ? ex.ToString() : ex.Message,
+                    path = context.Request.Path.Value
+                };
+
+                await context.Response.WriteAsJsonAsync(errorResponse);
+            }
+        });
+    });
+
+    if (!app.Environment.IsDevelopment())
+    {
+        // app.UseHsts();
+        // app.UseHttpsRedirection(); // Temporarily disabled for HTTP API calls
+    }
+
+    app.UseCors("AllowReactApp");
+
+    // Marathi Devanagari Unicode Numerals Normalization Middleware (Converts ०-९ to 0-9 in Path, Query & Body)
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.HasValue)
+        {
+            string path = context.Request.Path.Value!;
+            if (path.Any(c => c >= '०' && c <= '९'))
+            {
+                var normalizedPath = new string(path.Select(c => (c >= '०' && c <= '९') ? (char)('0' + (c - '०')) : c).ToArray());
+                context.Request.Path = new PathString(normalizedPath);
+            }
+        }
+
+        if (context.Request.QueryString.HasValue)
+        {
+            string query = context.Request.QueryString.Value!;
+            if (query.Any(c => c >= '०' && c <= '९'))
+            {
+                var normalizedQuery = new string(query.Select(c => (c >= '०' && c <= '९') ? (char)('0' + (c - '०')) : c).ToArray());
+                context.Request.QueryString = new QueryString(normalizedQuery);
+            }
+        }
+
+        if (context.Request.ContentLength > 0 && context.Request.ContentType != null && context.Request.ContentType.Contains("application/json"))
+        {
+            context.Request.EnableBuffering();
+            using var reader = new StreamReader(context.Request.Body, System.Text.Encoding.UTF8, leaveOpen: true);
+            string body = await reader.ReadToEndAsync();
+            context.Request.Body.Position = 0;
+
+            if (!string.IsNullOrEmpty(body) && body.Any(c => c >= '०' && c <= '९'))
+            {
+                string normalizedBody = new string(body.Select(c => (c >= '०' && c <= '९') ? (char)('0' + (c - '०')) : c).ToArray());
+                var memoryStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(normalizedBody));
+                context.Request.Body = memoryStream;
+            }
+        }
+
+        await next();
+    });
+
+    app.UseDefaultFiles(); // Serves index.html automatically
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        OnPrepareResponse = ctx =>
+        {
+            ctx.Context.Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
+            ctx.Context.Response.Headers.Append("Expires", "-1");
         }
     });
-});
 
-if (!app.Environment.IsDevelopment())
-{
-    // app.UseHsts();
-    // app.UseHttpsRedirection(); // Temporarily disabled for HTTP API calls
-}
+    app.UseCors("AllowReactApp");
 
-app.UseCors("AllowReactApp");
+    app.UseMiddleware<Bhisi.Api.Filters.LicenseEnforcementMiddleware>();
 
-// Marathi Devanagari Unicode Numerals Normalization Middleware (Converts ०-९ to 0-9 in Path, Query & Body)
-app.Use(async (context, next) =>
-{
-    if (context.Request.Path.HasValue)
+    app.Use(async (context, next) =>
     {
-        string path = context.Request.Path.Value!;
-        if (path.Any(c => c >= '०' && c <= '९'))
+        await next();
+
+        // Prevent 302 Redirects for API Routes (Convert to 401 Unauthorized)
+        if (context.Response.StatusCode == 302 && context.Request.Path.StartsWithSegments("/api"))
         {
-            var normalizedPath = new string(path.Select(c => (c >= '०' && c <= '९') ? (char)('0' + (c - '०')) : c).ToArray());
-            context.Request.Path = new PathString(normalizedPath);
+            context.Response.Clear();
+            context.Response.StatusCode = 401;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync("{\"error\":\"Unauthorized\",\"message\":\"Authentication is required to access this resource.\"}");
         }
-    }
+    });
 
-    if (context.Request.QueryString.HasValue)
+    app.UseAuthentication();
+    app.UseAuthorization();
+
+    app.MapControllers();
+
+    app.MapGet("/favicon.ico", (IWebHostEnvironment env) =>
     {
-        string query = context.Request.QueryString.Value!;
-        if (query.Any(c => c >= '०' && c <= '९'))
+        var path = Path.Combine(env.WebRootPath ?? "wwwroot", "favicon.ico");
+        if (File.Exists(path))
         {
-            var normalizedQuery = new string(query.Select(c => (c >= '०' && c <= '९') ? (char)('0' + (c - '०')) : c).ToArray());
-            context.Request.QueryString = new QueryString(normalizedQuery);
+            return Results.File(path, "image/x-icon");
         }
-    }
+        return Results.NoContent();
+    }).AllowAnonymous();
 
-    if (context.Request.ContentLength > 0 && context.Request.ContentType != null && context.Request.ContentType.Contains("application/json"))
+    // Ensure unhandled /api/* paths return 404 JSON and DO NOT hit the SPA fallback
+    app.MapFallback("/api/{**catchall}", async context =>
     {
-        context.Request.EnableBuffering();
-        using var reader = new StreamReader(context.Request.Body, System.Text.Encoding.UTF8, leaveOpen: true);
-        string body = await reader.ReadToEndAsync();
-        context.Request.Body.Position = 0;
-
-        if (!string.IsNullOrEmpty(body) && body.Any(c => c >= '०' && c <= '९'))
-        {
-            string normalizedBody = new string(body.Select(c => (c >= '०' && c <= '९') ? (char)('0' + (c - '०')) : c).ToArray());
-            var memoryStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(normalizedBody));
-            context.Request.Body = memoryStream;
-        }
-    }
-
-    await next();
-});
-
-app.UseDefaultFiles(); // Serves index.html automatically
-app.UseStaticFiles(new StaticFileOptions
-{
-    OnPrepareResponse = ctx =>
-    {
-        ctx.Context.Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
-        ctx.Context.Response.Headers.Append("Expires", "-1");
-    }
-});
-
-app.UseCors("AllowReactApp");
-
-app.UseMiddleware<Bhisi.Api.Filters.LicenseEnforcementMiddleware>();
-
-app.Use(async (context, next) =>
-{
-    await next();
-
-    // Prevent 302 Redirects for API Routes (Convert to 401 Unauthorized)
-    if (context.Response.StatusCode == 302 && context.Request.Path.StartsWithSegments("/api"))
-    {
-        context.Response.Clear();
-        context.Response.StatusCode = 401;
+        context.Response.StatusCode = 404;
         context.Response.ContentType = "application/json";
-        await context.Response.WriteAsync("{\"error\":\"Unauthorized\",\"message\":\"Authentication is required to access this resource.\"}");
-    }
-});
+        await context.Response.WriteAsync("{\"error\":\"Not Found\",\"message\":\"The requested API endpoint does not exist.\"}");
+    });
 
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.MapControllers();
-
-app.MapGet("/favicon.ico", (IWebHostEnvironment env) =>
-{
-    var path = Path.Combine(env.WebRootPath ?? "wwwroot", "favicon.ico");
-    if (File.Exists(path))
-    {
-        return Results.File(path, "image/x-icon");
-    }
-    return Results.NoContent();
-}).AllowAnonymous();
-
-// Ensure unhandled /api/* paths return 404 JSON and DO NOT hit the SPA fallback
-app.MapFallback("/api/{**catchall}", async context =>
-{
-    context.Response.StatusCode = 404;
-    context.Response.ContentType = "application/json";
-    await context.Response.WriteAsync("{\"error\":\"Not Found\",\"message\":\"The requested API endpoint does not exist.\"}");
-});
-
-app.MapFallbackToFile("index.html").AllowAnonymous(); // Handles React routing without requiring JWT
+    app.MapFallbackToFile("index.html").AllowAnonymous(); // Handles React routing without requiring JWT
 
 
-app.Run();
+    app.Run();
 }
 catch (Exception ex)
 {
@@ -3547,7 +3547,7 @@ static string ResolveWorkingConnectionString(string configuredConnStr)
                 }
 
                 Log.Information("SQL Server connection verified on instance '{Server}' for database '{Database}'.", server, targetDb);
-                
+
                 var workingBuilder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(configuredConnStr)
                 {
                     DataSource = server,

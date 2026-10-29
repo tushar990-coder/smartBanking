@@ -251,7 +251,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/FdAccounts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetFdAccounts([FromQuery] int? branchId, [FromQuery] int? customerId = null, [FromQuery] string? status = null)
+        public async Task<ActionResult<IEnumerable<object>>> GetFdAccounts([FromQuery] int? branchId, [FromQuery] int? customerId = null, [FromQuery] string? status = null, [FromQuery] bool excludeOpeningBalance = false)
         {
             await HealOrphanedRenewalsInternalAsync();
 
@@ -283,6 +283,17 @@ namespace Bhisi.Api.Controllers
             }
 
             var seniorCutoffDate = DateTime.Today.AddYears(-60);
+
+            if (excludeOpeningBalance)
+            {
+                query = query.Where(f =>
+                    !f.IsLegacyAccount &&
+                    !_context.FdTransactions.Any(t =>
+                        t.FdAccountID == f.FdAccountID &&
+                        t.TransactionType == "Opening" &&
+                        t.Voucher != null &&
+                        t.Voucher.VoucherNo.StartsWith("JV-FD-OP-")));
+            }
 
             var accountsList = await query
                 .OrderBy(f => f.AccountNo)
@@ -330,6 +341,7 @@ namespace Bhisi.Api.Controllers
                     f.NomineeRelation,
                     f.Remarks,
                     BirthDate = f.Customer != null ? f.Customer.BirthDate : null,
+                    f.PaymentMode,
                     IsSeniorCitizen = f.Customer != null && f.Customer.BirthDate.HasValue && f.Customer.BirthDate.Value <= seniorCutoffDate
                 })
                 .ToListAsync();
@@ -380,6 +392,7 @@ namespace Bhisi.Api.Controllers
                     f.IsLegacyAccount,
                     f.LegacyAccruedInt,
                     AlreadyPostedInterest = posted,
+                    f.PaymentMode,
                     f.LastInterestPostingDate,
                     f.Status,
                     f.NomineeName,

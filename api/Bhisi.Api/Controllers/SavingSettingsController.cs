@@ -291,7 +291,7 @@ namespace Bhisi.Api.Controllers
 
             await _context.SaveChangesAsync();
             await SyncLinkedSavingAccountsMinimumBalanceAsync(existing);
-            return NoContent();
+            return Ok(existing);
         }
 
         [HttpDelete("Interest/{id}")]
@@ -316,8 +316,10 @@ namespace Bhisi.Api.Controllers
 
             var linkedAccounts = await _context.SavingAccountMasters
                 .Where(a => a.SavingSchemeID == scheme.SettingID ||
-                            (mappedLiabId > 0 && a.LedgerID == mappedLiabId) ||
-                            (totalSchemes == 1 && (!a.SavingSchemeID.HasValue || a.SavingSchemeID.Value <= 0)))
+                            ((!a.SavingSchemeID.HasValue || a.SavingSchemeID.Value <= 0) && (
+                                (mappedLiabId > 0 && a.LedgerID == mappedLiabId) ||
+                                a.InterestRate == scheme.InterestRate ||
+                                totalSchemes == 1)))
                 .ToListAsync();
 
             if (linkedAccounts.Count > 0)

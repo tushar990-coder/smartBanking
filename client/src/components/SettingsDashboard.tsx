@@ -35,6 +35,7 @@ import CashSchemeSettingMaster from './CashSchemeSettingMaster';
 import InvestmentInstitutionMaster from './InvestmentInstitutionMaster';
 import CustomerOpeningBalance from './CustomerOpeningBalance';
 import BranchLedgerOpeningMaster from './BranchLedgerOpeningMaster';
+import DeadstockOpeningBalance from './DeadstockOpeningBalance';
 
 interface SettingsDashboardProps {
   defaultCategory?: string;
@@ -159,7 +160,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       case 'cash-ob': return <LedgerOpeningBalance defaultFilter="Cash" />;
       case 'bank-ob': return <LedgerOpeningBalance defaultFilter="Bank" />;
       case 'ledger-ob': return <LedgerOpeningBalance defaultFilter="All" />;
-      case 'deadstock-ob': return <LedgerOpeningBalance defaultFilter="Deadstock" />;
+      case 'deadstock-ob': return <DeadstockOpeningBalance />;
       case 'account-group': return <AccountGroupMaster />;
       case 'ledger': return <LedgerMaster />;
       case 'mapping': return <VoucherMappingMaster />;

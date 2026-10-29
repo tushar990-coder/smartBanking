@@ -358,6 +358,8 @@ function App() {
     'asset-master': '/deadstock/master',
     'asset-purchase': '/deadstock/purchase',
     'asset-reports': '/deadstock/reports',
+    'deadstock-ob': '/settings?category=opening-balance&sub=deadstock-ob',
+    'deadstock-opening': '/settings?category=opening-balance&sub=deadstock-ob',
 
     // NPA Module (एन.पी.ए. विभाग)
     'npa-dashboard': '/npa/dashboard',
@@ -851,6 +853,7 @@ function App() {
         {activeTab === 'asset-master' && <AssetMaster />}
         {activeTab === 'asset-purchase' && <AssetPurchaseForm onNavigate={handleNavigate} />}
         {activeTab === 'asset-reports' && <AssetReports />}
+        {(activeTab === 'deadstock-ob' || activeTab === 'deadstock-opening') && <SettingsDashboard defaultCategory="opening-balance" defaultSub="deadstock-ob" />}
         
         {/* Locker Management Module Views */}
         {(activeTab === 'locker' || activeTab === 'locker-dashboard') && <LockerDashboard onNavigate={handleNavigate} />}

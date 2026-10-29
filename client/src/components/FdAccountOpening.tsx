@@ -2610,14 +2610,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             >
                               🖨️ प्रिंट
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteConfirm({ id: fd.fdAccountID, accountNo: fd.accountNo })}
-                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors shadow-xs"
-                              title="खाते व पासिंग व्हाउचर थेट डिलीट करा"
-                            >
-                              🗑️ डिलीट
-                            </button>
+
                           </div>
                         </td>
                       </tr>

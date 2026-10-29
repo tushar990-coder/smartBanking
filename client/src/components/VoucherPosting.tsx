@@ -161,17 +161,22 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const isOpeningMigrationVoucher = (v: Voucher) => {
     const vNo = v.voucherNo || '';
     const narr = (v.narration || '').toLowerCase();
+    const vDate = v.voucherDate ? new Date(v.voucherDate) : null;
+    const isLegacyDate = vDate && vDate <= new Date('2026-03-31T23:59:59');
+
     return (
-      vNo.includes('-OP-') ||
-      vNo.startsWith('JV-FD-OP-') ||
-      vNo.startsWith('REC-FD-OP-') ||
-      vNo.startsWith('JV-RD-OP-') ||
-      vNo.startsWith('REC-RD-OP-') ||
-      vNo.startsWith('JV-SH-OP-') ||
-      vNo.startsWith('JV-INV-OP-') ||
       (v.voucherType || '').toLowerCase() === 'opening' ||
       narr.includes('आरंभिक शिल्लक') ||
-      narr.includes('opening balance migration')
+      narr.includes('opening balance migration') ||
+      (Boolean(isLegacyDate) && (
+        vNo.includes('-OP-') ||
+        vNo.startsWith('JV-FD-OP-') ||
+        vNo.startsWith('REC-FD-OP-') ||
+        vNo.startsWith('JV-RD-OP-') ||
+        vNo.startsWith('REC-RD-OP-') ||
+        vNo.startsWith('JV-SH-OP-') ||
+        vNo.startsWith('JV-INV-OP-')
+      ))
     );
   };
 
@@ -420,6 +425,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       vNo.startsWith('REC-FD-OP-') ||
       vNo.startsWith('JV-FD-OP-') ||
       vNo.startsWith('REC-FD-') ||
+      vNo.startsWith('JV-FD-') ||
       v.narration?.includes('मुदत ठेव रक्कम जमा') ||
       v.narration?.includes('नवीन मुदत ठेव खाते') ||
       v.narration?.includes('मुदत ठेव खाते उघडले') ||

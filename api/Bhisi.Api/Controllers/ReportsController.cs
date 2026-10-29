@@ -7847,7 +7847,7 @@ namespace Bhisi.Api.Controllers
 
                 string[] fdVoucherPrefixes = {
                     "JV-FD-REN-", "PAY-FD-INT-", "JV-FD-INT-",
-                    "REC-FD-OP-", "JV-FD-OP-",
+                    "REC-FD-OP-", "JV-FD-OP-", "REC-FD-", "JV-FD-",
                     "JV-FD-PRECLOSE-", "PAY-FD-PRECLOSE-", "PMT-FD-PRECLOSE-",
                     "JV-FD-CLOSE-", "PAY-FD-CLOSE-", "PMT-FD-CLOSE-",
                     "JV-FD-PROV-", "JV-FD-ACC-"
@@ -7888,7 +7888,9 @@ namespace Bhisi.Api.Controllers
                         txType = "मुदतपूर्ती परतावा";
                         badge = "bg-emerald-100 text-emerald-800";
                     }
-                    else if (vNo.StartsWith("REC-FD-OP-", StringComparison.OrdinalIgnoreCase))
+                    else if (vNo.StartsWith("REC-FD-OP-", StringComparison.OrdinalIgnoreCase) ||
+                             vNo.StartsWith("REC-FD-", StringComparison.OrdinalIgnoreCase) ||
+                             vNo.StartsWith("JV-FD-", StringComparison.OrdinalIgnoreCase))
                     {
                         txType = "नवीन मुदत ठेव जमा";
                         badge = "bg-blue-100 text-blue-800";

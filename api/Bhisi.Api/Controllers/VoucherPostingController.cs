@@ -41,28 +41,29 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                // 2.5 Auto-heal: Ensure all historical/migrated opening balance vouchers (<= 31/03/2026 or -OP-) are marked Approved so they never appear in pending queue
+                // 2.5 Auto-heal: Ensure all historical/migrated opening balance vouchers (<= 31/03/2026 or migration narration) are marked Approved so they never appear in pending queue
                 var pendingMigrationVouchers = await _context.Vouchers
                     .Where(v => v.Status == "Pending" && (
-                        v.VoucherNo.Contains("-OP-") ||
-                        v.VoucherNo.StartsWith("JV-FD-OP-") ||
-                        v.VoucherNo.StartsWith("REC-FD-OP-") ||
-                        v.VoucherNo.StartsWith("JV-RD-OP-") ||
-                        v.VoucherNo.StartsWith("REC-RD-OP-") ||
-                        v.VoucherNo.StartsWith("JV-SH-OP-") ||
-                        v.VoucherNo.StartsWith("JV-INV-OP-") ||
                         v.VoucherType == "Opening" ||
-                        (v.VoucherDate <= new DateTime(2026, 3, 31) &&
+                        (v.Narration != null && (
+                            v.Narration.Contains("आरंभिक शिल्लक") || 
+                            v.Narration.Contains("Opening Balance Migration"))) ||
+                        (v.VoucherDate <= new DateTime(2026, 3, 31) && (
+                            v.VoucherNo.Contains("-OP-") ||
+                            v.VoucherNo.StartsWith("JV-FD-OP-") ||
+                            v.VoucherNo.StartsWith("REC-FD-OP-") ||
+                            v.VoucherNo.StartsWith("JV-RD-OP-") ||
+                            v.VoucherNo.StartsWith("REC-RD-OP-") ||
+                            v.VoucherNo.StartsWith("JV-SH-OP-") ||
+                            v.VoucherNo.StartsWith("JV-INV-OP-")
+                        ) &&
                          !v.VoucherNo.StartsWith("JV-FD-REN-") &&
                          !v.VoucherNo.StartsWith("PAY-FD-INT-") &&
                          !v.VoucherNo.StartsWith("JV-FD-INT-") &&
                          !v.VoucherNo.StartsWith("JV-FD-CLOSE-") &&
                          !v.VoucherNo.StartsWith("JV-FD-PRECLOSE-") &&
                          !v.VoucherNo.StartsWith("PAY-FD-CLOSE-") &&
-                         !v.VoucherNo.StartsWith("PMT-FD-CLOSE-")) ||
-                        (v.Narration != null && (
-                            v.Narration.Contains("आरंभिक शिल्लक") || 
-                            v.Narration.Contains("Opening Balance Migration")))
+                         !v.VoucherNo.StartsWith("PMT-FD-CLOSE-"))
                     ))
                     .ToListAsync();
                 if (pendingMigrationVouchers.Any())
@@ -104,25 +105,19 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(vd => vd.Member)
                         .ThenInclude(m => m!.Customer)
                 .Where(v => v.Status == "Pending" && 
-                            !v.VoucherNo.Contains("-OP-") && 
-                            !v.VoucherNo.StartsWith("JV-FD-OP-") &&
-                            !v.VoucherNo.StartsWith("REC-FD-OP-") &&
-                            !v.VoucherNo.StartsWith("JV-RD-OP-") &&
-                            !v.VoucherNo.StartsWith("REC-RD-OP-") &&
-                            !v.VoucherNo.StartsWith("JV-SH-OP-") &&
-                            !v.VoucherNo.StartsWith("JV-INV-OP-") &&
                             v.VoucherType != "Opening" &&
-                            (v.VoucherDate > new DateTime(2026, 3, 31) ||
-                             v.VoucherNo.StartsWith("JV-FD-REN-") ||
-                             v.VoucherNo.StartsWith("PAY-FD-INT-") ||
-                             v.VoucherNo.StartsWith("JV-FD-INT-") ||
-                             v.VoucherNo.StartsWith("JV-FD-CLOSE-") ||
-                             v.VoucherNo.StartsWith("JV-FD-PRECLOSE-") ||
-                             v.VoucherNo.StartsWith("PAY-FD-CLOSE-") ||
-                             v.VoucherNo.StartsWith("PMT-FD-CLOSE-")) &&
                             !(v.Narration != null && (
                                 v.Narration.Contains("आरंभिक शिल्लक") || 
-                                v.Narration.Contains("Opening Balance Migration"))))
+                                v.Narration.Contains("Opening Balance Migration"))) &&
+                            !(v.VoucherDate <= new DateTime(2026, 3, 31) && (
+                                v.VoucherNo.Contains("-OP-") ||
+                                v.VoucherNo.StartsWith("JV-FD-OP-") ||
+                                v.VoucherNo.StartsWith("REC-FD-OP-") ||
+                                v.VoucherNo.StartsWith("JV-RD-OP-") ||
+                                v.VoucherNo.StartsWith("REC-RD-OP-") ||
+                                v.VoucherNo.StartsWith("JV-SH-OP-") ||
+                                v.VoucherNo.StartsWith("JV-INV-OP-")
+                            )))
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.VoucherID)
                 .ToListAsync();
@@ -156,23 +151,19 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(vd => vd.Member)
                         .ThenInclude(m => m!.Customer)
                 .Where(v => v.Status == "Approved" && 
-                            !v.VoucherNo.Contains("-OP-") && 
-                            !v.VoucherNo.StartsWith("JV-FD-OP-") &&
-                            !v.VoucherNo.StartsWith("REC-FD-OP-") &&
-                            !v.VoucherNo.StartsWith("JV-RD-OP-") &&
-                            !v.VoucherNo.StartsWith("REC-RD-OP-") &&
-                            !v.VoucherNo.StartsWith("JV-SH-OP-") &&
-                            !v.VoucherNo.StartsWith("JV-INV-OP-") &&
                             v.VoucherType != "Opening" &&
-                            (v.VoucherDate > new DateTime(2026, 3, 31) ||
-                             v.VoucherNo.StartsWith("JV-FD-REN-") ||
-                             v.VoucherNo.StartsWith("PAY-FD-INT-") ||
-                             v.VoucherNo.StartsWith("JV-FD-INT-") ||
-                             v.VoucherNo.StartsWith("JV-FD-CLOSE-") ||
-                             v.VoucherNo.StartsWith("JV-FD-PRECLOSE-") ||
-                             v.VoucherNo.StartsWith("PAY-FD-CLOSE-") ||
-                             v.VoucherNo.StartsWith("PMT-FD-CLOSE-")) &&
-                            !(v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration"))))
+                            !(v.Narration != null && (
+                                v.Narration.Contains("आरंभिक शिल्लक") || 
+                                v.Narration.Contains("Opening Balance Migration"))) &&
+                            !(v.VoucherDate <= new DateTime(2026, 3, 31) && (
+                                v.VoucherNo.Contains("-OP-") ||
+                                v.VoucherNo.StartsWith("JV-FD-OP-") ||
+                                v.VoucherNo.StartsWith("REC-FD-OP-") ||
+                                v.VoucherNo.StartsWith("JV-RD-OP-") ||
+                                v.VoucherNo.StartsWith("REC-RD-OP-") ||
+                                v.VoucherNo.StartsWith("JV-SH-OP-") ||
+                                v.VoucherNo.StartsWith("JV-INV-OP-")
+                            )))
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.ScrollNo ?? 0)
                 .ThenBy(v => v.VoucherID)
@@ -380,15 +371,21 @@ namespace Bhisi.Api.Controllers
                 foreach (var voucher in vouchers)
                 {
                     // 0. Safety Lock: Opening Balance Migration Vouchers cannot be unpassed
-                    if (voucher.VoucherNo.Contains("-OP-") || 
-                        voucher.VoucherNo.StartsWith("JV-FD-OP-") ||
-                        voucher.VoucherNo.StartsWith("REC-FD-OP-") ||
-                        voucher.VoucherNo.StartsWith("JV-RD-OP-") ||
-                        voucher.VoucherNo.StartsWith("REC-RD-OP-") ||
-                        voucher.VoucherNo.StartsWith("JV-SH-OP-") ||
-                        voucher.VoucherNo.StartsWith("JV-INV-OP-") ||
-                        voucher.VoucherType == "Opening" ||
-                        (voucher.Narration != null && (voucher.Narration.Contains("आरंभिक शिल्लक") || voucher.Narration.Contains("Opening Balance Migration"))))
+                    bool isMigrationVoucher = voucher.VoucherType == "Opening" ||
+                        (voucher.Narration != null && (
+                            voucher.Narration.Contains("आरंभिक शिल्लक") || 
+                            voucher.Narration.Contains("Opening Balance Migration"))) ||
+                        (voucher.VoucherDate <= new DateTime(2026, 3, 31) && (
+                            voucher.VoucherNo.Contains("-OP-") ||
+                            voucher.VoucherNo.StartsWith("JV-FD-OP-") ||
+                            voucher.VoucherNo.StartsWith("REC-FD-OP-") ||
+                            voucher.VoucherNo.StartsWith("JV-RD-OP-") ||
+                            voucher.VoucherNo.StartsWith("REC-RD-OP-") ||
+                            voucher.VoucherNo.StartsWith("JV-SH-OP-") ||
+                            voucher.VoucherNo.StartsWith("JV-INV-OP-")
+                        ));
+
+                    if (isMigrationVoucher)
                     {
                         await dbTransaction.RollbackAsync();
                         return BadRequest($"सुरक्षा ऑडिट: आरंभिक शिल्लक स्थलांतर व्हाउचर क्र. {voucher.VoucherNo} अन-पास करण्यास सक्त मनाई आहे (Opening balance migration cannot be unpassed).");
@@ -861,7 +858,9 @@ namespace Bhisi.Api.Controllers
                     Helpers.FdRenewalRollbackHelper.IsFdRenewalVoucher(voucher) ||
                     voucher.VoucherNo.Contains("-FD-CLOSE-") ||
                     voucher.VoucherNo.Contains("-FD-PRECLOSE-") ||
-                    voucher.VoucherNo.Contains("-FD-OP-"));
+                    voucher.VoucherNo.Contains("-FD-OP-") ||
+                    voucher.VoucherNo.StartsWith("JV-FD-") ||
+                    voucher.VoucherNo.StartsWith("REC-FD-"));
 
                 if (!string.IsNullOrEmpty(voucher.VoucherNo) && !isFdLinkedForSaving)
                 {
@@ -941,8 +940,11 @@ namespace Bhisi.Api.Controllers
 
                 bool isFdOpening = !isFdRenewal && (voucher.VoucherNo.StartsWith("REC-FD-OP-") || 
                                    voucher.VoucherNo.StartsWith("JV-FD-OP-") || 
+                                   voucher.VoucherNo.StartsWith("REC-FD-") || 
+                                   voucher.VoucherNo.StartsWith("JV-FD-") || 
                                    (voucher.Narration != null && (voucher.Narration.Contains("मुदत ठेव रक्कम जमा") || 
-                                                                  voucher.Narration.Contains("नवीन मुदत ठेव खाते"))));
+                                                                  voucher.Narration.Contains("नवीन मुदत ठेव खाते") ||
+                                                                  voucher.Narration.Contains("मुदत ठेव खाते उघडले"))));
 
                 if (isFdRenewal)
                 {
@@ -1078,6 +1080,10 @@ namespace Bhisi.Api.Controllers
                         fdAccNo = voucher.VoucherNo.Substring("REC-FD-OP-".Length).Trim();
                     else if (voucher.VoucherNo.StartsWith("JV-FD-OP-"))
                         fdAccNo = voucher.VoucherNo.Substring("JV-FD-OP-".Length).Trim();
+                    else if (voucher.VoucherNo.StartsWith("REC-FD-"))
+                        fdAccNo = voucher.VoucherNo.Substring("REC-FD-".Length).Trim();
+                    else if (voucher.VoucherNo.StartsWith("JV-FD-"))
+                        fdAccNo = voucher.VoucherNo.Substring("JV-FD-".Length).Trim();
                     else
                     {
                         var match = System.Text.RegularExpressions.Regex.Match(voucher.Narration ?? "", @"[A-Za-z0-9]+-[0-9]+-FD-[0-9]+");
@@ -1092,32 +1098,17 @@ namespace Bhisi.Api.Controllers
 
                         if (fdAcc != null)
                         {
-                            // 🛡️ Lien & Active Loan Check: जर खातेदाराकडे सक्रिय कर्ज असेल तर तारण सुरक्षेसाठी डिलीट रोखा
-                            if (fdAcc.CustomerID > 0)
+                            // 🛡️ Specific Lien / Security Check: तपासा ही विशिष्ट पावती कर्जासाठी थेट तारण म्हणून नोंदवलेली आहे का?
+                            string accNo = fdAcc.AccountNo ?? "";
+                            string legNo = fdAcc.LegacyAccountNumber ?? "";
+                            var pledgedLoan = await _context.LoanAccounts
+                                .FirstOrDefaultAsync(l => l.Status == "Active" && 
+                                    ((!string.IsNullOrEmpty(accNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(accNo)) ||
+                                     (!string.IsNullOrEmpty(legNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(legNo))));
+
+                            if (pledgedLoan != null)
                             {
-                                int custId = fdAcc.CustomerID;
-                                int? linkedMemId = null;
-                                var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
-                                if (mem != null) linkedMemId = mem.MemberID;
-
-                                var activeLoansQuery = _context.LoanAccounts
-                                    .Where(l => l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0));
-
-                                if (linkedMemId.HasValue && linkedMemId.Value > 0)
-                                {
-                                    activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemId.Value);
-                                }
-                                else
-                                {
-                                    activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId);
-                                }
-
-                                var activeLoans = await activeLoansQuery.ToListAsync();
-                                if (activeLoans.Any())
-                                {
-                                    decimal totalLoanLiability = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
-                                    throw new InvalidOperationException($"सदर खातेदाराकडे एकूण ₹{totalLoanLiability:N2} चे सक्रिय कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) हे मुदत ठेव खाते व त्याचे व्हाउचर नष्ट करता येणार नाही.");
-                                }
+                                throw new InvalidOperationException($"सदर मुदत ठेव पावती '{fdAcc.AccountNo}' कर्ज खाते क्र. {pledgedLoan.LoanAccountNo} साठी थेट तारण (Lien/Security) म्हणून नोंदवलेली आहे. त्यामुळे हे खाते व व्हाउचर नष्ट करता येणार नाही.");
                             }
                             if (fdAcc.IsLegacyAccount)
                             {
@@ -1145,14 +1136,15 @@ namespace Bhisi.Api.Controllers
                                 string custName = fdAcc.Customer != null ? $"{fdAcc.Customer.FirstName} {fdAcc.Customer.LastName}".Trim() : "";
 
                                 // Refund SB account if PaymentMode was Transfer
-                                if (fdAcc.PaymentMode == "Transfer" && fdAcc.SavingAccountID.HasValue && fdAcc.SavingAccountID.Value > 0)
+                                if ((fdAcc.PaymentMode == "Transfer" || fdAcc.PaymentMode == "Savings") && fdAcc.SavingAccountID.HasValue && fdAcc.SavingAccountID.Value > 0)
                                 {
                                     var sbAcc = await _context.SavingAccountMasters.FindAsync(fdAcc.SavingAccountID.Value);
                                     if (sbAcc != null)
                                     {
                                         sbAcc.CurrentBalance += depositAmount;
                                         var sbTx = await _context.SavingTransactions
-                                            .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && st.Narration != null && st.Narration.Contains(fdAccNo))
+                                            .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && 
+                                                         (st.VoucherNo == voucher.VoucherNo || (st.Narration != null && st.Narration.Contains(fdAccNo))))
                                             .FirstOrDefaultAsync();
                                         if (sbTx != null) _context.SavingTransactions.Remove(sbTx);
                                     }
@@ -1257,6 +1249,10 @@ namespace Bhisi.Api.Controllers
 
                 var rdAccruals = await _context.RdInterestAccruals.Where(ra => ra.VoucherID == id).ToListAsync();
                 if (rdAccruals.Any()) _context.RdInterestAccruals.RemoveRange(rdAccruals);
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
             }
             catch { }
 

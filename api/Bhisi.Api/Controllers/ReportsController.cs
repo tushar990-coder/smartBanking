@@ -5544,7 +5544,8 @@ namespace Bhisi.Api.Controllers
                 var beforeFromDate = allTransactions.Where(t => t.TransactionDate.Date < fromDate.Value.Date).ToList();
                 foreach (var t in beforeFromDate)
                 {
-                    decimal amt = t.PrincipalAmount > 0 ? t.PrincipalAmount : t.InterestAmount;
+                    var (preDr, preCr) = Helpers.RdClosureSettlementHelper.ResolveRdKhatavaniLineAmounts(t, runningBalance);
+                    decimal amt = t.DebitCredit == "Cr" ? preCr : preDr;
                     if (t.DebitCredit == "Cr")
                         runningBalance += amt;
                     else
@@ -5589,13 +5590,13 @@ namespace Bhisi.Api.Controllers
 
                 if (t.DebitCredit == "Cr")
                 {
-                    cr = t.PrincipalAmount > 0 ? t.PrincipalAmount : t.InterestAmount;
+                    (_, cr) = Helpers.RdClosureSettlementHelper.ResolveRdKhatavaniLineAmounts(t, runningBalance);
                     runningBalance += cr;
                     periodTotalCr += cr;
                 }
                 else
                 {
-                    dr = t.PrincipalAmount > 0 ? t.PrincipalAmount : t.InterestAmount;
+                    (dr, _) = Helpers.RdClosureSettlementHelper.ResolveRdKhatavaniLineAmounts(t, runningBalance);
                     runningBalance -= dr;
                     periodTotalDr += dr;
                 }
@@ -5706,7 +5707,7 @@ namespace Bhisi.Api.Controllers
                 TotalDepositedAmount = account.TotalDepositedAmount,
                 CumulativeInterestAccrued = account.CumulativeInterestAccrued,
                 LegacyAccruedInt = account.LegacyAccruedInt,
-                CurrentTotalBalance = account.TotalDepositedAmount + account.CumulativeInterestAccrued + account.LegacyAccruedInt,
+                CurrentTotalBalance = account.Status == "Closed" && !toDate.HasValue ? 0m : runningBalance,
                 PeriodOpeningBalance = periodOpeningBal,
                 PeriodTotalDebit = periodTotalDr,
                 PeriodTotalCredit = periodTotalCr,

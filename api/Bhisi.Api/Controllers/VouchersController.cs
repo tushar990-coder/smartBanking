@@ -646,6 +646,21 @@ namespace Bhisi.Api.Controllers
                 _context.LoanDisbursements.Remove(ld);
             }
 
+            bool rdClosureRolledBack = false;
+            try
+            {
+                rdClosureRolledBack = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
+                    _context,
+                    voucher,
+                    dto.Reason,
+                    dto.UserID,
+                    !string.IsNullOrWhiteSpace(dto.Username) ? dto.Username : $"User-{dto.UserID}");
+            }
+            catch (InvalidOperationException rdEx)
+            {
+                return BadRequest(new { message = rdEx.Message });
+            }
+
             // FD Renewal Rollback (handles 14-digit CBS & legacy accounts, sibling interest vouchers, and Saving transfer reversal)
             if (Helpers.FdRenewalRollbackHelper.IsFdRenewalVoucher(voucher))
             {
@@ -668,7 +683,10 @@ namespace Bhisi.Api.Controllers
             }
             else if (!string.IsNullOrEmpty(voucher.VoucherNo))
             {
-                await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "DELETED");
+                if (!rdClosureRolledBack)
+                {
+                    await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "DELETED");
+                }
                 var savingTxs = await _context.SavingTransactions.Where(st => st.VoucherNo == voucher.VoucherNo).ToListAsync();
                 foreach (var st in savingTxs) st.VoucherNo = null;
             }
@@ -743,6 +761,12 @@ namespace Bhisi.Api.Controllers
 
             var fdTxs = await _context.FdTransactions.Where(ft => ft.VoucherID == id).ToListAsync();
             if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
+
+            var rdTxs = await _context.RdTransactions.Where(rt => rt.VoucherID == id).ToListAsync();
+            if (rdTxs.Any()) _context.RdTransactions.RemoveRange(rdTxs);
+
+            var rdAccruals = await _context.RdInterestAccruals.Where(ra => ra.VoucherID == id).ToListAsync();
+            if (rdAccruals.Any()) _context.RdInterestAccruals.RemoveRange(rdAccruals);
 
             // 6. Immutable Security Audit Logging
             var oldVoucherJson = System.Text.Json.JsonSerializer.Serialize(new
@@ -878,7 +902,20 @@ namespace Bhisi.Api.Controllers
             voucher.RejectionReason = dto.Reason;
 
             // Automatically reverse linked saving transactions if any
-            await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "REJECTED");
+            bool rdRejHandled;
+            try
+            {
+                rdRejHandled = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
+                    _context, voucher, dto.Reason, rejecterId, User.GetUsername() ?? $"User-{rejecterId}");
+            }
+            catch (InvalidOperationException rdEx)
+            {
+                return BadRequest(rdEx.Message);
+            }
+            if (!rdRejHandled)
+            {
+                await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "REJECTED");
+            }
 
             await _context.SaveChangesAsync();
             return Ok(new { message = "Voucher rejected successfully and linked saving balance reversed." });
@@ -906,7 +943,22 @@ namespace Bhisi.Api.Controllers
             voucher.RejectionReason = dto.Reason;
 
             // Automatically reverse linked saving transactions if any
-            await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "CANCELLED");
+            int cancelCheckUserId = User.GetUserId();
+            if (cancelCheckUserId <= 0 && dto.RejectedBy > 0) cancelCheckUserId = dto.RejectedBy;
+            bool rdCanHandled;
+            try
+            {
+                rdCanHandled = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
+                    _context, voucher, dto.Reason, cancelCheckUserId, User.GetUsername() ?? $"User-{cancelCheckUserId}");
+            }
+            catch (InvalidOperationException rdEx)
+            {
+                return BadRequest(rdEx.Message);
+            }
+            if (!rdCanHandled)
+            {
+                await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "CANCELLED");
+            }
 
             int cancelUserId = User.GetUserId();
             if (cancelUserId <= 0 && dto.RejectedBy > 0) cancelUserId = dto.RejectedBy;

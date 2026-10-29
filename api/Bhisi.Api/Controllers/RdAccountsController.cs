@@ -322,6 +322,13 @@ namespace Bhisi.Api.Controllers
                 .Include(x => x.Customer)
                     .ThenInclude(c => c!.MemberProfile)
                 .Include(x => x.RdScheme)
+                    .ThenInclude(s => s!.RdLiabilityLedger)
+                .Include(x => x.RdScheme)
+                    .ThenInclude(s => s!.InterestPayableLedger)
+                .Include(x => x.RdScheme)
+                    .ThenInclude(s => s!.InterestExpenseLedger)
+                .Include(x => x.RdScheme)
+                    .ThenInclude(s => s!.PenaltyIncomeLedger)
                 .Include(x => x.Branch)
                 .FirstOrDefaultAsync(x => x.RdAccountID == id);
 
@@ -330,25 +337,42 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
+            var (effectiveAccruedInt, _) = await Helpers.RdClosureSettlementHelper.ComputeRdAccrualStateAsync(_context, r);
+
             // Get payment history details
             var history = await _context.RdTransactions
                 .AsNoTracking()
                 .Where(t => t.RdAccountID == id)
                 .OrderBy(t => t.TransactionDate)
+                .ThenBy(t => t.RdTransactionID)
                 .Select(t => new {
                     t.RdTransactionID,
+                    t.VoucherID,
                     t.TransactionDate,
                     t.TransactionType,
                     t.InstallmentNo,
                     t.DebitCredit,
                     t.PrincipalAmount,
                     t.PenaltyAmount,
-                    t.InterestAmount
+                    t.InterestAmount,
+                    t.BalanceAfterTxn,
+                    t.Narration
                 })
                 .ToListAsync();
 
             return Ok(new {
                 AccountDetails = new {
+                    EffectiveAccruedInt = effectiveAccruedInt,
+                    PrematurePenaltyRate = r.RdScheme != null ? r.RdScheme.PrematurePenaltyRate : 1.00m,
+                    RdLiabilityLedgerName = r.RdScheme?.RdLiabilityLedger?.LedgerName ?? "१३ मेंबर आरडी ठेव",
+                    InterestPayableLedgerName = r.RdScheme?.InterestPayableLedger?.LedgerName ?? "२३ देणे सभासद ठेव व्याज",
+                    InterestExpenseLedgerName = r.RdScheme?.InterestExpenseLedger?.LedgerName ?? "१३४ आरडी ठेवीवरील व्याज",
+                    PenaltyIncomeLedgerName = r.RdScheme?.PenaltyIncomeLedger?.LedgerName ?? "४६ आरडी दंड आकारणी",
+                    r.ClosureDate,
+                    r.ClosureType,
+                    r.ClosedPayoutAmount,
+                    r.IsLienMarked,
+                    r.LienLoanAccountNo,
                     r.RdAccountID,
                     r.BranchID,
                     BranchName = r.Branch != null ? r.Branch.BranchName : "",
@@ -1795,7 +1819,17 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/MaturedClose
         [HttpPost("{id}/MaturedClose")]
-        public async Task<IActionResult> MaturedClose(
+        public Task<IActionResult> MaturedClose(
+            int id,
+            [FromQuery] DateTime? closureDate = null,
+            [FromQuery] string paymentMode = "Cash",
+            [FromQuery] int? bankLedgerId = null,
+            [FromQuery] int? savingAccountId = null,
+            [FromQuery] decimal? customPayoutAmount = null,
+            [FromQuery] string? remarks = null)
+            => Helpers.RdClosureSettlementHelper.ExecuteMaturedCloseAsync(_context, HttpContext.User, id, closureDate, paymentMode, bankLedgerId, savingAccountId, customPayoutAmount, remarks);
+
+        private async Task<IActionResult> MaturedCloseLegacyUnused(
             int id,
             [FromQuery] DateTime? closureDate = null,
             [FromQuery] string paymentMode = "Cash",
@@ -1982,7 +2016,18 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/PrematureClose
         [HttpPost("{id}/PrematureClose")]
-        public async Task<IActionResult> PrematureClose(
+        public Task<IActionResult> PrematureClose(
+            int id,
+            [FromQuery] DateTime closureDate,
+            [FromQuery] decimal? customPrematureRate = null,
+            [FromQuery] string paymentMode = "Cash",
+            [FromQuery] int? bankLedgerId = null,
+            [FromQuery] int? savingAccountId = null,
+            [FromQuery] decimal? customPayoutAmount = null,
+            [FromQuery] string? remarks = null)
+            => Helpers.RdClosureSettlementHelper.ExecutePrematureCloseAsync(_context, HttpContext.User, id, closureDate, customPrematureRate, paymentMode, bankLedgerId, savingAccountId, customPayoutAmount, remarks);
+
+        private async Task<IActionResult> PrematureCloseLegacyUnused(
             int id,
             [FromQuery] DateTime closureDate,
             [FromQuery] decimal? customPrematureRate = null,
@@ -2245,7 +2290,15 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/Renew
         [HttpPost("{id}/Renew")]
-        public async Task<IActionResult> Renew(int id, [FromQuery] int targetSchemeId, [FromQuery] DateTime? closureDate = null)
+        public Task<IActionResult> Renew(
+            int id,
+            [FromQuery] int targetSchemeId,
+            [FromQuery] DateTime? closureDate = null,
+            [FromQuery] decimal? customPayoutAmount = null,
+            [FromQuery] string? remarks = null)
+            => Helpers.RdClosureSettlementHelper.ExecuteRenewAsync(_context, HttpContext.User, id, targetSchemeId, closureDate, customPayoutAmount, remarks);
+
+        private async Task<IActionResult> RenewLegacyUnused(int id, int targetSchemeId, DateTime? closureDate = null)
         {
             var oldAccount = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -2927,7 +2980,10 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/RdAccounts/closure-by-voucher/{voucherId}
         [HttpGet("closure-by-voucher/{voucherId}")]
-        public async Task<IActionResult> GetRdClosureByVoucher(int voucherId)
+        public Task<IActionResult> GetRdClosureByVoucher(int voucherId)
+            => Helpers.RdClosureSettlementHelper.GetClosureByVoucherAsync(_context, voucherId);
+
+        private async Task<IActionResult> GetRdClosureByVoucherLegacyUnused(int voucherId)
         {
             var voucher = await _context.Vouchers
                 .Include(v => v.VoucherDetails)

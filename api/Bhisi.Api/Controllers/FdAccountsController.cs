@@ -731,20 +731,6 @@ namespace Bhisi.Api.Controllers
 
                         // Deduct balance from Member Savings Account
                         sbAcc.CurrentBalance -= account.DepositAmount;
-                        _context.SavingTransactions.Add(new SavingTransaction
-                        {
-                            SavingAccountID = sbAcc.SavingAccountID,
-                            CustomerID = sbAcc.CustomerID,
-                            BranchID = account.BranchID > 0 ? account.BranchID : sbAcc.BranchID,
-                            TransactionDate = account.OpeningDate,
-                            TransactionType = "Withdrawal",
-                            PaymentMode = "Transfer",
-                            Amount = account.DepositAmount,
-                            BalanceAfterTxn = sbAcc.CurrentBalance,
-                            Narration = $"मुदत ठेव खात्यासाठी वर्ग (FD Opening SB Debit): {account.AccountNo}",
-                            CreatedBy = account.CreatedBy,
-                            CreatedOn = DateTime.Now
-                        });
                     }
 
                     if (debitLedger == null)
@@ -755,6 +741,7 @@ namespace Bhisi.Api.Controllers
 
                     var (voucherStatus, approvedBy, approvedOn) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, account.DepositAmount, account.CreatedBy);
 
+                    Voucher? voucher = null;
                     if (!account.IsLegacyAccount)
                     {
                         if (fdLiabilityLedger == null)
@@ -769,12 +756,17 @@ namespace Bhisi.Api.Controllers
                             return BadRequest("डिपॉझिट जमा करण्यासाठी डेबिट लेजर (Cash/Bank/SB) सापडले नाही.");
                         }
 
-                        var voucher = new Voucher
+                        string vType = account.PaymentMode == "Transfer" ? "Journal" : "Receipt";
+                        string vNo = account.PaymentMode == "Transfer"
+                            ? $"JV-FD-{account.AccountNo}"
+                            : $"REC-FD-{account.AccountNo}";
+
+                        voucher = new Voucher
                         {
                             BranchID = account.BranchID,
-                            VoucherNo = $"REC-FD-OP-{account.AccountNo}",
+                            VoucherNo = vNo,
                             VoucherDate = account.OpeningDate,
-                            VoucherType = "Receipt",
+                            VoucherType = vType,
                             Status = voucherStatus,
                             ApprovedBy = approvedBy,
                             ApprovedOn = approvedOn,
@@ -786,6 +778,30 @@ namespace Bhisi.Api.Controllers
 
                         _context.Vouchers.Add(voucher);
                         await _context.SaveChangesAsync();
+
+                        // Link SavingTransaction to Voucher
+                        if (account.PaymentMode == "Transfer" && account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
+                        {
+                            var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
+                            if (sbAcc != null)
+                            {
+                                _context.SavingTransactions.Add(new SavingTransaction
+                                {
+                                    SavingAccountID = sbAcc.SavingAccountID,
+                                    CustomerID = sbAcc.CustomerID,
+                                    BranchID = account.BranchID > 0 ? account.BranchID : sbAcc.BranchID,
+                                    TransactionDate = account.OpeningDate,
+                                    TransactionType = "Withdrawal",
+                                    PaymentMode = "Transfer",
+                                    Amount = account.DepositAmount,
+                                    BalanceAfterTxn = sbAcc.CurrentBalance,
+                                    Narration = $"मुदत ठेव खात्यासाठी वर्ग (FD Opening SB Debit): {account.AccountNo}",
+                                    VoucherNo = voucher.VoucherNo,
+                                    CreatedBy = account.CreatedBy,
+                                    CreatedOn = DateTime.Now
+                                });
+                            }
+                        }
 
                         var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
                         int? linkedMemberId = linkedMember?.MemberID;
@@ -957,14 +973,16 @@ namespace Bhisi.Api.Controllers
                 var targetVoucherIdSet = new HashSet<int>(accountVoucherIds.Union(accrualVoucherIds));
 
                 // Also check for the exact opening voucher created specifically for this account type
-                string expectedOpVoucherNo = isLegacy 
-                    ? $"JV-FD-OP-{accountNo}" 
-                    : $"REC-FD-OP-{accountNo}";
+                var matchedOpVouchers = await _context.Vouchers
+                    .Where(v => v.VoucherNo == $"REC-FD-{accountNo}" || 
+                                v.VoucherNo == $"JV-FD-{accountNo}" || 
+                                v.VoucherNo == $"REC-FD-OP-{accountNo}" || 
+                                v.VoucherNo == $"JV-FD-OP-{accountNo}")
+                    .ToListAsync();
 
-                var opVoucher = await _context.Vouchers.FirstOrDefaultAsync(v => v.VoucherNo == expectedOpVoucherNo);
-                if (opVoucher != null)
+                foreach (var mv in matchedOpVouchers)
                 {
-                    targetVoucherIdSet.Add(opVoucher.VoucherID);
+                    targetVoucherIdSet.Add(mv.VoucherID);
                 }
 
                 // 2. Remove all FdTransactions and FdInterestAccruals for THIS account FIRST

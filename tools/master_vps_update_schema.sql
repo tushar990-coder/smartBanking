@@ -6575,6 +6575,20 @@ IF OBJECT_ID('dbo.VoucherDetails', 'U') IS NOT NULL AND COL_LENGTH('VoucherDetai
 GO
 
 PRINT '========================================================================';
+-- ========================================================================
+-- v2.6.04: RD CLOSURE & EDITABLE PAYOUT SETTLEMENT SCHEMA SYNC
+-- ========================================================================
+IF OBJECT_ID('dbo.RdAccounts', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('RdAccounts', 'ClosureDate') IS NULL
+        ALTER TABLE [dbo].[RdAccounts] ADD [ClosureDate] DATETIME2 NULL;
+    IF COL_LENGTH('RdAccounts', 'ClosureType') IS NULL
+        ALTER TABLE [dbo].[RdAccounts] ADD [ClosureType] NVARCHAR(30) NULL;
+    IF COL_LENGTH('RdAccounts', 'ClosedPayoutAmount') IS NULL
+        ALTER TABLE [dbo].[RdAccounts] ADD [ClosedPayoutAmount] DECIMAL(18,2) NULL;
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

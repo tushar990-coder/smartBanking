@@ -1,5 +1,26 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-29] - आवृत्ती v2.6.04 (RD Editable Payout & Balanced Double-Entry GL Settlement, Zero-Balance RD Khatavani, Closure/Renewal Rollback & Deadstock OB Master Patch)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **आरडी मुदतपूर्ती पेमेंट आणि खाते बंद — संपादनीय परतावा रक्कम (`RdWithdrawalMaturity.tsx`, `RdClosureSettlementHelper.cs`, `RdAccountsController.cs`):**
+  * **`/rd/withdrawal-maturity` (`आरडी मुदतपूर्ती पेमेंट आणि खाते बंद`)** स्क्रीनवर **`मुदतपूर्ती बंद (Matured)`**, **`मुदतपूर्व बंद (Premature)`** आणि **`नूतनीकरण (Renewal — नवीन RD / नवीन FD)`** या तिन्ही टॅबवर **`निव्वळ देय परतावा रक्कम (Net Payout Amount ₹)`** व **`निव्वळ व्याज / दंड (Net Interest / Penalty ₹)`** पूर्णपणे संपादनीय (Editable) व द्विमार्गी सिंक्रोनाइझ्ड (`Payout = Principal + NetInterest`) केले आहेत.
+  * मराठी (`१३५००.५०`) व इंग्रजी (`13500.50`) दोन्ही अंकांचा सपोर्ट, **`↺ मूळ गणना (Reset)`** बटण, ऐच्छिक **`बदलाचे कारण / शेरा (Remarks)`**, सर्व हप्ते पूर्ण भरलेल्या खात्यांसाठी स्वयंचलित `'मुदतपूर्ती बंद'` टॅब निवड, आणि कोलॅप्सिबल **`अकाउंटिंग व्हाउचर प्रिव्ह्यू (Balanced Dr == Cr)`** उपलब्ध.
+  * तारण (`IsLienMarked`) खात्यांसाठी स्पष्ट चेतावणी व सबमिट प्रतिबंध आणि व्हाउचर पासिंग चेकर मोडमध्ये `{ voucherIds: [voucherId], approvedBy }` पेलोड दुरुस्ती.
+* **कस्टम परताव्यानुसार १००% संतुलित दुहेरी नोंद (`Dr == Cr`) जी.एल. सेटलमेंट व क्रॉस-ब्रांच IBT (`RdClosureSettlementHelper.cs`):**
+  * **प्रकरण A (कस्टम परतावा >= मुद्दल + जमा व्याज):** आरडी मुद्दल `Dr` + जमा व्याज तरतूद `Dr` + उर्वरित अतिरिक्त व्याज खर्च `Dr` == रोख/बँक/बचत/नूतनीकरण `Cr`.
+  * **प्रकरण B (मुद्दल <= कस्टम परतावा < मुद्दल + जमा व्याज):** आरडी मुद्दल `Dr` + जमा व्याज तरतूद `Dr` == ग्राहक परतावा `Cr` + जास्त तरतूद व्याज खर्च रिव्हर्सल `Cr`.
+  * **प्रकरण C (कस्टम परतावा < मुद्दल — निव्वळ दंड कपात):** आरडी मुद्दल `Dr` (+ जमा व्याज तरतूद असल्यास संपूर्ण रिव्हर्सल `Dr`/`Cr`) == ग्राहक परतावा `Cr` + मुदतपूर्व बंद दंड उत्पन्न `Cr`.
+* **आरडी खातावणी शून्य-बाकी ताळमेळ व क्लोजर/नूतनीकरण रोलबॅक (`ReportsController.cs`, `VoucherPostingController.cs`, `VouchersController.cs`):**
+  * आरडी बंद करताना निव्वळ व्याज जमा (`Cr`) किंवा दंड नावे (`Dr`) उप-खातावणीत (`RdTransactions`) नोंदवून अंतिम परतावा नावे (`Dr`) केल्यामुळे बंद खात्याची आरडी खातावणी अखेर शिल्लक तंतोतंत **`₹ ०.००` (Zero Balance)** राहते.
+  * आरडी क्लोजर (`-RD-CLOSE-`, `-RD-PRECLOSE-`) किंवा नूतनीकरण (`JV-RD-REN-`) व्हाउचर डिलीट, रिजेक्ट किंवा रद्द केल्यास आरडी खाते पुन्हा `Active` / `Matured` स्थितीत पूर्ववत होते, बचत खात्यातील जमा रक्कम सुरक्षितपणे रिव्हर्स होते आणि दुबार तयार झालेले नवीन RD/FD खाते (कोणतेही पुढील व्यवहार नसल्यास) स्वच्छ काढले जाते.
+* **डेडस्टॉक आरंभिक शिल्लक व प्रलंबित व्हाउचर कॅस्केड डिलीट सुधारणा (`DeadstockOpeningBalance.tsx`, `LoanDisbursementReversalHelper.cs`, `VoucherPostingController.cs`):**
+  * सेटिंग्ज -> आरंभिक शिल्लक केंद्रामध्ये स्वतंत्र **डेडस्टॉक आरंभिक शिल्लक (`Deadstock Opening Balance`)** टॅब समाविष्ट आणि प्रलंबित कर्ज वाटप व्हाउचर डिलीट करताना `500 FK Error` निवारण व कडक `Pending`-ओन्ली व्हाउचर डिलीट सुरक्षा धोरण लागू.
+* **१-क्लिक मल्टि-ॲप मास्टर पॅच (`SmartBanking_VPS_Multi_App_Master_Patch.zip` & `SmartBanking_Patch_v2.6.04.patch`):**
+  * सर्व ९ कॉन्फिगर केलेल्या संस्थांसाठी तयार केलेला मास्टर पॅच व गिट पॅच उपलब्ध.
+
+---
+
 ## 📅 [2026-10-29] - आवृत्ती v2.6.03 (Legacy Daybook & Kacchi Legacy Daybook with Short Voucher & 8-Module Legacy Account Priority, FD Renewal Rollback/Self-Heal & CBS Loan Ledger Deposit Collateral Report Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

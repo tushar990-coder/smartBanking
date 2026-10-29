@@ -63,7 +63,12 @@ namespace Bhisi.Api.Controllers
                          !v.VoucherNo.StartsWith("JV-FD-CLOSE-") &&
                          !v.VoucherNo.StartsWith("JV-FD-PRECLOSE-") &&
                          !v.VoucherNo.StartsWith("PAY-FD-CLOSE-") &&
-                         !v.VoucherNo.StartsWith("PMT-FD-CLOSE-"))
+                         !v.VoucherNo.StartsWith("PMT-FD-CLOSE-") &&
+                         !v.VoucherNo.StartsWith("JV-RD-CLOSE-") &&
+                         !v.VoucherNo.StartsWith("JV-RD-PRECLOSE-") &&
+                         !v.VoucherNo.StartsWith("JV-RD-REN-") &&
+                         !v.VoucherNo.Contains("-RD-CLOSE-") &&
+                         !v.VoucherNo.Contains("-RD-PRECLOSE-"))
                     ))
                     .ToListAsync();
                 if (pendingMigrationVouchers.Any())
@@ -106,6 +111,7 @@ namespace Bhisi.Api.Controllers
                         .ThenInclude(m => m!.Customer)
                 .Where(v => v.Status == "Pending" && 
                             v.VoucherType != "Opening" &&
+
                             !(v.Narration != null && (
                                 v.Narration.Contains("आरंभिक शिल्लक") || 
                                 v.Narration.Contains("Opening Balance Migration"))) &&
@@ -860,7 +866,8 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherNo.Contains("-FD-PRECLOSE-") ||
                     voucher.VoucherNo.Contains("-FD-OP-") ||
                     voucher.VoucherNo.StartsWith("JV-FD-") ||
-                    voucher.VoucherNo.StartsWith("REC-FD-"));
+                    voucher.VoucherNo.StartsWith("REC-FD-") ||
+                    Helpers.RdClosureSettlementHelper.IsRdClosureOrRenewalVoucher(voucher));
 
                 if (!string.IsNullOrEmpty(voucher.VoucherNo) && !isFdLinkedForSaving)
                 {
@@ -924,6 +931,9 @@ namespace Bhisi.Api.Controllers
             }
             catch { }
 
+            // 4.9 Recurring Deposit Closure / Premature Close / Renewal Rollback
+            await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(_context, voucher, reason, userId, username);
+
             // 5. Fixed Deposit & Recurring Deposit Module Handling (Opening vs Withdrawal / Closure)
             try
             {
@@ -966,7 +976,7 @@ namespace Bhisi.Api.Controllers
                         Status = "Success"
                     });
                 }
-                else if (isFdWithdrawal)
+                else if (isFdWithdrawal && !Helpers.RdClosureSettlementHelper.IsRdClosureOrRenewalVoucher(voucher))
                 {
                     // === CASE 1: WITHDRAWAL / CLOSURE DELETE ===
                     // 🛡️ Statutory Safeguard: If this closure voucher adjusted proceeds against a Loan Account,

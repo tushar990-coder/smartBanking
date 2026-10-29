@@ -1410,14 +1410,16 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                   <span>बदला</span>
                                 </button>
                                 
-                                <button 
-                                  onClick={(e) => { e.stopPropagation(); handleDelete(v.voucherID); }} 
-                                  className="px-2 py-0.5 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5"
-                                  title="डिलीट करा"
-                                >
-                                  <Trash2 size={11} />
-                                  <span>बाद</span>
-                                </button>
+                                {v.status !== 'Approved' && (
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(v.voucherID); }} 
+                                    className="px-2 py-0.5 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5"
+                                    title="डिलीट करा"
+                                  >
+                                    <Trash2 size={11} />
+                                    <span>बाद</span>
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

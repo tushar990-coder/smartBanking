@@ -3937,7 +3937,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                             }} className="bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-sm shadow-sm" title="Edit"><Edit size={12} /></button>
                                                             <button onClick={() => setPrintingCollectionId(c.loanCollectionID)} className="bg-primary hover:bg-[#004a75] text-white p-1 rounded-sm shadow-sm" title="Print"><Printer size={12} /></button>
                                                             <button onClick={() => handleDirectWhatsAppShare(c)} className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 rounded-sm shadow-sm flex items-center justify-center" title="WhatsApp वर पाठवा"><span className="text-[10px]">📲</span></button>
-                                                            <button onClick={() => handleDeleteReceipt(c.loanCollectionID)} className="bg-red-600 hover:bg-red-700 text-white p-1 rounded-sm shadow-sm" title="Delete"><Trash2 size={12} /></button>
+                                                            
                                                         </>
                                                     )}
                                                 </td>

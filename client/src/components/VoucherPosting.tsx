@@ -1491,16 +1491,18 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                   </button>
                                 )}
 
-                                {/* 5. हटवा / डिलीट */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleActionDelete(v)}
-                                  disabled={actionLoading}
-                                  className="bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-gray-300 hover:border-rose-300 p-1 rounded text-[10.5px] transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
-                                  title={activeTab === 'PENDING' ? "व्हाउचर थेट रद्द व डिलीट करा" : "मंजूर व्हाउचर डिलीट करण्यासाठी प्रथम अन-पास करा"}
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
+                                {/* 5. हटवा / डिलीट - फक्त प्रलंबित (Pending) व्हाउचर्ससाठी उपलब्ध */}
+                                {activeTab === 'PENDING' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleActionDelete(v)}
+                                    disabled={actionLoading}
+                                    className="bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-gray-300 hover:border-rose-300 p-1 rounded text-[10.5px] transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
+                                    title="व्हाउचर थेट रद्द व डिलीट करा"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

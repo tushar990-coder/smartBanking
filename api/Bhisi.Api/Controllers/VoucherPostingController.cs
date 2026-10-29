@@ -713,21 +713,148 @@ namespace Bhisi.Api.Controllers
             }
             catch { }
 
-            // 3. Loans Module Unlinking
+            // 1b. Pigmy Withdrawals Rollback
             try
             {
-                var loanCollections = await _context.LoanCollections.Where(lc => lc.VoucherID == id).ToListAsync();
-                foreach (var lc in loanCollections) lc.VoucherID = null;
-
-                var overdueRecoveries = await _context.OverdueRecoveryLedgers.Where(o => o.VoucherID == id).ToListAsync();
-                foreach (var o in overdueRecoveries) o.VoucherID = null;
-
-                var overdueInterests = await _context.OverdueInterestLedgers.Where(o => o.VoucherID == id).ToListAsync();
-                foreach (var o in overdueInterests) o.VoucherID = null;
+                if (!string.IsNullOrEmpty(voucher.VoucherNo))
+                {
+                    var pigmyWithdrawals = await _context.PigmyWithdrawals.Where(w => w.VoucherNo == voucher.VoucherNo).ToListAsync();
+                    foreach (var pw in pigmyWithdrawals)
+                    {
+                        var pAcc = await _context.PigmyAccounts.FindAsync(pw.PigmyAccountID);
+                        if (pAcc != null)
+                        {
+                            pAcc.TotalDepositedAmount += pw.RequestedAmount;
+                            if (pAcc.TotalWithdrawnAmount >= pw.RequestedAmount)
+                            {
+                                pAcc.TotalWithdrawnAmount -= pw.RequestedAmount;
+                            }
+                            if (pAcc.Status == "Closed") pAcc.Status = "Active";
+                            _context.Entry(pAcc).State = EntityState.Modified;
+                        }
+                    }
+                    if (pigmyWithdrawals.Any()) _context.PigmyWithdrawals.RemoveRange(pigmyWithdrawals);
+                }
             }
             catch { }
 
-            // 4. Savings Module Unlinking (skip FD closure/renewal/opening vouchers whose SavingTransactions are reversed in Block 5)
+            // 3. Loans Module Reversal & Cascade Deletion
+            try
+            {
+                var loanCollections = await _context.LoanCollections
+                    .Include(lc => lc.Fees)
+                    .Where(lc => lc.VoucherID == id || lc.HomeBranchVoucherID == id)
+                    .ToListAsync();
+
+                foreach (var lc in loanCollections)
+                {
+                    var loanAcc = await _context.LoanAccounts.FindAsync(lc.LoanAccountID);
+                    if (loanAcc != null)
+                    {
+                        loanAcc.PrincipalBalance += lc.PrincipalCollected;
+                        loanAcc.PurePrincipalBalance = Math.Min(loanAcc.PrincipalBalance, loanAcc.PurePrincipalBalance + lc.PrincipalCollected);
+                        if (lc.PenaltyInterestCollected > 0) loanAcc.OverdueInterestBalance += lc.PenaltyInterestCollected;
+                        if (lc.ReceivableInterestCollected > 0) loanAcc.InterestBalance += lc.ReceivableInterestCollected;
+                        if (loanAcc.Status == "Closed" && loanAcc.PrincipalBalance > 0) loanAcc.Status = "Active";
+
+                        var remainingCollections = await _context.LoanCollections
+                            .Where(c => c.LoanAccountID == loanAcc.LoanAccountID && c.LoanCollectionID != lc.LoanCollectionID)
+                            .OrderByDescending(c => c.CollectionDate)
+                            .ThenByDescending(c => c.LoanCollectionID)
+                            .ToListAsync();
+
+                        loanAcc.LastInstallmentPaidDate = remainingCollections.FirstOrDefault()?.CollectionDate;
+                        _context.Entry(loanAcc).State = EntityState.Modified;
+
+                        var allSchedules = await _context.LoanInstallmentSchedules
+                            .Where(s => s.LoanAccountID == loanAcc.LoanAccountID)
+                            .OrderBy(s => s.InstallmentNo)
+                            .ToListAsync();
+
+                        if (allSchedules.Any())
+                        {
+                            Services.LoanScheduleGenerator.SynchronizeSchedules(loanAcc, allSchedules, remainingCollections);
+                            foreach (var schedule in allSchedules)
+                            {
+                                _context.Entry(schedule).State = EntityState.Modified;
+                            }
+                        }
+                    }
+
+                    // Strict Physical Reversal: Clean up Pigmy Account & Transactions if paid via Pigmy
+                    if (lc.SourcePigmyAccountID.HasValue && lc.SourcePigmyAccountID.Value > 0)
+                    {
+                        decimal totalDeducted = lc.TotalAmountReceived + (lc.Fees?.Sum(f => f.Amount) ?? 0);
+                        var pigmyAcc = await _context.PigmyAccounts.FindAsync(lc.SourcePigmyAccountID.Value);
+                        if (pigmyAcc != null)
+                        {
+                            pigmyAcc.TotalDepositedAmount += totalDeducted;
+                            if (pigmyAcc.TotalWithdrawnAmount >= totalDeducted)
+                            {
+                                pigmyAcc.TotalWithdrawnAmount -= totalDeducted;
+                            }
+                            if (lc.PigmyTransferType == "CLOSURE" && pigmyAcc.Status == "Closed")
+                            {
+                                pigmyAcc.Status = "Active";
+                            }
+                            _context.Entry(pigmyAcc).State = EntityState.Modified;
+
+                            var pigmyTxns = await _context.PigmyTransactions
+                                .Where(pt => pt.PigmyAccountID == pigmyAcc.PigmyAccountID && 
+                                             ((!string.IsNullOrEmpty(lc.ReceiptNo) && pt.ReferenceId == lc.ReceiptNo) || 
+                                              (!string.IsNullOrEmpty(lc.ReceiptNo) && pt.Narration.Contains(lc.ReceiptNo))))
+                                .ToListAsync();
+                            if (pigmyTxns.Any())
+                            {
+                                _context.PigmyTransactions.RemoveRange(pigmyTxns);
+                            }
+                        }
+                    }
+                    else if (lc.PaymentMode == "Saving Transfer" || lc.PaymentMode == "Saving")
+                    {
+                        SavingAccountMaster? savingAccount = null;
+                        if (lc.SourceSavingAccountID.HasValue && lc.SourceSavingAccountID.Value > 0)
+                        {
+                            savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == lc.SourceSavingAccountID.Value);
+                        }
+                        if (savingAccount == null && !string.IsNullOrEmpty(lc.TransferFromSavingAccountNo))
+                        {
+                            savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == lc.TransferFromSavingAccountNo);
+                        }
+                        if (savingAccount != null)
+                        {
+                            decimal totalDeducted = lc.TotalAmountReceived + (lc.Fees?.Sum(f => f.Amount) ?? 0);
+                            savingAccount.CurrentBalance += totalDeducted;
+                            _context.Entry(savingAccount).State = EntityState.Modified;
+
+                            var savingTxns = await _context.SavingTransactions
+                                .Where(st => st.SavingAccountID == savingAccount.SavingAccountID && 
+                                             !string.IsNullOrEmpty(lc.ReceiptNo) && st.Narration.Contains(lc.ReceiptNo))
+                                .ToListAsync();
+                            if (savingTxns.Any())
+                            {
+                                _context.SavingTransactions.RemoveRange(savingTxns);
+                            }
+                        }
+                    }
+
+                    if (lc.Fees != null && lc.Fees.Any())
+                    {
+                        _context.LoanCollectionFees.RemoveRange(lc.Fees);
+                    }
+
+                    _context.LoanCollections.Remove(lc);
+                }
+
+                var overdueRecoveries = await _context.OverdueRecoveryLedgers.Where(o => o.VoucherID == id).ToListAsync();
+                if (overdueRecoveries.Any()) _context.OverdueRecoveryLedgers.RemoveRange(overdueRecoveries);
+
+                var overdueInterests = await _context.OverdueInterestLedgers.Where(o => o.VoucherID == id).ToListAsync();
+                if (overdueInterests.Any()) _context.OverdueInterestLedgers.RemoveRange(overdueInterests);
+            }
+            catch { }
+
+            // 4. Savings Module Reversal & Cascade Deletion (skip FD closure/renewal/opening vouchers whose SavingTransactions are reversed in Block 5)
             try
             {
                 bool isFdLinkedForSaving = !string.IsNullOrEmpty(voucher.VoucherNo) && (
@@ -738,14 +865,62 @@ namespace Bhisi.Api.Controllers
 
                 if (!string.IsNullOrEmpty(voucher.VoucherNo) && !isFdLinkedForSaving)
                 {
-                    var savingTxs = await _context.SavingTransactions.Where(st => st.VoucherNo == voucher.VoucherNo).ToListAsync();
-                    foreach (var st in savingTxs) st.VoucherNo = null;
+                    var savingTxs = await _context.SavingTransactions
+                        .Where(st => st.VoucherNo == voucher.VoucherNo)
+                        .ToListAsync();
+
+                    foreach (var st in savingTxs)
+                    {
+                        var account = await _context.SavingAccountMasters.FindAsync(st.SavingAccountID);
+                        if (account != null)
+                        {
+                            if (st.TransactionType == "Deposit" || st.TransactionType == "Interest")
+                            {
+                                account.CurrentBalance -= st.Amount;
+                            }
+                            else if (st.TransactionType == "Withdrawal" || st.TransactionType == "Charges")
+                            {
+                                account.CurrentBalance += st.Amount;
+                            }
+                            _context.Entry(account).State = EntityState.Modified;
+                        }
+
+                        if (st.PaymentMode == "Transfer" && st.TargetSavingAccountID.HasValue)
+                        {
+                            var targetAccount = await _context.SavingAccountMasters.FindAsync(st.TargetSavingAccountID.Value);
+                            if (targetAccount != null)
+                            {
+                                if (st.TransactionType == "Withdrawal")
+                                {
+                                    targetAccount.CurrentBalance -= st.Amount;
+                                }
+                                else
+                                {
+                                    targetAccount.CurrentBalance += st.Amount;
+                                }
+                                _context.Entry(targetAccount).State = EntityState.Modified;
+                            }
+
+                            var pairedTxn = await _context.SavingTransactions
+                                .FirstOrDefaultAsync(t => t.TransactionID != st.TransactionID &&
+                                                          t.SavingAccountID == st.TargetSavingAccountID.Value &&
+                                                          t.TargetSavingAccountID == st.SavingAccountID &&
+                                                          t.TransactionDate.Date == st.TransactionDate.Date &&
+                                                          t.Amount == st.Amount);
+                            if (pairedTxn != null)
+                            {
+                                _context.SavingTransactions.Remove(pairedTxn);
+                            }
+                        }
+
+                        _context.SavingTransactions.Remove(st);
+                    }
 
                     var savingInterest = await _context.SavingInterestPostings.Where(s => s.VoucherNo == voucher.VoucherNo).ToListAsync();
-                    foreach (var s in savingInterest) s.VoucherNo = null;
+                    if (savingInterest.Any()) _context.SavingInterestPostings.RemoveRange(savingInterest);
 
                     var savingClosings = await _context.SavingAccountClosings.Where(s => s.VoucherNo == voucher.VoucherNo).ToListAsync();
-                    foreach (var s in savingClosings) s.VoucherNo = null;
+                    if (savingClosings.Any()) _context.SavingAccountClosings.RemoveRange(savingClosings);
                 }
             }
             catch { }

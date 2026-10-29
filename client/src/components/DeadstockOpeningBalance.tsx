@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import {
@@ -362,7 +363,7 @@ export default function DeadstockOpeningBalance() {
 
   return (
     <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
-      
+
       {/* 1. Header Banner */}
       <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center gap-2.5">
@@ -482,261 +483,261 @@ export default function DeadstockOpeningBalance() {
 
       {/* 3. Opening Balance Entry Form */}
       <div className="bg-white rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary mb-3 overflow-hidden transition-all duration-200 animate-in fade-in">
-          <div className="bg-slate-50 px-3.5 py-2 border-b border-gray-200 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="p-1 bg-primary/10 text-primary rounded">
-                <Plus className="w-3.5 h-3.5" />
-              </div>
-              <div>
-                <h3 className="text-xs font-bold text-gray-800">
-                  {editingAssetId ? 'डेडस्टॉक नोंद दुरुस्ती (Edit Deadstock Opening Entry)' : 'नवीन डेडस्टॉक शिल्लक नोंद (New Deadstock Opening Balance Entry)'}
-                </h3>
-                <p className="text-[10px] text-gray-500">प्रारंभिक शिल्लक (Opening Balance) मालमत्तेची माहिती, खरेदी किंमत व घसारा नोंदवा</p>
-              </div>
+        <div className="bg-slate-50 px-3.5 py-2 border-b border-gray-200 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-primary/10 text-primary rounded">
+              <Plus className="w-3.5 h-3.5" />
             </div>
-            {editingAssetId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="text-xs text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 cursor-pointer"
+            <div>
+              <h3 className="text-xs font-bold text-gray-800">
+                {editingAssetId ? 'डेडस्टॉक नोंद दुरुस्ती (Edit Deadstock Opening Entry)' : 'नवीन डेडस्टॉक शिल्लक नोंद (New Deadstock Opening Balance Entry)'}
+              </h3>
+              <p className="text-[10px] text-gray-500">प्रारंभिक शिल्लक (Opening Balance) मालमत्तेची माहिती, खरेदी किंमत व घसारा नोंदवा</p>
+            </div>
+          </div>
+          {editingAssetId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="text-xs text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <X size={12} />
+              <span>दुरुस्ती रद्द करा</span>
+            </button>
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-3.5 space-y-3">
+          {/* Row 1: Branch, Category, Code, Name */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div>
+              <label className={labelClass}>शाखा (Branch) *</label>
+              <select
+                name="branchID"
+                value={formData.branchID}
+                onChange={handleInputChange}
+                className={selectClass}
+                required
               >
-                <X size={12} />
-                <span>दुरुस्ती रद्द करा</span>
-              </button>
+                {branches.map((b: any) => (
+                  <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>मालमत्ता वर्ग (Category) *</label>
+              <select
+                name="categoryID"
+                value={formData.categoryID}
+                onChange={handleInputChange}
+                className={selectClass}
+                required
+              >
+                <option value={0}>-- वर्ग निवडा --</option>
+                {categories.map((c: any) => (
+                  <option key={c.categoryID} value={c.categoryID}>
+                    {c.categoryName} ({c.depreciationRate}% {c.depreciationMethod || 'SLM'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>
+                {safeQty > 1 ? 'मालमत्ता कोड प्रिफिक्स (Asset Code Prefix) *' : 'मालमत्ता कोड (Asset Code) *'}
+              </label>
+              <input
+                ref={assetCodeInputRef}
+                type="text"
+                name="assetCode"
+                value={formData.assetCode}
+                onChange={handleInputChange}
+                required
+                placeholder={safeQty > 1 ? "उदा. COMP-HQ किंवा FURN" : "उदा. COMP-HQ-01"}
+                className={`${inputClass} font-mono font-bold text-primary`}
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>मालमत्ता नाव (Asset Name) *</label>
+              <input
+                type="text"
+                name="assetName"
+                value={formData.assetName}
+                onChange={handleInputChange}
+                required
+                placeholder="उदा. Lenovo ThinkCentre / Executive Chair / Godrej Safe"
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          {/* Row 2: Purchase Date, Quantity, Calculation Mode, Original Cost */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div>
+              <label className={labelClass}>खरेदी तारीख (Purchase Date) *</label>
+              <input
+                type="date"
+                name="purchaseDate"
+                value={formData.purchaseDate}
+                onChange={handleInputChange}
+                required
+                className={inputClass}
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>
+                <span className="text-primary font-bold">नग / संख्या (Quantity) *</span>
+              </label>
+              <input
+                type="number"
+                name="quantity"
+                value={formData.quantity || ''}
+                onChange={handleInputChange}
+                required
+                min="1"
+                step="1"
+                disabled={editingAssetId !== null}
+                className={`${inputClass} font-bold text-primary bg-primary/5 border-primary/30`}
+                placeholder="1"
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>किंमत पद्धत (Calculation Mode)</label>
+              <select
+                name="costMode"
+                value={formData.costMode}
+                onChange={handleInputChange}
+                disabled={editingAssetId !== null || safeQty <= 1}
+                className={selectClass}
+              >
+                <option value="perUnit">प्रति नग किंमत (Per Item Cost)</option>
+                <option value="total">एकूण एकत्रित किंमत (Total Lump-sum)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>
+                {formData.costMode === 'perUnit' ? 'प्रति नग मूळ किंमत (Cost / Unit ₹) *' : 'सर्व नगांची एकूण किंमत (Total Cost ₹) *'}
+              </label>
+              <input
+                type="number"
+                name="originalCost"
+                value={formData.originalCost || ''}
+                onChange={handleInputChange}
+                required
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                className={`${inputClass} font-semibold`}
+              />
+            </div>
+          </div>
+
+          {/* Row 3: Accumulated Depr, Unit WDV, Location, Custodian */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div>
+              <label className={labelClass}>
+                {formData.costMode === 'perUnit' ? 'प्रति नग घसारा (Depr / Unit ₹)' : 'एकूण एकत्रित घसारा (Total Depr ₹)'}
+              </label>
+              <input
+                type="number"
+                name="accumulatedDepreciation"
+                value={formData.accumulatedDepreciation || ''}
+                onChange={handleInputChange}
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                className={inputClass}
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>प्रति नग WDV (Unit Book Value ₹)</label>
+              <input
+                type="text"
+                value={unitWdv.toFixed(2)}
+                readOnly
+                className={`${inputClass} bg-slate-100 font-mono font-bold text-slate-700 cursor-not-allowed`}
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>स्थान (Location)</label>
+              <input
+                type="text"
+                name="location"
+                value={formData.location}
+                onChange={handleInputChange}
+                placeholder="उदा. मुख्य दालन, केबिन, रेकॉर्ड रूम"
+                className={inputClass}
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>कस्टोडियन / जबाबदार व्यक्ती</label>
+              <input
+                type="text"
+                name="custodian"
+                value={formData.custodian}
+                onChange={handleInputChange}
+                placeholder="उदा. शाखा व्यवस्थापक, कॅशियर"
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          {/* Live Calculation Preview Banner */}
+          <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <span className="text-slate-600 font-medium">
+                एकूण नग: <strong className="text-slate-900 font-bold">{safeQty}</strong>
+              </span>
+              <span className="text-slate-400">|</span>
+              <span className="text-slate-600 font-medium">
+                एकूण मूळ किंमत: <strong className="text-blue-700 font-bold">₹{totalCostCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+              </span>
+              <span className="text-slate-400">|</span>
+              <span className="text-slate-600 font-medium">
+                एकूण घसारा: <strong className="text-amber-700 font-bold">₹{totalDeprCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+              </span>
+              <span className="text-slate-400">|</span>
+              <span className="text-slate-600 font-medium">
+                एकूण पुस्तकी मूल्य (WDV): <strong className="text-emerald-700 font-bold">₹{totalWdvCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+              </span>
+            </div>
+
+            {safeQty > 1 && (
+              <div className="text-[11px] font-mono text-primary font-bold">
+                सिक्वेन्स: {formData.assetCode.trim() || 'ASSET'}-001 ते {formData.assetCode.trim() || 'ASSET'}-{String(safeQty).padStart(3, '0')}
+              </div>
             )}
           </div>
 
-          <form onSubmit={handleSubmit} className="p-3.5 space-y-3">
-            {/* Row 1: Branch, Category, Code, Name */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-              <div>
-                <label className={labelClass}>शाखा (Branch) *</label>
-                <select
-                  name="branchID"
-                  value={formData.branchID}
-                  onChange={handleInputChange}
-                  className={selectClass}
-                  required
-                >
-                  {branches.map((b: any) => (
-                    <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
-                  ))}
-                </select>
-              </div>
+          {/* Form Actions */}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-sm border border-slate-300 transition-all cursor-pointer"
+            >
+              रीसेट (Reset)
+            </button>
 
-              <div>
-                <label className={labelClass}>मालमत्ता वर्ग (Category) *</label>
-                <select
-                  name="categoryID"
-                  value={formData.categoryID}
-                  onChange={handleInputChange}
-                  className={selectClass}
-                  required
-                >
-                  <option value={0}>-- वर्ग निवडा --</option>
-                  {categories.map((c: any) => (
-                    <option key={c.categoryID} value={c.categoryID}>
-                      {c.categoryName} ({c.depreciationRate}% {c.depreciationMethod || 'SLM'})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className={labelClass}>
-                  {safeQty > 1 ? 'मालमत्ता कोड प्रिफिक्स (Asset Code Prefix) *' : 'मालमत्ता कोड (Asset Code) *'}
-                </label>
-                <input
-                  ref={assetCodeInputRef}
-                  type="text"
-                  name="assetCode"
-                  value={formData.assetCode}
-                  onChange={handleInputChange}
-                  required
-                  placeholder={safeQty > 1 ? "उदा. COMP-HQ किंवा FURN" : "उदा. COMP-HQ-01"}
-                  className={`${inputClass} font-mono font-bold text-primary`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>मालमत्ता नाव (Asset Name) *</label>
-                <input
-                  type="text"
-                  name="assetName"
-                  value={formData.assetName}
-                  onChange={handleInputChange}
-                  required
-                  placeholder="उदा. Lenovo ThinkCentre / Executive Chair / Godrej Safe"
-                  className={inputClass}
-                />
-              </div>
-            </div>
-
-            {/* Row 2: Purchase Date, Quantity, Calculation Mode, Original Cost */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-              <div>
-                <label className={labelClass}>खरेदी तारीख (Purchase Date) *</label>
-                <input
-                  type="date"
-                  name="purchaseDate"
-                  value={formData.purchaseDate}
-                  onChange={handleInputChange}
-                  required
-                  className={inputClass}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>
-                  <span className="text-primary font-bold">नग / संख्या (Quantity) *</span>
-                </label>
-                <input
-                  type="number"
-                  name="quantity"
-                  value={formData.quantity || ''}
-                  onChange={handleInputChange}
-                  required
-                  min="1"
-                  step="1"
-                  disabled={editingAssetId !== null}
-                  className={`${inputClass} font-bold text-primary bg-primary/5 border-primary/30`}
-                  placeholder="1"
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>किंमत पद्धत (Calculation Mode)</label>
-                <select
-                  name="costMode"
-                  value={formData.costMode}
-                  onChange={handleInputChange}
-                  disabled={editingAssetId !== null || safeQty <= 1}
-                  className={selectClass}
-                >
-                  <option value="perUnit">प्रति नग किंमत (Per Item Cost)</option>
-                  <option value="total">एकूण एकत्रित किंमत (Total Lump-sum)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className={labelClass}>
-                  {formData.costMode === 'perUnit' ? 'प्रति नग मूळ किंमत (Cost / Unit ₹) *' : 'सर्व नगांची एकूण किंमत (Total Cost ₹) *'}
-                </label>
-                <input
-                  type="number"
-                  name="originalCost"
-                  value={formData.originalCost || ''}
-                  onChange={handleInputChange}
-                  required
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  className={`${inputClass} font-semibold`}
-                />
-              </div>
-            </div>
-
-            {/* Row 3: Accumulated Depr, Unit WDV, Location, Custodian */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-              <div>
-                <label className={labelClass}>
-                  {formData.costMode === 'perUnit' ? 'प्रति नग घसारा (Depr / Unit ₹)' : 'एकूण एकत्रित घसारा (Total Depr ₹)'}
-                </label>
-                <input
-                  type="number"
-                  name="accumulatedDepreciation"
-                  value={formData.accumulatedDepreciation || ''}
-                  onChange={handleInputChange}
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  className={inputClass}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>प्रति नग WDV (Unit Book Value ₹)</label>
-                <input
-                  type="text"
-                  value={unitWdv.toFixed(2)}
-                  readOnly
-                  className={`${inputClass} bg-slate-100 font-mono font-bold text-slate-700 cursor-not-allowed`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>स्थान (Location)</label>
-                <input
-                  type="text"
-                  name="location"
-                  value={formData.location}
-                  onChange={handleInputChange}
-                  placeholder="उदा. मुख्य दालन, केबिन, रेकॉर्ड रूम"
-                  className={inputClass}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>कस्टोडियन / जबाबदार व्यक्ती</label>
-                <input
-                  type="text"
-                  name="custodian"
-                  value={formData.custodian}
-                  onChange={handleInputChange}
-                  placeholder="उदा. शाखा व्यवस्थापक, कॅशियर"
-                  className={inputClass}
-                />
-              </div>
-            </div>
-
-            {/* Live Calculation Preview Banner */}
-            <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-sm flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-3">
-                <span className="text-slate-600 font-medium">
-                  एकूण नग: <strong className="text-slate-900 font-bold">{safeQty}</strong>
-                </span>
-                <span className="text-slate-400">|</span>
-                <span className="text-slate-600 font-medium">
-                  एकूण मूळ किंमत: <strong className="text-blue-700 font-bold">₹{totalCostCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                </span>
-                <span className="text-slate-400">|</span>
-                <span className="text-slate-600 font-medium">
-                  एकूण घसारा: <strong className="text-amber-700 font-bold">₹{totalDeprCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                </span>
-                <span className="text-slate-400">|</span>
-                <span className="text-slate-600 font-medium">
-                  एकूण पुस्तकी मूल्य (WDV): <strong className="text-emerald-700 font-bold">₹{totalWdvCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                </span>
-              </div>
-
-              {safeQty > 1 && (
-                <div className="text-[11px] font-mono text-primary font-bold">
-                  सिक्वेन्स: {formData.assetCode.trim() || 'ASSET'}-001 ते {formData.assetCode.trim() || 'ASSET'}-{String(safeQty).padStart(3, '0')}
-                </div>
-              )}
-            </div>
-
-            {/* Form Actions */}
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-sm border border-slate-300 transition-all cursor-pointer"
-              >
-                रीसेट (Reset)
-              </button>
-
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-4 py-1.5 bg-primary hover:opacity-90 disabled:opacity-50 text-white rounded-sm text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Save size={13} />
-                <span>{saving ? 'जतन होत आहे...' : editingAssetId ? 'बदल जतन करा (Update)' : 'सुरुवातीची शिल्लक जतन करा (Save Entry)'}</span>
-              </button>
-            </div>
-          </form>
-        </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-1.5 bg-primary hover:opacity-90 disabled:opacity-50 text-white rounded-sm text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Save size={13} />
+              <span>{saving ? 'जतन होत आहे...' : editingAssetId ? 'बदल जतन करा (Update)' : 'सुरुवातीची शिल्लक जतन करा (Save Entry)'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
 
       {/* 4. Registered Deadstock Opening Balances Table */}
       <div className="bg-white rounded-sm border border-slate-200 shadow-2xs overflow-hidden flex flex-col flex-1">

@@ -946,15 +946,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                           >
                             पावती प्रिंट
                           </button>
-                          <button
-                            type="button"
-                            disabled={deletingDepositId === item.depositId}
-                            onClick={() => handleDeleteDeposit(item.depositId, item.receiptNo)}
-                            className="border border-red-500 text-red-700 px-2 py-0.5 rounded-sm hover:bg-red-50 transition-colors font-semibold text-[10px] cursor-pointer disabled:opacity-50"
-                            title="भरणा पावती डिलीट / रद्द करा"
-                          >
-                            {deletingDepositId === item.depositId ? '...' : 'डिलीट'}
-                          </button>
+
                         </div>
                       </td>
                     </tr>

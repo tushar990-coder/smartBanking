@@ -456,10 +456,10 @@ namespace Bhisi.Api.Controllers
 
             bool isHOUser = User.IsHeadOfficeAdmin();
 
-            // 2. Approved Voucher Deletion Policy
-            if (voucher.Status == "Approved" && !isHOUser)
+            // 2. Approved Voucher Deletion Policy - STRICT: Approved/Passed vouchers CANNOT be deleted directly! Must be Unpassed first.
+            if (voucher.Status == "Approved")
             {
-                return BadRequest("पोस्ट झालेला व्हाऊचर डिलीट करण्याचा अधिकार फक्त मुख्य कार्यालय व्यवस्थापकाकडे (HO Manager) आहे.");
+                return BadRequest("मंजूर (Approved/Passed) व्हाउचर थेट डिलीट करता येत नाही. प्रथम व्हाउचर अन-पास (Unpass) करा आणि मग प्रलंबित यादीतून डिलीट करा.");
             }
 
             // 3. Pending Voucher Deletion Policy (Branch User limited to Today)

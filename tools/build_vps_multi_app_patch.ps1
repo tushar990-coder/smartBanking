@@ -1454,8 +1454,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory($patchFolder, $zipOutputFile, [System.IO.Compression.CompressionLevel]::Optimal, $false)
 
 $desktop = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
-$desktopDest = Join-Path $desktop "SmartBanking_VPS_Multi_App_Master_Patch.zip"
-Copy-Item $zipOutputFile $desktopDest -Force
+$desktopDest = if (-not [string]::IsNullOrWhiteSpace($desktop) -and (Test-Path $desktop)) { Join-Path $desktop "SmartBanking_VPS_Multi_App_Master_Patch.zip" } else { "" }
+if (-not [string]::IsNullOrWhiteSpace($desktopDest)) { Copy-Item $zipOutputFile $desktopDest -Force }
 
 $localDesktop = "C:\Users\$env:USERNAME\Desktop"
 if ((Test-Path $localDesktop) -and ($localDesktop -ne $desktop)) {

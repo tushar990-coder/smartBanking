@@ -481,6 +481,11 @@ namespace Bhisi.Api.Helpers
                             context.LoanAccountNpaStatuses.RemoveRange(npaStatuses);
                         }
 
+                        // Flush all staged changes (Disbursement delete, Schedule deletes, Collateral unlinks,
+                        // GoldLoanDetail unlinks/removes, ComplianceLog deletes) to DB within the current transaction
+                        // BEFORE querying AnyAsync — otherwise AnyAsync reads stale DB rows causing FK violations on SaveChanges.
+                        await context.SaveChangesAsync();
+
                         bool hasOtherRefs =
                             await context.LoanCollections.AnyAsync(c => c.LoanAccountID == loanAcc.LoanAccountID) ||
                             await context.LoanDocuments.AnyAsync(d => d.LoanAccountID == loanAcc.LoanAccountID) ||
@@ -489,7 +494,11 @@ namespace Bhisi.Api.Helpers
                             await context.Sec101CaseMasters.AnyAsync(s => s.LoanAccountId == loanAcc.LoanAccountID) ||
                             await context.Sec101NoticeHistories.AnyAsync(s => s.LoanAccountId == loanAcc.LoanAccountID) ||
                             await context.Sec101LegalExpenses.AnyAsync(s => s.LoanAccountId == loanAcc.LoanAccountID) ||
-                            await context.FdMisPayouts.AnyAsync(f => f.TargetLoanAccountID == loanAcc.LoanAccountID);
+                            await context.FdMisPayouts.AnyAsync(f => f.TargetLoanAccountID == loanAcc.LoanAccountID) ||
+                            await context.GoldLoanDetails.AnyAsync(g => g.LoanAccountID == loanAcc.LoanAccountID) ||
+                            await context.LoanDepositCollaterals.AnyAsync(c => c.LoanAccountID == loanAcc.LoanAccountID) ||
+                            await context.LoanInstallmentSchedules.AnyAsync(s => s.LoanAccountID == loanAcc.LoanAccountID) ||
+                            await context.CollateralComplianceLogs.AnyAsync(c => c.LoanAccountID == loanAcc.LoanAccountID);
 
                         if (!hasOtherRefs)
                         {

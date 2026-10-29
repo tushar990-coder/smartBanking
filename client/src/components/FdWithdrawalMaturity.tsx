@@ -272,16 +272,96 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [showReceiptPrintModal, setShowReceiptPrintModal] = useState<boolean>(false);
   const [printAccountData, setPrintAccountData] = useState<any | null>(null);
 
-  // Synchronize duration fields when selected target scheme changes
-  useEffect(() => {
-    if (targetSchemeId > 0 && schemes.length > 0) {
-      const sch = schemes.find(s => s.fdSchemeID === targetSchemeId);
-      if (sch) {
-        setRenewalDurationValue(sch.durationMonths > 0 ? sch.durationMonths : 12);
-        setRenewalDurationType((sch.durationType as any) || 'Months');
+  const computeDaysForTenor = (baseDateStr: string, dType: 'Days' | 'Months' | 'Years', dVal: number): number => {
+    const start = new Date((baseDateStr || activeBusinessDate) + 'T00:00:00');
+    if (isNaN(start.getTime())) return dVal;
+    if (dType === 'Days') return Math.max(1, dVal);
+    const end = new Date(start);
+    if (dType === 'Years') {
+      end.setFullYear(end.getFullYear() + dVal);
+    } else {
+      end.setMonth(end.getMonth() + dVal);
+    }
+    return Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+  };
+
+  const resolveDefaultRenewalTenorForScheme = (
+    sch: FdScheme | undefined,
+    acc?: FdAccount | null
+  ): { durType: 'Days' | 'Months' | 'Years'; durVal: number } => {
+    let contractedDays = Number((acc as any)?.durationInDays || 0);
+    if (contractedDays <= 0 && acc?.openingDate && acc?.maturityDate) {
+      const oDt = new Date(acc.openingDate.split('T')[0] + 'T00:00:00');
+      const mDt = new Date(acc.maturityDate.split('T')[0] + 'T00:00:00');
+      if (!isNaN(oDt.getTime()) && !isNaN(mDt.getTime()) && mDt > oDt) {
+        contractedDays = Math.round((mDt.getTime() - oDt.getTime()) / (1000 * 60 * 60 * 24));
       }
     }
-  }, [targetSchemeId, schemes]);
+
+    let durType: 'Days' | 'Months' | 'Years' = ((sch?.durationType as any) || 'Months');
+    let durVal: number = sch && sch.durationMonths > 0 ? sch.durationMonths : 12;
+
+    if (acc && sch && acc.fdSchemeID === sch.fdSchemeID) {
+      const accDurVal = Number((acc as any).durationValue || 0);
+      const accDurType = (acc as any).durationType as ('Days' | 'Months' | 'Years' | undefined);
+      if (accDurVal > 0 && (accDurType === 'Days' || accDurType === 'Months' || accDurType === 'Years')) {
+        durType = accDurType;
+        durVal = accDurVal;
+      } else if (contractedDays > 0) {
+        durType = 'Days';
+        durVal = contractedDays;
+      }
+    }
+
+    if (sch && sch.schemeDurationModel === 'Slab' && sch.slabs && sch.slabs.length > 0) {
+      const activeSlabs = sch.slabs.filter(s => s.isActive !== false);
+      if (activeSlabs.length > 0) {
+        const candidateDays = computeDaysForTenor(closureDate, durType, durVal);
+        const fitsCurrent = activeSlabs.some(s => candidateDays >= Number(s.fromDays) && candidateDays <= Number(s.toDays));
+        if (!fitsCurrent) {
+          if (contractedDays > 0 && activeSlabs.some(s => contractedDays >= Number(s.fromDays) && contractedDays <= Number(s.toDays))) {
+            durType = 'Days';
+            durVal = contractedDays;
+          } else {
+            const sortedSlabs = [...activeSlabs].sort(
+              (a, b) => Math.abs(Number(a.fromDays) - candidateDays) - Math.abs(Number(b.fromDays) - candidateDays)
+            );
+            durType = 'Days';
+            durVal = Math.max(1, Number(sortedSlabs[0].fromDays));
+          }
+        }
+      }
+    }
+
+    return { durType, durVal };
+  };
+
+  const handleTargetSchemeChange = (nextSchemeId: number) => {
+    setTargetSchemeId(nextSchemeId);
+    const sch = schemes.find(s => s.fdSchemeID === nextSchemeId);
+    if (sch) {
+      const { durType, durVal } = resolveDefaultRenewalTenorForScheme(sch, selectedAccount);
+      setRenewalDurationType(durType);
+      setRenewalDurationValue(durVal);
+    }
+  };
+
+  // Automatically sync renewal scheme & valid tenor whenever selected FD account or schemes list loads/changes
+  useEffect(() => {
+    if (schemes.length === 0) return;
+    if (selectedAccount) {
+      const matchedSch =
+        schemes.find(s => s.fdSchemeID === selectedAccount.fdSchemeID) ||
+        schemes.find(s => s.schemeName === selectedAccount.schemeName) ||
+        schemes[0];
+      if (matchedSch) {
+        setTargetSchemeId(matchedSch.fdSchemeID);
+        const { durType, durVal } = resolveDefaultRenewalTenorForScheme(matchedSch, selectedAccount);
+        setRenewalDurationType(durType);
+        setRenewalDurationValue(durVal);
+      }
+    }
+  }, [selectedAccount?.fdAccountID, schemes.length]);
 
   // Sync CBS Business Date if changed
   useEffect(() => {
@@ -368,8 +448,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         }
       }
     } catch (err: any) {
-      console.error('Error loading FD closure voucher:', err);
-      alert('मुदत ठेव क्लोजर व्हाउचर लोड करताना त्रुटी आली: ' + (err.response?.data?.message || err.message));
+      console.error('Error loading FD closure/renewal voucher:', err);
+      alert('मुदत ठेव व्हाउचर लोड करताना त्रुटी आली: ' + (err.response?.data?.message || err.message));
     } finally {
       setPassingLoading(false);
     }
@@ -377,7 +457,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
   const handlePassVoucher = async () => {
     if (!voucherId) return;
-    if (!window.confirm('आपण खात्रीपूर्वक हे मुदत ठेव क्लोजर व्हाउचर मंजूर व पास करू इच्छिता?')) return;
+    const actionLabel = actionType === 'Renewal' ? 'नूतनीकरण' : 'क्लोजर';
+    if (!window.confirm(`आपण खात्रीपूर्वक हे मुदत ठेव ${actionLabel} व्हाउचर मंजूर व पास करू इच्छिता?`)) return;
     setPassingActionLoading(true);
     try {
       await axios.post('/api/VoucherPosting/Post', [voucherId]);
@@ -1114,26 +1195,28 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     // Senior citizen eligibility check
     const isSenior = Boolean(selectedAccount.isSeniorCitizen);
 
-    // Resolve rate
+    // Resolve rate (1-to-1 match with Backend FdAccountsController.Renew Slab check)
     let appliedRate = targetScheme.interestRate;
     let matchedSlab: FdSchemeInterestSlab | null = null;
+    const activeSlabs = (targetScheme.slabs || []).filter(s => s.isActive !== false);
+    const isSlabModel = targetScheme.schemeDurationModel === 'Slab' && activeSlabs.length > 0;
 
-    if (targetScheme.schemeDurationModel === 'Slab' && targetScheme.slabs && targetScheme.slabs.length > 0) {
-      const activeSlabs = targetScheme.slabs.filter(s => s.isActive !== false);
+    if (isSlabModel) {
       const matched = activeSlabs.find(s => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays));
       if (matched) {
         matchedSlab = matched;
         appliedRate = isSenior && Number(matched.seniorCitizenRate) > 0 ? Number(matched.seniorCitizenRate) : Number(matched.interestRate);
       } else {
-        const sorted = [...activeSlabs].sort((a, b) => Number(b.toDays) - Number(a.toDays));
-        if (sorted.length > 0 && totalDays > Number(sorted[0].toDays)) {
-          matchedSlab = sorted[0];
-          appliedRate = isSenior && Number(sorted[0].seniorCitizenRate) > 0 ? Number(sorted[0].seniorCitizenRate) : Number(sorted[0].interestRate);
-        }
+        appliedRate = isSenior && Number(targetScheme.seniorCitizenInterestRate) > 0 ? Number(targetScheme.seniorCitizenInterestRate) : Number(targetScheme.interestRate);
       }
     } else {
       appliedRate = isSenior && Number(targetScheme.seniorCitizenInterestRate) > 0 ? Number(targetScheme.seniorCitizenInterestRate) : Number(targetScheme.interestRate);
     }
+
+    const isSlabValid = !isSlabModel || matchedSlab !== null;
+    const validSlabsText = isSlabModel
+      ? activeSlabs.map(s => `${s.fromDays} ते ${s.toDays} दिवस`).join(', ')
+      : '';
 
     // Maturity Amount Calculation (Exact CBS 365-day basis)
     const p = newDepositAmount;
@@ -1176,6 +1259,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       appliedRate,
       isSenior,
       matchedSlab,
+      isSlabModel,
+      isSlabValid,
+      validSlabsText,
       simMaturityAmount,
       estimatedInterest,
       monthlyPayout
@@ -1449,6 +1535,15 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         if (targetSchemeId === 0) {
           setError('कृपया नूतनीकरणासाठी नवीन ठेव योजना निवडा.');
           setLoading(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+        if (renewalSimulation && !renewalSimulation.isSlabValid) {
+          setError(
+            `निवडलेला नूतनीकरण कालावधी (${renewalSimulation.totalDays} दिवस) '${renewalSimulation.targetScheme.schemeName}' योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही. कृपया मंजूर स्लॅबमधील कालावधी निवडा (${renewalSimulation.validSlabsText}).`
+          );
+          setLoading(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
 
@@ -1511,7 +1606,22 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       setActiveLoansData(null);
       fetchAccounts();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.response?.data || 'व्यवहार पूर्ण करताना त्रुटी आली.');
+      const respData = err?.response?.data;
+      let errMsg = 'व्यवहार पूर्ण करताना त्रुटी आली.';
+      if (typeof respData === 'string' && respData.trim()) {
+        errMsg = respData.trim();
+      } else if (respData?.message && typeof respData.message === 'string') {
+        errMsg = respData.message;
+      } else if (respData?.errors && typeof respData.errors === 'object') {
+        const flatErrors = Object.values(respData.errors).flat().filter(Boolean).join(' | ');
+        if (flatErrors) errMsg = flatErrors;
+      } else if (respData?.title && typeof respData.title === 'string') {
+        errMsg = respData.title;
+      } else if (err?.message) {
+        errMsg = err.message;
+      }
+      setError(errMsg);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setLoading(false);
     }
@@ -2290,11 +2400,17 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                     खाते स्थिती
                                   </th>
                                   <td className="px-2.5 py-1.5">
-                                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm border ${
-                                      isMatured ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'
-                                    }`}>
-                                      {isMatured ? 'मुदत संपली (Matured)' : 'मुदत चालू (Premature)'}
-                                    </span>
+                                    {!isPassingMode && acc.status === 'Closed' ? (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-rose-50 text-rose-800 border-rose-300">
+                                        बंद / नूतनीकरण झालेले (Closed)
+                                      </span>
+                                    ) : (
+                                      <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm border ${
+                                        isMatured ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'
+                                      }`}>
+                                        {isMatured ? 'मुदत संपली (Matured)' : 'मुदत चालू (Premature)'}
+                                      </span>
+                                    )}
                                     {isOverdue && (
                                       <span className="ml-2 text-[10.5px] font-semibold text-amber-700">
                                         ({overdueDays} दिवस ओव्हरड्यू)
@@ -2495,7 +2611,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                 <FormRow label="नवीन योजना (New Scheme)" required>
                                   <select
                                     value={targetSchemeId}
-                                    onChange={(e) => setTargetSchemeId(parseInt(e.target.value))}
+                                    onChange={(e) => handleTargetSchemeChange(parseInt(e.target.value))}
                                     className={`${ctrl} font-semibold cursor-pointer`}
                                     required
                                   >
@@ -2652,6 +2768,35 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                       एकूण ~{renewalSimulation?.totalDays || 0} दिवस
                                     </span>
                                   </div>
+                                  {renewalSimulation && !renewalSimulation.isSlabValid && (
+                                    <div className="mt-1.5 p-2 bg-red-50 border border-red-300 rounded text-[11px] text-red-900 space-y-1">
+                                      <div className="font-bold flex items-center gap-1">
+                                        <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                        <span>
+                                          निवडलेला कालावधी ({renewalSimulation.totalDays} दिवस) या योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही!
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-[10.5px] text-red-800">मंजूर स्लॅब निवडा:</span>
+                                        {(renewalSimulation.targetScheme.slabs || [])
+                                          .filter(s => s.isActive !== false)
+                                          .map((slab, sIdx) => (
+                                            <button
+                                              key={sIdx}
+                                              type="button"
+                                              onClick={() => {
+                                                setRenewalDurationType('Days');
+                                                setRenewalDurationValue(Number(slab.fromDays));
+                                                setError('');
+                                              }}
+                                              className="px-2 py-0.5 bg-white hover:bg-red-100 text-red-900 border border-red-300 rounded font-bold text-[10px] cursor-pointer"
+                                            >
+                                              {slab.fromDays}–{slab.toDays} दिवस ({slab.interestRate}%)
+                                            </button>
+                                          ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </FormRow>
 
                                 {isOverdue && (
@@ -3372,7 +3517,24 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
               {/* ================= STICKY ACTION BAR ================= */}
               {acc && (
-                <div className="sticky bottom-0 z-20 mt-3 bg-white border border-slate-200 rounded-sm shadow-[0_-2px_8px_rgba(15,23,42,0.08)] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="sticky bottom-0 z-20 mt-3 bg-white border border-slate-200 rounded-sm shadow-[0_-2px_8px_rgba(15,23,42,0.08)] px-3 py-2 space-y-1.5">
+                  {error && (
+                    <div className="bg-red-50 border border-red-300 border-l-4 border-l-red-600 text-red-900 text-xs px-2.5 py-1.5 rounded-sm font-semibold flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                        <span>{error}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setError('')}
+                        className="text-red-700 hover:text-red-950 cursor-pointer shrink-0"
+                        title="त्रुटी बंद करा"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-[11px] min-w-0">
                     {hasLien ? (
                       <span className="flex items-center gap-1.5 text-amber-900 bg-amber-50 border border-amber-200 rounded-sm px-2 py-1 font-medium">
@@ -3486,6 +3648,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                         </button>
                       </>
                     )}
+                  </div>
                   </div>
                 </div>
               )}

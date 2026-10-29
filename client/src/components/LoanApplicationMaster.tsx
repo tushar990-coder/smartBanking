@@ -263,6 +263,12 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositCollaterals, setDepositCollaterals] = useState<any[]>([]);
 
+  // Quick-Add Security Type Modal & State
+  const [showAddSecurityModal, setShowAddSecurityModal] = useState(false);
+  const [newSecurityTypeName, setNewSecurityTypeName] = useState('');
+  const [addingSecurityType, setAddingSecurityType] = useState(false);
+  const [addSecurityError, setAddSecurityError] = useState('');
+
   // Gold Loan Modal & CRUD State
   const [showGoldModal, setShowGoldModal] = useState(false);
   const [goldItems, setGoldItems] = useState<GoldLoanItem[]>([]);
@@ -649,6 +655,91 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     }
   };
 
+  const openQuickAddSecurityModal = (prefillText = '') => {
+    setNewSecurityTypeName(prefillText);
+    setAddSecurityError('');
+    setShowAddSecurityModal(true);
+  };
+
+  const handleQuickAddSecurityType = async () => {
+    const trimmed = newSecurityTypeName.trim();
+    if (!trimmed) {
+      setAddSecurityError('कृपया तारण प्रकाराचे नाव प्रविष्ट करा.');
+      return;
+    }
+
+    const existingMatch = securityTypes.find(
+      (s: any) => String(s.name || '').trim().toLowerCase() === trimmed.toLowerCase()
+    );
+    if (existingMatch) {
+      setFormData(prev => ({ ...prev, securityDetails: existingMatch.name }));
+      setShowAddSecurityModal(false);
+      setNewSecurityTypeName('');
+      setAddSecurityError('');
+      setSuccess(`तारण प्रकार "${existingMatch.name}" आधीच उपलब्ध असल्याने निवडला गेला!`);
+      return;
+    }
+
+    setAddingSecurityType(true);
+    setAddSecurityError('');
+    try {
+      const res = await axios.post('/api/SecurityTypes', {
+        name: trimmed,
+        isActive: true
+      });
+      const created = res.data;
+      const savedName = created?.name || trimmed;
+
+      setSecurityTypes(prev => {
+        const exists = prev.some(
+          (s: any) => String(s.name || '').trim().toLowerCase() === savedName.trim().toLowerCase()
+        );
+        if (exists) {
+          return prev.map((s: any) =>
+            String(s.name || '').trim().toLowerCase() === savedName.trim().toLowerCase()
+              ? { ...s, ...created, name: savedName, isActive: true }
+              : s
+          );
+        }
+        return [...prev, created || { securityTypeID: Date.now(), name: savedName, isActive: true }];
+      });
+
+      setFormData(prev => ({ ...prev, securityDetails: savedName }));
+      setShowAddSecurityModal(false);
+      setNewSecurityTypeName('');
+      setAddSecurityError('');
+      setSuccess(`नवीन तारण प्रकार "${savedName}" यशस्वीरित्या जोडला व निवडला गेला!`);
+    } catch (err: any) {
+      if (err.response?.status === 409) {
+        try {
+          const secRes = await axios.get('/api/SecurityTypes');
+          const activeList = Array.isArray(secRes.data) ? secRes.data.filter((s: any) => s.isActive) : [];
+          setSecurityTypes(activeList);
+          const matched = activeList.find(
+            (s: any) => String(s.name || '').trim().toLowerCase() === trimmed.toLowerCase()
+          );
+          const finalName = matched?.name || trimmed;
+          setFormData(prev => ({ ...prev, securityDetails: finalName }));
+          setShowAddSecurityModal(false);
+          setNewSecurityTypeName('');
+          setAddSecurityError('');
+          setSuccess(`तारण प्रकार "${finalName}" निवडला गेला!`);
+          return;
+        } catch {
+          // Fall through to display error below
+        }
+      }
+      const errData = err.response?.data;
+      setAddSecurityError(
+        typeof errData === 'string'
+          ? errData
+          : errData?.title || errData?.message || 'तारण प्रकार जोडताना त्रुटी आली.'
+      );
+    } finally {
+      setAddingSecurityType(false);
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     if (name === 'installmentAmount') {
@@ -710,6 +801,9 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     setShowCoBorrowers(false);
     setDepositCollaterals([]);
     setShowDepositModal(false);
+    setShowAddSecurityModal(false);
+    setNewSecurityTypeName('');
+    setAddSecurityError('');
     setGoldItems([]);
     setEditingGoldId(null);
     stopCamera();
@@ -1633,10 +1727,20 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     );
   });
 
-  const secOptions = securityTypes.map(s => ({
-    value: s.name,
-    label: s.name
-  }));
+  const secOptions = (() => {
+    const opts = securityTypes.map(s => ({
+      value: s.name,
+      label: s.name
+    }));
+    const currentSec = (formData.securityDetails || '').trim();
+    if (currentSec && !opts.some(o => String(o.value).trim() === currentSec)) {
+      opts.unshift({
+        value: formData.securityDetails as string,
+        label: formData.securityDetails as string
+      });
+    }
+    return opts;
+  })();
 
   // KPI Calculations
   const totalRequestedAmount = Array.isArray(applications) ? applications.reduce((sum, a) => sum + (a.requestedAmount || 0), 0) : 0;
@@ -2290,12 +2394,30 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                   <div>
                     <div className="flex items-center justify-between mb-1 h-[15px]">
                       <label className={labelClass}>तारण प्रकार (Security Details)</label>
+                      {!isPassingMode && (
+                        <button
+                          type="button"
+                          onClick={() => openQuickAddSecurityModal('')}
+                          className="text-[9.5px] text-primary hover:text-white hover:bg-primary font-bold flex items-center gap-0.5 cursor-pointer bg-primary/10 px-1.5 py-0.2 rounded border border-primary/30 transition-colors shadow-2xs"
+                          title="नवीन तारण प्रकार जोडा (Add New Security Type)"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>तारण जोडा</span>
+                        </button>
+                      )}
                     </div>
                     <SearchableSelect
                       options={secOptions}
                       value={formData.securityDetails || ''}
                       onChange={(e: any) => setFormData(p => ({ ...p, securityDetails: e.target.value }))}
                       placeholder="-- तारण प्रकार निवडा --"
+                      searchPlaceholder="तारण प्रकार शोधा (उदा. सोने तारण, वाहन तारण, गहाणखत)..."
+                      countLabel="उपलब्ध तारण प्रकार"
+                      emptyMessage="कोणताही तारण प्रकार आढळला नाही."
+                      emptySubMessage="नवीन तारण प्रकार जोडण्यासाठी खालील बटणावर क्लिक करा."
+                      onQuickAdd={!isPassingMode ? (typedText) => openQuickAddSecurityModal(typedText) : undefined}
+                      quickAddLabel="+ तारण जोडा"
+                      minMenuWidth={0}
                       className={`${inputClass} flex justify-between items-center text-left cursor-pointer`}
                       disabled={isPassingMode}
                     />
@@ -3870,6 +3992,130 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                 className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1 rounded text-xs font-bold cursor-pointer"
               >
                 बंद करा
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ➕ QUICK-ADD SECURITY TYPE MODAL (नवीन तारण प्रकार जोडा) */}
+      {showAddSecurityModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 animate-in fade-in duration-150">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-primary text-white px-3.5 py-2.5 flex justify-between items-center border-b border-primary/20">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-white" />
+                <h3 className="font-bold text-xs sm:text-sm">
+                  नवीन तारण प्रकार जोडा (Add Security Type)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddSecurityModal(false);
+                  setAddSecurityError('');
+                  setNewSecurityTypeName('');
+                }}
+                className="text-white/80 hover:text-white hover:bg-white/15 p-1 rounded transition-colors cursor-pointer"
+                title="बंद करा (Close)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 space-y-3 text-xs">
+              {addSecurityError && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-700 px-2.5 py-2 rounded text-[11px] font-semibold flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>{addSecurityError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  तारण प्रकाराचे नाव (Security Type Name) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={newSecurityTypeName}
+                  onChange={(e) => {
+                    setNewSecurityTypeName(e.target.value);
+                    if (addSecurityError) setAddSecurityError('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleQuickAddSecurityType();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setShowAddSecurityModal(false);
+                      setAddSecurityError('');
+                      setNewSecurityTypeName('');
+                    }
+                  }}
+                  placeholder="उदा. दुचाकी वाहन तारण / शेतजमीन गहाणखत / पगार हमीपत्र"
+                  className="w-full border border-gray-300 rounded-sm px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white font-medium text-gray-900"
+                  autoFocus
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  सेव्ह केल्यावर हा तारण प्रकार मास्टरमध्ये कायमस्वरूपी जतन होईल व या अर्जात आपोआप निवडला जाईल.
+                </p>
+              </div>
+
+              {securityTypes.length > 0 && (
+                <div className="bg-slate-50 border border-slate-200 rounded p-2">
+                  <div className="text-[10px] font-bold text-slate-600 mb-1.5 flex items-center justify-between">
+                    <span>सध्या उपलब्ध तारण प्रकार (क्लिक करून निवडा):</span>
+                    <span className="font-mono text-primary">{securityTypes.length}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto">
+                    {securityTypes
+                      .filter((st: any) =>
+                        !newSecurityTypeName.trim() ||
+                        String(st.name || '').toLowerCase().includes(newSecurityTypeName.trim().toLowerCase())
+                      )
+                      .map((st: any) => (
+                        <button
+                          key={st.securityTypeID || st.name}
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, securityDetails: st.name }));
+                            setShowAddSecurityModal(false);
+                            setNewSecurityTypeName('');
+                            setAddSecurityError('');
+                          }}
+                          className="px-2 py-0.5 bg-white hover:bg-primary/10 text-slate-700 hover:text-primary border border-slate-300 hover:border-primary/40 rounded text-[10.5px] font-semibold transition-colors cursor-pointer"
+                          title={`"${st.name}" निवडा`}
+                        >
+                          {st.name}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-3.5 py-2.5 bg-slate-50 border-t border-gray-200 flex justify-end items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddSecurityModal(false);
+                  setAddSecurityError('');
+                  setNewSecurityTypeName('');
+                }}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-sm text-xs font-bold transition-colors cursor-pointer"
+              >
+                रद्द करा (Cancel)
+              </button>
+              <button
+                type="button"
+                disabled={addingSecurityType}
+                onClick={handleQuickAddSecurityType}
+                className="px-4 py-1.5 bg-primary hover:opacity-90 disabled:opacity-50 text-white rounded-sm text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{addingSecurityType ? 'जतन होत आहे...' : 'जतन करा व निवडा (Save & Select)'}</span>
               </button>
             </div>
           </div>

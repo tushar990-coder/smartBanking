@@ -1,5 +1,25 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-29] - आवृत्ती v2.6.03 (Legacy Daybook & Kacchi Legacy Daybook with Short Voucher & 8-Module Legacy Account Priority, FD Renewal Rollback/Self-Heal & CBS Loan Ledger Deposit Collateral Report Master Patch)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **स्वतंत्र लेगसी रोजकीर्द व कच्ची लेगसी रोजकीर्द अहवाल (`LegacyDaybook.tsx`, `LegacyDaybookHelper.cs`, `ReportsController.cs`, `ReportDashboard.tsx`):**
+  * **सर्व रिपोर्ट केंद्र (`अकाउंटिंग / Accounting`)** मध्ये मूळ **`रोजकीर्द (Daybook)`** १००% अबाधित ठेवून **`लेगसी रोजकीर्द (Legacy Daybook)`** (`/reports/legacy-daybook`) हा स्वतंत्र अहवाल पर्याय जोडला आहे.
+  * ड्रॉपडाऊनमध्ये **`१. लेगसी रोजकीर्द (Legacy Daybook)`** व **`२. कच्ची लेगसी रोजकीर्द (Kacchi Legacy Daybook)`** हे २ पर्याय उपलब्ध असून मूळ रोजकीर्दीप्रमाणेच A4 लँडस्केप २-कॉलम (`जमा / RECEIPT` व `नावे / PAYMENT`) सीबीएस फॉरमॅट ठेवला आहे.
+  * **शॉर्ट व्हाउचर क्रमांक (`FormatShortVoucherNo`):** लांब सिस्टीम व्हाउचर क्रमांक संक्षिप्त स्वरूपात दिसतात (उदा. `001-PAY-26-27-00013` -> `[PAY-13]`, `JV-FD-REN-001-001-FD-000007` -> `[FD-REN-7]`, `PAY-INV-OP-001-INV-000005` -> `[INV-OP-5]`) आणि माउस नेल्यास (`hover tooltip`) व एक्सेल एक्सपोर्टमध्ये संपूर्ण मूळ व्हाउचर क्र. सुरक्षित दिसतो.
+  * **सर्व ८ मॉड्यूल्समध्ये जुना खाते क्र. व जुना CIF प्रथम प्राधान्य:** ठेव पावती (`FD`), कर्ज वसुली, कर्ज वाटप, आरडी (`RD`), गुंतवणूक (`Investment`), बचत ठेव (`Saving`), पिग्मी (`Pigmy`) व शेअर्स (`Shares`) या सर्व मॉड्यूल्समध्ये जुना खाते क्र. उपलब्ध असल्यास **`(जुना खाते: ...)`** व जुना CIF (`जुना CIF: ...`) प्रथम प्राधान्याने दिसतो; जेथे जुना क्र. उपलब्ध नाही तेथे नवीन खाते क्र. **`(खाते: ...)`** व नवीन `CIFNo` आपोआप दर्शविला जातो.
+* **मुदत ठेव नूतनीकरण (`FD Renewal`) ४०० एरर निवारण, व्हाउचर पासिंग/कच्ची किर्द दृश्यता व संपूर्ण डिलीट रोलबॅक (`FdRenewalRollbackHelper.cs`, `FdAccountsController.cs`, `VoucherPostingController.cs`, `VouchersController.cs`, `FdReports.tsx`):**
+  * नूतनीकृत ठेव खाते किंवा `JV-FD-REN-*` व्हाउचर डिलीट/रिजेक्ट केल्यावर मूळ जुनी ठेव पावती आपोआप `Matured` / `Active` स्थितीत पूर्ववत होते आणि पुन्हा नूतनीकरण/परतावा करता येतो (`Collision-Safe VoucherNo` + अनाथ बंद पावती `Self-Healing`, उदा. पावती `1582`).
+  * नूतनीकरणाची प्रलंबित नोंद व्हाउचर पासिंग (`VoucherPosting.tsx`) व कच्च्या रोजकीर्दीत स्पष्ट दिसते आणि पासिंग होईपर्यंत `FD Reports` मध्ये दुहेरी/चुकीची शिल्लक दिसत नाही.
+* **कर्ज खतावणी अहवाल सीबीएस नमुना टेम्प्लेट व ठेव तारण तपशील (`LoanLedgerReport.tsx`, `ReportsController.cs`, `ReportDtos.cs`):**
+  * अधिकृत सीबीएस नमुना टेम्प्लेटनुसार कर्ज खतावणी अहवाल आणि ठेव तारण कर्जासाठी तारण ठेवलेल्या ठेवींचा संपूर्ण तक्ता (**जुना ठेव खाते क्र.** व **नवीन ठेव खाते क्र.**, योजना, ठेव रक्कम, व्याजदर, मुदतपूर्ती दिनांक व तारण रक्कम) समाविष्ट.
+* **कर्ज मागणी अर्ज `+ तारण जोडा` व फ्लोटिंग पोर्टल ड्रॉपडाऊन सुधारणा (`LoanApplicationMaster.tsx`, `SecurityTypesController.cs`, `SearchableSelect.tsx`, `SecurityTypeMaster.tsx`):**
+  * कर्ज मागणी अर्जामधूनच थेट नवीन तारण प्रकार (`+ तारण जोडा`) जोडण्याची सोय आणि `SearchableSelect` पोर्टल ड्रॉपडाऊनची अचूक पोझिशनिंग.
+* **१-क्लिक मल्टि-ॲप मास्टर पॅच (`SmartBanking_VPS_Multi_App_Master_Patch.zip` & `SmartBanking_Patch_v2.6.03.patch`):**
+  * सर्व ९ कॉन्फिगर केलेल्या संस्थांसाठी तयार केलेला मास्टर पॅच व गिट पॅच उपलब्ध.
+
+---
+
 ## 📅 [2026-10-28] - आवृत्ती v2.6.02 (Universal Dynamic Bank Account GL Payment Mode & Ledger-ID Search Across All 11 Modules Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

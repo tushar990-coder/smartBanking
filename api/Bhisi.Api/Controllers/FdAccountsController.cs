@@ -117,7 +117,7 @@ namespace Bhisi.Api.Controllers
                         maxSeq = sVal;
                     }
                 }
-                else
+                else if (accStr.Contains("-FD-", StringComparison.OrdinalIgnoreCase))
                 {
                     var lastDash = accStr.LastIndexOf('-');
                     if (lastDash >= 0 && lastDash < accStr.Length - 1)
@@ -149,8 +149,8 @@ namespace Bhisi.Api.Controllers
             int nextSeq = seq.CurrentValue + 1;
             string candidate = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdNum, schemeCodeNum, nextSeq);
 
-            // Avoid collisions if any duplicate exists
-            while (existingAccounts.Contains(candidate))
+            // Avoid collisions against both raw 14-digit and formatted 14-digit CBS account numbers
+            while (existingAccounts.Contains(candidate) || existingAccounts.Contains(Helpers.AccountNumberHelper.Format14Digit(candidate)))
             {
                 nextSeq++;
                 candidate = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdNum, schemeCodeNum, nextSeq);
@@ -243,57 +243,10 @@ namespace Bhisi.Api.Controllers
             return Ok(new { isDuplicate = false });
         }
 
-        // 🛡️ Self-healing: Check for any orphan renewed accounts whose JV-FD-REN voucher was deleted in the past
-        private async Task HealOrphanedRenewalsInternalAsync()
+        // 🛡️ Self-healing: Clean orphaned renewal vouchers, orphaned renewed accounts, and stuck Closed parent accounts (14-digit CBS & legacy safe)
+        private async Task HealOrphanedRenewalsInternalAsync(int? targetFdAccountId = null)
         {
-            try
-            {
-                var renewedAccounts = await _context.FdAccounts
-                    .Where(f => f.Remarks != null && f.Remarks.Contains("नूतनीकरण खाते"))
-                    .ToListAsync();
-
-                if (!renewedAccounts.Any()) return;
-
-                bool modified = false;
-                foreach (var newAcc in renewedAccounts)
-                {
-                    string expectedVoucherNo = $"JV-FD-REN-{newAcc.AccountNo}";
-                    bool voucherExists = await _context.Vouchers.AnyAsync(v => v.VoucherNo == expectedVoucherNo);
-                    if (!voucherExists)
-                    {
-                        var match = System.Text.RegularExpressions.Regex.Match(newAcc.Remarks ?? "", @"(?:Renewed from|नूतनीकरण खाते(?:\s*\(Renewed from\))?):\s*([A-Za-z0-9]+-[0-9]+-FD-[0-9]+)");
-                        if (match.Success)
-                        {
-                            string oldAccNo = match.Groups[1].Value.Trim();
-                            var oldAcc = await _context.FdAccounts.FirstOrDefaultAsync(f => f.AccountNo == oldAccNo);
-                            if (oldAcc != null && oldAcc.Status == "Closed")
-                            {
-                                oldAcc.Status = "Active";
-                                if (!string.IsNullOrEmpty(oldAcc.Remarks))
-                                {
-                                    var idx = oldAcc.Remarks.IndexOf(" | नूतनीकरण दिनांक:");
-                                    if (idx >= 0) oldAcc.Remarks = oldAcc.Remarks.Substring(0, idx).Trim();
-                                }
-                            }
-                        }
-
-                        var newTxs = await _context.FdTransactions.Where(t => t.FdAccountID == newAcc.FdAccountID).ToListAsync();
-                        if (newTxs.Any()) _context.FdTransactions.RemoveRange(newTxs);
-
-                        var newAccruals = await _context.FdInterestAccruals.Where(a => a.FdAccountID == newAcc.FdAccountID).ToListAsync();
-                        if (newAccruals.Any()) _context.FdInterestAccruals.RemoveRange(newAccruals);
-
-                        _context.FdAccounts.Remove(newAcc);
-                        modified = true;
-                    }
-                }
-
-                if (modified)
-                {
-                    await _context.SaveChangesAsync();
-                }
-            }
-            catch { }
+            await Helpers.FdRenewalRollbackHelper.HealOrphanedRenewalsAsync(_context, targetFdAccountId);
         }
 
         // GET: api/FdAccounts
@@ -444,6 +397,8 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<object>> GetFdAccount(int id)
         {
+            await HealOrphanedRenewalsInternalAsync(id);
+
             var f = await _context.FdAccounts
                 .AsNoTracking()
                 .Include(x => x.Customer)
@@ -980,6 +935,10 @@ namespace Bhisi.Api.Controllers
                 string customerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() : "";
                 bool isLegacy = account.IsLegacyAccount;
 
+                // 0. If this FD account was created via FD Renewal, atomically rollback parent renewal
+                //    (removes parent's Renewal FdTransaction, JV-FD-REN-* & PAY/JV-FD-INT-* vouchers, and restores parent to Matured/Active)
+                var renewalRollback = await Helpers.FdRenewalRollbackHelper.RollbackParentRenewalOnChildAccountDeleteAsync(_context, account);
+
                 // 1. Identify which vouchers were actually linked to THIS specific account
                 // (Collect VoucherIDs from this account's transactions and accruals)
                 var accountVoucherIds = await _context.FdTransactions
@@ -1125,7 +1084,7 @@ namespace Bhisi.Api.Controllers
                             remainingMaxSeq = sVal;
                         }
                     }
-                    else
+                    else if (accStr.Contains("-FD-", StringComparison.OrdinalIgnoreCase))
                     {
                         // Pattern: {Prefix}-{BranchID:D3}-FD-{SeqNo:D6}
                         var lastDash = accStr.LastIndexOf('-');
@@ -1146,12 +1105,19 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // 7. Record Audit Log
+                string deleteActionCode = renewalRollback.WasRenewal
+                    ? "FD_RENEWAL_ACCOUNT_DELETED"
+                    : (isLegacy ? "FD_MIGRATED_OPENING_DELETED" : "FD_OPENING_DIRECT_DELETED");
+                string parentRestoreNote = renewalRollback.WasRenewal && !string.IsNullOrEmpty(renewalRollback.OldAccountNo)
+                    ? $" मूळ मुदत ठेव खाते क्र. {renewalRollback.OldAccountNo} पुन्हा सक्रिय/मुदतपूर्ण (Restored) केले."
+                    : "";
+
                 _context.AuditLogs.Add(new AuditLog
                 {
-                    Action = isLegacy ? "FD_MIGRATED_OPENING_DELETED" : "FD_OPENING_DIRECT_DELETED",
+                    Action = deleteActionCode,
                     EntityName = "FdAccount",
                     EntityID = accountNo,
-                    Details = $"मुदत ठेव खाते {accountNo} (रक्कम: ₹{depositAmount:N2}, खातेदार: {customerName}) डिलीट केले. व्हाउचर हटवले आणि पावती अनुक्रमांक सिंक करून {remainingMaxSeq} केला.",
+                    Details = $"मुदत ठेव खाते {accountNo} (रक्कम: ₹{depositAmount:N2}, खातेदार: {customerName}) डिलीट केले.{parentRestoreNote} व्हाउचर हटवले आणि पावती अनुक्रमांक सिंक करून {remainingMaxSeq} केला.",
                     Timestamp = DateTime.Now,
                     Status = "Success"
                 });
@@ -3967,6 +3933,9 @@ namespace Bhisi.Api.Controllers
         [HttpPost("{id}/Renew")]
         public async Task<IActionResult> Renew(int id, [FromBody] FdRenewalRequest request)
         {
+            // Self-heal any orphaned renewal state on this account before validation (e.g. half-deleted prior renewal)
+            await HealOrphanedRenewalsInternalAsync(id);
+
             var oldAccount = await _context.FdAccounts
                 .Include(a => a.FdScheme)
                 .ThenInclude(s => s!.FdLiabilityLedger)
@@ -4166,21 +4135,11 @@ namespace Bhisi.Api.Controllers
                     oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType})" + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "") + manualAuditNote;
                     await _context.SaveChangesAsync();
 
-                    // 2. Generate Account Number
-                    var branch = await _context.Branches.FindAsync(oldAccount.BranchID);
-                    string branchPrefix = branch != null ? branch.BranchCode : "HO";
-
-                    var seq = await _context.FdAccountSequences
-                        .FirstOrDefaultAsync(s => s.BranchID == oldAccount.BranchID && s.ProductType == "FD");
-                    
-                    if (seq == null)
-                    {
-                        seq = new FdAccountSequence { BranchID = oldAccount.BranchID, ProductType = "FD", CurrentValue = 0 };
-                        _context.FdAccountSequences.Add(seq);
-                    }
-                    
-                    seq.CurrentValue += 1;
-                    await _context.SaveChangesAsync();
+                    // 2. Generate Standardized 14-Digit CBS Account Number (sequence-synced & duplicate-safe)
+                    var (_, formattedNewAccountNo, _) = await GenerateNextFdAccountNoAsync(
+                        oldAccount.BranchID,
+                        request.TargetSchemeID,
+                        incrementSequence: true);
 
                     // Determine correct Financial Year corresponding to new deposit opening date
                     var matchingFy = await _context.FinancialYears
@@ -4246,7 +4205,7 @@ namespace Bhisi.Api.Controllers
                         FinancialYearID = targetFinancialYearId,
                         CustomerID = oldAccount.CustomerID,
                         FdSchemeID = request.TargetSchemeID,
-                        AccountNo = $"{branchPrefix}-{oldAccount.BranchID:D3}-FD-{seq.CurrentValue:D6}",
+                        AccountNo = formattedNewAccountNo,
                         OpeningDate = newOpeningDate,
                         DepositAmount = newDepositAmount,
                         InterestRate = appliedRate,
@@ -4377,6 +4336,14 @@ namespace Bhisi.Api.Controllers
 
                     var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == oldAccount.CustomerID);
                     int? linkedMemberId = linkedMember?.MemberID;
+                    int currentUserId = int.TryParse(
+                        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("UserID")?.Value,
+                        out int parsedUid) && parsedUid > 0 ? parsedUid : 1;
+
+                    if (savTx != null)
+                    {
+                        savTx.CreatedBy = currentUserId;
+                    }
 
                     Voucher? voucher1 = null;
                     Voucher? voucher2 = null;
@@ -4384,18 +4351,22 @@ namespace Bhisi.Api.Controllers
 
                     if (request.RenewalType == "PrincipalOnly")
                     {
+                        string renVoucherNo1 = await Helpers.FdRenewalRollbackHelper.BuildCollisionSafeVoucherNoAsync(
+                            _context, $"JV-FD-REN-{newAccount.AccountNo}");
+
                         // 1. Voucher 1: Pure Journal Voucher for Principal Renewal (100% Transfer, no cash)
                         voucher1 = new Voucher
                         {
                             BranchID = oldAccount.BranchID,
-                            VoucherNo = $"JV-FD-REN-{newAccount.AccountNo}",
+                            VoucherNo = renVoucherNo1,
                             VoucherDate = closureDate,
                             VoucherType = "Journal",
                             TotalAmount = oldAccount.DepositAmount,
                             Narration = (string.IsNullOrWhiteSpace(request.Narration)
                                 ? $"मुदत ठेव मुद्दल नूतनीकरण (FD Principal Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}"
                                 : request.Narration) + manualAuditNote,
-                            CreatedBy = 1,
+                            Status = "Pending",
+                            CreatedBy = currentUserId,
                             CreatedOn = DateTime.Now
                         };
                         _context.Vouchers.Add(voucher1);
@@ -4412,7 +4383,8 @@ namespace Bhisi.Api.Controllers
                         {
                             string intVoucherType = (paymentMode == "Transfer") ? "Journal" : "Payment";
                             string intVoucherPrefix = (paymentMode == "Transfer") ? "JV-FD-INT" : "PAY-FD-INT";
-                            string intVoucherNo = $"{intVoucherPrefix}-{newAccount.AccountNo}";
+                            string intVoucherNo = await Helpers.FdRenewalRollbackHelper.BuildCollisionSafeVoucherNoAsync(
+                                _context, $"{intVoucherPrefix}-{newAccount.AccountNo}");
 
                             voucher2 = new Voucher
                             {
@@ -4422,7 +4394,8 @@ namespace Bhisi.Api.Controllers
                                 VoucherType = intVoucherType,
                                 TotalAmount = interestPayoutAmount,
                                 Narration = $"मुदत ठेव व्याज परतावा ({paymentMode}): खा. क्र. {oldAccount.AccountNo} (नवीन खा. क्र. {newAccount.AccountNo}){(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}" + manualAuditNote,
-                                CreatedBy = 1,
+                                Status = "Pending",
+                                CreatedBy = currentUserId,
                                 CreatedOn = DateTime.Now
                             };
                             _context.Vouchers.Add(voucher2);
@@ -4502,18 +4475,22 @@ namespace Bhisi.Api.Controllers
                     }
                     else
                     {
+                        string renSingleVoucherNo = await Helpers.FdRenewalRollbackHelper.BuildCollisionSafeVoucherNoAsync(
+                            _context, $"JV-FD-REN-{newAccount.AccountNo}");
+
                         // PrincipalPlusInterest: Single compound Journal Voucher (100% Transfer, no cash payout)
                         singleVoucher = new Voucher
                         {
                             BranchID = oldAccount.BranchID,
-                            VoucherNo = $"JV-FD-REN-{newAccount.AccountNo}",
+                            VoucherNo = renSingleVoucherNo,
                             VoucherDate = closureDate,
                             VoucherType = "Journal",
                             TotalAmount = totalMaturityAmount,
                             Narration = (string.IsNullOrWhiteSpace(request.Narration)
                                 ? $"मुदत ठेव नूतनीकरण (FD Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
                                 : request.Narration) + manualAuditNote,
-                            CreatedBy = 1,
+                            Status = "Pending",
+                            CreatedBy = currentUserId,
                             CreatedOn = DateTime.Now
                         };
                         _context.Vouchers.Add(singleVoucher);
@@ -5242,8 +5219,15 @@ namespace Bhisi.Api.Controllers
                     });
                 }
 
-                // If FD was closed with payout > principal/net liability, synthesize uncredited closure interest entry
-                var closeTx = fullTxList.FirstOrDefault(t => t.DebitCredit == "Dr" && (t.TransactionType == "Premature_Close" || t.TransactionType == "PrematureClose" || t.TransactionType == "Maturity" || t.TransactionType == "Closure" || t.TransactionType == "Payout" || (!string.IsNullOrEmpty(t.VoucherNo) && (t.VoucherNo.Contains("PRECLOSE") || t.VoucherNo.Contains("CLOSE")))));
+                // If FD was closed or renewed with total payout/transfer > principal/net liability, synthesize uncredited closure/renewal interest entry
+                var closeTx = fullTxList.FirstOrDefault(t => t.DebitCredit == "Dr" && (
+                    t.TransactionType == "Premature_Close" ||
+                    t.TransactionType == "PrematureClose" ||
+                    t.TransactionType == "Maturity" ||
+                    t.TransactionType == "Closure" ||
+                    t.TransactionType == "Payout" ||
+                    t.TransactionType == "Renewal" ||
+                    (!string.IsNullOrEmpty(t.VoucherNo) && (t.VoucherNo.Contains("PRECLOSE") || t.VoucherNo.Contains("CLOSE") || t.VoucherNo.Contains("REN")))));
                 if (closeTx != null)
                 {
                     decimal totalCrBeforeClosure = fullTxList.Where(t => t != closeTx && t.DebitCredit == "Cr").Sum(t => t.Amount);
@@ -5253,10 +5237,11 @@ namespace Bhisi.Api.Controllers
                     if (closeTx.Amount > netLiabilityBeforeClosure && (closeTx.Amount - netLiabilityBeforeClosure) >= 0.01m)
                     {
                         decimal closureInterest = Math.Round(closeTx.Amount - netLiabilityBeforeClosure, 2);
-                        bool alreadyHasAccrual = fullTxList.Any(t => t.TransactionType == "Accrual" && Math.Abs(t.Amount - closureInterest) < 0.01m);
-                        if (!alreadyHasAccrual)
+                        bool alreadySynthesized = fullTxList.Any(t => t.FdTransactionID == -2);
+                        if (!alreadySynthesized)
                         {
-                            bool isPremature = closeTx.TransactionType.Contains("Premature") || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("PRECLOSE"));
+                            bool isPremature = (closeTx.TransactionType ?? "").Contains("Premature") || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("PRECLOSE"));
+                            bool isRenewal = closeTx.TransactionType == "Renewal" || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("REN"));
                             fullTxList.Add(new
                             {
                                 FdTransactionID = -2,
@@ -5265,7 +5250,7 @@ namespace Bhisi.Api.Controllers
                                 DebitCredit = "Cr",
                                 Amount = closureInterest,
                                 VoucherNo = closeTx.VoucherNo,
-                                Narration = isPremature ? "मुदतपूर्व व्याज जमा" : "मुदतपूर्ती व्याज जमा"
+                                Narration = isPremature ? "मुदतपूर्व व्याज जमा" : (isRenewal ? "नूतनीकरण मुदतपूर्ती व्याज जमा" : "मुदतपूर्ती व्याज जमा")
                             });
                         }
                     }
@@ -6717,7 +6702,7 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
             }
 
-            // 1. Try to find FdTransaction linked to this closure voucher
+            // 1. Try to find FdTransaction linked to this closure or renewal voucher (parent account)
             var fdTx = await _context.FdTransactions
                 .Include(t => t.FdAccount)
                     .ThenInclude(a => a!.Customer)
@@ -6725,11 +6710,34 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(a => a!.FdScheme)
                 .Include(t => t.FdAccount)
                     .ThenInclude(a => a!.Branch)
-                .FirstOrDefaultAsync(t => t.VoucherID == voucherId && (t.TransactionType == "Payout" || t.TransactionType == "Premature_Close"));
+                .FirstOrDefaultAsync(t => t.VoucherID == voucherId &&
+                    (t.TransactionType == "Payout" ||
+                     t.TransactionType == "Premature_Close" ||
+                     t.TransactionType == "Renewal" ||
+                     t.TransactionType == "Interest Payout"));
 
             FdAccount? account = fdTx?.FdAccount;
+            FdAccount? renewedToAccount = null;
 
-            // 2. Fallback: Parse from VoucherNo (e.g. JV-FD-CLOSE-..., JV-FD-PRECLOSE-..., PMT-FD-CLOSE-...)
+            bool isRenewalVoucher = Helpers.FdRenewalRollbackHelper.IsFdRenewalVoucher(voucher) ||
+                                    fdTx?.TransactionType == "Renewal" ||
+                                    fdTx?.TransactionType == "Interest Payout";
+
+            if (isRenewalVoucher)
+            {
+                var openingTx = await _context.FdTransactions
+                    .Include(t => t.FdAccount)
+                    .FirstOrDefaultAsync(t => t.VoucherID == voucherId && t.TransactionType == "Opening");
+                renewedToAccount = openingTx?.FdAccount;
+
+                if (renewedToAccount == null)
+                {
+                    string suffixNewNo = Helpers.FdRenewalRollbackHelper.ExtractAccountSuffixFromRenewalVoucherNo(voucher.VoucherNo);
+                    renewedToAccount = await Helpers.FdRenewalRollbackHelper.FindFdAccountByAnyNumberAsync(_context, suffixNewNo);
+                }
+            }
+
+            // 2. Fallback: Parse from VoucherNo / Narration (Closure & Renewal, 14-digit CBS + legacy safe)
             if (account == null)
             {
                 string vNo = voucher.VoucherNo ?? "";
@@ -6737,14 +6745,21 @@ namespace Bhisi.Api.Controllers
                 if (vNo.StartsWith("JV-FD-CLOSE-")) accNoCandidate = vNo.Substring("JV-FD-CLOSE-".Length).Trim();
                 else if (vNo.StartsWith("JV-FD-PRECLOSE-")) accNoCandidate = vNo.Substring("JV-FD-PRECLOSE-".Length).Trim();
                 else if (vNo.StartsWith("PMT-FD-CLOSE-")) accNoCandidate = vNo.Substring("PMT-FD-CLOSE-".Length).Trim();
+                else if (vNo.StartsWith("PAY-FD-CLOSE-")) accNoCandidate = vNo.Substring("PAY-FD-CLOSE-".Length).Trim();
+                else if (isRenewalVoucher)
+                {
+                    var (parsedOld, _) = Helpers.FdRenewalRollbackHelper.ExtractOldAndNewAccFromText(renewedToAccount?.Remarks, voucher.Narration);
+                    accNoCandidate = parsedOld;
+                }
 
                 if (!string.IsNullOrEmpty(accNoCandidate))
                 {
+                    var variants = Helpers.FdRenewalRollbackHelper.BuildAccountNumberVariants(accNoCandidate);
                     account = await _context.FdAccounts
                         .Include(a => a.Customer)
                         .Include(a => a.FdScheme)
                         .Include(a => a.Branch)
-                        .FirstOrDefaultAsync(a => a.AccountNo == accNoCandidate);
+                        .FirstOrDefaultAsync(a => a.AccountNo != null && variants.Contains(a.AccountNo));
                 }
             }
 
@@ -6766,12 +6781,14 @@ namespace Bhisi.Api.Controllers
 
             if (account == null)
             {
-                return NotFound(new { message = $"सदर मुदत ठेव क्लोजरशी (ID: {voucherId}) संबंधित खाते सापडले नाही." });
+                return NotFound(new { message = $"सदर मुदत ठेव व्यवहाराशी (ID: {voucherId}) संबंधित खाते सापडले नाही." });
             }
 
-            string closureType = (fdTx?.TransactionType == "Premature_Close" || voucher.VoucherNo?.Contains("PRECLOSE") == true)
-                ? "PrematureClose"
-                : "MaturityClose";
+            string closureType = isRenewalVoucher
+                ? "Renewal"
+                : ((fdTx?.TransactionType == "Premature_Close" || voucher.VoucherNo?.Contains("PRECLOSE") == true)
+                    ? "PrematureClose"
+                    : "MaturityClose");
 
             return Ok(new
             {
@@ -6786,6 +6803,7 @@ namespace Bhisi.Api.Controllers
                     account.FdSchemeID,
                     SchemeName = account.FdScheme?.SchemeName ?? "",
                     account.AccountNo,
+                    account.LegacyAccountNumber,
                     account.DepositAmount,
                     account.InterestRate,
                     account.OpeningDate,
@@ -6798,6 +6816,8 @@ namespace Bhisi.Api.Controllers
                     ClosureDate = fdTx?.TransactionDate ?? voucher.VoucherDate,
                     ClosureType = closureType,
                     TotalPayoutAmount = voucher.TotalAmount,
+                    NewAccountNo = renewedToAccount?.AccountNo,
+                    NewFdAccountID = renewedToAccount?.FdAccountID,
                     Narration = voucher.Narration
                 },
                 voucher = new
@@ -6821,6 +6841,17 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "Admin,SuperAdmin,Manager,HeadOffice,HO_Manager,BranchManager,Cashier,Operator")]
         public async Task<IActionResult> ReopenFdAccount(int id, [FromBody] FdReopenRequest? request = null)
         {
+            var preCheck = await _context.FdAccounts.AsNoTracking().FirstOrDefaultAsync(a => a.FdAccountID == id);
+            if (preCheck == null)
+            {
+                return NotFound(new { message = $"मुदत ठेव खाते ID #{id} सापडले नाही." });
+            }
+
+            bool wasClosedBeforeHeal = string.Equals(preCheck.Status, "Closed", StringComparison.OrdinalIgnoreCase);
+
+            // Clean up any orphaned renewal vouchers / orphaned Renewal FdTransactions on this account first
+            await HealOrphanedRenewalsInternalAsync(id);
+
             var account = await _context.FdAccounts
                 .Include(a => a.Customer)
                 .Include(a => a.FdScheme)
@@ -6831,34 +6862,37 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = $"मुदत ठेव खाते ID #{id} सापडले नाही." });
             }
 
-            if (account.Status != "Closed")
+            if (account.Status != "Closed" && !wasClosedBeforeHeal)
             {
                 return BadRequest(new { message = $"हे खाते आधीच '{account.Status}' स्थितीत आहे. केवळ बंद (Closed) झालेली खातीच पूर्ववत (Reopen) करता येतात." });
             }
 
-            // Check if there is an active un-deleted Payout / Premature_Close transaction
+            // Check if there is an active un-deleted Payout / Premature_Close / Renewal transaction
             var activeCloseTx = await _context.FdTransactions
                 .Include(t => t.Voucher)
-                .FirstOrDefaultAsync(t => t.FdAccountID == id && (t.TransactionType == "Payout" || t.TransactionType == "Premature_Close"));
+                .FirstOrDefaultAsync(t => t.FdAccountID == id &&
+                    (t.TransactionType == "Payout" ||
+                     t.TransactionType == "Premature_Close" ||
+                     t.TransactionType == "Renewal"));
 
-            if (activeCloseTx != null)
+            if (activeCloseTx != null && activeCloseTx.Voucher != null)
             {
+                string txLabel = activeCloseTx.TransactionType == "Renewal" ? "नूतनीकरण" : "क्लोजर";
                 return BadRequest(new { 
-                    message = $"सदर खात्याचा क्लोजर व्यवहार (व्हाउचर क्र. '{activeCloseTx.Voucher?.VoucherNo ?? activeCloseTx.VoucherID.ToString()}') अद्याप सिस्टीममध्ये अस्तित्वात आहे. खाते री-ओपन करण्यापूर्वी संबंधित क्लोजर व्हाउचर रद्द/डिलीट करणे आवश्यक आहे." 
+                    message = $"सदर खात्याचा {txLabel} व्यवहार (व्हाउचर क्र. '{activeCloseTx.Voucher.VoucherNo}') अद्याप सिस्टीममध्ये अस्तित्वात आहे. खाते पूर्ववत करण्यापूर्वी संबंधित व्हाउचर किंवा नवीन पावती रद्द/डिलीट करणे आवश्यक आहे." 
                 });
             }
 
-            // Revert status
+            // Revert status & clean closure/renewal remarks
             string newStatus = (account.MaturityDate.Date <= DateTime.Today.Date) ? "Matured" : "Active";
             account.Status = newStatus;
 
             if (!string.IsNullOrEmpty(account.Remarks))
             {
-                var idx = account.Remarks.IndexOf(" | बंद दिनांक:");
-                if (idx >= 0)
-                {
-                    account.Remarks = account.Remarks.Substring(0, idx).Trim();
-                }
+                account.Remarks = System.Text.RegularExpressions.Regex.Replace(
+                    account.Remarks,
+                    @"\s*\|\s*(?:बंद दिनांक|नूतनीकरण दिनांक):[^|]*",
+                    "").Trim();
             }
 
             string reason = !string.IsNullOrWhiteSpace(request?.Reason) ? request.Reason.Trim() : "क्लोजर व्हाउचर डिलीट झाल्याने खाते पूर्ववत केले";

@@ -65,6 +65,7 @@ import TrialBalance from './components/TrialBalance';
 import TrialBalanceNamunaN from './components/TrialBalanceNamunaN';
 import ProfitAndLoss from './components/ProfitAndLoss';
 import Daybook from './components/Daybook';
+import LegacyDaybook from './components/LegacyDaybook';
 import DaybookSummary from './components/DaybookSummary';
 import BalanceSheet from './components/BalanceSheet';
 import BalanceSheetFormN from './components/BalanceSheetFormN';
@@ -396,6 +397,7 @@ function App() {
     'cash-book': '/reports/cash-book',
     'daybook': '/reports/daybook',
     'draft-daybook': '/reports/draft-daybook',
+    'legacy-daybook': '/reports/legacy-daybook',
     'daybook-summary': '/reports/daybook-summary',
     'profit-loss': '/reports/profit-loss',
     'balance-sheet': '/reports/balance-sheet',
@@ -870,6 +872,7 @@ function App() {
         {activeTab === 'cash-book' && <CashBookReport />}
         {activeTab === 'daybook' && <Daybook />}
         {activeTab === 'draft-daybook' && <Daybook initialVoucherStatus="pending" />}
+        {activeTab === 'legacy-daybook' && <LegacyDaybook />}
         {activeTab === 'daybook-summary' && <DaybookSummary />}
         {activeTab === 'profit-loss' && <ProfitAndLoss />}
         {activeTab === 'balance-sheet' && <BalanceSheet />}

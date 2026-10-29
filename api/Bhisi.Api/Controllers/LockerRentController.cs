@@ -43,7 +43,8 @@ namespace Bhisi.Api.Controllers
                 .OrderBy(a => a.ExpiryDate)
                 .ToListAsync();
 
-            var result = list.Select(a => {
+            var result = list.Select(a =>
+            {
                 var overdueMonths = 0;
                 if (DateTime.Today > a.ExpiryDate)
                 {
@@ -58,7 +59,8 @@ namespace Bhisi.Api.Controllers
                 decimal gstAmount = Math.Round((subTotal * gstRate) / 100, 2);
                 decimal totalPayable = subTotal + gstAmount;
 
-                return new {
+                return new
+                {
                     a.AllotmentID,
                     a.BranchID,
                     a.LockerAccountNo,
@@ -216,7 +218,8 @@ namespace Bhisi.Api.Controllers
 
             await _context.SaveChangesAsync();
 
-            return Ok(new {
+            return Ok(new
+            {
                 message = "लॉकर भाडे यशस्वीरीत्या जमा झाले व मुदत १ वर्षाने वाढवली गेली.",
                 postingID = rentPosting.PostingID,
                 newExpiryDate = allotment.ExpiryDate,
@@ -233,9 +236,9 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.Customer)
                 .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.LinkedSavingAccount)
-                .Where(a => a.Status == "Active" && 
-                            a.IsAutoDebitEnabled && 
-                            a.LinkedSavingAccountID.HasValue && 
+                .Where(a => a.Status == "Active" &&
+                            a.IsAutoDebitEnabled &&
+                            a.LinkedSavingAccountID.HasValue &&
                             a.ExpiryDate <= DateTime.Today)
                 .ToListAsync();
 
@@ -255,7 +258,8 @@ namespace Bhisi.Api.Controllers
                 if (a.LinkedSavingAccount == null || a.LinkedSavingAccount.CurrentBalance < a.AnnualRent)
                 {
                     failedCount++;
-                    details.Add(new {
+                    details.Add(new
+                    {
                         a.LockerAccountNo,
                         MemberName = holderName,
                         Status = "Failed",
@@ -280,7 +284,8 @@ namespace Bhisi.Api.Controllers
 
                     await CollectRent(rentDto);
                     successCount++;
-                    details.Add(new {
+                    details.Add(new
+                    {
                         a.LockerAccountNo,
                         MemberName = holderName,
                         Status = "Success",
@@ -290,7 +295,8 @@ namespace Bhisi.Api.Controllers
                 catch (Exception ex)
                 {
                     failedCount++;
-                    details.Add(new {
+                    details.Add(new
+                    {
                         a.LockerAccountNo,
                         MemberName = holderName,
                         Status = "Failed",
@@ -299,7 +305,8 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            return Ok(new {
+            return Ok(new
+            {
                 message = $"ऑटो-डेबिट प्रक्रिया पूर्ण: {successCount} यशस्वी, {failedCount} अयशस्वी.",
                 successCount,
                 failedCount,
@@ -345,10 +352,10 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            var memberName = allotment?.Customer != null 
-                ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}".Trim() 
-                : (allotment?.Member?.Customer != null 
-                    ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}".Trim() 
+            var memberName = allotment?.Customer != null
+                ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}".Trim()
+                : (allotment?.Member?.Customer != null
+                    ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}".Trim()
                     : "Member");
 
             return Ok(new

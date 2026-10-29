@@ -49,9 +49,23 @@ namespace Bhisi.Api.Controllers
         {
             if (id != securityType.SecurityTypeID)
             {
-                return BadRequest();
+                return BadRequest("अवैध तारण प्रकार आयडी.");
             }
 
+            var trimmedName = (securityType.Name ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(trimmedName))
+            {
+                return BadRequest("कृपया तारण प्रकाराचे नाव प्रविष्ट करा.");
+            }
+
+            var duplicateExists = await _context.SecurityTypes
+                .AnyAsync(s => s.SecurityTypeID != id && s.Name.ToLower() == trimmedName.ToLower());
+            if (duplicateExists)
+            {
+                return Conflict("हा तारण प्रकार आधीच अस्तित्वात आहे!");
+            }
+
+            securityType.Name = trimmedName;
             _context.Entry(securityType).State = EntityState.Modified;
 
             try
@@ -77,6 +91,29 @@ namespace Bhisi.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<SecurityType>> PostSecurityType(SecurityType securityType)
         {
+            var trimmedName = (securityType.Name ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(trimmedName))
+            {
+                return BadRequest("कृपया तारण प्रकाराचे नाव प्रविष्ट करा.");
+            }
+
+            var existing = await _context.SecurityTypes
+                .FirstOrDefaultAsync(s => s.Name.ToLower() == trimmedName.ToLower());
+
+            if (existing != null)
+            {
+                if (!existing.IsActive)
+                {
+                    existing.Name = trimmedName;
+                    existing.IsActive = true;
+                    await _context.SaveChangesAsync();
+                    return Ok(existing);
+                }
+
+                return Conflict("हा तारण प्रकार आधीच अस्तित्वात आहे!");
+            }
+
+            securityType.Name = trimmedName;
             _context.SecurityTypes.Add(securityType);
             await _context.SaveChangesAsync();
 

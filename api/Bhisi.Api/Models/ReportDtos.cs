@@ -136,6 +136,11 @@ namespace Bhisi.Api.Models
         public string? BranchName { get; set; }
         public bool IsCrossBranch { get; set; }
         public int? HomeBranchId { get; set; }
+        public string? FullVoucherNo { get; set; }
+        public string? DisplayCustomerNo { get; set; }
+        public string? DisplayAccountNo { get; set; }
+        public bool IsLegacyCustomerNo { get; set; }
+        public bool IsLegacyAccountNo { get; set; }
     }
 
     public class DaybookBatchResponseDto
@@ -388,7 +393,17 @@ namespace Bhisi.Api.Models
         public int OverdueInstallmentCount { get; set; }
         public decimal OverdueAmount { get; set; }
         
+        public string BranchName { get; set; } = string.Empty;
+        public decimal PrincipalBalance { get; set; }
+        public string MobileNo { get; set; } = string.Empty;
+        public string? LegacyCustomerNo { get; set; }
+        public string InstallmentFrequency { get; set; } = string.Empty;
+        public string? CollateralCategory { get; set; }
+        public string? SecurityDetails { get; set; }
+        public decimal SecurityValue { get; set; }
+        public bool IsDepositBackedLoan { get; set; }
         public List<LoanLedgerGuarantorDto> Guarantors { get; set; } = new();
+        public List<LoanLedgerDepositCollateralDto> DepositCollaterals { get; set; } = new();
         public List<LoanLedgerTransactionDto> Transactions { get; set; } = new();
         public List<OpeningBalanceScheduleDto> InstallmentChart { get; set; } = new();
     }
@@ -396,6 +411,27 @@ namespace Bhisi.Api.Models
     public class LoanLedgerGuarantorDto
     {
         public string Name { get; set; } = string.Empty;
+    }
+
+    public class LoanLedgerDepositCollateralDto
+    {
+        public int CollateralID { get; set; }
+        public string CollateralType { get; set; } = string.Empty;
+        public string DepositTypeLabel { get; set; } = string.Empty;
+        public string SchemeName { get; set; } = string.Empty;
+        public int DepositAccountID { get; set; }
+        public string DepositAccountNo { get; set; } = string.Empty;
+        public string? LegacyDepositAccountNo { get; set; }
+        public string HolderName { get; set; } = string.Empty;
+        public DateTime? OpeningDate { get; set; }
+        public DateTime? MaturityDate { get; set; }
+        public decimal InterestRate { get; set; }
+        public decimal DepositAmount { get; set; }
+        public decimal CurrentBalance { get; set; }
+        public decimal? MaturityAmount { get; set; }
+        public decimal LienAmount { get; set; }
+        public string LienStatus { get; set; } = string.Empty;
+        public string DepositStatus { get; set; } = string.Empty;
     }
 
     public class LoanLedgerTransactionDto

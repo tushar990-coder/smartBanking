@@ -860,7 +860,18 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpGet("DaybookBatch")]
-        public async Task<ActionResult<DaybookBatchResponseDto>> GetDaybookBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? voucherStatus = "approved")
+        public Task<ActionResult<DaybookBatchResponseDto>> GetDaybookBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? voucherStatus = "approved")
+        {
+            return BuildDaybookBatchCoreAsync(date, toDate, branchId, voucherStatus, isLegacyMode: false);
+        }
+
+        [HttpGet("LegacyDaybookBatch")]
+        public Task<ActionResult<DaybookBatchResponseDto>> GetLegacyDaybookBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? voucherStatus = "approved")
+        {
+            return BuildDaybookBatchCoreAsync(date, toDate, branchId, voucherStatus, isLegacyMode: true);
+        }
+
+        private async Task<ActionResult<DaybookBatchResponseDto>> BuildDaybookBatchCoreAsync(DateTime date, DateTime? toDate, int? branchId, string? voucherStatus, bool isLegacyMode)
         {
             DateTime rangeStart = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
             DateTime rangeEnd = DateTime.SpecifyKind(toDate.HasValue ? toDate.Value.Date.AddDays(1).AddTicks(-1) : date.Date.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
@@ -951,6 +962,7 @@ namespace Bhisi.Api.Controllers
                     unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
                 allUnvoucheredDisb = await unvoucheredDisbQuery
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Customer)
                     .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .ToListAsync();
@@ -963,10 +975,15 @@ namespace Bhisi.Api.Controllers
                     unvoucheredColQuery = unvoucheredColQuery.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
                 allUnvoucheredCols = await unvoucheredColQuery
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .ToListAsync();
             }
+
+            Helpers.LegacyDaybookHelper.VoucherAccountContext? legacyAccountCtx = isLegacyMode
+                ? await Helpers.LegacyDaybookHelper.BuildVoucherAccountContextAsync(_context, allVouchers, ledgers)
+                : null;
 
             var defaultLoanLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan") || l.LedgerName.Contains("मुद्दल")) ?? ledgers.FirstOrDefault();
             var defaultInterestLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज व्याज") || l.LedgerName.Contains("व्याज जमा") || l.LedgerName.Contains("Interest")) ?? defaultLoanLedger;
@@ -1015,7 +1032,12 @@ namespace Bhisi.Api.Controllers
                             var group = targetDict[vd.LedgerID];
 
                             string fallbackNarration = string.IsNullOrWhiteSpace(v.Narration) ? (v.VoucherType ?? "") : v.Narration;
-                            string narration = FormatVoucherPartyNarration(vd, fallbackNarration);
+                            Helpers.LegacyDaybookHelper.FormattedLegacyLine? legacyFmt = isLegacyMode && legacyAccountCtx != null
+                                ? Helpers.LegacyDaybookHelper.FormatLegacyEntry(v, vd, fallbackNarration, legacyAccountCtx)
+                                : null;
+                            string narration = legacyFmt != null
+                                ? legacyFmt.Narration
+                                : FormatVoucherPartyNarration(vd, fallbackNarration);
 
                             decimal cashAmt = 0m;
                             decimal transferAmt = 0m;
@@ -1080,7 +1102,14 @@ namespace Bhisi.Api.Controllers
                                 Narration = isCrossBranch && !narration.Contains("आंतर-शाखा")
                                     ? $"{narration} [आंतर-शाखा: मूळ शाखा #{customerBranch}]"
                                     : narration,
-                                VoucherNo = v.VoucherNo ?? "",
+                                VoucherNo = isLegacyMode
+                                    ? Helpers.LegacyDaybookHelper.FormatShortVoucherNo(v.VoucherNo)
+                                    : (v.VoucherNo ?? ""),
+                                FullVoucherNo = isLegacyMode ? (v.VoucherNo ?? "") : null,
+                                DisplayCustomerNo = legacyFmt?.DisplayCustomerNo,
+                                DisplayAccountNo = legacyFmt?.DisplayAccountNo,
+                                IsLegacyCustomerNo = legacyFmt?.IsLegacyCustomerNo ?? false,
+                                IsLegacyAccountNo = legacyFmt?.IsLegacyAccountNo ?? false,
                                 CashAmount = Math.Round(cashAmt, 2),
                                 TransferAmount = Math.Round(transferAmt, 2),
                                 Status = v.Status ?? "Pending",
@@ -1120,9 +1149,14 @@ namespace Bhisi.Api.Controllers
 
                             var group = naveGroups[lId];
                             var member = ld.LoanAccount?.Member;
-                            string narration = member?.Customer != null 
+                            string stdDisbNarration = member?.Customer != null 
                                 ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
                                 : (member != null ? $"{member.MemberCode}" : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})");
+                            var legacyDisbFmt = isLegacyMode
+                                ? Helpers.LegacyDaybookHelper.FormatUnvoucheredLoanLine(ld.LoanAccount, stdDisbNarration)
+                                : null;
+                            string narration = legacyDisbFmt != null ? legacyDisbFmt.Narration : stdDisbNarration;
+                            string rawDisbVch = "DISB-" + ld.LoanDisbursementID;
 
                             int disbBranch = ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount?.BranchID ?? 1);
                             int? accBranch = ld.LoanAccount?.BranchID;
@@ -1134,7 +1168,12 @@ namespace Bhisi.Api.Controllers
                                 Narration = isCrossBranch && !narration.Contains("आंतर-शाखा")
                                     ? $"{narration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
                                     : narration,
-                                VoucherNo = "DISB-" + ld.LoanDisbursementID,
+                                VoucherNo = isLegacyMode ? Helpers.LegacyDaybookHelper.FormatShortVoucherNo(rawDisbVch) : rawDisbVch,
+                                FullVoucherNo = isLegacyMode ? rawDisbVch : null,
+                                DisplayCustomerNo = legacyDisbFmt?.DisplayCustomerNo,
+                                DisplayAccountNo = legacyDisbFmt?.DisplayAccountNo,
+                                IsLegacyCustomerNo = legacyDisbFmt?.IsLegacyCustomerNo ?? false,
+                                IsLegacyAccountNo = legacyDisbFmt?.IsLegacyAccountNo ?? false,
                                 CashAmount = isCash ? ld.DisbursementAmount : 0,
                                 TransferAmount = isCash ? 0 : ld.DisbursementAmount,
                                 Status = "Direct",
@@ -1154,9 +1193,15 @@ namespace Bhisi.Api.Controllers
                         foreach (var lc in dayCols)
                         {
                             var member = lc.LoanAccount?.Member;
-                            string memberNarration = member?.Customer != null 
+                            string stdColNarration = member?.Customer != null 
                                 ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
                                 : (member != null ? $"{member.MemberCode}" : $"Loan Collection (Rect: {lc.ReceiptNo})");
+                            var legacyColFmt = isLegacyMode
+                                ? Helpers.LegacyDaybookHelper.FormatUnvoucheredLoanLine(lc.LoanAccount, stdColNarration)
+                                : null;
+                            string memberNarration = legacyColFmt != null ? legacyColFmt.Narration : stdColNarration;
+                            string rawColVch = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID);
+                            string effColVch = isLegacyMode ? Helpers.LegacyDaybookHelper.FormatShortVoucherNo(rawColVch) : rawColVch;
                             bool isCash = lc.PaymentMode == "Cash";
                             int colBranch = lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount?.BranchID ?? 1);
                             int? accBranch = lc.HomeBranchID ?? lc.LoanAccount?.BranchID;
@@ -1183,7 +1228,12 @@ namespace Bhisi.Api.Controllers
                                         Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
                                             ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
                                             : memberNarration,
-                                        VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                        VoucherNo = effColVch,
+                                        FullVoucherNo = isLegacyMode ? rawColVch : null,
+                                        DisplayCustomerNo = legacyColFmt?.DisplayCustomerNo,
+                                        DisplayAccountNo = legacyColFmt?.DisplayAccountNo,
+                                        IsLegacyCustomerNo = legacyColFmt?.IsLegacyCustomerNo ?? false,
+                                        IsLegacyAccountNo = legacyColFmt?.IsLegacyAccountNo ?? false,
                                         CashAmount = isCash ? lc.PrincipalCollected : 0,
                                         TransferAmount = isCash ? 0 : lc.PrincipalCollected,
                                         Status = "Direct",
@@ -1218,7 +1268,12 @@ namespace Bhisi.Api.Controllers
                                         Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
                                             ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
                                             : memberNarration,
-                                        VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                        VoucherNo = effColVch,
+                                        FullVoucherNo = isLegacyMode ? rawColVch : null,
+                                        DisplayCustomerNo = legacyColFmt?.DisplayCustomerNo,
+                                        DisplayAccountNo = legacyColFmt?.DisplayAccountNo,
+                                        IsLegacyCustomerNo = legacyColFmt?.IsLegacyCustomerNo ?? false,
+                                        IsLegacyAccountNo = legacyColFmt?.IsLegacyAccountNo ?? false,
                                         CashAmount = isCash ? lc.ReceivableInterestCollected : 0,
                                         TransferAmount = isCash ? 0 : lc.ReceivableInterestCollected,
                                         Status = "Direct",
@@ -1254,7 +1309,12 @@ namespace Bhisi.Api.Controllers
                                         Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
                                             ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
                                             : memberNarration,
-                                        VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                        VoucherNo = effColVch,
+                                        FullVoucherNo = isLegacyMode ? rawColVch : null,
+                                        DisplayCustomerNo = legacyColFmt?.DisplayCustomerNo,
+                                        DisplayAccountNo = legacyColFmt?.DisplayAccountNo,
+                                        IsLegacyCustomerNo = legacyColFmt?.IsLegacyCustomerNo ?? false,
+                                        IsLegacyAccountNo = legacyColFmt?.IsLegacyAccountNo ?? false,
                                         CashAmount = isCash ? intAmt : 0,
                                         TransferAmount = isCash ? 0 : intAmt,
                                         Status = "Direct",
@@ -3071,6 +3131,8 @@ namespace Bhisi.Api.Controllers
                     .Include(la => la.Customer)
                     .Include(la => la.Member).ThenInclude(m => m!.Customer)
                     .Include(la => la.LoanRate)
+                    .Include(la => la.Branch)
+                    .Include(la => la.LoanApplication)
                     .FirstOrDefaultAsync(la => la.LoanAccountID == loanAccountId);
 
                 if (loanAccount == null) return NotFound("Loan Account not found");
@@ -3103,6 +3165,22 @@ namespace Bhisi.Api.Controllers
                     MaturityDate = loanAccount.MaturityDate,
                     DurationMonths = loanAccount.DurationMonths,
                     OverdueAmount = loanAccount.OverdueInterestBalance,
+                    BranchName = loanAccount.Branch?.BranchName ?? "मुख्य शाखा",
+                    PrincipalBalance = loanAccount.PrincipalBalance,
+                    MobileNo = cust?.MobileNo ?? memCust?.MobileNo ?? "",
+                    LegacyCustomerNo = cust?.LegacyCustomerNo ?? memCust?.LegacyCustomerNo,
+                    InstallmentFrequency = !string.IsNullOrWhiteSpace(loanAccount.InstallmentFrequency)
+                        ? loanAccount.InstallmentFrequency
+                        : (loanAccount.LoanRate?.LoanInstallmentType ?? loanAccount.LoanRate?.InstallmentType ?? "मासिक"),
+                    CollateralCategory = loanAccount.LoanRate?.CollateralCategory,
+                    SecurityDetails = !string.IsNullOrWhiteSpace(loanAccount.SecurityDetails)
+                        ? loanAccount.SecurityDetails
+                        : (!string.IsNullOrWhiteSpace(loanAccount.LoanApplication?.SecurityDetails)
+                            ? loanAccount.LoanApplication.SecurityDetails
+                            : loanAccount.LoanRate?.SecurityType),
+                    SecurityValue = loanAccount.SecurityValue > 0
+                        ? loanAccount.SecurityValue
+                        : (loanAccount.LoanApplication?.SecurityValue ?? 0),
                 };
 
                 // Guarantors
@@ -3119,6 +3197,408 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // Fetch transactions
+                if (report.Guarantors.Count == 0 && loanAccount.LoanApplication != null)
+                {
+                    if (loanAccount.LoanApplication.Guarantor1CustomerID.HasValue && loanAccount.LoanApplication.Guarantor1CustomerID.Value > 0)
+                    {
+                        var gc1 = await _context.Customers.FindAsync(loanAccount.LoanApplication.Guarantor1CustomerID.Value);
+                        if (gc1 != null) report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = $"{gc1.FirstName} {gc1.MiddleName} {gc1.LastName}".Replace("  ", " ").Trim() });
+                    }
+                    if (loanAccount.LoanApplication.Guarantor2CustomerID.HasValue && loanAccount.LoanApplication.Guarantor2CustomerID.Value > 0)
+                    {
+                        var gc2 = await _context.Customers.FindAsync(loanAccount.LoanApplication.Guarantor2CustomerID.Value);
+                        if (gc2 != null) report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = $"{gc2.FirstName} {gc2.MiddleName} {gc2.LastName}".Replace("  ", " ").Trim() });
+                    }
+                }
+
+                // Fetch Pledged Deposit Collaterals (LoanDepositCollaterals + Direct Lien Fallback) with Legacy Deposit Account Numbers
+                static string NormalizeDepositType(string? rawType)
+                {
+                    var t = (rawType ?? "").Trim();
+                    if (t.Equals("FixedDeposit", StringComparison.OrdinalIgnoreCase) || t.Equals("FD", StringComparison.OrdinalIgnoreCase) || t.Contains("मुदत"))
+                        return "FixedDeposit";
+                    if (t.Equals("RecurringDeposit", StringComparison.OrdinalIgnoreCase) || t.Equals("RD", StringComparison.OrdinalIgnoreCase) || t.Contains("आवर्ती"))
+                        return "RecurringDeposit";
+                    if (t.Equals("PigmyDeposit", StringComparison.OrdinalIgnoreCase) || t.Contains("Pigmy", StringComparison.OrdinalIgnoreCase) || t.Contains("पिग्मी"))
+                        return "PigmyDeposit";
+                    if (t.Equals("SavingDeposit", StringComparison.OrdinalIgnoreCase) || t.Contains("Saving", StringComparison.OrdinalIgnoreCase) || t.Contains("बचत"))
+                        return "SavingDeposit";
+                    return t;
+                }
+
+                static string FormatCustomerFullName(Customer? c, string fallback)
+                {
+                    if (c == null) return fallback;
+                    var full = string.Join(" ", new[] { c.FirstName, c.MiddleName, c.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+                    return string.IsNullOrWhiteSpace(full) ? fallback : full;
+                }
+
+                int? linkedAppId = loanAccount.LoanApplicationID;
+                var rawCollaterals = await _context.LoanDepositCollaterals
+                    .Where(c => c.LoanAccountID == loanAccount.LoanAccountID || (linkedAppId.HasValue && linkedAppId.Value > 0 && c.LoanApplicationID == linkedAppId.Value))
+                    .OrderByDescending(c => c.LoanAccountID.HasValue)
+                    .ThenBy(c => c.CollateralID)
+                    .ToListAsync();
+
+                var seenDeposits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var col in rawCollaterals)
+                {
+                    string normType = NormalizeDepositType(col.CollateralType);
+
+                    if (normType == "FixedDeposit")
+                    {
+                        var fd = await _context.FdAccounts
+                            .Include(f => f.FdScheme)
+                            .Include(f => f.Customer)
+                            .FirstOrDefaultAsync(f => f.FdAccountID == col.DepositAccountID);
+                        if (fd == null && !string.IsNullOrWhiteSpace(col.DepositAccountNo))
+                        {
+                            fd = await _context.FdAccounts
+                                .Include(f => f.FdScheme)
+                                .Include(f => f.Customer)
+                                .FirstOrDefaultAsync(f => f.AccountNo == col.DepositAccountNo);
+                        }
+
+                        int resolvedId = fd?.FdAccountID ?? col.DepositAccountID;
+                        string dedupKey = $"FixedDeposit:{resolvedId}:{fd?.AccountNo ?? col.DepositAccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = col.CollateralID,
+                            CollateralType = "FixedDeposit",
+                            DepositTypeLabel = "मुदत ठेव (FD)",
+                            SchemeName = fd?.FdScheme?.SchemeName ?? "मुदत ठेव योजना",
+                            DepositAccountID = resolvedId,
+                            DepositAccountNo = fd?.AccountNo ?? col.DepositAccountNo,
+                            LegacyDepositAccountNo = fd?.LegacyAccountNumber,
+                            HolderName = FormatCustomerFullName(fd?.Customer, bName),
+                            OpeningDate = fd?.OpeningDate,
+                            MaturityDate = fd?.MaturityDate ?? col.MaturityDate,
+                            InterestRate = fd?.InterestRate ?? 0,
+                            DepositAmount = fd?.DepositAmount ?? col.DepositAmount,
+                            CurrentBalance = fd?.DepositAmount ?? (col.CurrentDepositBalance > 0 ? col.CurrentDepositBalance : col.DepositAmount),
+                            MaturityAmount = fd?.MaturityAmount,
+                            LienAmount = col.LienAmount > 0 ? col.LienAmount : (fd?.LienAmount ?? col.DepositAmount),
+                            LienStatus = !string.IsNullOrWhiteSpace(col.LienStatus) ? col.LienStatus : (fd?.IsLienMarked == true ? "LienMarked" : "Pledged"),
+                            DepositStatus = fd?.Status ?? "Active"
+                        });
+                    }
+                    else if (normType == "RecurringDeposit")
+                    {
+                        var rd = await _context.RdAccounts
+                            .Include(r => r.RdScheme)
+                            .Include(r => r.Customer)
+                            .FirstOrDefaultAsync(r => r.RdAccountID == col.DepositAccountID);
+                        if (rd == null && !string.IsNullOrWhiteSpace(col.DepositAccountNo))
+                        {
+                            rd = await _context.RdAccounts
+                                .Include(r => r.RdScheme)
+                                .Include(r => r.Customer)
+                                .FirstOrDefaultAsync(r => r.AccountNo == col.DepositAccountNo);
+                        }
+
+                        int resolvedId = rd?.RdAccountID ?? col.DepositAccountID;
+                        string dedupKey = $"RecurringDeposit:{resolvedId}:{rd?.AccountNo ?? col.DepositAccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = col.CollateralID,
+                            CollateralType = "RecurringDeposit",
+                            DepositTypeLabel = "आवर्ती ठेव (RD)",
+                            SchemeName = rd?.RdScheme?.SchemeName ?? "आवर्ती ठेव योजना",
+                            DepositAccountID = resolvedId,
+                            DepositAccountNo = rd?.AccountNo ?? col.DepositAccountNo,
+                            LegacyDepositAccountNo = rd?.LegacyAccountNumber,
+                            HolderName = FormatCustomerFullName(rd?.Customer, bName),
+                            OpeningDate = rd?.OpeningDate,
+                            MaturityDate = rd?.MaturityDate ?? col.MaturityDate,
+                            InterestRate = rd?.InterestRate ?? 0,
+                            DepositAmount = rd?.TotalDepositedAmount ?? col.DepositAmount,
+                            CurrentBalance = rd?.TotalDepositedAmount ?? (col.CurrentDepositBalance > 0 ? col.CurrentDepositBalance : col.DepositAmount),
+                            MaturityAmount = rd?.MaturityAmount,
+                            LienAmount = col.LienAmount > 0 ? col.LienAmount : (rd?.LienAmount ?? col.DepositAmount),
+                            LienStatus = !string.IsNullOrWhiteSpace(col.LienStatus) ? col.LienStatus : (rd?.IsLienMarked == true ? "LienMarked" : "Pledged"),
+                            DepositStatus = rd?.Status ?? "Active"
+                        });
+                    }
+                    else if (normType == "PigmyDeposit")
+                    {
+                        var pg = await _context.PigmyAccounts
+                            .Include(p => p.PigmyScheme)
+                            .Include(p => p.Customer)
+                            .FirstOrDefaultAsync(p => p.PigmyAccountID == col.DepositAccountID);
+                        if (pg == null && !string.IsNullOrWhiteSpace(col.DepositAccountNo))
+                        {
+                            pg = await _context.PigmyAccounts
+                                .Include(p => p.PigmyScheme)
+                                .Include(p => p.Customer)
+                                .FirstOrDefaultAsync(p => p.AccountNo == col.DepositAccountNo);
+                        }
+
+                        int resolvedId = pg?.PigmyAccountID ?? col.DepositAccountID;
+                        string dedupKey = $"PigmyDeposit:{resolvedId}:{pg?.AccountNo ?? col.DepositAccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+
+                        decimal pgNetBal = pg != null
+                            ? Math.Max(0, pg.TotalDepositedAmount - pg.TotalWithdrawnAmount)
+                            : (col.CurrentDepositBalance > 0 ? col.CurrentDepositBalance : col.DepositAmount);
+                        string? pgLegacy = pg != null
+                            ? (!string.IsNullOrWhiteSpace(pg.LegacyAccountNumber)
+                                ? pg.LegacyAccountNumber
+                                : (!string.IsNullOrWhiteSpace(pg.OldAccountNo) ? pg.OldAccountNo : pg.PreviousAccountNo))
+                            : null;
+
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = col.CollateralID,
+                            CollateralType = "PigmyDeposit",
+                            DepositTypeLabel = "पिग्मी ठेव (Pigmy)",
+                            SchemeName = pg?.PigmyScheme?.SchemeName ?? "दैनिक पिग्मी ठेव योजना",
+                            DepositAccountID = resolvedId,
+                            DepositAccountNo = pg?.AccountNo ?? col.DepositAccountNo,
+                            LegacyDepositAccountNo = pgLegacy,
+                            HolderName = FormatCustomerFullName(pg?.Customer, bName),
+                            OpeningDate = pg?.OpeningDate,
+                            MaturityDate = pg?.MaturityDate ?? col.MaturityDate,
+                            InterestRate = pg?.InterestRate ?? 0,
+                            DepositAmount = pg?.TotalDepositedAmount ?? col.DepositAmount,
+                            CurrentBalance = pgNetBal,
+                            MaturityAmount = null,
+                            LienAmount = col.LienAmount > 0 ? col.LienAmount : (pg?.LienAmount ?? pgNetBal),
+                            LienStatus = !string.IsNullOrWhiteSpace(col.LienStatus) ? col.LienStatus : (pg?.IsLienMarked == true ? "LienMarked" : "Pledged"),
+                            DepositStatus = pg?.Status ?? "Active"
+                        });
+                    }
+                    else if (normType == "SavingDeposit")
+                    {
+                        var sav = await _context.SavingAccountMasters
+                            .Include(s => s.SavingScheme)
+                            .Include(s => s.Ledger)
+                            .Include(s => s.Customer)
+                            .FirstOrDefaultAsync(s => s.SavingAccountID == col.DepositAccountID);
+                        if (sav == null && !string.IsNullOrWhiteSpace(col.DepositAccountNo))
+                        {
+                            sav = await _context.SavingAccountMasters
+                                .Include(s => s.SavingScheme)
+                                .Include(s => s.Ledger)
+                                .Include(s => s.Customer)
+                                .FirstOrDefaultAsync(s => s.AccountNo == col.DepositAccountNo);
+                        }
+
+                        int resolvedId = sav?.SavingAccountID ?? col.DepositAccountID;
+                        string dedupKey = $"SavingDeposit:{resolvedId}:{sav?.AccountNo ?? col.DepositAccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+
+                        string? savLegacy = sav != null
+                            ? (!string.IsNullOrWhiteSpace(sav.LegacyAccountNumber) ? sav.LegacyAccountNumber : sav.OldAccountNo)
+                            : null;
+
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = col.CollateralID,
+                            CollateralType = "SavingDeposit",
+                            DepositTypeLabel = "बचत ठेव (Saving)",
+                            SchemeName = sav?.SavingScheme?.SchemeName ?? sav?.Ledger?.LedgerName ?? "बचत ठेव खाते",
+                            DepositAccountID = resolvedId,
+                            DepositAccountNo = sav?.AccountNo ?? col.DepositAccountNo,
+                            LegacyDepositAccountNo = savLegacy,
+                            HolderName = FormatCustomerFullName(sav?.Customer, bName),
+                            OpeningDate = sav?.OpeningDate,
+                            MaturityDate = null,
+                            InterestRate = sav?.InterestRate ?? 0,
+                            DepositAmount = sav?.CurrentBalance ?? col.DepositAmount,
+                            CurrentBalance = sav?.CurrentBalance ?? (col.CurrentDepositBalance > 0 ? col.CurrentDepositBalance : col.DepositAmount),
+                            MaturityAmount = null,
+                            LienAmount = col.LienAmount > 0 ? col.LienAmount : (sav?.LienAmount ?? col.DepositAmount),
+                            LienStatus = !string.IsNullOrWhiteSpace(col.LienStatus) ? col.LienStatus : ((sav?.LienAmount ?? 0) > 0 ? "LienMarked" : "Pledged"),
+                            DepositStatus = sav?.Status ?? "Active"
+                        });
+                    }
+                    else
+                    {
+                        string dedupKey = $"{normType}:{col.DepositAccountID}:{col.DepositAccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = col.CollateralID,
+                            CollateralType = normType,
+                            DepositTypeLabel = "ठेव तारण",
+                            SchemeName = col.CollateralType,
+                            DepositAccountID = col.DepositAccountID,
+                            DepositAccountNo = col.DepositAccountNo,
+                            LegacyDepositAccountNo = null,
+                            HolderName = bName,
+                            OpeningDate = null,
+                            MaturityDate = col.MaturityDate,
+                            InterestRate = 0,
+                            DepositAmount = col.DepositAmount,
+                            CurrentBalance = col.CurrentDepositBalance > 0 ? col.CurrentDepositBalance : col.DepositAmount,
+                            MaturityAmount = null,
+                            LienAmount = col.LienAmount > 0 ? col.LienAmount : col.DepositAmount,
+                            LienStatus = col.LienStatus,
+                            DepositStatus = "Active"
+                        });
+                    }
+                }
+
+                // Fallback: Also check direct LienLoanAccountNo on FD / RD / Pigmy / Saving tables for migrated / legacy loans
+                string loanAccNoClean = (loanAccount.LoanAccountNo ?? "").Trim();
+                if (!string.IsNullOrWhiteSpace(loanAccNoClean))
+                {
+                    var directFds = await _context.FdAccounts
+                        .Include(f => f.FdScheme)
+                        .Include(f => f.Customer)
+                        .Where(f => f.LienLoanAccountNo == loanAccNoClean)
+                        .ToListAsync();
+                    foreach (var fd in directFds)
+                    {
+                        string dedupKey = $"FixedDeposit:{fd.FdAccountID}:{fd.AccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = 0,
+                            CollateralType = "FixedDeposit",
+                            DepositTypeLabel = "मुदत ठेव (FD)",
+                            SchemeName = fd.FdScheme?.SchemeName ?? "मुदत ठेव योजना",
+                            DepositAccountID = fd.FdAccountID,
+                            DepositAccountNo = fd.AccountNo,
+                            LegacyDepositAccountNo = fd.LegacyAccountNumber,
+                            HolderName = FormatCustomerFullName(fd.Customer, bName),
+                            OpeningDate = fd.OpeningDate,
+                            MaturityDate = fd.MaturityDate,
+                            InterestRate = fd.InterestRate,
+                            DepositAmount = fd.DepositAmount,
+                            CurrentBalance = fd.DepositAmount,
+                            MaturityAmount = fd.MaturityAmount,
+                            LienAmount = fd.LienAmount ?? fd.DepositAmount,
+                            LienStatus = fd.IsLienMarked ? "LienMarked" : "Pledged",
+                            DepositStatus = fd.Status
+                        });
+                    }
+
+                    var directRds = await _context.RdAccounts
+                        .Include(r => r.RdScheme)
+                        .Include(r => r.Customer)
+                        .Where(r => r.LienLoanAccountNo == loanAccNoClean)
+                        .ToListAsync();
+                    foreach (var rd in directRds)
+                    {
+                        string dedupKey = $"RecurringDeposit:{rd.RdAccountID}:{rd.AccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = 0,
+                            CollateralType = "RecurringDeposit",
+                            DepositTypeLabel = "आवर्ती ठेव (RD)",
+                            SchemeName = rd.RdScheme?.SchemeName ?? "आवर्ती ठेव योजना",
+                            DepositAccountID = rd.RdAccountID,
+                            DepositAccountNo = rd.AccountNo,
+                            LegacyDepositAccountNo = rd.LegacyAccountNumber,
+                            HolderName = FormatCustomerFullName(rd.Customer, bName),
+                            OpeningDate = rd.OpeningDate,
+                            MaturityDate = rd.MaturityDate,
+                            InterestRate = rd.InterestRate,
+                            DepositAmount = rd.TotalDepositedAmount,
+                            CurrentBalance = rd.TotalDepositedAmount,
+                            MaturityAmount = rd.MaturityAmount,
+                            LienAmount = rd.LienAmount ?? rd.TotalDepositedAmount,
+                            LienStatus = rd.IsLienMarked ? "LienMarked" : "Pledged",
+                            DepositStatus = rd.Status
+                        });
+                    }
+
+                    var directPigmies = await _context.PigmyAccounts
+                        .Include(p => p.PigmyScheme)
+                        .Include(p => p.Customer)
+                        .Where(p => p.LienLoanAccountNo == loanAccNoClean)
+                        .ToListAsync();
+                    foreach (var pg in directPigmies)
+                    {
+                        string dedupKey = $"PigmyDeposit:{pg.PigmyAccountID}:{pg.AccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+                        decimal pgNetBal = Math.Max(0, pg.TotalDepositedAmount - pg.TotalWithdrawnAmount);
+                        string? pgLegacy = !string.IsNullOrWhiteSpace(pg.LegacyAccountNumber)
+                            ? pg.LegacyAccountNumber
+                            : (!string.IsNullOrWhiteSpace(pg.OldAccountNo) ? pg.OldAccountNo : pg.PreviousAccountNo);
+
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = 0,
+                            CollateralType = "PigmyDeposit",
+                            DepositTypeLabel = "पिग्मी ठेव (Pigmy)",
+                            SchemeName = pg.PigmyScheme?.SchemeName ?? "दैनिक पिग्मी ठेव योजना",
+                            DepositAccountID = pg.PigmyAccountID,
+                            DepositAccountNo = pg.AccountNo,
+                            LegacyDepositAccountNo = pgLegacy,
+                            HolderName = FormatCustomerFullName(pg.Customer, bName),
+                            OpeningDate = pg.OpeningDate,
+                            MaturityDate = pg.MaturityDate,
+                            InterestRate = pg.InterestRate,
+                            DepositAmount = pg.TotalDepositedAmount,
+                            CurrentBalance = pgNetBal,
+                            MaturityAmount = null,
+                            LienAmount = pg.LienAmount ?? pgNetBal,
+                            LienStatus = pg.IsLienMarked ? "LienMarked" : "Pledged",
+                            DepositStatus = pg.Status
+                        });
+                    }
+
+                    var directSavings = await _context.SavingAccountMasters
+                        .Include(s => s.SavingScheme)
+                        .Include(s => s.Ledger)
+                        .Include(s => s.Customer)
+                        .Where(s => s.LienAmount > 0 && s.LienReason != null && s.LienReason.Contains(loanAccNoClean))
+                        .ToListAsync();
+                    foreach (var sav in directSavings)
+                    {
+                        string dedupKey = $"SavingDeposit:{sav.SavingAccountID}:{sav.AccountNo}";
+                        if (!seenDeposits.Add(dedupKey)) continue;
+                        string? savLegacy = !string.IsNullOrWhiteSpace(sav.LegacyAccountNumber) ? sav.LegacyAccountNumber : sav.OldAccountNo;
+
+                        report.DepositCollaterals.Add(new LoanLedgerDepositCollateralDto
+                        {
+                            CollateralID = 0,
+                            CollateralType = "SavingDeposit",
+                            DepositTypeLabel = "बचत ठेव (Saving)",
+                            SchemeName = sav.SavingScheme?.SchemeName ?? sav.Ledger?.LedgerName ?? "बचत ठेव खाते",
+                            DepositAccountID = sav.SavingAccountID,
+                            DepositAccountNo = sav.AccountNo,
+                            LegacyDepositAccountNo = savLegacy,
+                            HolderName = FormatCustomerFullName(sav.Customer, bName),
+                            OpeningDate = sav.OpeningDate,
+                            MaturityDate = null,
+                            InterestRate = sav.InterestRate,
+                            DepositAmount = sav.CurrentBalance,
+                            CurrentBalance = sav.CurrentBalance,
+                            MaturityAmount = null,
+                            LienAmount = sav.LienAmount,
+                            LienStatus = "LienMarked",
+                            DepositStatus = sav.Status
+                        });
+                    }
+                }
+
+                string catCheck = (loanAccount.LoanRate?.CollateralCategory ?? "").Trim();
+                bool categoryIsDeposit =
+                    catCheck.Equals("FixedDeposit", StringComparison.OrdinalIgnoreCase) ||
+                    catCheck.Equals("RecurringDeposit", StringComparison.OrdinalIgnoreCase) ||
+                    catCheck.Equals("PigmyDeposit", StringComparison.OrdinalIgnoreCase) ||
+                    catCheck.Equals("SavingDeposit", StringComparison.OrdinalIgnoreCase);
+
+                string combinedSecText = $"{loanAccount.LoanRate?.LoanType} {loanAccount.LoanRate?.ShortName} {loanAccount.LoanRate?.SecurityType} {report.SecurityDetails}";
+                bool textMentionsDeposit = new[]
+                {
+                    "ठेव", "मुदत ठेव", "आवर्ती ठेव", "पिग्मी", "बचत ठेव",
+                    "Pigmy", "Fixed Deposit", "Recurring Deposit", "Saving Deposit",
+                    "FD तारण", "RD तारण", "F.D.", "R.D."
+                }.Any(kw => combinedSecText.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                report.IsDepositBackedLoan = report.DepositCollaterals.Count > 0 || categoryIsDeposit || textMentionsDeposit;
+
                 var transactions = new List<LoanLedgerTransactionDto>();
 
                 decimal sanctionedDisbursement = loanAccount.SanctionedAmount > 0 ? loanAccount.SanctionedAmount : loanAccount.PrincipalBalance;
@@ -6826,10 +7306,14 @@ namespace Bhisi.Api.Controllers
             {
                 DateTime targetDate = asOfDate?.Date ?? DateTime.Today.Date;
 
-                // 1. Identify closed accounts on or before targetDate
+                // 1. Identify closed or renewed accounts on or before targetDate
                 var closedAccountIdsBeforeTarget = await _context.FdTransactions
                     .Where(t => t.TransactionType != null && 
-                               (t.TransactionType == "Close" || t.TransactionType == "Matured_Close" || t.TransactionType == "Premature_Close") && 
+                               (t.TransactionType == "Close" ||
+                                t.TransactionType == "Matured_Close" ||
+                                t.TransactionType == "Premature_Close" ||
+                                t.TransactionType == "Payout" ||
+                                t.TransactionType == "Renewal") && 
                                t.TransactionDate.Date <= targetDate)
                     .Select(t => t.FdAccountID)
                     .Distinct()
@@ -7149,8 +7633,15 @@ namespace Bhisi.Api.Controllers
                         });
                     }
 
-                    // If FD was closed with payout > principal/net liability, synthesize uncredited closure interest entry
-                    var closeTx = fullTxList.FirstOrDefault(t => t.DebitCredit == "Dr" && (t.TransactionType == "Premature_Close" || t.TransactionType == "PrematureClose" || t.TransactionType == "Maturity" || t.TransactionType == "Closure" || t.TransactionType == "Payout" || (!string.IsNullOrEmpty(t.VoucherNo) && (t.VoucherNo.Contains("PRECLOSE") || t.VoucherNo.Contains("CLOSE")))));
+                    // If FD was closed or renewed with total payout/transfer > principal/net liability, synthesize uncredited closure/renewal interest entry
+                    var closeTx = fullTxList.FirstOrDefault(t => t.DebitCredit == "Dr" && (
+                        t.TransactionType == "Premature_Close" ||
+                        t.TransactionType == "PrematureClose" ||
+                        t.TransactionType == "Maturity" ||
+                        t.TransactionType == "Closure" ||
+                        t.TransactionType == "Payout" ||
+                        t.TransactionType == "Renewal" ||
+                        (!string.IsNullOrEmpty(t.VoucherNo) && (t.VoucherNo.Contains("PRECLOSE") || t.VoucherNo.Contains("CLOSE") || t.VoucherNo.Contains("REN")))));
                     if (closeTx != null)
                     {
                         decimal totalCrBeforeClosure = fullTxList.Where(t => t != closeTx && t.DebitCredit == "Cr").Sum(t => t.Amount);
@@ -7160,10 +7651,11 @@ namespace Bhisi.Api.Controllers
                         if (closeTx.Amount > netLiabilityBeforeClosure && (closeTx.Amount - netLiabilityBeforeClosure) >= 0.01m)
                         {
                             decimal closureInterest = Math.Round(closeTx.Amount - netLiabilityBeforeClosure, 2);
-                            bool alreadyHasAccrual = fullTxList.Any(t => t.TransactionType == "Accrual" && Math.Abs(t.Amount - closureInterest) < 0.01m);
-                            if (!alreadyHasAccrual)
+                            bool alreadySynthesized = fullTxList.Any(t => t.FdTransactionID == -2);
+                            if (!alreadySynthesized)
                             {
-                                bool isPremature = closeTx.TransactionType.Contains("Premature") || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("PRECLOSE"));
+                                bool isPremature = (closeTx.TransactionType ?? "").Contains("Premature") || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("PRECLOSE"));
+                                bool isRenewal = closeTx.TransactionType == "Renewal" || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("REN"));
                                 fullTxList.Add(new
                                 {
                                     FdTransactionID = -2,
@@ -7172,7 +7664,7 @@ namespace Bhisi.Api.Controllers
                                     DebitCredit = "Cr",
                                     Amount = closureInterest,
                                     VoucherNo = closeTx.VoucherNo,
-                                    Narration = isPremature ? "मुदतपूर्व व्याज जमा" : "मुदतपूर्ती व्याज जमा"
+                                    Narration = isPremature ? "मुदतपूर्व व्याज जमा" : (isRenewal ? "नूतनीकरण मुदतपूर्ती व्याज जमा" : "मुदतपूर्ती व्याज जमा")
                                 });
                             }
                         }
@@ -7322,8 +7814,17 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var query = _context.Vouchers
+                    .AsNoTracking()
                     .Include(v => v.Branch)
-                    .Where(v => (v.VoucherNo != null && v.VoucherNo.StartsWith("JV-FD-")) || (v.Narration != null && (v.Narration.Contains("मुदत ठेव") || v.Narration.ToLower().Contains("fd"))))
+                    .Include(v => v.VoucherDetails)
+                        .ThenInclude(vd => vd.Customer)
+                    .Where(v =>
+                        (v.VoucherNo != null && (
+                            v.VoucherNo.StartsWith("JV-FD-") ||
+                            v.VoucherNo.StartsWith("PAY-FD-") ||
+                            v.VoucherNo.StartsWith("PMT-FD-") ||
+                            v.VoucherNo.StartsWith("REC-FD-"))) ||
+                        (v.Narration != null && (v.Narration.Contains("मुदत ठेव") || v.Narration.Contains("FD Renewal") || v.Narration.Contains("FD Maturity"))))
                     .AsQueryable();
 
                 if (branchId.HasValue && branchId.Value > 0)
@@ -7338,31 +7839,93 @@ namespace Bhisi.Api.Controllers
                 if (!string.IsNullOrEmpty(status) && status != "ALL")
                     query = query.Where(v => v.Status == status);
 
-                var list = await query
+                var rawVouchers = await query
                     .OrderByDescending(v => v.VoucherDate)
                     .ThenByDescending(v => v.VoucherID)
-                    .Take(300)
-                    .Select(v => new
+                    .Take(500)
+                    .ToListAsync();
+
+                string[] fdVoucherPrefixes = {
+                    "JV-FD-REN-", "PAY-FD-INT-", "JV-FD-INT-",
+                    "REC-FD-OP-", "JV-FD-OP-",
+                    "JV-FD-PRECLOSE-", "PAY-FD-PRECLOSE-", "PMT-FD-PRECLOSE-",
+                    "JV-FD-CLOSE-", "PAY-FD-CLOSE-", "PMT-FD-CLOSE-",
+                    "JV-FD-PROV-", "JV-FD-ACC-"
+                };
+
+                var list = rawVouchers.Select(v =>
+                {
+                    string vNo = v.VoucherNo ?? "";
+                    string accNo = vNo;
+                    foreach (var pfx in fdVoucherPrefixes)
+                    {
+                        if (vNo.StartsWith(pfx, StringComparison.OrdinalIgnoreCase))
+                        {
+                            accNo = vNo.Substring(pfx.Length).Trim();
+                            break;
+                        }
+                    }
+
+                    string txType = "व्याज तरतूद";
+                    string badge = "bg-amber-100 text-amber-800";
+                    if (vNo.Contains("-FD-REN-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        txType = "मुदत ठेव नूतनीकरण";
+                        badge = "bg-indigo-100 text-indigo-800";
+                    }
+                    else if (vNo.Contains("-FD-INT-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        txType = "नूतनीकरण व्याज परतावा";
+                        badge = "bg-purple-100 text-purple-800";
+                    }
+                    else if (vNo.Contains("PRECLOSE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        txType = "मुदतपूर्व परतावा";
+                        badge = "bg-rose-100 text-rose-800";
+                    }
+                    else if (vNo.Contains("CLOSE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        txType = "मुदतपूर्ती परतावा";
+                        badge = "bg-emerald-100 text-emerald-800";
+                    }
+                    else if (vNo.StartsWith("REC-FD-OP-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        txType = "नवीन मुदत ठेव जमा";
+                        badge = "bg-blue-100 text-blue-800";
+                    }
+                    else if (vNo.StartsWith("JV-FD-OP-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        txType = "आरंभिक शिल्लक";
+                        badge = "bg-sky-100 text-sky-800";
+                    }
+
+                    var cust = v.VoucherDetails?.FirstOrDefault(vd => vd.Customer != null)?.Customer;
+                    string custName = cust != null
+                        ? $"{cust.FirstName} {cust.LastName}".Trim()
+                        : (v.Narration ?? "-");
+                    string custCode = cust?.CIFNo ?? "";
+
+                    return new
                     {
                         v.VoucherID,
                         v.VoucherNo,
                         VoucherDate = v.VoucherDate.ToString("yyyy-MM-dd"),
                         BranchName = v.Branch != null ? v.Branch.BranchName : "मुख्य शाखा",
-                        AccountNo = v.VoucherNo.Replace("JV-FD-OP-", "").Replace("JV-FD-CLOSE-", "").Replace("JV-FD-PROV-", ""),
-                        CustomerName = v.Narration,
-                        CustomerCode = "",
-                        TransactionType = v.VoucherNo.Contains("OP") ? "आरंभिक शिल्लक" : (v.VoucherNo.Contains("CLOSE") ? "मुदत समाप्ती" : "व्याज तरतूद"),
-                        TypeBadge = v.VoucherNo.Contains("OP") ? "bg-blue-100 text-blue-800" : (v.VoucherNo.Contains("CLOSE") ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"),
+                        AccountNo = accNo,
+                        CustomerName = custName,
+                        CustomerCode = custCode,
+                        TransactionType = txType,
+                        TypeBadge = badge,
                         v.VoucherType,
                         v.TotalAmount,
-                        Status = v.Status ?? "Approved",
+                        Status = string.IsNullOrWhiteSpace(v.Status) ? "Pending" : v.Status,
                         ScrollNo = v.ScrollNo,
                         v.Narration,
                         CreatedBy = "Admin",
-                        ApprovedBy = "Admin",
-                        ApprovedOn = v.CreatedOn.ToString("yyyy-MM-dd")
-                    })
-                    .ToListAsync();
+                        ApprovedBy = v.ApprovedBy.HasValue ? "Admin" : "-",
+                        ApprovedOn = v.ApprovedOn.HasValue ? v.ApprovedOn.Value.ToString("yyyy-MM-dd") : "-"
+                    };
+                }).ToList();
 
                 return Ok(list);
             }
@@ -7376,8 +7939,120 @@ namespace Bhisi.Api.Controllers
         [HttpGet("fd-deleted-entries")]
         public async Task<IActionResult> GetFdDeletedEntries([FromQuery] int? branchId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
         {
-            var list = new List<object>();
-            return Ok(list);
+            try
+            {
+                var query = _context.AuditLogs
+                    .AsNoTracking()
+                    .Where(a =>
+                        (a.Action.StartsWith("FD_") && a.Action.Contains("DELETE")) ||
+                        (a.EntityName == "FdAccount" && a.Action.Contains("DELETE")) ||
+                        (a.EntityName == "Voucher" && a.Action.Contains("DELETE") &&
+                         ((a.EntityID != null && a.EntityID.Contains("-FD-")) ||
+                          (a.Details != null && a.Details.Contains("मुदत ठेव")))))
+                    .AsQueryable();
+
+                if (fromDate.HasValue)
+                    query = query.Where(a => a.Timestamp >= fromDate.Value.Date);
+
+                if (toDate.HasValue)
+                    query = query.Where(a => a.Timestamp <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+                var rawLogs = await query
+                    .OrderByDescending(a => a.Timestamp)
+                    .ThenByDescending(a => a.AuditLogID)
+                    .Take(300)
+                    .ToListAsync();
+
+                var list = rawLogs.Select(a =>
+                {
+                    string details = a.Details ?? "";
+                    string entityId = a.EntityID ?? "";
+
+                    string voucherNo = "-";
+                    if (entityId.Contains("-FD-", StringComparison.OrdinalIgnoreCase) &&
+                        (entityId.StartsWith("JV-", StringComparison.OrdinalIgnoreCase) ||
+                         entityId.StartsWith("PAY-", StringComparison.OrdinalIgnoreCase) ||
+                         entityId.StartsWith("PMT-", StringComparison.OrdinalIgnoreCase) ||
+                         entityId.StartsWith("REC-", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        voucherNo = entityId;
+                    }
+                    else
+                    {
+                        var vMatch = System.Text.RegularExpressions.Regex.Match(details, @"(?:JV|PAY|PMT|REC)-FD-[A-Za-z0-9-]+");
+                        if (vMatch.Success) voucherNo = vMatch.Value;
+                    }
+
+                    string accountNo = (!string.IsNullOrEmpty(entityId) && entityId != voucherNo) ? entityId : "-";
+                    if (accountNo == "-")
+                    {
+                        var accMatch = System.Text.RegularExpressions.Regex.Match(details, @"\d{3}-\d{3}-\d{7}-\d|\d{14}|[A-Za-z0-9]+-\d+-FD-\d+");
+                        if (accMatch.Success) accountNo = accMatch.Value;
+                    }
+
+                    decimal amount = 0m;
+                    var amtMatch = System.Text.RegularExpressions.Regex.Match(details, @"₹\s*([0-9,]+(?:\.[0-9]+)?)");
+                    if (amtMatch.Success)
+                    {
+                        decimal.TryParse(amtMatch.Groups[1].Value.Replace(",", ""), out amount);
+                    }
+                    else
+                    {
+                        var jsonAmtMatch = System.Text.RegularExpressions.Regex.Match(details, @"""TotalAmount""\s*:\s*([0-9]+(?:\.[0-9]+)?)");
+                        if (jsonAmtMatch.Success)
+                        {
+                            decimal.TryParse(jsonAmtMatch.Groups[1].Value, out amount);
+                        }
+                    }
+
+                    string deleteType = "FD व्हाउचर डिलीट";
+                    string typeBadge = "bg-rose-100 text-rose-800";
+                    string rollbackInfo = "व्हाउचर व संबंधित व्यवहार पूर्ववत";
+
+                    if (a.Action.Contains("RENEWAL", StringComparison.OrdinalIgnoreCase) || voucherNo.Contains("-FD-REN-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        deleteType = "नूतनीकरण रद्द (Renewal Rollback)";
+                        typeBadge = "bg-indigo-100 text-indigo-800";
+                        rollbackInfo = "नवीन FD खाते हटवून मूळ खाते पूर्ववत";
+                    }
+                    else if (a.Action.Contains("OPENING", StringComparison.OrdinalIgnoreCase) || a.EntityName == "FdAccount")
+                    {
+                        deleteType = "मुदत ठेव खाते डिलीट";
+                        typeBadge = "bg-amber-100 text-amber-800";
+                        rollbackInfo = "पावती, व्हाउचर व अनुक्रमांक पूर्ववत";
+                    }
+                    else if (voucherNo.Contains("CLOSE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        deleteType = "ठेव क्लोजर रद्द";
+                        typeBadge = "bg-emerald-100 text-emerald-800";
+                        rollbackInfo = "परतावा रद्द करून खाते पुन्हा सक्रिय";
+                    }
+
+                    int snapIdx = details.IndexOf("| Snapshot:", StringComparison.OrdinalIgnoreCase);
+                    if (snapIdx < 0) snapIdx = details.IndexOf("| OldVoucherDetails:", StringComparison.OrdinalIgnoreCase);
+                    string cleanDetails = snapIdx > 0 ? details.Substring(0, snapIdx).Trim() : details;
+
+                    return new
+                    {
+                        LogID = a.AuditLogID,
+                        DeletedDate = a.Timestamp.ToString("yyyy-MM-dd HH:mm"),
+                        AccountNo = accountNo,
+                        VoucherNo = voucherNo,
+                        DeleteType = deleteType,
+                        TypeBadge = typeBadge,
+                        Amount = amount,
+                        DeletedBy = !string.IsNullOrWhiteSpace(a.Username) ? a.Username : "Admin",
+                        RollbackInfo = rollbackInfo,
+                        ReasonOrDetails = cleanDetails
+                    };
+                }).ToList();
+
+                return Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "डिलीट केलेल्या FD नोंदी लोड करताना त्रुटी आली.", error = ex.Message });
+            }
         }
 
         // GET: api/Reports/LoanOutstandingReport

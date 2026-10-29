@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 
 export const convertMarathiDigits = (val: string): string => {
@@ -25,6 +25,13 @@ interface SearchableSelectProps {
   className?: string;
   required?: boolean;
   tabIndex?: number;
+  searchPlaceholder?: string;
+  countLabel?: string;
+  emptyMessage?: string;
+  emptySubMessage?: string;
+  onQuickAdd?: (searchText: string) => void;
+  quickAddLabel?: string;
+  minMenuWidth?: number;
 }
 
 const focusNext = (current: HTMLElement | null) => {
@@ -58,15 +65,29 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   placeholder = "- निवडा -",
   disabled = false,
   className,
-  tabIndex
+  tabIndex,
+  searchPlaceholder = "खाते क्र. (ID), खाते नाव किंवा गट कोड (उदा. 1, 28.1)...",
+  countLabel = "उपलब्ध खाती",
+  emptyMessage = "कोणतीही खाती आढळली नाहीत.",
+  emptySubMessage = "खाते क्र. (ID), खाते नाव किंवा गट कोड तपासा.",
+  onQuickAdd,
+  quickAddLabel = "+ नवीन जोडा",
+  minMenuWidth
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState<number>(0);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number; maxHeight: number }>({
+  const [menuPos, setMenuPos] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  }>({
     top: 0,
+    bottom: undefined,
     left: 0,
-    width: 480,
+    width: 320,
     maxHeight: 280
   });
 
@@ -80,8 +101,8 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
   const safeOptions = Array.isArray(options) ? options : [];
 
-  // Update floating dropdown position whenever opened, scrolled, or resized
-  useEffect(() => {
+  // Update floating dropdown position before paint whenever opened, scrolled, or resized
+  useLayoutEffect(() => {
     if (!isOpen) return;
 
     const updatePosition = () => {
@@ -90,25 +111,52 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
 
-      const spaceBelow = viewportHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const openUp = spaceBelow < 250 && spaceAbove > spaceBelow;
+      const hasRichSubLabels = safeOptions.some((o: any) => Boolean(o?.subLabel || o?.badge));
+      const effectiveMinWidth =
+        typeof minMenuWidth === 'number'
+          ? minMenuWidth
+          : hasRichSubLabels
+            ? 460
+            : Math.min(rect.width, 240);
 
-      const desiredWidth = Math.max(rect.width, 540);
+      const desiredWidth = Math.max(rect.width, effectiveMinWidth);
+      const clampedWidth = Math.min(desiredWidth, viewportWidth - 24);
+
       let left = rect.left;
-      if (left + desiredWidth > viewportWidth - 16) {
-        left = Math.max(16, viewportWidth - desiredWidth - 16);
+      if (left + clampedWidth > viewportWidth - 12) {
+        left = Math.max(12, viewportWidth - clampedWidth - 12);
+      }
+      if (left < 12) {
+        left = 12;
       }
 
-      const availableHeight = openUp ? Math.min(280, spaceAbove - 20) : Math.min(280, spaceBelow - 20);
-      const top = openUp ? Math.max(10, rect.top - availableHeight - 4) : rect.bottom + 4;
+      const spaceBelow = viewportHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const rowHeight = hasRichSubLabels ? 46 : 34;
+      const estimatedHeight = Math.min(280, 96 + Math.max(1, safeOptions.length) * rowHeight);
+      const openUp = spaceBelow < Math.min(200, estimatedHeight + 12) && spaceAbove > spaceBelow;
 
-      setMenuPos({
-        top,
-        left,
-        width: Math.min(desiredWidth, viewportWidth - 32),
-        maxHeight: availableHeight
-      });
+      const availableHeight = openUp
+        ? Math.max(120, Math.min(280, spaceAbove - 16))
+        : Math.max(120, Math.min(280, spaceBelow - 16));
+
+      if (openUp) {
+        setMenuPos({
+          top: undefined,
+          bottom: Math.max(8, viewportHeight - rect.top + 4),
+          left,
+          width: clampedWidth,
+          maxHeight: availableHeight
+        });
+      } else {
+        setMenuPos({
+          top: rect.bottom + 4,
+          bottom: undefined,
+          left,
+          width: clampedWidth,
+          maxHeight: availableHeight
+        });
+      }
     };
 
     updatePosition();
@@ -119,7 +167,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [isOpen]);
+  }, [isOpen, safeOptions.length, minMenuWidth]);
 
   // Click outside to close (checking both trigger and portaled menu)
   useEffect(() => {
@@ -275,13 +323,14 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
           ref={menuPortalRef}
           style={{
             position: 'fixed',
-            top: `${menuPos.top}px`,
+            ...(menuPos.top !== undefined ? { top: `${menuPos.top}px` } : {}),
+            ...(menuPos.bottom !== undefined ? { bottom: `${menuPos.bottom}px` } : {}),
             left: `${menuPos.left}px`,
             width: `${menuPos.width}px`,
             maxHeight: `${menuPos.maxHeight}px`,
             zIndex: 999999
           }}
-          className="bg-white border border-slate-300 shadow-2xl rounded-xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 ring-1 ring-black/5"
+          className="bg-white border border-slate-300 shadow-2xl rounded-lg overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 ring-1 ring-black/5"
         >
           {/* Search Box Header */}
           <div className="sticky top-0 bg-slate-50 p-2 border-b border-slate-200 z-10 shrink-0">
@@ -292,7 +341,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 aria-label={placeholder || "शोधा..."}
                 type="text"
                 className="w-full border border-slate-300 pl-3 pr-7 py-1.5 text-xs rounded-lg focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 bg-white font-medium"
-                placeholder="खाते क्र. (ID), खाते नाव किंवा गट कोड (उदा. 1, 28.1)..."
+                placeholder={searchPlaceholder}
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
@@ -358,8 +407,26 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
               )}
             </div>
             <div className="mt-1 flex items-center justify-between text-[10.5px] text-slate-500 px-1 font-semibold">
-              <span>उपलब्ध खाती: <strong className="text-primary font-mono">{filteredOptions.length}</strong></span>
-              {searchTerm && <span className="text-[10px] text-indigo-600">सर्च: "{searchTerm}"</span>}
+              <span>{countLabel}: <strong className="text-primary font-mono">{filteredOptions.length}</strong></span>
+              <div className="flex items-center gap-2">
+                {searchTerm && <span className="text-[10px] text-indigo-600">सर्च: "{searchTerm}"</span>}
+                {onQuickAdd && !disabled && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const typed = searchTerm.trim();
+                      setIsOpen(false);
+                      setSearchTerm('');
+                      onQuickAdd(typed);
+                    }}
+                    className="text-[10px] text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors"
+                  >
+                    {quickAddLabel}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -428,9 +495,27 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
             })}
 
             {filteredOptions.length === 0 && (
-              <div className="px-3 py-6 text-slate-400 text-xs text-center flex flex-col items-center gap-1">
-                <span>कोणतीही खाती आढळली नाहीत.</span>
-                <span className="text-[10.5px] text-slate-500">खाते क्र. (ID), खाते नाव किंवा गट कोड तपासा.</span>
+              <div className="px-3 py-6 text-slate-400 text-xs text-center flex flex-col items-center gap-1.5">
+                <span className="font-semibold text-slate-500">{emptyMessage}</span>
+                {emptySubMessage && (
+                  <span className="text-[10.5px] text-slate-400">{emptySubMessage}</span>
+                )}
+                {onQuickAdd && !disabled && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const typed = searchTerm.trim();
+                      setIsOpen(false);
+                      setSearchTerm('');
+                      onQuickAdd(typed);
+                    }}
+                    className="mt-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-bold shadow-xs cursor-pointer transition-colors"
+                  >
+                    {searchTerm.trim() ? `+ "${searchTerm.trim()}" जोडा` : quickAddLabel}
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -63,9 +63,11 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
     return 'approved';
   };
 
+  const initialCbsDate = user?.businessDate ? user.businessDate.split('T')[0] : getTodayDate();
+  const hasSyncedBusinessDateRef = useRef<boolean>(Boolean(user?.businessDate));
   const [voucherStatus, setVoucherStatus] = useState<'approved' | 'pending' | 'all'>(getInitialStatus);
-  const [fromDate, setFromDate] = useState<string>(getTodayDate());
-  const [toDate, setToDate] = useState<string>(getTodayDate());
+  const [fromDate, setFromDate] = useState<string>(initialCbsDate);
+  const [toDate, setToDate] = useState<string>(initialCbsDate);
   const [pages, setPages] = useState<{ date: string; data: DaybookResponse }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +103,16 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
     }
   }, [user?.branchID, isHOUser]);
 
+  useEffect(() => {
+    if (user?.businessDate && !hasSyncedBusinessDateRef.current) {
+      hasSyncedBusinessDateRef.current = true;
+      const bDate = user.businessDate.split('T')[0];
+      setFromDate(bDate);
+      setToDate(bDate);
+      fetchReport(voucherStatus, bDate, bDate);
+    }
+  }, [user?.businessDate]);
+
   const fetchBranches = async () => {
     try {
       const response = await fetch('/api/Branches');
@@ -131,13 +143,19 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
     }
   };
 
-  const fetchReport = async (overrideStatus?: 'approved' | 'pending' | 'all') => {
+  const fetchReport = async (
+    overrideStatus?: 'approved' | 'pending' | 'all',
+    overrideFromDate?: string,
+    overrideToDate?: string
+  ) => {
     setLoading(true);
     setError(null);
 
     const activeStatus = overrideStatus || voucherStatus;
+    const effectiveFrom = overrideFromDate || fromDate;
+    const effectiveTo = overrideToDate || toDate;
     try {
-      let url = `/api/Reports/DaybookBatch?date=${fromDate}&toDate=${toDate}&voucherStatus=${activeStatus}`;
+      let url = `/api/Reports/DaybookBatch?date=${effectiveFrom}&toDate=${effectiveTo}&voucherStatus=${activeStatus}`;
       if (selectedBranchId !== 'all') {
         url += `&branchId=${selectedBranchId}`;
       }

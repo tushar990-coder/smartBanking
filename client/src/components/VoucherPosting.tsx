@@ -130,10 +130,33 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const [unpassReason, setUnpassReason] = useState('माहिती सुधारण्यासाठी मंजुरी रद्द केली (Reverted to Pending for correction)');
   const [unpassError, setUnpassError] = useState('');
 
+  const getOperatingBranchQuery = () => {
+    const globalBranchStr = localStorage.getItem('globalBranchId');
+    const isHO = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+    if (globalBranchStr && globalBranchStr !== 'all') {
+      const parsed = parseInt(globalBranchStr, 10);
+      if (!isNaN(parsed) && parsed > 0) return `?branchId=${parsed}`;
+    }
+    if (globalBranchStr === 'all' && isHO) {
+      return '';
+    }
+    if (isHO && (!user?.branchID || user.branchID <= 0)) {
+      return '';
+    }
+    return `?branchId=${user?.branchID || 1}`;
+  };
+
   useEffect(() => {
     fetchUnpostedVouchers();
     fetchApprovedVouchers();
-  }, []);
+
+    const handleBranchChange = () => {
+      fetchUnpostedVouchers();
+      fetchApprovedVouchers();
+    };
+    window.addEventListener('globalBranchChange', handleBranchChange);
+    return () => window.removeEventListener('globalBranchChange', handleBranchChange);
+  }, [user?.branchID, user?.role]);
 
   const isOpeningMigrationVoucher = (v: Voucher) => {
     const vNo = v.voucherNo || '';
@@ -155,8 +178,8 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const fetchApprovedVouchers = async () => {
     setLoadingApproved(true);
     try {
-      const branchId = user?.branchID || 1;
-      const res = await fetch(`/api/VoucherPosting/Approved?branchId=${branchId}`);
+      const branchQuery = getOperatingBranchQuery();
+      const res = await fetch(`/api/VoucherPosting/Approved${branchQuery}`);
       if (res.ok) {
         const data = await res.json();
         const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter((v: Voucher) => !isOpeningMigrationVoucher(v));
@@ -180,8 +203,8 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     setMessage('');
     setError('');
     try {
-      const branchId = user?.branchID || 1;
-      const res = await fetch(`/api/VoucherPosting/Unposted?branchId=${branchId}`);
+      const branchQuery = getOperatingBranchQuery();
+      const res = await fetch(`/api/VoucherPosting/Unposted${branchQuery}`);
       if (res.ok) {
         const data = await res.json();
         const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter((v: Voucher) => !isOpeningMigrationVoucher(v));
@@ -374,11 +397,19 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       narr.includes('saving withdrawal') ||
       narr.includes('saving transfer');
 
-    // 5. Fixed Deposit Withdrawal / Closure
+    // 5. Fixed Deposit Withdrawal / Closure / Renewal
     const isFdWithdrawal =
       vNo.startsWith('JV-FD-CLOSE-') ||
       vNo.startsWith('JV-FD-PRECLOSE-') ||
+      vNo.startsWith('PAY-FD-CLOSE-') ||
+      vNo.startsWith('PMT-FD-CLOSE-') ||
+      vNo.startsWith('JV-FD-REN-') ||
+      vNo.startsWith('JV-FD-INT-') ||
+      vNo.startsWith('PAY-FD-INT-') ||
       narr.includes('fd maturity payout') ||
+      narr.includes('fd renewal') ||
+      v.narration?.includes('मुदत ठेव नूतनीकरण') ||
+      v.narration?.includes('मुदत ठेव मुद्दल नूतनीकरण') ||
       v.narration?.includes('मुदत ठेव पूर्ण क्लोजर') ||
       narr.includes('fd premature') ||
       v.narration?.includes('मुदतपूर्व परतावा') ||
@@ -844,6 +875,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const totalCount = dateFilteredVouchers.length;
   const receiptsCount = dateFilteredVouchers.filter((v) => v.voucherType === 'Receipt').length;
   const paymentsCount = dateFilteredVouchers.filter((v) => v.voucherType === 'Payment').length;
+  const journalsCount = dateFilteredVouchers.filter((v) => v.voucherType === 'Journal' || v.voucherType === 'Contra').length;
   const totalAmount = dateFilteredVouchers.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
 
   const selectedVouchersList = dateFilteredVouchers.filter((v) => selectedVouchers.has(v.voucherID));
@@ -1142,7 +1174,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
           </div>
 
           {/* Clean Summary Stat Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             <div className="bg-white p-2.5 rounded-md border border-gray-200 shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
@@ -1176,6 +1208,14 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 <p className="text-base font-bold text-rose-700 font-mono mt-0.5">{paymentsCount}</p>
               </div>
               <span className="p-1.5 bg-rose-50 rounded text-sm">📤</span>
+            </div>
+
+            <div className="bg-white p-2.5 rounded-md border border-gray-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wider">जर्नल / ट्रान्सफर (JV)</p>
+                <p className="text-base font-bold text-indigo-700 font-mono mt-0.5">{journalsCount}</p>
+              </div>
+              <span className="p-1.5 bg-indigo-50 rounded text-sm">🔄</span>
             </div>
 
             <div className="bg-white p-2.5 rounded-md border border-gray-200 shadow-2xs flex items-center justify-between">

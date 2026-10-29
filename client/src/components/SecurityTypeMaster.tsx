@@ -61,7 +61,12 @@ const SecurityTypeMaster: React.FC = () => {
             fetchData();
         } catch (err: any) {
             console.error(err);
-            setError(err.response?.data || 'An error occurred while saving.');
+            const errData = err.response?.data;
+            setError(
+                typeof errData === 'string'
+                    ? errData
+                    : errData?.title || errData?.message || 'तारण प्रकार जतन करताना त्रुटी आली.'
+            );
         }
     };
 

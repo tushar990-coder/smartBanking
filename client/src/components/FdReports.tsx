@@ -210,15 +210,29 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
   const [data, setData] = useState<FdAccountReportRow[]>([]);
   const [voucherPassingData, setVoucherPassingData] = useState<FdVoucherPassingRow[]>([]);
   const [deletedEntriesData, setDeletedEntriesData] = useState<FdDeletedEntryRow[]>([]);
-  const [fromDate, setFromDate] = useState<string>(() => {
+  const getLocalTodayStr = () => {
     const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
-  });
-  const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const initialCbsDateStr = user?.businessDate ? user.businessDate.split('T')[0] : getLocalTodayStr();
+  const [hasSyncedCbsDate, setHasSyncedCbsDate] = useState<boolean>(Boolean(user?.businessDate));
+
+  const [fromDate, setFromDate] = useState<string>(() => `${initialCbsDateStr.slice(0, 7)}-01`);
+  const [toDate, setToDate] = useState<string>(() => initialCbsDateStr);
   const [voucherPassingStatus, setVoucherPassingStatus] = useState<string>('ALL');
 
   const [customerSummaryData, setCustomerSummaryData] = useState<FdCustomerSummaryRow[]>([]);
-  const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [asOfDate, setAsOfDate] = useState<string>(() => initialCbsDateStr);
+
+  useEffect(() => {
+    if (user?.businessDate && !hasSyncedCbsDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setFromDate(`${bDate.slice(0, 7)}-01`);
+      setToDate(bDate);
+      setAsOfDate(bDate);
+      setHasSyncedCbsDate(true);
+    }
+  }, [user?.businessDate, hasSyncedCbsDate]);
   const [expandedCustomerIds, setExpandedCustomerIds] = useState<number[]>([]);
   const [summaryViewMode, setSummaryViewMode] = useState<'DualColumn' | 'Detailed'>('DualColumn');
 

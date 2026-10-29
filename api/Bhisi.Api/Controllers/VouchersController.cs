@@ -646,7 +646,27 @@ namespace Bhisi.Api.Controllers
                 _context.LoanDisbursements.Remove(ld);
             }
 
-            if (!string.IsNullOrEmpty(voucher.VoucherNo))
+            // FD Renewal Rollback (handles 14-digit CBS & legacy accounts, sibling interest vouchers, and Saving transfer reversal)
+            if (Helpers.FdRenewalRollbackHelper.IsFdRenewalVoucher(voucher))
+            {
+                var renRollback = await Helpers.FdRenewalRollbackHelper.RollbackRenewalByVoucherAsync(
+                    _context,
+                    voucher,
+                    deletePrimaryVoucherRecord: false);
+
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = dto.UserID > 0 ? dto.UserID : null,
+                    Username = !string.IsNullOrWhiteSpace(dto.Username) ? dto.Username : "User-" + dto.UserID,
+                    Action = "FD_RENEWAL_VOUCHER_DELETED",
+                    EntityName = "FdAccount",
+                    EntityID = renRollback.OldAccountNo ?? renRollback.NewAccountNo ?? voucher.VoucherNo,
+                    Details = $"मुदत ठेव नूतनीकरण व्हाउचर {voucher.VoucherNo} (नवीन खाते: {renRollback.NewAccountNo ?? "-"}, मूळ खाते: {renRollback.OldAccountNo ?? "-"}) डिलीट केले. नवीन खाते हटवले व मूळ खाते पूर्ववत केले. कारण: {dto.Reason}",
+                    Timestamp = DateTime.Now,
+                    Status = "Success"
+                });
+            }
+            else if (!string.IsNullOrEmpty(voucher.VoucherNo))
             {
                 await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "DELETED");
                 var savingTxs = await _context.SavingTransactions.Where(st => st.VoucherNo == voucher.VoucherNo).ToListAsync();

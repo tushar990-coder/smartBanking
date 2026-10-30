@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award, Lock, Unlock, Coins, Landmark, UserCheck, Users } from 'lucide-react';
+import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award, Lock, Unlock, Coins, Landmark, UserCheck, Users, RotateCcw, RefreshCw, Share2, ShieldCheck, Zap, ArrowLeft } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
@@ -69,6 +69,7 @@ interface LoanAccount {
     openingDate: string;
     maturityDate: string;
     isOpeningBalance?: boolean;
+    status?: string;
 }
 
 interface LoanInstallmentScheduleDto {
@@ -279,6 +280,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [showInstallmentModal, setShowInstallmentModal] = useState(false);
     const [modalFilter, setModalFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'PARTIAL'>('ALL');
     const [isSchedulePrintView, setIsSchedulePrintView] = useState(false);
+    const [showFeesPanel, setShowFeesPanel] = useState(false);
 
     const [formData, setFormData] = useState<Partial<LoanCollection>>({
         collectionDate: activeBusinessDate,
@@ -639,6 +641,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
             if (col.loanAccount) {
                 const acc = col.loanAccount;
+                const accSchemeId = acc.loanRateID || acc.loanRate?.loanRateID;
+                if (accSchemeId) setSelectedSchemeId(accSchemeId);
                 setSelectedAccount(acc);
                 const custId = acc.customerID || acc.customer?.customerID;
                 const bKey = custId ? `C_${custId}` : (acc.memberID ? `M_${acc.memberID}` : `ACC_${acc.loanAccountID}`);
@@ -1715,6 +1719,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 fees: []
             });
             setAllowDateOverride(false);
+            setShowFeesPanel(false);
             setSelectedBorrowerKey(null);
             setSelectedCustomerId(null);
             setSelectedAccount(null);
@@ -1842,71 +1847,318 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         return <LoanCollectionReceiptPrint collectionId={printingCollectionId} onBack={() => setPrintingCollectionId(null)} />;
     }
 
-    const inputClass = "w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-[11px] h-[24px]";
-    const labelClass = "block text-[11px] font-semibold text-gray-700 mb-0.5";
+    const inputClass = "w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 bg-white text-gray-800 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary h-[30px] transition-colors disabled:bg-slate-100 disabled:cursor-not-allowed";
+    const labelClass = "block text-[11px] font-bold text-gray-700 mb-0.5";
+
+    const handleResetForm = () => {
+        setFormData({
+            collectionDate: activeBusinessDate,
+            receiptNo: '',
+            paymentMode: "Cash",
+            totalAmountReceived: 0,
+            surchargeCollected: 0,
+            penaltyInterestCollected: 0,
+            receivableInterestCollected: 0,
+            interestCollected: 0,
+            principalCollected: 0,
+            fees: []
+        });
+        setAllowDateOverride(false);
+        setShowFeesPanel(false);
+        setNoLoanFoundAlert(null);
+        setSelectedCustomerId(null);
+        setSelectedBorrowerKey(null);
+        setSelectedAccount(null);
+        setAccountDetails(null);
+        setNpaStatus(null);
+        setCustomerPigmyAccounts([]);
+        setSelectedPigmyAccount(null);
+        setPigmyAccountSourceType('SELF');
+        setPigmyOldAccSearchQuery('');
+        setOtherPigmySearchResults([]);
+        setCustomerSavingAccounts([]);
+        setSelectedSavingAccount(null);
+        setSavingAccountSourceType('SELF');
+        setOtherSavingSearchQuery('');
+        setOtherSavingSearchResults([]);
+        (window as any).selectedLoanCustomerId = undefined;
+        (window as any).selectedLoanAccountId = undefined;
+        (window as any).selectedLoanMemberId = undefined;
+        setLastSavedCollectionId(null);
+        fetchNextReceiptNo(selectedBranchId);
+    };
+
+    const selectedBorrowerName = selectedAccount
+        ? (selectedAccount.customer
+            ? [selectedAccount.customer.firstName, selectedAccount.customer.middleName, selectedAccount.customer.lastName].filter(Boolean).join(' ').trim()
+            : [selectedAccount.member?.firstName, selectedAccount.member?.lastName].filter(Boolean).join(' ').trim()) || 'कर्जदार खातेदार'
+        : '';
+
+    const selectedBorrowerCif = selectedAccount?.customer?.cifNo || selectedAccount?.member?.memberCode || '';
+    const activeBranchObj = branches.find(b => b.branchID === selectedBranchId);
+    const effectiveSchemeId = selectedSchemeId || selectedAccount?.loanRateID || selectedAccount?.loanRate?.loanRateID || '';
+    const totalMatchingLoansCount = Math.max(borrowerLoans.length, customerMatchingLoans.length);
+
+    const duesSummary = (() => {
+        if (!selectedAccount) return null;
+        const loanRate = selectedAccount.loanRate;
+        const isDailyReducing = Boolean(
+            loanRate &&
+            (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"))
+        );
+
+        const disbursementDate = accountDetails?.disbursementDate || selectedAccount.loanDisbursementDate || selectedAccount.openingDate;
+        const totalDisbursed = accountDetails?.totalDisbursedAmount || accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount || 0;
+        const sanctionedAmount = accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount || 0;
+        const interestRate = selectedAccount.loanRate?.interestRate || selectedAccount.interestRate || 0;
+        const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (selectedAccount.principalBalance || 0);
+
+        let thakitDinank = "-";
+        let vasulpatra = 0;
+        let paikiThakbaki = 0;
+        let vyaj = 0;
+        const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0);
+        const dandVyaj = accountDetails?.currentOverdueInterestBalance !== undefined ? accountDetails.currentOverdueInterestBalance : (selectedAccount.overdueInterestBalance || 0);
+        const surcharge = formData.surchargeCollected || 0;
+        const vasuliFee = (formData.fees || []).reduce((acc, f) => acc + (Number(f.amount) || 0), 0);
+
+        const collectionDateObj = parseDateSafe(formData.collectionDate || new Date());
+        collectionDateObj.setHours(0, 0, 0, 0);
+
+        let thakitHapteCount = 0;
+        if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
+            thakitHapteCount = accountDetails.schedule.filter(s => {
+                const dDate = parseDateSafe(s.dueDate);
+                dDate.setHours(0, 0, 0, 0);
+                return dDate <= collectionDateObj && s.status !== 'Paid';
+            }).length;
+        }
+
+        if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
+            const overdueInstallments = accountDetails.schedule.filter(s => {
+                const dueDateObj = parseDateSafe(s.dueDate);
+                dueDateObj.setHours(0, 0, 0, 0);
+                return dueDateObj <= collectionDateObj && s.status !== 'Paid';
+            });
+
+            if (overdueInstallments.length > 0) {
+                vasulpatra = overdueInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
+                paikiThakbaki = overdueInstallments
+                    .filter(s => {
+                        const dDate = parseDateSafe(s.dueDate);
+                        dDate.setHours(0, 0, 0, 0);
+                        return dDate < collectionDateObj;
+                    })
+                    .reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
+                vyaj = overdueInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
+            } else {
+                const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
+                if (nextInstallment) {
+                    vasulpatra = nextInstallment.remainingPrincipal !== undefined ? nextInstallment.remainingPrincipal : (nextInstallment.principalAmount || 0);
+                    vyaj = nextInstallment.interestAmount || 0;
+                }
+            }
+        } else {
+            const fromDateStr = getInterestStartDate(selectedAccount);
+            if (fromDateStr) {
+                const diffDays = calculateElapsedDays(fromDateStr, formData.collectionDate);
+                if (diffDays > 0) {
+                    vyaj = Math.round((yeneBaki * interestRate * diffDays) / 36500);
+                }
+            }
+
+            if (accountDetails?.schedule) {
+                paikiThakbaki = accountDetails.schedule
+                    .filter(s => parseDateSafe(s.dueDate) <= collectionDateObj && s.status !== 'Paid')
+                    .reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
+                vasulpatra = paikiThakbaki;
+            }
+        }
+
+        if (vasulpatra > yeneBaki) vasulpatra = yeneBaki;
+        if (paikiThakbaki > yeneBaki) paikiThakbaki = yeneBaki;
+
+        if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
+            const firstUnpaid = accountDetails.schedule.find(s => s.status !== 'Paid');
+            if (firstUnpaid) {
+                const dDate = parseDateSafe(firstUnpaid.dueDate);
+                dDate.setHours(0, 0, 0, 0);
+                if (isDailyReducing || dDate < collectionDateObj) {
+                    thakitDinank = formatDateSafe(dDate);
+                }
+            }
+        }
+
+        let days = 0;
+        const fromDateStrGrid = getInterestStartDate(selectedAccount);
+        if (fromDateStrGrid) {
+            days = calculateElapsedDays(fromDateStrGrid, formData.collectionDate);
+        }
+
+        const shillakKarjRakkam = Math.max(0, yeneBaki - (formData.principalCollected || 0));
+        const ekunVasulpatra = vasulpatra + vyaj + yeneVyaj + dandVyaj + surcharge + vasuliFee;
+
+        return {
+            disbursementDate,
+            totalDisbursed,
+            sanctionedAmount,
+            interestRate,
+            yeneBaki,
+            thakitDinank,
+            vasulpatra,
+            paikiThakbaki,
+            vyaj,
+            yeneVyaj,
+            dandVyaj,
+            thakitHapteCount,
+            fromDateStrGrid,
+            days,
+            shillakKarjRakkam,
+            ekunVasulpatra,
+            isDailyReducing
+        };
+    })();
 
     return (
-        <div className="p-1 max-w-7xl mx-auto bg-gray-50 min-h-screen font-sans pb-4">
-            {/* Page Header */}
-            <div className="bg-primary text-white px-3 py-1.5 rounded-t-sm flex justify-between items-center shadow-xs mb-2">
-                <h1 className="text-sm font-bold flex items-center gap-2">
-                    <FileText size={16} /> कर्ज वसुली (Loan Collection)
-                </h1>
-                <div className="flex items-center gap-2 text-xs">
-                    <span className="bg-white/20 text-white px-2 py-0.5 rounded-sm font-mono text-[11px] font-bold">
-                        Smart Banking ERP
-                    </span>
+        <div className="p-1.5 max-w-7xl mx-auto bg-gray-50 min-h-screen font-sans pb-4 space-y-2">
+            {/* 1. STANDARD CBS TOP HEADER BANNER (border-b-2 border-primary) */}
+            <div className="bg-white px-3.5 py-2 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-sm bg-primary/10 border border-primary/20 text-primary">
+                        <Landmark className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h1 className="text-sm font-bold text-gray-900 leading-tight">
+                                कर्ज वसुली (Loan Recovery & Collection)
+                            </h1>
+                            {isHOUser ? (
+                                <div className="inline-flex items-center gap-1 bg-slate-50 border border-gray-300 rounded-sm px-1.5 py-0.5">
+                                    <Building2 className="w-3 h-3 text-primary" />
+                                    <select
+                                        value={selectedBranchId}
+                                        onChange={(e) => {
+                                            const bId = parseInt(e.target.value, 10);
+                                            setSelectedBranchId(bId);
+                                            fetchData(bId);
+                                            fetchNextReceiptNo(bId, selectedAccount?.loanAccountID);
+                                        }}
+                                        disabled={isPassingMode}
+                                        className="text-[11px] font-bold text-gray-800 bg-transparent focus:outline-none cursor-pointer disabled:cursor-not-allowed"
+                                        title="वसुली शाखा निवडा"
+                                    >
+                                        {branches.map(b => (
+                                            <option key={b.branchID} value={b.branchID}>
+                                                {b.branchName} ({b.branchCode})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-primary/10 border border-primary/20 text-primary text-[10.5px] font-bold">
+                                    <Building2 className="w-3 h-3" />
+                                    <span>{activeBranchObj ? `${activeBranchObj.branchName}` : `शाखा #${selectedBranchId}`}</span>
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-[10.5px] text-gray-500">
+                            मुद्दल, येणे/चालू व्याज, दंड व खाते समायोजन पावती प्रणाली
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {selectedAccount && (
+                        <button
+                            type="button"
+                            onClick={() => setShowInstallmentModal(true)}
+                            className="px-2.5 py-1 rounded-sm bg-primary/10 hover:bg-primary hover:text-white text-primary border border-primary/25 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            title="कर्ज हप्ता परतफेड वेळापत्रक चार्ट पहा"
+                        >
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>हप्ता वेळापत्रक</span>
+                            {accountDetails?.schedule && accountDetails.schedule.length > 0 && (
+                                <span className="px-1.5 py-0.2 rounded-sm bg-white/90 text-primary font-mono text-[10px] font-bold border border-primary/20">
+                                    {accountDetails.schedule.length}
+                                </span>
+                            )}
+                        </button>
+                    )}
+
+                    <button
+                        type="button"
+                        onClick={() => setShowReceiptsModal(true)}
+                        className="px-2.5 py-1 rounded-sm bg-white hover:bg-slate-50 text-gray-700 border border-gray-300 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                    >
+                        <FileText className="w-3.5 h-3.5 text-primary" />
+                        <span>सर्व जमापावती</span>
+                        <span className="px-1.5 py-0.2 rounded-sm bg-primary/10 text-primary font-mono text-[10px] font-bold">
+                            {collections.length}
+                        </span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => fetchData(selectedBranchId)}
+                        className="p-1.5 rounded-sm bg-white hover:bg-slate-50 text-gray-700 border border-gray-300 transition-colors cursor-pointer shadow-2xs"
+                        title="माहिती ताजी करा (Refresh)"
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 text-primary ${loading ? 'animate-spin' : ''}`} />
+                    </button>
                 </div>
             </div>
 
-            {/* ⚠️ Passing Mode Verification Alert Banner */}
+            {/* Passing Mode Maker-Checker Verification Strip */}
             {isPassingMode && (
-                <div className="mb-2 p-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-sm shadow-md border border-amber-600 flex flex-wrap items-center justify-between gap-2 animate-in fade-in duration-200">
+                <div className="p-2.5 bg-amber-50/90 border border-amber-300 border-l-4 border-l-amber-600 rounded-sm shadow-2xs flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                        <span className="text-xl">⚠️</span>
+                        <div className="p-1.5 rounded-sm bg-amber-100 text-amber-800 border border-amber-300">
+                            <ShieldCheck className="w-4 h-4" />
+                        </div>
                         <div>
-                            <div className="font-black text-xs tracking-wide uppercase flex items-center gap-1.5">
-                                <span>व्हाउचर तपासणी व मंजुरी मोड (Voucher Passing & Verification Mode)</span>
-                                <span className="bg-amber-900/50 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                            <div className="font-bold text-xs text-amber-950 flex items-center gap-2">
+                                <span>व्हाउचर तपासणी व मंजुरी मोड (Maker-Checker Passing)</span>
+                                <span className="bg-amber-200/80 text-amber-900 text-[10px] px-2 py-0.5 rounded-sm font-bold border border-amber-300">
                                     फक्त वाचन (Read-Only)
                                 </span>
                             </div>
-                            <div className="text-[11px] text-amber-100 flex flex-wrap items-center gap-3 mt-0.5">
-                                <span>पावती / व्हाउचर क्र: <strong className="font-mono text-white">{passingVoucher?.voucherNo || formData.receiptNo || '-'}</strong></span>
-                                {passingVoucher?.scrollNo && <span>स्क्रोल क्र: <strong className="font-mono text-white">{passingVoucher.scrollNo}</strong></span>}
+                            <div className="text-[11px] text-amber-900 flex flex-wrap items-center gap-3 mt-0.5">
+                                <span>पावती / व्हाउचर क्र.: <strong className="font-mono">{passingVoucher?.voucherNo || formData.receiptNo || '-'}</strong></span>
+                                {passingVoucher?.scrollNo && <span>स्क्रोल क्र.: <strong className="font-mono">{passingVoucher.scrollNo}</strong></span>}
                                 {passingVoucher?.createdByUser?.username && (
-                                    <span>नोंद करणारा (Maker): <strong className="text-white">{passingVoucher.createdByUser.username}</strong></span>
+                                    <span>नोंद करणारा (Maker): <strong>{passingVoucher.createdByUser.username}</strong></span>
                                 )}
-                                <span>जमा रक्कम: <strong className="font-mono text-white">₹{(formData.totalAmountReceived || 0).toFixed(2)}</strong></span>
+                                <span>जमा रक्कम: <strong className="font-mono text-emerald-800">₹{(formData.totalAmountReceived || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                         <button
                             type="button"
                             onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
-                            className="bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                            className="bg-white hover:bg-slate-100 text-gray-700 border border-gray-300 text-[11px] font-bold px-2.5 py-1 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
                         >
-                            <span>↩️ मागे जा</span>
+                            <ArrowLeft className="w-3.5 h-3.5" />
+                            <span>मागे जा</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => setRejectModalOpen(true)}
                             disabled={passingActionLoading}
-                            className="bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-2xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-sm transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
                         >
-                            <Trash2 size={13} />
+                            <Trash2 className="w-3.5 h-3.5" />
                             <span>रिजेक्ट करा</span>
                         </button>
                         <button
                             type="button"
                             onClick={handlePassVoucher}
                             disabled={passingActionLoading}
-                            className="bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-black px-3 py-1 rounded shadow-sm transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1 rounded-sm shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
-                            <CheckCircle size={14} />
-                            <span>{passingActionLoading ? 'पास होत आहे...' : '✅ पास करा (Approve)'}</span>
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>{passingActionLoading ? 'पास होत आहे...' : 'पावती पास करा (Approve)'}</span>
                         </button>
                     </div>
                 </div>
@@ -1914,265 +2166,77 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
             {/* No Loan Found Alert */}
             {noLoanFoundAlert && (
-                <div className="mb-2 p-2.5 bg-amber-50 text-amber-900 rounded-sm border border-amber-300 flex items-center justify-between text-xs animate-in fade-in">
-                    <div className="flex items-center gap-2">
+                <div className="p-2.5 bg-amber-50 text-amber-900 rounded-sm border border-amber-300 flex items-center justify-between text-xs shadow-2xs">
+                    <div className="flex items-center gap-2 font-semibold">
                         <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                         <span>{noLoanFoundAlert}</span>
                     </div>
                     <button
                         type="button"
                         onClick={() => setNoLoanFoundAlert(null)}
-                        className="text-amber-800 hover:text-black font-bold text-xs px-2 py-0.5 cursor-pointer"
+                        className="text-amber-800 hover:text-amber-950 p-0.5 cursor-pointer"
                     >
-                        ✕
+                        <X className="w-3.5 h-3.5" />
                     </button>
                 </div>
             )}
 
+            {/* 2. MAIN 12-COLUMN CBS WORKSPACE: LEFT ENTRY FORM (8) + RIGHT LOAN & DUES PANEL (4) */}
             <form onSubmit={handleSubmit}>
-            <div className="flex flex-col lg:flex-row gap-2.5">
-                {/* Left Sidebar - Payment Details */}
-                <div className="w-full lg:w-1/4 bg-white rounded-sm shadow-xs border border-gray-300 flex flex-col overflow-hidden">
-                    <div className="bg-primary text-white px-2.5 py-1 text-xs font-bold flex items-center justify-between shadow-xs border-b border-primary/20">
-                        <span className="flex items-center gap-1.5"><CheckSquare size={13} /> पावती तपशील (Receipt Details)</span>
-                    </div>
-
-                    <div className="p-2 flex flex-col gap-2">
-                        {/* Collecting Branch Selector */}
-                        <div className="bg-primary/5 p-1.5 rounded-sm border border-primary/20 flex flex-col gap-1 text-[11px]">
-                            <div className="flex justify-between items-center">
-                                <span className="font-bold text-gray-700 flex items-center gap-1">
-                                    <Building2 className="w-3.5 h-3.5 text-primary" /> वसुल शाखा (Collecting Branch):
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-start">
+                    {/* LEFT 8 COLUMNS: LOAN COLLECTION ENTRY CARD */}
+                    <div className="lg:col-span-8 bg-white rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col overflow-visible">
+                        {/* Card Top Strip: Title + Receipt No + Inline Today Recovery Pills */}
+                        <div className="px-3.5 py-2 bg-slate-50/80 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <span className="border-l-4 border-primary pl-2 text-primary font-bold text-xs">
+                                    वसुली पावती नोंद (Collection Entry)
                                 </span>
-                                {!isHOUser && (
-                                    <span className="text-[10px] text-gray-500 font-semibold bg-gray-200 px-1 rounded">(शाखा लॉक)</span>
+                                <span className="px-2 py-0.5 rounded-sm bg-primary/10 border border-primary/20 text-primary font-mono text-[10.5px] font-bold">
+                                    पावती क्र.: {formData.receiptNo || 'Auto'}
+                                </span>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
+                                <span className="px-2 py-0.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold">
+                                    आज रोख: <b className="font-mono">₹{todayTotalCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                </span>
+                                <span className="px-2 py-0.5 rounded-sm bg-primary/5 border border-primary/20 text-primary font-semibold">
+                                    आज बँक/इतर: <b className="font-mono">₹{todayTotalBank.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                </span>
+                                <span className="px-2 py-0.5 rounded-sm bg-white border border-gray-300 text-gray-800 font-bold">
+                                    आज एकूण: <b className="font-mono text-primary">₹{(todayTotalCash + todayTotalBank).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                </span>
+                                {!isPassingMode && (
+                                    <button
+                                        type="button"
+                                        onClick={handleResetForm}
+                                        className="px-2 py-0.5 rounded-sm bg-white hover:bg-slate-100 text-gray-700 border border-gray-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                        title="फॉर्म रिकामा करा (Reset)"
+                                    >
+                                        <RotateCcw className="w-3 h-3 text-primary" />
+                                        <span>रीसेट</span>
+                                    </button>
                                 )}
                             </div>
-                            <select
-                                value={selectedBranchId}
-                                onChange={(e) => {
-                                    const bId = parseInt(e.target.value, 10);
-                                    setSelectedBranchId(bId);
-                                    fetchData(bId);
-                                    fetchNextReceiptNo(bId, selectedAccount?.loanAccountID);
-                                }}
-                                disabled={isPassingMode || !isHOUser}
-                                className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs font-bold bg-white text-gray-800 disabled:bg-slate-100 disabled:text-gray-600 focus:outline-none focus:border-primary cursor-pointer"
-                            >
-                                {branches.map(b => (
-                                    <option key={b.branchID} value={b.branchID}>
-                                        {b.branchName} ({b.branchCode})
-                                    </option>
-                                ))}
-                            </select>
                         </div>
 
-                        <div className="bg-primary/5 p-1.5 rounded-sm border border-primary/20 flex justify-between items-center text-[11px]">
-                            <span className="font-bold text-gray-700">पावती क्र. (Receipt No):</span>
-                            <span className="font-mono font-bold text-primary text-xs bg-white px-2 py-0.5 rounded-sm border border-primary/30 shadow-2xs">
-                                {formData.receiptNo || 'Auto'}
-                            </span>
-                        </div>
-                        
-                        <div className="space-y-1.5 text-[11px]">
-                            {/* Quick Selection Buttons */}
-                            {selectedAccount && !isPassingMode && (
-                                <div className="grid grid-cols-3 gap-1 mb-1.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => applyQuickAmount('1_INST')}
-                                        className="px-1 py-1 text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-sm transition-colors text-center cursor-pointer shadow-2xs"
-                                        title="१ हप्ता मुद्दल + सर्व व्याज व फी"
-                                    >
-                                        ⚡ १ हप्ता
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => applyQuickAmount('INTEREST_ONLY')}
-                                        className="px-1 py-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-sm transition-colors text-center cursor-pointer shadow-2xs"
-                                        title="थकीत येणे व्याज + चालू व्याज + दंड"
-                                    >
-                                        ⚡ फक्त व्याज
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => applyQuickAmount('FULL_DUE')}
-                                        className="px-1 py-1 text-[10px] font-bold bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-sm transition-colors text-center cursor-pointer shadow-2xs"
-                                        title="संपूर्ण थकबाकी (मुद्दल + सर्व व्याज + दंड)"
-                                    >
-                                        ⚡ पूर्ण नील
-                                    </button>
-                                </div>
-                            )}
-
-                            <div className="flex justify-between items-center bg-primary/10 p-1.5 rounded-sm border border-primary/30 mb-2">
-                                <label className="font-bold text-primary">एकूण जमा रक्कम (Total)</label>
-                                <input type="number" name="totalAmountReceived" value={formData.totalAmountReceived || ''} onChange={handleTotalAmountChange} min="0" disabled={isPassingMode}
-                                    className={`w-28 border-2 border-primary px-2 py-1 font-bold focus:outline-none focus:ring-1 focus:ring-primary rounded-sm text-right ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-primary'}`} placeholder="₹0.00" />
-                            </div>
-
-                            <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
-                                <label className="font-semibold text-gray-700">रक्कम (Principal)</label>
-                                <input type="number" name="principalCollected" value={formData.principalCollected !== undefined ? formData.principalCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
-                                    className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
-                            </div>
-
-                            <div className="flex justify-between items-center bg-emerald-50/50 p-1 rounded-sm border border-emerald-200/60 transition-colors">
-                                <div className="flex flex-col">
-                                    <label className="font-bold text-emerald-800">येणे व्याज (Past Int)</label>
-                                    {selectedAccount && (
-                                        <span className="text-[9px] text-emerald-600 font-semibold font-mono">
-                                            बाकी: ₹{(accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0)).toLocaleString('en-IN')}
-                                        </span>
-                                    )}
-                                </div>
-                                <input type="number" name="receivableInterestCollected" value={formData.receivableInterestCollected !== undefined ? formData.receivableInterestCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
-                                    className={`w-24 border border-emerald-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-emerald-600 text-right font-bold text-emerald-900 ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-emerald-50/60'}`} />
-                            </div>
-
-                            <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
-                                <label className="font-semibold text-gray-700">चालू व्याज (Current Int)</label>
-                                <input type="number" name="interestCollected" value={formData.interestCollected !== undefined ? formData.interestCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
-                                    className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
-                            </div>
-
-                            <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
-                                <div className="flex flex-col">
-                                    <label className="font-semibold text-gray-700">जादा व्याज (Penal Int)</label>
-                                    {selectedAccount && (selectedAccount.overdueInterestBalance || 0) > 0 && (
-                                        <span className="text-[9px] text-rose-600 font-semibold font-mono">
-                                            बाकी: ₹{(selectedAccount.overdueInterestBalance || 0).toLocaleString('en-IN')}
-                                        </span>
-                                    )}
-                                </div>
-                                <input type="number" name="penaltyInterestCollected" value={formData.penaltyInterestCollected !== undefined ? formData.penaltyInterestCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
-                                    className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
-                            </div>
-
-                            <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
-                                <label className="font-semibold text-gray-700">देणे सरचार्ज (Surcharge)</label>
-                                <input type="number" name="surchargeCollected" value={formData.surchargeCollected !== undefined ? formData.surchargeCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
-                                    className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
-                            </div>
-     
-                            {/* Dynamic Ledgers */}
-                            <div className="pt-2 border-t border-gray-200 mt-2">
-                                <div className="flex justify-between items-center mb-1">
-                                    <span className="font-bold text-primary text-[11px]">इतर वसूल खाते</span>
-                                    {!isPassingMode && (
-                                        <button type="button" onClick={addFeeRow} className="text-emerald-700 hover:text-emerald-900 flex items-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer">
-                                            <PlusCircle size={12} /> खाते जोडा
-                                        </button>
-                                    )}
-                                </div>
-                                
-                                {formData.fees?.map((fee, index) => (
-                                    <div key={index} className="flex gap-1 mb-1 items-center bg-gray-50 p-1 rounded-sm border border-gray-200">
-                                        <select value={fee.ledgerID} onChange={(e) => handleFeeChange(index, 'ledgerID', e.target.value)} disabled={isPassingMode}
-                                            className="w-full border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-primary text-[10px] rounded-sm bg-white disabled:bg-slate-100 disabled:cursor-not-allowed">
-                                            <option value="0">खाते निवडा...</option>
-                                            {ledgers.map(l => (
-                                                <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
-                                            ))}
-                                        </select>
-                                        <input type="number" value={fee.amount || ''} onChange={(e) => handleFeeChange(index, 'amount', e.target.value)} min="0" placeholder="रक्कम" disabled={isPassingMode}
-                                            className="w-16 border border-gray-300 px-1.5 py-0.5 focus:outline-none focus:border-primary text-[10px] rounded-sm text-right font-medium bg-white disabled:bg-slate-100 disabled:cursor-not-allowed" />
-                                        {!isPassingMode && (
-                                            <button type="button" onClick={() => removeFeeRow(index)} className="text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"><Trash2 size={12}/></button>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-     
-                            {/* Totals */}
-                            <div className="pt-2 mt-2 border-t border-primary/30 space-y-1.5">
-                                <div className="flex justify-between items-center bg-emerald-50/50 border-l-4 border-emerald-600 text-gray-900 p-1.5 rounded-sm shadow-2xs text-[11px]">
-                                    <label className="font-semibold text-gray-700">पावती एकूण रक्कम</label>
-                                    <span className="font-extrabold text-xs text-emerald-700">₹ {formData.totalAmountReceived?.toFixed(2) || '0.00'}</span>
-                                </div>
-                                <div className="flex justify-between items-center bg-blue-50/50 border-l-4 border-primary text-gray-900 p-1.5 rounded-sm shadow-2xs text-[11px]">
-                                    <label className="font-semibold text-gray-700">नवीन शिल्लक कर्ज</label>
-                                    <span className="font-extrabold text-xs text-primary">
-                                        ₹ {selectedAccount ? Math.max(0, ((accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (selectedAccount.principalBalance || 0)) - (formData.principalCollected || 0))).toFixed(2) : '0.00'}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Right Main Area */}
-                <div className="w-full lg:w-3/4 flex flex-col gap-2.5">
-                    
-                    {/* Top Controls */}
-                    <div className="bg-white rounded-sm shadow-xs border border-gray-300 overflow-visible relative z-20">
-                        <div className="bg-primary text-white px-2.5 py-1 text-xs font-bold flex items-center justify-between shadow-xs border-b border-primary/20">
-                            <span className="flex items-center gap-1.5"><FileText size={13} /> कर्ज खाते निवड व तपशील (Loan Account Details)</span>
-                        </div>
-
-                        <div className="p-2.5">
-                            {/* Row 1: Date, 1. Loan Scheme, Payment Mode */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
-                                <div>
-                                    <div className="flex items-center justify-between !mb-0.5">
-                                        <label className={labelClass}>दिनांक (Date)</label>
-                                        {!allowDateOverride && (
-                                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                                                <Lock size={9} /> लॉक
-                                            </span>
-                                        )}
-                                    </div>
-                                    <input 
-                                        type="date" 
-                                        name="collectionDate" 
-                                        value={formData.collectionDate || activeBusinessDate} 
-                                        onChange={(e) => setFormData(p => ({ ...p, collectionDate: e.target.value }))} 
-                                        required 
-                                        disabled={isPassingMode || !allowDateOverride}
-                                        readOnly={!allowDateOverride}
-                                        className={`${inputClass} ${(!allowDateOverride || isPassingMode) ? 'bg-slate-100 cursor-not-allowed select-none font-semibold text-slate-800' : 'bg-white border-amber-400 font-bold'}`} 
-                                    />
-                                    {isHOUser && !isPassingMode && (
-                                        <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
-                                            <input
-                                                type="checkbox"
-                                                checked={allowDateOverride}
-                                                onChange={(e) => {
-                                                    const checked = e.target.checked;
-                                                    setAllowDateOverride(checked);
-                                                    if (!checked) {
-                                                        setFormData(p => ({ ...p, collectionDate: activeBusinessDate }));
-                                                    }
-                                                }}
-                                                className="w-3 h-3 text-primary rounded"
-                                            />
-                                            <span className="flex items-center gap-0.5">
-                                                {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
-                                                तारीख बदला (Override)
-                                            </span>
-                                        </label>
-                                    )}
-                                    {allowDateOverride && formData.collectionDate !== activeBusinessDate && (
-                                        <div className="text-[9px] text-amber-800 bg-amber-50 border border-amber-300 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1 leading-tight">
-                                            <AlertCircle size={10} className="shrink-0 text-amber-600" />
-                                            <span>लॉगिन तारीख {activeBusinessDate} व्यतिरिक्त इतर तारीख निवडली आहे.</span>
-                                        </div>
-                                    )}
-                                </div>
-                                
-                                <div className="md:col-span-2">
-                                    <label className={`${labelClass} text-primary font-bold !mb-0.5 flex items-center gap-1`}>
-                                        <Layers size={13} className="text-primary" />
-                                        १. कर्ज प्रकार / योजना (Loan Scheme)
+                        <div className="p-3.5 space-y-3">
+                            {/* STEP 1: Loan Scheme & Borrower Customer Selection */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                                <div className="md:col-span-4">
+                                    <label className={`${labelClass} text-primary flex items-center gap-1`}>
+                                        <Layers className="w-3 h-3 text-primary" />
+                                        <span>१. कर्ज प्रकार / योजना <span className="text-rose-600">*</span></span>
                                     </label>
                                     <select
-                                        value={selectedSchemeId ? selectedSchemeId.toString() : ''}
+                                        value={effectiveSchemeId ? effectiveSchemeId.toString() : ''}
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             handleSchemeChange(val ? parseInt(val) : null);
                                         }}
                                         disabled={isPassingMode}
-                                        className={`${inputClass} font-semibold text-xs ${selectedSchemeId ? 'bg-primary/10 border-primary text-primary font-bold' : 'bg-white'}`}
+                                        className={`${inputClass} font-semibold ${effectiveSchemeId ? 'bg-primary/5 border-primary text-primary font-bold' : ''}`}
                                     >
                                         <option value="">-- कर्ज प्रकार निवडा --</option>
                                         {availableLoanSchemes.map(s => (
@@ -2182,12 +2246,164 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         ))}
                                     </select>
                                 </div>
-                                
-                                <div>
-                                    <label className={labelClass}>मोड (Payment Mode)</label>
-                                    <select 
-                                        name="paymentMode" 
-                                        value={formData.paymentMode} 
+
+                                <div className="md:col-span-8">
+                                    <div className="flex items-center justify-between mb-0.5">
+                                        <label className="text-[11px] font-bold text-gray-700 flex items-center gap-1.5">
+                                            <span>२. कर्जदार खातेदार निवडा <span className="text-rose-600">*</span></span>
+                                            {selectedSchemeId && (
+                                                <span className="text-[10px] font-semibold text-gray-500">
+                                                    ({borrowerCustomers.length} कर्जदार)
+                                                </span>
+                                            )}
+                                        </label>
+
+                                        {totalMatchingLoansCount > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (customerMatchingLoans.length <= 1 && borrowerLoans.length > 1) {
+                                                        setCustomerMatchingLoans(borrowerLoans);
+                                                    }
+                                                    setShowMultiLoanModal(true);
+                                                }}
+                                                className="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/15 border border-primary/25 px-2 py-0.2 rounded-sm flex items-center gap-1 transition-all cursor-pointer"
+                                                title="खातेदाराच्या इतर कर्ज खात्यांची यादी उघडा"
+                                            >
+                                                <Layers className="w-3 h-3 text-primary" />
+                                                <span>खाते बदला ({totalMatchingLoansCount} खाती)</span>
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div className="relative z-30">
+                                        <CustomerSearchSelect
+                                            customers={borrowerCustomers}
+                                            value={selectedCustomerId || ''}
+                                            onChange={handleCustomerSelect}
+                                            isDisabled={isPassingMode || !effectiveSchemeId}
+                                            placeholder={!effectiveSchemeId ? "-- आधी कर्ज प्रकार निवडा --" : "-- नाव, जुने कर्ज क्र., CIF किंवा मोबाईलने शोधा --"}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Compact 1-Click Loan Switcher Strip when Borrower has >1 Loans in Scheme */}
+                            {borrowerLoans.length > 1 && (
+                                <div className="p-2.5 bg-slate-50/90 rounded-sm border border-gray-200 border-l-4 border-l-primary space-y-1.5">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                        <span className="font-bold text-primary flex items-center gap-1.5">
+                                            <CreditCard className="w-3.5 h-3.5" />
+                                            <span>
+                                                {selectedAccount
+                                                    ? `या योजनेत खातेदाराची ${borrowerLoans.length} कर्ज खाती उपलब्ध आहेत:`
+                                                    : `कृपया वसुलीसाठी खालील ${borrowerLoans.length} कर्ज खात्यांपैकी एक खाते निवडा:`}
+                                            </span>
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {borrowerLoans.map((acc: LoanAccount) => {
+                                            const isSelected = selectedAccount?.loanAccountID === acc.loanAccountID;
+                                            return (
+                                                <button
+                                                    key={acc.loanAccountID}
+                                                    type="button"
+                                                    onClick={() => selectLoanAccountById(acc.loanAccountID)}
+                                                    className={`px-2.5 py-1.5 rounded-sm border text-left transition-all cursor-pointer flex items-center gap-2 text-[11px] ${
+                                                        isSelected
+                                                            ? 'bg-primary text-white border-primary shadow-2xs font-bold'
+                                                            : 'bg-white hover:bg-primary/5 text-gray-800 border-gray-300'
+                                                    }`}
+                                                >
+                                                    <CheckCircle className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-gray-300'}`} />
+                                                    <div>
+                                                        <div className="font-mono font-bold leading-tight">
+                                                            {format14DigitDisplay(acc.loanAccountNo)}
+                                                            {acc.legacyAccountNumber && (
+                                                                <span className={`ml-1.5 px-1.5 py-0.2 rounded-sm text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}>
+                                                                    जुना: {acc.legacyAccountNumber}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className={`text-[10px] mt-0.5 ${isSelected ? 'text-white/90' : 'text-gray-500'}`}>
+                                                            मुद्दल बाकी: <b>₹{(acc.principalBalance || 0).toLocaleString('en-IN')}</b>
+                                                            {acc.installmentAmount > 0 && ` | हप्ता: ₹${(acc.installmentAmount || 0).toLocaleString('en-IN')}`}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Cross-Branch Compact Alert */}
+                            {selectedAccount && selectedAccount.branchID && selectedAccount.branchID !== selectedBranchId && (
+                                <div className="px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-sm text-amber-900 text-[11px] flex items-center gap-2">
+                                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>
+                                        <b>आंतर-शाखा वसुली (Cross-Branch):</b> मूळ शाखा <b>{selectedAccount.branch?.branchName || `#${selectedAccount.branchID}`}</b> — जमा रोकड <b>{activeBranchObj?.branchName || `#${selectedBranchId}`}</b> च्या गल्ल्यात नोंदवली जाईल.
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* STEP 2: Date, Payment Mode & Remarks */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 items-start">
+                                <div className="md:col-span-3">
+                                    <div className="flex items-center justify-between mb-0.5">
+                                        <label className="text-[11px] font-bold text-gray-700">
+                                            दिनांक (Date) <span className="text-rose-600">*</span>
+                                        </label>
+                                        {isHOUser && !isPassingMode ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const next = !allowDateOverride;
+                                                    setAllowDateOverride(next);
+                                                    if (!next) {
+                                                        setFormData(p => ({ ...p, collectionDate: activeBusinessDate }));
+                                                    }
+                                                }}
+                                                className={`inline-flex items-center gap-0.5 text-[9.5px] font-bold px-1.5 py-0.2 rounded-sm border cursor-pointer ${
+                                                    allowDateOverride
+                                                        ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                                        : 'bg-slate-100 text-gray-600 border-gray-300 hover:bg-slate-200'
+                                                }`}
+                                                title="तारीख बदलण्याची परवानगी (HO Override)"
+                                            >
+                                                {allowDateOverride ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
+                                                <span>{allowDateOverride ? 'बदला' : 'लॉक'}</span>
+                                            </button>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded-sm border border-emerald-200">
+                                                <Lock className="w-2.5 h-2.5" /> लॉक
+                                            </span>
+                                        )}
+                                    </div>
+                                    <input
+                                        type="date"
+                                        name="collectionDate"
+                                        value={formData.collectionDate || activeBusinessDate}
+                                        onChange={(e) => setFormData(p => ({ ...p, collectionDate: e.target.value }))}
+                                        required
+                                        disabled={isPassingMode || !allowDateOverride}
+                                        readOnly={!allowDateOverride}
+                                        className={`${inputClass} font-mono font-bold ${(!allowDateOverride || isPassingMode) ? 'bg-slate-100 text-slate-800 cursor-not-allowed select-none' : 'border-amber-400 bg-amber-50/30'}`}
+                                    />
+                                    {allowDateOverride && formData.collectionDate !== activeBusinessDate && (
+                                        <p className="text-[9.5px] text-amber-700 font-semibold mt-0.5">
+                                            लॉगिन तारीख: {activeBusinessDate}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="md:col-span-4">
+                                    <label className={labelClass}>
+                                        पेमेंट पद्धत (Mode) <span className="text-rose-600">*</span>
+                                    </label>
+                                    <select
+                                        name="paymentMode"
+                                        value={formData.paymentMode}
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             const isBankOrCheque = val === 'Bank' || val === 'Cheque';
@@ -2206,232 +2422,44 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             if (val === 'Saving Transfer' && selectedCustomerId) {
                                                 fetchCustomerSavingAccounts(selectedCustomerId);
                                             }
-                                        }} 
+                                        }}
                                         disabled={isPassingMode}
-                                        className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`}>
-                                        <option value="Cash">Cash (रोख)</option>
-                                        <option value="Bank">Bank Transfer (बँक ट्रान्सफर)</option>
-                                        <option value="Cheque">Cheque (चेक)</option>
-                                        <option value="Saving Transfer">Saving Transfer (सेव्हिंग)</option>
-                                        <option value="Pigmy Transfer">Pigmy Transfer (पिग्मी ठेव वर्ग)</option>
+                                        className={`${inputClass} font-bold`}
+                                    >
+                                        <option value="Cash">रोख (Cash)</option>
+                                        <option value="Bank">बँक ट्रान्सफर (Bank)</option>
+                                        <option value="Cheque">चेक (Cheque)</option>
+                                        <option value="Saving Transfer">बचत खाते वर्ग (Saving Transfer)</option>
+                                        <option value="Pigmy Transfer">पिग्मी ठेव वर्ग (Pigmy Transfer)</option>
                                     </select>
                                 </div>
-                            </div>
 
-                            {/* Row 2: 2. Borrower Customer (Full Width with CustomerSearchSelect, 3. Loan Account removed) */}
-                            <div className="mt-2 pt-2 border-t border-gray-200">
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className={`${labelClass} font-bold text-gray-800 flex items-center gap-1`}>
-                                            <span>२. कर्जदार खातेदार (Borrower Customer)</span>
-                                            {selectedCustomerId && (
-                                                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-sm border border-emerald-200">
-                                                    ✓ खातेदार निवडला
-                                                </span>
-                                            )}
-                                        </label>
-                                        <span className="text-[10px] px-2 py-0.5 rounded-sm bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                                            {selectedSchemeId ? `${borrowerCustomers.length} कर्जदार उपलब्ध` : 'आधी कर्ज प्रकार निवडा'}
-                                        </span>
-                                    </div>
-                                    <div className="relative z-30">
-                                        <CustomerSearchSelect 
-                                            customers={borrowerCustomers}
-                                            value={selectedCustomerId || ''} 
-                                            onChange={handleCustomerSelect} 
-                                            isDisabled={isPassingMode || !selectedSchemeId}
-                                            placeholder={!selectedSchemeId ? "-- आधी कर्ज प्रकार निवडा --" : "-- कर्जदार खातेदार निवडा (नाव / जुने कर्ज क्र. / CIF / मोबाईलने शोधा) --"} 
-                                        />
-                                    </div>
+                                <div className="sm:col-span-2 md:col-span-5">
+                                    <label className={labelClass}>तपशील / शेरा (Remarks)</label>
+                                    <input
+                                        type="text"
+                                        value={formData.remarks || ''}
+                                        onChange={(e) => setFormData(p => ({ ...p, remarks: e.target.value }))}
+                                        disabled={isPassingMode}
+                                        className={inputClass}
+                                        placeholder="हप्ता / पावती संदर्भात शेरा..."
+                                    />
                                 </div>
-
-                                {/* Active Selected Loan Account Card with Legacy Account Number */}
-                                {selectedAccount && (
-                                    <div className="mt-2 p-2 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/90 border border-blue-200/90 rounded-sm shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className="text-slate-600 font-semibold">सक्रिय कर्ज खाते:</span>
-                                            <span className="font-mono font-bold text-gray-900 bg-white px-2 py-0.5 rounded border border-blue-300">
-                                                {format14DigitDisplay(selectedAccount.loanAccountNo)}
-                                            </span>
-                                            {selectedAccount.legacyAccountNumber && (
-                                                <span className="font-mono font-bold text-purple-900 bg-purple-100 px-2 py-0.5 rounded border border-purple-300 text-[11px] flex items-center gap-1 shadow-2xs">
-                                                    🏷️ जुने कर्ज खाते क्र.: <strong className="text-purple-950 font-black">{selectedAccount.legacyAccountNumber}</strong>
-                                                </span>
-                                            )}
-                                            {borrowerLoans.length === 1 && (
-                                                <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300">
-                                                    ✓ एकमेव खाते
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-3 text-[11px]">
-                                            <span>मंजूर रक्कम: <strong className="text-slate-800">₹{(selectedAccount.sanctionedAmount || 0).toLocaleString('en-IN')}</strong></span>
-                                            <span>मुद्दल बाकी: <strong className="text-rose-700 font-bold">₹{(selectedAccount.principalBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
-                                            <span>थकीत/चालू व्याज: <strong className="text-amber-800 font-bold">₹{(selectedAccount.interestBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
-                                            {selectedAccount.installmentAmount > 0 && (
-                                                <span>नियमित हप्ता: <strong className="text-emerald-700 font-bold">₹{(selectedAccount.installmentAmount || 0).toLocaleString('en-IN')}</strong></span>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Multi-Loan Selection Inline Grid */}
-                                {borrowerLoans.length > 1 && (
-                                    <div className="mt-2.5 bg-gradient-to-b from-blue-50/70 via-slate-50 to-white rounded-sm border border-blue-200/80 p-2.5 shadow-2xs">
-                                        <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
-                                            <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
-                                                <span className="p-1 rounded-sm bg-primary text-white">
-                                                    <Layers size={13} />
-                                                </span>
-                                                <span>खातेदाराची {borrowerLoans.length} कर्ज खाती उपलब्ध (हप्ता भरण्यासाठी खालील ग्रिडमधून कर्ज खाते निवडा):</span>
-                                            </div>
-                                            {selectedAccount && (
-                                                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-sm border border-emerald-300 flex items-center gap-1">
-                                                    <CheckCircle size={12} /> चालू निवड: #{format14DigitDisplay(selectedAccount.loanAccountNo)}
-                                                    {selectedAccount.legacyAccountNumber && ` (जुना क्र: ${selectedAccount.legacyAccountNumber})`}
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <div className="overflow-x-auto border border-gray-200 rounded-sm bg-white shadow-2xs">
-                                            <table className="w-full text-left border-collapse text-xs">
-                                                <thead>
-                                                    <tr className="bg-slate-100 text-slate-700 text-[11px] font-bold border-b border-gray-200 uppercase tracking-wider">
-                                                        <th className="py-2 px-3 text-center w-14">निवड</th>
-                                                        <th className="py-2 px-3">कर्ज खाते क्र.</th>
-                                                        <th className="py-2 px-3">कर्ज प्रकार / योजना</th>
-                                                        <th className="py-2 px-3 text-right">मंजूर रक्कम</th>
-                                                        <th className="py-2 px-3 text-right">मुद्दल शिल्लक</th>
-                                                        <th className="py-2 px-3 text-right">थकीत/चालू व्याज</th>
-                                                        <th className="py-2 px-3 text-right">नियमित हप्ता</th>
-                                                        <th className="py-2 px-3 text-center">कृती</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-100">
-                                                    {borrowerLoans.map((acc: any) => {
-                                                        const isSelected = selectedAccount?.loanAccountID === acc.loanAccountID;
-                                                        return (
-                                                            <tr
-                                                                key={acc.loanAccountID}
-                                                                onClick={() => selectLoanAccountById(acc.loanAccountID)}
-                                                                className={`cursor-pointer transition-all ${
-                                                                    isSelected 
-                                                                        ? 'bg-primary/10 font-semibold ring-1 ring-inset ring-primary' 
-                                                                        : 'hover:bg-slate-50'
-                                                                }`}
-                                                            >
-                                                                <td className="py-2 px-3 text-center">
-                                                                    <input
-                                                                        type="radio"
-                                                                        name="selectedLoanAccountRadio"
-                                                                        checked={isSelected}
-                                                                        onChange={() => selectLoanAccountById(acc.loanAccountID)}
-                                                                        className="w-4 h-4 text-primary focus:ring-primary cursor-pointer accent-primary"
-                                                                    />
-                                                                </td>
-                                                                <td className="py-2 px-3 font-mono font-bold text-gray-900">
-                                                                    {format14DigitDisplay(acc.loanAccountNo)}
-                                                                    {acc.legacyAccountNumber && (
-                                                                        <span className="inline-block ml-1.5 font-mono text-[10px] font-bold text-purple-900 bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200 shadow-2xs">
-                                                                            🏷️ जुना क्र: {acc.legacyAccountNumber}
-                                                                        </span>
-                                                                    )}
-                                                                </td>
-                                                                <td className="py-2 px-3 text-gray-800">
-                                                                    {acc.loanRate?.shortName || acc.loanRate?.loanType || 'कर्ज'}
-                                                                </td>
-                                                                <td className="py-2 px-3 text-right font-medium text-gray-700">
-                                                                    ₹{(acc.sanctionedAmount || 0).toLocaleString('en-IN')}
-                                                                </td>
-                                                                <td className="py-2 px-3 text-right font-bold text-rose-700">
-                                                                    ₹{(acc.principalBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                                                </td>
-                                                                <td className="py-2 px-3 text-right text-amber-800 font-medium">
-                                                                    ₹{(acc.interestBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                                                </td>
-                                                                <td className="py-2 px-3 text-right font-bold text-emerald-700">
-                                                                    ₹{(acc.installmentAmount || 0).toLocaleString('en-IN')}
-                                                                </td>
-                                                                <td className="py-2 px-3 text-center">
-                                                                    <span className={`inline-block px-2.5 py-0.5 rounded-sm text-[10px] font-bold transition-all ${
-                                                                        isSelected 
-                                                                            ? 'bg-emerald-600 text-white shadow-2xs' 
-                                                                            : 'bg-white hover:bg-primary hover:text-white text-primary border border-primary/40'
-                                                                    }`}>
-                                                                        {isSelected ? '✓ निवडलेले' : 'हप्ता घ्या'}
-                                                                    </span>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {selectedAccount && selectedAccount.loanRate && (
-                                    <div className="mt-2 p-2 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/90 border border-blue-200/80 rounded-sm shadow-2xs text-[11px] flex flex-wrap items-center justify-between gap-2">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-bold bg-primary text-white tracking-wide">
-                                                धोरण (Policy)
-                                            </span>
-                                            <span className="text-slate-700">
-                                                योजना: <strong className="text-primary font-bold">{selectedAccount.loanRate.shortName || selectedAccount.loanRate.loanType}</strong>
-                                            </span>
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-2.5">
-                                            <span className="text-slate-600">
-                                                हप्ता: <strong className="text-emerald-800 font-bold">{selectedAccount.loanRate.loanInstallmentType || 'समान हप्ता'}</strong>
-                                            </span>
-                                            <span className="text-slate-600">
-                                                आकारणी: <strong className="text-blue-800 font-bold">{selectedAccount.loanRate.interestCalculationMethod || 'Daily Reducing'}</strong>
-                                            </span>
-                                            <span className="text-slate-600">
-                                                वारंवारता: <strong className="text-purple-800 font-bold">{selectedAccount.loanRate.interestPostingFrequency || 'मासिक'}</strong>
-                                            </span>
-                                            <span className="bg-white px-2 py-0.5 border border-blue-200 rounded-sm font-medium shadow-2xs">
-                                                {selectedAccount.loanRate?.loanInstallmentType?.includes("व्याजवरती") ? "ऑटो चालू थकीत व्याज: " : "नियमित हप्ता: "}
-                                                <strong className="text-primary font-mono font-bold">
-                                                    ₹{selectedAccount.loanRate?.loanInstallmentType?.includes("व्याजवरती")
-                                                        ? ((formData.interestCollected || 0) + (formData.penaltyInterestCollected || 0)).toLocaleString('en-IN')
-                                                        : (selectedAccount.installmentAmount || 0).toLocaleString('en-IN')}
-                                                </strong>
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
-                                {selectedAccount && (
-                                    <div className="mt-1 flex items-center justify-between text-[11px] px-1">
-                                        <span className="text-gray-600">
-                                            कर्ज मूळ शाखा (Home Branch): <strong className="text-gray-800 font-semibold">{selectedAccount.branch?.branchName || `शाखा #${selectedAccount.branchID || '-'}`}</strong>
-                                        </span>
-                                        {selectedAccount.branchID && selectedAccount.branchID !== selectedBranchId && (
-                                            <span className="bg-amber-100 text-amber-800 border border-amber-300 font-bold px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1">
-                                                <AlertCircle className="w-3 h-3 text-amber-600" /> आंतर-शाखा वसुली (Cross-Branch)
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                                {selectedAccount && selectedAccount.branchID && selectedAccount.branchID !== selectedBranchId && (
-                                    <div className="mt-1.5 p-2 bg-amber-50 border border-amber-300 rounded text-amber-900 text-xs flex items-center gap-2">
-                                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                                        <div>
-                                            <strong className="font-bold">आंतर-शाखा वसुली (Cross-Branch Collection):</strong> हे कर्ज <strong>{selectedAccount.branch?.branchName || `शाखा #${selectedAccount.branchID}`}</strong> चे आहे. जमा होणारी रोकड <strong>{branches.find(b => b.branchID === selectedBranchId)?.branchName || `शाखा #${selectedBranchId}`}</strong> च्या कॅशियर गल्ल्यात नोंदवली जाईल.
-                                        </div>
-                                    </div>
-                                )}
                             </div>
-                            
-                            <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center mt-2 border-t pt-2 border-gray-100">
-                                {formData.paymentMode === 'Bank' && (
-                                    <div className="w-full sm:min-w-[300px]">
+
+                            {/* Conditional Bank / Cheque Sub-Panel */}
+                            {(formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque') && (
+                                <div className="p-2.5 bg-slate-50/90 rounded-sm border border-gray-200 border-l-4 border-l-primary grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                    <div className={formData.paymentMode === 'Cheque' ? 'md:col-span-8' : 'md:col-span-12'}>
+                                        <label className={labelClass}>
+                                            बँक जी.एल. खाते निवडा (Bank GL Account) <span className="text-rose-600">*</span>
+                                        </label>
                                         <BankLedgerSelect
                                             name="bankAccountLedgerID"
                                             ledgers={ledgers}
                                             value={formData.bankAccountLedgerID}
                                             hideLabel
-                                            placeholder="🏦 बँक जी.एल. खाते निवडा (खाते क्र. / नाव) *"
+                                            placeholder="-- बँक जी.एल. खाते निवडा (खाते क्र. / नाव) --"
                                             disabled={isPassingMode}
                                             onChange={(ledgerId) => {
                                                 const selectedBank = bankLedgers.find(l => Number(l.ledgerID) === Number(ledgerId));
@@ -2443,58 +2471,38 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             }}
                                         />
                                     </div>
-                                )}
-                                {formData.paymentMode === 'Cheque' && (
-                                    <>
-                                        <div className="w-full sm:min-w-[300px]">
-                                            <BankLedgerSelect
-                                                name="bankAccountLedgerID"
-                                                ledgers={ledgers}
-                                                value={formData.bankAccountLedgerID}
-                                                hideLabel
-                                                placeholder="🏦 बँक जी.एल. खाते निवडा (खाते क्र. / नाव) *"
+                                    {formData.paymentMode === 'Cheque' && (
+                                        <div className="md:col-span-4">
+                                            <label className={labelClass}>
+                                                चेक क्रमांक (Cheque No) <span className="text-rose-600">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={formData.chequeNo || ''}
+                                                onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))}
+                                                placeholder="चेक क्र. टाका"
                                                 disabled={isPassingMode}
-                                                onChange={(ledgerId) => {
-                                                    const selectedBank = bankLedgers.find(l => Number(l.ledgerID) === Number(ledgerId));
-                                                    setFormData(p => ({
-                                                        ...p,
-                                                        bankAccountLedgerID: ledgerId > 0 ? ledgerId : undefined,
-                                                        bankName: selectedBank ? selectedBank.ledgerName : undefined
-                                                    }));
-                                                }}
+                                                className={`${inputClass} font-mono font-bold`}
+                                                required
                                             />
                                         </div>
-                                        <input type="text" value={formData.chequeNo || ''} onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))} placeholder="चेक नंबर (Cheque No)" disabled={isPassingMode} className={`${inputClass} sm:w-44 ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required />
-                                    </>
-                                )}
-                                <label className={labelClass + " whitespace-nowrap !mb-0 text-gray-700"}>तपशील</label>
-                                <input type="text" value={formData.remarks || ''} onChange={(e) => setFormData(p => ({ ...p, remarks: e.target.value }))} disabled={isPassingMode} className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} placeholder="अधिक माहिती..." />
-                            </div>
+                                    )}
+                                </div>
+                            )}
 
-                            {/* Pigmy Transfer CBS Section - Simplified */}
+                            {/* Conditional Pigmy Transfer Sub-Panel */}
                             {formData.paymentMode === 'Pigmy Transfer' && (
-                                <div className="mt-2 p-2 bg-primary/5 rounded-sm border border-primary/20 shadow-2xs space-y-2">
-                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/15 pb-1">
-                                        <span className="text-xs font-bold text-primary flex items-center gap-1.5">
-                                            <Coins size={14} className="text-primary" />
-                                            <span>पिग्मी ठेव कर्ज समायोजन (Pigmy Transfer Adjustment)</span>
+                                <div className="p-2.5 bg-slate-50/90 rounded-sm border border-gray-200 border-l-4 border-l-primary space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span className="text-[11px] font-bold text-primary flex items-center gap-1.5">
+                                            <Coins className="w-3.5 h-3.5 text-primary" />
+                                            <span>पिग्मी ठेव कर्ज समायोजन (Pigmy Transfer)</span>
                                         </span>
-                                        {loadingPigmyAccounts && (
-                                            <span className="text-[10px] text-gray-500 font-semibold flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-gray-200">
-                                                <Clock size={11} className="animate-spin text-primary" /> खाती लोड होत आहेत...
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Pigmy Source Selector: Self vs Other/Old Account Search */}
-                                    <div className="flex flex-wrap items-center gap-4 bg-white px-2.5 py-1 rounded border border-gray-300 shadow-2xs">
-                                        <label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="pigmyAccountSourceType"
-                                                checked={pigmyAccountSourceType === 'SELF'}
+                                        <div className="inline-flex items-center p-0.5 bg-white border border-gray-300 rounded-sm gap-0.5 text-[10.5px]">
+                                            <button
+                                                type="button"
                                                 disabled={isPassingMode}
-                                                onChange={() => {
+                                                onClick={() => {
                                                     setPigmyAccountSourceType('SELF');
                                                     if (customerPigmyAccounts.length > 0) {
                                                         const acc = customerPigmyAccounts[0];
@@ -2513,18 +2521,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         }));
                                                     }
                                                 }}
-                                                className="w-3.5 h-3.5 text-primary focus:ring-primary cursor-pointer accent-primary"
-                                            />
-                                            <span>कर्जदाराचे स्वतःचे पिग्मी खाते (Self A/c)</span>
-                                        </label>
-
-                                        <label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="pigmyAccountSourceType"
-                                                checked={pigmyAccountSourceType === 'OTHER'}
+                                                className={`px-2.5 py-0.5 rounded-sm font-bold transition-colors cursor-pointer ${
+                                                    pigmyAccountSourceType === 'SELF' ? 'bg-primary text-white' : 'text-gray-700 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                स्वतःचे पिग्मी खाते
+                                            </button>
+                                            <button
+                                                type="button"
                                                 disabled={isPassingMode}
-                                                onChange={() => {
+                                                onClick={() => {
                                                     setPigmyAccountSourceType('OTHER');
                                                     setSelectedPigmyAccount(null);
                                                     setFormData(p => ({
@@ -2533,245 +2539,212 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         transferFromPigmyAccountNo: undefined
                                                     }));
                                                 }}
-                                                className="w-3.5 h-3.5 text-primary focus:ring-primary cursor-pointer accent-primary"
-                                            />
-                                            <span>इतर खातेदार / जुना नंबर थेट शोधा (Other Member / Old A/c Search)</span>
-                                        </label>
+                                                className={`px-2.5 py-0.5 rounded-sm font-bold transition-colors cursor-pointer ${
+                                                    pigmyAccountSourceType === 'OTHER' ? 'bg-primary text-white' : 'text-gray-700 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                इतर खाते / जुना क्र. शोधा
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    {/* SELF MODE: Dropdown with Old Account No and Quick Filter */}
-                                    {pigmyAccountSourceType === 'SELF' && (
-                                        <div>
-                                            {customerPigmyAccounts.length > 0 ? (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
-                                                    <div>
-                                                        <div className="flex items-center justify-between">
-                                                            <label className={`${labelClass} text-gray-700`}>
-                                                                पिग्मी खाते निवडा (Select Pigmy A/c) <span className="text-rose-600 font-bold">*</span>
-                                                            </label>
-                                                            {customerPigmyAccounts.length > 1 && (
-                                                                <input
-                                                                    type="text"
-                                                                    placeholder="जुना क्र. शोधा..."
-                                                                    value={pigmyOldAccSearchQuery}
-                                                                    onChange={(e) => {
-                                                                        const q = e.target.value;
-                                                                        setPigmyOldAccSearchQuery(q);
-                                                                        if (q.trim()) {
-                                                                            const matched = customerPigmyAccounts.find(a => 
-                                                                                (a.oldAccountNo && a.oldAccountNo.toLowerCase().includes(q.toLowerCase())) ||
-                                                                                (a.legacyAccountNumber && a.legacyAccountNumber.toLowerCase().includes(q.toLowerCase())) ||
-                                                                                (a.previousAccountNo && a.previousAccountNo.toLowerCase().includes(q.toLowerCase())) ||
-                                                                                (a.accountNo && a.accountNo.includes(q))
-                                                                            );
-                                                                            if (matched) {
-                                                                                setSelectedPigmyAccount(matched);
-                                                                                setFormData(p => ({
-                                                                                    ...p,
-                                                                                    sourcePigmyAccountID: matched.pigmyAccountID,
-                                                                                    transferFromPigmyAccountNo: matched.accountNo
-                                                                                }));
-                                                                            }
+                                    {loadingPigmyAccounts && (
+                                        <div className="text-[10.5px] text-gray-500 flex items-center gap-1.5">
+                                            <Clock className="w-3 h-3 animate-spin text-primary" /> पिग्मी खाती लोड होत आहेत...
+                                        </div>
+                                    )}
+
+                                    {pigmyAccountSourceType === 'SELF' ? (
+                                        customerPigmyAccounts.length > 0 ? (
+                                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                                                <div className="md:col-span-6">
+                                                    <div className="flex items-center justify-between mb-0.5">
+                                                        <label className="text-[11px] font-bold text-gray-700">
+                                                            पिग्मी खाते निवडा <span className="text-rose-600">*</span>
+                                                        </label>
+                                                        {customerPigmyAccounts.length > 1 && (
+                                                            <input
+                                                                type="text"
+                                                                placeholder="जुना क्र. फिल्टर..."
+                                                                value={pigmyOldAccSearchQuery}
+                                                                onChange={(e) => {
+                                                                    const q = e.target.value;
+                                                                    setPigmyOldAccSearchQuery(q);
+                                                                    if (q.trim()) {
+                                                                        const matched = customerPigmyAccounts.find(a =>
+                                                                            (a.oldAccountNo && a.oldAccountNo.toLowerCase().includes(q.toLowerCase())) ||
+                                                                            (a.legacyAccountNumber && a.legacyAccountNumber.toLowerCase().includes(q.toLowerCase())) ||
+                                                                            (a.previousAccountNo && a.previousAccountNo.toLowerCase().includes(q.toLowerCase())) ||
+                                                                            (a.accountNo && a.accountNo.includes(q))
+                                                                        );
+                                                                        if (matched) {
+                                                                            setSelectedPigmyAccount(matched);
+                                                                            setFormData(p => ({
+                                                                                ...p,
+                                                                                sourcePigmyAccountID: matched.pigmyAccountID,
+                                                                                transferFromPigmyAccountNo: matched.accountNo
+                                                                            }));
                                                                         }
-                                                                    }}
-                                                                    className="text-[10px] px-1.5 py-0.5 border border-gray-300 rounded focus:border-primary focus:outline-none w-28 bg-white"
-                                                                    title="जुना खाते क्रमांक टाकून खाते निवडा"
-                                                                />
-                                                            )}
-                                                        </div>
-                                                        <select
-                                                            value={formData.sourcePigmyAccountID || ''}
-                                                            disabled={isPassingMode || loadingPigmyAccounts}
-                                                            onChange={(e) => {
-                                                                const accId = parseInt(e.target.value);
-                                                                const acc = customerPigmyAccounts.find(a => a.pigmyAccountID === accId);
-                                                                setSelectedPigmyAccount(acc || null);
+                                                                    }
+                                                                }}
+                                                                className="text-[10px] px-1.5 py-0.2 border border-gray-300 rounded-sm focus:border-primary focus:outline-none w-24 bg-white"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                    <select
+                                                        value={formData.sourcePigmyAccountID || ''}
+                                                        disabled={isPassingMode || loadingPigmyAccounts}
+                                                        onChange={(e) => {
+                                                            const accId = parseInt(e.target.value);
+                                                            const acc = customerPigmyAccounts.find(a => a.pigmyAccountID === accId);
+                                                            setSelectedPigmyAccount(acc || null);
+                                                            setFormData(p => ({
+                                                                ...p,
+                                                                sourcePigmyAccountID: accId || undefined,
+                                                                transferFromPigmyAccountNo: acc ? acc.accountNo : undefined
+                                                            }));
+                                                        }}
+                                                        className={`${inputClass} font-semibold`}
+                                                        required
+                                                    >
+                                                        <option value="">-- पिग्मी खाते निवडा --</option>
+                                                        {customerPigmyAccounts.map(a => {
+                                                            const oldNo = a.oldAccountNo || a.legacyAccountNumber || a.previousAccountNo;
+                                                            return (
+                                                                <option key={a.pigmyAccountID} value={a.pigmyAccountID}>
+                                                                    {format14DigitDisplay(a.accountNo)} {oldNo ? `[जुना: ${oldNo}]` : ''} - {a.pigmyScheme?.schemeName || 'दैनिक ठेव'} (₹{(a.totalDepositedAmount || 0).toLocaleString('en-IN')})
+                                                                </option>
+                                                            );
+                                                        })}
+                                                    </select>
+                                                </div>
+
+                                                {selectedPigmyAccount && (
+                                                    <div className="md:col-span-6 flex flex-wrap gap-1.5 text-[10.5px] items-center pb-0.5">
+                                                        {(selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo) && (
+                                                            <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-sm border border-primary/20 font-bold font-mono">
+                                                                जुना: {selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo}
+                                                            </span>
+                                                        )}
+                                                        <span className="bg-white px-2 py-0.5 rounded-sm border border-gray-300 text-gray-700 font-semibold">
+                                                            ठेव: <b className="font-mono text-gray-900">₹{(selectedPigmyAccount.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                                        </span>
+                                                        <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-sm border border-emerald-300 font-bold">
+                                                            वर्गपात्र: <b className="font-mono text-emerald-700">₹{Math.max(0, (selectedPigmyAccount.totalDepositedAmount || 0) - (selectedPigmyAccount.isLienMarked ? (selectedPigmyAccount.lienAmount || 0) : 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-sm text-[11px] text-amber-900">
+                                                <span>या कर्जदाराचे सक्रिय पिग्मी खाते आढळले नाही.</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPigmyAccountSourceType('OTHER')}
+                                                    className="text-primary font-bold underline cursor-pointer"
+                                                >
+                                                    इतर खाते शोधा
+                                                </button>
+                                            </div>
+                                        )
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                                            <div className="md:col-span-5">
+                                                <label className={labelClass}>जुना पिग्मी क्र. / नाव / मोबाईल शोधा</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        value={pigmyOldAccSearchQuery}
+                                                        onChange={(e) => {
+                                                            const q = e.target.value;
+                                                            setPigmyOldAccSearchQuery(q);
+                                                            searchOtherPigmyAccounts(q);
+                                                        }}
+                                                        placeholder="उदा. 104, नाव किंवा मोबाईल..."
+                                                        disabled={isPassingMode}
+                                                        className={`${inputClass} pr-7`}
+                                                    />
+                                                    <Search className="w-3.5 h-3.5 absolute right-2 top-2 text-gray-400 pointer-events-none" />
+                                                </div>
+                                            </div>
+
+                                            {otherPigmySearchResults.length > 0 && !selectedPigmyAccount && (
+                                                <div className="md:col-span-7">
+                                                    <label className={`${labelClass} text-primary`}>
+                                                        शोध निकाल ({otherPigmySearchResults.length} खाती)
+                                                    </label>
+                                                    <select
+                                                        onChange={(e) => {
+                                                            const accId = parseInt(e.target.value);
+                                                            const acc = otherPigmySearchResults.find(a => a.pigmyAccountID === accId);
+                                                            if (acc) {
+                                                                setSelectedPigmyAccount(acc);
                                                                 setFormData(p => ({
                                                                     ...p,
-                                                                    sourcePigmyAccountID: accId || undefined,
-                                                                    transferFromPigmyAccountNo: acc ? acc.accountNo : undefined
+                                                                    sourcePigmyAccountID: acc.pigmyAccountID,
+                                                                    transferFromPigmyAccountNo: acc.accountNo
                                                                 }));
-                                                            }}
-                                                            className={`${inputClass} font-semibold bg-white border-gray-300 focus:border-primary`}
-                                                            required
-                                                        >
-                                                            <option value="">-- पिग्मी खाते निवडा --</option>
-                                                            {customerPigmyAccounts.map(a => {
-                                                                const oldNo = a.oldAccountNo || a.legacyAccountNumber || a.previousAccountNo;
-                                                                return (
-                                                                    <option key={a.pigmyAccountID} value={a.pigmyAccountID}>
-                                                                        {format14DigitDisplay(a.accountNo)} {oldNo ? `[जुना क्र: ${oldNo}]` : ''} - {a.pigmyScheme?.schemeName || 'दैनिक ठेव'} (शिल्लक: ₹{(a.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
-                                                                    </option>
-                                                                );
-                                                            })}
-                                                        </select>
-                                                    </div>
-
-                                                    {selectedPigmyAccount && (
-                                                        <div className="flex flex-wrap gap-1.5 text-[10px] py-0.5 items-center">
-                                                            {(selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo) && (
-                                                                <span className="bg-purple-100 text-purple-950 px-2 py-0.5 rounded border border-purple-300 font-bold shadow-2xs">
-                                                                    🏷️ जुना क्र: <strong className="font-mono">{selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo}</strong>
-                                                                </span>
-                                                            )}
-                                                            <span className="bg-white px-2 py-0.5 rounded border border-gray-300 font-medium text-gray-700 shadow-2xs">
-                                                                एकूण ठेव: <strong className="text-gray-900 font-bold font-mono">₹{(selectedPigmyAccount.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                            </span>
-                                                            {selectedPigmyAccount.isLienMarked && (
-                                                                <span className="bg-amber-50 text-amber-900 px-2 py-0.5 rounded border border-amber-300 font-medium shadow-2xs">
-                                                                    तारण (Lien): <strong className="font-bold font-mono">₹{(selectedPigmyAccount.lienAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                                </span>
-                                                            )}
-                                                            <span className="bg-emerald-50 text-emerald-950 px-2 py-0.5 rounded border border-emerald-300 font-bold shadow-2xs">
-                                                                वर्गपात्र शिल्लक: <strong className="text-emerald-700 text-xs font-mono font-bold">₹{Math.max(0, (selectedPigmyAccount.totalDepositedAmount || 0) - (selectedPigmyAccount.isLienMarked ? (selectedPigmyAccount.lienAmount || 0) : 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                            </span>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="text-[11px] text-gray-600 font-medium flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-gray-200">
-                                                        <span>💡 फॉर्ममधील 'एकूण जमा रक्कम' मधील रक्कम थेट या पिग्मी खात्यातून वर्ग होईल.</span>
-                                                    </div>
+                                                            }
+                                                        }}
+                                                        defaultValue=""
+                                                        className={`${inputClass} border-primary font-semibold`}
+                                                    >
+                                                        <option value="" disabled>-- पिग्मी खाते निवडा --</option>
+                                                        {otherPigmySearchResults.map(a => {
+                                                            const oldNo = a.oldAccountNo || a.legacyAccountNumber || a.previousAccountNo;
+                                                            const custName = a.customerName || (a.customer ? `${a.customer.firstName || ''} ${a.customer.lastName || ''}`.trim() : '');
+                                                            return (
+                                                                <option key={a.pigmyAccountID} value={a.pigmyAccountID}>
+                                                                    {format14DigitDisplay(a.accountNo)} {oldNo ? `[जुना: ${oldNo}]` : ''} - {custName} (₹{(a.totalDepositedAmount || 0).toLocaleString('en-IN')})
+                                                                </option>
+                                                            );
+                                                        })}
+                                                    </select>
                                                 </div>
-                                            ) : (
-                                                <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-amber-50 border border-amber-300 rounded text-[11px] text-amber-900">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <AlertCircle size={14} className="text-amber-600 shrink-0" />
-                                                        <span>या कर्जदार खातेदाराचे कोणतेही सक्रिय पिग्मी खाते आढळले नाही.</span>
-                                                    </div>
+                                            )}
+
+                                            {selectedPigmyAccount && (
+                                                <div className="md:col-span-7 flex flex-wrap gap-1.5 text-[10.5px] items-center pb-0.5">
+                                                    <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-sm border border-primary/20 font-bold">
+                                                        {selectedPigmyAccount.customerName || (selectedPigmyAccount.customer ? `${selectedPigmyAccount.customer.firstName || ''} ${selectedPigmyAccount.customer.lastName || ''}`.trim() : '')} ({format14DigitDisplay(selectedPigmyAccount.accountNo)})
+                                                    </span>
+                                                    <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-sm border border-emerald-300 font-bold">
+                                                        वर्गपात्र: <b className="font-mono text-emerald-700">₹{Math.max(0, (selectedPigmyAccount.totalDepositedAmount || 0) - (selectedPigmyAccount.isLienMarked ? (selectedPigmyAccount.lienAmount || 0) : 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                                    </span>
                                                     <button
                                                         type="button"
-                                                        onClick={() => setPigmyAccountSourceType('OTHER')}
-                                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded text-[10px] cursor-pointer"
+                                                        onClick={() => {
+                                                            setSelectedPigmyAccount(null);
+                                                            setFormData(p => ({
+                                                                ...p,
+                                                                sourcePigmyAccountID: undefined,
+                                                                transferFromPigmyAccountNo: undefined
+                                                            }));
+                                                        }}
+                                                        className="text-rose-600 hover:text-rose-800 font-bold underline cursor-pointer"
                                                     >
-                                                        इतर खातेदार / जुना नंबर थेट शोधा ➔
+                                                        बदला
                                                     </button>
                                                 </div>
                                             )}
                                         </div>
                                     )}
-
-                                    {/* OTHER MODE: Search any pigmy account by Old Account No / Name / CIF */}
-                                    {pigmyAccountSourceType === 'OTHER' && (
-                                        <div className="space-y-2">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
-                                                <div>
-                                                    <label className={`${labelClass} text-gray-700`}>
-                                                        जुना पिग्मी खाते क्र. / नाव / मोबाईल शोधा
-                                                    </label>
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
-                                                            value={pigmyOldAccSearchQuery}
-                                                            onChange={(e) => {
-                                                                const q = e.target.value;
-                                                                setPigmyOldAccSearchQuery(q);
-                                                                searchOtherPigmyAccounts(q);
-                                                            }}
-                                                            placeholder="उदा. 104, नाव किंवा मोबाईल टाका..."
-                                                            disabled={isPassingMode}
-                                                            className={`${inputClass} bg-white pr-7 font-medium`}
-                                                        />
-                                                        <Search size={13} className="absolute right-2 top-1.5 text-gray-400 pointer-events-none" />
-                                                    </div>
-                                                </div>
-
-                                                {otherPigmySearchResults.length > 0 && !selectedPigmyAccount && (
-                                                    <div className="md:col-span-2">
-                                                        <label className={`${labelClass} text-primary font-bold`}>
-                                                            शोध निकाल ({otherPigmySearchResults.length} खाती आढळली):
-                                                        </label>
-                                                        <select
-                                                            onChange={(e) => {
-                                                                const accId = parseInt(e.target.value);
-                                                                const acc = otherPigmySearchResults.find(a => a.pigmyAccountID === accId);
-                                                                if (acc) {
-                                                                    setSelectedPigmyAccount(acc);
-                                                                    setFormData(p => ({
-                                                                        ...p,
-                                                                        sourcePigmyAccountID: acc.pigmyAccountID,
-                                                                        transferFromPigmyAccountNo: acc.accountNo
-                                                                    }));
-                                                                }
-                                                            }}
-                                                            defaultValue=""
-                                                            className={`${inputClass} bg-white border-primary focus:border-primary font-semibold`}
-                                                        >
-                                                            <option value="" disabled>-- पिग्मी खाते निवडा --</option>
-                                                            {otherPigmySearchResults.map(a => {
-                                                                const oldNo = a.oldAccountNo || a.legacyAccountNumber || a.previousAccountNo;
-                                                                const custName = a.customerName || (a.customer ? `${a.customer.firstName || ''} ${a.customer.lastName || ''}`.trim() : '');
-                                                                return (
-                                                                    <option key={a.pigmyAccountID} value={a.pigmyAccountID}>
-                                                                        {format14DigitDisplay(a.accountNo)} {oldNo ? `[जुना क्र: ${oldNo}]` : ''} - {custName} (शिल्लक: ₹{(a.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
-                                                                    </option>
-                                                                );
-                                                            })}
-                                                        </select>
-                                                    </div>
-                                                )}
-
-                                                {selectedPigmyAccount && (
-                                                    <div className="flex flex-wrap gap-1.5 text-[10px] py-0.5 md:col-span-2 items-center">
-                                                        <span className="bg-purple-50 text-purple-950 px-2 py-0.5 rounded border border-purple-300 font-bold shadow-2xs">
-                                                            👤 {selectedPigmyAccount.customerName || (selectedPigmyAccount.customer ? `${selectedPigmyAccount.customer.firstName || ''} ${selectedPigmyAccount.customer.lastName || ''}`.trim() : '')} ({format14DigitDisplay(selectedPigmyAccount.accountNo)})
-                                                        </span>
-                                                        {(selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo) && (
-                                                            <span className="bg-purple-100 text-purple-950 px-2 py-0.5 rounded border border-purple-300 font-bold shadow-2xs">
-                                                                🏷️ जुना क्र: <strong className="font-mono">{selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo}</strong>
-                                                            </span>
-                                                        )}
-                                                        <span className="bg-white px-2 py-0.5 rounded border border-gray-300 font-medium text-gray-700 shadow-2xs">
-                                                            शिल्लक: <strong className="text-gray-900 font-bold font-mono">₹{(selectedPigmyAccount.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                        </span>
-                                                        <span className="bg-emerald-50 text-emerald-950 px-2 py-0.5 rounded border border-emerald-300 font-bold shadow-2xs">
-                                                            वर्गपात्र शिल्लक: <strong className="text-emerald-700 text-xs font-mono font-bold">₹{Math.max(0, (selectedPigmyAccount.totalDepositedAmount || 0) - (selectedPigmyAccount.isLienMarked ? (selectedPigmyAccount.lienAmount || 0) : 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setSelectedPigmyAccount(null);
-                                                                setFormData(p => ({
-                                                                    ...p,
-                                                                    sourcePigmyAccountID: undefined,
-                                                                    transferFromPigmyAccountNo: undefined
-                                                                }));
-                                                            }}
-                                                            className="text-rose-600 hover:text-rose-800 text-[10px] font-bold underline cursor-pointer ml-1"
-                                                        >
-                                                            बदला
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
                             )}
 
-                            {/* Saving Transfer CBS Section - Auto-detect & Third Party */}
+                            {/* Conditional Saving Transfer Sub-Panel */}
                             {formData.paymentMode === 'Saving Transfer' && (
-                                <div className="mt-2 p-2 bg-primary/5 rounded-sm border border-primary/20 shadow-2xs space-y-2">
-                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/15 pb-1">
-                                        <span className="text-xs font-bold text-primary flex items-center gap-1.5">
-                                            <Landmark size={14} className="text-primary" />
-                                            <span>बचत ठेव कर्ज समायोजन (Saving Deposit Transfer)</span>
+                                <div className="p-2.5 bg-slate-50/90 rounded-sm border border-gray-200 border-l-4 border-l-primary space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span className="text-[11px] font-bold text-primary flex items-center gap-1.5">
+                                            <Landmark className="w-3.5 h-3.5 text-primary" />
+                                            <span>बचत ठेव कर्ज समायोजन (Saving Transfer)</span>
                                         </span>
-                                        {loadingSavingAccounts && (
-                                            <span className="text-[10px] text-gray-500 font-semibold flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-gray-200">
-                                                <Clock size={11} className="animate-spin text-primary" /> खाती लोड होत आहेत...
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Account Source Selector: Self vs Other */}
-                                    <div className="flex flex-wrap items-center gap-4 bg-white px-2.5 py-1 rounded border border-gray-300 shadow-2xs">
-                                        <label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="savingAccountSourceType"
-                                                checked={savingAccountSourceType === 'SELF'}
+                                        <div className="inline-flex items-center p-0.5 bg-white border border-gray-300 rounded-sm gap-0.5 text-[10.5px]">
+                                            <button
+                                                type="button"
                                                 disabled={isPassingMode}
-                                                onChange={() => {
+                                                onClick={() => {
                                                     setSavingAccountSourceType('SELF');
                                                     if (customerSavingAccounts.length > 0) {
                                                         const acc = customerSavingAccounts[0];
@@ -2792,18 +2765,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         }));
                                                     }
                                                 }}
-                                                className="w-3.5 h-3.5 text-primary focus:ring-primary cursor-pointer accent-primary"
-                                            />
-                                            <span>कर्जदाराचे स्वतःचे बचत खाते (Self A/c)</span>
-                                        </label>
-
-                                        <label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="savingAccountSourceType"
-                                                checked={savingAccountSourceType === 'OTHER'}
+                                                className={`px-2.5 py-0.5 rounded-sm font-bold transition-colors cursor-pointer ${
+                                                    savingAccountSourceType === 'SELF' ? 'bg-primary text-white' : 'text-gray-700 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                स्वतःचे बचत खाते
+                                            </button>
+                                            <button
+                                                type="button"
                                                 disabled={isPassingMode}
-                                                onChange={() => {
+                                                onClick={() => {
                                                     setSavingAccountSourceType('OTHER');
                                                     setSelectedSavingAccount(null);
                                                     setFormData(p => ({
@@ -2813,643 +2784,803 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         savingCustomerName: undefined
                                                     }));
                                                 }}
-                                                className="w-3.5 h-3.5 text-primary focus:ring-primary cursor-pointer accent-primary"
-                                            />
-                                            <span>इतर खातेदार / जामीनदार बचत खाते (Other Member / Guarantor A/c)</span>
-                                        </label>
+                                                className={`px-2.5 py-0.5 rounded-sm font-bold transition-colors cursor-pointer ${
+                                                    savingAccountSourceType === 'OTHER' ? 'bg-primary text-white' : 'text-gray-700 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                इतर खातेदार / जामीनदार
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    {/* SELF MODE: Dropdown for customer's saving accounts */}
-                                    {savingAccountSourceType === 'SELF' && (
-                                        <div>
-                                            {customerSavingAccounts.length > 0 ? (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
-                                                    <div>
-                                                        <label className={`${labelClass} text-gray-700`}>
-                                                            बचत खाते निवडा (Select Saving A/c) <span className="text-rose-600 font-bold">*</span>
-                                                        </label>
-                                                        <select
-                                                            value={formData.sourceSavingAccountID || ''}
-                                                            disabled={isPassingMode || loadingSavingAccounts}
-                                                            onChange={(e) => {
-                                                                const accId = parseInt(e.target.value);
-                                                                const acc = customerSavingAccounts.find(a => a.savingAccountID === accId);
-                                                                setSelectedSavingAccount(acc || null);
+                                    {loadingSavingAccounts && (
+                                        <div className="text-[10.5px] text-gray-500 flex items-center gap-1.5">
+                                            <Clock className="w-3 h-3 animate-spin text-primary" /> बचत खाती लोड होत आहेत...
+                                        </div>
+                                    )}
+
+                                    {savingAccountSourceType === 'SELF' ? (
+                                        customerSavingAccounts.length > 0 ? (
+                                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                                                <div className="md:col-span-6">
+                                                    <label className={labelClass}>
+                                                        बचत खाते निवडा <span className="text-rose-600">*</span>
+                                                    </label>
+                                                    <select
+                                                        value={formData.sourceSavingAccountID || ''}
+                                                        disabled={isPassingMode || loadingSavingAccounts}
+                                                        onChange={(e) => {
+                                                            const accId = parseInt(e.target.value);
+                                                            const acc = customerSavingAccounts.find(a => a.savingAccountID === accId);
+                                                            setSelectedSavingAccount(acc || null);
+                                                            setFormData(p => ({
+                                                                ...p,
+                                                                sourceSavingAccountID: accId || undefined,
+                                                                transferFromSavingAccountNo: acc ? acc.accountNo : undefined,
+                                                                savingCustomerName: acc ? acc.customerName : undefined
+                                                            }));
+                                                        }}
+                                                        className={`${inputClass} font-semibold`}
+                                                        required
+                                                    >
+                                                        {customerSavingAccounts.map(a => (
+                                                            <option key={a.savingAccountID} value={a.savingAccountID}>
+                                                                {format14DigitDisplay(a.accountNo)} - {a.schemeName || 'बचत ठेव'} (₹{(a.currentBalance || 0).toLocaleString('en-IN')})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                {selectedSavingAccount && (
+                                                    <div className="md:col-span-6 flex flex-wrap gap-1.5 text-[10.5px] items-center pb-0.5">
+                                                        <span className="bg-white px-2 py-0.5 rounded-sm border border-gray-300 text-gray-700 font-semibold">
+                                                            शिल्लक: <b className="font-mono text-gray-900">₹{(selectedSavingAccount.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                                        </span>
+                                                        {(selectedSavingAccount.minimumBalance || 0) > 0 && (
+                                                            <span className="bg-white px-2 py-0.5 rounded-sm border border-gray-300 text-gray-600">
+                                                                किमान: <b className="font-mono">₹{(selectedSavingAccount.minimumBalance || 0).toLocaleString('en-IN')}</b>
+                                                            </span>
+                                                        )}
+                                                        <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-sm border border-emerald-300 font-bold">
+                                                            वर्गपात्र: <b className="font-mono text-emerald-700">₹{Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-sm text-[11px] text-amber-900">
+                                                <span>या कर्जदाराचे सक्रिय बचत खाते आढळले नाही.</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSavingAccountSourceType('OTHER')}
+                                                    className="text-primary font-bold underline cursor-pointer"
+                                                >
+                                                    इतर बचत खाते शोधा
+                                                </button>
+                                            </div>
+                                        )
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                                            <div className="md:col-span-5">
+                                                <label className={labelClass}>इतर बचत खाते शोधा (खाते क्र. / नाव / CIF)</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        value={otherSavingSearchQuery}
+                                                        onChange={(e) => {
+                                                            const q = e.target.value;
+                                                            setOtherSavingSearchQuery(q);
+                                                            searchOtherSavingAccounts(q);
+                                                        }}
+                                                        placeholder="खाते क्र., नाव, मोबाईल किंवा CIF..."
+                                                        disabled={isPassingMode}
+                                                        className={`${inputClass} pr-7`}
+                                                    />
+                                                    <Search className="w-3.5 h-3.5 absolute right-2 top-2 text-gray-400 pointer-events-none" />
+                                                </div>
+                                            </div>
+
+                                            {otherSavingSearchResults.length > 0 && !selectedSavingAccount && (
+                                                <div className="md:col-span-7">
+                                                    <label className={`${labelClass} text-primary`}>
+                                                        शोध निकाल ({otherSavingSearchResults.length} खाती)
+                                                    </label>
+                                                    <select
+                                                        onChange={(e) => {
+                                                            const accId = parseInt(e.target.value);
+                                                            const acc = otherSavingSearchResults.find(a => a.savingAccountID === accId);
+                                                            if (acc) {
+                                                                setSelectedSavingAccount(acc);
                                                                 setFormData(p => ({
                                                                     ...p,
-                                                                    sourceSavingAccountID: accId || undefined,
-                                                                    transferFromSavingAccountNo: acc ? acc.accountNo : undefined,
-                                                                    savingCustomerName: acc ? acc.customerName : undefined
+                                                                    sourceSavingAccountID: acc.savingAccountID,
+                                                                    transferFromSavingAccountNo: acc.accountNo,
+                                                                    savingCustomerName: acc.customerName || ''
                                                                 }));
-                                                            }}
-                                                            className={`${inputClass} font-semibold bg-white border-gray-300 focus:border-primary`}
-                                                            required
-                                                        >
-                                                            {customerSavingAccounts.map(a => (
-                                                                <option key={a.savingAccountID} value={a.savingAccountID}>
-                                                                    {format14DigitDisplay(a.accountNo)} - {a.schemeName || 'बचत ठेव'} (शिल्लक: ₹{(a.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-
-                                                    {selectedSavingAccount && (
-                                                        <div className="flex flex-wrap gap-1.5 text-[10px] py-0.5">
-                                                            <span className="bg-white px-2 py-0.5 rounded border border-gray-300 font-medium text-gray-700 shadow-2xs">
-                                                                एकूण शिल्लक: <strong className="text-gray-900 font-bold font-mono">₹{(selectedSavingAccount.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                            </span>
-                                                            {(selectedSavingAccount.minimumBalance || 0) > 0 && (
-                                                                <span className="bg-slate-50 text-slate-700 px-2 py-0.5 rounded border border-slate-300 font-medium shadow-2xs">
-                                                                    किमान ठेव: <strong className="font-bold font-mono">₹{(selectedSavingAccount.minimumBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                                </span>
-                                                            )}
-                                                            {(selectedSavingAccount.lienAmount || 0) > 0 && (
-                                                                <span className="bg-amber-50 text-amber-900 px-2 py-0.5 rounded border border-amber-300 font-medium shadow-2xs">
-                                                                    तारण: <strong className="font-bold font-mono">₹{(selectedSavingAccount.lienAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                                </span>
-                                                            )}
-                                                            <span className="bg-emerald-50 text-emerald-950 px-2 py-0.5 rounded border border-emerald-300 font-bold shadow-2xs">
-                                                                वर्गपात्र शिल्लक: <strong className="text-emerald-700 text-xs font-mono font-bold">₹{Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                            </span>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="text-[11px] text-gray-600 font-medium flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-gray-200">
-                                                        <span>💡 फॉर्ममधील 'एकूण जमा रक्कम' मधील रक्कम थेट या बचत खात्यातून वर्ग होईल.</span>
-                                                    </div>
+                                                            }
+                                                        }}
+                                                        defaultValue=""
+                                                        className={`${inputClass} border-primary font-semibold`}
+                                                    >
+                                                        <option value="" disabled>-- बचत खाते निवडा --</option>
+                                                        {otherSavingSearchResults.map(a => (
+                                                            <option key={a.savingAccountID} value={a.savingAccountID}>
+                                                                {format14DigitDisplay(a.accountNo)} - {a.customerName} (₹{(a.currentBalance || 0).toLocaleString('en-IN')})
+                                                            </option>
+                                                        ))}
+                                                    </select>
                                                 </div>
-                                            ) : (
-                                                <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-amber-50 border border-amber-300 rounded text-[11px] text-amber-900">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <AlertCircle size={14} className="text-amber-600 shrink-0" />
-                                                        <span>या कर्जदार खातेदाराचे कोणतेही सक्रिय बचत खाते आढळले नाही.</span>
-                                                    </div>
+                                            )}
+
+                                            {selectedSavingAccount && (
+                                                <div className="md:col-span-7 flex flex-wrap gap-1.5 text-[10.5px] items-center pb-0.5">
+                                                    <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-sm border border-primary/20 font-bold">
+                                                        {selectedSavingAccount.customerName} ({format14DigitDisplay(selectedSavingAccount.accountNo)})
+                                                    </span>
+                                                    <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-sm border border-emerald-300 font-bold">
+                                                        वर्गपात्र: <b className="font-mono text-emerald-700">₹{Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                                    </span>
                                                     <button
                                                         type="button"
-                                                        onClick={() => setSavingAccountSourceType('OTHER')}
-                                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded text-[10px] cursor-pointer"
+                                                        onClick={() => {
+                                                            setSelectedSavingAccount(null);
+                                                            setFormData(p => ({
+                                                                ...p,
+                                                                sourceSavingAccountID: undefined,
+                                                                transferFromSavingAccountNo: undefined,
+                                                                savingCustomerName: undefined
+                                                            }));
+                                                        }}
+                                                        className="text-rose-600 hover:text-rose-800 font-bold underline cursor-pointer"
                                                     >
-                                                        इतर खातेदाराचे बचत खाते निवडा ➔
+                                                        बदला
                                                     </button>
                                                 </div>
                                             )}
                                         </div>
                                     )}
-
-                                    {/* OTHER MODE: Search any saving account in bank */}
-                                    {savingAccountSourceType === 'OTHER' && (
-                                        <div className="space-y-2">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
-                                                <div>
-                                                    <label className={`${labelClass} text-gray-700`}>
-                                                        इतर बचत खाते शोधा (Search Account / Name / Mobile / CIF)
-                                                    </label>
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
-                                                            value={otherSavingSearchQuery}
-                                                            onChange={(e) => {
-                                                                const q = e.target.value;
-                                                                setOtherSavingSearchQuery(q);
-                                                                searchOtherSavingAccounts(q);
-                                                            }}
-                                                            placeholder="खाते क्र., नाव, मोबाईल किंवा CIF टाका..."
-                                                            disabled={isPassingMode}
-                                                            className={`${inputClass} bg-white pr-7 font-medium`}
-                                                        />
-                                                        <Search size={13} className="absolute right-2 top-1.5 text-gray-400 pointer-events-none" />
-                                                    </div>
-                                                </div>
-
-                                                {otherSavingSearchResults.length > 0 && !selectedSavingAccount && (
-                                                    <div className="md:col-span-2">
-                                                        <label className={`${labelClass} text-primary font-bold`}>
-                                                            शोध निकाल ({otherSavingSearchResults.length} खाती आढळली):
-                                                        </label>
-                                                        <select
-                                                            onChange={(e) => {
-                                                                const accId = parseInt(e.target.value);
-                                                                const acc = otherSavingSearchResults.find(a => a.savingAccountID === accId);
-                                                                if (acc) {
-                                                                    setSelectedSavingAccount(acc);
-                                                                    setFormData(p => ({
-                                                                        ...p,
-                                                                        sourceSavingAccountID: acc.savingAccountID,
-                                                                        transferFromSavingAccountNo: acc.accountNo,
-                                                                        savingCustomerName: acc.customerName || ''
-                                                                    }));
-                                                                }
-                                                            }}
-                                                            defaultValue=""
-                                                            className={`${inputClass} bg-white border-primary focus:border-primary font-semibold`}
-                                                        >
-                                                            <option value="" disabled>-- खाते निवडा --</option>
-                                                            {otherSavingSearchResults.map(a => (
-                                                                <option key={a.savingAccountID} value={a.savingAccountID}>
-                                                                    {format14DigitDisplay(a.accountNo)} - {a.customerName} (शिल्लक: ₹{(a.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                )}
-
-                                                {selectedSavingAccount && (
-                                                    <div className="flex flex-wrap gap-1.5 text-[10px] py-0.5 md:col-span-2 items-center">
-                                                        <span className="bg-purple-50 text-purple-950 px-2 py-0.5 rounded border border-purple-300 font-bold shadow-2xs">
-                                                            👤 {selectedSavingAccount.customerName} ({format14DigitDisplay(selectedSavingAccount.accountNo)})
-                                                        </span>
-                                                        <span className="bg-white px-2 py-0.5 rounded border border-gray-300 font-medium text-gray-700 shadow-2xs">
-                                                            शिल्लक: <strong className="text-gray-900 font-bold font-mono">₹{(selectedSavingAccount.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                        </span>
-                                                        <span className="bg-emerald-50 text-emerald-950 px-2 py-0.5 rounded border border-emerald-300 font-bold shadow-2xs">
-                                                            वर्गपात्र शिल्लक: <strong className="text-emerald-700 text-xs font-mono font-bold">₹{Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setSelectedSavingAccount(null);
-                                                                setFormData(p => ({
-                                                                    ...p,
-                                                                    sourceSavingAccountID: undefined,
-                                                                    transferFromSavingAccountNo: undefined,
-                                                                    savingCustomerName: undefined
-                                                                }));
-                                                            }}
-                                                            className="text-rose-600 hover:text-rose-800 text-[10px] font-bold underline cursor-pointer ml-1"
-                                                        >
-                                                            बदला
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
                             )}
 
-                            {/* OTS & Interest Waiver Section */}
-                            <div className="bg-amber-50/80 p-2 rounded-sm border border-amber-300 mt-2 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <label className="flex items-center gap-2 cursor-pointer">
+                            {/* STEP 3: Amount & Allocation Split Panel */}
+                            <div className="bg-slate-50/80 border border-gray-200 rounded-sm p-3 space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-gray-200">
+                                    <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                                        <Coins className="w-3.5 h-3.5 text-primary" />
+                                        <span>३. रक्कम व वसुली विभागणी (Amount & Allocation)</span>
+                                    </span>
+
+                                    {selectedAccount && !isPassingMode && (
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => applyQuickAmount('1_INST')}
+                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white border border-primary/25 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
+                                                title="१ हप्ता मुद्दल + सर्व व्याज व फी"
+                                            >
+                                                <Zap className="w-3 h-3" />
+                                                <span>१ हप्ता</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => applyQuickAmount('INTEREST_ONLY')}
+                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-emerald-50 text-emerald-800 hover:bg-emerald-600 hover:text-white border border-emerald-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
+                                                title="थकीत येणे व्याज + चालू व्याज + दंड"
+                                            >
+                                                <Zap className="w-3 h-3" />
+                                                <span>फक्त व्याज</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => applyQuickAmount('FULL_DUE')}
+                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-amber-50 text-amber-900 hover:bg-amber-600 hover:text-white border border-amber-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
+                                                title="संपूर्ण मुद्दल + सर्व व्याज + दंड (पूर्ण नील)"
+                                            >
+                                                <Zap className="w-3 h-3" />
+                                                <span>पूर्ण नील</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Total Amount + 5 Split Inputs Grid */}
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 items-end">
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-primary mb-0.5">
+                                            एकूण जमा (Total ₹) <span className="text-rose-600">*</span>
+                                        </label>
+                                        <input
+                                            type="number"
+                                            name="totalAmountReceived"
+                                            value={formData.totalAmountReceived || ''}
+                                            onChange={handleTotalAmountChange}
+                                            min="0"
+                                            disabled={isPassingMode}
+                                            placeholder="0.00"
+                                            className={`w-full border-2 border-primary px-2 py-1 rounded-sm font-mono font-bold text-xs text-right h-[32px] focus:outline-none focus:ring-1 focus:ring-primary ${
+                                                isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-primary'
+                                            }`}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className={labelClass}>मुद्दल (Principal ₹)</label>
+                                        <input
+                                            type="number"
+                                            name="principalCollected"
+                                            value={formData.principalCollected !== undefined ? formData.principalCollected : ''}
+                                            onChange={handleSplitChange}
+                                            min="0"
+                                            disabled={isPassingMode}
+                                            placeholder="0.00"
+                                            className={`${inputClass} h-[32px] text-right font-mono font-bold`}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <label className="text-[11px] font-bold text-emerald-800">येणे व्याज</label>
+                                            {duesSummary && duesSummary.yeneVyaj > 0 && (
+                                                <span className="text-[9.5px] font-mono font-bold text-emerald-700">
+                                                    ₹{duesSummary.yeneVyaj.toLocaleString('en-IN')}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="number"
+                                            name="receivableInterestCollected"
+                                            value={formData.receivableInterestCollected !== undefined ? formData.receivableInterestCollected : ''}
+                                            onChange={handleSplitChange}
+                                            min="0"
+                                            disabled={isPassingMode}
+                                            placeholder="0.00"
+                                            className={`${inputClass} h-[32px] text-right font-mono font-bold border-emerald-300 text-emerald-900 bg-emerald-50/40 focus:border-emerald-600`}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <label className="text-[11px] font-bold text-gray-700">चालू व्याज</label>
+                                            {duesSummary && duesSummary.days > 0 && (
+                                                <span className="text-[9.5px] font-mono font-semibold text-gray-500">
+                                                    {duesSummary.days} दि.
+                                                </span>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="number"
+                                            name="interestCollected"
+                                            value={formData.interestCollected !== undefined ? formData.interestCollected : ''}
+                                            onChange={handleSplitChange}
+                                            min="0"
+                                            disabled={isPassingMode}
+                                            placeholder="0.00"
+                                            className={`${inputClass} h-[32px] text-right font-mono font-semibold`}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <label className="text-[11px] font-bold text-gray-700">जादा/दंड व्याज</label>
+                                            {duesSummary && duesSummary.dandVyaj > 0 && (
+                                                <span className="text-[9.5px] font-mono font-bold text-rose-600">
+                                                    ₹{duesSummary.dandVyaj.toLocaleString('en-IN')}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="number"
+                                            name="penaltyInterestCollected"
+                                            value={formData.penaltyInterestCollected !== undefined ? formData.penaltyInterestCollected : ''}
+                                            onChange={handleSplitChange}
+                                            min="0"
+                                            disabled={isPassingMode}
+                                            placeholder="0.00"
+                                            className={`${inputClass} h-[32px] text-right font-mono font-semibold`}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className={labelClass}>सरचार्ज (₹)</label>
+                                        <input
+                                            type="number"
+                                            name="surchargeCollected"
+                                            value={formData.surchargeCollected !== undefined ? formData.surchargeCollected : ''}
+                                            onChange={handleSplitChange}
+                                            min="0"
+                                            disabled={isPassingMode}
+                                            placeholder="0.00"
+                                            className={`${inputClass} h-[32px] text-right font-mono font-semibold`}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Compact Optional Toggles Row: Other Fee Ledgers & OTS Waiver */}
+                                <div className="pt-2 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                    <div className="flex items-center gap-2">
+                                        {!isPassingMode && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (!showFeesPanel && (!formData.fees || formData.fees.length === 0)) {
+                                                        setShowFeesPanel(true);
+                                                        addFeeRow();
+                                                    } else if (formData.fees && formData.fees.length > 0) {
+                                                        addFeeRow();
+                                                    } else {
+                                                        setShowFeesPanel(prev => !prev);
+                                                    }
+                                                }}
+                                                className="text-primary hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                            >
+                                                <PlusCircle className="w-3.5 h-3.5" />
+                                                <span>इतर वसूल खाते / फी जोडा</span>
+                                            </button>
+                                        )}
+                                        {formData.fees && formData.fees.length > 0 && (
+                                            <span className="px-1.5 py-0.2 rounded-sm bg-primary/10 text-primary font-mono text-[10px] font-bold">
+                                                {formData.fees.length} फी खाते
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <label className="flex items-center gap-1.5 cursor-pointer select-none font-semibold text-amber-900">
                                         <input
                                             type="checkbox"
                                             checked={formData.isOTS || false}
                                             onChange={(e) => setFormData(p => ({ ...p, isOTS: e.target.checked }))}
                                             disabled={isPassingMode}
-                                            className="w-4 h-4 text-amber-600 rounded-sm focus:ring-amber-500 cursor-pointer disabled:cursor-not-allowed"
+                                            className="w-3.5 h-3.5 rounded-sm accent-primary cursor-pointer disabled:cursor-not-allowed"
                                         />
-                                        <span className="text-xs font-bold text-amber-900">
-                                            🏆 एकरकमी तडजोड (OTS / One Time Settlement) / व्याज सूट सवलत
-                                        </span>
+                                        <Award className="w-3.5 h-3.5 text-amber-700" />
+                                        <span>एकरकमी तडजोड (OTS) / व्याज सूट सवलत</span>
                                     </label>
-                                    {formData.isOTS && (
-                                        <span className="bg-amber-200 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-sm border border-amber-400">
-                                            तडजोड मोड सक्रिय
-                                        </span>
-                                    )}
                                 </div>
 
-                                {(formData.isOTS || (formData.interestWaived && formData.interestWaived > 0)) && (
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-amber-200">
+                                {/* Expanded Dynamic Fee Rows (Only when fees exist or toggled) */}
+                                {(showFeesPanel || (formData.fees && formData.fees.length > 0)) && (
+                                    <div className="p-2 bg-white rounded-sm border border-gray-200 space-y-1.5">
+                                        <div className="flex items-center justify-between text-[10.5px] font-bold text-gray-600">
+                                            <span>इतर वसूल खाते तपशील (Other Fee Ledgers)</span>
+                                            {(!formData.fees || formData.fees.length === 0) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowFeesPanel(false)}
+                                                    className="text-gray-400 hover:text-gray-700 cursor-pointer"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                        {formData.fees?.map((fee, index) => (
+                                            <div key={index} className="grid grid-cols-12 gap-2 items-center">
+                                                <div className="col-span-8">
+                                                    <select
+                                                        value={fee.ledgerID}
+                                                        onChange={(e) => handleFeeChange(index, 'ledgerID', e.target.value)}
+                                                        disabled={isPassingMode}
+                                                        className={inputClass}
+                                                    >
+                                                        <option value="0">-- इतर वसूल खाते निवडा --</option>
+                                                        {ledgers.map(l => (
+                                                            <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="col-span-3">
+                                                    <input
+                                                        type="number"
+                                                        value={fee.amount || ''}
+                                                        onChange={(e) => handleFeeChange(index, 'amount', e.target.value)}
+                                                        min="0"
+                                                        placeholder="रक्कम ₹"
+                                                        disabled={isPassingMode}
+                                                        className={`${inputClass} text-right font-mono font-bold`}
+                                                    />
+                                                </div>
+                                                <div className="col-span-1 text-center">
+                                                    {!isPassingMode && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                removeFeeRow(index);
+                                                                if ((formData.fees?.length || 0) <= 1) {
+                                                                    setShowFeesPanel(false);
+                                                                }
+                                                            }}
+                                                            className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                                                            title="हटवा"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Expanded OTS & Interest Waiver Panel (Only when ticked or waiver > 0) */}
+                                {(formData.isOTS || (formData.interestWaived && formData.interestWaived > 0) || (formData.penaltyWaived && formData.penaltyWaived > 0)) && (
+                                    <div className="p-2.5 bg-amber-50/90 rounded-sm border border-amber-300 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                                         <div>
-                                            <label className="block text-[11px] font-bold text-amber-900 mb-1">माफ करावयाचे व्याज (Interest Waived ₹)</label>
+                                            <label className="block text-[10.5px] font-bold text-amber-900 mb-0.5">
+                                                माफ करावयाचे व्याज (Waived ₹)
+                                            </label>
                                             <input
                                                 type="number"
                                                 value={formData.interestWaived || ''}
                                                 onChange={(e) => setFormData(p => ({ ...p, interestWaived: parseFloat(e.target.value) || 0 }))}
                                                 disabled={isPassingMode}
-                                                className={`w-full text-xs border border-amber-300 rounded-sm px-2 py-1 font-bold text-amber-900 focus:outline-none focus:border-amber-600 ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                                                 placeholder="0.00"
+                                                className={`${inputClass} border-amber-300 font-mono font-bold text-amber-950 text-right`}
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-[11px] font-bold text-amber-900 mb-1">माफ करावयाचे दंड व्याज (Penalty Waived ₹)</label>
+                                            <label className="block text-[10.5px] font-bold text-amber-900 mb-0.5">
+                                                माफ दंड व्याज (Penalty Waived ₹)
+                                            </label>
                                             <input
                                                 type="number"
                                                 value={formData.penaltyWaived || ''}
                                                 onChange={(e) => setFormData(p => ({ ...p, penaltyWaived: parseFloat(e.target.value) || 0 }))}
                                                 disabled={isPassingMode}
-                                                className={`w-full text-xs border border-amber-300 rounded-sm px-2 py-1 font-bold text-amber-900 focus:outline-none focus:border-amber-600 ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                                                 placeholder="0.00"
+                                                className={`${inputClass} border-amber-300 font-mono font-bold text-amber-950 text-right`}
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-[11px] font-bold text-amber-900 mb-1">
-                                                संचालक मंडळ ठराव / मंजुरी क्र. (Resolution No) <span className="text-red-600 font-extrabold">*</span>
+                                            <label className="block text-[10.5px] font-bold text-amber-900 mb-0.5">
+                                                संचालक मंडळ ठराव क्र. <span className="text-rose-600">*</span>
                                             </label>
                                             <input
                                                 type="text"
                                                 value={formData.resolutionNo || ''}
                                                 onChange={(e) => setFormData(p => ({ ...p, resolutionNo: e.target.value }))}
                                                 disabled={isPassingMode}
-                                                className={`w-full text-xs border border-amber-300 rounded-sm px-2 py-1 font-bold text-amber-900 focus:outline-none focus:border-amber-600 ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
-                                                placeholder="उदा. BR-2026/45 (आवश्यक)"
+                                                placeholder="उदा. BR-2026/45"
                                                 required
+                                                className={`${inputClass} border-amber-300 font-bold text-amber-950`}
                                             />
                                         </div>
                                     </div>
                                 )}
                             </div>
+
+                            {/* STEP 4: Clean Horizontal Footer Action Bar */}
+                            <div className="pt-2.5 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className="px-2.5 py-1 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-900 font-semibold">
+                                        पावती एकूण: <b className="font-mono text-emerald-700">₹{(formData.totalAmountReceived || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                    </span>
+                                    {duesSummary && (
+                                        <span className="px-2.5 py-1 rounded-sm bg-primary/5 border border-primary/20 text-gray-800 font-semibold">
+                                            नवीन मुद्दल बाकी: <b className="font-mono text-primary">₹{duesSummary.shillakKarjRakkam.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                        </span>
+                                    )}
+                                </div>
+
+                                {isPassingMode ? (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={handlePrintClick}
+                                            className="px-3 py-1.5 rounded-sm bg-white hover:bg-slate-50 text-gray-700 border border-gray-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                            <Printer className="w-3.5 h-3.5 text-primary" />
+                                            <span>प्रिंट पूर्वावलोकन</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setRejectModalOpen(true)}
+                                            disabled={passingActionLoading}
+                                            className="px-3 py-1.5 rounded-sm bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            <span>पावती रिजेक्ट करा</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handlePassVoucher}
+                                            disabled={passingActionLoading}
+                                            className="px-4 py-1.5 rounded-sm bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                        >
+                                            <CheckCircle className="w-3.5 h-3.5" />
+                                            <span>{passingActionLoading ? 'पास होत आहे...' : 'पावती पास करा (Approve)'}</span>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={handleResetForm}
+                                            className="px-3 py-1.5 rounded-sm bg-white hover:bg-slate-50 text-gray-700 border border-gray-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                            <PlusCircle className="w-3.5 h-3.5 text-gray-600" />
+                                            <span>नवीन पावती</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (lastSavedCollectionId) {
+                                                    const found = collections.find(c => c.loanCollectionID === lastSavedCollectionId);
+                                                    if (found) handleDirectWhatsAppShare(found);
+                                                    else alert('पावती सापडली नाही.');
+                                                } else {
+                                                    alert('कृपया आधी जमा माहिती जतन (Save) करा.');
+                                                }
+                                            }}
+                                            className="px-3 py-1.5 rounded-sm bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                            <Share2 className="w-3.5 h-3.5" />
+                                            <span>WhatsApp</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={handlePrintClick}
+                                            className="px-3 py-1.5 rounded-sm bg-white hover:bg-slate-50 text-primary border border-primary/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                            <Printer className="w-3.5 h-3.5" />
+                                            <span>प्रिंट</span>
+                                        </button>
+
+                                        <button
+                                            type="submit"
+                                            disabled={isSaving}
+                                            className={`px-5 py-1.5 rounded-sm bg-primary hover:opacity-90 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer transition-all ${
+                                                isSaving ? 'opacity-70 cursor-not-allowed' : ''
+                                            }`}
+                                        >
+                                            {isSaving ? (
+                                                <>
+                                                    <Clock className="w-3.5 h-3.5 animate-spin" />
+                                                    <span>जतन होत आहे...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save className="w-3.5 h-3.5" />
+                                                    <span>जतन करा (Save)</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    {/* Account Details */}
-                    {accountDetails && (
-                        <div className="border border-gray-300 bg-white rounded-sm shadow-xs overflow-hidden mb-1">
-                            <div className="flex flex-wrap justify-between items-center bg-primary/5 p-2 border-b border-primary/20 gap-3">
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] text-gray-500 font-bold">मंजूर मर्यादा</span> 
-                                    <span className="text-gray-900 font-bold text-xs">₹ {accountDetails.sanctionedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                </div>
-                                <div className="flex flex-col border-l border-gray-300 pl-3">
-                                    <span className="text-[10px] text-primary font-bold flex items-center gap-1">
-                                        एकूण वाटप
-                                        {accountDetails.disbursementCount && accountDetails.disbursementCount > 1 ? (
-                                            <span className="text-[9px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded-sm border border-amber-300 font-bold">
-                                                {accountDetails.disbursementCount} टप्पे
-                                            </span>
-                                        ) : null}
-                                    </span> 
-                                    <span className="text-primary font-extrabold text-xs">
-                                        ₹ {(accountDetails.totalDisbursedAmount || accountDetails.currentPrincipalBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                    </span>
-                                </div>
-                                {(accountDetails.pendingSanctionedAmount || 0) > 0 && (
-                                    <div className="flex flex-col border-l border-gray-300 pl-3">
-                                        <span className="text-[10px] text-purple-700 font-bold">शिल्लक मंजुरी</span> 
-                                        <span className="text-purple-800 font-extrabold text-xs bg-purple-50 px-1.5 py-0.2 rounded-sm border border-purple-200">
-                                            ₹ {accountDetails.pendingSanctionedAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                        </span>
-                                    </div>
-                                )}
-                                <div className="flex flex-col border-l border-gray-300 pl-3">
-                                    <span className="text-[10px] text-emerald-800 font-bold">चालू मुद्दल शिल्लक</span> 
-                                    <span className="text-emerald-900 font-extrabold text-sm">
-                                        ₹ {accountDetails.currentPrincipalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                    </span>
-                                </div>
-                                <div className="flex flex-col border-l border-gray-300 pl-3">
-                                    <span className="text-[10px] text-rose-600 font-bold">३१/३ अखेर बाकी</span> 
-                                    <span className="text-rose-700 font-bold text-xs">₹ {accountDetails.march31Balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                </div>
-                                {npaStatus && (
-                                    <div className="flex flex-col border-l border-gray-300 pl-3">
-                                        <span className="text-[10px] text-purple-600 font-bold">NPA स्थिती</span> 
-                                        <span className={`font-bold text-xs ${npaStatus.category === 'Standard' ? 'text-emerald-700' : 'text-rose-700'}`}>
-                                            {npaStatus.categoryMarathi}
-                                        </span>
-                                    </div>
-                                )}
-                                <div className="flex items-center ml-auto">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowInstallmentModal(true)}
-                                        className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white px-3 py-1 rounded-sm text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                                        title="कर्ज हप्ता परतफेड वेळापत्रक चार्ट पहा"
-                                    >
-                                        <Calendar size={13} />
-                                        <span>📅 हप्ता चार्ट पहा</span>
-                                        {accountDetails.schedule && accountDetails.schedule.length > 0 && (
-                                            <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.2 rounded-sm font-mono font-bold ml-0.5">
-                                                {accountDetails.schedule.length} हप्ते
-                                            </span>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Tranche breakdown banner if multiple disbursements */}
-                            {accountDetails.tranches && accountDetails.tranches.length > 1 && (
-                                <div className="bg-amber-50/80 border-t border-amber-200 px-3 py-1.5 text-[11px] flex flex-wrap items-center gap-2.5">
-                                    <span className="font-bold text-amber-950 flex items-center gap-1">
-                                        <span>⚡</span>
-                                        <span>टप्पानिहाय वाटप तपशील:</span>
-                                    </span>
-                                    {accountDetails.tranches.map((t, idx) => (
-                                        <span key={t.disbursementID} className="bg-white px-2 py-0.5 rounded-sm border border-amber-300 text-slate-800 font-medium shadow-2xs">
-                                            टप्पा {idx + 1}: <strong className="text-emerald-700">₹{t.disbursementAmount.toLocaleString('en-IN')}</strong> ({new Date(t.disbursementDate).toLocaleDateString('en-GB')})
-                                        </span>
-                                    ))}
-                                </div>
+                    {/* RIGHT 4 COLUMNS: CONSOLIDATED LOAN ACCOUNT & DUES PANEL */}
+                    <div className="lg:col-span-4 bg-white rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col overflow-hidden">
+                        {/* Card Strip */}
+                        <div className="px-3.5 py-2 bg-slate-50/80 border-b border-gray-200 flex items-center justify-between gap-2">
+                            <span className="border-l-4 border-primary pl-2 text-primary font-bold text-xs">
+                                कर्ज खाते स्थिती व थकबाकी (Loan & Dues)
+                            </span>
+                            {npaStatus && (
+                                <span
+                                    className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border ${
+                                        npaStatus.category === 'Standard'
+                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                            : 'bg-rose-50 text-rose-800 border-rose-300'
+                                    }`}
+                                >
+                                    {npaStatus.categoryMarathi}
+                                </span>
                             )}
                         </div>
-                    )}
 
-                    {/* Middle Overdue Table */}
-                    <div className="border border-gray-300 bg-white min-h-[120px] rounded-sm shadow-xs overflow-x-auto mt-1">
-                        <table className="w-full text-[10px] text-center border-collapse">
-                            <thead>
-                                <tr className="bg-gray-100 text-primary border-b-2 border-primary font-bold">
-                                    <th className="p-1 border-r border-gray-300">कर्ज प्रकार</th>
-                                    <th className="p-1 border-r border-gray-300">कर्ज उचल दिनांक</th>
-                                    <th className="p-1 border-r border-gray-300 bg-sky-50 text-sky-900 font-bold">व्याज आकारणी पासून</th>
-                                    <th className="p-1 border-r border-gray-300">कर्ज उचल रक्कम</th>
-                                    <th className="p-1 border-r border-gray-300 text-primary font-bold">हप्त्याची रक्कम</th>
-                                    <th className="p-1 border-r border-gray-300">व्याज दर (%)</th>
-                                    <th className="p-1 border-r border-gray-300">येणे बाकी</th>
-                                    <th className="p-1 border-r border-gray-300">राहिलेला हप्ता (₹)</th>
-                                    <th className="p-1 border-r border-gray-300 text-rose-700 bg-rose-50 font-bold">थकीत हफ्ते</th>
-                                    <th className="p-1 border-r border-gray-300 text-rose-700">थकीत हप्ता दिनांक</th>
-                                    <th className="p-1 border-r border-gray-300 bg-rose-50 text-rose-700">पैकी थकबाकी</th>
-                                    <th className="p-1 border-r border-gray-300 text-orange-700">व्याज</th>
-                                    <th className="p-1 border-r border-gray-300">येणे व्याज</th>
-                                    <th className="p-1 border-r border-gray-300">दंड व्याज</th>
-                                    <th className="p-1 border-r border-gray-300">सरचार्ज</th>
-                                    <th className="p-1 border-r border-gray-300">वसुली फी</th>
-                                    <th className="p-1 border-r border-gray-300">दिवस</th>
-                                    <th className="p-1 border-r border-gray-300 font-bold text-primary">शिल्लक कर्ज रक्कम</th>
-                                    <th className="p-1 bg-amber-100 text-amber-900 font-bold">एकूण देय रक्कम (₹)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                 {selectedAccount ? (
-                                     (() => {
-                                         const loanRate = selectedAccount.loanRate;
-                                         const isDailyReducing = loanRate && 
-                                             (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
+                        {selectedAccount && duesSummary ? (
+                            <div className="p-3 space-y-2.5">
+                                {/* 1. Account Identity Box */}
+                                <div className="p-2.5 rounded-sm bg-primary/5 border border-primary/20 space-y-1.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <div className="text-xs font-bold text-gray-900 leading-snug">
+                                                {selectedBorrowerName}
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10.5px]">
+                                                <span className="font-mono font-bold text-primary">
+                                                    {format14DigitDisplay(selectedAccount.loanAccountNo)}
+                                                </span>
+                                                {selectedBorrowerCif && (
+                                                    <span className="px-1.5 py-0.2 rounded-sm bg-white border border-gray-300 text-gray-600 font-mono text-[10px] font-semibold">
+                                                        CIF: {selectedBorrowerCif}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
 
-                                         const disbursementDate = accountDetails?.disbursementDate || selectedAccount.loanDisbursementDate || selectedAccount.openingDate;
-                                         const totalDisbursed = accountDetails?.totalDisbursedAmount || accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount;
-                                         const sanctionedAmount = accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount;
-                                         const interestRate = selectedAccount.loanRate?.interestRate || selectedAccount.interestRate || 0;
-                                         const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (selectedAccount.principalBalance || 0);
+                                        {selectedAccount.legacyAccountNumber && (
+                                            <span className="px-2 py-0.5 rounded-sm bg-white border border-primary/30 text-primary font-mono text-[10.5px] font-bold shrink-0 shadow-2xs">
+                                                जुना क्र.: {selectedAccount.legacyAccountNumber}
+                                            </span>
+                                        )}
+                                    </div>
 
-                                         let thakitDinank = "-";
-                                         let vasulpatra = 0;
-                                         let paikiThakbaki = 0;
-                                         let vyaj = 0;
-                                         let yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0);
-                                         let dandVyaj = accountDetails?.currentOverdueInterestBalance !== undefined ? accountDetails.currentOverdueInterestBalance : (selectedAccount.overdueInterestBalance || 0);
-                                         let surcharge = 0;
-                                         let vasuliFee = 0;
-
-                                         const collectionDateObj = parseDateSafe(formData.collectionDate || new Date());
-                                         collectionDateObj.setHours(0, 0, 0, 0);
-
-                                         let thakitHapteCount = 0;
-                                         if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
-                                             thakitHapteCount = accountDetails.schedule.filter(s => {
-                                                 const dDate = parseDateSafe(s.dueDate);
-                                                 dDate.setHours(0, 0, 0, 0);
-                                                 return dDate <= collectionDateObj && s.status !== 'Paid';
-                                             }).length;
-                                         }
-
-                                         if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
-                                             // Filter unpaid installments that are due up to the collection date
-                                             const overdueInstallments = accountDetails.schedule.filter(s => {
-                                                 const dueDateObj = parseDateSafe(s.dueDate);
-                                                 dueDateObj.setHours(0, 0, 0, 0);
-                                                 return dueDateObj <= collectionDateObj && s.status !== 'Paid';
-                                             });
-
-                                             if (overdueInstallments.length > 0) {
-                                                 vasulpatra = overdueInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
-                                                 paikiThakbaki = overdueInstallments
-                                                     .filter(s => {
-                                                         const dDate = parseDateSafe(s.dueDate);
-                                                         dDate.setHours(0, 0, 0, 0);
-                                                         return dDate < collectionDateObj;
-                                                     })
-                                                     .reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
-                                                 vyaj = overdueInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
-                                             } else {
-                                                 // No overdue installments yet, show the first upcoming pending installment details
-                                                 const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
-                                                 if (nextInstallment) {
-                                                      vasulpatra = nextInstallment.remainingPrincipal !== undefined ? nextInstallment.remainingPrincipal : (nextInstallment.principalAmount || 0);
-                                                      vyaj = nextInstallment.interestAmount || 0;
-                                                 }
-                                             }
-                                         } else {
-                                             // Dynamic daily Reducing balance calculations
-                                             const rate = selectedAccount.loanRate?.interestRate || selectedAccount.interestRate || 0;
-                                             const principal = yeneBaki;
-                                             const fromDateStr = getInterestStartDate(selectedAccount);
-                                            if (fromDateStr) {
-                                                const diffDays = calculateElapsedDays(fromDateStr, formData.collectionDate);
-                                                if (diffDays > 0) {
-                                                    vyaj = Math.round((principal * rate * diffDays) / 36500);
-                                                }
-                                            }
-
-                                             if (accountDetails?.schedule) {
-                                                 paikiThakbaki = accountDetails.schedule
-                                                     .filter(s => parseDateSafe(s.dueDate) <= collectionDateObj && s.status !== 'Paid')
-                                                     .reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
-                                                 vasulpatra = paikiThakbaki;
-                                             }
-                                         }
-
-                                         if (vasulpatra > yeneBaki) vasulpatra = yeneBaki;
-                                         if (paikiThakbaki > yeneBaki) paikiThakbaki = yeneBaki;
-
-                                         if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
-                                             const firstUnpaid = accountDetails.schedule.find(s => s.status !== 'Paid');
-                                             if (firstUnpaid) {
-                                                 const dDate = parseDateSafe(firstUnpaid.dueDate);
-                                                 dDate.setHours(0,0,0,0);
-                                                 if (isDailyReducing || dDate < collectionDateObj) {
-                                                     thakitDinank = formatDateSafe(dDate); 
-                                                 }
-                                             }
-                                         }
-
-                                         // Calculate actual elapsed days for display
-                                        let days = 0;
-                                        const fromDateStrGrid = getInterestStartDate(selectedAccount);
-                                        if (fromDateStrGrid) {
-                                            days = calculateElapsedDays(fromDateStrGrid, formData.collectionDate);
-                                        }
-
-                                         // Calculate Remaining Loan Amount (शिल्लक कर्ज रक्कम)
-                                         const shillakKarjRakkam = Math.max(0, yeneBaki - (formData.principalCollected || 0));
-
-                                         // Calculate Total Recoverable (एकूण वसुलपात्र)
-                                         const ekunVasulpatra = vasulpatra + vyaj + yeneVyaj + dandVyaj + surcharge + vasuliFee;
-
-                                         return (
-                                             <tr className="border-b border-gray-200 hover:bg-gray-50">
-                                                 <td className="p-1.5 border-r border-gray-200 font-semibold">{selectedAccount.loanRate?.shortName || selectedAccount.loanRate?.loanType || 'N/A'}</td>
-                                                 <td className="p-1.5 border-r border-gray-200">{disbursementDate ? formatDateSafe(disbursementDate) : ''}</td>
-                                                <td className="p-1.5 border-r border-gray-200 font-mono text-sky-800 font-bold bg-sky-50/50">
-                                                    {fromDateStrGrid ? formatDateSafe(fromDateStrGrid) : '-'}
-                                                </td>
-                                                <td className="p-1.5 border-r border-gray-200 font-mono font-semibold">{totalDisbursed.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-bold text-primary">{(selectedAccount.installmentAmount || 0).toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono">{interestRate.toFixed(2)}%</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-semibold text-slate-700">{yeneBaki.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono">{vasulpatra.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-extrabold text-rose-700 bg-rose-50">{thakitHapteCount}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono text-rose-600">{thakitDinank}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono text-rose-600 font-bold bg-rose-50/50">{paikiThakbaki.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-semibold text-orange-600">{vyaj.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono">{yeneVyaj.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono">{dandVyaj.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono">{surcharge.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono">{vasuliFee.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-semibold" title={`व्याज दिवस: ${fromDateStrGrid ? formatDateSafe(fromDateStrGrid) : ''} ते ${formatDateSafe(formData.collectionDate || new Date())} (${days} दिवस)`}>
-                                                    {days}
-                                                </td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-bold text-primary">{shillakKarjRakkam.toFixed(2)}</td>
-                                                 <td className="p-1.5 font-mono font-bold bg-amber-100 text-amber-900 text-xs">{ekunVasulpatra.toFixed(2)}</td>
-                                             </tr>
-                                         );
-                                     })()
-                                 ) : (
-                                     <tr>
-                                         <td colSpan={19} className="p-8 text-gray-400 italic">कृपया खाते निवडा (Select Account)</td>
-                                     </tr>
-                                 )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Bottom Area - Actions & Summary */}
-                    <div className="flex flex-col md:flex-row gap-2.5">
-                        {/* Actions */}
-                        {isPassingMode ? (
-                            <div className="w-full md:w-1/4 flex flex-col gap-2 p-2.5 bg-amber-50/80 border-2 border-amber-400 rounded-sm shadow-xs">
-                                <div className="text-[11px] font-bold text-amber-900 border-b border-amber-200 pb-1 flex items-center justify-between">
-                                    <span>पासिंग / मंजुरी पर्याय</span>
-                                    <span className="bg-amber-200 text-amber-800 text-[10px] px-1.5 py-0.5 rounded font-bold">Passing Mode</span>
+                                    <div className="pt-1.5 border-t border-primary/15 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10.5px] text-gray-700">
+                                        <span>
+                                            योजना: <b className="text-gray-900">{selectedAccount.loanRate?.shortName || selectedAccount.loanRate?.loanType || '-'}</b>
+                                        </span>
+                                        <span>
+                                            दर: <b className="font-mono text-primary">{duesSummary.interestRate.toFixed(2)}%</b>
+                                        </span>
+                                        <span>
+                                            पद्धत: <b>{selectedAccount.loanRate?.interestCalculationMethod || 'Daily Reducing'}</b>
+                                        </span>
+                                        {selectedAccount.branch?.branchName && (
+                                            <span>
+                                                शाखा: <b>{selectedAccount.branch.branchName}</b>
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
 
-                                <button 
-                                    type="button" 
-                                    onClick={handlePassVoucher}
-                                    disabled={passingActionLoading}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black py-2.5 px-3 rounded-sm shadow-md transition-all flex justify-center items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                                >
-                                    <CheckCircle size={15} />
-                                    <span>{passingActionLoading ? 'पास होत आहे...' : '✅ पावती पास करा (Approve & Pass)'}</span>
-                                </button>
+                                {/* 2. Four Key KPI Tiles (2x2 Grid) */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="p-2 rounded-sm bg-slate-50 border border-gray-200">
+                                        <div className="text-[10px] font-bold text-gray-500">चालू मुद्दल बाकी</div>
+                                        <div className="text-sm font-black font-mono text-gray-900 mt-0.5">
+                                            ₹{duesSummary.yeneBaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </div>
+                                    </div>
 
-                                <button 
-                                    type="button" 
-                                    onClick={() => setRejectModalOpen(true)}
-                                    disabled={passingActionLoading}
-                                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold py-2 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                                >
-                                    <Trash2 size={14} />
-                                    <span>❌ पावती रिजेक्ट करा (Reject)</span>
-                                </button>
+                                    <div className="p-2 rounded-sm bg-amber-50/80 border border-amber-300">
+                                        <div className="text-[10px] font-bold text-amber-900">आज एकूण देय रक्कम</div>
+                                        <div className="text-sm font-black font-mono text-amber-950 mt-0.5">
+                                            ₹{duesSummary.ekunVasulpatra.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </div>
+                                    </div>
 
-                                <button 
-                                    type="button" 
-                                    onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
-                                    disabled={passingActionLoading}
-                                    className="bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold py-2 px-3 rounded-sm shadow-2xs transition-colors flex justify-center items-center gap-1.5 cursor-pointer"
-                                >
-                                    <span>↩️ मागे जा (Back to Queue)</span>
-                                </button>
+                                    <div className="p-2 rounded-sm bg-white border border-gray-200">
+                                        <div className="flex items-center justify-between text-[10px] font-bold text-gray-500">
+                                            <span>मंजूर / एकूण वाटप</span>
+                                            {accountDetails?.disbursementCount && accountDetails.disbursementCount > 1 ? (
+                                                <span className="px-1 rounded-sm bg-amber-100 text-amber-900 text-[9px]">
+                                                    {accountDetails.disbursementCount} टप्पे
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        <div className="text-xs font-bold font-mono text-gray-800 mt-0.5">
+                                            ₹{duesSummary.totalDisbursed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </div>
+                                        {(accountDetails?.pendingSanctionedAmount || 0) > 0 && (
+                                            <div className="text-[9.5px] text-primary font-semibold mt-0.5">
+                                                शिल्लक मंजुरी: ₹{accountDetails?.pendingSanctionedAmount?.toLocaleString('en-IN')}
+                                            </div>
+                                        )}
+                                    </div>
 
-                                <button 
-                                    type="button" 
-                                    onClick={handlePrintClick} 
-                                    className="bg-slate-600 hover:bg-slate-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer mt-1"
+                                    <div className="p-2 rounded-sm bg-white border border-gray-200">
+                                        <div className="text-[10px] font-bold text-gray-500">
+                                            {selectedAccount.loanRate?.loanInstallmentType?.includes('व्याजवरती') ? 'हप्ता प्रकार: व्याजवरती' : 'नियमित हप्ता (EMI)'}
+                                        </div>
+                                        <div className="text-xs font-bold font-mono text-emerald-700 mt-0.5">
+                                            ₹{(selectedAccount.installmentAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </div>
+                                        <div className="text-[9.5px] text-gray-500 mt-0.5">
+                                            उचल: {duesSummary.disbursementDate ? formatDateSafe(duesSummary.disbursementDate) : '-'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 3. Clean Scannable Dues & Interest Breakdown List */}
+                                <div className="border border-gray-200 rounded-sm divide-y divide-gray-100 text-[11px]">
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-slate-50/60">
+                                        <span className="text-gray-600 font-medium">व्याज आकारणी पासून (दिवस)</span>
+                                        <span className="font-mono font-bold text-gray-900">
+                                            {duesSummary.fromDateStrGrid ? formatDateSafe(duesSummary.fromDateStrGrid) : '-'}
+                                            <span className="ml-1 text-primary">({duesSummary.days} दि.)</span>
+                                        </span>
+                                    </div>
+
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
+                                        <span className="text-gray-600 font-medium">थकीत हप्ते / थकीत दिनांक</span>
+                                        <span className="font-mono font-bold text-rose-700">
+                                            {duesSummary.thakitHapteCount} हप्ते
+                                            {duesSummary.thakitDinank !== '-' && (
+                                                <span className="text-gray-500 font-normal ml-1">({duesSummary.thakitDinank})</span>
+                                            )}
+                                        </span>
+                                    </div>
+
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
+                                        <span className="text-gray-600 font-medium">वसूलपात्र / थकीत मुद्दल</span>
+                                        <span className="font-mono font-bold text-gray-900">
+                                            ₹{duesSummary.vasulpatra.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            {duesSummary.paikiThakbaki > 0 && duesSummary.paikiThakbaki !== duesSummary.vasulpatra && (
+                                                <span className="text-[10px] text-rose-600 ml-1">
+                                                    (थकीत: ₹{duesSummary.paikiThakbaki.toLocaleString('en-IN')})
+                                                </span>
+                                            )}
+                                        </span>
+                                    </div>
+
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
+                                        <span className="text-gray-600 font-medium">चालू आकारणी व्याज</span>
+                                        <span className="font-mono font-bold text-amber-800">
+                                            ₹{duesSummary.vyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
+                                        <span className="text-gray-600 font-medium">मागील येणे व्याज</span>
+                                        <span className="font-mono font-bold text-emerald-800">
+                                            ₹{duesSummary.yeneVyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
+                                        <span className="text-gray-600 font-medium">दंड / जादा व्याज</span>
+                                        <span className="font-mono font-bold text-rose-700">
+                                            ₹{duesSummary.dandVyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+
+                                    {accountDetails && (
+                                        <div className="px-2.5 py-1.5 flex items-center justify-between bg-slate-50/40">
+                                            <span className="text-gray-600 font-medium">३१/३ अखेर बाकी</span>
+                                            <span className="font-mono font-semibold text-gray-800">
+                                                ₹{accountDetails.march31Balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    <div className="px-2.5 py-2 flex items-center justify-between bg-primary/5 border-l-4 border-l-primary">
+                                        <span className="text-gray-800 font-bold">वसुलीनंतर नवीन शिल्लक कर्ज</span>
+                                        <span className="font-mono font-black text-xs text-primary">
+                                            ₹{duesSummary.shillakKarjRakkam.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Multiple Disbursement Tranches (if >1) */}
+                                {accountDetails?.tranches && accountDetails.tranches.length > 1 && (
+                                    <div className="p-2 rounded-sm bg-amber-50/70 border border-amber-200 text-[10.5px] space-y-1">
+                                        <div className="font-bold text-amber-900">टप्पानिहाय वाटप तपशील:</div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {accountDetails.tranches.map((t, idx) => (
+                                                <span key={t.disbursementID} className="px-1.5 py-0.5 bg-white rounded-sm border border-amber-300 text-gray-800 font-mono">
+                                                    टप्पा {idx + 1}: <b>₹{t.disbursementAmount.toLocaleString('en-IN')}</b> ({new Date(t.disbursementDate).toLocaleDateString('en-GB')})
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Schedule Chart Action Button */}
+                                <button
+                                    type="button"
+                                    onClick={() => setShowInstallmentModal(true)}
+                                    className="w-full py-1.5 px-3 rounded-sm bg-primary/10 hover:bg-primary hover:text-white text-primary border border-primary/25 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                                 >
-                                    <Printer size={13} /> 🖨️ प्रिंट पूर्वावलोकन (Preview)
+                                    <Calendar className="w-3.5 h-3.5" />
+                                    <span>हप्ता परतफेड वेळापत्रक चार्ट पहा</span>
+                                    {accountDetails?.schedule && accountDetails.schedule.length > 0 && (
+                                        <span className="font-mono text-[10.5px] opacity-90">
+                                            ({accountDetails.schedule.length} हप्ते)
+                                        </span>
+                                    )}
                                 </button>
                             </div>
                         ) : (
-                            <div className="w-full md:w-1/4 flex flex-col gap-1.5">
-                                <button 
-                                    type="submit" 
-                                    disabled={isSaving}
-                                    className={`bg-primary hover:bg-primary/90 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                >
-                                    {isSaving ? (
-                                        <>
-                                            <Clock size={14} className="animate-spin" /> ⏳ जतन होत आहे...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Save size={14} /> जतन (Save)
-                                        </>
-                                    )}
-                                </button>
-                                <button type="button" onClick={() => {
-                                    setFormData({
-                                        collectionDate: activeBusinessDate,
-                                        receiptNo: '',
-                                        paymentMode: "Cash",
-                                        totalAmountReceived: 0,
-                                        surchargeCollected: 0,
-                                        penaltyInterestCollected: 0,
-                                        receivableInterestCollected: 0,
-                                        interestCollected: 0,
-                                        principalCollected: 0,
-                                        fees: []
-                                    });
-                                    setAllowDateOverride(false);
-                                    setSelectedCustomerId(null);
-                                    setSelectedBorrowerKey(null);
-                                    setSelectedAccount(null);
-                                    setAccountDetails(null);
-                                    setCustomerPigmyAccounts([]);
-                                    setSelectedPigmyAccount(null);
-                                    setCustomerSavingAccounts([]);
-                                    setSelectedSavingAccount(null);
-                                    setSavingAccountSourceType('SELF');
-                                    setOtherSavingSearchQuery('');
-                                    setOtherSavingSearchResults([]);
-                                    (window as any).selectedLoanCustomerId = undefined;
-                                    (window as any).selectedLoanAccountId = undefined;
-                                    (window as any).selectedLoanMemberId = undefined;
-                                    setLastSavedCollectionId(null);
-                                    fetchNextReceiptNo(selectedBranchId);
-                                }} className="bg-slate-700 hover:bg-slate-800 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
-                                    <PlusCircle size={14} /> नवीन पावती (New)
-                                </button>
-                                <button type="button" onClick={handlePrintClick} className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
-                                    <Printer size={14} /> प्रिंट (Print)
-                                </button>
-                                <button type="button" onClick={() => {
-                                    if (lastSavedCollectionId) {
-                                        const found = collections.find(c => c.loanCollectionID === lastSavedCollectionId);
-                                        if (found) handleDirectWhatsAppShare(found);
-                                        else alert('पावती सापडली नाही.');
-                                    } else {
-                                        alert('कृपया आधी जमा माहिती जतन (Save) करा.');
-                                    }
-                                }} className="bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
-                                    <span>📲</span> WhatsApp पाठवा
-                                </button>
-                                <button type="button" onClick={() => setShowReceiptsModal(true)} className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 mt-0.5 cursor-pointer">
-                                    <Search size={14} /> सर्व जमापावती पहा
-                                </button>
+                            <div className="p-6 text-center text-gray-500 flex flex-col items-center justify-center min-h-[260px] space-y-2">
+                                <div className="p-2.5 rounded-full bg-slate-100 text-gray-400 border border-gray-200">
+                                    <Landmark className="w-6 h-6" />
+                                </div>
+                                <div className="text-xs font-bold text-gray-700">
+                                    {borrowerLoans.length > 1
+                                        ? 'डावीकडील यादीतून कर्ज खाते निवडा'
+                                        : 'कोणतेही कर्ज खाते निवडलेले नाही'}
+                                </div>
+                                <p className="text-[11px] text-gray-500 max-w-[230px]">
+                                    कर्ज प्रकार व कर्जदार निवडताच येथे मुद्दल बाकी, चालू/येणे व्याज, थकीत हप्ते आणि NPA स्थिती दिसेल.
+                                </p>
                             </div>
                         )}
-                        
-                        {/* Summary Table */}
-                        <div className="w-full md:w-3/4 border border-gray-300 bg-white rounded-sm shadow-xs overflow-hidden text-[11px]">
-                            <div className="bg-primary text-white font-bold text-center py-1 border-b border-primary/20 text-xs">
-                                दिवसाचा आलेला वसूल (Today's Recovery Summary)
-                            </div>
-                            <table className="w-full text-center">
-                                <thead>
-                                    <tr className="border-b border-gray-300 bg-gray-100 text-primary">
-                                        <th className="py-1 border-r border-gray-300 font-bold">खाते प्रकार (Type)</th>
-                                        <th className="py-1 border-r border-gray-300 font-bold text-emerald-700">Cash (रोख)</th>
-                                        <th className="py-1 border-r border-gray-300 font-bold text-primary">Trans (बँक / इतर)</th>
-                                        <th className="py-1 font-bold text-slate-900">एकूण (Total)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr className="hover:bg-gray-50 transition-colors">
-                                        <td className="py-1.5 border-r border-gray-200 text-gray-800 font-bold">Total Collections</td>
-                                        <td className="py-1.5 border-r border-gray-200 font-bold text-emerald-700">₹ {todayTotalCash.toFixed(2)}</td>
-                                        <td className="py-1.5 border-r border-gray-200 font-bold text-primary">₹ {todayTotalBank.toFixed(2)}</td>
-                                        <td className="py-1.5 font-bold text-sm text-primary">₹ {(todayTotalCash + todayTotalBank).toFixed(2)}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
                     </div>
-                    
                 </div>
-            </div>
             </form>
 
             {/* Installment Schedule Modal Window - Matching Smart Banking ERP Theme */}
@@ -3470,7 +3601,13 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         </span>
                                     </h2>
                                     <p className="text-[11px] text-white/90 mt-0.5 flex flex-wrap items-center gap-2">
-                                        <span>सभासद: <strong className="text-white">{selectedAccount.member?.firstName} {selectedAccount.member?.lastName}</strong></span>
+                                        <span>खातेदार: <strong className="text-white">{selectedBorrowerName}</strong></span>
+                                        {selectedBorrowerCif && (
+                                            <>
+                                                <span>•</span>
+                                                <span>CIF: <strong className="text-white font-mono">{selectedBorrowerCif}</strong></span>
+                                            </>
+                                        )}
                                         <span>•</span>
                                         <span>कर्ज प्रकार: <strong className="text-white">{selectedAccount.loanRate?.shortName || selectedAccount.loanRate?.loanType || '-'}</strong></span>
                                         <span>•</span>
@@ -3847,10 +3984,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                         {/* Modal Footer */}
                         <div className="flex justify-between items-center p-2 bg-gray-100 border-t border-gray-300 rounded-b-sm">
-                            <div className="text-[11px] text-gray-600 font-medium flex items-center gap-3">
-                                <span>🟢 पूर्ण भरले (Nil): <strong className="text-emerald-700">{accountDetails?.schedule?.filter(s => s.status === 'Paid').length || 0}</strong></span>
-                                <span>🟡 अंशतः भरले: <strong className="text-amber-800">{accountDetails?.schedule?.filter(s => s.status === 'Partially Paid').length || 0}</strong></span>
-                                <span>🔴 थकीत: <strong className="text-rose-700">{accountDetails?.schedule?.filter(s => {
+                            <div className="text-[11px] text-gray-600 font-medium flex flex-wrap items-center gap-3">
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" /> पूर्ण भरले (Nil): <strong className="text-emerald-700">{accountDetails?.schedule?.filter(s => s.status === 'Paid').length || 0}</strong></span>
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> अंशतः भरले: <strong className="text-amber-800">{accountDetails?.schedule?.filter(s => s.status === 'Partially Paid').length || 0}</strong></span>
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-600 inline-block" /> थकीत: <strong className="text-rose-700">{accountDetails?.schedule?.filter(s => {
                                     if (s.status === 'Paid') return false;
                                     const dDate = parseDateSafe(s.dueDate);
                                     dDate.setHours(0, 0, 0, 0);
@@ -3858,7 +3995,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     cDate.setHours(0, 0, 0, 0);
                                     return s.status === 'Overdue' || (dDate <= cDate && s.status !== 'Paid');
                                 }).length || 0}</strong></span>
-                                <span>🔵 येणे बाकी: <strong className="text-primary">{accountDetails?.schedule?.filter(s => s.status !== 'Paid').length || 0}</strong></span>
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary inline-block" /> येणे बाकी: <strong className="text-primary">{accountDetails?.schedule?.filter(s => s.status !== 'Paid').length || 0}</strong></span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <button
@@ -3925,8 +4062,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 <td className="p-1 border-r min-w-[140px]">
                                                     {isEditing ? (
                                                         (c.paymentMode === 'Saving Transfer' || c.paymentMode === 'Saving' || c.paymentMode === 'Pigmy Transfer' || c.paymentMode === 'Pigmy') ? (
-                                                            <div className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded-sm text-[10px] font-bold text-slate-700" title="खाते वर्ग (Transfer) पावतीची पेमेंट पद्धत बदलता येत नाही">
-                                                                🔒 {c.paymentMode}
+                                                            <div className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded-sm text-[10px] font-bold text-slate-700 inline-flex items-center gap-1" title="खाते वर्ग (Transfer) पावतीची पेमेंट पद्धत बदलता येत नाही">
+                                                                <Lock className="w-2.5 h-2.5" /> {c.paymentMode}
                                                             </div>
                                                         ) : (
                                                             <div className="space-y-1">
@@ -3952,13 +4089,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                                         required={false}
                                                                         ledgers={ledgers}
                                                                         value={editData.bankAccountLedgerID || 0}
-                                                                        onChange={(bankLId, selectedLedger) => setEditData({
-                                                                            ...editData,
-                                                                            bankAccountLedgerID: bankLId,
-                                                                            bankName: selectedLedger?.ledgerName || editData.bankName || ''
-                                                                        })}
+                                                                        onChange={(bankLId) => {
+                                                                            const selectedLedger = bankLedgers.find(l => Number(l.ledgerID) === Number(bankLId));
+                                                                            setEditData({
+                                                                                ...editData,
+                                                                                bankAccountLedgerID: bankLId,
+                                                                                bankName: selectedLedger?.ledgerName || editData.bankName || ''
+                                                                            });
+                                                                        }}
                                                                         placeholder="-- बँक खाते निवडा --"
-                                                                        className="border border-blue-400 p-0.5 text-[10px] h-[22px] w-full bg-blue-50/40 font-semibold"
+                                                                        className="border border-primary/40 p-0.5 text-[10px] h-[22px] w-full bg-primary/5 font-semibold"
                                                                     />
                                                                 )}
                                                             </div>
@@ -3988,11 +4128,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                                     chequeNo: c.chequeNo || '',
                                                                     remarks: c.remarks || ''
                                                                 });
-                                                            }} className="bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-sm shadow-sm" title="Edit"><Edit size={12} /></button>
-                                                            <button onClick={() => setPrintingCollectionId(c.loanCollectionID)} className="bg-primary hover:bg-[#004a75] text-white p-1 rounded-sm shadow-sm" title="Print"><Printer size={12} /></button>
-                                                            <button onClick={() => handleDirectWhatsAppShare(c)} className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 rounded-sm shadow-sm flex items-center justify-center" title="WhatsApp वर पाठवा"><span className="text-[10px]">📲</span></button>
+                                                            }} className="bg-slate-600 hover:bg-slate-700 text-white p-1 rounded-sm shadow-2xs cursor-pointer" title="Edit"><Edit size={12} /></button>
+                                                            <button onClick={() => setPrintingCollectionId(c.loanCollectionID)} className="bg-primary hover:opacity-90 text-white p-1 rounded-sm shadow-2xs cursor-pointer" title="Print"><Printer size={12} /></button>
+                                                            <button onClick={() => handleDirectWhatsAppShare(c)} className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 rounded-sm shadow-2xs flex items-center justify-center cursor-pointer" title="WhatsApp वर पाठवा"><Share2 size={12} /></button>
                                                             {(!c.voucher || c.voucher.status !== 'Approved') && (!c.homeBranchVoucher || c.homeBranchVoucher.status !== 'Approved') && (
-                                                                <button type="button" onClick={() => handleDeleteReceipt(c.loanCollectionID)} className="bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-sm shadow-sm" title="पावती व व्हाउचर डिलीट करा (Hard Delete)"><Trash2 size={12} /></button>
+                                                                <button type="button" onClick={() => handleDeleteReceipt(c.loanCollectionID)} className="bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-sm shadow-2xs cursor-pointer" title="पावती व व्हाउचर डिलीट करा (Hard Delete)"><Trash2 size={12} /></button>
                                                             )}
                                                             
                                                         </>

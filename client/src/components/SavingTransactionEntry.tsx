@@ -11,19 +11,14 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
-  Calendar,
   CreditCard,
   Building,
   RotateCcw,
+  RefreshCw,
   Save,
-  Plus,
-  TrendingUp,
-  TrendingDown,
-  Percent,
-  Receipt,
-  FileText,
   X,
-  AlertTriangle
+  AlertTriangle,
+  ShieldCheck
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import { filterBankAccountLedgers, buildBankLedgerOptions } from '../utils/bankLedgerUtils';
@@ -41,7 +36,6 @@ interface SavingAccount {
   memberID?: number;
   customerName?: string;
   customerNameEng?: string;
-
   accountType?: string;
   openingDate?: string;
   isLegacyAccount?: boolean;
@@ -85,7 +79,6 @@ interface SavingTransaction {
   voucherNo?: string;
   accountNo?: string;
   customerName?: string;
-
 }
 
 const formatDisplayDate = (dStr?: string | null) => {
@@ -133,7 +126,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const [bankLedgers, setBankLedgers] = useState<Ledger[]>([]);
   const [allRawLedgers, setAllRawLedgers] = useState<Ledger[]>([]);
   const [transactions, setTransactions] = useState<SavingTransaction[]>([]);
-  
+
   const [selectedLedgerID, setSelectedLedgerID] = useState<number>(0);
   const [selectedAccount, setSelectedAccount] = useState<SavingAccount | null>(null);
 
@@ -141,6 +134,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const [selectedTargetAccount, setSelectedTargetAccount] = useState<SavingAccount | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -179,7 +173,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
   useEffect(() => {
     if (user?.businessDate) {
-      setFormData(prev => ({ ...prev, transactionDate: user.businessDate.split('T')[0] }));
+      setFormData((prev) => ({ ...prev, transactionDate: user.businessDate.split('T')[0] }));
     }
   }, [user?.businessDate]);
 
@@ -295,7 +289,6 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         }
       }
 
-      // Safe Property Getters handling camelCase, PascalCase and DB column variations
       const getAccCustomerId = (a: any) => Number(a.customerId ?? a.customerID ?? a.CustomerID ?? 0);
       const getAccMemberId = (a: any) => Number(a.memberId ?? a.memberID ?? a.MemberID ?? 0);
       const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.cif ?? '').trim().toUpperCase();
@@ -334,7 +327,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
               });
               if (typeStr) {
                 const finalType: string = typeStr;
-                setFormData(prev => ({ ...prev, transactionType: finalType }));
+                setFormData((prev) => ({ ...prev, transactionType: finalType }));
               }
               setShowMultiAccountModal(true);
               setNoAccountFoundAlert(null);
@@ -346,7 +339,6 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         }
       }
 
-      // Concurrently load full accounts, interest settings, and ledgers (single call for ledgers)
       const [accRes, interestRes, ledgersRes] = await Promise.all([
         axios.get(`${API_URL}/SavingAccounts`, { signal }),
         axios.get(`${API_URL}/SavingSettings/Interest`, { signal }).catch((err) => {
@@ -364,14 +356,12 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       const accData: SavingAccount[] = accRes.data || [];
       setAccounts(accData);
 
-      // Populate Bank Ledgers from the single /api/Ledgers call (eliminating duplicate request)
       const allLedgersList: any[] = Array.isArray(ledgersRes.data) ? ledgersRes.data : [];
       parseBankLedgers(allLedgersList);
 
-      // Re-sync selectedAccount with the latest fresh balance from API
       const targetAccId = preserveAccountId || selectedAccount?.savingAccountID || formData.savingAccountID;
       if (targetAccId && targetAccId > 0) {
-        const freshAcc = accData.find(a => a.savingAccountID === targetAccId);
+        const freshAcc = accData.find((a) => a.savingAccountID === targetAccId);
         if (freshAcc) {
           setSelectedAccount(freshAcc);
           if (freshAcc.ledgerID) {
@@ -380,9 +370,8 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         }
       }
 
-      // Also re-sync selectedTargetAccount if in Transfer mode
       if (formData.targetSavingAccountID && formData.targetSavingAccountID > 0) {
-        const freshTarget = accData.find(a => a.savingAccountID === formData.targetSavingAccountID);
+        const freshTarget = accData.find((a) => a.savingAccountID === formData.targetSavingAccountID);
         if (freshTarget) {
           setSelectedTargetAccount(freshTarget);
         }
@@ -390,19 +379,17 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
       const uniqueLedgerMap = new Map<number, string>();
 
-      // 1. Prioritize schemes created in Saving Scheme Master
       if (Array.isArray(interestRes.data) && interestRes.data.length > 0) {
         interestRes.data.forEach((s: any) => {
           const targetLid = s.savingLiabilityLedgerID || s.ledgerID || s.interestExpenseLedgerID;
           if (targetLid && targetLid > 0) {
             const rawName = s.schemeName || s.savingLiabilityLedger?.ledgerName || s.ledger?.ledgerName || 'बचत योजना';
-            const rateInfo = (s.interestRate !== undefined && s.interestRate !== null) ? ` (${s.interestRate}%)` : '';
+            const rateInfo = s.interestRate !== undefined && s.interestRate !== null ? ` (${s.interestRate}%)` : '';
             uniqueLedgerMap.set(targetLid, `${rawName}${rateInfo}`);
           }
         });
       }
 
-      // 2. Fallback: Saving ledgers from /api/Ledgers
       if (uniqueLedgerMap.size === 0) {
         allLedgersList.forEach((l: any) => {
           if (!l || !l.ledgerID) return;
@@ -414,7 +401,6 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         });
       }
 
-      // 3. Add ledgers from existing saving accounts to ensure complete coverage
       accData.forEach((acc: any) => {
         const lid = acc.ledgerID;
         const lname = acc.ledgerName || 'बचत ठेव';
@@ -426,7 +412,6 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       const ledgerList = Array.from(uniqueLedgerMap.entries()).map(([ledgerID, ledgerName]) => ({ ledgerID, ledgerName }));
       setLedgers(ledgerList);
 
-      // If fast-track did not run or didn't find match, run full fallback match
       if (!preserveAccountId && !isPassingMode && !selectedAccount) {
         if (accountIdStr) {
           const accId = parseInt(accountIdStr, 10);
@@ -441,12 +426,10 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
           const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
           const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
 
-          // Tiered CIF-First Matching Architecture
           let matched: SavingAccount[] = [];
 
-          // Tier 1: CIF exact match OR numeric digits equivalence
           if (cleanCif) {
-            matched = accData.filter(a => {
+            matched = accData.filter((a) => {
               const aCif = getAccCif(a);
               if (!aCif) return false;
               if (aCif === cleanCif) return true;
@@ -455,14 +438,12 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             });
           }
 
-          // Tier 2: CustomerID match
           if (matched.length === 0 && cId > 0) {
-            matched = accData.filter(a => getAccCustomerId(a) === cId);
+            matched = accData.filter((a) => getAccCustomerId(a) === cId);
           }
 
-          // Tier 3: MemberID fallback
           if (matched.length === 0 && mId > 0) {
-            matched = accData.filter(a => getAccMemberId(a) === mId || getAccCustomerId(a) === mId);
+            matched = accData.filter((a) => getAccMemberId(a) === mId || getAccCustomerId(a) === mId);
           }
 
           if (matched.length === 1) {
@@ -480,13 +461,13 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             });
             if (typeStr) {
               const finalType: string = typeStr;
-              setFormData(prev => ({ ...prev, transactionType: finalType }));
+              setFormData((prev) => ({ ...prev, transactionType: finalType }));
             }
             setShowMultiAccountModal(true);
             setNoAccountFoundAlert(null);
           } else {
             setCustomerMatchingAccounts([]);
-            const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
+            const identifier = cleanCif ? `CIF: ${cleanCif}` : cId ? `ID: ${cId}` : `Member: ${mId}`;
             setNoAccountFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही बचत खाते आढळले नाही.`);
           }
         }
@@ -530,10 +511,38 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     }
   };
 
+  const handleRefreshAll = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([fetchAccounts(formData.savingAccountID || undefined), fetchTransactions()]);
+    } finally {
+      if (isMountedRef.current) setRefreshing(false);
+    }
+  };
+
+  const handleResetForm = () => {
+    setSelectedLedgerID(0);
+    setSelectedAccount(null);
+    setSelectedTargetLedgerID(0);
+    setSelectedTargetAccount(null);
+    setFormData((prev) => ({
+      ...prev,
+      savingAccountID: 0,
+      targetSavingAccountID: 0,
+      bankLedgerID: 0,
+      paymentMode: 'Cash',
+      amount: '',
+      narration: '',
+      checkNo: ''
+    }));
+    setError('');
+    setSuccess('');
+  };
+
   const handleLedgerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const lid = parseInt(e.target.value, 10) || 0;
     setSelectedLedgerID(lid);
-    setFormData(prev => ({ ...prev, savingAccountID: 0 }));
+    setFormData((prev) => ({ ...prev, savingAccountID: 0 }));
     setSelectedAccount(null);
     setError('');
   };
@@ -541,7 +550,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const handleTargetLedgerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const lid = parseInt(e.target.value, 10) || 0;
     setSelectedTargetLedgerID(lid);
-    setFormData(prev => ({ ...prev, targetSavingAccountID: 0 }));
+    setFormData((prev) => ({ ...prev, targetSavingAccountID: 0 }));
     setSelectedTargetAccount(null);
     setError('');
   };
@@ -549,7 +558,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const handleAccountChange = (e: any) => {
     const accountId = parseInt(e.target.value, 10) || 0;
     setFormData((prev) => ({ ...prev, savingAccountID: accountId }));
-    const acc = accounts.find(a => a.savingAccountID === accountId) || null;
+    const acc = accounts.find((a) => a.savingAccountID === accountId) || null;
     setSelectedAccount(acc);
     if (acc && acc.ledgerID) {
       setSelectedLedgerID(acc.ledgerID);
@@ -561,7 +570,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const handleTargetAccountChange = (e: any) => {
     const accountId = parseInt(e.target.value, 10) || 0;
     setFormData((prev) => ({ ...prev, targetSavingAccountID: accountId }));
-    const acc = accounts.find(a => a.savingAccountID === accountId) || null;
+    const acc = accounts.find((a) => a.savingAccountID === accountId) || null;
     setSelectedTargetAccount(acc);
     if (acc && acc.ledgerID) {
       setSelectedTargetLedgerID(acc.ledgerID);
@@ -574,7 +583,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     const lid = parseInt(String(e?.target?.value ?? 0), 10) || 0;
     setFormData((prev) => ({
       ...prev,
-      bankLedgerID: lid,
+      bankLedgerID: lid
     }));
     setError('');
   };
@@ -583,7 +592,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: value
     }));
   };
 
@@ -653,14 +662,15 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       }
 
       const response = await axios.post(`${API_URL}/SavingTransactions`, payload);
-      
-      const newBal = response.data?.currentBalance !== undefined 
-        ? ` | चालू शिल्लक: ₹${Number(response.data.currentBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` 
-        : '';
+
+      const newBal =
+        response.data?.currentBalance !== undefined
+          ? ` | चालू शिल्लक: ₹${Number(response.data.currentBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+          : '';
       const voucherInfo = response.data?.voucherNo ? ` [व्हाउचर क्र.: ${response.data.voucherNo}]` : '';
 
       setSuccess(`व्यवहार यशस्वीरित्या नोंदवला गेला!${voucherInfo}${newBal}`);
-      
+
       const currentAccId = formData.savingAccountID;
       setFormData((prev) => ({
         ...prev,
@@ -668,7 +678,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         narration: '',
         checkNo: ''
       }));
-      
+
       fetchTransactions();
       await fetchAccounts(currentAccId);
     } catch (err: any) {
@@ -680,15 +690,14 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   };
 
   // Filter accounts by selected deposit ledger
-  const filteredAccounts = selectedLedgerID > 0
-    ? accounts.filter(acc => (acc.ledgerID || 7) === selectedLedgerID)
-    : accounts;
+  const filteredAccounts =
+    selectedLedgerID > 0 ? accounts.filter((acc) => (acc.ledgerID || 7) === selectedLedgerID) : accounts;
 
   const accountOptions = filteredAccounts.map((acc: any) => {
     const accDisplay = acc.formattedAccountNo || format14DigitDisplay(acc.accountNo);
     const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : '';
     const oldNo = acc.oldAccountNo || acc.previousAccountNo || acc.legacyAccountNumber;
-    const oldAccPart = (oldNo && oldNo !== acc.accountNo) ? ` (जुना: ${oldNo})` : '';
+    const oldAccPart = oldNo && oldNo !== acc.accountNo ? ` (जुना: ${oldNo})` : '';
     const namePart = acc.customerName || 'अज्ञात';
     const engPart = acc.customerNameEng ? ` (${acc.customerNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -698,16 +707,17 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     };
   });
 
-  // Target accounts filtered by selected target deposit ledger (and excluding source account)
-  const filteredTargetAccounts = selectedTargetLedgerID > 0
-    ? accounts.filter(acc => (acc.ledgerID || 7) === selectedTargetLedgerID && acc.savingAccountID !== formData.savingAccountID)
-    : accounts.filter(acc => acc.savingAccountID !== formData.savingAccountID);
+  // Target accounts filtered by selected target deposit ledger (excluding source account)
+  const filteredTargetAccounts =
+    selectedTargetLedgerID > 0
+      ? accounts.filter((acc) => (acc.ledgerID || 7) === selectedTargetLedgerID && acc.savingAccountID !== formData.savingAccountID)
+      : accounts.filter((acc) => acc.savingAccountID !== formData.savingAccountID);
 
   const targetAccountOptions = filteredTargetAccounts.map((acc: any) => {
     const accDisplay = acc.formattedAccountNo || format14DigitDisplay(acc.accountNo);
     const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : '';
     const oldNo = acc.oldAccountNo || acc.previousAccountNo || acc.legacyAccountNumber;
-    const oldAccPart = (oldNo && oldNo !== acc.accountNo) ? ` (जुना: ${oldNo})` : '';
+    const oldAccPart = oldNo && oldNo !== acc.accountNo ? ` (जुना: ${oldNo})` : '';
     const namePart = acc.customerName || 'अज्ञात';
     const engPart = acc.customerNameEng ? ` (${acc.customerNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -719,7 +729,8 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
   // Filter transactions by search query (Exclude Opening Balance migration entries)
   const filteredTransactions = transactions.filter((t) => {
-    const isOpeningBal = t.narration && (t.narration.toLowerCase().includes('opening balance') || t.narration.includes('आरंभीची शिल्लक'));
+    const isOpeningBal =
+      t.narration && (t.narration.toLowerCase().includes('opening balance') || t.narration.includes('आरंभीची शिल्लक'));
     if (isOpeningBal) return false;
 
     const query = searchQuery.toLowerCase();
@@ -730,27 +741,6 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       (t.voucherNo && t.voucherNo.toLowerCase().includes(query))
     );
   });
-
-  const handleDeleteTransaction = async (id: number) => {
-    if (!window.confirm('तुम्हाला खरोखर हा व्यवहार डिलीट करायचा आहे का? (Are you sure you want to delete this transaction?)')) {
-      return;
-    }
-
-    try {
-      const currentAccId = formData.savingAccountID;
-      const res = await fetch(`/api/SavingTransactions/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setSuccess('व्यवहार यशस्वीरित्या डिलीट केला (Transaction deleted successfully).');
-        fetchTransactions();
-        await fetchAccounts(currentAccId);
-      } else {
-        const data = await res.json();
-        setError(data.message || 'व्यवहार डिलीट करताना त्रुटी आली.');
-      }
-    } catch (err) {
-      setError('Network error while deleting transaction.');
-    }
-  };
 
   const handlePassVoucher = async () => {
     const vId = passingVoucher?.voucherID || voucherIdFromUrl;
@@ -787,7 +777,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         const errText = await res.text();
         alert(`त्रुटी: ${errText}`);
       }
-    } catch (e) {
+    } catch {
       alert('व्हाउचर पास करताना नेटवर्क त्रुटी आली.');
     } finally {
       setPassingActionLoading(false);
@@ -828,7 +818,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       } else {
         alert(resData?.message || resData || 'व्हाउचर नामंजूर करताना त्रुटी आली.');
       }
-    } catch (e) {
+    } catch {
       alert('व्हाउचर नामंजूर करताना नेटवर्क त्रुटी आली.');
     } finally {
       setPassingActionLoading(false);
@@ -861,146 +851,121 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     Boolean(selectedTargetAccount) &&
     txnAmountNum > targetAvailableToWithdraw;
 
-  // KPI Calculations
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayTxns = transactions.filter(t => t.transactionDate && t.transactionDate.startsWith(todayStr));
-  const todayTxnCount = todayTxns.length;
+  // Compact Today Summary Metrics
+  const todayTxns = transactions.filter((t) => t.transactionDate && t.transactionDate.startsWith(activeBusinessDate));
   const todayDepositSum = todayTxns
-    .filter(t => t.transactionType === 'Deposit' || t.transactionType === 'Interest')
+    .filter((t) => t.transactionType === 'Deposit' || t.transactionType === 'Interest')
     .reduce((sum, t) => sum + (t.amount || 0), 0);
   const todayWithdrawalSum = todayTxns
-    .filter(t => t.transactionType === 'Withdrawal' || t.transactionType === 'Charges')
+    .filter((t) => t.transactionType === 'Withdrawal' || t.transactionType === 'Charges')
     .reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  return (
-    <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
-      
-      {/* Passing Checker Banner */}
-      {isPassingMode && (
-        <div className="mb-3 bg-amber-50 border-2 border-amber-400 rounded-sm p-3 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="flex h-3 w-3 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-              </span>
-              <div className="font-bold text-amber-950 text-xs">
-                ⚠️ व्हाउचर पासिंग तपासणी मोड (Checker Verification Mode) - पूर्णपणे केवळ वाचन (Read-Only)
-              </div>
-            </div>
-            <div className="flex items-center gap-3 text-xs font-semibold">
-              <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-mono border border-amber-300">
-                व्हाउचर क्र.: {passingVoucher?.voucherNo || voucherIdFromUrl}
-              </span>
-              <span className="text-amber-800">
-                रक्कम: <b>₹{Number(formData.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
-              </span>
-              <span className="bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded">
-                प्रकार: {formData.transactionType === 'Deposit' ? 'बचत ठेव (Deposit)' : 'बचत उपसा (Withdrawal)'}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+  const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
+  const inputClass =
+    'w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium h-[30px]';
 
-      {/* Top Sleek CBS Header Banner */}
-      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
+  return (
+    <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-full flex flex-col bg-slate-50 text-[11px] font-sans pb-10">
+      {/* 1. STANDARD CBS THEME HEADER BANNER (Matches VoucherPosting & Dynamic ERP Theme) */}
+      <div className="bg-white px-3.5 py-2 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-2.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
-            <ArrowDownCircle size={18} className="stroke-[2.5]" />
+          <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs shrink-0">
+            <Wallet size={18} className="stroke-[2.2]" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
+            <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-1.5 flex-wrap">
               <span>बचत जमा व नावे नोंद</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Saving Deposit / Withdrawal Entry)</span>
+              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">
+                (Saving Deposit & Withdrawal)
+              </span>
+              {isPassingMode && (
+                <span className="px-2 py-0.5 rounded-sm bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                  चेकर तपासणी मोड
+                </span>
+              )}
             </h1>
-            <p className="text-[11px] text-gray-500 font-medium">
-              बचत खात्यात रोख, बँक व ट्रान्सफर रक्कम जमा व नावे व्यवहार नोंदणी आणि खात्याची चालू शिल्लक व्यवस्थापन
+            <p className="text-[10.5px] text-gray-500 font-medium">
+              बचत खाते रोख, बँक व अंतर्गत ट्रान्सफर जमा-नावे व्यवहार व्यवस्थापन
             </p>
           </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        {/* Recent Directory + Refresh */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => {
               fetchTransactions();
               setShowTxnModal(true);
             }}
-            className="px-3.5 py-1.5 bg-primary hover:opacity-90 text-white rounded-sm text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-sm text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs h-[28px]"
             title="अलीकडील सर्व बचत व्यवहार यादी पहा"
           >
-            <Layers className="w-4 h-4" />
-            <span>📋 अलीकडील व्यवहार यादी ({filteredTransactions.length})</span>
+            <Layers className="w-3.5 h-3.5 text-primary" />
+            <span>व्यवहार यादी ({filteredTransactions.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleRefreshAll}
+            disabled={refreshing || loading}
+            className="px-2.5 py-1 bg-white hover:bg-slate-100 text-gray-700 border border-gray-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs h-[28px] disabled:opacity-50"
+            title="खाती व व्यवहार ताजे करा (Refresh)"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-primary ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">रीफ्रेश</span>
           </button>
         </div>
       </div>
 
-      {/* 4-KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded">
-            <Wallet className="w-4 h-4" />
+      {/* Passing Checker Verification Strip */}
+      {isPassingMode && (
+        <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-300 border-l-4 border-l-amber-500 rounded-sm flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
+          <div className="flex items-center gap-2 font-bold text-amber-950">
+            <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>व्हाउचर पासिंग तपासणी मोड (Read-Only)</span>
           </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण बचत खाती</div>
-            <div className="text-sm font-black text-gray-900">{accounts.length}</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
-            <Calendar className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">आजचे व्यवहार</div>
-            <div className="text-sm font-black text-indigo-950">{todayTxnCount}</div>
+          <div className="flex flex-wrap items-center gap-2.5 font-semibold">
+            <span className="bg-white text-primary px-2 py-0.5 rounded-sm font-mono font-bold border border-amber-300">
+              व्हाउचर क्र.: {passingVoucher?.voucherNo || voucherIdFromUrl}
+            </span>
+            <span className="text-amber-950 font-mono">
+              रक्कम: <b>₹{Number(formData.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+            </span>
+            <span className="bg-amber-200/70 text-amber-950 px-2 py-0.5 rounded-sm text-[11px] font-bold">
+              {formData.transactionType === 'Deposit' ? 'बचत जमा (Deposit)' : 'बचत नावे (Withdrawal)'}
+            </span>
           </div>
         </div>
+      )}
 
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
-            <TrendingUp className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">आजची जमा रक्कम (Cr ₹)</div>
-            <div className="text-sm font-black text-emerald-800">
-              ₹ {todayDepositSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-rose-50 text-rose-700 border border-rose-200 rounded">
-            <TrendingDown className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">आजची नावे रक्कम (Dr ₹)</div>
-            <div className="text-sm font-black text-rose-800">
-              ₹ {todayWithdrawalSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Alert Messages */}
+      {/* Compact Dismissible Alerts */}
       {error && (
-        <div className="mb-3 p-2 bg-rose-50 border border-rose-300 text-rose-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs">
-          <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>{error}</span>
+        <div className="mb-2 p-2 bg-rose-50 border border-rose-300 text-rose-900 rounded-sm flex items-center justify-between gap-2 text-xs font-bold shadow-2xs">
+          <div className="flex items-center gap-2">
+            <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button type="button" onClick={() => setError('')} className="text-rose-700 hover:text-rose-950 cursor-pointer">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
       {success && (
-        <div className="mb-3 p-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs">
-          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{success}</span>
+        <div className="mb-2 p-2 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-sm flex items-center justify-between gap-2 text-xs font-bold shadow-2xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{success}</span>
+          </div>
+          <button type="button" onClick={() => setSuccess('')} className="text-emerald-700 hover:text-emerald-950 cursor-pointer">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
       {noAccountFoundAlert && (
-        <div className="mb-3 p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-sm flex items-center justify-between text-xs font-semibold shadow-2xs">
+        <div className="mb-2 p-2.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-sm flex flex-wrap items-center justify-between gap-2 text-xs font-semibold shadow-2xs">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>{noAccountFoundAlert}</span>
@@ -1009,7 +974,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             <button
               type="button"
               onClick={() => onNavigate('saving-account')}
-              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
+              className="px-2.5 py-1 bg-primary hover:opacity-90 text-white rounded-sm text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
             >
               + नवीन बचत खाते उघडा
             </button>
@@ -1017,319 +982,98 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         </div>
       )}
 
-      {/* Main Content Layout - Form & Details Card side-by-side */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-3">
-        
-        {/* Form Container */}
-        <div className="lg:col-span-3 bg-white p-3.5 rounded-sm shadow-xs border border-gray-200">
-          <div className="border-b border-gray-200 pb-2 mb-3 flex items-center justify-between">
-            <span className="flex items-center gap-1.5 border-l-4 border-primary pl-2 text-primary font-bold text-xs">
-              📝 व्यवहार तपशील (Transaction Details)
-            </span>
-            <span className="text-[11px] font-normal text-gray-500">
-              एकूण खाती: <b>{accounts.length}</b>
-            </span>
+      {/* 2. MAIN WORKSPACE: ENTRY FORM + ACCOUNT BALANCE PANEL */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5">
+        {/* LEFT: SAVING TRANSACTION ENTRY CARD (border-t-2 border-primary) */}
+        <div className="lg:col-span-8 bg-white rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col overflow-hidden">
+          {/* Card Strip: Form Title + Inline Today Summary Chips */}
+          <div className="px-3.5 py-2 bg-slate-50/80 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="border-l-4 border-primary pl-2 text-primary font-bold text-xs">
+                व्यवहार तपशील (Transaction Entry)
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border ${
+                  formData.transactionType === 'Deposit'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-rose-50 text-rose-800 border-rose-200'
+                }`}
+              >
+                {formData.transactionType === 'Deposit' ? 'जमा नोंद (Cr)' : 'नावे नोंद (Dr)'}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
+              <span className="px-2 py-0.5 rounded-sm bg-white border border-gray-300 text-gray-700 font-semibold">
+                खाती: <b className="font-mono text-gray-900">{accounts.length}</b>
+              </span>
+              <span className="px-2 py-0.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold">
+                आज जमा: <b className="font-mono">₹{todayDepositSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+              </span>
+              <span className="px-2 py-0.5 rounded-sm bg-rose-50 border border-rose-200 text-rose-800 font-semibold">
+                आज नावे: <b className="font-mono">₹{todayWithdrawalSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+              </span>
+              {!isPassingMode && (
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="px-2 py-0.5 rounded-sm bg-white hover:bg-slate-100 text-gray-700 border border-gray-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  title="फॉर्म रिकामा करा (Reset)"
+                >
+                  <RotateCcw className="w-3 h-3 text-primary" />
+                  <span>रीसेट</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <fieldset disabled={isPassingMode} className="contents space-y-3">
-            {/* Transaction Type Segmented Toggle */}
-            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded border border-gray-200 inline-flex">
-              <label className={`cursor-pointer px-4 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${formData.transactionType === 'Deposit' ? 'bg-emerald-600 text-white shadow-xs' : 'text-gray-600 hover:bg-slate-200'}`}>
-                <input
-                  type="radio"
-                  name="transactionType"
-                  value="Deposit"
-                  checked={formData.transactionType === 'Deposit'}
-                  onChange={handleInputChange}
-                  className="hidden"
-                />
-                <ArrowDownCircle size={14} className="stroke-[2.5]" />
-                <span>जमा (Deposit)</span>
-              </label>
-              <label className={`cursor-pointer px-4 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${formData.transactionType === 'Withdrawal' ? 'bg-rose-600 text-white shadow-xs' : 'text-gray-600 hover:bg-slate-200'}`}>
-                <input
-                  type="radio"
-                  name="transactionType"
-                  value="Withdrawal"
-                  checked={formData.transactionType === 'Withdrawal'}
-                  onChange={handleInputChange}
-                  className="hidden"
-                />
-                <ArrowUpCircle size={14} className="stroke-[2.5]" />
-                <span>नावे (Withdrawal)</span>
-              </label>
-            </div>
-
-            {/* Account Selection and Ledger Filter Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Saving Ledger / Scheme Filter */}
-              <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                  बचत ठेव योजना / प्रकार (Filter Scheme)
-                </label>
-                <select
-                  value={selectedLedgerID}
-                  onChange={handleLedgerChange}
-                  disabled={isPassingMode}
-                  className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium h-[30px]"
-                >
-                  <option value={0}>-- सर्व बचत योजना (All Schemes) --</option>
-                  {ledgers.map((l) => (
-                    <option key={l.ledgerID} value={l.ledgerID}>
-                      {l.ledgerName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Account Searchable Select */}
-              <div className="md:col-span-2">
-                <div className="flex items-center justify-between mb-0.5">
-                  <label className="text-[11px] font-bold text-gray-700">
-                    बचत खाते निवडा (Select Saving Account) *
-                  </label>
-                  {customerMatchingAccounts.length > 1 && (
+          <form onSubmit={handleSubmit} className="p-3.5 space-y-3 flex-1 flex flex-col justify-between">
+            <div className="space-y-3">
+              <fieldset disabled={isPassingMode} className="contents space-y-3">
+                {/* Deposit / Withdrawal Action Buttons inside Transaction Entry */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-gray-100">
+                  <div className="inline-flex items-center p-1 bg-slate-100 border border-gray-200 rounded-sm gap-1">
                     <button
                       type="button"
-                      onClick={() => setShowMultiAccountModal(true)}
-                      className="text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                      title="या खातेदाराचे दुसरे बचत खाते निवडा"
+                      disabled={isPassingMode}
+                      onClick={() => setFormData((prev) => ({ ...prev, transactionType: 'Deposit' }))}
+                      className={`px-4 py-1.5 rounded-sm text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed ${
+                        formData.transactionType === 'Deposit'
+                          ? 'bg-primary text-white shadow-xs'
+                          : 'text-gray-700 hover:bg-slate-200/80'
+                      }`}
                     >
-                      <RotateCcw size={11} className="text-blue-600" />
-                      <span>🔄 खाते बदला ({customerMatchingAccounts.length} खाती उपलब्ध)</span>
+                      <ArrowDownCircle className="w-3.5 h-3.5" />
+                      <span>जमा (Deposit)</span>
                     </button>
-                  )}
-                </div>
-                <SearchableSelect
-                  options={accountOptions}
-                  value={formData.savingAccountID}
-                  onChange={handleAccountChange}
-                  name="savingAccountID"
-                  disabled={isPassingMode}
-                  placeholder="-- खाते क्रमांक, जुना क्र. किंवा नाव शोधा --"
-                />
-              </div>
-            </div>
 
-            {/* Transaction Core Details: Date, Mode, Amount, Ref No */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-              {/* Date */}
-              <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                  व्यवहार दिनांक (Date) *
-                </label>
-                <input
-                  type="date"
-                  name="transactionDate"
-                  value={formData.transactionDate}
-                  readOnly={true}
-                  disabled={true}
-                  required
-                  className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 bg-slate-100 text-slate-800 font-mono font-bold h-[30px] cursor-not-allowed select-none"
-                />
-              </div>
-
-              {/* Payment Mode */}
-              <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                  पद्धत (Payment Mode) *
-                </label>
-                <select
-                  name="paymentMode"
-                  value={formData.paymentMode}
-                  onChange={handleInputChange}
-                  className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-bold h-[30px]"
-                >
-                  <option value="Cash">💵 रोख (Cash)</option>
-                  <option value="Bank">🏦 बँक ट्रान्सफर (Bank Transfer)</option>
-                  <option value="Transfer">🔄 अंतर्गत ट्रान्सफर (Internal Transfer)</option>
-                </select>
-              </div>
-
-              {/* Amount Input */}
-              <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                  रक्कम (Amount ₹) *
-                </label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-gray-400">₹</span>
-                  <input
-                    ref={amountInputRef}
-                    type="number"
-                    name="amount"
-                    step="0.01"
-                    min="1"
-                    value={formData.amount}
-                    onChange={handleInputChange}
-                    onWheel={(e) => e.currentTarget.blur()}
-                    onFocus={(e) => e.target.select()}
-                    placeholder="0.00"
-                    required
-                    className="w-full text-[11px] border border-gray-300 pl-6 pr-2.5 py-1 rounded-sm focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-black h-[30px]"
-                  />
-                </div>
-              </div>
-
-              {/* Check / Ref No (When not Bank, but still needed optionally) */}
-              {formData.paymentMode !== 'Bank' && (
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                    संदर्भ क्र. (Ref / Voucher No)
-                  </label>
-                  <input
-                    type="text"
-                    name="checkNo"
-                    value={formData.checkNo}
-                    onChange={handleInputChange}
-                    placeholder="ऐच्छिक संदर्भ क्रमांक"
-                    className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium h-[30px]"
-                  />
-                </div>
-              )}
-
-              {/* Narration */}
-              <div className={formData.paymentMode === 'Bank' ? 'md:col-span-1' : 'md:col-span-4'}>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                  तपशील (Narration)
-                </label>
-                <input
-                  type="text"
-                  name="narration"
-                  value={formData.narration}
-                  onChange={handleInputChange}
-                  placeholder="उदा. रोख भरणा / बँक जमा / ट्रान्सफर"
-                  className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium h-[30px]"
-                />
-              </div>
-            </div>
-
-            {/* Cash Ledger Reflection Banner (Shown when Payment Mode is Cash) */}
-            {formData.paymentMode === 'Cash' && (
-              <CashLedgerReflectBadge 
-                transactionType={formData.transactionType === 'Deposit' ? 'Deposit' : 'Withdrawal'} 
-              />
-            )}
-
-            {/* Bank GL Account Selection Card (Shown when Payment Mode is Bank Transfer) */}
-            {formData.paymentMode === 'Bank' && (() => {
-              const bankLedgerOptions = buildBankLedgerOptions(
-                bankLedgers,
-                formData.bankLedgerID,
-                isPassingMode ? allRawLedgers : undefined
-              );
-
-              return (
-                <div className="bg-slate-50 p-3 rounded-sm border border-blue-200 shadow-2xs space-y-2">
-                  <div className="flex items-center justify-between border-b border-blue-200 pb-1">
-                    <div className="flex items-center gap-1.5">
-                      <Building className="w-4 h-4 text-blue-700" />
-                      <h3 className="text-xs font-bold text-blue-950 tracking-wide">
-                        बँक ट्रान्सफर व बँक जी.एल. तपशील (Bank GL Transfer Details)
-                      </h3>
-                    </div>
-                    <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-300">
-                      {bankLedgers.length} बँक जी.एल. खाती उपलब्ध
-                    </span>
-                  </div>
-
-                  {!isPassingMode && bankLedgers.length === 0 && (
-                    <div className="p-2 bg-amber-50 border border-amber-300 rounded-sm text-[11px] text-amber-900 font-semibold flex items-center gap-2">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span>
-                        कोणत्याही खात्याला <b>Bank Account (बँक खाते)</b> प्रकार दिलेला नाही. कृपया <b>सेटिंग्ज &rarr; खाते माहिती (Ledger Master)</b> मध्ये बँक खात्याचा <b>खाते प्रकार = Bank Account</b> निवडा.
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
-                    <div>
-                      <label className="block text-[11px] font-bold text-blue-950 mb-0.5">
-                        🏦 बँक जी.एल. खाते निवडा (Select Bank GL Account) *
-                      </label>
-                      <SearchableSelect
-                        options={bankLedgerOptions}
-                        value={formData.bankLedgerID || ''}
-                        onChange={handleBankLedgerChange}
-                        name="bankLedgerID"
-                        disabled={isPassingMode}
-                        placeholder="-- खाते क्र. (Ledger No.) किंवा बँक जी.एल. नाव शोधा --"
-                        className={`w-full text-[11px] border border-blue-400 rounded-sm px-2.5 py-1 flex justify-between items-center h-[30px] shadow-2xs ${
-                          isPassingMode
-                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed opacity-75'
-                            : 'bg-white text-blue-950 font-bold cursor-pointer hover:border-blue-500'
-                        }`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-blue-950 mb-0.5">
-                        चेक / युटीआर / संदर्भ क्र. (Cheque / UTR / Ref No)
-                      </label>
-                      <input
-                        type="text"
-                        name="checkNo"
-                        value={formData.checkNo}
-                        onChange={handleInputChange}
-                        placeholder="उदा. CHQ-984512 / UTR12345678"
-                        className="w-full text-[11px] border border-blue-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none bg-white font-medium text-slate-800 h-[30px]"
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Selected Customer Quick Info Badge */}
-            {selectedAccount && (
-              <div className="p-2.5 bg-slate-100 rounded-sm border border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                    👤
-                  </div>
-                  <div>
-                    <span className="font-bold text-slate-900">{selectedAccount.customerName}</span>
-                    {selectedAccount.cifNo && (
-                      <span className="ml-1.5 bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold font-mono">
-                        CIF: {selectedAccount.cifNo}
-                      </span>
-                    )}
-                    <span className="ml-2 text-slate-500 font-mono">({selectedAccount.accountNo})</span>
-                    {(selectedAccount.oldAccountNo || selectedAccount.legacyAccountNumber) && (
-                      <span className="ml-1.5 text-[10px] text-amber-950 font-bold bg-amber-100 border border-amber-300 rounded px-1">
-                        जुने: {selectedAccount.oldAccountNo || selectedAccount.legacyAccountNumber}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 font-semibold text-xs">
-                  <span>ठेव प्रकार: <b className="text-slate-800">{selectedAccount.ledgerName || 'बचत ठेव'}</b></span>
-                  <span>उपलब्ध शिल्लक: <b className="text-emerald-700 font-bold">₹ {availableToWithdraw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b></span>
-                </div>
-              </div>
-            )}
-
-            {/* Transfer Target Account Details */}
-            {formData.paymentMode === 'Transfer' && (
-              <div className="bg-slate-50 p-3 rounded-sm border border-indigo-200 shadow-2xs space-y-2">
-                <div className="flex items-center gap-1.5 border-b border-indigo-200 pb-1">
-                  <CreditCard className="w-4 h-4 text-indigo-700" />
-                  <h3 className="text-xs font-bold text-indigo-900 tracking-wide">
-                    हस्तांतरण टार्गेट खाते माहिती (Target Account Details)
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                  <div>
-                    <label className="block text-[11px] font-bold text-indigo-950 mb-0.5">
-                      🎯 टार्गेट बचत ठेव प्रकार (Target Scheme) *
-                    </label>
-                    <select
-                      value={selectedTargetLedgerID}
-                      onChange={handleTargetLedgerChange}
-                      className="w-full text-[11px] border border-indigo-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 focus:outline-none bg-white font-medium text-slate-800 h-[30px]"
+                    <button
+                      type="button"
+                      disabled={isPassingMode}
+                      onClick={() => setFormData((prev) => ({ ...prev, transactionType: 'Withdrawal' }))}
+                      className={`px-4 py-1.5 rounded-sm text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed ${
+                        formData.transactionType === 'Withdrawal'
+                          ? 'bg-primary text-white shadow-xs'
+                          : 'text-gray-700 hover:bg-slate-200/80'
+                      }`}
                     >
-                      <option value={0}>-- सर्व टार्गेट प्रकार (All Target Ledgers) --</option>
+                      <ArrowUpCircle className="w-3.5 h-3.5" />
+                      <span>नावे (Withdrawal)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Row 1: Scheme Filter + Account Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  <div className="md:col-span-4">
+                    <label className={labelClass}>बचत ठेव योजना / प्रकार (Scheme Filter)</label>
+                    <select
+                      value={selectedLedgerID}
+                      onChange={handleLedgerChange}
+                      disabled={isPassingMode}
+                      className={inputClass}
+                    >
+                      <option value={0}>-- सर्व बचत योजना (All Schemes) --</option>
                       {ledgers.map((l) => (
                         <option key={l.ledgerID} value={l.ledgerID}>
                           {l.ledgerName}
@@ -1338,168 +1082,363 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-indigo-950 mb-0.5">
-                      🎯 हस्तांतरित करायचे टार्गेट खाते (Target Account) *
-                    </label>
+                  <div className="md:col-span-8">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="text-[11px] font-bold text-gray-700">
+                        बचत खाते निवडा (Select Saving Account) <span className="text-rose-600">*</span>
+                      </label>
+                      {customerMatchingAccounts.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowMultiAccountModal(true)}
+                          className="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 px-2 py-0.2 rounded-sm flex items-center gap-1 transition-all cursor-pointer"
+                          title="या खातेदाराचे दुसरे बचत खाते निवडा"
+                        >
+                          <RotateCcw size={10} className="text-primary" />
+                          <span>खाते बदला ({customerMatchingAccounts.length} खाती)</span>
+                        </button>
+                      )}
+                    </div>
                     <SearchableSelect
-                      options={targetAccountOptions}
-                      value={formData.targetSavingAccountID}
-                      onChange={handleTargetAccountChange}
-                      name="targetSavingAccountID"
+                      options={accountOptions}
+                      value={formData.savingAccountID}
+                      onChange={handleAccountChange}
+                      name="savingAccountID"
                       disabled={isPassingMode}
-                      placeholder="-- टार्गेट खाते निवडा --"
+                      placeholder="-- खाते क्र., जुना क्र., CIF किंवा खातेदाराचे नाव शोधा --"
+                    />
+                  </div>
+                </div>
+
+                {/* Row 2: Date, Payment Mode, Amount, Ref No */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end">
+                  <div>
+                    <label className={labelClass}>
+                      व्यवहार दिनांक (Date) <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      name="transactionDate"
+                      value={formData.transactionDate}
+                      readOnly={true}
+                      disabled={true}
+                      required
+                      className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 bg-slate-100 text-slate-800 font-mono font-bold h-[30px] cursor-not-allowed select-none"
                     />
                   </div>
 
-                  {selectedTargetAccount ? (
-                    <div className={`md:col-span-1 border rounded-sm px-3 py-1.5 flex flex-col justify-center shadow-2xs ${
-                      isTargetInsufficient ? 'bg-rose-50 border-rose-300' : 'bg-emerald-50 border-emerald-300'
-                    }`}>
-                      <span className={`text-[10px] font-bold uppercase tracking-wider ${
-                        isTargetInsufficient ? 'text-rose-800' : 'text-emerald-800'
-                      }`}>
-                        👤 खातेदार: {selectedTargetAccount.customerName}
-                      </span>
-                      <span className={`text-xs font-black ${
-                        isTargetInsufficient ? 'text-rose-950' : 'text-emerald-950'
-                      }`}>
-                        💳 शिल्लक: ₹ {targetCurrentBalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                      {formData.transactionType === 'Deposit' && (
-                        <span className={`text-[10px] font-bold ${
-                          isTargetInsufficient ? 'text-rose-700' : 'text-emerald-700'
-                        }`}>
-                          वर्गपात्र: ₹ {targetAvailableToWithdraw.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (किमान: ₹{targetMinBalNum.toFixed(0)})
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="md:col-span-1 text-[11px] text-slate-400 italic flex items-center">
-                      टार्गेट खाते निवडल्यावर शिल्लक दिसेल
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            </fieldset>
+                  <div>
+                    <label className={labelClass}>
+                      पेमेंट पद्धत (Mode) <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      name="paymentMode"
+                      value={formData.paymentMode}
+                      onChange={handleInputChange}
+                      className={`${inputClass} font-bold`}
+                    >
+                      <option value="Cash">रोख (Cash)</option>
+                      <option value="Bank">बँक ट्रान्सफर (Bank)</option>
+                      <option value="Transfer">अंतर्गत ट्रान्सफर (Saving Transfer)</option>
+                    </select>
+                  </div>
 
-            {/* Submit / Passing Action Buttons */}
-            <div className="pt-2 flex justify-end gap-2 items-center">
-              {isPassingMode ? (
-                <>
+                  <div>
+                    <label className={labelClass}>
+                      रक्कम (Amount ₹) <span className="text-rose-600">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-primary">₹</span>
+                      <input
+                        ref={amountInputRef}
+                        type="number"
+                        name="amount"
+                        step="0.01"
+                        min="1"
+                        value={formData.amount}
+                        onChange={handleInputChange}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        onFocus={(e) => e.target.select()}
+                        placeholder="0.00"
+                        required
+                        className="w-full text-xs border border-gray-300 pl-6 pr-2.5 py-1 rounded-sm focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-mono font-black h-[30px]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>
+                      {formData.paymentMode === 'Bank' ? 'चेक / UTR / संदर्भ क्र.' : 'संदर्भ क्र. (Ref No)'}
+                    </label>
+                    <input
+                      type="text"
+                      name="checkNo"
+                      value={formData.checkNo}
+                      onChange={handleInputChange}
+                      placeholder={formData.paymentMode === 'Bank' ? 'CHQ / UTR क्र.' : 'ऐच्छिक संदर्भ क्र.'}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+
+                {/* Row 3: Mode-Specific Reflection / Selection Sub-Panel (100% Theme-Matched) */}
+                {formData.paymentMode === 'Cash' && (
+                  <CashLedgerReflectBadge
+                    transactionType={formData.transactionType === 'Deposit' ? 'Deposit' : 'Withdrawal'}
+                  />
+                )}
+
+                {formData.paymentMode === 'Bank' &&
+                  (() => {
+                    const bankLedgerOptions = buildBankLedgerOptions(
+                      bankLedgers,
+                      formData.bankLedgerID,
+                      isPassingMode ? allRawLedgers : undefined
+                    );
+
+                    return (
+                      <div className="bg-slate-50/90 p-3 rounded-sm border border-gray-200 border-l-4 border-l-primary space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Building className="w-3.5 h-3.5 text-primary" />
+                            <h3 className="text-xs font-bold text-primary">
+                              बँक जी.एल. खाते निवड (Bank GL Account) <span className="text-rose-600">*</span>
+                            </h3>
+                          </div>
+                          <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-sm border border-primary/20">
+                            {bankLedgers.length} बँक खाती उपलब्ध
+                          </span>
+                        </div>
+
+                        {!isPassingMode && bankLedgers.length === 0 && (
+                          <div className="p-2 bg-amber-50 border border-amber-300 rounded-sm text-[11px] text-amber-900 font-semibold flex items-center gap-2">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>
+                              कोणत्याही लेजरला <b>Bank Account</b> प्रकार दिलेला नाही. कृपया <b>Ledger Master</b> मध्ये बँक खात्याचा प्रकार निवडा.
+                            </span>
+                          </div>
+                        )}
+
+                        <SearchableSelect
+                          options={bankLedgerOptions}
+                          value={formData.bankLedgerID || ''}
+                          onChange={handleBankLedgerChange}
+                          name="bankLedgerID"
+                          disabled={isPassingMode}
+                          placeholder="-- लेजर क्र. किंवा बँक जी.एल. खात्याचे नाव शोधा --"
+                        />
+                      </div>
+                    );
+                  })()}
+
+                {formData.paymentMode === 'Transfer' && (
+                  <div className="bg-slate-50/90 p-3 rounded-sm border border-gray-200 border-l-4 border-l-primary space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5 text-primary" />
+                      <h3 className="text-xs font-bold text-primary">
+                        अंतर्गत हस्तांतरण टार्गेट बचत खाते (Target Saving Account)
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                      <div className="md:col-span-4">
+                        <label className={labelClass}>टार्गेट बचत योजना</label>
+                        <select
+                          value={selectedTargetLedgerID}
+                          onChange={handleTargetLedgerChange}
+                          className={inputClass}
+                        >
+                          <option value={0}>-- सर्व योजना --</option>
+                          {ledgers.map((l) => (
+                            <option key={l.ledgerID} value={l.ledgerID}>
+                              {l.ledgerName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-5">
+                        <label className={labelClass}>
+                          टार्गेट बचत खाते निवडा <span className="text-rose-600">*</span>
+                        </label>
+                        <SearchableSelect
+                          options={targetAccountOptions}
+                          value={formData.targetSavingAccountID}
+                          onChange={handleTargetAccountChange}
+                          name="targetSavingAccountID"
+                          disabled={isPassingMode}
+                          placeholder="-- टार्गेट बचत खाते निवडा --"
+                        />
+                      </div>
+
+                      <div className="md:col-span-3">
+                        {selectedTargetAccount ? (
+                          <div
+                            className={`border rounded-sm px-2.5 py-1.5 ${
+                              isTargetInsufficient ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-white border-gray-300 text-gray-800'
+                            }`}
+                          >
+                            <div className="text-[10px] font-bold truncate">{selectedTargetAccount.customerName}</div>
+                            <div className="text-[11px] font-mono font-black text-primary">
+                              शिल्लक: ₹{targetCurrentBalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </div>
+                            {formData.transactionType === 'Deposit' && (
+                              <div className={`text-[9.5px] font-bold ${isTargetInsufficient ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                वर्गपात्र: ₹{targetAvailableToWithdraw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="h-[30px] px-2.5 border border-dashed border-gray-300 rounded-sm flex items-center text-[10.5px] text-gray-400">
+                            टार्गेट शिल्लक येथे दिसेल
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Row 4: Narration */}
+                <div>
+                  <label className={labelClass}>तपशील (Narration)</label>
+                  <input
+                    type="text"
+                    name="narration"
+                    value={formData.narration}
+                    onChange={handleInputChange}
+                    placeholder="उदा. बचत खात्यात रोख भरणा / बँक ट्रान्सफर / अंतर्गत वर्ग"
+                    className={inputClass}
+                  />
+                </div>
+              </fieldset>
+            </div>
+
+            {/* Footer Action Buttons */}
+            <div className="pt-3 mt-2 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10.5px] text-gray-500">
+                {isPassingMode
+                  ? 'तपासणी करून व्हाउचर पास किंवा नामंजूर करा.'
+                  : 'नोंद जतन केल्यावर व्हाउचर पासिंगसाठी प्रलंबित (Pending) यादीत जाईल.'}
+              </span>
+
+              <div className="flex items-center gap-2 ml-auto">
+                {isPassingMode ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => (onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting'))}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-gray-700 font-bold rounded-sm text-xs border border-gray-300 cursor-pointer flex items-center gap-1.5 transition-all"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-primary" />
+                      <span>परत जा</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRejectModalOpen(true)}
+                      disabled={passingActionLoading}
+                      className="px-3.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold rounded-sm text-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>नामंजूर / रद्द करा</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePassVoucher}
+                      disabled={passingActionLoading}
+                      className="px-5 py-1.5 bg-primary hover:opacity-90 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>{passingActionLoading ? 'पास होत आहे...' : 'व्हाउचर पास करा'}</span>
+                    </button>
+                  </>
+                ) : (
                   <button
-                    type="button"
-                    onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
-                    className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
+                    type="submit"
+                    disabled={loading || isInsufficient || isTargetInsufficient}
+                    className="px-5 py-1.5 rounded-sm font-bold text-xs bg-primary hover:opacity-90 text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-                    <span>पासिंग यादीवर परत जा (Back)</span>
+                    <Save size={14} />
+                    <span>
+                      {loading
+                        ? 'जतन करत आहे...'
+                        : formData.transactionType === 'Deposit'
+                          ? 'रक्कम जमा करा (Save Deposit)'
+                          : 'रक्कम नावे करा (Save Withdrawal)'}
+                    </span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setRejectModalOpen(true)}
-                    disabled={passingActionLoading}
-                    className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>व्हाउचर नामंजूर / रद्द करा (Reject)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handlePassVoucher}
-                    disabled={passingActionLoading}
-                    className="px-6 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    <span>{passingActionLoading ? 'पास होत आहे...' : 'बचत व्हाउचर पास करा (Approve & Pass)'}</span>
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={loading || isInsufficient || isTargetInsufficient}
-                  className={`px-6 py-2 rounded-sm font-bold text-xs text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                    formData.transactionType === 'Deposit'
-                      ? 'bg-emerald-600 hover:bg-emerald-700'
-                      : 'bg-rose-600 hover:bg-rose-700'
-                  }`}
-                >
-                  <Save size={14} />
-                  <span>
-                    {loading ? 'जतन करत आहे...' : (
-                      formData.transactionType === 'Deposit' 
-                        ? 'रक्कम जमा करा (Save Deposit)' 
-                        : 'रक्कम नावे करा (Save Withdrawal)'
-                    )}
-                  </span>
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </form>
         </div>
 
-        {/* Account Details Side Card */}
-        <div className="rounded-sm border border-gray-200 shadow-xs overflow-hidden flex flex-col justify-between bg-white">
-          {/* Card Header matching App Primary Theme */}
-          <div className="px-3.5 py-2 flex items-center justify-between bg-primary text-white">
-            <div className="flex items-center gap-1.5">
+        {/* RIGHT: THEME-MATCHED ACCOUNT INFO & LIVE BALANCE CARD (border-t-2 border-primary) */}
+        <div className="lg:col-span-4 bg-white rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col overflow-hidden">
+          <div className="px-3.5 py-2 bg-slate-50/80 border-b border-gray-200 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
               <Wallet size={15} />
-              <span className="text-xs font-bold tracking-wide">खाते माहिती (Account Info)</span>
+              <span>खाते माहिती व शिल्लक (Account Info)</span>
             </div>
             {selectedAccount && (
-              <span className="text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-xs font-mono font-bold">
+              <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-sm font-bold">
                 {selectedAccount.branchName || 'मुख्य शाखा'}
               </span>
             )}
           </div>
 
-          <div className="p-3 flex-1 flex flex-col justify-between bg-slate-50/50 space-y-2.5">
+          <div className="p-3 flex-1 flex flex-col justify-between space-y-2.5">
             {selectedAccount ? (
               <>
-                {/* Customer Details */}
-                <div className="bg-white rounded-sm p-2.5 border border-slate-200 shadow-2xs space-y-1.5">
+                <div className="bg-slate-50/70 rounded-sm p-2.5 border border-gray-200 space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">खातेदार नाव</span>
-                      <p className="font-bold text-sm text-slate-900 truncate leading-tight">{selectedAccount.customerName}</p>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                        {selectedAccount.cifNo && (
-                          <span className="text-[10px] font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 font-mono">
-                            CIF: {selectedAccount.cifNo}
-                          </span>
-                        )}
-
-                      </div>
+                      <span className="text-[10px] text-gray-500 font-semibold block">खातेदाराचे नाव</span>
+                      <p className="font-bold text-xs sm:text-sm text-gray-900 truncate leading-snug">
+                        {selectedAccount.customerName}
+                      </p>
+                      {selectedAccount.cifNo && (
+                        <span className="inline-block mt-1 text-[10px] font-bold bg-primary/10 text-primary px-1.5 py-0.2 rounded-sm border border-primary/20 font-mono">
+                          CIF: {selectedAccount.cifNo}
+                        </span>
+                      )}
                     </div>
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded tracking-wide shrink-0 ${
-                      selectedAccount.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
-                      selectedAccount.status === 'Frozen' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
-                      selectedAccount.status === 'Dormant' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                      'bg-slate-100 text-slate-700 border border-slate-300'
-                    }`}>
-                      {selectedAccount.status === 'Active' ? '● सक्रिय' :
-                       selectedAccount.status === 'Frozen' ? '🔒 फ्रीझ' :
-                       selectedAccount.status === 'Dormant' ? '⚠️ सुप्त' : '● बंद'}
+
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-sm shrink-0 border ${
+                        selectedAccount.status === 'Active'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : selectedAccount.status === 'Frozen'
+                            ? 'bg-rose-50 text-rose-800 border-rose-200'
+                            : selectedAccount.status === 'Dormant'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-slate-100 text-slate-700 border-slate-300'
+                      }`}
+                    >
+                      {selectedAccount.status === 'Active'
+                        ? 'सक्रिय'
+                        : selectedAccount.status === 'Frozen'
+                          ? 'फ्रीझ'
+                          : selectedAccount.status === 'Dormant'
+                            ? 'सुप्त'
+                            : 'बंद'}
                     </span>
                   </div>
 
-                  {/* Account Numbers & Ledger */}
-                  <div className="pt-1.5 border-t border-slate-100 flex flex-wrap justify-between items-center text-xs gap-1">
+                  <div className="pt-2 border-t border-gray-200 flex flex-wrap justify-between items-start gap-2 text-xs">
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">बचत खाते क्र. (CBS)</span>
-                      <span className="font-mono font-extrabold text-primary text-xs">{selectedAccount.accountNo}</span>
+                      <span className="text-[10px] text-gray-500 block font-semibold">बचत खाते क्र.</span>
+                      <span className="font-mono font-bold text-primary">{selectedAccount.accountNo}</span>
                       {(selectedAccount.oldAccountNo || selectedAccount.legacyAccountNumber) && (
-                        <div className="text-[10px] text-amber-950 font-bold bg-amber-100/90 border border-amber-300 rounded px-1 mt-0.5 inline-block">
-                          जुने क्र.: {selectedAccount.oldAccountNo || selectedAccount.legacyAccountNumber}
+                        <div className="text-[10px] text-amber-900 font-bold bg-amber-50 border border-amber-200 rounded-sm px-1.5 mt-0.5 inline-block">
+                          जुना क्र.: {selectedAccount.oldAccountNo || selectedAccount.legacyAccountNumber}
                         </div>
                       )}
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block font-medium">ठेव योजना (GL)</span>
-                      <span className="font-bold text-slate-800 text-[11px]">{selectedAccount.ledgerName || 'बचत ठेव'}</span>
+                      <span className="text-[10px] text-gray-500 block font-semibold">ठेव योजना</span>
+                      <span className="font-bold text-gray-800 text-[11px]">{selectedAccount.ledgerName || 'बचत ठेव'}</span>
                       {selectedAccount.openingDate && (
-                        <span className="text-[10px] text-slate-500 block font-mono">
+                        <span className="text-[10px] text-gray-500 block font-mono">
                           उघडले: {formatDisplayDate(selectedAccount.openingDate)}
                         </span>
                       )}
@@ -1507,261 +1446,219 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                   </div>
                 </div>
 
-                {/* 4-Card Financial Metrics Grid */}
+                {/* Clean 2x2 Balance Metrics Grid */}
                 <div className="grid grid-cols-2 gap-2">
-                  {/* Opening Balance */}
-                  <div className="bg-white rounded-sm p-2 border border-slate-200 shadow-2xs">
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <span className="text-xs">🏁</span>
-                      <span className="text-[10px] text-slate-500 font-bold">सुरुवातीची शिल्लक</span>
-                    </div>
-                    <p className="font-black text-xs text-slate-800 font-mono">
+                  <div className="bg-white rounded-sm p-2 border border-gray-200">
+                    <span className="text-[10px] text-gray-500 font-bold block">आरंभीची शिल्लक</span>
+                    <p className="font-bold text-xs text-gray-800 font-mono mt-0.5">
                       ₹{openingBalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </p>
                   </div>
 
-                  {/* Current Ledger Balance */}
-                  <div className={`rounded-sm p-2 border shadow-2xs ${currentBalNum < minBalNum ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <span className="text-xs">💰</span>
-                      <span className="text-[10px] text-slate-700 font-bold">सध्याची चालू शिल्लक</span>
-                    </div>
-                    <p className={`font-black text-sm font-mono ${currentBalNum < minBalNum ? 'text-rose-700' : 'text-emerald-800'}`}>
+                  <div
+                    className={`rounded-sm p-2 border ${
+                      currentBalNum < minBalNum ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50/70 border-emerald-200'
+                    }`}
+                  >
+                    <span className="text-[10px] text-gray-700 font-bold block">सध्याची चालू शिल्लक</span>
+                    <p
+                      className={`font-black text-xs sm:text-sm font-mono mt-0.5 ${
+                        currentBalNum < minBalNum ? 'text-rose-700' : 'text-emerald-800'
+                      }`}
+                    >
                       ₹{currentBalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </p>
                   </div>
 
-                  {/* Minimum Balance */}
-                  <div className="bg-white rounded-sm p-2 border border-slate-200 shadow-2xs">
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <span className="text-xs">🛡️</span>
-                      <span className="text-[10px] text-slate-500 font-bold">किमान मर्यादा</span>
-                    </div>
-                    <p className="font-bold text-xs text-slate-700 font-mono">
+                  <div className="bg-white rounded-sm p-2 border border-gray-200">
+                    <span className="text-[10px] text-gray-500 font-bold block">किमान शिल्लक मर्यादा</span>
+                    <p className="font-bold text-xs text-gray-800 font-mono mt-0.5">
                       ₹{minBalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </p>
                   </div>
 
-                  {/* Lien Hold */}
-                  <div className={`rounded-sm p-2 border shadow-2xs ${lienNum > 0 ? 'bg-amber-100/70 border-amber-300' : 'bg-slate-50 border-slate-200'}`}>
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <span className="text-xs">🔒</span>
-                      <span className="text-[10px] text-slate-700 font-bold">तारण होल्ड</span>
-                    </div>
-                    <p className={`font-bold text-xs font-mono ${lienNum > 0 ? 'text-amber-900 font-black' : 'text-slate-600'}`}>
+                  <div className={`rounded-sm p-2 border ${lienNum > 0 ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'}`}>
+                    <span className="text-[10px] text-gray-500 font-bold block">तारण होल्ड (Lien)</span>
+                    <p className={`font-bold text-xs font-mono mt-0.5 ${lienNum > 0 ? 'text-amber-900 font-black' : 'text-gray-700'}`}>
                       ₹{lienNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </p>
                   </div>
                 </div>
 
-                {/* Live Projected Balance Simulation Banner */}
+                {/* Live Balance Simulation OR Theme-Matched Withdrawable Balance */}
                 {txnAmountNum > 0 ? (
-                  <div className={`rounded-sm p-2.5 border shadow-2xs transition-all ${
-                    isInsufficient
-                      ? 'bg-rose-50 border-rose-400 text-rose-950'
-                      : formData.transactionType === 'Deposit'
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                        : 'bg-blue-50 border-blue-300 text-blue-950'
-                  }`}>
-                    <div className="flex justify-between items-center text-[10px] font-bold mb-1 border-b border-black/10 pb-1">
-                      <span>
-                        {formData.transactionType === 'Deposit' ? '📥 जमा सिम्युलेशन (+)' : '📤 नावे सिम्युलेशन (-)'}
+                  <div
+                    className={`rounded-sm p-2.5 border transition-all ${
+                      isInsufficient
+                        ? 'bg-rose-50 border-rose-300 text-rose-950'
+                        : 'bg-primary/10 border-primary/25 text-gray-900'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center text-[10.5px] font-bold pb-1 mb-1 border-b border-gray-300/60">
+                      <span className={isInsufficient ? 'text-rose-800' : 'text-primary'}>
+                        {formData.transactionType === 'Deposit' ? 'जमा सिम्युलेशन (+)' : 'नावे सिम्युलेशन (-)'}
                       </span>
                       <span className="font-mono">
-                        रक्कम: ₹{txnAmountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ₹{txnAmountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-xs font-extrabold">नवीन शिल्लक:</span>
-                      <span className="text-sm font-black font-mono">
+                      <span className="text-xs font-bold">व्यवहारानंतर नवीन शिल्लक:</span>
+                      <span className={`text-sm font-black font-mono ${isInsufficient ? 'text-rose-700' : 'text-primary'}`}>
                         ₹{simulatedBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                     {isInsufficient && (
-                      <div className="mt-1.5 text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-300 rounded px-1.5 py-0.5 flex items-center gap-1">
-                        <span>⚠️</span> अपुरी शिल्लक! खात्यातून जास्तीत जास्त ₹{availableToWithdraw.toFixed(2)} काढता येतील.
+                      <div className="mt-1.5 text-[10px] font-bold text-rose-800 bg-white border border-rose-300 rounded-sm px-2 py-1 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        <span>अपुरी शिल्लक! काढता येणारी कमाल रक्कम: ₹{availableToWithdraw.toFixed(2)}</span>
                       </div>
                     )}
                   </div>
                 ) : (
-                  /* Default Withdrawable Balance Banner */
-                  <div className="rounded-sm px-3 py-2 bg-slate-900 text-white shadow-2xs flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm">📤</span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">काढता येणारी शिल्लक</span>
-                    </div>
-                    <p className="font-black text-sm text-emerald-400 font-mono">
+                  <div className="rounded-sm px-3 py-2 bg-primary/10 border border-primary/25 flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-primary">काढता येणारी शिल्लक (Withdrawable)</span>
+                    <span className="font-black text-sm text-primary font-mono">
                       ₹{availableToWithdraw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </p>
+                    </span>
                   </div>
                 )}
               </>
             ) : (
-              <div className="text-center py-10">
-                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto mb-2">
-                  <Wallet size={24} />
+              <div className="text-center py-10 my-auto">
+                <div className="w-10 h-10 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center mx-auto mb-2">
+                  <Wallet size={20} />
                 </div>
-                <p className="text-xs text-slate-600 font-bold">व्यवहारासाठी खाते निवडा</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Select an account to view details</p>
+                <p className="text-xs text-gray-700 font-bold">व्यवहारासाठी बचत खाते निवडा</p>
+                <p className="text-[10.5px] text-gray-400 mt-0.5">खाते निवडल्यावर येथे सविस्तर शिल्लक दिसेल</p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Transaction List Summary Bar */}
-      <div className="bg-white p-3 rounded-sm shadow-xs border border-gray-200 flex flex-wrap justify-between items-center gap-2">
-        <div className="flex items-center space-x-2">
-          <div className="p-1.5 bg-primary/10 text-primary rounded">
-            <Layers className="w-4 h-4" />
-          </div>
-          <h2 className="text-xs font-bold text-gray-800">नुकतेच झालेले बचत व्यवहार (Recent Transactions)</h2>
-          <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
-            {filteredTransactions.length} नोंदी
-          </span>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="नाव किंवा खाते क्र. शोधा..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="border border-gray-300 pl-8 pr-2.5 py-1 rounded-sm focus:outline-none focus:border-primary text-xs w-52 bg-white"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowTxnModal(true)}
-            className="bg-primary hover:opacity-90 text-white text-xs px-3.5 py-1 rounded-sm shadow-2xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <Layers size={13} />
-            <span>व्यवहार यादी पॉपअप</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Full Screen Modal Popup Window for Transactions */}
+      {/* ========================================================
+          RECENT SAVING TRANSACTIONS DIRECTORY MODAL (Theme-Matched)
+          ======================================================== */}
       {showTxnModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-white rounded-sm shadow-2xl border border-gray-300 w-full max-w-7xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
-            
-            {/* Modal Header Banner */}
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-sm shadow-2xl border border-gray-300 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4" />
-                <h2 className="text-xs sm:text-sm font-bold">बचत जमा व नावे व्यवहार यादी (Saving Transactions Directory)</h2>
-                <span className="bg-white/20 text-white text-xs px-2.5 py-0.5 rounded-full font-bold border border-white/20">
-                  {filteredTransactions.length} नोंदी
+                <h2 className="text-xs sm:text-sm font-bold">बचत जमा व नावे व्यवहार यादी (Recent Saving Transactions)</h2>
+                <span className="bg-white/20 text-white text-[11px] px-2 py-0.2 rounded-full font-mono font-bold">
+                  {filteredTransactions.length}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setShowTxnModal(false)}
-                className="text-white/80 hover:text-white hover:bg-white/20 w-7 h-7 rounded-full flex items-center justify-center text-lg font-bold transition-colors cursor-pointer"
-                title="बंद करा (Close)"
+                className="text-white/80 hover:text-white cursor-pointer"
+                title="बंद करा"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* Modal Search Bar & Filter Options */}
-            <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
-              <div className="flex items-center space-x-2 w-full sm:w-auto">
-                <label className="text-xs font-bold text-gray-700 whitespace-nowrap">शोधा (Search):</label>
-                <div className="relative w-full sm:w-80">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="नाव, खाते क्र. किंवा व्हाउचर क्र. शोधा..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="border border-gray-300 pl-8 pr-2.5 py-1.5 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs w-full bg-white font-medium"
-                    autoFocus
-                  />
-                </div>
+            <div className="px-3 py-2 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
+              <div className="relative w-full sm:w-80">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="नाव, खाते क्र. किंवा व्हाउचर क्र. शोधा..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="border border-gray-300 pl-8 pr-6 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs w-full bg-white h-[28px]"
+                  autoFocus
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-
-              <div className="flex items-center gap-3 text-xs">
-                <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded font-bold border border-emerald-200">
-                  🟢 जमा व्यवहार
-                </span>
-                <span className="bg-rose-100 text-rose-800 px-2 py-1 rounded font-bold border border-rose-200">
-                  🔴 नावे व्यवहार
-                </span>
-                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold border border-blue-200">
-                  🔵 ट्रान्सफर
-                </span>
-              </div>
+              <span className="text-xs text-gray-600 font-semibold">
+                एकूण नोंदी: <b className="text-primary font-mono">{filteredTransactions.length}</b>
+              </span>
             </div>
 
-            {/* Modal Body - Grid Table */}
-            <div className="overflow-auto flex-1 p-2">
-              <table className="min-w-full divide-y divide-slate-200 text-xs text-center border border-slate-200">
-                <thead className="bg-slate-100 text-slate-900 border-b border-slate-300 sticky top-0 z-10 shadow-xs">
+            <div className="overflow-auto flex-1">
+              <table className="min-w-full divide-y divide-gray-200 text-xs border-collapse">
+                <thead className="bg-slate-100 text-slate-800 border-b border-slate-300 sticky top-0 z-10 font-bold">
                   <tr>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-center">अ. क्र.</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-left">दिनांक (Date)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-left">खाते क्र. (A/c No)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-left">खातेदाराचे नाव (Customer Name)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-center">प्रकार (Type)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-center">मोड (Mode)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-right">रक्कम (Amount ₹)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-right">नवीन शिल्लक (Balance ₹)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-left">तपशील (Narration)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-center">व्हाउचर (Voucher No)</th>
-                    
+                    <th className="px-2 py-2 border-r border-gray-200 text-center w-12">#</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 text-left w-24">दिनांक</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 text-left">खाते क्र.</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 text-left">खातेदाराचे नाव</th>
+                    <th className="px-2 py-2 border-r border-gray-200 text-center w-20">प्रकार</th>
+                    <th className="px-2 py-2 border-r border-gray-200 text-center w-24">पद्धत</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">रक्कम (₹)</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">शिल्लक (₹)</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 text-left">तपशील</th>
+                    <th className="px-2.5 py-2 text-left w-32">व्हाउचर क्र.</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
+                <tbody className="divide-y divide-gray-200 bg-white">
                   {filteredTransactions.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-8 text-center text-slate-500 font-medium">
+                      <td colSpan={10} className="px-4 py-10 text-center text-gray-500 font-semibold">
                         कोणतेही व्यवहार आढळले नाहीत.
                       </td>
                     </tr>
                   ) : (
                     filteredTransactions.map((t: any, index: number) => (
                       <tr key={t.transactionID} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-center font-semibold text-slate-500">
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500 font-mono">
                           {index + 1}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-left whitespace-nowrap text-slate-700">
-                          {new Date(t.transactionDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left whitespace-nowrap text-gray-700">
+                          {new Date(t.transactionDate).toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-left font-bold text-primary font-mono whitespace-nowrap">
+                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-bold text-primary font-mono whitespace-nowrap">
                           {t.accountNo}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-left font-semibold text-slate-900 min-w-[160px]">
+                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-semibold text-gray-900">
                           {t.customerName}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-center whitespace-nowrap">
-                          <span className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded ${
-                            t.transactionType === 'Deposit' || t.transactionType === 'Interest'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                              : 'bg-rose-100 text-rose-800 border border-rose-300'
-                          }`}>
-                            {t.transactionType === 'Deposit' ? '🟢 जमा' : t.transactionType === 'Withdrawal' ? '🔴 नावे' : t.transactionType}
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                          <span
+                            className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded-sm border ${
+                              t.transactionType === 'Deposit' || t.transactionType === 'Interest'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-rose-50 text-rose-800 border-rose-200'
+                            }`}
+                          >
+                            {t.transactionType === 'Deposit'
+                              ? 'जमा'
+                              : t.transactionType === 'Withdrawal'
+                                ? 'नावे'
+                                : t.transactionType}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-center whitespace-nowrap font-medium text-slate-700">
-                          {t.paymentMode === 'Cash' ? '💵 रोख' : t.paymentMode === 'Transfer' ? '🔄 हस्तांतरण' : '🏦 बँक'}
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap font-semibold text-gray-700">
+                          {t.paymentMode === 'Cash' ? 'रोख' : t.paymentMode === 'Transfer' ? 'ट्रान्सफर' : 'बँक'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-right font-bold text-slate-900 font-mono whitespace-nowrap">
+                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-right font-bold text-gray-900 font-mono whitespace-nowrap">
                           ₹{t.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-right font-bold text-emerald-700 font-mono whitespace-nowrap">
+                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono whitespace-nowrap">
                           ₹{t.balanceAfterTxn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-left text-slate-600 max-w-[200px] truncate" title={t.narration || ''}>
+                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left text-gray-600 max-w-[200px] truncate" title={t.narration || ''}>
                           {t.narration || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-center font-bold text-indigo-700 whitespace-nowrap font-mono">
+                        <td className="px-2.5 py-1.5 text-left font-bold text-primary whitespace-nowrap font-mono">
                           {t.voucherNo || '-'}
                         </td>
-                        
                       </tr>
                     ))
                   )}
@@ -1769,145 +1666,11 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
               </table>
             </div>
 
-            {/* Modal Footer */}
-            <div className="px-4 py-2.5 bg-slate-100 border-t border-slate-200 flex justify-between items-center text-xs shrink-0">
-              <span className="text-slate-600 font-medium">एकूण व्यवहार नोंदी: <b>{filteredTransactions.length}</b></span>
+            <div className="px-4 py-2 bg-slate-50 border-t border-gray-200 flex justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setShowTxnModal(false)}
-                className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-1.5 rounded-sm font-semibold transition-colors cursor-pointer"
-              >
-                पॉपअप बंद करा (Close)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Multi-Account Selection Modal */}
-      {showMultiAccountModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full overflow-hidden border border-blue-200">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-4 py-3 text-white flex items-center justify-between shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="p-1.5 bg-white/10 rounded-md">
-                  <CreditCard className="w-5 h-5 text-blue-100" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm leading-tight">
-                    बचत खाते निवडा (Select Saving Account)
-                  </h3>
-                  <p className="text-[11px] text-blue-100 font-medium">
-                    {multiAccountCustomerInfo?.name || 'खातेदार'} {multiAccountCustomerInfo?.cifNo ? `(CIF: ${multiAccountCustomerInfo.cifNo})` : ''} - एकूण {customerMatchingAccounts.length} खाती उपलब्ध
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowMultiAccountModal(false)}
-                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-md cursor-pointer transition-colors"
-                title="बंद करा"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 max-h-[70vh] overflow-y-auto space-y-2.5 bg-slate-50/50">
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-md text-[11px] text-blue-900 font-medium flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0" />
-                <span>
-                  या खातेदाराचे <b>{customerMatchingAccounts.length} बचत खाती</b> नोंदणीकृत आहेत. कृपया व्यवहारासाठी इच्छित खाते निवडा:
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {customerMatchingAccounts.map((acc, idx) => {
-                  const isCurrent = formData.savingAccountID === acc.savingAccountID;
-                  const displayAccNo = acc.accountNo ? format14DigitDisplay(acc.accountNo) : '-';
-                  const oldAcc = acc.oldAccountNo || acc.legacyAccountNumber;
-                  const schemeName = acc.ledgerName || 'सर्वसाधारण बचत ठेव';
-
-                  return (
-                    <div
-                      key={acc.savingAccountID || idx}
-                      onClick={() => handleSelectCustomerAccount(acc)}
-                      className={`p-3 rounded-lg border transition-all cursor-pointer shadow-2xs hover:shadow-md flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 ${
-                        isCurrent 
-                          ? 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-400/30' 
-                          : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 ${
-                          isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
-                        }`}>
-                          {idx + 1}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-black text-xs text-slate-900 tracking-wide">
-                              {displayAccNo}
-                            </span>
-                            {oldAcc && oldAcc !== acc.accountNo && (
-                              <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
-                                जुना: {oldAcc}
-                              </span>
-                            )}
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              {acc.status || 'Active'}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-600 font-semibold mt-1">
-                            योजना: <span className="text-slate-800 font-bold">{schemeName}</span>
-                            {acc.openingDate && (
-                              <span className="text-slate-400 font-normal ml-2">
-                                (सुरू: {formatDisplayDate(acc.openingDate)})
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 sm:text-right w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
-                        <div>
-                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">शिल्लक रक्कम</div>
-                          <div className="text-sm font-black text-emerald-700">
-                            ₹ {(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectCustomerAccount(acc);
-                          }}
-                          className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                            isCurrent
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-300'
-                          }`}
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          <span>{isCurrent ? 'निवडलेले आहे' : 'हे खाते निवडा'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-slate-100 px-4 py-2.5 border-t border-slate-200 flex justify-between items-center text-xs">
-              <span className="text-slate-500 font-medium">
-                खाते निवडल्यावर थेट रक्कम (Amount) रकान्यावर कर्सर जाईल.
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowMultiAccountModal(false)}
-                className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold cursor-pointer transition-colors"
+                className="bg-primary hover:opacity-90 text-white px-4 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
               >
                 बंद करा (Close)
               </button>
@@ -1916,58 +1679,178 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         </div>
       )}
 
-      {/* Rejection Reason Modal */}
-      {rejectModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-md shadow-2xl max-w-md w-full overflow-hidden border border-rose-200">
-            <div className="bg-rose-600 px-4 py-3 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <Trash2 className="w-4 h-4" />
-                <span>बचत व्हाउचर नामंजूर / रद्द करणे (Reject Voucher)</span>
+      {/* ========================================================
+          MULTI-ACCOUNT SELECTION MODAL (Theme-Matched)
+          ======================================================== */}
+      {showMultiAccountModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-3">
+          <div className="bg-white rounded-sm shadow-2xl max-w-2xl w-full overflow-hidden border border-gray-300">
+            <div className="bg-primary px-4 py-2.5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-white" />
+                <div>
+                  <h3 className="font-bold text-xs sm:text-sm leading-tight">बचत खाते निवडा (Select Saving Account)</h3>
+                  <p className="text-[10.5px] text-white/85">
+                    {multiAccountCustomerInfo?.name || 'खातेदार'}{' '}
+                    {multiAccountCustomerInfo?.cifNo ? `(CIF: ${multiAccountCustomerInfo.cifNo})` : ''} — एकूण{' '}
+                    {customerMatchingAccounts.length} खाती उपलब्ध
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setRejectModalOpen(false)}
-                className="text-white hover:bg-rose-700 p-1 rounded cursor-pointer"
+                onClick={() => setShowMultiAccountModal(false)}
+                className="text-white/80 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-4 space-y-3">
-              <div className="text-xs text-slate-700 font-medium">
-                व्हाउचर क्र.: <b className="font-mono text-slate-900">{passingVoucher?.voucherNo || voucherIdFromUrl}</b>
+
+            <div className="p-3.5 max-h-[68vh] overflow-y-auto space-y-2 bg-slate-50">
+              {customerMatchingAccounts.map((acc, idx) => {
+                const isCurrent = formData.savingAccountID === acc.savingAccountID;
+                const displayAccNo = acc.accountNo ? format14DigitDisplay(acc.accountNo) : '-';
+                const oldAcc = acc.oldAccountNo || acc.legacyAccountNumber;
+                const schemeName = acc.ledgerName || 'सर्वसाधारण बचत ठेव';
+
+                return (
+                  <div
+                    key={acc.savingAccountID || idx}
+                    onClick={() => handleSelectCustomerAccount(acc)}
+                    className={`p-3 rounded-sm border transition-all cursor-pointer flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 ${
+                      isCurrent
+                        ? 'bg-primary/5 border-primary ring-1 ring-primary/30'
+                        : 'bg-white border-gray-200 hover:border-primary/50'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div
+                        className={`w-7 h-7 rounded-sm flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 ${
+                          isCurrent ? 'bg-primary text-white' : 'bg-slate-100 text-gray-700 border border-gray-200'
+                        }`}
+                      >
+                        {idx + 1}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-xs text-primary">{displayAccNo}</span>
+                          {oldAcc && oldAcc !== acc.accountNo && (
+                            <span className="text-[10px] bg-amber-50 text-amber-900 px-1.5 py-0.2 rounded-sm border border-amber-200 font-semibold">
+                              जुना: {oldAcc}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-sm bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            {acc.status || 'Active'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-gray-600 mt-0.5">
+                          योजना: <b className="text-gray-800">{schemeName}</b>
+                          {acc.openingDate && (
+                            <span className="text-gray-400 ml-2">(उघडले: {formatDisplayDate(acc.openingDate)})</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                      <div className="sm:text-right">
+                        <div className="text-[10px] text-gray-500 font-bold">चालू शिल्लक</div>
+                        <div className="text-xs sm:text-sm font-black text-emerald-700 font-mono">
+                          ₹{(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectCustomerAccount(acc);
+                        }}
+                        className={`px-3 py-1.5 rounded-sm text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                          isCurrent
+                            ? 'bg-primary text-white'
+                            : 'bg-white hover:bg-primary hover:text-white text-primary border border-primary/40'
+                        }`}
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>{isCurrent ? 'निवडलेले' : 'निवडा'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="bg-white px-4 py-2 border-t border-gray-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowMultiAccountModal(false)}
+                className="px-3.5 py-1 bg-slate-100 hover:bg-slate-200 text-gray-700 border border-gray-300 rounded-sm text-xs font-bold cursor-pointer"
+              >
+                बंद करा
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          REJECTION REASON MODAL (Theme-Matched)
+          ======================================================== */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-3">
+          <div className="bg-white rounded-sm shadow-2xl max-w-md w-full overflow-hidden border border-gray-300">
+            <div className="bg-primary px-4 py-2.5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-xs">
+                <Trash2 className="w-4 h-4" />
+                <span>बचत व्हाउचर नामंजूर / रद्द करणे (Reject & Rollback)</span>
               </div>
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="text-white/80 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              <div className="bg-slate-50 border border-gray-200 rounded-sm px-3 py-2 flex justify-between items-center">
+                <span className="text-gray-600 font-semibold">व्हाउचर क्र.:</span>
+                <b className="font-mono text-primary">{passingVoucher?.voucherNo || voucherIdFromUrl}</b>
+              </div>
+
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  नामंजूर करण्याचे कारण (Reason for Rejection) *
+                <label className="block text-xs font-bold text-gray-800 mb-1">
+                  नामंजूर करण्याचे कारण (Reason) <span className="text-rose-600">*</span>
                 </label>
                 <textarea
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="उदा. चुकीची रक्कम, चुकीचे बचत खाते, संशयास्पद व्यवहार इत्यादी..."
+                  placeholder="उदा. चुकीची रक्कम किंवा चुकीचे खाते निवडले..."
                   rows={3}
-                  className="w-full text-xs border border-slate-300 rounded p-2 focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                  className="w-full text-xs border border-gray-300 rounded-sm p-2 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none"
                   required
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setRejectModalOpen(false)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold cursor-pointer"
-                >
-                  रद्द करा (Cancel)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRejectVoucher}
-                  disabled={passingActionLoading || !rejectionReason.trim()}
-                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>{passingActionLoading ? 'रद्द होत आहे...' : 'खात्रीपूर्वक नामंजूर करा'}</span>
-                </button>
-              </div>
+            </div>
+
+            <div className="bg-slate-50 px-4 py-2.5 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-sm text-xs font-bold cursor-pointer"
+              >
+                रद्द करा
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectVoucher}
+                disabled={passingActionLoading || !rejectionReason.trim()}
+                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-sm text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{passingActionLoading ? 'रद्द होत आहे...' : 'खात्रीपूर्वक नामंजूर करा'}</span>
+              </button>
             </div>
           </div>
         </div>

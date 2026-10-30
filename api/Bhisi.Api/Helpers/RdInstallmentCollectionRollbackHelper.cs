@@ -187,6 +187,8 @@ namespace Bhisi.Api.Helpers
                     }
                 }
 
+                var stPassbooks = await context.SavingPassbooks.Where(p => p.TransactionID == st.TransactionID).ToListAsync();
+                if (stPassbooks.Any()) context.SavingPassbooks.RemoveRange(stPassbooks);
                 context.SavingTransactions.Remove(st);
             }
         }
@@ -590,6 +592,12 @@ namespace Bhisi.Api.Helpers
             }
 
             // 3. Clean up Cross-Branch IBT sibling voucher if present
+            if (siblingIbtVoucher == null)
+            {
+                siblingIbtVoucher = await context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .FirstOrDefaultAsync(v => v.RelatedVoucherID == voucher.VoucherID);
+            }
             if (siblingIbtVoucher != null)
             {
                 voucher.RelatedVoucherID = null;

@@ -130,6 +130,17 @@ namespace Bhisi.Api.Controllers
         [HttpPost("Collect")]
         public async Task<ActionResult<object>> CollectRent([FromBody] RentCollectionDto dto)
         {
+            if (dto == null || dto.TotalAmount <= 0)
+            {
+                return BadRequest(new { message = "भाड्याची एकूण रक्कम ₹0 पेक्षा जास्त असणे आवश्यक आहे." });
+            }
+
+            decimal expectedTotal = Math.Round(dto.RentAmount + dto.PenaltyAmount + dto.GstAmount, 2, MidpointRounding.AwayFromZero);
+            if (Math.Abs(dto.TotalAmount - expectedTotal) > 0.01m)
+            {
+                return BadRequest(new { message = $"भाड्याची एकूण रक्कम (₹{dto.TotalAmount:N2}) आणि भाडे + विलंब शुल्क + GST बेरीज (₹{expectedTotal:N2}) जुळत नाही." });
+            }
+
             var allotment = await _context.LockerAllotments
                 .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
                 .Include(a => a.Customer)
@@ -142,121 +153,237 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "लॉकर खाते सापडले नाही." });
             }
 
-            var fromDate = allotment.ExpiryDate;
-            var toDate = fromDate.AddYears(1).AddDays(-1);
-
-            int cashLedgerId = 1;
-            cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, allotment.BranchID, "LOCKER");
-            var cashLedger = (Ledger?)null;
-            if (cashLedger != null) cashLedgerId = cashLedger.LedgerID;
-
-            int debitLedgerId = cashLedgerId;
-            if (dto.PaymentMode == "Bank" || dto.PaymentMode == "Transfer" || Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode)) { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID); if (!bankCheck.IsValid) return BadRequest(new { message = bankCheck.ErrorMessage }); debitLedgerId = bankCheck.LedgerId; } else if (dto.PaymentMode == "SavingDebit" && allotment.LinkedSavingAccount != null) { var savLiab = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, allotment.LinkedSavingAccount); if (savLiab <= 0) return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(allotment.LinkedSavingAccount.AccountNo) }); debitLedgerId = savLiab; }
-
-            // If paying through Savings Account, deduct from savings
-            if (dto.PaymentMode == "SavingDebit" && allotment.LinkedSavingAccount != null)
+            int debitLedgerId;
+            if (string.Equals(dto.PaymentMode, "SavingDebit", StringComparison.OrdinalIgnoreCase))
             {
+                if (allotment.LinkedSavingAccount == null)
+                {
+                    return BadRequest(new { message = "बचत खात्यातून भाडे वजा करण्यासाठी या लॉकर खात्याला कोणतेही बचत खाते जोडलेले नाही." });
+                }
+                if (allotment.LinkedSavingAccount.Status == "Closed" || allotment.LinkedSavingAccount.Status == "Frozen")
+                {
+                    return BadRequest(new { message = $"संलग्न बचत खाते (#{allotment.LinkedSavingAccount.AccountNo}) सध्या '{allotment.LinkedSavingAccount.Status}' स्थितीत असल्यामुळे त्यातून भाडे वजा करता येणार नाही." });
+                }
+                var savLiab = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, allotment.LinkedSavingAccount);
+                if (savLiab <= 0)
+                {
+                    return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(allotment.LinkedSavingAccount.AccountNo) });
+                }
                 var (availSbBal, effSbMinBal) = await Helpers.SavingLedgerHelper.ResolveAvailableBalanceAsync(_context, allotment.LinkedSavingAccount);
                 if (availSbBal < dto.TotalAmount)
                 {
                     return BadRequest(new { message = $"बचत खात्यात पुरेशी वर्गपात्र शिल्लक नाही. किमान शिल्लक (₹{effSbMinBal:N2}) व तारण वगळता उपलब्ध शिल्लक: ₹{availSbBal:N2}" });
                 }
-
-                allotment.LinkedSavingAccount.CurrentBalance -= dto.TotalAmount;
-                // Add Saving transaction
-                var savingTxn = new SavingTransaction
+                debitLedgerId = savLiab;
+            }
+            else if (dto.PaymentMode == "Bank" || dto.PaymentMode == "Transfer" || Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode))
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID);
+                if (!bankCheck.IsValid)
                 {
-                    SavingAccountID = allotment.LinkedSavingAccount.SavingAccountID,
-                    CustomerID = allotment.LinkedSavingAccount.CustomerID,
-                    BranchID = allotment.BranchID > 0 ? allotment.BranchID : allotment.LinkedSavingAccount.BranchID,
-                    TransactionDate = dto.PaymentDate,
-                    TransactionType = "Withdrawal",
-                    Amount = dto.TotalAmount,
-                    BalanceAfterTxn = allotment.LinkedSavingAccount.CurrentBalance,
-                    Narration = $"Locker Rent Auto-Deduction: {allotment.LockerAccountNo} (Locker: {allotment.Locker?.LockerNo})",
-                    PaymentMode = "Transfer",
-                    CreatedOn = DateTime.UtcNow
-                };
-                _context.SavingTransactions.Add(savingTxn);
+                    return BadRequest(new { message = bankCheck.ErrorMessage });
+                }
+                debitLedgerId = bankCheck.LedgerId;
+            }
+            else
+            {
+                debitLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, allotment.BranchID, "LOCKER");
+                if (debitLedgerId <= 0)
+                {
+                    return BadRequest(new { message = "या शाखेसाठी रोख शिल्लक लेजर सापडले नाही. कृपया शाखा मास्टरमध्ये रोख खाते तपासा." });
+                }
             }
 
-            int? voucherId = null;
-            // Create GL Voucher
-            if (allotment.Locker?.LockerType?.RentIncomeLedgerID.HasValue == true)
+            // Mandatory resolution of Rent Income, Late Fee Income, and GST Liability GL ledgers
+            int rentIncomeLedgerId = allotment.Locker?.LockerType?.RentIncomeLedgerID ?? 0;
+            if (dto.RentAmount > 0 && rentIncomeLedgerId <= 0)
             {
-                string holderName = allotment.Customer != null ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}" : (allotment.Member?.Customer != null ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}" : "Member");
+                var dynRent = await _context.Ledgers
+                    .Include(l => l.AccountGroup)
+                    .FirstOrDefaultAsync(l => l.IsActive &&
+                        (l.AccountType == "Income" || l.AccountType == "Revenue" || (l.AccountGroup != null && (l.AccountGroup.NatureOfGroup == "Income" || l.AccountGroup.NatureOfGroup == "Revenue"))) &&
+                        (l.LedgerName.Contains("लॉकर भाडे") || l.LedgerName.Contains("Locker Rent")));
+                if (dynRent != null)
+                {
+                    rentIncomeLedgerId = dynRent.LedgerID;
+                }
+                else
+                {
+                    return BadRequest(new { message = $"लॉकर प्रकारास ('{allotment.Locker?.LockerType?.TypeName ?? allotment.Locker?.LockerNo}') 'भाडे उत्पन्न लेजर' (Rent Income Ledger) जोडलेले नाही. कृपया लॉकर प्रकार मास्टरमध्ये जी.एल. लेजर मॅपिंग पूर्ण करा." });
+                }
+            }
 
-                int vchCount = await _context.Vouchers.CountAsync() + 1;
+            int lateFeeLedgerId = allotment.Locker?.LockerType?.LateFeeIncomeLedgerID ?? 0;
+            if (dto.PenaltyAmount > 0 && lateFeeLedgerId <= 0)
+            {
+                var dynPenalty = await _context.Ledgers
+                    .Include(l => l.AccountGroup)
+                    .FirstOrDefaultAsync(l => l.IsActive &&
+                        (l.AccountType == "Income" || l.AccountType == "Revenue" || (l.AccountGroup != null && (l.AccountGroup.NatureOfGroup == "Income" || l.AccountGroup.NatureOfGroup == "Revenue"))) &&
+                        (l.LedgerName.Contains("लॉकर दंड") || l.LedgerName.Contains("विलंब") || l.LedgerName.Contains("Late Fee") || l.LedgerName.Contains("दंड") || l.LedgerName.Contains("Penalty")));
+                if (dynPenalty != null)
+                {
+                    lateFeeLedgerId = dynPenalty.LedgerID;
+                }
+                else
+                {
+                    return BadRequest(new { message = $"विलंब शुल्क/दंड (₹{dto.PenaltyAmount:N2}) आकारण्यासाठी लॉकर प्रकारास 'विलंब शुल्क उत्पन्न लेजर' (Late Fee Income Ledger) जोडलेले नाही. कृपया लॉकर प्रकार मास्टरमध्ये लेजर मॅप करा." });
+                }
+            }
+
+            int gstLedgerId = allotment.Locker?.LockerType?.GstLiabilityLedgerID ?? 0;
+            if (dto.GstAmount > 0 && gstLedgerId <= 0)
+            {
+                var dynGst = await _context.Ledgers
+                    .Include(l => l.AccountGroup)
+                    .FirstOrDefaultAsync(l => l.IsActive &&
+                        (l.AccountType == "Liabilities" || l.AccountType == "Liability" || l.AccountType == "Duties & Taxes" || (l.AccountGroup != null && l.AccountGroup.NatureOfGroup == "Liabilities")) &&
+                        (l.LedgerName.Contains("GST") || l.LedgerName.Contains("जीएसटी") || l.LedgerName.Contains("जी.एस.टी")));
+                if (dynGst != null)
+                {
+                    gstLedgerId = dynGst.LedgerID;
+                }
+                else
+                {
+                    return BadRequest(new { message = $"GST रक्कम (₹{dto.GstAmount:N2}) नोंदवण्यासाठी लॉकर प्रकारास 'GST देयता लेजर' (GST Liability Ledger) जोडलेले नाही. कृपया लॉकर प्रकार मास्टरमध्ये GST लेजर मॅप करा." });
+                }
+            }
+
+            var ownTx = _context.Database.CurrentTransaction == null
+                ? await _context.Database.BeginTransactionAsync()
+                : null;
+
+            try
+            {
+                var fromDate = allotment.ExpiryDate;
+                var toDate = fromDate.AddYears(1).AddDays(-1);
+                bool isSavingDebit = string.Equals(dto.PaymentMode, "SavingDebit", StringComparison.OrdinalIgnoreCase);
+
+                string holderName = allotment.Customer != null
+                    ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}".Trim()
+                    : (allotment.Member?.Customer != null
+                        ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}".Trim()
+                        : "Member");
+
+                string refSuffix = !string.IsNullOrWhiteSpace(dto.ReferenceNo) ? $" [संदर्भ: {dto.ReferenceNo.Trim()}]" : "";
+                string vchNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-LKR-REN-{dto.PaymentDate:yyyyMMdd}-", 4);
+
                 var voucher = new Voucher
                 {
                     BranchID = allotment.BranchID,
-                    VoucherNo = $"VCH-LKR-REN-{DateTime.Today:yyyyMMdd}-{vchCount:D4}",
+                    VoucherNo = vchNo,
                     VoucherDate = dto.PaymentDate,
-                    VoucherType = dto.PaymentMode == "SavingDebit" ? "Journal" : "Receipt",
+                    VoucherType = isSavingDebit ? "Journal" : "Receipt",
                     TotalAmount = dto.TotalAmount,
-                    Narration = $"Locker Rent Renewal: {allotment.LockerAccountNo} (Locker No: {allotment.Locker?.LockerNo}) for period {fromDate:dd/MM/yyyy} to {toDate:dd/MM/yyyy}. Member: {holderName}",
+                    Narration = $"Locker Rent Renewal: {allotment.LockerAccountNo} (Locker No: {allotment.Locker?.LockerNo}) for period {fromDate:dd/MM/yyyy} to {toDate:dd/MM/yyyy}. Member: {holderName}{refSuffix}",
                     Status = "Pending",
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>()
                 };
 
-                // Debit line (Cash or Saving/Transfer)
-                voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = debitLedgerId, DrCr = "Dr", Amount = dto.TotalAmount });
+                // Debit line (Cash / Bank / Saving Liability)
+                voucher.VoucherDetails.Add(new VoucherDetail
+                {
+                    LedgerID = debitLedgerId,
+                    DrCr = "Dr",
+                    Amount = dto.TotalAmount,
+                    CustomerID = isSavingDebit ? allotment.LinkedSavingAccount?.CustomerID : null
+                });
 
                 // Credit Rent Income
-                voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = allotment.Locker!.LockerType!.RentIncomeLedgerID!.Value, DrCr = "Cr", Amount = dto.RentAmount });
-
-                // Credit Late fee if any
-                if (dto.PenaltyAmount > 0 && allotment.Locker?.LockerType?.LateFeeIncomeLedgerID.HasValue == true)
+                if (dto.RentAmount > 0)
                 {
-                    voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = allotment.Locker!.LockerType!.LateFeeIncomeLedgerID!.Value, DrCr = "Cr", Amount = dto.PenaltyAmount });
+                    voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = rentIncomeLedgerId, DrCr = "Cr", Amount = dto.RentAmount });
                 }
 
-                // Credit GST if any
-                if (dto.GstAmount > 0 && allotment.Locker?.LockerType?.GstLiabilityLedgerID.HasValue == true)
+                // Credit Late Fee Income
+                if (dto.PenaltyAmount > 0)
                 {
-                    voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = allotment.Locker!.LockerType!.GstLiabilityLedgerID!.Value, DrCr = "Cr", Amount = dto.GstAmount });
+                    voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = lateFeeLedgerId, DrCr = "Cr", Amount = dto.PenaltyAmount });
                 }
 
+                // Credit GST Liability
+                if (dto.GstAmount > 0)
+                {
+                    voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = gstLedgerId, DrCr = "Cr", Amount = dto.GstAmount });
+                }
+
+                Helpers.VoucherBalanceHelper.EnsureBalanced(voucher);
                 _context.Vouchers.Add(voucher);
                 await _context.SaveChangesAsync();
-                voucherId = voucher.VoucherID;
+
+                if (isSavingDebit && allotment.LinkedSavingAccount != null)
+                {
+                    allotment.LinkedSavingAccount.CurrentBalance -= dto.TotalAmount;
+                    var savingTxn = new SavingTransaction
+                    {
+                        SavingAccountID = allotment.LinkedSavingAccount.SavingAccountID,
+                        CustomerID = allotment.LinkedSavingAccount.CustomerID,
+                        BranchID = allotment.BranchID > 0 ? allotment.BranchID : allotment.LinkedSavingAccount.BranchID,
+                        TransactionDate = dto.PaymentDate,
+                        TransactionType = "Withdrawal",
+                        Amount = dto.TotalAmount,
+                        BalanceAfterTxn = allotment.LinkedSavingAccount.CurrentBalance,
+                        Narration = $"Locker Rent Auto-Deduction: {allotment.LockerAccountNo} (Locker: {allotment.Locker?.LockerNo})",
+                        VoucherNo = voucher.VoucherNo,
+                        PaymentMode = "Transfer",
+                        CreatedOn = DateTime.UtcNow
+                    };
+                    _context.SavingTransactions.Add(savingTxn);
+                }
+
+                var rentPosting = new LockerRentPosting
+                {
+                    BranchID = allotment.BranchID,
+                    AllotmentID = allotment.AllotmentID,
+                    FinancialYear = $"{fromDate.Year}-{(fromDate.Year + 1)}",
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    RentAmount = dto.RentAmount,
+                    GstAmount = dto.GstAmount,
+                    PenaltyAmount = dto.PenaltyAmount,
+                    TotalAmount = dto.TotalAmount,
+                    PaymentMode = dto.PaymentMode,
+                    PaymentDate = dto.PaymentDate,
+                    ReceiptNo = voucher.VoucherNo,
+                    VoucherID = voucher.VoucherID,
+                    IsPaid = true,
+                    Remarks = dto.Remarks ?? "Annual Rent Renewal Paid",
+                    CreatedAt = DateTime.Now
+                };
+
+                _context.LockerRentPostings.Add(rentPosting);
+                allotment.ExpiryDate = fromDate.AddYears(1);
+
+                await _context.SaveChangesAsync();
+                if (ownTx != null)
+                {
+                    await ownTx.CommitAsync();
+                }
+
+                return Ok(new
+                {
+                    message = "लॉकर भाडे यशस्वीरीत्या जमा झाले व मुदत १ वर्षाने वाढवली गेली.",
+                    postingID = rentPosting.PostingID,
+                    newExpiryDate = allotment.ExpiryDate,
+                    voucherId = voucher.VoucherID
+                });
             }
-
-            var rentPosting = new LockerRentPosting
+            catch (Exception ex)
             {
-                BranchID = allotment.BranchID,
-                AllotmentID = allotment.AllotmentID,
-                FinancialYear = $"{fromDate.Year}-{(fromDate.Year + 1)}",
-                FromDate = fromDate,
-                ToDate = toDate,
-                RentAmount = dto.RentAmount,
-                GstAmount = dto.GstAmount,
-                PenaltyAmount = dto.PenaltyAmount,
-                TotalAmount = dto.TotalAmount,
-                PaymentMode = dto.PaymentMode,
-                PaymentDate = dto.PaymentDate,
-                ReceiptNo = $"REC-LKR-{allotment.AllotmentID}-{DateTime.Today:yyyyMMdd}",
-                VoucherID = voucherId,
-                IsPaid = true,
-                Remarks = dto.Remarks ?? "Annual Rent Renewal Paid",
-                CreatedAt = DateTime.Now
-            };
-
-            _context.LockerRentPostings.Add(rentPosting);
-
-            // Extend Expiry Date by 1 year
-            allotment.ExpiryDate = fromDate.AddYears(1);
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new
+                if (ownTx != null)
+                {
+                    await ownTx.RollbackAsync();
+                }
+                return BadRequest(new { message = $"लॉकर भाडे जमा करताना त्रुटी: {ex.Message}" });
+            }
+            finally
             {
-                message = "लॉकर भाडे यशस्वीरीत्या जमा झाले व मुदत १ वर्षाने वाढवली गेली.",
-                postingID = rentPosting.PostingID,
-                newExpiryDate = allotment.ExpiryDate,
-                voucherId
-            });
+                if (ownTx != null)
+                {
+                    await ownTx.DisposeAsync();
+                }
+            }
         }
 
         // POST: api/LockerRent/AutoDebitBatch
@@ -318,15 +445,29 @@ namespace Bhisi.Api.Controllers
                         Remarks = "Auto-Debit Batch Processing"
                     };
 
-                    await CollectRent(rentDto);
-                    successCount++;
-                    details.Add(new
+                    var collectResult = await CollectRent(rentDto);
+                    if (collectResult.Result is BadRequestObjectResult badReq)
                     {
-                        a.LockerAccountNo,
-                        MemberName = holderName,
-                        Status = "Success",
-                        Amount = a.AnnualRent
-                    });
+                        failedCount++;
+                        details.Add(new
+                        {
+                            a.LockerAccountNo,
+                            MemberName = holderName,
+                            Status = "Failed",
+                            Reason = badReq.Value?.ToString() ?? "लेजर मॅपिंग किंवा शिल्लक त्रुटी"
+                        });
+                    }
+                    else
+                    {
+                        successCount++;
+                        details.Add(new
+                        {
+                            a.LockerAccountNo,
+                            MemberName = holderName,
+                            Status = "Success",
+                            Amount = a.AnnualRent
+                        });
+                    }
                 }
                 catch (Exception ex)
                 {

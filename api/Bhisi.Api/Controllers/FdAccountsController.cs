@@ -867,6 +867,10 @@ namespace Bhisi.Api.Controllers
                             CreatedBy = account.CreatedBy
                         };
                         _context.FdTransactions.Add(tx);
+                        if (tx.TransactionType == "Premature_Close" && tx.VoucherID > 0)
+                        {
+                            await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, tx.VoucherID);
+                        }
                         await _context.SaveChangesAsync();
                     }
 
@@ -967,6 +971,38 @@ namespace Bhisi.Api.Controllers
 
                 // 0. If this FD account was created via FD Renewal, atomically rollback parent renewal
                 //    (removes parent's Renewal FdTransaction, JV-FD-REN-* & PAY/JV-FD-INT-* vouchers, and restores parent to Matured/Active)
+                if (!isLegacy)
+                {
+                    var preCheckTxVIds = await _context.FdTransactions
+                        .Where(t => t.FdAccountID == id && t.VoucherID > 0)
+                        .Select(t => t.VoucherID)
+                        .ToListAsync();
+                    var preCheckAccVIds = await _context.FdInterestAccruals
+                        .Where(a => a.FdAccountID == id && a.VoucherID > 0)
+                        .Select(a => a.VoucherID)
+                        .ToListAsync();
+                    var preCheckMisVIds = await _context.FdMisPayouts
+                        .Where(m => m.FdAccountID == id && m.VoucherID.HasValue && m.VoucherID.Value > 0)
+                        .Select(m => m.VoucherID!.Value)
+                        .ToListAsync();
+                    var preCheckIds = preCheckTxVIds.Union(preCheckAccVIds).Union(preCheckMisVIds).Distinct().ToList();
+
+                    bool hasApprovedLinkedVoucher = await _context.Vouchers.AnyAsync(v =>
+                        v.Status == "Approved" &&
+                        (preCheckIds.Contains(v.VoucherID) ||
+                         v.VoucherNo == $"REC-FD-{accountNo}" ||
+                         v.VoucherNo == $"JV-FD-{accountNo}" ||
+                         v.VoucherNo == $"REC-FD-OP-{accountNo}" ||
+                         v.VoucherNo == $"JV-FD-OP-{accountNo}" ||
+                         (!string.IsNullOrEmpty(accountNo) &&
+                          v.VoucherNo.StartsWith("JV-FD-REN-") && v.Narration != null && v.Narration.Contains(accountNo))));
+
+                    if (hasApprovedLinkedVoucher)
+                    {
+                        return BadRequest(new { message = "या मुदत ठेव खात्याशी संबंधित व्हाउचर मंजूर (Approved) झालेले आहे. खाते डिलीट करण्यापूर्वी व्हाउचर पासिंगमधून संबंधित व्हाउचर अन-पास (Unpass) करा." });
+                    }
+                }
+
                 var renewalRollback = await Helpers.FdRenewalRollbackHelper.RollbackParentRenewalOnChildAccountDeleteAsync(_context, account);
 
                 // 1. Identify which vouchers were actually linked to THIS specific account
@@ -1011,6 +1047,27 @@ namespace Bhisi.Api.Controllers
                 if (fdAccruals.Any())
                 {
                     _context.FdInterestAccruals.RemoveRange(fdAccruals);
+                }
+
+                var fdMisPayouts = await _context.FdMisPayouts.Where(m => m.FdAccountID == id).ToListAsync();
+                if (fdMisPayouts.Any())
+                {
+                    foreach (var mis in fdMisPayouts.Where(m => m.VoucherID.HasValue && m.VoucherID.Value > 0))
+                    {
+                        targetVoucherIdSet.Add(mis.VoucherID!.Value);
+                    }
+                    _context.FdMisPayouts.RemoveRange(fdMisPayouts);
+                }
+
+                var fdAutoRenewalLogs = await _context.FdAutoRenewalLogs
+                    .Where(l => l.OldFdAccountID == id || l.NewFdAccountID == id)
+                    .ToListAsync();
+                if (fdAutoRenewalLogs.Any())
+                {
+                    _context.FdAutoRenewalLogs.RemoveRange(fdAutoRenewalLogs);
+                }
+                if (fdAccruals.Any() || fdMisPayouts.Any() || fdAutoRenewalLogs.Any())
+                {
                     await _context.SaveChangesAsync();
                 }
 
@@ -1028,11 +1085,26 @@ namespace Bhisi.Api.Controllers
                         bool usedByOtherAccrual = await _context.FdInterestAccruals.AnyAsync(a => a.FdAccountID != id && a.VoucherID == vId);
                         if (usedByOtherAccrual) continue;
 
+                        bool usedByOtherMis = await _context.FdMisPayouts.AnyAsync(m => m.FdAccountID != id && m.VoucherID == vId);
+                        if (usedByOtherMis) continue;
+                        if (usedByOtherAccrual) continue;
+
                         var vch = await _context.Vouchers.Include(v => v.VoucherDetails).FirstOrDefaultAsync(v => v.VoucherID == vId);
                         if (vch != null)
                         {
                             vouchersToDelete.Add(vch);
                         }
+                    }
+
+                    if (vouchersToDelete.Any())
+                    {
+                        var delVIds = vouchersToDelete.Select(v => v.VoucherID).ToList();
+                        var revVouchers = await _context.Vouchers
+                            .Where(v => v.RelatedVoucherID.HasValue && delVIds.Contains(v.RelatedVoucherID.Value))
+                            .ToListAsync();
+                        foreach (var rv in revVouchers) rv.RelatedVoucherID = null;
+                        foreach (var dv in vouchersToDelete) dv.RelatedVoucherID = null;
+                        await _context.SaveChangesAsync();
                     }
 
                     foreach (var vch in vouchersToDelete)
@@ -1066,6 +1138,13 @@ namespace Bhisi.Api.Controllers
 
                         if (sbTx != null)
                         {
+                            var sbPbs = await _context.SavingPassbooks
+                                .Where(p => p.TransactionID == sbTx.TransactionID)
+                                .ToListAsync();
+                            if (sbPbs.Any())
+                            {
+                                _context.SavingPassbooks.RemoveRange(sbPbs);
+                            }
                             _context.SavingTransactions.Remove(sbTx);
                         }
                     }
@@ -1302,7 +1381,7 @@ namespace Bhisi.Api.Controllers
                     return BadRequest(new { message = "निवडलेले बँक खाते लेजर आढळले नाही." });
                 }
             }
-            else if (req.PaymentMode == "Transfer")
+            else if (string.Equals(req.PaymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(req.PaymentMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(req.PaymentMode, "Savings", StringComparison.OrdinalIgnoreCase) || string.Equals(req.PaymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase))
             {
                 if (!req.SavingAccountID.HasValue || req.SavingAccountID.Value <= 0)
                 {
@@ -1365,7 +1444,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 // If SB transfer, deduct total from SB account
-                if (req.PaymentMode == "Transfer" && sbAcc != null)
+                if (sbAcc != null)
                 {
                     sbAcc.CurrentBalance -= req.TotalAmount;
                     _context.SavingTransactions.Add(new SavingTransaction
@@ -1584,6 +1663,10 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 voucher.VoucherType = isBulkTransfer ? "Journal" : "Receipt"; // Debit Leg: Cash / Bank / SB
+                foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
+                {
+                    st.VoucherNo = voucher.VoucherNo;
+                }
                 bool isDebitCustomerPersonal = (req.PaymentMode == "Transfer" || req.PaymentMode == "Savings") 
                     && debitLedger.AccountType != "Cash In Hand" 
                     && !debitLedger.LedgerName.Contains("रोख")
@@ -2108,6 +2191,10 @@ namespace Bhisi.Api.Controllers
                                 Amount = dailyInterest
                             };
                             _context.FdTransactions.Add(tx);
+                        if (tx.TransactionType == "Premature_Close" && tx.VoucherID > 0)
+                        {
+                            await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, tx.VoucherID);
+                        }
                         }
                     }
 
@@ -2301,6 +2388,8 @@ namespace Bhisi.Api.Controllers
             }
 
             // 🌟 1. Accrue unposted interest up to settlement txDate (Daily Reducing / Scheduled)
+            decimal prevIntBal = targetLoan.InterestBalance;
+            DateTime? prevIntDt = targetLoan.LastInterestPostingDate;
             var (pendingInterest, pendingDays, fromDate) = await CalculatePendingLoanInterestAsync(targetLoan, txDate);
             if (pendingInterest > 0)
             {
@@ -2346,10 +2435,13 @@ namespace Bhisi.Api.Controllers
                 ReceiptNo = loanReceiptNo,
                 TotalAmountReceived = adjustAmount,
                 PenaltyInterestCollected = penaltyPaid,
-                InterestCollected = interestPaid,
+                BranchID = targetLoan.BranchID > 0 ? targetLoan.BranchID : branchId,
+                ReceivableInterestCollected = Math.Min(interestPaid, prevIntBal),
+                InterestCollected = Math.Max(0m, interestPaid - Math.Min(interestPaid, prevIntBal)),
                 PrincipalCollected = principalPaid,
                 PaymentMode = "FD Settlement",
                 BankName = $"मुदत ठेव वर्ग: {accountNo}",
+                Remarks = $"FD वजावट: {accountNo} [PreIntBal:{prevIntBal.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}|PreIntDt:{(prevIntDt.HasValue ? prevIntDt.Value.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) : "NULL")}]",
                 ChequeNo = accountNo
             };
             _context.LoanCollections.Add(loanCollection);
@@ -2790,6 +2882,10 @@ namespace Bhisi.Api.Controllers
                             Amount = totalMaturityPayout
                         };
                         _context.FdTransactions.Add(tx);
+                        if (tx.TransactionType == "Premature_Close" && tx.VoucherID > 0)
+                        {
+                            await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, tx.VoucherID);
+                        }
 
                         if (overdueInterest > 0)
                         {
@@ -3012,6 +3108,10 @@ namespace Bhisi.Api.Controllers
                             Amount = totalMaturityPayout
                         };
                         _context.FdTransactions.Add(tx);
+                        if (tx.TransactionType == "Premature_Close" && tx.VoucherID > 0)
+                        {
+                            await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, tx.VoucherID);
+                        }
 
                         if (overdueInterest > 0)
                         {
@@ -3448,11 +3548,13 @@ namespace Bhisi.Api.Controllers
 
                     // 5. Final payable calculations
                     decimal penaltyClawback = 0;
+                    decimal unpaidMisInterest = isPeriodicPayout ? Math.Max(0m, recalculatedInterest - alreadyAccruedInt) : 0m;
                     decimal netPayoutAmount = account.DepositAmount + recalculatedInterest;
 
                     if (isPeriodicPayout)
                     {
                         // In MIS: interest was physically disbursed to customer monthly.
+                        netPayoutAmount = account.DepositAmount + unpaidMisInterest;
                         // If already paid interest exceeds recalculated interest, recover from Principal payout.
                         if (alreadyAccruedInt > recalculatedInterest)
                         {
@@ -3518,6 +3620,21 @@ namespace Bhisi.Api.Controllers
                     var payableLedger = await ResolveInterestPayableLedgerAsync(account.FdScheme);
                     var expenseLedger = await ResolveInterestExpenseLedgerAsync(account.FdScheme);
                     var clawbackLedger = await ResolveClawbackLedgerAsync(account.FdScheme);
+                    if (!isPeriodicPayout && alreadyAccruedInt > 0 && payableLedger == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("मुदत ठेव देय व्याज लेजर (FD Interest Payable Ledger) सापडले नाही. कृपया मुदत ठेव योजनेत लेजर मॅपिंग तपासा.");
+                    }
+                    if ((isPeriodicPayout ? unpaidMisInterest > 0 : recalculatedInterest > alreadyAccruedInt) && expenseLedger == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("मुदत ठेव व्याज खर्च लेजर (FD Interest Expense Ledger) सापडले नाही. कृपया मुदत ठेव योजनेत लेजर मॅपिंग तपासा.");
+                    }
+                    if (penaltyClawback > 0 && clawbackLedger == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("मुदतपूर्व दंड / व्याज कपात लेजर (Premature Penalty / Clawback Ledger) सापडले नाही. कृपया मुदत ठेव योजनेत लेजर मॅपिंग तपासा.");
+                    }
                     
                     if (fdLiabilityLedger == null)
                     {
@@ -3622,6 +3739,10 @@ namespace Bhisi.Api.Controllers
                         if (isPeriodicPayout)
                         {
                             // In MIS:
+                            if (unpaidMisInterest > 0 && expenseLedger != null)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unpaidMisInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            }
                             // Cr Clawback Income / Recovery
                             if (penaltyClawback > 0 && clawbackLedger != null)
                             {
@@ -3697,6 +3818,10 @@ namespace Bhisi.Api.Controllers
                             Amount = netPayoutAmount
                         };
                         _context.FdTransactions.Add(tx);
+                        if (tx.TransactionType == "Premature_Close" && tx.VoucherID > 0)
+                        {
+                            await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, tx.VoucherID);
+                        }
 
                         await _context.SaveChangesAsync();
                         await transaction.CommitAsync();
@@ -3947,6 +4072,18 @@ namespace Bhisi.Api.Controllers
                             finalVoucherId = counterVoucher.VoucherID;
                         }
 
+                        int targetMisExpenseVoucherId = isCrossBranchTxn
+                            ? (_context.Vouchers.Local.FirstOrDefault(v => v.VoucherID == finalVoucherId)?.RelatedVoucherID ?? finalVoucherId)
+                            : finalVoucherId;
+                        if (isPeriodicPayout && unpaidMisInterest > 0 && expenseLedger != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = targetMisExpenseVoucherId, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unpaidMisInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        }
+                        await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, finalVoucherId);
+                        if (isCrossBranchTxn && targetMisExpenseVoucherId != finalVoucherId)
+                        {
+                            await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, targetMisExpenseVoucherId);
+                        }
                         // Log Closure Interest (Cr) if recalculated interest > 0 so FD sub-ledger stays balanced to 0.00
                         if (recalculatedInterest > 0)
                         {
@@ -3975,6 +4112,10 @@ namespace Bhisi.Api.Controllers
                             Amount = netPayoutAmount
                         };
                         _context.FdTransactions.Add(tx);
+                        if (tx.TransactionType == "Premature_Close" && tx.VoucherID > 0)
+                        {
+                            await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, tx.VoucherID);
+                        }
 
                         await _context.SaveChangesAsync();
                         await transaction.CommitAsync();
@@ -5092,6 +5233,10 @@ namespace Bhisi.Api.Controllers
                             Amount = itemInterest
                         };
                         _context.FdTransactions.Add(tx);
+                        if (tx.TransactionType == "Premature_Close" && tx.VoucherID > 0)
+                        {
+                            await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, tx.VoucherID);
+                        }
                         acc.LastInterestPostingDate = req.AccrualDate;
                         postedCount++;
                     }

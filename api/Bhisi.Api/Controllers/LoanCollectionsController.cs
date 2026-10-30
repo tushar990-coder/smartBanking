@@ -19,10 +19,12 @@ namespace Bhisi.Api.Controllers
     public class LoanCollectionsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly Services.VoucherRollbackAndDeleteService _rollbackService;
 
-        public LoanCollectionsController(AppDbContext context)
+        public LoanCollectionsController(AppDbContext context, Services.VoucherRollbackAndDeleteService rollbackService)
         {
             _context = context;
+            _rollbackService = rollbackService;
         }
 
         private (int? userId, string userRole, int userBranchId, bool isHOUser) GetCurrentUserInfo()
@@ -60,6 +62,8 @@ namespace Bhisi.Api.Controllers
                 var query = _context.LoanCollections
                     .AsNoTracking()
                     .Include(c => c.Branch)
+                    .Include(c => c.Voucher)
+                    .Include(c => c.HomeBranchVoucher)
                     .Include(c => c.LoanAccount)
                         .ThenInclude(l => l!.Member)
                     .Include(c => c.LoanAccount)
@@ -101,6 +105,8 @@ namespace Bhisi.Api.Controllers
                     var fallbackQuery = _context.LoanCollections
                         .AsNoTracking()
                         .Include(c => c.Branch)
+                    .Include(c => c.Voucher)
+                    .Include(c => c.HomeBranchVoucher)
                         .Include(c => c.LoanAccount)
                             .ThenInclude(l => l!.Customer)
                         .AsQueryable();
@@ -125,7 +131,8 @@ namespace Bhisi.Api.Controllers
                 catch (Exception fallbackEx)
                 {
                     Serilog.Log.Error(fallbackEx, "GetLoanCollections fallback failure: {Message}", fallbackEx.Message);
-                    string detailedError = ex.InnerException?.Message ?? ex.Message;
+                    if (ex is InvalidOperationException) { return BadRequest(new { message = ex.Message }); }
+                string detailedError = ex.InnerException?.Message ?? ex.Message;
                     return StatusCode(500, new { message = $"कर्ज वसुली नोंदी लोड करताना त्रुटी आली: {detailedError}" });
                 }
             }
@@ -271,6 +278,9 @@ namespace Bhisi.Api.Controllers
                 decimal regularInterestPaid = 0;
                 decimal principalPaid = 0;
                 LoanRate? loanRate = loanAccount.LoanRate;
+                decimal preLoanPrin = loanAccount.PrincipalBalance;
+                decimal preBookedInt = loanAccount.InterestBalance;
+                decimal preBookedPen = loanAccount.OverdueInterestBalance;
 
                 if (collection.IsOTS)
                 {
@@ -294,11 +304,12 @@ namespace Bhisi.Api.Controllers
                     remaining -= penaltyPaid;
 
                     interestPaid = regularInterestPaid + penaltyPaid;
-                    principalPaid = remaining;
+                    principalPaid = Math.Min(remaining, loanAccount.PrincipalBalance);
+                    decimal extraOtsInterest = Math.Max(0m, remaining - principalPaid);
 
                     collection.PenaltyInterestCollected = penaltyPaid;
                     collection.ReceivableInterestCollected = regularInterestPaid;
-                    collection.InterestCollected = 0;
+                    collection.InterestCollected = extraOtsInterest;
                     collection.PrincipalCollected = principalPaid;
                     collection.SurchargeCollected = 0;
 
@@ -391,6 +402,23 @@ namespace Bhisi.Api.Controllers
                         regularInterestPaid = collection.InterestCollected;
                         principalPaid = Math.Min(collection.PrincipalCollected, loanAccount.PrincipalBalance);
                         surchargeCollected = collection.SurchargeCollected;
+                        decimal explicitDiff = remaining - (penaltyPaid + receivablePaid + regularInterestPaid + principalPaid + surchargeCollected);
+                        if (explicitDiff > 0m)
+                        {
+                            decimal addPrin = Math.Min(explicitDiff, Math.Max(0m, loanAccount.PrincipalBalance - principalPaid));
+                            principalPaid += addPrin;
+                            explicitDiff -= addPrin;
+                            surchargeCollected += explicitDiff;
+                        }
+                        else if (explicitDiff < 0m)
+                        {
+                            decimal trim = -explicitDiff;
+                            decimal cutSur = Math.Min(trim, surchargeCollected); surchargeCollected -= cutSur; trim -= cutSur;
+                            decimal cutInt = Math.Min(trim, regularInterestPaid); regularInterestPaid -= cutInt; trim -= cutInt;
+                            decimal cutPrin = Math.Min(trim, principalPaid); principalPaid -= cutPrin; trim -= cutPrin;
+                            decimal cutRec = Math.Min(trim, receivablePaid); receivablePaid -= cutRec; trim -= cutRec;
+                            decimal cutPen = Math.Min(trim, penaltyPaid); penaltyPaid -= cutPen;
+                        }
 
                         loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - penaltyPaid);
                         loanAccount.InterestBalance = Math.Max(0, (existingReceivableInterest - receivablePaid) + (currentPeriodInterest - regularInterestPaid));
@@ -631,7 +659,13 @@ namespace Bhisi.Api.Controllers
                 int collectingBranch = collectingBranchId;
                 collection.BranchID = collectingBranch;
 
-                int surchargeLedgerId = loanRate?.SurchargeLedgerID ?? 0;
+                int surchargeLedgerId = await Helpers.Step4AccountingHelper.ResolveSurchargeLedgerIdAsync(_context, loanRate?.SurchargeLedgerID ?? 0, overdueInterestLedgerId, collection.SurchargeCollected);
+                int recoveryExpenseLedgerId = await Helpers.Step4AccountingHelper.ResolveRecoveryExpenseLedgerIdAsync(_context, loanRate, expensesPaid);
+                if (collection.Fees != null && collection.Fees.Any(f => f.Amount > 0 && f.LedgerID <= 0))
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = "वसुली शुल्कासाठी (Collection Fee) वैध जी.एल. खाते निवडलेले नाही." });
+                }
                 int cashLedgerId;
                 if (isBankMode)
                 {
@@ -708,6 +742,7 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
+                    if (pigmyLedgerId <= 0) { await transaction.RollbackAsync(); return BadRequest(new { message = $"पिग्मी ठेव खाते (#{sourcePigmyAcc.AccountNo}) योजनेला वैध 'पिग्मी देयता लेजर' जोडलेले नाही." }); }
                     if (pigmyLedgerId > 0)
                     {
                         cashLedgerId = pigmyLedgerId;
@@ -801,7 +836,19 @@ namespace Bhisi.Api.Controllers
 
                 decimal totalFees = collection.Fees?.Sum(f => f.Amount) ?? 0;
                 decimal totalReceiptAmount = collection.TotalAmountReceived + totalFees;
-                decimal totalWaiverAmount = collection.InterestWaived + collection.PenaltyWaived;
+                decimal bookedPrincipalWaived = collection.IsOTS ? Math.Max(0m, preLoanPrin - collection.PrincipalCollected) : 0m;
+                decimal bookedInterestWaived = collection.IsOTS
+                    ? Math.Max(0m, preBookedInt - collection.ReceivableInterestCollected)
+                    : Math.Min(Math.Max(0m, collection.InterestWaived), Math.Max(0m, preBookedInt - collection.ReceivableInterestCollected));
+                decimal bookedPenaltyWaived = collection.IsOTS
+                    ? Math.Max(0m, preBookedPen - collection.PenaltyInterestCollected)
+                    : Math.Min(Math.Max(0m, collection.PenaltyWaived), Math.Max(0m, preBookedPen - collection.PenaltyInterestCollected));
+                decimal totalWaiverAmount = bookedPrincipalWaived + bookedInterestWaived + bookedPenaltyWaived;
+                if (totalWaiverAmount > 0m && waiverLedger == null)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = "कर्ज सूट (OTS / Interest Waiver) नोंदवण्यासाठी व्याज सूट खर्च लेजर सापडले नाही." });
+                }
 
                 // Create Voucher under the Collecting Branch (where cash is physically received)
                 var branch = await _context.Branches.FindAsync(collectingBranch);
@@ -919,6 +966,15 @@ namespace Bhisi.Api.Controllers
 
                     // Voucher details and collection link will be saved in the consolidated batch SaveChangesAsync
                     collection.VoucherID = voucher.VoucherID;
+                    if (recoveryExpenseLedgerId > 0 && expensesPaid > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = recoveryExpenseLedgerId, DrCr = "Cr", Amount = expensesPaid, CustomerID = custId, MemberID = memId });
+                    if (loanLedgerId > 0 && bookedPrincipalWaived > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = bookedPrincipalWaived, CustomerID = custId, MemberID = memId });
+                    if (receivableInterestLedgerId > 0 && bookedInterestWaived > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = receivableInterestLedgerId, DrCr = "Cr", Amount = bookedInterestWaived, CustomerID = custId, MemberID = memId });
+                    if (overdueInterestLedgerId > 0 && bookedPenaltyWaived > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = overdueInterestLedgerId, DrCr = "Cr", Amount = bookedPenaltyWaived, CustomerID = custId, MemberID = memId });
+                    await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
                     collection.HomeBranchVoucherID = null;
                 }
                 else
@@ -946,7 +1002,7 @@ namespace Bhisi.Api.Controllers
                     // 2. Voucher 2: Home Branch Settlement (Dr IBT, Cr Loan Principal, Cr Interest, Cr Penalty, Cr Surcharge, Cr Fees)
                     var homeBranch = await _context.Branches.FindAsync(targetHomeBranchId);
                     string hbCode = homeBranch?.BranchCode ?? "HB";
-                    int countHb = await _context.Vouchers.CountAsync(v => v.BranchID == targetHomeBranchId && v.VoucherType == "Journal") + 1;
+                    int countHb = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{hbCode}-JV-{fy}-", 5);
                     string voucherNoHb = $"{hbCode}-JV-{fy}-{countHb:D5}";
                     while (await _context.Vouchers.AnyAsync(v => v.VoucherNo == voucherNoHb))
                     {
@@ -1026,6 +1082,16 @@ namespace Bhisi.Api.Controllers
                     homeVoucher.RelatedVoucherID = counterVoucher.VoucherID;
 
                     collection.VoucherID = counterVoucher.VoucherID;
+                    if (recoveryExpenseLedgerId > 0 && expensesPaid > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = recoveryExpenseLedgerId, DrCr = "Cr", Amount = expensesPaid, CustomerID = custId, MemberID = memId });
+                    if (loanLedgerId > 0 && bookedPrincipalWaived > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = bookedPrincipalWaived, CustomerID = custId, MemberID = memId });
+                    if (receivableInterestLedgerId > 0 && bookedInterestWaived > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = receivableInterestLedgerId, DrCr = "Cr", Amount = bookedInterestWaived, CustomerID = custId, MemberID = memId });
+                    if (overdueInterestLedgerId > 0 && bookedPenaltyWaived > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = overdueInterestLedgerId, DrCr = "Cr", Amount = bookedPenaltyWaived, CustomerID = custId, MemberID = memId });
+                    await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, counterVoucher.VoucherID, counterVoucher.VoucherNo);
+                    await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, homeVoucher.VoucherID, homeVoucher.VoucherNo);
                     collection.HomeBranchVoucherID = homeVoucher.VoucherID;
                 }
 
@@ -1151,6 +1217,7 @@ namespace Bhisi.Api.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                if (ex is InvalidOperationException) { return BadRequest(new { message = ex.Message }); }
                 string detailedError = ex.InnerException?.Message ?? ex.Message;
                 return StatusCode(500, new { message = $"पावती जतन करताना सर्व्हर त्रुटी आली: {detailedError}" });
             }
@@ -1311,6 +1378,60 @@ namespace Bhisi.Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteLoanCollection(int id)
         {
+            var (curUserId, curUserRole, curBranchId, curIsHO) = GetCurrentUserInfo();
+
+            var preCol = await _context.LoanCollections
+                .AsNoTracking()
+                .Include(c => c.Voucher)
+                .Include(c => c.HomeBranchVoucher)
+                .FirstOrDefaultAsync(c => c.LoanCollectionID == id);
+
+            if (preCol == null) return NotFound(new { message = "कर्ज वसुली पावती सापडली नाही." });
+
+            if (!curIsHO && preCol.BranchID != curBranchId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला इतर शाखेची कर्ज वसुली पावती डिलीट करण्याची परवानगी नाही." });
+            }
+
+            if ((preCol.Voucher != null && preCol.Voucher.Status == "Approved") ||
+                (preCol.HomeBranchVoucher != null && preCol.HomeBranchVoucher.Status == "Approved"))
+            {
+                return BadRequest(new { message = "मंजूर (Approved) कर्ज वसुली पावती थेट डिलीट करता येत नाही. प्रथम व्हाउचर पासिंगमधून संबंधित व्हाउचर अन-पास (Unpass) करा." });
+            }
+
+            int? targetVoucherId = (preCol.VoucherID.HasValue && preCol.VoucherID.Value > 0)
+                ? preCol.VoucherID
+                : ((preCol.HomeBranchVoucherID.HasValue && preCol.HomeBranchVoucherID.Value > 0) ? preCol.HomeBranchVoucherID : null);
+
+            if (targetVoucherId.HasValue)
+            {
+                var delRes = await _rollbackService.DeleteVoucherWithRollbackAsync(
+                    targetVoucherId.Value,
+                    new Services.VoucherDeleteRequestContext
+                    {
+                        UserId = curUserId ?? 1,
+                        Username = User?.Identity?.Name ?? "User",
+                        UserRole = curUserRole,
+                        UserBranchId = curBranchId,
+                        IsHeadOfficeAdmin = curIsHO,
+                        Reason = $"कर्ज वसुली पावती क्र. {preCol.ReceiptNo} थेट डिलीट (Hard Delete)",
+                        ActionSource = "LOAN_COLLECTION_HARD_DELETE",
+                        ClientIpAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString()
+                    });
+
+                if (!delRes.Success)
+                {
+                    return StatusCode(delRes.HttpStatusCode, new { message = delRes.Message });
+                }
+
+                return Ok(new { message = "पावती व संलग्न व्हाउचर यशस्वीरित्या डिलीट व पूर्ववत केले (Receipt & Voucher hard-deleted)." });
+            }
+
+            return await DeleteLegacyUnlinkedLoanCollectionAsync(id);
+        }
+
+        private async Task<IActionResult> DeleteLegacyUnlinkedLoanCollectionAsync(int id)
+        {
             var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
 
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -1341,7 +1462,16 @@ namespace Bhisi.Api.Controllers
                     {
                         loanAccount.InterestBalance += collection.ReceivableInterestCollected;
                     }
-                    if (loanAccount.Status == "Closed" && loanAccount.PrincipalBalance > 0)
+                    if (collection.PenaltyWaived > 0)
+                    {
+                        loanAccount.OverdueInterestBalance += collection.PenaltyWaived;
+                    }
+                    if (collection.InterestWaived > 0)
+                    {
+                        loanAccount.InterestBalance += collection.InterestWaived;
+                    }
+                    if ((loanAccount.Status == "Closed" || loanAccount.Status == "Closed_OTS") &&
+                        (loanAccount.PrincipalBalance > 0 || loanAccount.InterestBalance > 0 || loanAccount.OverdueInterestBalance > 0))
                     {
                         loanAccount.Status = "Active";
                     }
@@ -1415,10 +1545,13 @@ namespace Bhisi.Api.Controllers
 
                         var savingTxns = await _context.SavingTransactions
                             .Where(st => st.SavingAccountID == savingAccount.SavingAccountID && 
-                                         !string.IsNullOrEmpty(collection.ReceiptNo) && st.Narration.Contains(collection.ReceiptNo))
+                                         !string.IsNullOrEmpty(collection.ReceiptNo) && st.Narration != null && st.Narration.Contains(collection.ReceiptNo))
                             .ToListAsync();
                         if (savingTxns.Any())
                         {
+                            var savTxnIds = savingTxns.Select(x => x.TransactionID).ToList();
+                            var savPbs = await _context.SavingPassbooks.Where(p => savTxnIds.Contains(p.TransactionID)).ToListAsync();
+                            if (savPbs.Any()) _context.SavingPassbooks.RemoveRange(savPbs);
                             _context.SavingTransactions.RemoveRange(savingTxns);
                         }
                     }

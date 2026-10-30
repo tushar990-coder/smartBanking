@@ -100,6 +100,11 @@ namespace Bhisi.Api.Controllers
                 disbursement.DisbursementDate = cleanDate;
 
                 // Ensure all ledgers are loaded and validated
+                var preLedgers = await _context.Ledgers.Include(l => l.AccountGroup).ToListAsync();
+                var preLedgerDict = preLedgers.ToDictionary(l => l.LedgerID);
+                var preShareLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
+                int? postRateIdForDed = disbursement.LoanAccount?.LoanRateID ?? (disbursement.LoanAccountID > 0 ? await _context.LoanAccounts.Where(a => a.LoanAccountID == disbursement.LoanAccountID).Select(a => (int?)a.LoanRateID).FirstOrDefaultAsync() : null);
+                await Helpers.Step4AccountingHelper.NormalizeAndValidateDisbursementDeductionsAsync(_context, disbursement, preLedgerDict, preLedgers, preShareLedger, postRateIdForDed);
                 var ledgers = await _context.Ledgers.Include(l => l.AccountGroup).ToListAsync();
                 var validLedgerDict = ledgers.ToDictionary(l => l.LedgerID);
                 var shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
@@ -111,7 +116,7 @@ namespace Bhisi.Api.Controllers
                     {
                         if (!validLedgerDict.ContainsKey(ded.LedgerID))
                         {
-                            ded.LedgerID = shareCapitalLedger.LedgerID;
+                            if (ded.Amount > 0) { throw new InvalidOperationException($"कर्ज वाटपातील ₹{ded.Amount:N2} कपातीसाठी वैध जी.एल. खाते (Deduction Ledger) निवडलेले नाही."); }
                         }
 
                         if (validLedgerDict.TryGetValue(ded.LedgerID, out var l))
@@ -747,7 +752,7 @@ namespace Bhisi.Api.Controllers
                     {
                         if (ded.Amount > 0)
                         {
-                            int targetDedLedgerId = validLedgerDict.ContainsKey(ded.LedgerID) ? ded.LedgerID : shareCapitalLedger.LedgerID;
+                            int targetDedLedgerId = ded.LedgerID;
                             _context.VoucherDetails.Add(new VoucherDetail
                             {
                                 VoucherID = voucher.VoucherID,
@@ -763,6 +768,7 @@ namespace Bhisi.Api.Controllers
 
                 await _context.SaveChangesAsync();
 
+                await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
                 // Auto-allocate shares in Share Module if Share Deduction is present
                 if (disbursement.ShareDeduction > 0)
                 {
@@ -1106,6 +1112,11 @@ namespace Bhisi.Api.Controllers
                 existingDisbursement.DisbursementAmount = disbursement.DisbursementAmount;
                 
                 // Categorize deductions into scalar properties
+                var prePutLedgers = await _context.Ledgers.Include(l => l.AccountGroup).ToListAsync();
+                var prePutLedgerDict = prePutLedgers.ToDictionary(l => l.LedgerID);
+                var prePutShareLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
+                int? putRateIdForDed = disbursement.LoanAccount?.LoanRateID ?? await _context.LoanAccounts.Where(a => a.LoanAccountID == existingDisbursement.LoanAccountID).Select(a => (int?)a.LoanRateID).FirstOrDefaultAsync();
+                await Helpers.Step4AccountingHelper.NormalizeAndValidateDisbursementDeductionsAsync(_context, disbursement, prePutLedgerDict, prePutLedgers, prePutShareLedger, putRateIdForDed);
                 var ledgers = await _context.Ledgers.Include(l => l.AccountGroup).ToListAsync();
                 var validLedgerDict = ledgers.ToDictionary(l => l.LedgerID);
                 var shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
@@ -1117,7 +1128,7 @@ namespace Bhisi.Api.Controllers
                     {
                         if (!validLedgerDict.ContainsKey(ded.LedgerID))
                         {
-                            ded.LedgerID = shareCapitalLedger.LedgerID;
+                            if (ded.Amount > 0) { throw new InvalidOperationException($"कर्ज वाटपातील ₹{ded.Amount:N2} कपातीसाठी वैध जी.एल. खाते (Deduction Ledger) निवडलेले नाही."); }
                         }
 
                         if (validLedgerDict.TryGetValue(ded.LedgerID, out var l))
@@ -1145,7 +1156,8 @@ namespace Bhisi.Api.Controllers
                 {
                     foreach (var d in disbursement.Deductions)
                     {
-                        int validDedLedgerId = validLedgerDict.ContainsKey(d.LedgerID) ? d.LedgerID : shareCapitalLedger.LedgerID;
+                        if (d.Amount <= 0) continue;
+                        int validDedLedgerId = d.LedgerID;
                         d.LoanDisbursementDeductionID = 0;
                         d.LoanDisbursementID = id;
                         d.LedgerID = validDedLedgerId;
@@ -1347,7 +1359,7 @@ namespace Bhisi.Api.Controllers
                         {
                             if (ded.Amount > 0)
                             {
-                                int validDedLedgerId = validLedgerDict.ContainsKey(ded.LedgerID) ? ded.LedgerID : shareCapitalLedger.LedgerID;
+                                int validDedLedgerId = ded.LedgerID;
                                 existingDisbursement.Voucher.VoucherDetails.Add(new VoucherDetail
                                 {
                                     LedgerID = validDedLedgerId,
@@ -1367,6 +1379,7 @@ namespace Bhisi.Api.Controllers
 
                     await _context.SaveChangesAsync();
 
+                    Helpers.VoucherBalanceHelper.EnsureBalanced(existingDisbursement.Voucher);
                     if (isSavingTransfer && vStatus == "Approved" && savingTransferTarget != null)
                     {
                         await Helpers.LoanDisbursementReversalHelper.ApplyApprovedSavingTransferCreditAsync(

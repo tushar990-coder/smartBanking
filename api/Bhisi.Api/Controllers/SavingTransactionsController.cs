@@ -240,6 +240,7 @@ namespace Bhisi.Api.Controllers
                 int targetBranchId = operatingBranchId;
 
                 txn.BranchID = targetBranchId;
+                SavingTransaction? targetTxn = null;
                 txn.CustomerID = account.CustomerID;
                 txn.BalanceAfterTxn = account.CurrentBalance;
                 txn.CreatedOn = DateTime.Now;
@@ -258,7 +259,7 @@ namespace Bhisi.Api.Controllers
 
                 if (targetAccount != null)
                 {
-                    var targetTxn = new SavingTransaction
+                    targetTxn = new SavingTransaction
                     {
                         SavingAccountID = targetAccount.SavingAccountID,
                         CustomerID = targetAccount.CustomerID,
@@ -318,7 +319,7 @@ namespace Bhisi.Api.Controllers
                     await dbTransaction.RollbackAsync();
                     return BadRequest($"अवैध पेमेंट पद्धत '{txn.PaymentMode}' किंवा संबंधित खाते निवडलेले नाही.");
                 }
-                else if (false)
+                else if (txn.BankLedgerID.HasValue && txn.BankLedgerID.Value < 0)
                 {
                     cashBankLedgerID = txn.BankLedgerID.Value;
                 }
@@ -348,7 +349,7 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                int count = await _context.Vouchers.CountAsync(v => v.BranchID == targetBranchId && v.VoucherType == voucherType) + 1;
+                int count = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{branchCode}-{typeCode}-{fy}-", 5);
                 string voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
 
                 string narration = targetAccount != null
@@ -423,7 +424,7 @@ namespace Bhisi.Api.Controllers
 
                     _context.Vouchers.Add(voucher);
                     await _context.SaveChangesAsync();
-                    txn.VoucherNo = voucherNo;
+                    txn.VoucherNo = voucherNo; if (targetTxn != null) { targetTxn.VoucherNo = voucherNo; }
                 }
                 else
                 {
@@ -432,7 +433,7 @@ namespace Bhisi.Api.Controllers
                     var homeBranch = await _context.Branches.FindAsync(homeBranchId);
                     string hbCode = homeBranch?.BranchCode ?? "HB";
 
-                    int countHb = await _context.Vouchers.CountAsync(v => v.BranchID == homeBranchId && v.VoucherType == "Journal") + 1;
+                    int countHb = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{hbCode}-JV-{fy}-", 5);
                     string voucherNoHb = $"{hbCode}-JV-{fy}-{countHb:D5}";
 
                     if (txn.TransactionType == "Deposit" || txn.TransactionType == "Interest")
@@ -515,7 +516,7 @@ namespace Bhisi.Api.Controllers
                         homeVoucher.RelatedVoucherID = counterVoucher.VoucherID;
                         await _context.SaveChangesAsync();
 
-                        txn.VoucherNo = voucherNo;
+                        txn.VoucherNo = voucherNo; if (targetTxn != null) { targetTxn.VoucherNo = voucherNo; }
                     }
                     else // Withdrawal
                     {
@@ -597,7 +598,7 @@ namespace Bhisi.Api.Controllers
                         homeVoucher.RelatedVoucherID = counterVoucher.VoucherID;
                         await _context.SaveChangesAsync();
 
-                        txn.VoucherNo = voucherNo;
+                        txn.VoucherNo = voucherNo; if (targetTxn != null) { targetTxn.VoucherNo = voucherNo; }
                     }
                 }
                 await _context.SaveChangesAsync();

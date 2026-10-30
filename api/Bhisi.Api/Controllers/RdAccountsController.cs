@@ -687,6 +687,10 @@ namespace Bhisi.Api.Controllers
                         _context.Vouchers.Add(voucher);
                         await _context.SaveChangesAsync();
                         generatedVoucherId = voucher.VoucherID;
+                        foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
+                        {
+                            st.VoucherNo = voucher.VoucherNo;
+                        }
 
                         // Dr Cash / Saving Liability, Cr RD Liability
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitGlLedger.LedgerID, DrCr = "Dr", Amount = account.InstallmentAmount, CustomerID = autoDebitSavingCustomerId ?? account.CustomerID, MemberID = linkedMemberId });
@@ -948,6 +952,27 @@ namespace Bhisi.Api.Controllers
             bool hasSubsequentPaidSchedules = await _context.RDInstallmentSchedules
                 .AnyAsync(s => s.RdAccountID == id && s.InstallmentNo > initialAllowedInstallments && s.Status == "Paid");
 
+            var txVoucherIds = transactions.Where(t => t.VoucherID > 0).Select(t => t.VoucherID).Distinct().ToList();
+            var schedVoucherIds = await _context.RDInstallmentSchedules
+                .Where(s => s.RdAccountID == id && s.VoucherID.HasValue && s.VoucherID.Value > 0)
+                .Select(s => s.VoucherID!.Value)
+                .Distinct()
+                .ToListAsync();
+            var allCandidateVIds = txVoucherIds.Union(schedVoucherIds).Distinct().ToList();
+
+            var linkedOpeningVouchers = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                .Where(v => allCandidateVIds.Contains(v.VoucherID) ||
+                            (!string.IsNullOrEmpty(account.AccountNo) &&
+                             (v.VoucherNo == $"REC-RD-OPEN-{account.AccountNo}" ||
+                              v.VoucherNo == $"JV-RD-OPEN-{account.AccountNo}")))
+                .ToListAsync();
+
+            if (!account.IsLegacyAccount && linkedOpeningVouchers.Any(v => v.Status == "Approved"))
+            {
+                return BadRequest(new { message = "या आरडी खात्याचे ओपनिंग व्हाउचर मंजूर (Approved) झालेले आहे. खाते डिलीट करण्यापूर्वी व्हाउचर पासिंगमधून संबंधित व्हाउचर अन-पास (Unpass) करा." });
+            }
+
             if (hasSubsequentTxns || hasSubsequentPaidSchedules)
             {
                 return BadRequest(new { message = "हे खाते डिलीट करता येणार नाही कारण या खात्यावर नंतरचे आर्थिक व्यवहार (Transactions / हप्ते) झालेले आहेत." });
@@ -1003,6 +1028,92 @@ namespace Bhisi.Api.Controllers
                 }
 
                 _context.RdAccounts.Remove(account);
+                await _context.SaveChangesAsync();
+
+                if (!account.IsLegacyAccount)
+                {
+                    var linkedVchNos = linkedOpeningVouchers
+                        .Where(v => !string.IsNullOrWhiteSpace(v.VoucherNo))
+                        .Select(v => v.VoucherNo)
+                        .Distinct()
+                        .ToList();
+
+                    if (account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
+                    {
+                        var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
+                        if (sbAcc != null)
+                        {
+                            SavingTransaction? sbTx = null;
+                            if (linkedVchNos.Any())
+                            {
+                                sbTx = await _context.SavingTransactions
+                                    .FirstOrDefaultAsync(st => st.SavingAccountID == sbAcc.SavingAccountID &&
+                                                               st.VoucherNo != null &&
+                                                               linkedVchNos.Contains(st.VoucherNo));
+                            }
+                            if (sbTx == null && !string.IsNullOrEmpty(account.AccountNo))
+                            {
+                                sbTx = await _context.SavingTransactions
+                                    .FirstOrDefaultAsync(st => st.SavingAccountID == sbAcc.SavingAccountID &&
+                                                               st.TransactionType == "Withdrawal" &&
+                                                               st.Narration != null &&
+                                                               st.Narration.Contains(account.AccountNo));
+                            }
+
+                            if (sbTx != null)
+                            {
+                                sbAcc.CurrentBalance += sbTx.Amount;
+                                _context.Entry(sbAcc).State = EntityState.Modified;
+
+                                var sbPassbooks = await _context.SavingPassbooks
+                                    .Where(p => p.TransactionID == sbTx.TransactionID)
+                                    .ToListAsync();
+                                if (sbPassbooks.Any())
+                                {
+                                    _context.SavingPassbooks.RemoveRange(sbPassbooks);
+                                }
+                                _context.SavingTransactions.Remove(sbTx);
+                            }
+                        }
+                    }
+
+                    if (linkedOpeningVouchers.Any())
+                    {
+                        var vouchersToHardDelete = new List<Voucher>();
+                        foreach (var lv in linkedOpeningVouchers)
+                        {
+                            bool usedElsewhere = await _context.RdTransactions.AnyAsync(t => t.VoucherID == lv.VoucherID) ||
+                                                 await _context.RDInstallmentSchedules.AnyAsync(s => s.VoucherID == lv.VoucherID) ||
+                                                 await _context.RdInterestAccruals.AnyAsync(a => a.VoucherID == lv.VoucherID);
+                            if (!usedElsewhere)
+                            {
+                                vouchersToHardDelete.Add(lv);
+                            }
+                        }
+
+                        if (vouchersToHardDelete.Any())
+                        {
+                            var delIds = vouchersToHardDelete.Select(v => v.VoucherID).ToList();
+                            var revRefs = await _context.Vouchers
+                                .Where(v => v.RelatedVoucherID.HasValue && delIds.Contains(v.RelatedVoucherID.Value))
+                                .ToListAsync();
+                            foreach (var rv in revRefs) rv.RelatedVoucherID = null;
+                            foreach (var dv in vouchersToHardDelete) dv.RelatedVoucherID = null;
+                            await _context.SaveChangesAsync();
+
+                            foreach (var dv in vouchersToHardDelete)
+                            {
+                                if (dv.VoucherDetails != null && dv.VoucherDetails.Any())
+                                {
+                                    _context.VoucherDetails.RemoveRange(dv.VoucherDetails);
+                                }
+                                _context.Vouchers.Remove(dv);
+                            }
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                }
                 await _context.SaveChangesAsync();
 
                 // If the deleted record was the highest/only RdAccountID, automatically decrement/reseed identity counter

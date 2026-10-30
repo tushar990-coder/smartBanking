@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 using System.Security.Claims;
 
@@ -12,10 +13,12 @@ namespace Bhisi.Api.Controllers
     public class ShareAccountsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly Services.VoucherRollbackAndDeleteService _rollbackService;
 
-        public ShareAccountsController(AppDbContext context)
+        public ShareAccountsController(AppDbContext context, Services.VoucherRollbackAndDeleteService rollbackService)
         {
             _context = context;
+            _rollbackService = rollbackService;
         }
 
         private (int userId, string username, int branchId) GetCurrentUserContext()
@@ -514,6 +517,10 @@ namespace Bhisi.Api.Controllers
                 };
                 _context.Vouchers.Add(voucher);
                 await _context.SaveChangesAsync(); // Get VoucherId
+                foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
+                {
+                    st.VoucherNo = voucher.VoucherNo;
+                }
 
                 // 5. Create ShareTransaction
                 var shareTxn = new ShareTransaction
@@ -785,6 +792,10 @@ namespace Bhisi.Api.Controllers
                 account.TotalShareCount -= request.NumberOfShares;
                 account.TotalShareAmount -= totalAmount;
 
+                foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
+                {
+                    st.VoucherNo = voucher.VoucherNo;
+                }
                 // 🌟 Handle Certificates (FIFO Deduction & Surrender):
                 int remainingToDeduct = request.NumberOfShares;
                 var activeCerts = (account.Certificates ?? new List<ShareCertificate>())
@@ -2770,6 +2781,10 @@ namespace Bhisi.Api.Controllers
                         }
                     };
                     _context.Vouchers.Add(feeVoucher);
+                    foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
+                    {
+                        st.VoucherNo = feeVoucher.VoucherNo;
+                    }
                     await _context.SaveChangesAsync();
                 }
 
@@ -2943,6 +2958,52 @@ namespace Bhisi.Api.Controllers
         [HttpPost("CancelTransfer/{transactionId}")]
         public async Task<IActionResult> CancelTransfer(int transactionId)
         {
+            var preCheckTxn = await _context.ShareTransactions
+                .AsNoTracking()
+                .Include(t => t.Voucher)
+                .FirstOrDefaultAsync(t => t.TransactionId == transactionId);
+
+            if (preCheckTxn == null) return NotFound("हस्तांतरण नोंद सापडली नाही.");
+            if (preCheckTxn.TransactionType != "Transfer-Out" && preCheckTxn.TransactionType != "Transfer-In")
+            {
+                return BadRequest("फक्त शेअर हस्तांतरण नोंदीच रद्द करता येतात.");
+            }
+
+            if (preCheckTxn.VoucherId.HasValue && preCheckTxn.VoucherId.Value > 0)
+            {
+                if (preCheckTxn.Voucher != null && preCheckTxn.Voucher.Status == "Approved")
+                {
+                    return BadRequest(new { message = "मंजूर (Approved) शेअर हस्तांतरण व्हाउचर थेट रद्द/डिलीट करता येत नाही. प्रथम व्हाउचर पासिंगमधून संबंधित व्हाउचर अन-पास (Unpass) करा." });
+                }
+
+                var (uid, uname, bid) = GetCurrentUserContext();
+                var delRes = await _rollbackService.DeleteVoucherWithRollbackAsync(
+                    preCheckTxn.VoucherId.Value,
+                    new Services.VoucherDeleteRequestContext
+                    {
+                        UserId = uid,
+                        Username = uname,
+                        UserRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "Admin",
+                        UserBranchId = bid,
+                        IsHeadOfficeAdmin = User.IsHeadOfficeAdmin(),
+                        Reason = "शेअर हस्तांतरण नोंद रद्द / Hard Delete (CancelTransfer)",
+                        ActionSource = "SHARE_TRANSFER_HARD_DELETE",
+                        ClientIpAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString()
+                    });
+
+                if (!delRes.Success)
+                {
+                    return StatusCode(delRes.HttpStatusCode, new { message = delRes.Message });
+                }
+
+                return Ok(new { message = "शेअर हस्तांतरण नोंद व संलग्न व्हाउचर डेटाबेसमधून पूर्णपणे डिलीट व पूर्ववत (Hard Delete & Rollback) करण्यात आले आहे!" });
+            }
+
+            return await CancelLegacyUnlinkedTransferAsync(transactionId);
+        }
+
+        private async Task<IActionResult> CancelLegacyUnlinkedTransferAsync(int transactionId)
+        {
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -3011,10 +3072,16 @@ namespace Bhisi.Api.Controllers
                     if (transfereeCerts.Any())
                     {
                         var certToCancel = transfereeCerts.First();
-                        certToCancel.Status = "Cancelled";
+                        if (false) certToCancel.Status = "Cancelled";
+                        var certPrints = await _context.ShareCertificatePrintHistories.Where(p => p.CertificateId == certToCancel.CertificateId).ToListAsync();
+                        if (certPrints.Any()) _context.ShareCertificatePrintHistories.RemoveRange(certPrints);
+                        _context.ShareCertificates.Remove(certToCancel);
+                        if (false)
+                        {
                         certToCancel.CancellationReason = $"Transfer Reversal: Cancelled transfer from Member ID {fromAccount.MemberId}";
                         certToCancel.ModifiedDate = DateTime.UtcNow;
                         _context.Entry(certToCancel).State = EntityState.Modified;
+                        }
                     }
 
                     // Restore Transferor's certificate if any marked as Transferred
@@ -3201,6 +3268,56 @@ namespace Bhisi.Api.Controllers
         [HttpPost("Transactions/{transactionId:int}/Cancel")]
         public async Task<IActionResult> CancelAllotment(int transactionId, [FromBody] CancelAllotmentRequest request)
         {
+            var preCheckAllot = await _context.ShareTransactions
+                .AsNoTracking()
+                .Include(t => t.Voucher)
+                .FirstOrDefaultAsync(t => t.TransactionId == transactionId);
+
+            if (preCheckAllot == null) return NotFound("शेअर व्यवहार नोंद सापडली नाही.");
+            if (preCheckAllot.TransactionType != "Allotment")
+            {
+                return BadRequest("फक्त शेअर वाटप (Allotment) नोंदीच या पर्यायातून रद्द करता येतात.");
+            }
+
+            if (preCheckAllot.VoucherId.HasValue && preCheckAllot.VoucherId.Value > 0)
+            {
+                if (preCheckAllot.Voucher != null && preCheckAllot.Voucher.Status == "Approved")
+                {
+                    return BadRequest(new { message = "मंजूर (Approved) शेअर वाटप व्हाउचर थेट रद्द/डिलीट करता येत नाही. प्रथम व्हाउचर पासिंगमधून संबंधित व्हाउचर अन-पास (Unpass) करा." });
+                }
+
+                var (uid, uname, bid) = GetCurrentUserContext();
+                string reasonText = !string.IsNullOrWhiteSpace(request?.Reason)
+                    ? request.Reason.Trim()
+                    : "शेअर वाटप नोंद रद्द / Hard Delete (CancelAllotment)";
+
+                var delRes = await _rollbackService.DeleteVoucherWithRollbackAsync(
+                    preCheckAllot.VoucherId.Value,
+                    new Services.VoucherDeleteRequestContext
+                    {
+                        UserId = uid,
+                        Username = uname,
+                        UserRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "Admin",
+                        UserBranchId = bid,
+                        IsHeadOfficeAdmin = User.IsHeadOfficeAdmin(),
+                        Reason = reasonText,
+                        ActionSource = "SHARE_ALLOTMENT_HARD_DELETE",
+                        ClientIpAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString()
+                    });
+
+                if (!delRes.Success)
+                {
+                    return StatusCode(delRes.HttpStatusCode, new { message = delRes.Message });
+                }
+
+                return Ok(new { message = $"शेअर वाटप नोंद (शेअर्स: {preCheckAllot.NumberOfShares}, रक्कम: ₹{preCheckAllot.Amount:F2}) व संलग्न व्हाउचर पूर्णपणे डिलीट व पूर्ववत करण्यात आले!" });
+            }
+
+            return await CancelLegacyUnlinkedAllotmentAsync(transactionId, request ?? new CancelAllotmentRequest());
+        }
+
+        private async Task<IActionResult> CancelLegacyUnlinkedAllotmentAsync(int transactionId, CancelAllotmentRequest request)
+        {
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -3248,10 +3365,16 @@ namespace Bhisi.Api.Controllers
                 if (certs.Any())
                 {
                     var certToCancel = certs.First();
-                    certToCancel.Status = "Cancelled";
+                    if (false) certToCancel.Status = "Cancelled";
+                    var certPrints = await _context.ShareCertificatePrintHistories.Where(p => p.CertificateId == certToCancel.CertificateId).ToListAsync();
+                    if (certPrints.Any()) _context.ShareCertificatePrintHistories.RemoveRange(certPrints);
+                    _context.ShareCertificates.Remove(certToCancel);
+                    if (false)
+                    {
                     certToCancel.CancellationReason = $"Allotment Cancelled: {request.Reason}";
                     certToCancel.ModifiedDate = DateTime.UtcNow;
                     _context.Entry(certToCancel).State = EntityState.Modified;
+                    }
                 }
 
                 // 3. Cancel or Reverse Accounting Voucher
@@ -3290,6 +3413,7 @@ namespace Bhisi.Api.Controllers
                                         Amount = txn.Amount,
                                         BalanceAfterTxn = savAcc.CurrentBalance,
                                         Narration = $"शेअर वाटप रद्दीकरण परतावा (Share Allotment Cancellation Reversal): {request.Reason}",
+                                        VoucherNo = vch.VoucherNo,
                                         CreatedBy = 1,
                                         CreatedOn = DateTime.Now
                                     });

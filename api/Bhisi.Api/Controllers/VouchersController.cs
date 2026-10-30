@@ -4,10 +4,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Bhisi.Api.Helpers;
+using Bhisi.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Bhisi.Api.Controllers
@@ -19,10 +21,14 @@ namespace Bhisi.Api.Controllers
     public class VouchersController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly VoucherRollbackAndDeleteService _rollbackService;
 
-        public VouchersController(AppDbContext context)
+        public VouchersController(
+            AppDbContext context,
+            VoucherRollbackAndDeleteService rollbackService)
         {
             _context = context;
+            _rollbackService = rollbackService;
         }
 
         // GET: api/Vouchers
@@ -41,14 +47,14 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(v => v.Status == status);
                 if (status == "Pending")
                 {
-                    query = query.Where(v => !v.VoucherNo.Contains("-OP-") && 
-                                             !v.VoucherNo.StartsWith("JV-FD-OP-") && 
-                                             !v.VoucherNo.StartsWith("REC-FD-OP-") && 
-                                             !v.VoucherNo.StartsWith("JV-RD-OP-") && 
-                                             !v.VoucherNo.StartsWith("REC-RD-OP-") && 
-                                             !v.VoucherNo.StartsWith("JV-SH-OP-") && 
-                                             !v.VoucherNo.StartsWith("JV-INV-OP-") && 
-                                             v.VoucherType != "Opening" && 
+                    query = query.Where(v => !v.VoucherNo.Contains("-OP-") &&
+                                             !v.VoucherNo.StartsWith("JV-FD-OP-") &&
+                                             !v.VoucherNo.StartsWith("REC-FD-OP-") &&
+                                             !v.VoucherNo.StartsWith("JV-RD-OP-") &&
+                                             !v.VoucherNo.StartsWith("REC-RD-OP-") &&
+                                             !v.VoucherNo.StartsWith("JV-SH-OP-") &&
+                                             !v.VoucherNo.StartsWith("JV-INV-OP-") &&
+                                             v.VoucherType != "Opening" &&
                                              !(v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration"))));
                 }
             }
@@ -204,8 +210,8 @@ namespace Bhisi.Api.Controllers
 
             // 1.1 Cashier Role Restrictions (Cashiers only allowed Cash Receipt & Cash Payment)
             var userRole = User.GetUserRole();
-            if (userRole.Equals("Cashier", StringComparison.OrdinalIgnoreCase) && 
-                !User.IsManagerOrAdmin() && 
+            if (userRole.Equals("Cashier", StringComparison.OrdinalIgnoreCase) &&
+                !User.IsManagerOrAdmin() &&
                 !userRole.Equals("Accountant", StringComparison.OrdinalIgnoreCase))
             {
                 if (voucher.VoucherType != "Receipt" && voucher.VoucherType != "Payment")
@@ -228,7 +234,7 @@ namespace Bhisi.Api.Controllers
             // 2. Validate totals
             var totalDr = voucher.VoucherDetails.Where(d => d.DrCr == "Dr").Sum(d => d.Amount);
             var totalCr = voucher.VoucherDetails.Where(d => d.DrCr == "Cr").Sum(d => d.Amount);
-            
+
             if (totalDr != totalCr)
             {
                 return BadRequest("Total Debit must equal Total Credit.");
@@ -272,12 +278,12 @@ namespace Bhisi.Api.Controllers
             }
 
             // 3. Negative Cash Balance Check
-            int branchCashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, voucher.BranchID);
+            int branchCashLedgerId = await CashLedgerHelper.GetCashLedgerIdAsync(_context, voucher.BranchID);
             var cashLedger = await _context.Ledgers.FindAsync(branchCashLedgerId);
             if (cashLedger != null)
             {
                 var cashOutflow = voucher.VoucherDetails.Where(d => d.LedgerID == branchCashLedgerId && d.DrCr == "Cr").Sum(d => d.Amount);
-                
+
                 if (cashOutflow > 0)
                 {
                     decimal currentCash = 0;
@@ -311,34 +317,10 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // 4. Maker-Checker Approval Policy
-            var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
-            bool autoPost = false;
-            decimal autoPostLimit = 0m;
-
-            // Vouchers up to autoPostLimit are automatically approved; vouchers above require Manager Approval
-            if (autoPost && voucher.TotalAmount < autoPostLimit)
-            {
-                voucher.Status = "Approved";
-                voucher.ApprovedBy = voucher.CreatedBy;
-                voucher.ApprovedOn = DateTime.Now;
-
-                // Assign day-wise and branch-wise ScrollNo
-                if (!voucher.ScrollNo.HasValue || voucher.ScrollNo.Value <= 0)
-                {
-                    int maxScroll = await _context.Vouchers
-                        .Where(v => v.BranchID == voucher.BranchID && v.VoucherDate.Date == voucher.VoucherDate.Date && v.ScrollNo != null)
-                        .Select(v => (int?)v.ScrollNo)
-                        .MaxAsync() ?? 0;
-                    voucher.ScrollNo = maxScroll + 1;
-                }
-            }
-            else
-            {
-                voucher.Status = "Pending";
-                voucher.ApprovedBy = null;
-                voucher.ApprovedOn = null;
-            }
+            // 4. Maker-Checker Approval Policy (100% Pending — zero auto-post)
+            voucher.Status = "Pending";
+            voucher.ApprovedBy = null;
+            voucher.ApprovedOn = null;
             voucher.RejectionReason = null;
 
             _context.Vouchers.Add(voucher);
@@ -418,8 +400,9 @@ namespace Bhisi.Api.Controllers
 
             // Update Details
             _context.VoucherDetails.RemoveRange(existingVoucher.VoucherDetails);
-            
-            foreach(var d in voucher.VoucherDetails) {
+
+            foreach (var d in voucher.VoucherDetails)
+            {
                 d.VoucherDetailID = 0; // reset
                 existingVoucher.VoucherDetails.Add(d);
             }
@@ -440,392 +423,57 @@ namespace Bhisi.Api.Controllers
         // DELETE: api/Vouchers/5
         [HttpDelete("{id}")]
         [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
-        public async Task<IActionResult> DeleteVoucher(int id, [FromBody] VoucherDeleteDto dto)
+        public async Task<IActionResult> DeleteVoucher(
+            int id,
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] VoucherDeleteDto? dto = null,
+            [FromQuery] string? reason = null)
         {
-            var voucher = await _context.Vouchers
-                .Include(v => v.VoucherDetails)
-                .FirstOrDefaultAsync(v => v.VoucherID == id);
+            string effectiveReason = !string.IsNullOrWhiteSpace(dto?.Reason)
+                ? dto!.Reason.Trim()
+                : (reason?.Trim() ?? string.Empty);
 
-            if (voucher == null) return NotFound("व्हाऊचर सापडला नाही.");
+            int userId = User.GetUserId();
+            if (userId <= 0 && dto != null && dto.UserID > 0) userId = dto.UserID;
 
-            // 1. Mandatory Reason Check
-            if (dto == null || string.IsNullOrWhiteSpace(dto.Reason) || dto.Reason.Trim().Length < 10)
+            string username = User.GetUsername();
+            if (string.IsNullOrWhiteSpace(username))
             {
-                return BadRequest("व्हाऊचर डिलीट करण्याचे योग्य कारण (किमान १० अक्षरे) लिहिणे बंधनकारक आहे.");
+                username = !string.IsNullOrWhiteSpace(dto?.Username) ? dto!.Username.Trim() : $"User-{userId}";
             }
 
-            bool isHOUser = User.IsHeadOfficeAdmin();
-
-            // 2. Approved Voucher Deletion Policy - STRICT: Approved/Passed vouchers CANNOT be deleted directly! Must be Unpassed first.
-            if (voucher.Status == "Approved")
+            string userRole = User.GetUserRole();
+            if (string.IsNullOrWhiteSpace(userRole) && !string.IsNullOrWhiteSpace(dto?.UserRole))
             {
-                return BadRequest("मंजूर (Approved/Passed) व्हाउचर थेट डिलीट करता येत नाही. प्रथम व्हाउचर अन-पास (Unpass) करा आणि मग प्रलंबित यादीतून डिलीट करा.");
+                userRole = dto!.UserRole.Trim();
             }
 
-            // 3. Pending Voucher Deletion Policy (Branch User limited to Today)
-            if (voucher.Status == "Pending" && !isHOUser && voucher.VoucherDate.Date != DateTime.Today.Date)
-            {
-                return BadRequest("मागील तारखेचा प्रलंबित व्हाऊचर शाखा युजर डिलीट करू शकत नाही. फक्त आजच्या तारखेचा व्हाऊचर डिलीट करता येईल.");
-            }
-
-            // 4. Closed Business Date Lock Check
-            var dayStatus = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)
-                .FirstOrDefaultAsync();
-
-            if (dayStatus != null && dayStatus.IsDayClosed && !isHOUser)
-            {
-                return BadRequest($"तारीख {voucher.VoucherDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेचा व्हाऊचर डिलीट करता येणार नाही.");
-            }
-
-            // 5. Comprehensive Cascade Rollback for Linked Loan Collections & Disbursements
-            var loanCollections = await _context.LoanCollections
-                .Include(lc => lc.Fees)
-                .Where(lc => lc.VoucherID == id || lc.HomeBranchVoucherID == id)
-                .ToListAsync();
-
-            foreach (var lc in loanCollections)
-            {
-                var loanAcc = await _context.LoanAccounts.FindAsync(lc.LoanAccountID);
-                if (loanAcc != null)
+            var result = await _rollbackService.DeleteVoucherWithRollbackAsync(
+                id,
+                new VoucherDeleteRequestContext
                 {
-                    loanAcc.PrincipalBalance += lc.PrincipalCollected;
-                    loanAcc.PurePrincipalBalance = Math.Min(loanAcc.PrincipalBalance, loanAcc.PurePrincipalBalance + lc.PrincipalCollected);
-                    if (lc.PenaltyInterestCollected > 0) loanAcc.OverdueInterestBalance += lc.PenaltyInterestCollected;
-                    if (lc.ReceivableInterestCollected > 0) loanAcc.InterestBalance += lc.ReceivableInterestCollected;
-                    if (loanAcc.Status == "Closed" && loanAcc.PrincipalBalance > 0) loanAcc.Status = "Active";
-                    _context.Entry(loanAcc).State = EntityState.Modified;
-                }
-
-                if (lc.Fees != null && lc.Fees.Any())
-                {
-                    _context.LoanCollectionFees.RemoveRange(lc.Fees);
-                }
-
-                _context.LoanCollections.Remove(lc);
-            }
-
-            // 5.1 Comprehensive Cascade Rollback for Linked Share Transactions & Certificates
-            var linkedAllShareTxns = await _context.ShareTransactions.Where(st => st.VoucherId == id).ToListAsync();
-            foreach (var st in linkedAllShareTxns)
-            {
-                var shAcc = await _context.ShareAccounts.FindAsync(st.ShareAccountId);
-                if (shAcc != null)
-                {
-                    if (st.TransactionType == "Allotment")
-                    {
-                        shAcc.TotalShareCount = Math.Max(0, shAcc.TotalShareCount - st.NumberOfShares);
-                        shAcc.TotalShareAmount = Math.Max(0, shAcc.TotalShareAmount - st.Amount);
-                        _context.Entry(shAcc).State = EntityState.Modified;
-                    }
-                    else if (st.TransactionType == "Withdrawal")
-                    {
-                        shAcc.TotalShareCount += st.NumberOfShares;
-                        shAcc.TotalShareAmount += st.Amount;
-                        _context.Entry(shAcc).State = EntityState.Modified;
-                    }
-                }
-
-                var certsToCancel = await _context.ShareCertificates
-                    .Where(c => c.ShareAccountId == st.ShareAccountId && (c.Status == "PendingApproval" || c.NumberOfShares == st.NumberOfShares))
-                    .ToListAsync();
-                foreach (var pc in certsToCancel)
-                {
-                    pc.Status = "Cancelled";
-                }
-
-                _context.ShareTransactions.Remove(st);
-            }
-
-            var loanDisbursements = await _context.LoanDisbursements
-                .Include(ld => ld.Deductions)
-                .Where(ld => ld.VoucherID == id)
-                .ToListAsync();
-
-            foreach (var ld in loanDisbursements)
-            {
-
-                // 1. Remove linked Deductions
-                if (ld.Deductions != null && ld.Deductions.Any())
-                {
-                    _context.LoanDisbursementDeductions.RemoveRange(ld.Deductions);
-                }
-
-                // 2. Adjust LoanAccount principal balance and disbursement date
-                var loanAcc = await _context.LoanAccounts.FindAsync(ld.LoanAccountID);
-                if (loanAcc != null)
-                {
-                    loanAcc.PrincipalBalance = Math.Max(0, loanAcc.PrincipalBalance - ld.DisbursementAmount);
-
-                    var otherDisbursements = await _context.LoanDisbursements
-                        .Where(d => d.LoanAccountID == loanAcc.LoanAccountID && d.LoanDisbursementID != ld.LoanDisbursementID)
-                        .ToListAsync();
-
-                    if (!otherDisbursements.Any())
-                    {
-                        loanAcc.LoanDisbursementDate = null;
-
-                        var allPendingSchedules = await _context.LoanInstallmentSchedules
-                            .Where(s => s.LoanAccountID == loanAcc.LoanAccountID)
-                            .ToListAsync();
-                        if (allPendingSchedules.Any())
-                        {
-                            _context.LoanInstallmentSchedules.RemoveRange(allPendingSchedules);
-                        }
-
-                        if (loanAcc.LoanApplicationID.HasValue)
-                        {
-                            var app = await _context.LoanApplications.FindAsync(loanAcc.LoanApplicationID.Value);
-                            if (app != null)
-                            {
-                                app.LoanAccountNo = null;
-                                _context.Entry(app).State = EntityState.Modified;
-                            }
-                        }
-
-                        // Release Liens on Deposit Collaterals
-                        var linkedCollaterals = await _context.LoanDepositCollaterals
-                            .Where(c => c.LoanAccountID == loanAcc.LoanAccountID)
-                            .ToListAsync();
-
-                        foreach (var col in linkedCollaterals)
-                        {
-                            if (col.CollateralType == "FixedDeposit")
-                            {
-                                var fd = await _context.FdAccounts.FindAsync(col.DepositAccountID);
-                                if (fd != null && (fd.LienLoanAccountNo == loanAcc.LoanAccountNo || fd.IsLienMarked))
-                                {
-                                    fd.IsLienMarked = false;
-                                    fd.LienLoanAccountNo = null;
-                                    fd.LienAmount = 0;
-                                    _context.Entry(fd).State = EntityState.Modified;
-                                }
-                            }
-                            else if (col.CollateralType == "PigmyDeposit")
-                            {
-                                var pg = await _context.PigmyAccounts.FindAsync(col.DepositAccountID);
-                                if (pg != null && (pg.LienLoanAccountNo == loanAcc.LoanAccountNo || pg.IsLienMarked))
-                                {
-                                    pg.IsLienMarked = false;
-                                    pg.LienLoanAccountNo = null;
-                                    pg.LienAmount = 0;
-                                    _context.Entry(pg).State = EntityState.Modified;
-                                }
-                            }
-                            else if (col.CollateralType == "RecurringDeposit")
-                            {
-                                var rd = await _context.RdAccounts.FindAsync(col.DepositAccountID);
-                                if (rd != null && (rd.LienLoanAccountNo == loanAcc.LoanAccountNo || rd.IsLienMarked))
-                                {
-                                    rd.IsLienMarked = false;
-                                    rd.LienLoanAccountNo = null;
-                                    rd.LienAmount = 0;
-                                    _context.Entry(rd).State = EntityState.Modified;
-                                }
-                            }
-                            else if (col.CollateralType == "SavingDeposit")
-                            {
-                                var sav = await _context.SavingAccountMasters.FindAsync(col.DepositAccountID);
-                                if (sav != null)
-                                {
-                                    sav.LienAmount = 0;
-                                    sav.LienReason = null;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        loanAcc.LoanDisbursementDate = otherDisbursements.OrderByDescending(d => d.DisbursementDate).FirstOrDefault()?.DisbursementDate;
-                    }
-
-                    _context.Entry(loanAcc).State = EntityState.Modified;
-                }
-
-                // 3. Remove the LoanDisbursement record so it never becomes an orphan
-                _context.LoanDisbursements.Remove(ld);
-            }
-
-            bool rdClosureRolledBack = false;
-            bool rdInstallmentRolledBack = false;
-            try
-            {
-                rdClosureRolledBack = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
-                    _context,
-                    voucher,
-                    dto.Reason,
-                    dto.UserID,
-                    !string.IsNullOrWhiteSpace(dto.Username) ? dto.Username : $"User-{dto.UserID}");
-
-                if (!rdClosureRolledBack)
-                {
-                    rdInstallmentRolledBack = await Helpers.RdInstallmentCollectionRollbackHelper.RollbackRdInstallmentCollectionByVoucherAsync(
-                        _context,
-                        voucher,
-                        dto.Reason,
-                        dto.UserID,
-                        !string.IsNullOrWhiteSpace(dto.Username) ? dto.Username : $"User-{dto.UserID}");
-                }
-            }
-            catch (InvalidOperationException rdEx)
-            {
-                return BadRequest(new { message = rdEx.Message });
-            }
-
-            // FD Renewal Rollback (handles 14-digit CBS & legacy accounts, sibling interest vouchers, and Saving transfer reversal)
-            if (Helpers.FdRenewalRollbackHelper.IsFdRenewalVoucher(voucher))
-            {
-                var renRollback = await Helpers.FdRenewalRollbackHelper.RollbackRenewalByVoucherAsync(
-                    _context,
-                    voucher,
-                    deletePrimaryVoucherRecord: false);
-
-                _context.AuditLogs.Add(new AuditLog
-                {
-                    UserID = dto.UserID > 0 ? dto.UserID : null,
-                    Username = !string.IsNullOrWhiteSpace(dto.Username) ? dto.Username : "User-" + dto.UserID,
-                    Action = "FD_RENEWAL_VOUCHER_DELETED",
-                    EntityName = "FdAccount",
-                    EntityID = renRollback.OldAccountNo ?? renRollback.NewAccountNo ?? voucher.VoucherNo,
-                    Details = $"मुदत ठेव नूतनीकरण व्हाउचर {voucher.VoucherNo} (नवीन खाते: {renRollback.NewAccountNo ?? "-"}, मूळ खाते: {renRollback.OldAccountNo ?? "-"}) डिलीट केले. नवीन खाते हटवले व मूळ खाते पूर्ववत केले. कारण: {dto.Reason}",
-                    Timestamp = DateTime.Now,
-                    Status = "Success"
+                    UserId = userId,
+                    Username = username,
+                    UserRole = userRole,
+                    UserBranchId = User.GetOperatingBranchId(),
+                    IsHeadOfficeAdmin = User.IsHeadOfficeAdmin(),
+                    Reason = effectiveReason,
+                    ActionSource = "VOUCHER_DELETED",
+                    EnforceSameBusinessDateForBranchUser = true,
+                    RequireMinTenCharReason = true,
+                    ClientIpAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString()
                 });
-            }
-            else if (!string.IsNullOrEmpty(voucher.VoucherNo))
+
+            if (!result.Success)
             {
-                if (!rdClosureRolledBack && !rdInstallmentRolledBack)
-                {
-                    await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "DELETED");
-                }
-                if (!rdInstallmentRolledBack)
-                {
-                    var savingTxs = await _context.SavingTransactions.Where(st => st.VoucherNo == voucher.VoucherNo).ToListAsync();
-                    foreach (var st in savingTxs) st.VoucherNo = null;
-                }
+                return StatusCode(result.HttpStatusCode, new { message = result.Message });
             }
 
-            var assetPurchases = await _context.AssetPurchases.Where(ap => ap.VoucherID == id).ToListAsync();
-            foreach (var ap in assetPurchases) ap.VoucherID = null;
-
-            // FD Module unlinking & LastInterestPostingDate rollback
-            var fdAccruals = await _context.FdInterestAccruals.Where(fa => fa.VoucherID == id).ToListAsync();
-            if (fdAccruals.Any())
+            return Ok(new
             {
-                var affectedAccIds = fdAccruals.Select(a => a.FdAccountID).Distinct().ToList();
-                _context.FdInterestAccruals.RemoveRange(fdAccruals);
-                await _context.SaveChangesAsync();
-
-                foreach (var accId in affectedAccIds)
-                {
-                    var acc = await _context.FdAccounts.FindAsync(accId);
-                    if (acc != null)
-                    {
-                        var prevAccrual = await _context.FdInterestAccruals
-                            .Where(a => a.FdAccountID == accId && a.VoucherID != id)
-                            .OrderByDescending(a => a.AccrualDate)
-                            .FirstOrDefaultAsync();
-
-                        acc.LastInterestPostingDate = prevAccrual?.AccrualDate;
-                    }
-                }
-            }
-
-            // FD Closure / Premature Close Rollback when deleting closure vouchers
-            var fdCloseTxs = await _context.FdTransactions
-                .Where(ft => ft.VoucherID == id && (ft.TransactionType == "Payout" || ft.TransactionType == "Premature_Close"))
-                .ToListAsync();
-
-            var affectedCloseAccIds = fdCloseTxs.Select(t => t.FdAccountID).Distinct().ToList();
-
-            // Also check from VoucherNo if no transaction was directly tagged
-            string vNo = voucher.VoucherNo ?? "";
-            string fdAccCandidate = "";
-            if (vNo.Contains("-FD-CLOSE-"))
-                fdAccCandidate = vNo.Substring(vNo.IndexOf("-FD-CLOSE-") + "-FD-CLOSE-".Length).Trim();
-            else if (vNo.Contains("-FD-PRECLOSE-"))
-                fdAccCandidate = vNo.Substring(vNo.IndexOf("-FD-PRECLOSE-") + "-FD-PRECLOSE-".Length).Trim();
-
-            if (!string.IsNullOrEmpty(fdAccCandidate))
-            {
-                var candAcc = await _context.FdAccounts.FirstOrDefaultAsync(f => 
-                    f.AccountNo == fdAccCandidate || 
-                    f.LegacyAccountNumber == fdAccCandidate || 
-                    (f.LegacyAccountNumber != null && f.LegacyAccountNumber.Trim() == fdAccCandidate.Trim()) ||
-                    f.AccountNo.EndsWith(fdAccCandidate));
-                if (candAcc != null && !affectedCloseAccIds.Contains(candAcc.FdAccountID))
-                {
-                    affectedCloseAccIds.Add(candAcc.FdAccountID);
-                }
-            }
-
-            foreach (var accId in affectedCloseAccIds)
-            {
-                var acc = await _context.FdAccounts.FindAsync(accId);
-                if (acc != null && acc.Status == "Closed")
-                {
-                    acc.Status = (acc.MaturityDate.Date <= DateTime.Today.Date) ? "Matured" : "Active";
-                    if (!string.IsNullOrEmpty(acc.Remarks))
-                    {
-                        var idx = acc.Remarks.IndexOf(" | बंद दिनांक:");
-                        if (idx >= 0) acc.Remarks = acc.Remarks.Substring(0, idx).Trim();
-                    }
-                }
-            }
-
-            var fdTxs = await _context.FdTransactions.Where(ft => ft.VoucherID == id).ToListAsync();
-            if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
-
-            var rdTxs = await _context.RdTransactions.Where(rt => rt.VoucherID == id).ToListAsync();
-            if (rdTxs.Any()) _context.RdTransactions.RemoveRange(rdTxs);
-
-            var rdAccruals = await _context.RdInterestAccruals.Where(ra => ra.VoucherID == id).ToListAsync();
-            if (rdAccruals.Any()) _context.RdInterestAccruals.RemoveRange(rdAccruals);
-
-            // 6. Immutable Security Audit Logging
-            var oldVoucherJson = System.Text.Json.JsonSerializer.Serialize(new
-            {
-                VoucherID = voucher.VoucherID,
-                VoucherNo = voucher.VoucherNo,
-                VoucherDate = voucher.VoucherDate.ToString("yyyy-MM-dd"),
-                VoucherType = voucher.VoucherType,
-                TotalAmount = voucher.TotalAmount,
-                Status = voucher.Status,
-                BranchID = voucher.BranchID,
-                Narration = voucher.Narration,
-                CreatedBy = voucher.CreatedBy,
-                ApprovedBy = voucher.ApprovedBy,
-                LineItems = voucher.VoucherDetails.Select(d => new
-                {
-                    d.LedgerID,
-                    d.DrCr,
-                    d.Amount,
-                    d.CustomerID,
-                    d.MemberID
-                })
+                message = result.Message,
+                voucherNo = result.DeletedPrimaryVoucherNo,
+                voucherNumbers = result.DeletedVoucherNos
             });
-
-            _context.AuditLogs.Add(new AuditLog
-            {
-                UserID = dto.UserID > 0 ? dto.UserID : null,
-                Username = !string.IsNullOrWhiteSpace(dto.Username) ? dto.Username : "User-" + dto.UserID,
-                Action = "VOUCHER_DELETED",
-                EntityName = "Voucher",
-                EntityID = voucher.VoucherNo,
-                Details = $"DeletedBy: {dto.Username} ({dto.UserRole}) | Reason: {dto.Reason} | OldVoucherDetails: {oldVoucherJson}",
-                Timestamp = DateTime.Now
-            });
-
-            // Perform Deletion
-            if (voucher.VoucherDetails != null && voucher.VoucherDetails.Any())
-            {
-                _context.VoucherDetails.RemoveRange(voucher.VoucherDetails);
-            }
-
-            _context.Vouchers.Remove(voucher);
-
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "व्हाऊचर यशस्वीरित्या डिलीट केला व सुरक्षा ऑडिट नोंद जतन केली." });
         }
 
         // GET: api/Vouchers/batch
@@ -897,137 +545,92 @@ namespace Bhisi.Api.Controllers
             return Ok(new { message = "Voucher approved successfully." });
         }
 
-        // POST: api/Vouchers/5/Reject
+        // POST: api/Vouchers/5/Reject (100% Physical Hard Delete + State Rollback — zero soft-delete Status = "Rejected")
         [HttpPost("{id}/Reject")]
         [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
-        public async Task<IActionResult> RejectVoucher(int id, [FromBody] RejectionDto dto)
+        public async Task<IActionResult> RejectVoucher(
+            int id,
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] RejectionDto? dto = null,
+            [FromQuery] string? reason = null)
         {
-            var voucher = await _context.Vouchers.FindAsync(id);
-            if (voucher == null) return NotFound();
-
-            if (voucher.Status == "Approved") return BadRequest("Cannot reject an already approved voucher.");
+            string effectiveReason = !string.IsNullOrWhiteSpace(dto?.Reason)
+                ? dto!.Reason.Trim()
+                : (!string.IsNullOrWhiteSpace(reason) ? reason.Trim() : "व्हाउचर नाकारले व डेटाबेसमधून डिलीट केले");
 
             int rejecterId = User.GetUserId();
-            if (rejecterId <= 0 && dto.RejectedBy > 0) rejecterId = dto.RejectedBy;
+            if (rejecterId <= 0 && dto != null && dto.RejectedBy > 0) rejecterId = dto.RejectedBy;
 
-            voucher.Status = "Rejected";
-            voucher.ApprovedBy = rejecterId; // Reused for rejected by tracking
-            voucher.ApprovedOn = DateTime.Now;
-            voucher.RejectionReason = dto.Reason;
-
-            // Automatically reverse linked RD / saving transactions if any
-            bool rdRejHandled;
-            try
-            {
-                rdRejHandled = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
-                    _context, voucher, dto.Reason, rejecterId, User.GetUsername() ?? $"User-{rejecterId}");
-                if (!rdRejHandled)
+            var result = await _rollbackService.DeleteVoucherWithRollbackAsync(
+                id,
+                new VoucherDeleteRequestContext
                 {
-                    rdRejHandled = await Helpers.RdInstallmentCollectionRollbackHelper.RollbackRdInstallmentCollectionByVoucherAsync(
-                        _context, voucher, dto.Reason, rejecterId, User.GetUsername() ?? $"User-{rejecterId}");
-                }
-            }
-            catch (InvalidOperationException rdEx)
+                    UserId = rejecterId,
+                    Username = User.GetUsername() ?? $"User-{rejecterId}",
+                    UserRole = User.GetUserRole(),
+                    UserBranchId = User.GetOperatingBranchId(),
+                    IsHeadOfficeAdmin = User.IsHeadOfficeAdmin(),
+                    Reason = effectiveReason,
+                    ActionSource = "VOUCHER_REJECTED_HARD_DELETE",
+                    EnforceSameBusinessDateForBranchUser = false,
+                    RequireMinTenCharReason = false,
+                    ClientIpAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString()
+                });
+
+            if (!result.Success)
             {
-                return BadRequest(rdEx.Message);
-            }
-            if (!rdRejHandled)
-            {
-                await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "REJECTED");
+                return StatusCode(result.HttpStatusCode, new { message = result.Message });
             }
 
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Voucher rejected successfully and linked saving balance reversed." });
+            return Ok(new
+            {
+                message = result.Message,
+                voucherNo = result.DeletedPrimaryVoucherNo,
+                voucherNumbers = result.DeletedVoucherNos
+            });
         }
 
-        // POST: api/Vouchers/5/Cancel
+        // POST: api/Vouchers/5/Cancel (100% Physical Hard Delete + State Rollback — blocks Approved vouchers until Unpassed)
         [HttpPost("{id}/Cancel")]
         [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
-        public async Task<IActionResult> CancelVoucher(int id, [FromBody] RejectionDto dto)
+        public async Task<IActionResult> CancelVoucher(
+            int id,
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] RejectionDto? dto = null,
+            [FromQuery] string? reason = null)
         {
-            var voucher = await _context.Vouchers.FindAsync(id);
-            if (voucher == null) return NotFound();
-
-            // Business Date Lock Check
-            var dayStatus = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)
-                .FirstOrDefaultAsync();
-
-            if (dayStatus != null && dayStatus.IsDayClosed)
-            {
-                return BadRequest($"तारीख {voucher.VoucherDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेचे वॉउचर रद्द करता येणार नाही.");
-            }
-
-            voucher.Status = "Cancelled";
-            voucher.RejectionReason = dto.Reason;
-
-            // Automatically reverse linked RD / saving transactions if any
-            int cancelCheckUserId = User.GetUserId();
-            if (cancelCheckUserId <= 0 && dto.RejectedBy > 0) cancelCheckUserId = dto.RejectedBy;
-            bool rdCanHandled;
-            try
-            {
-                rdCanHandled = await Helpers.RdClosureSettlementHelper.RollbackRdClosureOrRenewalByVoucherAsync(
-                    _context, voucher, dto.Reason, cancelCheckUserId, User.GetUsername() ?? $"User-{cancelCheckUserId}");
-                if (!rdCanHandled)
-                {
-                    rdCanHandled = await Helpers.RdInstallmentCollectionRollbackHelper.RollbackRdInstallmentCollectionByVoucherAsync(
-                        _context, voucher, dto.Reason, cancelCheckUserId, User.GetUsername() ?? $"User-{cancelCheckUserId}");
-                }
-            }
-            catch (InvalidOperationException rdEx)
-            {
-                return BadRequest(rdEx.Message);
-            }
-            if (!rdCanHandled)
-            {
-                await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "CANCELLED");
-            }
+            string effectiveReason = !string.IsNullOrWhiteSpace(dto?.Reason)
+                ? dto!.Reason.Trim()
+                : (!string.IsNullOrWhiteSpace(reason) ? reason.Trim() : "व्हाउचर रद्द व डेटाबेसमधून डिलीट केले");
 
             int cancelUserId = User.GetUserId();
-            if (cancelUserId <= 0 && dto.RejectedBy > 0) cancelUserId = dto.RejectedBy;
+            if (cancelUserId <= 0 && dto != null && dto.RejectedBy > 0) cancelUserId = dto.RejectedBy;
 
-            _context.AuditLogs.Add(new AuditLog
-            {
-                UserID = cancelUserId > 0 ? cancelUserId : null,
-                Username = User.GetUsername(),
-                Action = "CANCEL_VOUCHER",
-                EntityName = "Voucher",
-                EntityID = voucher.VoucherNo,
-                Details = $"CANCELLED voucher #{voucher.VoucherNo} of amount ₹{voucher.TotalAmount:N2}. Reason: {dto.Reason}",
-                Timestamp = DateTime.Now
-            });
-
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "वॉउचर यशस्वीरित्या रद्द (Cancelled) केले व संबंधित बचत खात्याची शिल्लक पूर्ववत केली." });
-        }
-
-        private async Task ReverseLinkedSavingTransactions(string? voucherNo, string reason, string actionName)
-        {
-            if (string.IsNullOrEmpty(voucherNo)) return;
-
-            var savingTxs = await _context.SavingTransactions
-                .Include(st => st.SavingAccount)
-                .Where(st => st.VoucherNo == voucherNo)
-                .ToListAsync();
-
-            foreach (var st in savingTxs)
-            {
-                if (st.SavingAccount != null)
+            var result = await _rollbackService.DeleteVoucherWithRollbackAsync(
+                id,
+                new VoucherDeleteRequestContext
                 {
-                    if (st.TransactionType == "Deposit" || st.TransactionType == "Interest")
-                    {
-                        st.SavingAccount.CurrentBalance -= st.Amount;
-                    }
-                    else if (st.TransactionType == "Withdrawal" || st.TransactionType == "Charges")
-                    {
-                        st.SavingAccount.CurrentBalance += st.Amount;
-                    }
-                    _context.Entry(st.SavingAccount).State = EntityState.Modified;
-                }
-                st.Narration = $"[{actionName}: {reason}] " + (st.Narration ?? "");
-                _context.Entry(st).State = EntityState.Modified;
+                    UserId = cancelUserId,
+                    Username = User.GetUsername() ?? $"User-{cancelUserId}",
+                    UserRole = User.GetUserRole(),
+                    UserBranchId = User.GetOperatingBranchId(),
+                    IsHeadOfficeAdmin = User.IsHeadOfficeAdmin(),
+                    Reason = effectiveReason,
+                    ActionSource = "VOUCHER_CANCELLED_HARD_DELETE",
+                    EnforceSameBusinessDateForBranchUser = false,
+                    RequireMinTenCharReason = false,
+                    ClientIpAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString()
+                });
+
+            if (!result.Success)
+            {
+                return StatusCode(result.HttpStatusCode, new { message = result.Message });
             }
+
+            return Ok(new
+            {
+                message = result.Message,
+                voucherNo = result.DeletedPrimaryVoucherNo,
+                voucherNumbers = result.DeletedVoucherNos
+            });
         }
     }
 

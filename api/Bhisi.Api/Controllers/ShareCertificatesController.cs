@@ -469,7 +469,7 @@ namespace Bhisi.Api.Controllers
                 var voucher = new Voucher
                 {
                     BranchID = request.BranchId,
-                    VoucherNo = $"VCH-SHR-CNL-{voucherDate:yyyyMMdd}-{vchCount:D4}",
+                    VoucherNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-SHR-CNL-{voucherDate:yyyyMMdd}-", 4),
                     VoucherDate = voucherDate,
                     VoucherType = request.PaymentMode == "Transfer" ? "Journal" : "Payment",
                     TotalAmount = totalAmount,
@@ -488,6 +488,10 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 // 6. Create ShareTransaction Record
+                foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
+                {
+                    st.VoucherNo = voucher.VoucherNo;
+                }
                 var shareTxn = new ShareTransaction
                 {
                     ShareAccountId = account.ShareAccountId,

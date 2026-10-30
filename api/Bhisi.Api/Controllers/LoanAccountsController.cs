@@ -882,6 +882,7 @@ namespace Bhisi.Api.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                if (ex is InvalidOperationException) return BadRequest(new { message = ex.Message });
                 return StatusCode(500, "Internal server error: " + ex.Message);
             }
         }
@@ -2041,6 +2042,193 @@ namespace Bhisi.Api.Controllers
         {
             int id = loanAccount.LoanAccountID;
 
+            bool hasLegalCase = await _context.Sec101CaseMasters.AnyAsync(c => c.LoanAccountId == id);
+            if (hasLegalCase)
+            {
+                throw new InvalidOperationException("या कर्ज खात्यावर कलम १०१/९१ कायदेशीर खटला नोंदवलेला आहे. खाते डिलीट करण्यापूर्वी कायदेशीर नोंदी निकाली काढा.");
+            }
+
+            var disbVIds = await _context.LoanDisbursements
+                .Where(d => d.LoanAccountID == id && d.VoucherID.HasValue && d.VoucherID.Value > 0)
+                .Select(d => d.VoucherID!.Value)
+                .ToListAsync();
+            var colVIds = await _context.LoanCollections
+                .Where(c => c.LoanAccountID == id && c.VoucherID.HasValue && c.VoucherID.Value > 0)
+                .Select(c => c.VoucherID!.Value)
+                .ToListAsync();
+            var colHomeVIds = await _context.LoanCollections
+                .Where(c => c.LoanAccountID == id && c.HomeBranchVoucherID.HasValue && c.HomeBranchVoucherID.Value > 0)
+                .Select(c => c.HomeBranchVoucherID!.Value)
+                .ToListAsync();
+            var ovIntVIds = await _context.OverdueInterestLedgers
+                .Where(o => o.LoanAccountID == id && o.VoucherID.HasValue && o.VoucherID.Value > 0)
+                .Select(o => o.VoucherID!.Value)
+                .ToListAsync();
+            var ovRecVIds = await _context.OverdueRecoveryLedgers
+                .Where(o => o.LoanAccountID == id && o.VoucherID.HasValue && o.VoucherID.Value > 0)
+                .Select(o => o.VoucherID!.Value)
+                .ToListAsync();
+            var legVIds = await _context.Sec101LegalExpenses
+                .Where(e => e.LoanAccountId == id && e.VoucherId.HasValue && e.VoucherId.Value > 0)
+                .Select(e => e.VoucherId!.Value)
+                .ToListAsync();
+
+            var directLoanVoucherIds = disbVIds
+                .Union(colVIds)
+                .Union(colHomeVIds)
+                .Union(ovIntVIds)
+                .Union(ovRecVIds)
+                .Union(legVIds)
+                .Distinct()
+                .ToList();
+
+            var linkedLoanVouchers = new List<Voucher>();
+            if (directLoanVoucherIds.Any())
+            {
+                linkedLoanVouchers = await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .Where(v => directLoanVoucherIds.Contains(v.VoucherID) ||
+                                (v.RelatedVoucherID.HasValue && directLoanVoucherIds.Contains(v.RelatedVoucherID.Value)))
+                    .ToListAsync();
+
+                var extraRelIds = linkedLoanVouchers
+                    .Where(v => v.RelatedVoucherID.HasValue && !linkedLoanVouchers.Any(x => x.VoucherID == v.RelatedVoucherID.Value))
+                    .Select(v => v.RelatedVoucherID!.Value)
+                    .Distinct()
+                    .ToList();
+                if (extraRelIds.Any())
+                {
+                    var extraSibs = await _context.Vouchers
+                        .Include(v => v.VoucherDetails)
+                        .Where(v => extraRelIds.Contains(v.VoucherID))
+                        .ToListAsync();
+                    linkedLoanVouchers.AddRange(extraSibs);
+                }
+
+                bool hasApprovedOperationalVoucher = linkedLoanVouchers.Any(v =>
+                    v.Status == "Approved" &&
+                    !(loanAccount.IsOpeningBalance && v.VoucherDate.Date <= new DateTime(2026, 3, 31)));
+
+                if (hasApprovedOperationalVoucher)
+                {
+                    throw new InvalidOperationException("या कर्ज खात्याशी संबंधित मंजूर (Approved) व्हाउचर्स अस्तित्वात आहेत. खाते डिलीट करण्यापूर्वी व्हाउचर पासिंगमधून संबंधित व्हाउचर्स अन-पास (Unpass) करा.");
+                }
+            }
+
+            // Reverse Saving & Pigmy side-effects on pending collections and disbursements before removing rows
+            var linkedLoanVoucherNos = linkedLoanVouchers
+                .Where(v => !string.IsNullOrWhiteSpace(v.VoucherNo))
+                .Select(v => v.VoucherNo)
+                .Distinct()
+                .ToList();
+
+            if (linkedLoanVoucherNos.Any())
+            {
+                var linkedSavTxns = await _context.SavingTransactions
+                    .Where(st => st.VoucherNo != null && linkedLoanVoucherNos.Contains(st.VoucherNo))
+                    .ToListAsync();
+                foreach (var st in linkedSavTxns)
+                {
+                    var savAcc = await _context.SavingAccountMasters.FindAsync(st.SavingAccountID);
+                    if (savAcc != null)
+                    {
+                        if (st.TransactionType == "Deposit" || st.TransactionType == "Interest")
+                            savAcc.CurrentBalance = Math.Max(0m, savAcc.CurrentBalance - st.Amount);
+                        else
+                            savAcc.CurrentBalance += st.Amount;
+                        _context.Entry(savAcc).State = EntityState.Modified;
+                    }
+                    var pbs = await _context.SavingPassbooks.Where(p => p.TransactionID == st.TransactionID).ToListAsync();
+                    if (pbs.Any()) _context.SavingPassbooks.RemoveRange(pbs);
+                    _context.SavingTransactions.Remove(st);
+                }
+            }
+
+            var pendingCollectionsWithSubLedger = await _context.LoanCollections
+                .Include(c => c.Fees)
+                .Where(c => c.LoanAccountID == id)
+                .ToListAsync();
+            foreach (var pc in pendingCollectionsWithSubLedger)
+            {
+                decimal colTotalDeducted = pc.TotalAmountReceived + (pc.Fees?.Sum(f => f.Amount) ?? 0m);
+                if (pc.SourcePigmyAccountID.HasValue && pc.SourcePigmyAccountID.Value > 0)
+                {
+                    var pgAcc = await _context.PigmyAccounts.FindAsync(pc.SourcePigmyAccountID.Value);
+                    if (pgAcc != null)
+                    {
+                        pgAcc.TotalDepositedAmount += colTotalDeducted;
+                        if (pgAcc.TotalWithdrawnAmount >= colTotalDeducted) pgAcc.TotalWithdrawnAmount -= colTotalDeducted;
+                        if (pc.PigmyTransferType == "CLOSURE" && pgAcc.Status == "Closed") pgAcc.Status = "Active";
+                        _context.Entry(pgAcc).State = EntityState.Modified;
+
+                        if (!string.IsNullOrEmpty(pc.ReceiptNo))
+                        {
+                            var pgTxs = await _context.PigmyTransactions
+                                .Where(pt => pt.PigmyAccountID == pgAcc.PigmyAccountID &&
+                                             (pt.ReferenceId == pc.ReceiptNo || pt.Narration.Contains(pc.ReceiptNo)))
+                                .ToListAsync();
+                            if (pgTxs.Any()) _context.PigmyTransactions.RemoveRange(pgTxs);
+                        }
+                    }
+                }
+                else if ((pc.PaymentMode == "Saving Transfer" || pc.PaymentMode == "Saving") && !string.IsNullOrEmpty(pc.ReceiptNo))
+                {
+                    SavingAccountMaster? savAcc = pc.SourceSavingAccountID.HasValue && pc.SourceSavingAccountID.Value > 0
+                        ? await _context.SavingAccountMasters.FindAsync(pc.SourceSavingAccountID.Value)
+                        : (!string.IsNullOrEmpty(pc.TransferFromSavingAccountNo)
+                            ? await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == pc.TransferFromSavingAccountNo)
+                            : null);
+                    if (savAcc != null)
+                    {
+                        var fallbackSavTxns = await _context.SavingTransactions
+                            .Where(st => st.SavingAccountID == savAcc.SavingAccountID &&
+                                         (st.VoucherNo == null || !linkedLoanVoucherNos.Contains(st.VoucherNo)) &&
+                                         st.Narration != null && st.Narration.Contains(pc.ReceiptNo))
+                            .ToListAsync();
+                        foreach (var fst in fallbackSavTxns)
+                        {
+                            savAcc.CurrentBalance += fst.Amount;
+                            _context.Entry(savAcc).State = EntityState.Modified;
+                            var pbs = await _context.SavingPassbooks.Where(p => p.TransactionID == fst.TransactionID).ToListAsync();
+                            if (pbs.Any()) _context.SavingPassbooks.RemoveRange(pbs);
+                            _context.SavingTransactions.Remove(fst);
+                        }
+                    }
+                }
+            }
+
+            var pendingDisbsForSideEffects = await _context.LoanDisbursements
+                .Include(d => d.Deductions)
+                .Where(d => d.LoanAccountID == id)
+                .ToListAsync();
+            foreach (var pd in pendingDisbsForSideEffects)
+            {
+                var pdVoucher = pd.VoucherID.HasValue
+                    ? linkedLoanVouchers.FirstOrDefault(v => v.VoucherID == pd.VoucherID.Value)
+                    : null;
+                if (pdVoucher != null)
+                {
+                    await Helpers.LoanDisbursementReversalHelper.ReverseAndDeleteDisbursementAsync(
+                        _context,
+                        pd,
+                        pdVoucher,
+                        deleteVoucherRecord: false);
+                }
+            }
+
+            var misTargetRefs = await _context.FdMisPayouts.Where(m => m.TargetLoanAccountID == id).ToListAsync();
+            foreach (var mRef in misTargetRefs)
+            {
+                mRef.TargetLoanAccountID = null;
+                _context.Entry(mRef).State = EntityState.Modified;
+            }
+
+            var legalExpRows = await _context.Sec101LegalExpenses.Where(e => e.LoanAccountId == id).ToListAsync();
+            if (legalExpRows.Any())
+            {
+                _context.Sec101LegalExpenses.RemoveRange(legalExpRows);
+            }
+
             // 1. Delete Collateral Compliance Logs
             var collateralLogs = _context.CollateralComplianceLogs.Where(c => c.LoanAccountID == id);
             _context.CollateralComplianceLogs.RemoveRange(collateralLogs);
@@ -2219,6 +2407,50 @@ namespace Bhisi.Api.Controllers
             _context.LoanAccounts.Remove(loanAccount);
             await _context.SaveChangesAsync();
 
+            // Physically Hard Delete linked Pending/Unapproved vouchers now that all Loan child rows are removed
+            if (linkedLoanVouchers.Any())
+            {
+                var safeToDeleteVouchers = new List<Voucher>();
+                foreach (var lv in linkedLoanVouchers.DistinctBy(v => v.VoucherID))
+                {
+                    if (lv.Status == "Approved") continue;
+
+                    bool stillUsed = await _context.LoanDisbursements.AnyAsync(d => d.VoucherID == lv.VoucherID) ||
+                                     await _context.LoanCollections.AnyAsync(c => c.VoucherID == lv.VoucherID || c.HomeBranchVoucherID == lv.VoucherID) ||
+                                     await _context.OverdueInterestLedgers.AnyAsync(o => o.VoucherID == lv.VoucherID) ||
+                                     await _context.OverdueRecoveryLedgers.AnyAsync(o => o.VoucherID == lv.VoucherID) ||
+                                     await _context.Sec101LegalExpenses.AnyAsync(e => e.VoucherId == lv.VoucherID) ||
+                                     await _context.FdTransactions.AnyAsync(f => f.VoucherID == lv.VoucherID) ||
+                                     await _context.DemandRecoveries.AnyAsync(dr => dr.VoucherId == lv.VoucherID);
+                    if (!stillUsed)
+                    {
+                        safeToDeleteVouchers.Add(lv);
+                    }
+                }
+
+                if (safeToDeleteVouchers.Any())
+                {
+                    var delVIds = safeToDeleteVouchers.Select(v => v.VoucherID).ToList();
+                    var revRefs = await _context.Vouchers
+                        .Where(v => v.RelatedVoucherID.HasValue && delVIds.Contains(v.RelatedVoucherID.Value))
+                        .ToListAsync();
+                    foreach (var rv in revRefs) rv.RelatedVoucherID = null;
+                    foreach (var sv in safeToDeleteVouchers) sv.RelatedVoucherID = null;
+                    await _context.SaveChangesAsync();
+
+                    foreach (var sv in safeToDeleteVouchers)
+                    {
+                        if (sv.VoucherDetails != null && sv.VoucherDetails.Any())
+                        {
+                            _context.VoucherDetails.RemoveRange(sv.VoucherDetails);
+                        }
+                        _context.Vouchers.Remove(sv);
+                    }
+                    await _context.SaveChangesAsync();
+                }
+            }
+            await _context.SaveChangesAsync();
+
             if (wasOpeningBalance)
             {
                 await SyncLoanSchemeGlOpeningBalanceAsync(deletedLoanRateId);
@@ -2260,6 +2492,7 @@ namespace Bhisi.Api.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                if (ex is InvalidOperationException) return BadRequest(new { message = ex.Message });
                 return StatusCode(500, "Internal server error: " + ex.Message);
             }
         }
@@ -2284,6 +2517,7 @@ namespace Bhisi.Api.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                if (ex is InvalidOperationException) return BadRequest(new { message = ex.Message });
                 return StatusCode(500, "Internal server error: " + ex.Message);
             }
         }
@@ -2501,7 +2735,7 @@ namespace Bhisi.Api.Controllers
                 items.Add(new LoanInterestPostingItemDto
                 {
                     LoanAccountID = acc.LoanAccountID,
-                    LoanAccountNo = acc.LoanAccountNo,
+                    LoanAccountNo = acc.LoanAccountNo ?? string.Empty,
                     MemberName = borrowerName,
                     LoanSchemeName = currentRate?.LoanType ?? "कर्ज",
                     PostingType = shouldCapitalize ? "कर्जावर (मुद्दल)" : "येणे व्याजावर (व्याज)",
@@ -2579,6 +2813,8 @@ namespace Bhisi.Api.Controllers
                 }
 
                 decimal totalBatchInterest = 0;
+                var schemeInterestTotals = new Dictionary<int, decimal>();
+                var batchSnapshots = new List<Services.LoanInterestBatchAccountSnapshot>();
                 int processedCount = 0;
 
                 foreach (var acc in activeAccounts)
@@ -2606,10 +2842,18 @@ namespace Bhisi.Api.Controllers
                         acc.InterestBalance += calculatedInterest;
                     }
 
+                    batchSnapshots.Add(new Services.LoanInterestBatchAccountSnapshot
+                    {
+                        LoanAccountID = acc.LoanAccountID,
+                        Interest = calculatedInterest,
+                        Capitalized = shouldCapitalize,
+                        PrevLastPaidDate = acc.LastInstallmentPaidDate
+                    });
                     acc.LastInstallmentPaidDate = request.PostingDate;
                     _context.Entry(acc).State = EntityState.Modified;
 
                     totalBatchInterest += calculatedInterest;
+                    if (acc.LoanRateID > 0) { schemeInterestTotals[acc.LoanRateID] = schemeInterestTotals.GetValueOrDefault(acc.LoanRateID, 0m) + calculatedInterest; }
                     processedCount++;
                 }
 
@@ -2631,7 +2875,7 @@ namespace Bhisi.Api.Controllers
                     fy = activeYear.YearCode;
                 }
 
-                int count = await _context.Vouchers.CountAsync(v => v.BranchID == request.BranchID && v.VoucherType == "Journal") + 1;
+                int count = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{branchCode}-JV-{fy}-", 5);
                 string voucherNo = $"{branchCode}-JV-{fy}-{count:D5}";
 
                 var voucher = new Voucher
@@ -2671,6 +2915,7 @@ namespace Bhisi.Api.Controllers
                         schemeTotal += cInt;
                     }
 
+                    schemeTotal = schemeInterestTotals.GetValueOrDefault(group.Key, 0m);
                     if (schemeTotal <= 0) continue;
 
                     bool isSchemeCapitalize = rate.InterestPostingType == "कर्जावर" || rate.InterestPostingType?.Contains("कर्ज") == true;
@@ -2684,6 +2929,7 @@ namespace Bhisi.Api.Controllers
                     // Debit Scheme Dynamic Ledger (Principal or Receivable Interest)
                     _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = schemeTotal });
                     // Credit Scheme Dynamic Interest Income Ledger
+                    if (debitLedgerId <= 0 || creditLedgerId <= 0) { await transaction.RollbackAsync(); return BadRequest($"कर्ज योजना '{rate.LoanType}' साठी मुद्दल/येणे व्याज किंवा व्याज उत्पन्न जी.एल. लेजर जोडलेले नाही."); }
                     _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = creditLedgerId, DrCr = "Cr", Amount = schemeTotal });
                 }
 
@@ -2697,7 +2943,11 @@ namespace Bhisi.Api.Controllers
                     Action = "LOAN_INTEREST_POSTING_BATCH",
                     EntityName = "LoanAccount",
                     Timestamp = DateTime.Now,
-                    Details = $"Batch Loan Interest Posted: ₹{totalBatchInterest:N2} across {processedCount} accounts on {request.PostingDate:dd/MM/yyyy}. Mode: {request.PostingMode}"
+                    EntityID = voucher.VoucherNo,
+                    Details = $"Batch Loan Interest Posted: ₹{totalBatchInterest:N2} across {processedCount} accounts on {request.PostingDate:dd/MM/yyyy}. Mode: {request.PostingMode} {Services.VoucherRollbackAndDeleteService.BatchSnapshotPrefix}{System.Text.Json.JsonSerializer.Serialize(batchSnapshots)}]"
+                });
+                await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
+                _context.AuditLogs.Add(new AuditLog { UserID = 1, Username = "System", Action = "LOAN_INTEREST_BALANCE_VERIFIED", EntityName = "Voucher", EntityID = voucher.VoucherNo, Timestamp = DateTime.Now,
                 });
 
                 await _context.SaveChangesAsync();

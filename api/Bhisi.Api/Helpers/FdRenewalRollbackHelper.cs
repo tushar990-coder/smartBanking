@@ -275,6 +275,8 @@ namespace Bhisi.Api.Helpers
                 {
                     sbAcc.CurrentBalance -= sbTx.Amount;
                 }
+                var sbPassbooks = await context.SavingPassbooks.Where(p => p.TransactionID == sbTx.TransactionID).ToListAsync();
+                if (sbPassbooks.Any()) context.SavingPassbooks.RemoveRange(sbPassbooks);
                 context.SavingTransactions.Remove(sbTx);
             }
         }
@@ -421,7 +423,49 @@ namespace Bhisi.Api.Helpers
                 }
             }
 
-            // 6. Delete sibling renewal vouchers (and primaryVoucher if requested)
+            // 6. Clean AutoRenewalLogs, MisPayouts, RelatedVoucherID cycle & delete sibling renewal vouchers (and primaryVoucher if requested)
+            if (newAccount != null)
+            {
+                var newMis = await context.FdMisPayouts.Where(m => m.FdAccountID == newAccount.FdAccountID).ToListAsync();
+                if (newMis.Any())
+                {
+                    context.FdMisPayouts.RemoveRange(newMis);
+                    await context.SaveChangesAsync();
+                }
+            }
+
+            var autoRenLogs = await context.FdAutoRenewalLogs
+                .Where(l => (l.VoucherID.HasValue && allRenewalVoucherIds.Contains(l.VoucherID.Value)) ||
+                            (newAccId.HasValue && l.NewFdAccountID == newAccId.Value))
+                .ToListAsync();
+            if (autoRenLogs.Any())
+            {
+                if (oldAccount != null)
+                {
+                    oldAccount.AutoRenewalCount = Math.Max(0, oldAccount.AutoRenewalCount - 1);
+                }
+                context.FdAutoRenewalLogs.RemoveRange(autoRenLogs);
+                await context.SaveChangesAsync();
+            }
+
+            var vIdsBeingRemoved = new HashSet<int>(siblingVouchers.Select(s => s.VoucherID));
+            if (deletePrimaryVoucherRecord) vIdsBeingRemoved.Add(primaryVoucher.VoucherID);
+            if (vIdsBeingRemoved.Any())
+            {
+                var relRefs = await context.Vouchers
+                    .Where(v => vIdsBeingRemoved.Contains(v.VoucherID) || (v.RelatedVoucherID.HasValue && vIdsBeingRemoved.Contains(v.RelatedVoucherID.Value)))
+                    .ToListAsync();
+                bool relModified = false;
+                foreach (var rv in relRefs)
+                {
+                    if (rv.RelatedVoucherID.HasValue)
+                    {
+                        rv.RelatedVoucherID = null;
+                        relModified = true;
+                    }
+                }
+                if (relModified) await context.SaveChangesAsync();
+            }
             foreach (var sv in siblingVouchers)
             {
                 if (sv.VoucherDetails != null && sv.VoucherDetails.Any())
@@ -777,6 +821,10 @@ namespace Bhisi.Api.Helpers
 
                         var newAccruals = await context.FdInterestAccruals.Where(a => a.FdAccountID == newAcc.FdAccountID).ToListAsync();
                         if (newAccruals.Any()) context.FdInterestAccruals.RemoveRange(newAccruals);
+                        var newMis = await context.FdMisPayouts.Where(m => m.FdAccountID == newAcc.FdAccountID).ToListAsync();
+                        if (newMis.Any()) context.FdMisPayouts.RemoveRange(newMis);
+                        var newAutoLogs = await context.FdAutoRenewalLogs.Where(l => l.NewFdAccountID == newAcc.FdAccountID).ToListAsync();
+                        if (newAutoLogs.Any()) context.FdAutoRenewalLogs.RemoveRange(newAutoLogs);
 
                         branchesToSync.Add(newAcc.BranchID);
                         context.FdAccounts.Remove(newAcc);

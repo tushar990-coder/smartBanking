@@ -523,6 +523,7 @@ namespace Bhisi.Api.Controllers
                 allocation.Status = "ACCEPTED";
             }
 
+            try { await Step4AccountingHelper.PostCashAllocationVoucherIfEnabledAsync(_context, allocation); } catch (InvalidOperationException vEx) { return BadRequest(vEx.Message); }
             _context.CashAllocations.Add(allocation);
             await _context.SaveChangesAsync();
 
@@ -659,6 +660,7 @@ namespace Bhisi.Api.Controllers
                 denom.CreatedAt = DateTime.UtcNow;
             }
 
+            try { await Step4AccountingHelper.PostCashDenominationVarianceVoucherIfEnabledAsync(_context, denom); } catch (InvalidOperationException vEx) { return BadRequest(vEx.Message); }
             _context.CashDenominations.Add(denom);
             await _context.SaveChangesAsync();
 

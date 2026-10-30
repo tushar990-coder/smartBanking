@@ -1293,7 +1293,32 @@ namespace Bhisi.Api.Controllers
                 .Where(t => t.SavingAccountID == id)
                 .ToListAsync();
 
-            if (transactions.Count > 1 || (transactions.Count == 1 && transactions[0].Narration != "Opening Balance"))
+            if (transactions.Count > 1 || (transactions.Count == 1 && !(transactions[0].Narration ?? string.Empty).StartsWith("Opening Balance", StringComparison.OrdinalIgnoreCase)))
+            {
+                return BadRequest(new { message = "या खात्यावर व्यवहार झालेले आहेत. त्यामुळे खाते डिलीट करता येणार नाही." });
+            }
+
+            var openingVoucherNos = transactions
+                .Where(t => !string.IsNullOrWhiteSpace(t.VoucherNo))
+                .Select(t => t.VoucherNo!.Trim())
+                .Distinct()
+                .ToList();
+
+            var linkedOpeningVouchers = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                .Where(v => (openingVoucherNos.Contains(v.VoucherNo)) ||
+                            (!string.IsNullOrEmpty(savingAccount.AccountNo) &&
+                             v.BranchID == savingAccount.BranchID &&
+                             v.VoucherNo.StartsWith("VCH-SAV-OPN-") &&
+                             v.Narration != null &&
+                             v.Narration.Contains(savingAccount.AccountNo)))
+                .ToListAsync();
+
+            if (!savingAccount.IsLegacyAccount && linkedOpeningVouchers.Any(v => v.Status == "Approved"))
+            {
+                return BadRequest(new { message = "या बचत खात्याचे ओपनिंग व्हाउचर मंजूर (Approved) झालेले आहे. खाते डिलीट करण्यापूर्वी व्हाउचर पासिंगमधून संबंधित व्हाउचर अन-पास (Unpass) करा." });
+            }
+            if (false)
             {
                 return BadRequest(new { message = "या खात्यावर व्यवहार झालेले आहेत. त्यामुळे खाते डिलीट करता येणार नाही." });
             }
@@ -1361,6 +1386,11 @@ namespace Bhisi.Api.Controllers
                 // Delete Transactions
                 if (transactions.Any())
                 {
+                    var passbooks = await _context.SavingPassbooks.Where(p => p.SavingAccountID == id).ToListAsync();
+                    if (passbooks.Any())
+                    {
+                        _context.SavingPassbooks.RemoveRange(passbooks);
+                    }
                     _context.SavingTransactions.RemoveRange(transactions);
                 }
 
@@ -1371,7 +1401,69 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // Delete the account
+                var orphanPassbooks = await _context.SavingPassbooks.Where(p => p.SavingAccountID == id).ToListAsync();
+                if (orphanPassbooks.Any())
+                {
+                    _context.SavingPassbooks.RemoveRange(orphanPassbooks);
+                }
+
+                string accDigits = new string((savingAccount.AccountNo ?? string.Empty).Where(char.IsDigit).ToArray());
+                int schemeCodeNum = 101;
+                if (accDigits.Length == 14 && int.TryParse(accDigits.Substring(3, 3), out int parsedScheme))
+                {
+                    schemeCodeNum = parsedScheme;
+                }
+
                 _context.SavingAccountMasters.Remove(savingAccount);
+                await _context.SaveChangesAsync();
+
+                // Resync SavingAccountSequences for this branch & scheme
+                var savSeq = await _context.SavingAccountSequences
+                    .FirstOrDefaultAsync(s => s.BranchID == savingAccount.BranchID && s.SchemeCodeNumeric == schemeCodeNum);
+                if (savSeq != null)
+                {
+                    var remainingAccNos = await _context.SavingAccountMasters
+                        .Where(s => s.BranchID == savingAccount.BranchID && s.AccountNo != null)
+                        .Select(s => s.AccountNo)
+                        .ToListAsync();
+                    int maxSeq = 0;
+                    foreach (var remNo in remainingAccNos)
+                    {
+                        string d = new string((remNo ?? string.Empty).Where(char.IsDigit).ToArray());
+                        if (d.Length == 14 &&
+                            int.TryParse(d.Substring(3, 3), out int remScheme) &&
+                            remScheme == schemeCodeNum &&
+                            int.TryParse(d.Substring(6, 7), out int remSeq) &&
+                            remSeq > maxSeq)
+                        {
+                            maxSeq = remSeq;
+                        }
+                    }
+                    savSeq.LastSequenceNumber = maxSeq;
+                    savSeq.UpdatedOn = DateTime.UtcNow;
+                    _context.SavingAccountSequences.Update(savSeq);
+                }
+
+                // Physically Hard Delete linked Pending/Unapproved opening vouchers
+                if (!savingAccount.IsLegacyAccount && linkedOpeningVouchers.Any())
+                {
+                    var vIds = linkedOpeningVouchers.Select(v => v.VoucherID).ToList();
+                    var reverseRefs = await _context.Vouchers
+                        .Where(v => v.RelatedVoucherID.HasValue && vIds.Contains(v.RelatedVoucherID.Value))
+                        .ToListAsync();
+                    foreach (var rv in reverseRefs) rv.RelatedVoucherID = null;
+                    foreach (var ov in linkedOpeningVouchers) ov.RelatedVoucherID = null;
+                    await _context.SaveChangesAsync();
+
+                    foreach (var ov in linkedOpeningVouchers)
+                    {
+                        if (ov.VoucherDetails != null && ov.VoucherDetails.Any())
+                        {
+                            _context.VoucherDetails.RemoveRange(ov.VoucherDetails);
+                        }
+                        _context.Vouchers.Remove(ov);
+                    }
+                }
                 await _context.SaveChangesAsync();
 
                 // If the deleted record was the highest/only SavingAccountID, automatically decrement/reseed identity counter

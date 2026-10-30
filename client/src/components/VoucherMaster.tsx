@@ -242,7 +242,10 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     try {
       const res = await fetch(`/api/VoucherPosting/${vId}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {})
+        },
         body: JSON.stringify({
           reason: rejectionReason.trim(),
           userId: user?.userID || 1,
@@ -831,11 +834,23 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm("तुम्हाला खात्री आहे का की हे व्हाउचर डिलीट करायचे आहे?")) return;
+    const rawReason = window.prompt("व्हाउचर कायमस्वरूपी डिलीट (Hard Delete) करण्याचे कारण नमूद करा (किमान १० अक्षरे):");
+    if (rawReason === null) return;
+    const cleanReason = rawReason.trim();
+    if (cleanReason.length < 10) {
+      alert("ऑडिट नियमांनुसार व्हाउचर डिलीट करण्याचे किमान १० अक्षरांचे स्पष्ट कारण देणे आवश्यक आहे.");
+      return;
+    }
+    if (!window.confirm("तुम्हाला खात्री आहे का की हे व्हाउचर आणि संलग्न व्यवहार कायमस्वरूपी डिलीट करायचे आहेत?")) return;
 
     try {
       const response = await fetch(`${API_URL}/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {})
+        },
+        body: JSON.stringify({ reason: cleanReason })
       });
 
       const resData = await response.json().catch(() => null);

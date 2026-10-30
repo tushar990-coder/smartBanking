@@ -891,7 +891,16 @@ namespace Bhisi.Api.Controllers
             if (effectiveBranchId <= 0) effectiveBranchId = 1;
 
             string payee = dto.PaidTo ?? dto.PayeeName ?? "कायदेशीर सल्लागार / अधिकारी";
-            var voucher = await TryAutoPostLegalExpenseAsync(effectiveBranchId, dto.CaseId, effectiveLoanAccountId, dto.ExpenseType, dto.Amount, dto.ExpenseDate, !string.IsNullOrWhiteSpace(dto.Remarks) ? dto.Remarks! : $"कायदेशीर खर्च ({dto.ExpenseType}) - {payee}", dto.PaymentMode, dto.BankLedgerId, dto.ReferenceNo, payee);
+            Voucher? voucher;
+            try
+            {
+                dto.PayeeName = payee;
+                voucher = await Helpers.Step4AccountingHelper.ExecuteLegalExpenseAtomicAsync(_context, dto, effectiveBranchId, effectiveLoanAccountId);
+            }
+            catch (InvalidOperationException valEx)
+            {
+                return BadRequest(new { message = valEx.Message });
+            }
 
             return Ok(new
             {
@@ -948,6 +957,12 @@ namespace Bhisi.Api.Controllers
 
         // Helper: Dynamic Ledger Lookup & Auto-Voucher Posting (ZERO HARDCODING)
         private async Task<Voucher?> TryAutoPostLegalExpenseAsync(int branchId, int? caseId, int loanAccountId, string expenseType, decimal amount, DateTime expenseDate, string narration, string? paymentMode = "CASH", int? bankLedgerId = null, string? referenceNo = null, string? payeeName = null)
+        {
+            var autoDto = new AddLegalExpenseDto { BranchId = branchId, CaseId = caseId, LoanAccountId = loanAccountId, ExpenseType = expenseType, Amount = amount, ExpenseDate = expenseDate, Remarks = narration, PaymentMode = paymentMode, BankLedgerId = bankLedgerId, ReferenceNo = referenceNo, PaidTo = payeeName, IsDebitedToBorrower = true };
+            return await Helpers.Step4AccountingHelper.ExecuteLegalExpenseAtomicAsync(_context, autoDto, branchId, loanAccountId);
+        }
+
+        private async Task<Voucher?> LegacyTryAutoPostLegalExpenseUnusedAsync(int branchId, int? caseId, int loanAccountId, string expenseType, decimal amount, DateTime expenseDate, string narration, string? paymentMode = "CASH", int? bankLedgerId = null, string? referenceNo = null, string? payeeName = null)
         {
             try
             {

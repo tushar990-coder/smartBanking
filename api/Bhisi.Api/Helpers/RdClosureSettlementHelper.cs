@@ -1673,6 +1673,8 @@ namespace Bhisi.Api.Helpers
                             sbAcc.CurrentBalance += sbTx.Amount;
                         context.Entry(sbAcc).State = EntityState.Modified;
                     }
+                    var sbPassbooks = await context.SavingPassbooks.Where(p => p.TransactionID == sbTx.TransactionID).ToListAsync();
+                    if (sbPassbooks.Any()) context.SavingPassbooks.RemoveRange(sbPassbooks);
                     context.SavingTransactions.Remove(sbTx);
                 }
             }
@@ -1701,7 +1703,16 @@ namespace Bhisi.Api.Helpers
 
                         var allFdTxs = await context.FdTransactions.Where(ft => ft.FdAccountID == fdId).ToListAsync();
                         if (allFdTxs.Any()) context.FdTransactions.RemoveRange(allFdTxs);
+                        var allFdAccruals = await context.FdInterestAccruals.Where(fa => fa.FdAccountID == fdId).ToListAsync();
+                        if (allFdAccruals.Any()) context.FdInterestAccruals.RemoveRange(allFdAccruals);
+                        var allFdMis = await context.FdMisPayouts.Where(fm => fm.FdAccountID == fdId).ToListAsync();
+                        if (allFdMis.Any()) context.FdMisPayouts.RemoveRange(allFdMis);
+                        var allFdAuto = await context.FdAutoRenewalLogs.Where(fl => fl.NewFdAccountID == fdId).ToListAsync();
+                        if (allFdAuto.Any()) context.FdAutoRenewalLogs.RemoveRange(allFdAuto);
+                        int fdBranchId = newFd.BranchID;
                         context.FdAccounts.Remove(newFd);
+                        await context.SaveChangesAsync();
+                        await FdRenewalRollbackHelper.SyncBranchFdSequenceAsync(context, fdBranchId);
                     }
                 }
             }
@@ -1742,10 +1753,17 @@ namespace Bhisi.Api.Helpers
             }
 
             // 5. If Cross-Branch IBT sibling voucher exists, unlink and remove sibling voucher as well
+            if (siblingVoucher == null)
+            {
+                siblingVoucher = await context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .FirstOrDefaultAsync(v => v.RelatedVoucherID == voucher.VoucherID);
+            }
             if (siblingVoucher != null)
             {
                 voucher.RelatedVoucherID = null;
                 siblingVoucher.RelatedVoucherID = null;
+                await context.SaveChangesAsync();
                 if (siblingVoucher.VoucherDetails != null && siblingVoucher.VoucherDetails.Any())
                 {
                     context.VoucherDetails.RemoveRange(siblingVoucher.VoucherDetails);

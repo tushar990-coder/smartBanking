@@ -324,7 +324,9 @@ export default function RdAccountOpening({
     }
     setPassingActionLoading(true);
     try {
-      await axios.delete(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
+      await axios.delete(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason.trim())}`, {
+        data: { reason: rejectReason.trim() }
+      });
       alert('व्हाउचर यशस्वीरित्या नामंजूर / रद्द करण्यात आले!');
       setRejectModalOpen(false);
       if (onNavigate) {

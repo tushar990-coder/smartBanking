@@ -76,6 +76,10 @@ const InvestmentMaturityClaim: React.FC = () => {
     renewalAmount: 0,
     newSchemeID: 0,
     newInterestRate: 0,
+    interestPayoutAmount: 0,
+    paymentMode: 'Bank',
+    bankLedgerID: 0,
+    referenceNo: '',
   });
 
   // Sync CBS Business Date if changed
@@ -153,13 +157,17 @@ const InvestmentMaturityClaim: React.FC = () => {
         referenceNo: '',
       }));
 
-      setRenewalForm({
+      setRenewalForm(prev => ({
         renewalDate: activeBusinessDate,
         renewalType: 'PrincipalOnly',
         renewalAmount: principal,
         newSchemeID: acc.schemeID || (schemes[0]?.schemeID || 0),
         newInterestRate: acc.interestRate || 0,
-      });
+        interestPayoutAmount: 0,
+        paymentMode: prev.paymentMode || 'Bank',
+        bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
+        referenceNo: '',
+      }));
     }
   };
 
@@ -251,17 +259,29 @@ const InvestmentMaturityClaim: React.FC = () => {
       return;
     }
 
+    const principalRefund = Math.max(0, (selectedAccount.principalAmount || 0) - (renewalForm.renewalAmount || 0));
+    const totalInflow = principalRefund + Math.max(0, renewalForm.interestPayoutAmount || 0);
+    if (totalInflow > 0 && renewalForm.paymentMode === 'Bank' && (!renewalForm.bankLedgerID || Number(renewalForm.bankLedgerID) <= 0)) {
+      setError('नूतनीकरणावेळी व्याज किंवा आंशिक मुद्दल बँकेत जमा घेताना बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
+
     setSaving(true);
     try {
       const response = await axios.post(`${API_URL}/InvestmentAccounts/Renew`, {
         oldInvestmentAccountID: selectedAccount.investmentAccountID,
         ...renewalForm,
+        bankLedgerID: renewalForm.paymentMode === 'Bank' ? renewalForm.bankLedgerID : null,
       });
       setSuccess(`${response.data.message || 'मुदत ठेवीचे नूतनीकरण यशस्वीरीत्या झाले!'} ${response.data.newAccountNo ? `(नवीन खाते: ${response.data.newAccountNo})` : ''}`);
       setSelectedAccountId(0);
       fetchAccounts();
     } catch (err: any) {
-      setError(typeof err.response?.data === 'string' ? err.response.data : 'नूतनीकरण करताना त्रुटी आली.');
+      setError(
+        typeof err.response?.data === 'string'
+          ? err.response.data
+          : err.response?.data?.message || 'नूतनीकरण करताना त्रुटी आली.'
+      );
     } finally {
       setSaving(false);
     }
@@ -276,7 +296,8 @@ const InvestmentMaturityClaim: React.FC = () => {
     setRenewalForm(prev => ({
       ...prev,
       renewalType: type,
-      renewalAmount: newAmt
+      renewalAmount: newAmt,
+      ...(type === 'PrincipalAndInterest' ? { interestPayoutAmount: 0 } : {})
     }));
   };
 
@@ -905,7 +926,72 @@ const InvestmentMaturityClaim: React.FC = () => {
                       className={`${inputClass} font-mono font-bold text-primary`}
                     />
                   </div>
+
+                  {renewalForm.renewalType === 'PrincipalOnly' && (
+                    <div>
+                      <label className={labelClass}>प्राप्त व्याज परतावा ₹ (ऐच्छिक)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={renewalForm.interestPayoutAmount || ''}
+                        onChange={(e) => setRenewalForm(prev => ({ ...prev, interestPayoutAmount: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0.00"
+                        className={`${inputClass} font-mono font-bold text-emerald-700`}
+                      />
+                    </div>
+                  )}
                 </div>
+
+                {((selectedAccount && Math.max(0, (selectedAccount.principalAmount || 0) - (renewalForm.renewalAmount || 0)) > 0) || (renewalForm.interestPayoutAmount || 0) > 0) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start bg-white/80 p-2.5 rounded-sm border border-blue-200">
+                    <div>
+                      <label className={labelClass}>परतावा जमा पद्धत (Receipt Mode) *</label>
+                      <select
+                        value={renewalForm.paymentMode}
+                        onChange={(e) => {
+                          const mode = e.target.value;
+                          setRenewalForm(prev => ({
+                            ...prev,
+                            paymentMode: mode,
+                            ...(mode !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
+                          }));
+                        }}
+                        className={`${inputClass} font-bold text-blue-950 border-blue-300`}
+                      >
+                        <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                        <option value="Cash">💵 रोख (Cash)</option>
+                      </select>
+                    </div>
+
+                    {renewalForm.paymentMode === 'Bank' ? (
+                      <>
+                        <div className="sm:col-span-2">
+                          <BankLedgerSelect
+                            value={renewalForm.bankLedgerID}
+                            onChange={(id) => setRenewalForm(prev => ({ ...prev, bankLedgerID: id }))}
+                            showCountBadge
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>UTR / धनादेश / संदर्भ क्र.</label>
+                          <input
+                            type="text"
+                            value={renewalForm.referenceNo}
+                            onChange={(e) => setRenewalForm(prev => ({ ...prev, referenceNo: e.target.value }))}
+                            placeholder="उदा. UTR / NEFT / CHQ क्र."
+                            className={`${inputClass} font-mono`}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="sm:col-span-3 flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-sm text-[11px] font-bold text-emerald-900 mt-4">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                        <span>नूतनीकरणातील व्याज/आंशिक मुद्दल शाखेच्या मुख्य रोख खात्यात (Branch Cash GL Account) जमा केली जाईल.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="pt-2 flex justify-end gap-2 border-t border-primary/20">
                   <button

@@ -1,19 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { useAuth } from '../context/AuthContext';
+import { getBusinessDateISO } from '../utils/businessDateUtils';
 
 export default function DemandRecoveryMaster() {
+  const { user } = useAuth();
+  const defaultBizDate = getBusinessDateISO(user?.businessDate);
+
   const [demandNotices, setDemandNotices] = useState<any[]>([]);
   const [recoveries, setRecoveries] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   const [formData, setFormData] = useState({
     demandNoticeId: '',
-    recoveryDate: new Date().toISOString().split('T')[0],
+    recoveryDate: defaultBizDate,
     totalReceivedAmount: 0,
+    paymentMode: 'Bank',
+    bankLedgerID: '' as string | number,
+    referenceNo: '',
     remarks: ''
   });
 
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setFormData(prev => ({
+        ...prev,
+        recoveryDate: getBusinessDateISO(user.businessDate)
+      }));
+    }
+  }, [user?.businessDate]);
 
   useEffect(() => {
     fetchDemandNotices();
@@ -28,7 +46,7 @@ export default function DemandRecoveryMaster() {
         setDemandNotices(data);
       }
     } catch (error) {
-      console.error("Error fetching demand notices", error);
+      console.error('Error fetching demand notices', error);
     }
   };
 
@@ -40,7 +58,7 @@ export default function DemandRecoveryMaster() {
         setRecoveries(data);
       }
     } catch (error) {
-      console.error("Error fetching demand recoveries", error);
+      console.error('Error fetching demand recoveries', error);
     }
   };
 
@@ -49,15 +67,21 @@ export default function DemandRecoveryMaster() {
     const noticeId = val ? parseInt(String(val)) : '';
     setFormData(prev => {
       const selectedDemand = demandNotices.find(d => d.demandNoticeId === noticeId);
+      const alreadyRec = recoveries
+        .filter(r => r.demandNoticeId === noticeId)
+        .reduce((acc, r) => acc + (r.totalReceivedAmount || 0), 0);
+      const pendingAmt = selectedDemand
+        ? Math.max(0, (selectedDemand.totalDemandAmount || 0) - alreadyRec)
+        : 0;
       return {
         ...prev,
         demandNoticeId: noticeId ? noticeId.toString() : '',
-        totalReceivedAmount: selectedDemand ? selectedDemand.totalDemandAmount : 0
+        totalReceivedAmount: pendingAmt
       };
     });
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -65,23 +89,35 @@ export default function DemandRecoveryMaster() {
     }));
   };
 
+  const isBankMode = formData.paymentMode !== 'Cash';
+
   const processRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.demandNoticeId) {
-      alert("कृपया प्रलंबित डिमान्ड निवडा (Please select a demand notice)");
+      alert('कृपया प्रलंबित डिमान्ड निवडा (Please select a demand notice)');
       return;
     }
 
     if (formData.totalReceivedAmount <= 0) {
-      alert("कृपया योग्य रक्कम टाका (Please enter a valid amount)");
+      alert('कृपया योग्य रक्कम टाका (Please enter a valid amount)');
+      return;
+    }
+
+    if (isBankMode && (!formData.bankLedgerID || Number(formData.bankLedgerID) <= 0)) {
+      alert('कृपया बँक खाते निवडा (Please select a Bank Account Ledger)');
       return;
     }
 
     setLoading(true);
     try {
       const payload = {
-        ...formData,
-        demandNoticeId: parseInt(formData.demandNoticeId)
+        demandNoticeId: parseInt(formData.demandNoticeId),
+        recoveryDate: formData.recoveryDate,
+        totalReceivedAmount: formData.totalReceivedAmount,
+        paymentMode: formData.paymentMode,
+        bankLedgerID: isBankMode && formData.bankLedgerID ? Number(formData.bankLedgerID) : null,
+        referenceNo: formData.referenceNo || null,
+        remarks: formData.remarks
       };
 
       const response = await fetch('/api/DemandRecoveries/process', {
@@ -89,24 +125,28 @@ export default function DemandRecoveryMaster() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
+
       if (response.ok) {
-        alert("वसूल यशस्वीरित्या नोंदवली (Recovery processed successfully)");
+        const resData = await response.json().catch(() => null);
+        alert(resData?.message || 'वसूल यशस्वीरित्या नोंदवली व पासिंगसाठी व्हाउचर तयार झाले!');
         setFormData({
           demandNoticeId: '',
-          recoveryDate: new Date().toISOString().split('T')[0],
+          recoveryDate: getBusinessDateISO(user?.businessDate),
           totalReceivedAmount: 0,
+          paymentMode: 'Bank',
+          bankLedgerID: '',
+          referenceNo: '',
           remarks: ''
         });
         fetchDemandNotices();
         fetchRecoveries();
       } else {
         const errText = await response.text();
-        alert("त्रुटी (Error): " + errText);
+        alert('त्रुटी (Error): ' + errText);
       }
     } catch (error) {
-      console.error("Error processing recovery", error);
-      alert("नेटवर्क त्रुटी (Network error)");
+      console.error('Error processing recovery', error);
+      alert('नेटवर्क त्रुटी (Network error)');
     } finally {
       setLoading(false);
     }
@@ -120,11 +160,11 @@ export default function DemandRecoveryMaster() {
   };
 
   const pendingDemands = demandNotices.filter(d => d.status !== 'Received' && d.status !== 'Paid');
-  
+
   // KPI Metrics
   const totalDemandAmt = demandNotices.reduce((acc, curr) => acc + (curr.totalDemandAmount || 0), 0);
-  const pendingDemandAmt = pendingDemands.reduce((acc, curr) => acc + (curr.totalDemandAmount || 0), 0);
   const totalRecoveredAmt = recoveries.reduce((acc, curr) => acc + (curr.totalReceivedAmount || 0), 0);
+  const pendingDemandAmt = Math.max(0, totalDemandAmt - totalRecoveredAmt);
 
   // Filter recoveries for history table
   const filteredRecoveries = recoveries.filter(r => {
@@ -132,13 +172,14 @@ export default function DemandRecoveryMaster() {
     const q = searchQuery.toLowerCase();
     const noticeNo = (r.demandNotice?.noticeNumber || '').toLowerCase();
     const empName = (r.demandNotice?.employer?.name || '').toLowerCase();
+    const vchNo = (r.voucher?.voucherNo || '').toLowerCase();
     const remarks = (r.remarks || '').toLowerCase();
     const dateStr = new Date(r.recoveryDate).toLocaleDateString('en-IN').toLowerCase();
-    return noticeNo.includes(q) || empName.includes(q) || remarks.includes(q) || dateStr.includes(q);
+    return noticeNo.includes(q) || empName.includes(q) || vchNo.includes(q) || remarks.includes(q) || dateStr.includes(q);
   });
 
-  const labelClass = "block text-[11px] font-bold text-gray-700 mb-0.5";
-  const inputClass = "w-full text-xs border border-gray-300 rounded-sm px-2 py-1 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white text-gray-900";
+  const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
+  const inputClass = 'w-full text-xs border border-gray-300 rounded-sm px-2 py-1 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white text-gray-900';
 
   return (
     <div className="p-2 max-w-full h-full flex flex-col bg-gray-50 text-[11px] font-sans">
@@ -147,7 +188,7 @@ export default function DemandRecoveryMaster() {
         <span>डिमान्ड वसुली (Demand Recovery)</span>
         <span className="text-[10px] text-gray-500 font-normal">एकूण प्रलंबित: {pendingDemands.length} डिमान्ड्स</span>
       </div>
-      
+
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
         <div className="bg-white p-2 rounded-sm border border-gray-200 shadow-sm flex items-center justify-between">
@@ -178,10 +219,10 @@ export default function DemandRecoveryMaster() {
         <div className="text-[11px] font-bold text-primary border-b border-gray-200 pb-1 mb-2">
           १. वसुली नोंदवा (Process Recovery)
         </div>
-        
+
         <form onSubmit={processRecovery} className="space-y-2.5">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="md:col-span-1">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="md:col-span-2">
               <label className={labelClass}>प्रलंबित डिमान्ड निवडा (Pending Demand) <span className="text-red-500">*</span></label>
               <SearchableSelect
                 options={pendingDemands.map(dn => ({
@@ -193,55 +234,100 @@ export default function DemandRecoveryMaster() {
                 placeholder="-- डिमान्ड किंवा संस्था शोधा --"
               />
             </div>
-            
+
             <div>
               <label className={labelClass}>वसूल तारीख (Recovery Date) <span className="text-red-500">*</span></label>
-              <input 
-                type="date" 
-                name="recoveryDate" 
-                value={formData.recoveryDate} 
-                onChange={handleChange} 
-                required 
+              <input
+                type="date"
+                name="recoveryDate"
+                value={formData.recoveryDate}
+                onChange={handleChange}
+                required
                 className={inputClass}
               />
             </div>
 
             <div>
               <label className={labelClass}>मिळालेली एकूण रक्कम (Received Amount) <span className="text-red-500">*</span></label>
-              <input 
-                type="number" 
-                name="totalReceivedAmount" 
-                value={formData.totalReceivedAmount} 
-                onChange={handleChange} 
-                required 
+              <input
+                type="number"
+                name="totalReceivedAmount"
+                value={formData.totalReceivedAmount}
+                onChange={handleChange}
+                required
                 step="0.01"
-                className={`${inputClass} font-bold text-emerald-700`} 
+                className={`${inputClass} font-bold text-emerald-700`}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-            <div className="md:col-span-3">
-              <label className={labelClass}>शेरा (Remarks / Payment Details)</label>
-              <input 
+            <div>
+              <label className={labelClass}>पेमेंट पद्धत (Payment Mode) <span className="text-red-500">*</span></label>
+              <select
+                name="paymentMode"
+                value={formData.paymentMode}
+                onChange={(e) => {
+                  const nextMode = e.target.value;
+                  setFormData(prev => ({
+                    ...prev,
+                    paymentMode: nextMode,
+                    bankLedgerID: nextMode === 'Cash' ? '' : prev.bankLedgerID
+                  }));
+                }}
+                className={inputClass}
+              >
+                <option value="Bank">बँक / चेक / NEFT / RTGS</option>
+                <option value="Cheque">धनादेश (Cheque)</option>
+                <option value="Online">ऑनलाईन / UPI</option>
+                <option value="Cash">रोख (Cash)</option>
+              </select>
+            </div>
+
+            {isBankMode && (
+              <div>
+                <BankLedgerSelect
+                  value={formData.bankLedgerID}
+                  onChange={(id) => setFormData(prev => ({ ...prev, bankLedgerID: id }))}
+                  label="बँक खाते निवडा (Bank Account)"
+                  required
+                />
+              </div>
+            )}
+
+            <div>
+              <label className={labelClass}>चेक / UTR / संदर्भ क्र. (Reference No)</label>
+              <input
                 type="text"
-                name="remarks" 
-                value={formData.remarks} 
-                onChange={handleChange} 
-                placeholder="उदा. चेक नंबर / UTR क्र. / बँक तपशील"
+                name="referenceNo"
+                value={formData.referenceNo}
+                onChange={handleChange}
+                placeholder="चेक क्र. / UTR क्र."
                 className={inputClass}
               />
             </div>
 
-            <div>
-              <button 
-                type="submit" 
-                disabled={loading}
-                className="w-full bg-primary hover:bg-[#004a75] text-white px-4 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50 flex items-center justify-center gap-1"
-              >
-                <span>{loading ? 'प्रक्रिया चालू आहे...' : '✓ वसूल जमा करा (Submit Recovery)'}</span>
-              </button>
+            <div className={isBankMode ? '' : 'md:col-span-2'}>
+              <label className={labelClass}>शेरा (Remarks)</label>
+              <input
+                type="text"
+                name="remarks"
+                value={formData.remarks}
+                onChange={handleChange}
+                placeholder="अतिरिक्त तपशील"
+                className={inputClass}
+              />
             </div>
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <button
+              type="submit"
+              disabled={loading}
+              className="bg-primary hover:bg-[#004a75] text-white px-5 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50 flex items-center justify-center gap-1"
+            >
+              <span>{loading ? 'प्रक्रिया चालू आहे...' : '✓ वसूल जमा करा (Submit Recovery)'}</span>
+            </button>
           </div>
         </form>
       </div>
@@ -252,15 +338,15 @@ export default function DemandRecoveryMaster() {
           <div className="text-[11px] font-bold text-primary">
             २. वसूल इतिहास (Recovery History)
           </div>
-          <input 
-            type="text" 
-            placeholder="शोध (Search Notice No / Employer / Date)..." 
+          <input
+            type="text"
+            placeholder="शोध (Notice No / Employer / Voucher No)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-64 border border-gray-300 rounded-sm px-2 py-0.5 text-[11px] focus:outline-none focus:border-primary"
           />
         </div>
-        
+
         <div className="overflow-auto flex-1 border border-gray-200 rounded-sm">
           <table className="w-full text-[11px] border-collapse">
             <thead>
@@ -269,6 +355,7 @@ export default function DemandRecoveryMaster() {
                 <th className="px-2 py-1.5 border-r border-blue-400 text-left">वसूल तारीख</th>
                 <th className="px-2 py-1.5 border-r border-blue-400 text-left">डिमान्ड नोटीस क्र.</th>
                 <th className="px-2 py-1.5 border-r border-blue-400 text-left">संस्था / मालक नाव</th>
+                <th className="px-2 py-1.5 border-r border-blue-400 text-left">व्हाउचर क्र.</th>
                 <th className="px-2 py-1.5 border-r border-blue-400 text-right">जमा रक्कम (₹)</th>
                 <th className="px-2 py-1.5 text-left">शेरा (Remarks)</th>
               </tr>
@@ -276,7 +363,7 @@ export default function DemandRecoveryMaster() {
             <tbody className="divide-y divide-gray-200 bg-white">
               {filteredRecoveries.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-gray-500 text-xs">
+                  <td colSpan={7} className="px-4 py-6 text-center text-gray-500 text-xs">
                     अद्याप कोणतीही वसुली नोंदवलेली नाही किंवा शोधानुसार डेटा आढळला नाही.
                   </td>
                 </tr>
@@ -292,6 +379,13 @@ export default function DemandRecoveryMaster() {
                     </td>
                     <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-700">
                       {r.demandNotice?.employer?.name || '-'}
+                    </td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-left font-mono text-[10px]">
+                      {r.voucher?.voucherNo ? (
+                        <span className={`px-1.5 py-0.5 rounded font-semibold ${r.voucher?.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                          {r.voucher.voucherNo} ({r.voucher.status === 'Approved' ? 'मंजूर' : 'प्रलंबित'})
+                        </span>
+                      ) : '-'}
                     </td>
                     <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-emerald-700">
                       ₹{r.totalReceivedAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}

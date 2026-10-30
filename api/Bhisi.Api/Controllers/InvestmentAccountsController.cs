@@ -730,6 +730,7 @@ namespace Bhisi.Api.Controllers
                 var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
                 if (fy != null) account.FinancialYearID = fy.FinancialYearID;
 
+                if (!account.IsLegacyAccount && (await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID)) == null) { await transaction.RollbackAsync(); return BadRequest("गुंतवणूक योजनेसाठी जी.एल. लेजर मॅपिंग (Investment Voucher Mapping) सापडले नाही."); }
                 _context.InvestmentAccounts.Add(account);
                 await _context.SaveChangesAsync();
 
@@ -773,6 +774,7 @@ namespace Bhisi.Api.Controllers
 
                         _context.VoucherDetails.Add(debDetail);
                         _context.VoucherDetails.Add(credDetail);
+                        await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
                         await _context.SaveChangesAsync();
                     }
                 }
@@ -851,6 +853,7 @@ namespace Bhisi.Api.Controllers
                 var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
                 if (fy != null) account.FinancialYearID = fy.FinancialYearID;
 
+                if (!account.IsLegacyAccount && (await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID)) == null) { await transaction.RollbackAsync(); return BadRequest("गुंतवणूक योजनेसाठी जी.एल. लेजर मॅपिंग (Investment Voucher Mapping) सापडले नाही."); }
                 _context.InvestmentAccounts.Add(account);
                 await _context.SaveChangesAsync();
 
@@ -878,6 +881,27 @@ namespace Bhisi.Api.Controllers
             }
 
             bool hasMaturity = await _context.InvestmentMaturities.AnyAsync(m => m.InvestmentAccountID == id);
+            bool hasPremature = await _context.InvestmentPrematureWithdrawals.AnyAsync(p => p.InvestmentAccountID == id);
+            bool hasRenewal = await _context.InvestmentRenewals.AnyAsync(r => r.OldInvestmentAccountID == id || r.NewInvestmentAccountID == id);
+            bool hasIntReceipt = await _context.InvestmentInterestReceipts.AnyAsync(r => r.InvestmentAccountID == id);
+            bool hasIntAccrual = await _context.InvestmentInterestAccruals.AnyAsync(a => a.InvestmentAccountID == id);
+
+            if (hasMaturity || hasPremature || hasRenewal || hasIntReceipt || hasIntAccrual)
+            {
+                return BadRequest(new { message = "हे गुंतवणूक खाते डिलीट करता येणार नाही कारण यावर मुदतपूर्ती, मुदतपूर्व बंद, नूतनीकरण किंवा व्याज जमा/आकारणी नोंदी अस्तित्वात आहेत. प्रथम संबंधित व्यवहार व्हाउचर डिलीट करा." });
+            }
+
+            var linkedOpVouchers = !string.IsNullOrWhiteSpace(account.InvestmentNo)
+                ? await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .Where(v => v.VoucherNo == $"PAY-INV-OP-{account.InvestmentNo}")
+                    .ToListAsync()
+                : new List<Voucher>();
+
+            if (!account.IsLegacyAccount && linkedOpVouchers.Any(v => v.Status == "Approved"))
+            {
+                return BadRequest(new { message = "या गुंतवणूक खात्याचे ओपनिंग व्हाउचर मंजूर (Approved) झालेले आहे. खाते डिलीट करण्यापूर्वी व्हाउचर पासिंगमधून संबंधित व्हाउचर अन-पास (Unpass) करा." });
+            }
             if (hasMaturity)
             {
                 return BadRequest(new { message = "हे खाते डिलीट करता येणार नाही कारण याची मुदतपूर्ती (Maturity) नोंद झालेली आहे." });
@@ -901,7 +925,13 @@ namespace Bhisi.Api.Controllers
                     int maxNum = 0;
                     foreach (var invNo in remainingMaxSeq)
                     {
-                        var parts = invNo.Split('-');
+                        string invDigits = new string((invNo ?? string.Empty).Where(char.IsDigit).ToArray());
+                        if (invDigits.Length == 14 && int.TryParse(invDigits.Substring(6, 7), out int cbsSeq))
+                        {
+                            if (cbsSeq > maxNum) maxNum = cbsSeq;
+                            continue;
+                        }
+                        var parts = (invNo ?? string.Empty).Split('-');
                         if (parts.Length > 0 && int.TryParse(parts.Last(), out int parsed))
                         {
                             if (parsed > maxNum) maxNum = parsed;
@@ -912,6 +942,28 @@ namespace Bhisi.Api.Controllers
                 }
 
                 _context.InvestmentAccounts.Remove(account);
+                await _context.SaveChangesAsync();
+
+                if (!wasLegacy && linkedOpVouchers.Any())
+                {
+                    var delIds = linkedOpVouchers.Select(v => v.VoucherID).ToList();
+                    var revRefs = await _context.Vouchers
+                        .Where(v => v.RelatedVoucherID.HasValue && delIds.Contains(v.RelatedVoucherID.Value))
+                        .ToListAsync();
+                    foreach (var rv in revRefs) rv.RelatedVoucherID = null;
+                    foreach (var ov in linkedOpVouchers) ov.RelatedVoucherID = null;
+                    await _context.SaveChangesAsync();
+
+                    foreach (var ov in linkedOpVouchers)
+                    {
+                        if (ov.VoucherDetails != null && ov.VoucherDetails.Any())
+                        {
+                            _context.VoucherDetails.RemoveRange(ov.VoucherDetails);
+                        }
+                        _context.Vouchers.Remove(ov);
+                    }
+                    await _context.SaveChangesAsync();
+                }
                 await _context.SaveChangesAsync();
 
                 if (wasLegacy)
@@ -1019,9 +1071,11 @@ namespace Bhisi.Api.Controllers
                     }
 
                     await _context.SaveChangesAsync();
+                    await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
                     maturity.VoucherID = voucher.VoucherID;
                 }
 
+                if (maturity.VoucherID == null || maturity.VoucherID <= 0) { await transaction.RollbackAsync(); return BadRequest("गुंतवणूक मुदतपूर्तीसाठी जी.एल. लेजर मॅपिंग सापडले नाही."); }
                 _context.InvestmentMaturities.Add(maturity);
                 account.Status = "Matured";
                 await _context.SaveChangesAsync();
@@ -1086,7 +1140,7 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = withdrawal.WithdrawalDate,
                         VoucherType = "Receipt",
                         Narration = $"गुंतवणूक मुदतपूर्व बंद - {account.InvestmentNo}{refSuffix}",
-                        TotalAmount = withdrawal.NetPayout,
+                        TotalAmount = withdrawal.PrincipalPaid + withdrawal.InterestPaid,
                         CreatedBy = withdrawal.CreatedBy,
                         CreatedOn = DateTime.Now
                     };
@@ -1126,9 +1180,18 @@ namespace Bhisi.Api.Controllers
                     }
 
                     await _context.SaveChangesAsync();
+                    if (withdrawal.NetPayout < 0) { await transaction.RollbackAsync(); return BadRequest("मुदतपूर्व दंड रक्कम एकूण मुद्दल व व्याजापेक्षा जास्त असू शकत नाही."); }
+                    if (withdrawal.PenaltyAmount > 0)
+                    {
+                        int penaltyLedgerId = await Helpers.Step4AccountingHelper.ResolveInvestmentPenaltyLedgerIdAsync(_context, mapping);
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = penaltyLedgerId, DrCr = "Dr", Amount = withdrawal.PenaltyAmount });
+                        await _context.SaveChangesAsync();
+                    }
+                    await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
                     withdrawal.VoucherID = voucher.VoucherID;
                 }
 
+                if (withdrawal.VoucherID == null || withdrawal.VoucherID <= 0) { await transaction.RollbackAsync(); return BadRequest("गुंतवणूक मुदतपूर्व मोडणीसाठी जी.एल. लेजर मॅपिंग सापडले नाही."); }
                 _context.InvestmentPrematureWithdrawals.Add(withdrawal);
                 account.Status = "Closed";
                 await _context.SaveChangesAsync();
@@ -1223,6 +1286,25 @@ namespace Bhisi.Api.Controllers
                 };
 
                 _context.InvestmentRenewals.Add(renewal);
+                var oldMapping = await GetVoucherMappingForBranch(oldAccount.BranchID, "", oldAccount.SchemeID);
+                var newMapping = await GetVoucherMappingForBranch(newAccount.BranchID, "", newAccount.SchemeID);
+                if (oldMapping == null || newMapping == null)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest("गुंतवणूक नूतनीकरणासाठी जुन्या किंवा नवीन योजनेचे जी.एल. लेजर मॅपिंग (Investment Voucher Mapping) सापडले नाही.");
+                }
+                var renewalVoucher = await Helpers.Step4AccountingHelper.CreateInvestmentRenewalVoucherAsync(
+                    _context,
+                    oldAccount,
+                    newAccount,
+                    renewal,
+                    oldMapping,
+                    newMapping,
+                    request.PaymentMode,
+                    request.BankLedgerID,
+                    request.ReferenceNo,
+                    request.InterestPayoutAmount);
+                await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, renewalVoucher.VoucherID, renewalVoucher.VoucherNo);
                 oldAccount.Status = "Renewed";
                 await _context.SaveChangesAsync();
 
@@ -1306,6 +1388,7 @@ namespace Bhisi.Api.Controllers
                         });
                     }
 
+                    if (branchTotalInterest > 0 && mapping == null) { await transaction.RollbackAsync(); return BadRequest($"शाखा '{bName}' साठी गुंतवणूक व्याज तरतूद जी.एल. लेजर मॅपिंग सापडले नाही."); }
                     // Create consolidated voucher for this branch
                     if (mapping != null && branchTotalInterest > 0)
                     {
@@ -1347,6 +1430,9 @@ namespace Bhisi.Api.Controllers
                         foreach (var accrual in branchAccruals)
                         {
                             accrual.VoucherID = voucher.VoucherID;
+                        }
+                        await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
+                        {
                         }
                     }
 
@@ -1454,9 +1540,11 @@ namespace Bhisi.Api.Controllers
                     _context.VoucherDetails.Add(d1);
                     _context.VoucherDetails.Add(d2);
                     await _context.SaveChangesAsync();
+                    await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
                     receipt.VoucherID = voucher.VoucherID;
                 }
 
+                if (receipt.VoucherID == null || receipt.VoucherID <= 0) { await transaction.RollbackAsync(); return BadRequest("गुंतवणूक व्याज प्राप्तीसाठी जी.एल. लेजर मॅपिंग सापडले नाही."); }
                 _context.InvestmentInterestReceipts.Add(receipt);
                 await _context.SaveChangesAsync();
 
@@ -1649,6 +1737,10 @@ namespace Bhisi.Api.Controllers
         public decimal RenewalAmount { get; set; }
         public DateTime RenewalDate { get; set; }
         public decimal NewInterestRate { get; set; }
+        public decimal InterestPayoutAmount { get; set; } = 0;
+        public string? PaymentMode { get; set; } = "Bank";
+        public int? BankLedgerID { get; set; }
+        public string? ReferenceNo { get; set; }
     }
 
     public class AccrualPostingRequest

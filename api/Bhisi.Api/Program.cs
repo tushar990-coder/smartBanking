@@ -112,6 +112,7 @@ try
     builder.Services.AddScoped<Bhisi.Api.Services.INotificationEngineService, Bhisi.Api.Services.NotificationEngineService>();
     builder.Services.AddSingleton<Bhisi.Api.Services.ILicenseService, Bhisi.Api.Services.LicenseService>();
     builder.Services.AddScoped<Bhisi.Api.Services.ISystemUpdateService, Bhisi.Api.Services.SystemUpdateService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.VoucherRollbackAndDeleteService>();
 
     // Configure CORS for React client
     builder.Services.AddCors(options =>

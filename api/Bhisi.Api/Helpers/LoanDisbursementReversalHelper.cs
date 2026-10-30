@@ -238,6 +238,8 @@ namespace Bhisi.Api.Helpers
                     context.Entry(savAcc).State = EntityState.Modified;
                 }
 
+                var stPassbooks = await context.SavingPassbooks.Where(p => p.TransactionID == st.TransactionID).ToListAsync();
+                if (stPassbooks.Any()) context.SavingPassbooks.RemoveRange(stPassbooks);
                 context.SavingTransactions.Remove(st);
             }
         }
@@ -557,6 +559,19 @@ namespace Bhisi.Api.Helpers
 
                 if (effectiveVoucher != null)
                 {
+                    var relRefs = await context.Vouchers
+                        .Where(rv => rv.VoucherID == vId || rv.RelatedVoucherID == vId)
+                        .ToListAsync();
+                    bool relChanged = false;
+                    foreach (var rv in relRefs)
+                    {
+                        if (rv.RelatedVoucherID.HasValue)
+                        {
+                            rv.RelatedVoucherID = null;
+                            relChanged = true;
+                        }
+                    }
+                    if (relChanged) await context.SaveChangesAsync();
                     context.Vouchers.Remove(effectiveVoucher);
                 }
             }

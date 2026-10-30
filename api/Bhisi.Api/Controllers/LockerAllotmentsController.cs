@@ -52,7 +52,7 @@ namespace Bhisi.Api.Controllers
             if (!string.IsNullOrWhiteSpace(searchTerm))
             {
                 var term = searchTerm.Trim().ToLower();
-                query = query.Where(a => 
+                query = query.Where(a =>
                     a.LockerAccountNo.ToLower().Contains(term) ||
                     (a.Locker != null && a.Locker.LockerNo.ToLower().Contains(term)) ||
                     (a.Customer != null && ((a.Customer.FirstName + " " + a.Customer.LastName).ToLower().Contains(term) || (a.Customer.CIFNo != null && a.Customer.CIFNo.ToLower().Contains(term)))) ||
@@ -62,7 +62,8 @@ namespace Bhisi.Api.Controllers
 
             var list = await query
                 .OrderByDescending(a => a.AllotmentDate)
-                .Select(a => new {
+                .Select(a => new
+                {
                     a.AllotmentID,
                     a.BranchID,
                     a.LockerAccountNo,
@@ -137,7 +138,8 @@ namespace Bhisi.Api.Controllers
                 .OrderByDescending(rp => rp.PaymentDate)
                 .ToListAsync();
 
-            var response = new {
+            var response = new
+            {
                 a.AllotmentID,
                 a.BranchID,
                 a.LockerAccountNo,
@@ -228,139 +230,223 @@ namespace Bhisi.Api.Controllers
             int? resolvedCustomerId = customer?.CustomerID ?? (member?.CustomerID > 0 ? member.CustomerID : null);
             int? resolvedMemberId = member?.MemberID;
 
-            // Generate Locker Account Number: LKR-26-0001
-            int nextSeq = await _context.LockerAllotments.CountAsync() + 1;
-            string lockerAccountNo = $"LKR-{DateTime.Today:yy}-{nextSeq:D4}";
-
-            var allotment = new LockerAllotment
+            int paymentDebitLedgerId = 0;
+            bool hasMonetaryReceipt = dto.SecurityDepositAmount > 0 || dto.AdvanceRentPaid > 0;
+            if (hasMonetaryReceipt)
             {
-                BranchID = dto.BranchID,
-                LockerAccountNo = lockerAccountNo,
-                LockerID = dto.LockerID,
-                CustomerID = resolvedCustomerId,
-                MemberID = resolvedMemberId,
-                JointMember1_ID = dto.JointMember1_ID,
-                JointMember2_ID = dto.JointMember2_ID,
-                OperatingInstruction = dto.OperatingInstruction ?? "Self",
-                AllotmentDate = dto.AllotmentDate,
-                RentStartDate = dto.RentStartDate,
-                ExpiryDate = dto.RentStartDate.AddYears(1),
-                AnnualRent = dto.AnnualRent,
-                SecurityDepositAmount = dto.SecurityDepositAmount,
-                AdvanceRentPaid = dto.AdvanceRentPaid,
-                LinkedSavingAccountID = dto.LinkedSavingAccountID,
-                IsAutoDebitEnabled = dto.IsAutoDebitEnabled,
-                NomineeName = dto.NomineeName,
-                NomineeRelation = dto.NomineeRelation,
-                NomineeAge = dto.NomineeAge,
-                NomineeAadhaar = dto.NomineeAadhaar,
-                NomineeAddress = dto.NomineeAddress,
-                Status = "Active",
-                Remarks = dto.Remarks,
-                CreatedAt = DateTime.Now
-            };
-
-            // Update Locker Status to Allotted
-            locker.Status = "Allotted";
-
-            // Find Cash Ledger
-            int cashLedgerId;
-            if ((dto.SecurityDepositAmount > 0 || dto.AdvanceRentPaid > 0) && Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode)) { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID); if (!bankCheck.IsValid) return BadRequest(new { message = bankCheck.ErrorMessage }); cashLedgerId = bankCheck.LedgerId; } else { cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, dto.BranchID, "LOCKER"); }
-            var cashLedger = (Ledger?)null;
-            if (cashLedger != null) cashLedgerId = cashLedger.LedgerID;
-
-            int? depositVoucherId = null;
-            int? rentVoucherId = null;
-            
-            var accountHolderName = (customer != null 
-                ? $"{customer.FirstName} {customer.LastName}".Trim() 
-                : (member?.Customer != null 
-                    ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
-                    : "Locker Holder"));
-
-            // 1. Post Security Deposit Voucher if amount > 0 and GL configured
-            if (dto.SecurityDepositAmount > 0 && locker.LockerType?.DepositLiabilityLedgerID.HasValue == true)
-            {
-                int vchCount = await _context.Vouchers.CountAsync() + 1;
-                var depositVoucher = new Voucher
+                if (Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode))
                 {
-                    BranchID = dto.BranchID,
-                    VoucherNo = $"VCH-LKR-DEP-{DateTime.Today:yyyyMMdd}-{vchCount:D4}",
-                    VoucherDate = dto.AllotmentDate,
-                    VoucherType = "Receipt",
-                    TotalAmount = dto.SecurityDepositAmount,
-                    Narration = $"Locker Security Deposit: {lockerAccountNo} (Locker No: {locker.LockerNo}) - {accountHolderName}",
-                    Status = "Pending",
-                    CreatedBy = 1,
-                    VoucherDetails = new List<VoucherDetail>
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID);
+                    if (!bankCheck.IsValid)
                     {
-                        new VoucherDetail { LedgerID = cashLedgerId, DrCr = "Dr", Amount = dto.SecurityDepositAmount },
-                        new VoucherDetail { LedgerID = locker.LockerType!.DepositLiabilityLedgerID!.Value, DrCr = "Cr", Amount = dto.SecurityDepositAmount }
+                        return BadRequest(new { message = bankCheck.ErrorMessage });
                     }
-                };
-                _context.Vouchers.Add(depositVoucher);
-                await _context.SaveChangesAsync();
-                depositVoucherId = depositVoucher.VoucherID;
+                    paymentDebitLedgerId = bankCheck.LedgerId;
+                }
+                else
+                {
+                    paymentDebitLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, dto.BranchID, "LOCKER");
+                    if (paymentDebitLedgerId <= 0)
+                    {
+                        return BadRequest(new { message = "या शाखेसाठी रोख शिल्लक लेजर (Cash Ledger) सापडले नाही. कृपया शाखा मास्टरमध्ये रोख खाते तपासा." });
+                    }
+                }
             }
 
-            // 2. Post Advance Rent Voucher if amount > 0 and GL configured
-            if (dto.AdvanceRentPaid > 0 && locker.LockerType?.RentIncomeLedgerID.HasValue == true)
+            int depositLiabilityLedgerId = locker.LockerType?.DepositLiabilityLedgerID ?? 0;
+            if (dto.SecurityDepositAmount > 0 && depositLiabilityLedgerId <= 0)
             {
-                int vchCount = await _context.Vouchers.CountAsync() + 1;
-                var rentVoucher = new Voucher
-                {
-                    BranchID = dto.BranchID,
-                    VoucherNo = $"VCH-LKR-RNT-{DateTime.Today:yyyyMMdd}-{vchCount:D4}",
-                    VoucherDate = dto.AllotmentDate,
-                    VoucherType = "Receipt",
-                    TotalAmount = dto.AdvanceRentPaid,
-                    Narration = $"Locker Advance Rent: {lockerAccountNo} (Locker No: {locker.LockerNo}) - {accountHolderName}",
-                    Status = "Pending",
-                    CreatedBy = 1,
-                    VoucherDetails = new List<VoucherDetail>
-                    {
-                        new VoucherDetail { LedgerID = cashLedgerId, DrCr = "Dr", Amount = dto.AdvanceRentPaid },
-                        new VoucherDetail { LedgerID = locker.LockerType!.RentIncomeLedgerID!.Value, DrCr = "Cr", Amount = dto.AdvanceRentPaid }
-                    }
-                };
-                _context.Vouchers.Add(rentVoucher);
-                await _context.SaveChangesAsync();
-                rentVoucherId = rentVoucher.VoucherID;
+                var dynDepLedger = await _context.Ledgers
+                    .Include(l => l.AccountGroup)
+                    .FirstOrDefaultAsync(l => l.IsActive &&
+                        (l.AccountType == "Liabilities" || l.AccountType == "Liability" || (l.AccountGroup != null && l.AccountGroup.NatureOfGroup == "Liabilities")) &&
+                        (l.LedgerName.Contains("लॉकर अनामत") || l.LedgerName.Contains("लॉकर डिपॉझिट") || l.LedgerName.Contains("Locker Deposit") || l.LedgerName.Contains("Security Deposit")));
 
-                // Create initial RentPosting record
-                var rentPosting = new LockerRentPosting
+                if (dynDepLedger != null)
+                {
+                    depositLiabilityLedgerId = dynDepLedger.LedgerID;
+                }
+                else
+                {
+                    return BadRequest(new { message = $"लॉकर प्रकारास ('{locker.LockerType?.TypeName ?? locker.LockerNo}') 'डिपॉझिट देयता लेजर' (Deposit Liability Ledger) जोडलेले नाही. कृपया लॉकर प्रकार मास्टरमध्ये जी.एल. लेजर मॅपिंग पूर्ण करा." });
+                }
+            }
+
+            int rentIncomeLedgerId = locker.LockerType?.RentIncomeLedgerID ?? 0;
+            if (dto.AdvanceRentPaid > 0 && rentIncomeLedgerId <= 0)
+            {
+                var dynRentLedger = await _context.Ledgers
+                    .Include(l => l.AccountGroup)
+                    .FirstOrDefaultAsync(l => l.IsActive &&
+                        (l.AccountType == "Income" || l.AccountType == "Revenue" || (l.AccountGroup != null && (l.AccountGroup.NatureOfGroup == "Income" || l.AccountGroup.NatureOfGroup == "Revenue"))) &&
+                        (l.LedgerName.Contains("लॉकर भाडे") || l.LedgerName.Contains("Locker Rent")));
+
+                if (dynRentLedger != null)
+                {
+                    rentIncomeLedgerId = dynRentLedger.LedgerID;
+                }
+                else
+                {
+                    return BadRequest(new { message = $"लॉकर प्रकारास ('{locker.LockerType?.TypeName ?? locker.LockerNo}') 'भाडे उत्पन्न लेजर' (Rent Income Ledger) जोडलेले नाही. कृपया लॉकर प्रकार मास्टरमध्ये जी.एल. लेजर मॅपिंग पूर्ण करा." });
+                }
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // Generate collision-safe Locker Account Number: LKR-26-0001
+                string accPrefix = $"LKR-{dto.AllotmentDate:yy}-";
+                var existingAccNos = await _context.LockerAllotments
+                    .AsNoTracking()
+                    .Where(a => a.LockerAccountNo.StartsWith(accPrefix))
+                    .Select(a => a.LockerAccountNo)
+                    .ToListAsync();
+                int maxSeq = 0;
+                foreach (var no in existingAccNos)
+                {
+                    if (no.Length > accPrefix.Length && int.TryParse(no.Substring(accPrefix.Length), out int parsed) && parsed > maxSeq)
+                    {
+                        maxSeq = parsed;
+                    }
+                }
+                int nextSeq = Math.Max(existingAccNos.Count, maxSeq) + 1;
+                string lockerAccountNo = $"{accPrefix}{nextSeq:D4}";
+
+                var allotment = new LockerAllotment
                 {
                     BranchID = dto.BranchID,
-                    AllotmentID = allotment.AllotmentID,
-                    FinancialYear = $"{dto.RentStartDate.Year}-{(dto.RentStartDate.Year + 1)}",
-                    FromDate = dto.RentStartDate,
-                    ToDate = dto.RentStartDate.AddYears(1).AddDays(-1),
-                    RentAmount = dto.AdvanceRentPaid,
-                    TotalAmount = dto.AdvanceRentPaid,
-                    PaymentMode = "Cash",
-                    PaymentDate = dto.AllotmentDate,
-                    ReceiptNo = rentVoucher.VoucherNo,
-                    VoucherID = rentVoucherId,
-                    IsPaid = true,
-                    Remarks = "Initial Advance Rent Paid on Allotment",
+                    LockerAccountNo = lockerAccountNo,
+                    LockerID = dto.LockerID,
+                    CustomerID = resolvedCustomerId,
+                    MemberID = resolvedMemberId,
+                    JointMember1_ID = dto.JointMember1_ID,
+                    JointMember2_ID = dto.JointMember2_ID,
+                    OperatingInstruction = dto.OperatingInstruction ?? "Self",
+                    AllotmentDate = dto.AllotmentDate,
+                    RentStartDate = dto.RentStartDate,
+                    ExpiryDate = dto.RentStartDate.AddYears(1),
+                    AnnualRent = dto.AnnualRent,
+                    SecurityDepositAmount = dto.SecurityDepositAmount,
+                    AdvanceRentPaid = dto.AdvanceRentPaid,
+                    LinkedSavingAccountID = dto.LinkedSavingAccountID,
+                    IsAutoDebitEnabled = dto.IsAutoDebitEnabled,
+                    NomineeName = dto.NomineeName,
+                    NomineeRelation = dto.NomineeRelation,
+                    NomineeAge = dto.NomineeAge,
+                    NomineeAadhaar = dto.NomineeAadhaar,
+                    NomineeAddress = dto.NomineeAddress,
+                    Status = "Active",
+                    Remarks = dto.Remarks,
                     CreatedAt = DateTime.Now
                 };
-                _context.LockerRentPostings.Add(rentPosting);
+
+                // Update Locker Status to Allotted and persist allotment FIRST so AllotmentID > 0 for FK integrity
+                locker.Status = "Allotted";
+                _context.LockerAllotments.Add(allotment);
+                await _context.SaveChangesAsync();
+
+                int? depositVoucherId = null;
+                int? rentVoucherId = null;
+                string refSuffix = !string.IsNullOrWhiteSpace(dto.ReferenceNo) ? $" [संदर्भ: {dto.ReferenceNo.Trim()}]" : "";
+
+                var accountHolderName = (customer != null
+                    ? $"{customer.FirstName} {customer.LastName}".Trim()
+                    : (member?.Customer != null
+                        ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim()
+                        : "Locker Holder"));
+
+                // 1. Post Security Deposit Voucher if amount > 0
+                if (dto.SecurityDepositAmount > 0)
+                {
+                    string depVchNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-LKR-DEP-{dto.AllotmentDate:yyyyMMdd}-", 4);
+                    var depositVoucher = new Voucher
+                    {
+                        BranchID = dto.BranchID,
+                        VoucherNo = depVchNo,
+                        VoucherDate = dto.AllotmentDate,
+                        VoucherType = "Receipt",
+                        TotalAmount = dto.SecurityDepositAmount,
+                        Narration = $"Locker Security Deposit: {lockerAccountNo} (Locker No: {locker.LockerNo}) - {accountHolderName}{refSuffix}",
+                        Status = "Pending",
+                        CreatedBy = 1,
+                        VoucherDetails = new List<VoucherDetail>
+                        {
+                            new VoucherDetail { LedgerID = paymentDebitLedgerId, DrCr = "Dr", Amount = dto.SecurityDepositAmount },
+                            new VoucherDetail { LedgerID = depositLiabilityLedgerId, DrCr = "Cr", Amount = dto.SecurityDepositAmount, CustomerID = resolvedCustomerId, MemberID = resolvedMemberId }
+                        }
+                    };
+                    Helpers.VoucherBalanceHelper.EnsureBalanced(depositVoucher);
+                    _context.Vouchers.Add(depositVoucher);
+                    await _context.SaveChangesAsync();
+                    depositVoucherId = depositVoucher.VoucherID;
+                }
+
+                // 2. Post Advance Rent Voucher if amount > 0
+                if (dto.AdvanceRentPaid > 0)
+                {
+                    string rentVchNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-LKR-RNT-{dto.AllotmentDate:yyyyMMdd}-", 4);
+                    var rentVoucher = new Voucher
+                    {
+                        BranchID = dto.BranchID,
+                        VoucherNo = rentVchNo,
+                        VoucherDate = dto.AllotmentDate,
+                        VoucherType = "Receipt",
+                        TotalAmount = dto.AdvanceRentPaid,
+                        Narration = $"Locker Advance Rent: {lockerAccountNo} (Locker No: {locker.LockerNo}) - {accountHolderName}{refSuffix}",
+                        Status = "Pending",
+                        CreatedBy = 1,
+                        VoucherDetails = new List<VoucherDetail>
+                        {
+                            new VoucherDetail { LedgerID = paymentDebitLedgerId, DrCr = "Dr", Amount = dto.AdvanceRentPaid },
+                            new VoucherDetail { LedgerID = rentIncomeLedgerId, DrCr = "Cr", Amount = dto.AdvanceRentPaid }
+                        }
+                    };
+                    Helpers.VoucherBalanceHelper.EnsureBalanced(rentVoucher);
+                    _context.Vouchers.Add(rentVoucher);
+                    await _context.SaveChangesAsync();
+                    rentVoucherId = rentVoucher.VoucherID;
+
+                    // Create initial RentPosting record with valid persisted AllotmentID
+                    var rentPosting = new LockerRentPosting
+                    {
+                        BranchID = dto.BranchID,
+                        AllotmentID = allotment.AllotmentID,
+                        FinancialYear = $"{dto.RentStartDate.Year}-{(dto.RentStartDate.Year + 1)}",
+                        FromDate = dto.RentStartDate,
+                        ToDate = dto.RentStartDate.AddYears(1).AddDays(-1),
+                        RentAmount = dto.AdvanceRentPaid,
+                        TotalAmount = dto.AdvanceRentPaid,
+                        PaymentMode = string.IsNullOrWhiteSpace(dto.PaymentMode) ? "Cash" : dto.PaymentMode.Trim(),
+                        PaymentDate = dto.AllotmentDate,
+                        ReceiptNo = rentVoucher.VoucherNo,
+                        VoucherID = rentVoucherId,
+                        IsPaid = true,
+                        Remarks = "Initial Advance Rent Paid on Allotment",
+                        CreatedAt = DateTime.Now
+                    };
+                    _context.LockerRentPostings.Add(rentPosting);
+                }
+
+                allotment.DepositVoucherID = depositVoucherId;
+                allotment.AdvanceRentVoucherID = rentVoucherId;
+                await _context.SaveChangesAsync();
+
+                await transaction.CommitAsync();
+
+                return Ok(new
+                {
+                    message = "लॉकर यशस्वीरीत्या वाटप करण्यात आला आहे.",
+                    allotmentID = allotment.AllotmentID,
+                    lockerAccountNo = allotment.LockerAccountNo,
+                    depositVoucherId,
+                    rentVoucherId
+                });
             }
-
-            allotment.DepositVoucherID = depositVoucherId;
-            allotment.AdvanceRentVoucherID = rentVoucherId;
-
-            _context.LockerAllotments.Add(allotment);
-            await _context.SaveChangesAsync();
-
-            return Ok(new {
-                message = "लॉकर यशस्वीरीत्या वाटप करण्यात आला आहे.",
-                allotmentID = allotment.AllotmentID,
-                lockerAccountNo = allotment.LockerAccountNo,
-                depositVoucherId,
-                rentVoucherId
-            });
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return BadRequest(new { message = $"लॉकर वाटप सेव्ह करताना त्रुटी: {ex.Message}" });
+            }
         }
 
         // PUT: api/LockerAllotments/5
@@ -446,10 +532,10 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            var memberName = allotment?.Customer != null 
-                ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}".Trim() 
-                : (allotment?.Member?.Customer != null 
-                    ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}".Trim() 
+            var memberName = allotment?.Customer != null
+                ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}".Trim()
+                : (allotment?.Member?.Customer != null
+                    ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}".Trim()
                     : "");
 
             return Ok(new

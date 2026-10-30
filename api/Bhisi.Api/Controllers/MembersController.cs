@@ -1126,6 +1126,11 @@ namespace Bhisi.Api.Controllers
                     }
 
                     generatedVoucherNo = voucher.VoucherNo;
+                    foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
+                    {
+                        st.VoucherNo = voucher.VoucherNo;
+                    }
+                    await _context.SaveChangesAsync();
                     savedVoucherId = voucher.VoucherID;
                 }
 
@@ -1614,7 +1619,23 @@ namespace Bhisi.Api.Controllers
                     return StatusCode(403, new { message = "आपण केवळ आपल्या शाखेतील मयत सभासदाचा क्लेम सेटल करू शकता (Cross-Branch Claim Settlement Denied)." });
                 }
 
-                // Check active loan balance
+                // Check active loan balance (Executed via Step4AccountingHelper Compound Double-Entry Claim Engine)
+                if (req != null)
+                {
+                    try
+                    {
+                        var (step4Settlement, step4VoucherId, step4NetAmount) = await Step4AccountingHelper.ExecuteDeceasedClaimSettlementAsync(_context, member, req, userId);
+                        await transaction.CommitAsync();
+                        string mFullName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
+                        await LogAuditAsync("DECEASED_CLAIM_SETTLED", step4Settlement.ClaimID.ToString(), $"मयत खातेदार क्लेम सेटलमेंट पूर्ण: {mFullName}, वारसदार: {step4Settlement.NomineeName}, निव्वळ रक्कम: ₹{step4NetAmount}");
+                        return Ok(new { message = "मयत सभासद क्लेम सेटलमेंट यशस्वीरित्या पूर्ण झाले.", claimID = step4Settlement.ClaimID, voucherID = step4VoucherId, netPayableAmount = step4NetAmount });
+                    }
+                    catch (InvalidOperationException valEx)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = valEx.Message });
+                    }
+                }
                 var loanBalance = await _context.LoanAccounts
                     .Where(l => l.MemberID == id && l.Status != "Closed")
                     .SumAsync(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);

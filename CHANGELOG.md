@@ -1,5 +1,24 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-31] - आवृत्ती v2.6.08 (Pigmy Closure Voucher Rollback EF Core Conflicting Type Mapping Fix & Unified ERP Theme Master Patch)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **पिग्मी खाते बंद व्हाउचर रोलबॅक व डिलीट सुधारणा (`VoucherRollbackAndDeleteService.cs`):**
+  * व्हाउचर पासिंग किंवा व्हाउचर मास्टरमधून पिग्मी खाते बंद व्हाउचर (`VCH-CLO-*` / `PV-*-PIGMY-CLO-*` / `JV-PIGMY-CLO-*`) डिलीट किंवा रिजेक्ट करताना येणारा EF Core चा `Conflicting type mappings were inferred for column 'Value'` InvalidOperationException कायमस्वरूपी दूर केला.
+  * `pt.ReferenceId` आणि `pt.Narration` या दोन्ही फिल्ड्सच्या क्वेरीज स्वतंत्र चालवून मेमरीमध्ये सुरक्षितपणे एकत्र (`Distinct By PigmyTransactionID`) केल्या.
+* **कर्ज वसुली (Loan Collection) फॉर्म सुसूत्रीकरण व २-कॉलम कार्यक्षेत्र (`LoanCollectionMaster.tsx`):**
+  * डावीकडे ८ कॉलम्समध्ये सरळ व नैसर्गिक क्रमाने वसुली नोंद फॉर्म (कर्ज प्रकार, कर्जदार, १-क्लिक स्विचर, ट्रान्सफर पॅनेल, १ हप्ता/फक्त व्याज/पूर्ण नील क्विक चिप्स, एकूण रक्कम व ५ विभागणी रकाने, कोलॅप्सिबल फी/OTS, आडवी कृती पट्टी) आणि उजवीकडे ४ कॉलम्समध्ये एकत्रित कर्ज स्थिती, ४ मुख्य KPI बॉक्सेस व सविस्तर थकबाकी तक्ता.
+* **बचत जमा व नावे नोंद फॉर्म १००% डायनॅमिक थीम मॅचिंग (`SavingTransactionEntry.tsx`):**
+  * सॉफ्टवेअरच्या डायनॅमिक `primary` थीमशी जोडणी, इनलाईन आजचे जमा/नावे सारांश बॅजेस व रीसेट पर्याय, आणि जमा (Deposit) व नावे (Withdrawal) बटणे थेट व्यवहार तपशील कार्डमध्ये समाविष्ट.
+* **व्हाउचर पासिंग व व्यवस्थापन फॉर्म सुसूत्रीकरण (`VoucherPosting.tsx`):**
+  * २ सुटसुटीत पट्ट्या, परस्परसंवादी फिल्टर चिप्स, प्रलंबितमध्ये 'सर्व प्रलंबित' व मंजूरमध्ये 'आज' डिफॉल्ट तारीख, संदर्भानुसार दिसणारी बल्क ॲक्शन पट्टी आणि खातेदार नाव/CIF सह ७-कॉलम टेबल.
+* **पिग्मी मासिक चार्ट संकलन सुधारणा (`PigmyCollectionsController.cs`, `PigmyCollectionMaster.tsx`):**
+  * मासिक चार्ट संकलन `SaveChangesAsync` सह डेटाबेसमध्ये सुरक्षित जतन आणि भविष्यातील तारखेच्या व्यवहारांची कडक पडताळणी.
+* **१-क्लिक मल्टि-ॲप मास्टर पॅच (`SmartBanking_VPS_Multi_App_Master_Patch.zip` & `SmartBanking_Patch_v2.6.08.patch`):**
+  * सर्व ९ कॉन्फिगर केलेल्या संस्थांसाठी तयार केलेला मास्टर पॅच व गिट पॅच उपलब्ध.
+
+---
+
 ## 📅 [2026-10-30] - आवृत्ती v2.6.07 (Unified Dynamic ERP CBS Theme, Simplified Loan Collection, Saving Transaction & Voucher Passing Forms, Pigmy Monthly Chart Persistence Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

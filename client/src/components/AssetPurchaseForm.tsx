@@ -9,6 +9,7 @@ interface Category {
   categoryID: number;
   categoryName: string;
   categoryCode: string;
+  assetLedgerID?: number | null;
 }
 
 interface Ledger extends RawLedgerItem {
@@ -241,7 +242,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
     }));
   };
 
-  // Pre-fill asset details and prefix when category changes
+  // Pre-fill asset details, prefix and debit ledger when category changes
   const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const catId = parseInt(e.target.value);
     const cat = categories.find((c) => c.categoryID === catId);
@@ -251,6 +252,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
       categoryID: catId,
       assetCodePrefix: cat ? cat.categoryCode : '',
       assetName: cat ? cat.categoryName : '',
+      debitLedgerID: (cat && cat.assetLedgerID) ? cat.assetLedgerID : prev.debitLedgerID,
     }));
   };
 

@@ -37,7 +37,15 @@ interface Asset {
   branchID: number;
   branch?: { branchName: string };
   categoryID: number;
-  category?: { categoryName: string; depreciationRate: number; depreciationMethod: string };
+  category?: {
+    categoryName: string;
+    depreciationRate: number;
+    depreciationMethod: string;
+    assetLedgerID?: number | null;
+    depreciationExpenseLedgerID?: number | null;
+    accumulatedDepreciationLedgerID?: number | null;
+    disposalProfitLossLedgerID?: number | null;
+  };
   assetCode: string;
   assetName: string;
   purchaseDate: string;
@@ -253,15 +261,59 @@ const AssetMaster: React.FC = () => {
     const otherBranch = branches.find(b => b.branchID !== asset.branchID);
     setTransferData(prev => ({ ...prev, toBranchID: otherBranch ? otherBranch.branchID : (asset.branchID === 1 ? 2 : 1) }));
     
+    // Resolve Category GL Scheme Ledgers
+    const cat = categories.find((c: any) => c.categoryID === asset.categoryID);
+    const assetLedgerId = cat?.assetLedgerID || asset.category?.assetLedgerID || 0;
+    const depExpLedgerId = cat?.depreciationExpenseLedgerID || asset.category?.depreciationExpenseLedgerID || 0;
+    const accumDepLedgerId = cat?.accumulatedDepreciationLedgerID || asset.category?.accumulatedDepreciationLedgerID || 0;
+    const disposalPlLedgerId = cat?.disposalProfitLossLedgerID || asset.category?.disposalProfitLossLedgerID || 0;
+
     // Set single depr form default values
     const defaultDepAmount = calculateDefaultDepreciation(asset);
     setDepData({
       calculationDate: activeBusinessDate,
       depreciationAmount: defaultDepAmount,
       postVoucher: true,
-      debitLedgerID: 0,
-      creditLedgerID: 0
+      debitLedgerID: depExpLedgerId,
+      creditLedgerID: accumDepLedgerId || assetLedgerId
     });
+
+    // Set disposal form default values
+    setDisposeData(prev => ({
+      ...prev,
+      disposalDate: activeBusinessDate,
+      creditLedgerID: assetLedgerId,
+      profitLossLedgerID: disposalPlLedgerId
+    }));
+  };
+
+  const handleOpenDepreciationTab = () => {
+    setActiveActionTab('depreciation');
+    if (selectedAsset) {
+      const cat = categories.find((c: any) => c.categoryID === selectedAsset.categoryID);
+      const depExpLedgerId = cat?.depreciationExpenseLedgerID || selectedAsset.category?.depreciationExpenseLedgerID || 0;
+      const accumDepLedgerId = cat?.accumulatedDepreciationLedgerID || selectedAsset.category?.accumulatedDepreciationLedgerID || 0;
+      const assetLedgerId = cat?.assetLedgerID || selectedAsset.category?.assetLedgerID || 0;
+      setDepData(prev => ({
+        ...prev,
+        debitLedgerID: prev.debitLedgerID || depExpLedgerId,
+        creditLedgerID: prev.creditLedgerID || (accumDepLedgerId || assetLedgerId)
+      }));
+    }
+  };
+
+  const handleOpenDisposeTab = () => {
+    setActiveActionTab('dispose');
+    if (selectedAsset) {
+      const cat = categories.find((c: any) => c.categoryID === selectedAsset.categoryID);
+      const assetLedgerId = cat?.assetLedgerID || selectedAsset.category?.assetLedgerID || 0;
+      const disposalPlLedgerId = cat?.disposalProfitLossLedgerID || selectedAsset.category?.disposalProfitLossLedgerID || 0;
+      setDisposeData(prev => ({
+        ...prev,
+        creditLedgerID: prev.creditLedgerID || assetLedgerId,
+        profitLossLedgerID: prev.profitLossLedgerID || disposalPlLedgerId
+      }));
+    }
   };
 
   const handleOpeningChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -1163,7 +1215,7 @@ const AssetMaster: React.FC = () => {
                   </button>
 
                   <button 
-                    onClick={() => setActiveActionTab('depreciation')} 
+                    onClick={handleOpenDepreciationTab} 
                     className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
                       activeActionTab === 'depreciation' ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
@@ -1173,7 +1225,7 @@ const AssetMaster: React.FC = () => {
                   </button>
 
                   <button 
-                    onClick={() => setActiveActionTab('dispose')} 
+                    onClick={handleOpenDisposeTab} 
                     className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
                       activeActionTab === 'dispose' ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-100 text-rose-700 hover:bg-rose-50'
                     }`}

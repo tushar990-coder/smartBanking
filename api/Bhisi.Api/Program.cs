@@ -298,6 +298,18 @@ try
                 END
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'AssetCategories')
+            BEGIN
+                IF COL_LENGTH('AssetCategories', 'AssetLedgerID') IS NULL
+                    ALTER TABLE [dbo].[AssetCategories] ADD [AssetLedgerID] INT NULL;
+                IF COL_LENGTH('AssetCategories', 'DepreciationExpenseLedgerID') IS NULL
+                    ALTER TABLE [dbo].[AssetCategories] ADD [DepreciationExpenseLedgerID] INT NULL;
+                IF COL_LENGTH('AssetCategories', 'AccumulatedDepreciationLedgerID') IS NULL
+                    ALTER TABLE [dbo].[AssetCategories] ADD [AccumulatedDepreciationLedgerID] INT NULL;
+                IF COL_LENGTH('AssetCategories', 'DisposalProfitLossLedgerID') IS NULL
+                    ALTER TABLE [dbo].[AssetCategories] ADD [DisposalProfitLossLedgerID] INT NULL;
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingAccountClosings')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingAccountClosings]') AND name = 'CustomerID')

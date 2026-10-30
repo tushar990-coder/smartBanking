@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
-import { Package, Search, X, Edit, Trash2, Plus, Eye, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Package, Search, X, Edit, Trash2, Plus, Eye, RefreshCw, CheckCircle2, BookOpen } from 'lucide-react';
+import SearchableSelect, { SearchableSelectOption } from './SearchableSelect';
 
 interface AssetCategory {
   categoryID: number;
@@ -11,11 +12,20 @@ interface AssetCategory {
   depreciationRate: number;
   depreciationMethod: string;
   status: string;
+  assetLedgerID?: number | null;
+  depreciationExpenseLedgerID?: number | null;
+  accumulatedDepreciationLedgerID?: number | null;
+  disposalProfitLossLedgerID?: number | null;
+  assetLedger?: { ledgerID: number; ledgerName: string } | null;
+  depreciationExpenseLedger?: { ledgerID: number; ledgerName: string } | null;
+  accumulatedDepreciationLedger?: { ledgerID: number; ledgerName: string } | null;
+  disposalProfitLossLedger?: { ledgerID: number; ledgerName: string } | null;
 }
 
 const AssetCategoryMaster: React.FC = () => {
   const [categories, setCategories] = useState<AssetCategory[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
+  const [ledgers, setLedgers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -36,18 +46,24 @@ const AssetCategoryMaster: React.FC = () => {
     depreciationRate: 15.0,
     depreciationMethod: 'WDV',
     status: 'Active',
+    assetLedgerID: 0,
+    depreciationExpenseLedgerID: 0,
+    accumulatedDepreciationLedgerID: 0,
+    disposalProfitLossLedgerID: 0,
   });
 
   const fetchCategories = async () => {
     setLoading(true);
     try {
-      const [catRes, branchRes] = await Promise.allSettled([
+      const [catRes, branchRes, ledgerRes] = await Promise.allSettled([
         axios.get(`${API_URL}/AssetCategories`),
-        axios.get(`${API_URL}/Branches`)
+        axios.get(`${API_URL}/Branches`),
+        axios.get(`${API_URL}/Ledgers`)
       ]);
 
       if (catRes.status === 'fulfilled') setCategories(catRes.value.data);
       if (branchRes.status === 'fulfilled') setBranches(branchRes.value.data);
+      if (ledgerRes.status === 'fulfilled') setLedgers(ledgerRes.value.data);
     } catch {
       setError('मालमत्ता वर्ग लोड करताना त्रुटी आली.');
     } finally {
@@ -55,15 +71,26 @@ const AssetCategoryMaster: React.FC = () => {
     }
   };
 
+  const ledgerOptions: SearchableSelectOption[] = useMemo(() => {
+    return ledgers.map((l: any) => ({
+      value: l.ledgerID,
+      label: `${l.ledgerName} (#${l.ledgerID})`,
+      subLabel: l.accountGroup?.groupName || ''
+    }));
+  }, [ledgers]);
+
   useEffect(() => {
     fetchCategories();
   }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name?: string; value: any } }) => {
     const { name, value } = e.target;
+    if (!name) return;
     setFormData((prev) => ({
       ...prev,
-      [name]: name === 'branchID' || name === 'usefulLifeMonths' ? parseInt(value) : name === 'depreciationRate' ? parseFloat(value) : value,
+      [name]: name === 'branchID' || name === 'usefulLifeMonths' || name === 'assetLedgerID' || name === 'depreciationExpenseLedgerID' || name === 'accumulatedDepreciationLedgerID' || name === 'disposalProfitLossLedgerID'
+        ? parseInt(value) || 0
+        : name === 'depreciationRate' ? parseFloat(value) || 0 : value,
     }));
   };
 
@@ -77,15 +104,23 @@ const AssetCategoryMaster: React.FC = () => {
       return;
     }
 
+    const payload = {
+      ...formData,
+      assetLedgerID: formData.assetLedgerID && formData.assetLedgerID > 0 ? formData.assetLedgerID : null,
+      depreciationExpenseLedgerID: formData.depreciationExpenseLedgerID && formData.depreciationExpenseLedgerID > 0 ? formData.depreciationExpenseLedgerID : null,
+      accumulatedDepreciationLedgerID: formData.accumulatedDepreciationLedgerID && formData.accumulatedDepreciationLedgerID > 0 ? formData.accumulatedDepreciationLedgerID : null,
+      disposalProfitLossLedgerID: formData.disposalProfitLossLedgerID && formData.disposalProfitLossLedgerID > 0 ? formData.disposalProfitLossLedgerID : null,
+    };
+
     try {
       if (isEditMode && editId) {
         await axios.put(`${API_URL}/AssetCategories/${editId}`, {
-          ...formData,
+          ...payload,
           categoryID: editId,
         });
         setSuccess('मालमत्ता वर्ग यशस्वीरित्या अपडेट झाला! (Asset category updated successfully!)');
       } else {
-        await axios.post(`${API_URL}/AssetCategories`, formData);
+        await axios.post(`${API_URL}/AssetCategories`, payload);
         setSuccess('नवीन मालमत्ता वर्ग यशस्वीरित्या जोडला गेला! (New asset category added successfully!)');
       }
       resetForm();
@@ -106,6 +141,10 @@ const AssetCategoryMaster: React.FC = () => {
       depreciationRate: c.depreciationRate,
       depreciationMethod: c.depreciationMethod,
       status: c.status,
+      assetLedgerID: c.assetLedgerID || 0,
+      depreciationExpenseLedgerID: c.depreciationExpenseLedgerID || 0,
+      accumulatedDepreciationLedgerID: c.accumulatedDepreciationLedgerID || 0,
+      disposalProfitLossLedgerID: c.disposalProfitLossLedgerID || 0,
     });
     setIsListModalOpen(false);
 
@@ -147,6 +186,10 @@ const AssetCategoryMaster: React.FC = () => {
       depreciationRate: 15.0,
       depreciationMethod: 'WDV',
       status: 'Active',
+      assetLedgerID: 0,
+      depreciationExpenseLedgerID: 0,
+      accumulatedDepreciationLedgerID: 0,
+      disposalProfitLossLedgerID: 0,
     });
   };
 
@@ -291,6 +334,79 @@ const AssetCategoryMaster: React.FC = () => {
             </div>
           </div>
 
+          {/* Section: GL Ledger Mapping */}
+          <div className="bg-emerald-50/40 p-2.5 rounded border border-emerald-200 mb-3 space-y-2">
+            <div className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider pb-1 border-b border-emerald-200 flex items-center gap-1.5">
+              <BookOpen className="w-3.5 h-3.5 text-emerald-700" />
+              <span>खातेवही / लेजर योजना मॅपिंग (GL Ledger Scheme Mapping)</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
+                  १. मालमत्ता खाते (Asset GL Ledger)
+                </label>
+                <SearchableSelect
+                  name="assetLedgerID"
+                  value={formData.assetLedgerID}
+                  onChange={handleChange}
+                  options={ledgerOptions}
+                  placeholder="-- उदा. कॉम्प्युटर खाते / फर्निचर खाते निवडा --"
+                />
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  मालमत्ता खरेदी किंवा विल्हेवाट नोंदीवेळी आपोआप नावे/जमा होणारे खाते.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
+                  २. घसारा खर्च खाते (Depreciation Expense Ledger)
+                </label>
+                <SearchableSelect
+                  name="depreciationExpenseLedgerID"
+                  value={formData.depreciationExpenseLedgerID}
+                  onChange={handleChange}
+                  options={ledgerOptions}
+                  placeholder="-- उदा. घसारा खाते (खर्च) निवडा --"
+                />
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  नफा-तोटा खात्यातील घसारा आकारणीसाठी (नावे खाते).
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
+                  ३. साचलेला घसारा खाते (Accumulated Depreciation Ledger)
+                </label>
+                <SearchableSelect
+                  name="accumulatedDepreciationLedgerID"
+                  value={formData.accumulatedDepreciationLedgerID}
+                  onChange={handleChange}
+                  options={ledgerOptions}
+                  placeholder="-- उदा. साचलेला घसारा खाते निवडा (पर्यायी) --"
+                />
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  निवड नसल्यास वरील मूळ मालमत्ता खात्यावरच थेट घसारा जमा होईल.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
+                  ४. मालमत्ता विक्री नफा/तोटा खाते (Disposal Profit/Loss Ledger)
+                </label>
+                <SearchableSelect
+                  name="disposalProfitLossLedgerID"
+                  value={formData.disposalProfitLossLedgerID}
+                  onChange={handleChange}
+                  options={ledgerOptions}
+                  placeholder="-- उदा. मालमत्ता विक्री नफा/तोटा खाते निवडा --"
+                />
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  मालमत्ता विल्हेवाट / भंगार विक्री करताना नफा किंवा तोटा नोंदवण्यासाठी.
+                </span>
+              </div>
+            </div>
+          </div>
+
           {/* Form Controls */}
           <div className="flex items-center gap-2 pt-1 border-t border-gray-200">
             <button
@@ -338,6 +454,7 @@ const AssetCategoryMaster: React.FC = () => {
                   <th className="px-3 py-2 text-left w-10">#</th>
                   <th className="px-3 py-2 text-left">वर्ग कोड (Code)</th>
                   <th className="px-3 py-2 text-left">मालमत्ता वर्ग नाव (Name)</th>
+                  <th className="px-3 py-2 text-left">मॅप्ड खाते (Asset GL Ledger)</th>
                   <th className="px-3 py-2 text-right">उपयुक्त आयुष्य</th>
                   <th className="px-3 py-2 text-right">घसारा दर (%)</th>
                   <th className="px-3 py-2 text-left">घसारा पद्धत</th>
@@ -347,14 +464,24 @@ const AssetCategoryMaster: React.FC = () => {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="text-center py-4 text-gray-400">लोड होत आहे...</td></tr>
+                  <tr><td colSpan={9} className="text-center py-4 text-gray-400">लोड होत आहे...</td></tr>
                 ) : filteredCategories.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-4 text-gray-400">कोणतेही मालमत्ता वर्ग आढळले नाहीत.</td></tr>
+                  <tr><td colSpan={9} className="text-center py-4 text-gray-400">कोणतेही मालमत्ता वर्ग आढळले नाहीत.</td></tr>
                 ) : filteredCategories.map((c, idx) => (
                   <tr key={c.categoryID} className="hover:bg-emerald-50/50 border-b border-gray-100 transition-colors">
                     <td className="px-3 py-1.5 font-bold text-gray-500">{idx + 1}</td>
                     <td className="px-3 py-1.5 font-mono font-bold text-blue-900">{c.categoryCode}</td>
                     <td className="px-3 py-1.5 font-bold text-gray-800">{c.categoryName}</td>
+                    <td className="px-3 py-1.5 font-medium">
+                      {c.assetLedger?.ledgerName ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold text-[10px]">
+                          <BookOpen className="w-3 h-3 text-emerald-600" />
+                          {c.assetLedger.ledgerName}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 italic text-[10px]">मॅप्ड नाही</span>
+                      )}
+                    </td>
                     <td className="px-3 py-1.5 text-right font-medium">{c.usefulLifeMonths} महिने</td>
                     <td className="px-3 py-1.5 text-right font-extrabold text-emerald-700">{c.depreciationRate}%</td>
                     <td className="px-3 py-1.5 font-medium">{c.depreciationMethod}</td>
@@ -429,6 +556,7 @@ const AssetCategoryMaster: React.FC = () => {
                     <th className="px-3 py-2 text-left w-10">#</th>
                     <th className="px-3 py-2 text-left">वर्ग कोड (Code)</th>
                     <th className="px-3 py-2 text-left">वर्ग नाव (Name)</th>
+                    <th className="px-3 py-2 text-left">मॅप्ड खाते (Asset GL Ledger)</th>
                     <th className="px-3 py-2 text-right">उपयुक्त आयुष्य</th>
                     <th className="px-3 py-2 text-right">घसारा दर (%)</th>
                     <th className="px-3 py-2 text-left">घसारा पद्धत</th>
@@ -438,12 +566,22 @@ const AssetCategoryMaster: React.FC = () => {
                 </thead>
                 <tbody>
                   {filteredCategories.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center py-6 text-gray-400">कोणत्याही नोंदी सापडल्या नाहीत.</td></tr>
+                    <tr><td colSpan={9} className="text-center py-6 text-gray-400">कोणत्याही नोंदी सापडल्या नाहीत.</td></tr>
                   ) : filteredCategories.map((c, idx) => (
                     <tr key={c.categoryID} className="hover:bg-emerald-50/60 border-b border-gray-100 transition-colors">
                       <td className="px-3 py-2 font-bold text-gray-500">{idx + 1}</td>
                       <td className="px-3 py-2 font-mono font-bold text-blue-900">{c.categoryCode}</td>
                       <td className="px-3 py-2 font-bold text-gray-800">{c.categoryName}</td>
+                      <td className="px-3 py-2 font-medium">
+                        {c.assetLedger?.ledgerName ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold text-[10px]">
+                            <BookOpen className="w-3 h-3 text-emerald-600" />
+                            {c.assetLedger.ledgerName}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 italic text-[10px]">मॅप्ड नाही</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right font-medium">{c.usefulLifeMonths} महिने</td>
                       <td className="px-3 py-2 text-right font-extrabold text-emerald-700">{c.depreciationRate}%</td>
                       <td className="px-3 py-2 font-medium">{c.depreciationMethod}</td>

@@ -43,6 +43,27 @@ namespace Bhisi.Api.Models
         [StringLength(10)] // WDV or SLM
         public string DepreciationMethod { get; set; } = "WDV";
 
+        // GL Ledger Mapping for Scheme Setting
+        public int? AssetLedgerID { get; set; }
+
+        [ForeignKey("AssetLedgerID")]
+        public virtual Ledger? AssetLedger { get; set; }
+
+        public int? DepreciationExpenseLedgerID { get; set; }
+
+        [ForeignKey("DepreciationExpenseLedgerID")]
+        public virtual Ledger? DepreciationExpenseLedger { get; set; }
+
+        public int? AccumulatedDepreciationLedgerID { get; set; }
+
+        [ForeignKey("AccumulatedDepreciationLedgerID")]
+        public virtual Ledger? AccumulatedDepreciationLedger { get; set; }
+
+        public int? DisposalProfitLossLedgerID { get; set; }
+
+        [ForeignKey("DisposalProfitLossLedgerID")]
+        public virtual Ledger? DisposalProfitLossLedger { get; set; }
+
         [Required]
         [StringLength(20)]
         public string Status { get; set; } = "Active";

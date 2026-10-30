@@ -36,6 +36,7 @@ import InvestmentInstitutionMaster from './InvestmentInstitutionMaster';
 import CustomerOpeningBalance from './CustomerOpeningBalance';
 import BranchLedgerOpeningMaster from './BranchLedgerOpeningMaster';
 import DeadstockOpeningBalance from './DeadstockOpeningBalance';
+import AssetCategoryMaster from './AssetCategoryMaster';
 
 interface SettingsDashboardProps {
   defaultCategory?: string;
@@ -80,6 +81,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       { id: 'pigmy-scheme-sub', label: 'पिग्मी ठेव योजना (Pigmy Scheme)', icon: '🐖' },
       { id: 'inv-institution-sub', label: 'गुंतवणूक संस्था (Investment Institution)', icon: '🏛️' },
       { id: 'inv-scheme-sub', label: 'गुंतवणूक योजना (Investment Scheme)', icon: '💼' },
+      { id: 'asset-scheme-sub', label: 'डेडस्टॉक व मालमत्ता योजना (Deadstock / Asset Scheme)', icon: '🏢' },
       { id: 'saving-setting', label: 'बचत व्याजदर (Saving Interest)', icon: '💰' },
       { id: 'loan-rate', label: 'कर्ज दर पत्रक (Loan Interest Rate)', icon: '📉' },
       { id: 'security-type', label: 'तारण प्रकार (Security Types)', icon: '🛡️' }
@@ -142,6 +144,8 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       case 'inv-institution': return <InvestmentInstitutionMaster />;
       case 'inv-scheme-sub':
       case 'inv-scheme': return <InvestmentSchemeMaster />;
+      case 'asset-scheme-sub':
+      case 'asset-scheme': return <AssetCategoryMaster />;
       case 'saving-setting': return <SavingInterestSettingMaster />;
       case 'loan-rate': return <LoanRateMaster />;
       case 'security-type': return <SecurityTypeMaster />;

@@ -24,7 +24,13 @@ namespace Bhisi.Api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<AssetCategory>>> GetAssetCategories([FromQuery] int? branchId)
         {
-            var query = _context.AssetCategories.AsQueryable();
+            var query = _context.AssetCategories
+                .Include(c => c.AssetLedger)
+                .Include(c => c.DepreciationExpenseLedger)
+                .Include(c => c.AccumulatedDepreciationLedger)
+                .Include(c => c.DisposalProfitLossLedger)
+                .AsQueryable();
+
             if (branchId.HasValue && branchId.Value > 0)
             {
                 // Return institutional categories (BranchID == 1 or 0) along with branch-specific categories
@@ -37,7 +43,13 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<AssetCategory>> GetAssetCategory(int id)
         {
-            var category = await _context.AssetCategories.FindAsync(id);
+            var category = await _context.AssetCategories
+                .Include(c => c.AssetLedger)
+                .Include(c => c.DepreciationExpenseLedger)
+                .Include(c => c.AccumulatedDepreciationLedger)
+                .Include(c => c.DisposalProfitLossLedger)
+                .FirstOrDefaultAsync(c => c.CategoryID == id);
+
             if (category == null)
             {
                 return NotFound();
@@ -76,6 +88,10 @@ namespace Bhisi.Api.Controllers
             existing.UsefulLifeMonths = category.UsefulLifeMonths;
             existing.DepreciationRate = category.DepreciationRate;
             existing.DepreciationMethod = category.DepreciationMethod;
+            existing.AssetLedgerID = category.AssetLedgerID;
+            existing.DepreciationExpenseLedgerID = category.DepreciationExpenseLedgerID;
+            existing.AccumulatedDepreciationLedgerID = category.AccumulatedDepreciationLedgerID;
+            existing.DisposalProfitLossLedgerID = category.DisposalProfitLossLedgerID;
             existing.Status = category.Status;
             existing.UpdatedBy = category.UpdatedBy ?? 1;
             existing.UpdatedOn = DateTime.Now;
@@ -111,11 +127,11 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
-            // Check if any assets exist in this category
+            // Check if any assets belong to this category
             var hasAssets = await _context.Assets.AnyAsync(a => a.CategoryID == id);
             if (hasAssets)
             {
-                return BadRequest("या वर्गामध्ये मालमत्ता असल्यामुळे हा वर्ग काढता येणार नाही. (Cannot delete category because assets exist in it.)");
+                return BadRequest("या वर्गांतर्गत मालमत्ता (Assets) नोंदवलेल्या असल्यामुळे हा वर्ग डिलीट करता येणार नाही. (Cannot delete category because assets are registered under it.)");
             }
 
             _context.AssetCategories.Remove(category);

@@ -24,6 +24,11 @@ namespace Bhisi.Api.Helpers
 
             if (category != null)
             {
+                if (category.AssetLedgerID.HasValue && category.AssetLedgerID.Value > 0)
+                {
+                    return category.AssetLedgerID.Value;
+                }
+
                 string catName = (category.CategoryName ?? "").ToLower().Trim();
 
                 if (catName.Contains("संगणक") || catName.Contains("computer") || catName.Contains("प्रिंटर"))

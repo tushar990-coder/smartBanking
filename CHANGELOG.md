@@ -1,5 +1,25 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-30] - आवृत्ती v2.6.06 (CBS 100% Maker-Checker Voucher Passing, Strict Bank/Cash GL Separation, 17-Module Hard-Delete State Rollback, Bank Book & CustomerID-First Reports Master Patch)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१००% मेकर-चेकर व्हाउचर पासिंग धोरण (`SansthaDetails`, `VoucherPostingController.cs`, सर्व १७ मॉड्यूल्स):**
+  * `₹50,000` पर्यंतची ऑटो-पोस्ट (`AutoPostVouchers` / `AutoPostVoucherLimit`) सूट पूर्णपणे बंद करून सर्व १७ मॉड्यूल्समधील नवीन व्यवहार १००% **`Pending`** (व्हाउचर पासिंग रांगेत) तयार होणे अनिवार्य केले आहे.
+  * प्रलंबित व्हाउचर चेकरने पास करेपर्यंत फक्त कच्च्या रोजकीर्दीत दिसेल आणि पासिंगनंतरच पक्की रोजकीर्द, कॅश बुक, बँक बुक, जनरल लेजर व ताळेबंदामध्ये समाविष्ट होईल.
+* **कडक बँक व रोख जी.एल. विलगीकरण आणि संतुलित दुहेरी नोंद (`Dr == Cr`) गार्डरेल (`BankLedgerHelper.cs`, `CashLedgerHelper.cs`, `VoucherBalanceValidator.cs`):**
+  * बँक पेमेंट मोड निवडल्यावर वैध `AccountType = 'Bank Account'` जी.एल. खाते निवडणे बंधनकारक केले असून रोख खात्यावर होणारा चुकीचा फॉलबॅक १००% बंद केला आहे.
+  * सर्व व्यवहार शाखेच्या चालू **`BusinessDate`** वर नोंदवले जातात आणि प्रत्येक व्हाउचर सेव्ह होण्यापूर्वी `Total Dr == Total Cr` संतुलन तपासणी (`VoucherBalanceValidator`) लागू केली आहे.
+* **सर्व १७ मॉड्यूल्ससाठी १००% फिजिकल हार्ड-डिलीट स्टेट रोलबॅक (`VoucherPostingController.cs`, `VouchersController.cs`):**
+  * व्हाउचर पासिंग किंवा व्हाउचर मास्टरमधून व्हाउचर डिलीट/रिजेक्ट केल्यास संलग्न उप-मॉड्यूल नोंदी डेटाबेस टेबलमधून प्रत्यक्ष **Hard Delete** होतात आणि संबंधित खात्याची शिल्लक व स्थिती (`Active` / `Matured`), बचत/पिग्मी ट्रान्सफर रक्कम, कर्ज मुद्दल/व्याज व तारण १००% मूळ स्थितीत पूर्ववत होते (बचत, सिंगल/बल्क FD व कर्ज समायोजन, RD, पिग्मी/एजंट डे-बुक/कमिशन, शेअर व मयत वारस दावा, कर्ज वाटप/वसुली/NPA/कलम १०१, गुंतवणूक, लॉकर व स्थावर मालमत्ता + श्रेणीनिहाय डेडस्टॉक जी.एल. मॅपिंग).
+* **कॅश बुक + नवीन बँक बुक (`Bank Book`), डेडस्टॉक व रोजकीर्द सुधारणा आणि `100% CustomerID-First` अहवाल (`ReportsController.cs`, `CashBookReport.tsx`, `Daybook.tsx`, `DeadstockLedgerHelper.cs`):**
+  * कॅश बुक अहवालात **`रोख वही | बँक वही`** टॉगल व बँक खाते फिल्टर जोडून नवीन **बँक पुस्तक (`Bank Book`)** अहवाल व मल्टी-स्प्लिट वजावट ताळमेळ समाविष्ट केला आहे.
+  * रोजकीर्दीतील `"स्थलांतर"` शब्दाची चुकीची फिल्टर अट व डेडस्टॉक आरंभिक शिल्लकेतील चालू वर्षाच्या घसाऱ्याची दुहेरी बेरीज दुरुस्त केली आहे.
+  * कोणत्याही टेबलमध्ये नवीन `MemberID` न जोडता १००% **`CustomerID-First`** आर्किटेक्चरनुसार `MemberBalances`, `MemberLedgerBalances` व `MemberLedgerStatement` अपडेट केले असून सर्व ७ सब-लेजर खतावणी/रजिस्टर अहवालांमध्ये **`मंजूर` / `प्रलंबित`** (`PassingStatus`) बॅज व IBT सेटलमेंटमध्ये दोन्ही शाखांसाठी स्वतंत्र बँक जी.एल. निवड जोडली आहे.
+* **१-क्लिक मल्टि-ॲप मास्टर पॅच (`SmartBanking_VPS_Multi_App_Master_Patch.zip` & `SmartBanking_Patch_v2.6.06.patch`):**
+  * सर्व ९ कॉन्फिगर केलेल्या संस्थांसाठी तयार केलेला मास्टर पॅच व गिट पॅच उपलब्ध.
+
+---
+
 ## 📅 [2026-10-29] - आवृत्ती v2.6.05 (Dynamic Saving Scheme Minimum Balance Across All Modules, RD Post-Maturity & Partial Installment Waterfall + Rollback, FD Transfer Voucher Flow & General Ledger Fix Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

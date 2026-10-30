@@ -6631,6 +6631,44 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- v2.6.06: CBS 100% MAKER-CHECKER ENFORCEMENT & ASSET CATEGORY GL MAPPING
+-- ========================================================================
+IF OBJECT_ID('dbo.SansthaDetails', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('SansthaDetails', 'AutoPostVouchers') IS NOT NULL AND COL_LENGTH('SansthaDetails', 'AutoPostVoucherLimit') IS NOT NULL
+    BEGIN
+        EXEC(N'UPDATE [dbo].[SansthaDetails] SET [AutoPostVouchers] = 0, [AutoPostVoucherLimit] = 0.00 WHERE [AutoPostVouchers] <> 0 OR [AutoPostVoucherLimit] <> 0;');
+        PRINT 'Enforced 100% Maker-Checker voucher passing on SansthaDetails';
+    END
+END
+GO
+
+IF OBJECT_ID('dbo.AssetCategories', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('AssetCategories', 'AssetLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[AssetCategories] ADD [AssetLedgerID] INT NULL;
+        PRINT 'Added AssetLedgerID to AssetCategories';
+    END
+    IF COL_LENGTH('AssetCategories', 'DepreciationExpenseLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[AssetCategories] ADD [DepreciationExpenseLedgerID] INT NULL;
+        PRINT 'Added DepreciationExpenseLedgerID to AssetCategories';
+    END
+    IF COL_LENGTH('AssetCategories', 'AccumulatedDepreciationLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[AssetCategories] ADD [AccumulatedDepreciationLedgerID] INT NULL;
+        PRINT 'Added AccumulatedDepreciationLedgerID to AssetCategories';
+    END
+    IF COL_LENGTH('AssetCategories', 'DisposalProfitLossLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[AssetCategories] ADD [DisposalProfitLossLedgerID] INT NULL;
+        PRINT 'Added DisposalProfitLossLedgerID to AssetCategories';
+    END
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

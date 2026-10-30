@@ -513,7 +513,12 @@ namespace Bhisi.Api.Controllers
                     CreatedBy = actionUserId,
                     ApprovedBy = null,
                     ApprovedOn = null,
-                    VoucherDetails = voucherDetailsList
+                    VoucherDetails = voucherDetailsList.Select(d => {
+                        d.MemberID = null;
+                        bool isTransferSavingDr = request.PaymentMode == "Transfer" && savingAccount != null && d.DrCr == "Dr";
+                        d.CustomerID = d.LedgerID == shareCapitalLedger.LedgerID ? customerId : (isTransferSavingDr ? savingAccount!.CustomerID : null);
+                        return d;
+                    }).ToList()
                 };
                 _context.Vouchers.Add(voucher);
                 await _context.SaveChangesAsync(); // Get VoucherId
@@ -795,6 +800,14 @@ namespace Bhisi.Api.Controllers
                 foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
                 {
                     st.VoucherNo = voucher.VoucherNo;
+                }
+                foreach (var vd in voucher.VoucherDetails)
+                {
+                    vd.MemberID = null;
+                    if (vd.LedgerID != shareCapitalLedger.LedgerID)
+                    {
+                        vd.CustomerID = (request.PaymentMode == "Transfer" && savingAccount != null) ? savingAccount.CustomerID : null;
+                    }
                 }
                 // 🌟 Handle Certificates (FIFO Deduction & Surrender):
                 int remainingToDeduct = request.NumberOfShares;
@@ -2702,9 +2715,9 @@ namespace Bhisi.Api.Controllers
                     VoucherDetails = new List<VoucherDetail>
                     {
                         // Debit Transferor (Member A's shares reduce)
-                        new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Dr", Amount = totalAmount, MemberID = fromMember.MemberID, CustomerID = fromResolvedCustId },
+                        new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Dr", Amount = totalAmount, CustomerID = fromResolvedCustId },
                         // Credit Transferee (Member B's shares increase)
-                        new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Cr", Amount = totalAmount, MemberID = toMember.MemberID, CustomerID = toResolvedCustId }
+                        new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Cr", Amount = totalAmount, CustomerID = toResolvedCustId }
                     }
                 };
                 _context.Vouchers.Add(jvVoucher);
@@ -2776,8 +2789,8 @@ namespace Bhisi.Api.Controllers
                         CreatedBy = actionUserId,
                         VoucherDetails = new List<VoucherDetail>
                         {
-                            new VoucherDetail { LedgerID = feeDebitLedgerId, DrCr = "Dr", Amount = request.TransferFee, MemberID = request.FromMemberId },
-                            new VoucherDetail { LedgerID = feeIncomeLedgerId, DrCr = "Cr", Amount = request.TransferFee, MemberID = request.FromMemberId }
+                            new VoucherDetail { LedgerID = feeDebitLedgerId, DrCr = "Dr", Amount = request.TransferFee, CustomerID = (request.FeePaymentMode == "Saving" && request.SavingAccountId.HasValue) ? fromResolvedCustId : null },
+                            new VoucherDetail { LedgerID = feeIncomeLedgerId, DrCr = "Cr", Amount = request.TransferFee }
                         }
                     };
                     _context.Vouchers.Add(feeVoucher);

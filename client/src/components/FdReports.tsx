@@ -55,6 +55,8 @@ interface FdAccountReportRow {
   nomineeRelation?: string;
   remarks?: string;
   status: string;
+  voucherNo?: string;
+  passingStatus?: string;
 }
 
 interface FdVoucherPassingRow {
@@ -139,6 +141,7 @@ interface CustomerLedgerData {
       balance: number;
       amount: number;
       voucherNo: string;
+      passingStatus?: string;
       narration: string;
     }[];
   }[];
@@ -2023,7 +2026,18 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                 {formatDisplayDate(tx.transactionDate)}
                               </td>
                               <td className="border border-slate-900 py-1 px-2 text-center font-mono font-semibold text-blue-900">
-                                {tx.voucherNo || '-'}
+                                <div>{tx.voucherNo || '-'}</div>
+                                {tx.passingStatus && (
+                                  <span
+                                    className={`inline-block mt-0.5 px-1 py-0.2 rounded text-[8.5px] font-bold border ${
+                                      tx.passingStatus === 'Pending'
+                                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                        : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                    }`}
+                                  >
+                                    {tx.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'}
+                                  </span>
+                                )}
                               </td>
                               <td className="border border-slate-900 py-1 px-2">
                                 <span className="font-medium text-slate-900">
@@ -2289,6 +2303,20 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                     }`}>
                       {row.status === 'Active' ? 'Active' : row.status}
                     </span>
+                    {row.passingStatus && (
+                      <div className="mt-0.5">
+                        <span
+                          className={`inline-block px-1 py-0.2 rounded text-[8.5px] font-bold border ${
+                            row.passingStatus === 'Pending'
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          }`}
+                          title={row.voucherNo ? `व्हाउचर क्र.: ${row.voucherNo}` : undefined}
+                        >
+                          {row.passingStatus === 'Pending' ? 'व्हा.प्रलंबित' : 'व्हा.मंजूर'}
+                        </span>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -2393,6 +2421,20 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                     }`}>
                       {row.status === 'Active' ? 'Active' : row.status}
                     </span>
+                    {row.passingStatus && (
+                      <div className="mt-0.5">
+                        <span
+                          className={`inline-block px-1 py-0.2 rounded text-[8.5px] font-bold border ${
+                            row.passingStatus === 'Pending'
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          }`}
+                          title={row.voucherNo ? `व्हाउचर क्र.: ${row.voucherNo}` : undefined}
+                        >
+                          {row.passingStatus === 'Pending' ? 'व्हा.प्रलंबित' : 'व्हा.मंजूर'}
+                        </span>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

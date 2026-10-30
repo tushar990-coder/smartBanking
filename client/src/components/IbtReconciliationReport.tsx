@@ -169,6 +169,7 @@ export default function IbtReconciliationReport() {
   const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
   const [bankLedgers, setBankLedgers] = useState<RawLedgerItem[]>([]);
   const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<number | undefined>();
+  const [selectedToBankLedgerId, setSelectedToBankLedgerId] = useState<number | undefined>();
   const [settling, setSettling] = useState<boolean>(false);
 
   // Search filter inside drilldown table
@@ -268,6 +269,13 @@ export default function IbtReconciliationReport() {
             ? banks[0].ledgerID
             : undefined
       );
+      setSelectedToBankLedgerId((prev) =>
+        prev && banks.some((b) => Number(b.ledgerID) === Number(prev))
+          ? prev
+          : banks.length > 0
+            ? banks[0].ledgerID
+            : undefined
+      );
     } catch (err) {
       console.error('Error fetching bank ledgers', err);
     }
@@ -291,8 +299,11 @@ export default function IbtReconciliationReport() {
       alert('देणारी व घेणारी शाखा एकच असू शकत नाही.');
       return;
     }
-    if (settlementMode === 'Bank' && (!selectedBankLedgerId || Number(selectedBankLedgerId) <= 0)) {
-      alert('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+    if (
+      settlementMode === 'Bank' &&
+      (!selectedBankLedgerId || Number(selectedBankLedgerId) <= 0 || !selectedToBankLedgerId || Number(selectedToBankLedgerId) <= 0)
+    ) {
+      alert('बँक व्यवहारासाठी देणाऱ्या व घेणाऱ्या दोन्ही शाखांसाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
     }
 
@@ -304,6 +315,8 @@ export default function IbtReconciliationReport() {
         settlementAmount: settlementAmount,
         paymentMode: settlementMode,
         bankLedgerID: settlementMode === 'Bank' ? Number(selectedBankLedgerId) : null,
+        fromBankLedgerID: settlementMode === 'Bank' ? Number(selectedBankLedgerId) : null,
+        toBankLedgerID: settlementMode === 'Bank' ? Number(selectedToBankLedgerId) : null,
         narration: settlementNarration,
         createdBy: user?.userID || 1
       };
@@ -1208,8 +1221,14 @@ export default function IbtReconciliationReport() {
                       setSettlementMode(mode);
                       if (mode !== 'Bank') {
                         setSelectedBankLedgerId(undefined);
-                      } else if (!selectedBankLedgerId && bankLedgers.length > 0) {
-                        setSelectedBankLedgerId(bankLedgers[0].ledgerID);
+                        setSelectedToBankLedgerId(undefined);
+                      } else {
+                        if (!selectedBankLedgerId && bankLedgers.length > 0) {
+                          setSelectedBankLedgerId(bankLedgers[0].ledgerID);
+                        }
+                        if (!selectedToBankLedgerId && bankLedgers.length > 0) {
+                          setSelectedToBankLedgerId(bankLedgers[0].ledgerID);
+                        }
                       }
                     }}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded font-semibold outline-none focus:border-primary"
@@ -1220,14 +1239,25 @@ export default function IbtReconciliationReport() {
                 </div>
 
                 {settlementMode === 'Bank' && (
-                  <div>
-                    <BankLedgerSelect
-                      ledgers={allLedgers}
-                      value={selectedBankLedgerId}
-                      onChange={(id) => setSelectedBankLedgerId(id > 0 ? id : undefined)}
-                      showCountBadge
-                    />
-                  </div>
+                  <>
+                    <div className="col-span-2">
+                      <BankLedgerSelect
+                        ledgers={allLedgers}
+                        value={selectedBankLedgerId}
+                        onChange={(id) => setSelectedBankLedgerId(id > 0 ? id : undefined)}
+                        label="🏦 देणाऱ्या शाखेचे बँक खाते (Payer Branch Bank GL) *"
+                        showCountBadge
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <BankLedgerSelect
+                        ledgers={allLedgers}
+                        value={selectedToBankLedgerId}
+                        onChange={(id) => setSelectedToBankLedgerId(id > 0 ? id : undefined)}
+                        label="🏦 घेणाऱ्या शाखेचे बँक खाते (Receiver Branch Bank GL) *"
+                      />
+                    </div>
+                  </>
                 )}
               </div>
 

@@ -46,6 +46,7 @@ namespace Bhisi.Api.Controllers
             public int BranchID { get; set; }
             public int FinancialYearID { get; set; }
             public List<BranchLedgerOpeningDto> Items { get; set; } = new();
+            public List<BranchLedgerOpeningDto> Entries { get; set; } = new();
         }
 
         // GET: api/BranchLedgerOpeningBalances/ledger-rows
@@ -150,7 +151,8 @@ namespace Bhisi.Api.Controllers
 
             var existingMap = existingRows.ToDictionary(r => r.LedgerID, r => r);
 
-            foreach (var item in request.Items)
+            var itemsToSave = (request.Items != null && request.Items.Count > 0) ? request.Items : (request.Entries ?? new List<BranchLedgerOpeningDto>());
+            foreach (var item in itemsToSave)
             {
                 if (item.LedgerID <= 0) continue;
 
@@ -164,7 +166,7 @@ namespace Bhisi.Api.Controllers
                     existing.Remarks = item.Remarks;
                     existing.UpdatedOn = DateTime.UtcNow;
                 }
-                else if (safeBal > 0)
+                else if (safeBal >= 0)
                 {
                     var newRecord = new BranchLedgerOpeningBalance
                     {

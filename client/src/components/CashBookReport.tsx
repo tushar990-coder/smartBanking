@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
+import { filterBankAccountLedgers, RawLedgerItem } from '../utils/bankLedgerUtils';
 
 interface CashBookEntry {
   voucherNo: string;
@@ -73,12 +74,28 @@ export default function CashBookReport() {
     ? user.branchID.toString()
     : 'all';
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
+  const [bookMode, setBookMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [bankLedgers, setBankLedgers] = useState<RawLedgerItem[]>([]);
+  const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<string>('all');
 
   useEffect(() => {
     fetchSanstha();
     fetchBranches();
-    fetchReport();
+    fetchBankLedgers();
+    fetchReport('Cash', 'all');
   }, []);
+
+  const fetchBankLedgers = async () => {
+    try {
+      const res = await fetch('/api/Ledgers');
+      if (res.ok) {
+        const raw = await res.json();
+        setBankLedgers(filterBankAccountLedgers(Array.isArray(raw) ? raw : []));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
     if (!isHOUser && user?.branchID) {
@@ -107,14 +124,20 @@ export default function CashBookReport() {
     }
   };
 
-  const fetchReport = async () => {
+  const fetchReport = async (overrideMode?: 'Cash' | 'Bank', overrideBankId?: string) => {
     setLoading(true);
     setError(null);
 
+    const activeMode = overrideMode || bookMode;
+    const activeBankId = overrideBankId !== undefined ? overrideBankId : selectedBankLedgerId;
+
     try {
-      let url = `/api/Reports/CashBookBatch?date=${fromDate}&toDate=${toDate}`;
+      let url = `/api/Reports/CashBookBatch?date=${fromDate}&toDate=${toDate}&bookMode=${activeMode}`;
       if (selectedBranchId !== 'all') {
         url += `&branchId=${selectedBranchId}`;
+      }
+      if (activeMode === 'Bank' && activeBankId !== 'all') {
+        url += `&bankLedgerId=${activeBankId}`;
       }
 
       const response = await fetch(url);
@@ -146,13 +169,23 @@ export default function CashBookReport() {
     window.print();
   };
 
+  const getSelectedBankLabel = () => {
+    if (bookMode !== 'Bank') return '';
+    if (selectedBankLedgerId === 'all') return 'सर्व बँक खाती (All Bank GLs)';
+    const matched = bankLedgers.find((b) => String(b.ledgerID) === selectedBankLedgerId);
+    return matched ? `${matched.ledgerID} - ${matched.ledgerName}` : '';
+  };
+
   const handleExportExcel = () => {
     if (pages.length === 0) return;
     const rows: any[] = [];
+    const bookTitle = bookMode === 'Bank'
+      ? `बँक पुस्तक (BANK BOOK)${getSelectedBankLabel() ? ' - ' + getSelectedBankLabel() : ''}`
+      : 'रोख पुस्तक (CASH BOOK)';
 
     rows.push([sanstha?.sansthaName || 'संस्थेचे नाव']);
     rows.push([sanstha?.address || '']);
-    rows.push(['रोख पुस्तक (CASH BOOK)']);
+    rows.push([bookTitle]);
     rows.push([`कालावधी: ${formatDate(fromDate)} ते ${formatDate(toDate)}`]);
     rows.push([]);
 
@@ -165,7 +198,7 @@ export default function CashBookReport() {
       // Opening balance
       rows.push([
         '-',
-        'आरंभीची शिल्लक',
+        'आरंभीची शिल्लक (Dr)',
         '',
         data.openingType === 'Dr' ? data.openingBalance : 0,
         '-',
@@ -204,17 +237,22 @@ export default function CashBookReport() {
         ]);
       }
 
-      const totalR = (data.openingType === 'Dr' ? data.openingBalance : 0) + data.totalReceipts;
-      const totalP = data.totalPayments + (data.closingType === 'Dr' ? data.closingBalance : 0);
+      const openDr = data.openingType === 'Dr' ? data.openingBalance : 0;
+      const openCr = data.openingType === 'Cr' ? data.openingBalance : 0;
+      const closeDr = data.closingType === 'Dr' ? data.closingBalance : 0;
+      const closeCr = data.closingType === 'Cr' ? data.closingBalance : 0;
+      const totalR = openDr + data.totalReceipts + closeCr;
+      const totalP = openCr + data.totalPayments + closeDr;
 
-      rows.push(['', 'एकूण जमा', '', totalR, '', 'एकूण खर्च + अखेरची शिल्लक', '', totalP]);
+      rows.push(['', 'एकूण जमा बाजू', '', totalR, '', 'एकूण खर्च + अखेरची शिल्लक', '', totalP]);
       rows.push([]);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'CashBook');
-    XLSX.writeFile(wb, `CashBook_Report_${fromDate}_to_${toDate}.xlsx`);
+    const sheetName = bookMode === 'Bank' ? 'BankBook' : 'CashBook';
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, `${sheetName}_Report_${fromDate}_to_${toDate}.xlsx`);
   };
 
   const formatAmount = (amount: number) => {
@@ -262,15 +300,48 @@ export default function CashBookReport() {
         {/* Row 1: Title + Inline Filters + Action Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
           
-          {/* Left: Compact Title */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Left: Compact Title + Cash/Bank Toggle */}
+          <div className="flex items-center gap-2 shrink-0">
             <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-              <span className="text-xs">💵</span>
+              <span className="text-xs">{bookMode === 'Bank' ? '🏦' : '💵'}</span>
             </div>
             <h1 className="text-xs font-bold text-gray-900 tracking-tight flex items-center gap-1">
-              <span>रोख पुस्तक अहवाल</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Cash Book Report)</span>
+              <span>{bookMode === 'Bank' ? 'बँक पुस्तक अहवाल' : 'रोख पुस्तक अहवाल'}</span>
+              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">
+                {bookMode === 'Bank' ? '(Bank Book)' : '(Cash Book)'}
+              </span>
             </h1>
+
+            <div className="inline-flex rounded-sm border border-gray-300 overflow-hidden bg-gray-100 ml-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setBookMode('Cash');
+                  fetchReport('Cash', selectedBankLedgerId);
+                }}
+                className={`px-2 py-0.5 text-[11px] font-bold cursor-pointer transition-colors ${
+                  bookMode === 'Cash'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                रोख वही
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBookMode('Bank');
+                  fetchReport('Bank', selectedBankLedgerId);
+                }}
+                className={`px-2 py-0.5 text-[11px] font-bold border-l border-gray-300 cursor-pointer transition-colors ${
+                  bookMode === 'Bank'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                बँक वही
+              </button>
+            </div>
           </div>
 
           {/* Center: Integrated Inline Filter Inputs */}
@@ -293,6 +364,28 @@ export default function CashBookReport() {
                 ))}
               </select>
             </div>
+
+            {bookMode === 'Bank' && (
+              <div className="flex items-center gap-1">
+                <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">बँक खाते:</label>
+                <select
+                  value={selectedBankLedgerId}
+                  onChange={(e) => {
+                    const nextBank = e.target.value;
+                    setSelectedBankLedgerId(nextBank);
+                    fetchReport('Bank', nextBank);
+                  }}
+                  className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-40 sm:w-52 cursor-pointer"
+                >
+                  <option value="all">सर्व बँक खाती (All Bank GLs)</option>
+                  {bankLedgers.map((bl) => (
+                    <option key={bl.ledgerID} value={String(bl.ledgerID)}>
+                      {bl.ledgerID} - {bl.ledgerName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Dates */}
             <div className="flex items-center gap-1">
@@ -317,7 +410,7 @@ export default function CashBookReport() {
 
             {/* View Button */}
             <button
-              onClick={fetchReport}
+              onClick={() => fetchReport()}
               disabled={loading}
               className="h-6 bg-primary hover:opacity-90 text-white px-2.5 rounded-sm text-[11px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
             >
@@ -364,9 +457,11 @@ export default function CashBookReport() {
             const pageDate = page.date;
             const openBalDr = pageData.openingType === 'Dr' ? pageData.openingBalance : 0;
             const openBalCr = pageData.openingType === 'Cr' ? pageData.openingBalance : 0;
-            const totalReceiptsSide = openBalDr + pageData.totalReceipts;
             const closingBalDr = pageData.closingType === 'Dr' ? pageData.closingBalance : 0;
-            const totalPaymentsSide = pageData.totalPayments + closingBalDr;
+            const closingBalCr = pageData.closingType === 'Cr' ? pageData.closingBalance : 0;
+            const totalReceiptsSide = openBalDr + pageData.totalReceipts + closingBalCr;
+            const totalPaymentsSide = openBalCr + pageData.totalPayments + closingBalDr;
+            const bookUnitLabel = bookMode === 'Bank' ? 'बँक' : 'रोख';
 
             return (
               <div
@@ -392,7 +487,9 @@ export default function CashBookReport() {
                   <div className="mt-1.5 flex items-center justify-between">
                     <div className="w-24"></div>
                     <span className="border-2 border-gray-900 font-extrabold px-6 py-0.5 bg-gray-200 print:bg-gray-100 text-xs tracking-wider text-gray-900 shadow-2xs font-serif uppercase">
-                      रोख पुस्तक (CASH BOOK)
+                      {bookMode === 'Bank'
+                        ? `बँक पुस्तक (BANK BOOK)${getSelectedBankLabel() ? ' — ' + getSelectedBankLabel() : ''}`
+                        : 'रोख पुस्तक (CASH BOOK)'}
                     </span>
                     <div className="text-right text-[11px] font-bold text-gray-800">
                       दिनांक : <span className="font-mono">{formatDate(pageDate)}</span>
@@ -544,14 +641,16 @@ export default function CashBookReport() {
                       <div className="w-10 px-1 py-1 border-l border-gray-800"></div>
                     </div>
 
-                    {/* Row 2: Opening Cash Balance */}
+                    {/* Row 2: Opening Balance */}
                     <div className="flex border-b border-gray-800 font-extrabold bg-blue-50/70 print:bg-gray-200 text-gray-900">
                       <div className="w-10 px-1 py-1"></div>
                       <div className="flex-1 px-1 py-1 text-center font-black text-blue-900 print:text-black">
-                        📌 आरंभीची रोख शिल्लक (Opening Balance)
+                        {closingBalCr > 0
+                          ? `📌 आरंभीची शिल्लक (${formatAmount(openBalDr)}) + अखेरची ${bookUnitLabel} ओव्हरड्राफ्ट (Cr: ${formatAmount(closingBalCr)})`
+                          : `📌 आरंभीची ${bookUnitLabel} शिल्लक (Opening Balance)`}
                       </div>
                       <div className="w-24 border-l border-gray-800 px-1 py-1 text-right font-mono font-black text-blue-900 print:text-black bg-blue-100 print:bg-gray-300">
-                        {formatAmount(openBalDr)}
+                        {formatAmount(openBalDr + closingBalCr)}
                       </div>
                       <div className="w-10 px-1 py-1 border-l border-gray-800"></div>
                     </div>
@@ -579,14 +678,16 @@ export default function CashBookReport() {
                       <div className="w-10 px-1 py-1 border-l border-gray-800"></div>
                     </div>
 
-                    {/* Row 2: Closing Cash Balance */}
+                    {/* Row 2: Closing Balance */}
                     <div className="flex border-b border-gray-800 font-extrabold bg-emerald-100/70 print:bg-gray-200 text-gray-900">
                       <div className="w-10 px-1 py-1"></div>
                       <div className="flex-1 px-1 py-1 text-center font-black text-emerald-900 print:text-black">
-                        📌 अखेरची रोख शिल्लक (Closing Balance)
+                        {openBalCr > 0
+                          ? `📌 अखेरची शिल्लक (${formatAmount(closingBalDr)}) + आरंभीची Cr शिल्लक (${formatAmount(openBalCr)})`
+                          : `📌 अखेरची ${bookUnitLabel} शिल्लक (Closing Balance)`}
                       </div>
                       <div className="w-24 border-l border-gray-800 px-1 py-1 text-right font-mono font-black text-emerald-900 print:text-black bg-emerald-200 print:bg-gray-300">
-                        {formatAmount(closingBalDr)}
+                        {formatAmount(closingBalDr + openBalCr)}
                       </div>
                       <div className="w-10 px-1 py-1 border-l border-gray-800"></div>
                     </div>
@@ -603,9 +704,11 @@ export default function CashBookReport() {
                   </div>
                 </div>
 
-                {/* Official Cash Balance Banner */}
+                {/* Official Balance Banner */}
                 <div className="mt-2.5 p-1.5 bg-amber-50 print:bg-white border-2 border-amber-300 print:border-black rounded-xs text-center font-black text-xs text-amber-900 print:text-black shadow-2xs">
-                  💼 अखेरची शिल्लक ₹ {formatAmount(closingBalDr)} (सचिव / सेल्समन / कॅशियर यांचेकडे आहे)
+                  {bookMode === 'Bank'
+                    ? `🏦 अखेरची बँक शिल्लक ₹ ${formatAmount(pageData.closingBalance)} ${pageData.closingType ? `(${pageData.closingType})` : ''}`
+                    : `💼 अखेरची शिल्लक ₹ ${formatAmount(closingBalDr)} (सचिव / सेल्समन / कॅशियर यांचेकडे आहे)`}
                 </div>
 
                 {/* Official Signatures Block */}

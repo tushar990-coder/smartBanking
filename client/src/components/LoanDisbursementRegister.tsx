@@ -28,6 +28,8 @@ interface LoanDisbursementRegisterDto {
   netAmountPaid: number;
   guarantor1Name: string;
   guarantor2Name: string;
+  voucherNo?: string;
+  passingStatus?: string;
 }
 
 const fmtCurrency = (n: number | null | undefined) => {
@@ -548,7 +550,19 @@ export default function LoanDisbursementRegister() {
                               {formatDisplayDate(row.disbursementDate)}
                             </td>
                             <td className="border border-gray-900 py-1 px-1.5 text-center font-mono font-bold text-gray-900">
-                              {row.loanAccountNo}
+                              <div>{row.loanAccountNo}</div>
+                              {row.passingStatus && (
+                                <span
+                                  className={`inline-block mt-0.5 px-1 py-0.2 rounded text-[8.5px] font-bold border ${
+                                    row.passingStatus === 'Pending'
+                                      ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                      : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                  }`}
+                                  title={row.voucherNo ? `व्हाउचर क्र.: ${row.voucherNo}` : undefined}
+                                >
+                                  {row.passingStatus === 'Pending' ? 'व्हा.प्रलंबित' : 'व्हा.मंजूर'}
+                                </span>
+                              )}
                             </td>
                             <td className="border border-gray-900 py-1 px-2 font-medium">
                               {row.borrowerName}

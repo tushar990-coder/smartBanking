@@ -279,15 +279,18 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
     setErrorMsg('');
     setSuccessMsg('');
 
+    const mappedItems = modifiedRows.map(r => ({
+      ledgerID: r.ledgerID,
+      openingBalance: Number(r.openingBalance) || 0,
+      openingBalanceType: r.openingBalanceType || 'Dr',
+      remarks: r.remarks || null
+    }));
+
     const payload = {
       branchID: Number(selectedBranchId),
       financialYearID: Number(selectedFyId),
-      entries: modifiedRows.map(r => ({
-        ledgerID: r.ledgerID,
-        openingBalance: Number(r.openingBalance) || 0,
-        openingBalanceType: r.openingBalanceType || 'Dr',
-        remarks: r.remarks || null
-      }))
+      items: mappedItems,
+      entries: mappedItems
     };
 
     try {

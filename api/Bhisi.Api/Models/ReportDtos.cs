@@ -5,6 +5,7 @@ namespace Bhisi.Api.Models
 {
     public class MemberBalanceReportDto
     {
+        public int? CustomerID { get; set; }
         public int MemberId { get; set; }
         public string MemberCode { get; set; } = string.Empty;
         public string LegacyMemberNo { get; set; } = string.Empty;
@@ -208,6 +209,8 @@ namespace Bhisi.Api.Models
         public decimal NetAmountPaid { get; set; }
         public string Guarantor1Name { get; set; } = string.Empty;
         public string Guarantor2Name { get; set; } = string.Empty;
+        public string? VoucherNo { get; set; }
+        public string? PassingStatus { get; set; }
     }
 
     public class LoanCollectionRegisterDto
@@ -234,6 +237,8 @@ namespace Bhisi.Api.Models
         public bool IsCrossBranch { get; set; }
         public int? VoucherID { get; set; }
         public int? HomeBranchVoucherID { get; set; }
+        public string? VoucherNo { get; set; }
+        public string? PassingStatus { get; set; }
     }
 
     public class LoanTrancheDetailDto
@@ -439,6 +444,8 @@ namespace Bhisi.Api.Models
         public DateTime Date { get; set; }
         public string ReceiptNo { get; set; } = string.Empty;
         public string Particulars { get; set; } = string.Empty;
+        public string? PassingStatus { get; set; }
+        public string? VoucherNo { get; set; }
         public decimal LoanDisbursement { get; set; }
         public decimal PrincipalDeposit { get; set; }
         public decimal Interest { get; set; }
@@ -569,6 +576,7 @@ namespace Bhisi.Api.Models
     {
         public DateTime Date { get; set; }
         public string Particulars { get; set; } = string.Empty;
+        public string? PassingStatus { get; set; }
         public decimal Debit { get; set; }
         public decimal Credit { get; set; }
         public decimal Balance { get; set; }
@@ -626,6 +634,7 @@ namespace Bhisi.Api.Models
         public int? InstallmentNo { get; set; }
         public string TransactionType { get; set; } = string.Empty;
         public string Particulars { get; set; } = string.Empty;
+        public string? PassingStatus { get; set; }
         public string PaymentMode { get; set; } = string.Empty;
         public string CollectionSource { get; set; } = string.Empty;
         public string? AgentName { get; set; }
@@ -648,6 +657,7 @@ namespace Bhisi.Api.Models
         public decimal PenaltyWaived { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? VoucherNo { get; set; }
+        public string? PassingStatus { get; set; }
     }
 
     public class PigmyKhatavaniReportDto
@@ -700,6 +710,7 @@ namespace Bhisi.Api.Models
         public string ReferenceId { get; set; } = string.Empty;
         public string TransactionType { get; set; } = string.Empty;
         public string Particulars { get; set; } = string.Empty;
+        public string? PassingStatus { get; set; }
         public decimal Debit { get; set; }
         public decimal Credit { get; set; }
         public decimal InterestAmount { get; set; }

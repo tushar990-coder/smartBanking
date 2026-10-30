@@ -92,7 +92,7 @@ namespace Bhisi.Api.Helpers
             var assetQuery = context.Assets
                 .AsNoTracking()
                 .Include(a => a.Category)
-                .Where(a => a.Status == "Active" && (a.IsOpeningBalance || a.AccumulatedDepreciation > 0));
+                .Where(a => a.Status == "Active" && a.IsOpeningBalance);
 
             if (targetBranchId.HasValue && targetBranchId.Value > 0)
             {
@@ -197,7 +197,7 @@ namespace Bhisi.Api.Helpers
                         .Where(b => b.LedgerID == ledgerId && b.FinancialYearID == activeFyId && b.OpeningBalanceType == "Dr")
                         .SumAsync(b => b.OpeningBalance);
 
-                    if (totalDr > 0 || (ledger.OpeningBalance > 0 && targetBalances.Values.Any(v => v > 0)))
+                    if (totalDr >= 0)
                     {
                         ledger.OpeningBalance = totalDr;
                         ledger.OpeningBalanceType = "Dr";

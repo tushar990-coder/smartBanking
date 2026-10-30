@@ -149,6 +149,8 @@ namespace Bhisi.Api.Models
         public decimal SettlementAmount { get; set; }
         public string PaymentMode { get; set; } = "Bank"; // "Bank" or "Cash"
         public int? BankLedgerID { get; set; }
+        public int? FromBankLedgerID { get; set; }
+        public int? ToBankLedgerID { get; set; }
         public string? Narration { get; set; }
         public int? CreatedBy { get; set; }
     }

@@ -495,7 +495,7 @@ namespace Bhisi.Api.Controllers
                 .Where(v => v.VoucherDate >= startDate 
                          && v.VoucherDate <= endDate
                          && v.VoucherType != "Opening Balance"
-                         && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक") && !v.Narration.Contains("स्थलांतर"))));
+                         && v.VoucherType != "Opening" && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
 
             if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             {
@@ -922,7 +922,7 @@ namespace Bhisi.Api.Controllers
                 .Where(v => v.VoucherDate >= rangeStart 
                          && v.VoucherDate <= rangeEnd
                          && v.VoucherType != "Opening Balance"
-                         && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक") && !v.Narration.Contains("स्थलांतर"))));
+                         && v.VoucherType != "Opening" && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
 
             if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             {
@@ -1127,7 +1127,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // Process unvouchered disbursements and collections for this date
-                if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
+                if (statusFilter == "all" || statusFilter == "both" || statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
                 {
                     if (disbByDate.TryGetValue(currentDate, out var dayDisb))
                     {
@@ -1420,7 +1420,7 @@ namespace Bhisi.Api.Controllers
                 .Where(v => v.VoucherDate >= startDate 
                          && v.VoucherDate <= endDate
                          && v.VoucherType != "Opening Balance"
-                         && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक") && !v.Narration.Contains("स्थलांतर"))));
+                         && v.VoucherType != "Opening" && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
 
             if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             {
@@ -1756,7 +1756,7 @@ namespace Bhisi.Api.Controllers
                 .Where(v => v.VoucherDate >= rangeStart 
                          && v.VoucherDate <= rangeEnd
                          && v.VoucherType != "Opening Balance"
-                         && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक") && !v.Narration.Contains("स्थलांतर"))));
+                         && v.VoucherType != "Opening" && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
 
             if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             {
@@ -1897,7 +1897,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // 2. Disbursements and Collections for currentDate
-                if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
+                if (statusFilter == "all" || statusFilter == "both" || statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
                 {
                     if (disbByDate.TryGetValue(currentDate, out var dayDisb))
                     {
@@ -2535,32 +2535,159 @@ namespace Bhisi.Api.Controllers
             return dto;
         }
 
+        private async Task<HashSet<int>> ResolveBookTargetLedgerIdsAsync(List<Ledger> ledgers, int? branchId, string? bookMode, int? bankLedgerId)
+        {
+            if (string.Equals(bookMode, "Bank", StringComparison.OrdinalIgnoreCase))
+            {
+                if (bankLedgerId.HasValue && bankLedgerId.Value > 0)
+                {
+                    return new HashSet<int> { bankLedgerId.Value };
+                }
+
+                return ledgers
+                    .Where(l => Helpers.BankLedgerHelper.IsBankLedger(l))
+                    .Select(l => l.LedgerID)
+                    .ToHashSet();
+            }
+
+            var cashIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
+            return cashIds.ToHashSet();
+        }
+
+        private void AddBookGroupEntry(Dictionary<int, CashBookGroupDto> dict, Voucher v, VoucherDetail vd, decimal amount)
+        {
+            if (amount <= 0) return;
+
+            if (!dict.ContainsKey(vd.LedgerID))
+            {
+                dict[vd.LedgerID] = new CashBookGroupDto
+                {
+                    LedgerId = vd.LedgerID,
+                    LedgerName = vd.Ledger?.LedgerName ?? "Unknown"
+                };
+            }
+
+            var group = dict[vd.LedgerID];
+            string details = FormatVoucherPartyNarration(vd, string.IsNullOrWhiteSpace(v.Narration) ? (vd.Ledger?.LedgerName ?? "") : v.Narration);
+
+            var entry = new CashBookEntryDto
+            {
+                VoucherNo = v.VoucherNo ?? "",
+                Details = details,
+                Amount = amount
+            };
+
+            group.Entries.Add(entry);
+            group.TotalAmount += entry.Amount;
+        }
+
+        private void AddVoucherToBookGroups(
+            Voucher v,
+            HashSet<int> targetLedgerIds,
+            Dictionary<int, CashBookGroupDto> receiptsDict,
+            Dictionary<int, CashBookGroupDto> paymentsDict)
+        {
+            var bookDetails = v.VoucherDetails.Where(vd => targetLedgerIds.Contains(vd.LedgerID)).ToList();
+            if (bookDetails.Count == 0) return;
+
+            decimal bookDr = bookDetails.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+            decimal bookCr = bookDetails.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+            var nonBookDetails = v.VoucherDetails.Where(vd => !targetLedgerIds.Contains(vd.LedgerID)).ToList();
+
+            // Case 1: Pure internal Contra within the selected book ledgers (e.g. Bank A -> Bank B in All-Banks view)
+            // or balanced internal book movement where bookDr == bookCr.
+            if (nonBookDetails.Count == 0 || bookDr == bookCr)
+            {
+                foreach (var bvd in bookDetails)
+                {
+                    if (bvd.DrCr == "Dr")
+                        AddBookGroupEntry(receiptsDict, v, bvd, bvd.Amount);
+                    else if (bvd.DrCr == "Cr")
+                        AddBookGroupEntry(paymentsDict, v, bvd, bvd.Amount);
+                }
+                return;
+            }
+
+            // Case 2: Net inflow (bookDr > bookCr) or Net outflow (bookCr > bookDr).
+            // Scale opposite non-book lines proportionally to netBookAmount so multi-split vouchers with deductions
+            // (e.g. Loan Disbursement 1,00,000 with 5,000 Share deduction and 95,000 Bank/Cash payout) tally 100% with GL!
+            bool isNetReceipt = bookDr > bookCr;
+            decimal netBookAmount = isNetReceipt ? (bookDr - bookCr) : (bookCr - bookDr);
+            var targetDict = isNetReceipt ? receiptsDict : paymentsDict;
+            string oppositeDrCr = isNetReceipt ? "Cr" : "Dr";
+
+            var oppositeLines = nonBookDetails.Where(vd => vd.DrCr == oppositeDrCr && vd.Amount > 0).ToList();
+            if (oppositeLines.Count == 0)
+            {
+                foreach (var bvd in bookDetails)
+                {
+                    if (bvd.DrCr == "Dr")
+                        AddBookGroupEntry(receiptsDict, v, bvd, bvd.Amount);
+                    else if (bvd.DrCr == "Cr")
+                        AddBookGroupEntry(paymentsDict, v, bvd, bvd.Amount);
+                }
+                return;
+            }
+
+            decimal totalOpposite = oppositeLines.Sum(vd => vd.Amount);
+            if (totalOpposite == netBookAmount)
+            {
+                foreach (var vd in oppositeLines)
+                {
+                    AddBookGroupEntry(targetDict, v, vd, vd.Amount);
+                }
+            }
+            else
+            {
+                decimal allocated = 0m;
+                for (int i = 0; i < oppositeLines.Count; i++)
+                {
+                    var vd = oppositeLines[i];
+                    decimal lineAmt = (i == oppositeLines.Count - 1)
+                        ? Math.Max(0m, netBookAmount - allocated)
+                        : Math.Round(netBookAmount * (vd.Amount / totalOpposite), 2);
+                    allocated += lineAmt;
+                    AddBookGroupEntry(targetDict, v, vd, lineAmt);
+                }
+            }
+        }
+
+        // GET: api/Reports/BankBookBatch
+        [HttpGet("BankBookBatch")]
+        public Task<ActionResult<CashBookBatchResponseDto>> GetBankBookBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] int? bankLedgerId = null)
+        {
+            return GetCashBookBatch(date, toDate, branchId, "Bank", bankLedgerId);
+        }
+
         // GET: api/Reports/CashBookBatch
         [HttpGet("CashBookBatch")]
-        public async Task<ActionResult<CashBookBatchResponseDto>> GetCashBookBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
+        public async Task<ActionResult<CashBookBatchResponseDto>> GetCashBookBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? bookMode = "Cash", [FromQuery] int? bankLedgerId = null)
         {
             DateTime rangeStart = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
             DateTime rangeEnd = DateTime.SpecifyKind(toDate.HasValue ? toDate.Value.Date.AddDays(1).AddTicks(-1) : date.Date.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
 
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
-            var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
+            var targetLedgerIds = await ResolveBookTargetLedgerIdsAsync(ledgers, branchId, bookMode, bankLedgerId);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
 
             decimal baseOpeningDr = 0;
             decimal baseOpeningCr = 0;
 
-            var cashLedgersList = ledgers.Where(l => cashLedgerIds.Contains(l.LedgerID)).ToList();
-            foreach (var cl in cashLedgersList)
+            foreach (var lId in targetLedgerIds)
             {
-                if (cl.OpeningBalanceType == "Dr") baseOpeningDr += cl.OpeningBalance;
-                if (cl.OpeningBalanceType == "Cr") baseOpeningCr += cl.OpeningBalance;
+                if (obMap.TryGetValue(lId, out var obEntry))
+                {
+                    baseOpeningDr += obEntry.Dr;
+                    baseOpeningCr += obEntry.Cr;
+                }
             }
 
-            if (cashLedgerIds.Count > 0)
+            if (targetLedgerIds.Count > 0)
             {
                 var priorDrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
+                    .Where(vd => targetLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
+                    .Where(vd => targetLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
 
                 if (branchId.HasValue)
                 {
@@ -2624,42 +2751,7 @@ namespace Bhisi.Api.Controllers
                 {
                     foreach (var v in dayVouchers)
                     {
-                        var cashDetail = v.VoucherDetails.FirstOrDefault(vd => cashLedgerIds.Contains(vd.LedgerID));
-                        if (cashDetail == null) continue;
-
-                        bool isReceipt = cashDetail.DrCr == "Dr";
-                        var targetDict = isReceipt ? receiptsDict : paymentsDict;
-
-                        foreach (var vd in v.VoucherDetails)
-                        {
-                            if (cashLedgerIds.Contains(vd.LedgerID)) continue;
-
-                            if (isReceipt && vd.DrCr != "Cr") continue;
-                            if (!isReceipt && vd.DrCr != "Dr") continue;
-
-                            if (!targetDict.ContainsKey(vd.LedgerID))
-                            {
-                                targetDict[vd.LedgerID] = new CashBookGroupDto
-                                {
-                                    LedgerId = vd.LedgerID,
-                                    LedgerName = vd.Ledger?.LedgerName ?? "Unknown"
-                                };
-                            }
-
-                            var group = targetDict[vd.LedgerID];
-
-                            string details = FormatVoucherPartyNarration(vd, string.IsNullOrWhiteSpace(v.Narration) ? (vd.Ledger?.LedgerName ?? "") : v.Narration);
-
-                            var entry = new CashBookEntryDto
-                            {
-                                VoucherNo = v.VoucherNo ?? "",
-                                Details = details,
-                                Amount = vd.Amount
-                            };
-
-                            group.Entries.Add(entry);
-                            group.TotalAmount += entry.Amount;
-                        }
+                        AddVoucherToBookGroups(v, targetLedgerIds, receiptsDict, paymentsDict);
                     }
                 }
 
@@ -2702,32 +2794,42 @@ namespace Bhisi.Api.Controllers
             return Ok(batchResponse);
         }
 
+        // GET: api/Reports/BankBook
+        [HttpGet("BankBook")]
+        public Task<ActionResult<CashBookResponseDto>> GetBankBook([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] int? bankLedgerId = null)
+        {
+            return GetCashBook(date, toDate, branchId, "Bank", bankLedgerId);
+        }
+
         // GET: api/Reports/CashBook
         [HttpGet("CashBook")]
-        public async Task<ActionResult<CashBookResponseDto>> GetCashBook([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
+        public async Task<ActionResult<CashBookResponseDto>> GetCashBook([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? bookMode = "Cash", [FromQuery] int? bankLedgerId = null)
         {
             DateTime startDate = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
             DateTime endDate = DateTime.SpecifyKind(toDate.HasValue ? toDate.Value.Date.AddDays(1).AddTicks(-1) : date.Date.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
 
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
-            var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
+            var targetLedgerIds = await ResolveBookTargetLedgerIdsAsync(ledgers, branchId, bookMode, bankLedgerId);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
 
             decimal openingDr = 0;
             decimal openingCr = 0;
 
-            var cashLedgersList = ledgers.Where(l => cashLedgerIds.Contains(l.LedgerID)).ToList();
-            foreach (var cl in cashLedgersList)
+            foreach (var lId in targetLedgerIds)
             {
-                if (cl.OpeningBalanceType == "Dr") openingDr += cl.OpeningBalance;
-                if (cl.OpeningBalanceType == "Cr") openingCr += cl.OpeningBalance;
+                if (obMap.TryGetValue(lId, out var obEntry))
+                {
+                    openingDr += obEntry.Dr;
+                    openingCr += obEntry.Cr;
+                }
             }
 
-            if (cashLedgerIds.Count > 0)
+            if (targetLedgerIds.Count > 0)
             {
                 var priorDrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
+                    .Where(vd => targetLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
+                    .Where(vd => targetLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
                 if (branchId.HasValue)
                 {
                     priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -2756,7 +2858,7 @@ namespace Bhisi.Api.Controllers
                 response.OpeningType = "";
             }
 
-            var vouchersQuery = _context.Vouchers
+            var vouchersQuery = _context.Vouchers.AsNoTracking()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
@@ -2776,43 +2878,7 @@ namespace Bhisi.Api.Controllers
 
             foreach (var v in vouchers)
             {
-                var cashDetail = v.VoucherDetails.FirstOrDefault(vd => cashLedgerIds.Contains(vd.LedgerID));
-                if (cashDetail == null) continue; // Not a cash transaction
-
-                bool isReceipt = cashDetail.DrCr == "Dr";
-                var targetDict = isReceipt ? receiptsDict : paymentsDict;
-
-                foreach (var vd in v.VoucherDetails)
-                {
-                    if (cashLedgerIds.Contains(vd.LedgerID)) continue;
-
-                    // Only consider the opposite side of the cash entry
-                    if (isReceipt && vd.DrCr != "Cr") continue;
-                    if (!isReceipt && vd.DrCr != "Dr") continue;
-
-                    if (!targetDict.ContainsKey(vd.LedgerID))
-                    {
-                        targetDict[vd.LedgerID] = new CashBookGroupDto
-                        {
-                            LedgerId = vd.LedgerID,
-                            LedgerName = vd.Ledger?.LedgerName ?? "Unknown"
-                        };
-                    }
-
-                    var group = targetDict[vd.LedgerID];
-
-                    string details = FormatVoucherPartyNarration(vd, string.IsNullOrWhiteSpace(v.Narration) ? (vd.Ledger?.LedgerName ?? "") : v.Narration);
-
-                    var entry = new CashBookEntryDto
-                    {
-                        VoucherNo = v.VoucherNo ?? "",
-                        Details = details,
-                        Amount = vd.Amount
-                    };
-
-                    group.Entries.Add(entry);
-                    group.TotalAmount += entry.Amount;
-                }
+                AddVoucherToBookGroups(v, targetLedgerIds, receiptsDict, paymentsDict);
             }
 
             response.Receipts = receiptsDict.Values.OrderBy(g => g.LedgerId).ToList();
@@ -2864,16 +2930,22 @@ namespace Bhisi.Api.Controllers
                 membersQuery = membersQuery.Where(m => m.BranchID == branchId.Value);
             }
             var members = await membersQuery.ToListAsync();
-            
-            // Get opening balances for this ledger
-            var openingBalances = await _context.MemberOpeningBalances
-                .Where(m => m.LedgerID == ledgerId)
-                .ToDictionaryAsync(m => m.MemberID);
 
-            // Get all voucher details for this ledger up to asOfDate
-            var query = _context.VoucherDetails.Include(vd => vd.Voucher)
-                .Where(vd => vd.LedgerID == ledgerId && vd.MemberID != null);
-                
+            // Get opening balances for this ledger
+            var openingBalancesList = await _context.MemberOpeningBalances
+                .Where(m => m.LedgerID == ledgerId)
+                .ToListAsync();
+
+            // CustomerID-First: get all APPROVED voucher details for this ledger up to asOfDate
+            var query = _context.VoucherDetails.AsNoTracking()
+                .Include(vd => vd.Voucher)
+                .Where(vd => vd.LedgerID == ledgerId
+                          && (vd.CustomerID != null || vd.MemberID != null)
+                          && vd.Voucher != null
+                          && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted")
+                          && vd.Voucher.Status != "Rejected"
+                          && vd.Voucher.Status != "Cancelled");
+
             if (asOfDate.HasValue)
             {
                 var dateEnd = asOfDate.Value.Date.AddDays(1).AddTicks(-1);
@@ -2883,58 +2955,58 @@ namespace Bhisi.Api.Controllers
             {
                 query = query.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
             }
-            
+
             var voucherDetails = await query.ToListAsync();
 
-            // For share capital ledgers, check active share accounts for self-healing
-            var activeShareMemberIds = isShareLedger 
+            var activeShareMemberIds = isShareLedger
                 ? await _context.ShareAccounts.Where(s => s.TotalShareCount > 0).Select(s => s.MemberId).ToHashSetAsync()
                 : null;
             var activeShareCustomerIds = isShareLedger
                 ? await _context.ShareAccounts.Where(s => s.TotalShareCount > 0 && s.CustomerID > 0).Select(s => s.CustomerID).ToHashSetAsync()
                 : null;
-            
+
+            var memberCustomerIds = members.Where(m => m.CustomerID.HasValue).Select(m => m.CustomerID!.Value).ToHashSet();
+
             var result = new List<MemberBalanceReportDto>();
             var orphanMobsToRemove = new List<MemberOpeningBalance>();
-            
-            foreach(var member in members)
+
+            foreach (var member in members)
             {
-                decimal opAmt = 0;
-                string opType = "Dr";
-                if (openingBalances.TryGetValue(member.MemberID, out var opBal))
+                int? custId = member.CustomerID;
+                int memId = member.MemberID;
+
+                var matchingObs = openingBalancesList.Where(ob =>
+                    custId.HasValue
+                        ? (ob.CustomerID.HasValue ? ob.CustomerID.Value == custId.Value : ob.MemberID == memId)
+                        : (!ob.CustomerID.HasValue && ob.MemberID == memId)).ToList();
+
+                var matchingVds = voucherDetails.Where(vd =>
+                    custId.HasValue
+                        ? (vd.CustomerID.HasValue ? vd.CustomerID.Value == custId.Value : vd.MemberID == memId)
+                        : (!vd.CustomerID.HasValue && vd.MemberID == memId)).ToList();
+
+                if (matchingObs.Count > 0 && isShareLedger)
                 {
-                    // Self-healing check: if this is a share capital ledger, and member has no active share account and no vouchers, this is an orphan leftover
-                    bool hasActiveShares = activeShareMemberIds != null && (
-                        activeShareMemberIds.Contains(member.MemberID) ||
-                        (member.CustomerID.HasValue && activeShareCustomerIds != null && activeShareCustomerIds.Contains(member.CustomerID.Value))
-                    );
-
-                    if (isShareLedger && !hasActiveShares)
+                    bool hasActiveShares = (activeShareMemberIds != null && activeShareMemberIds.Contains(memId)) ||
+                                           (custId.HasValue && activeShareCustomerIds != null && activeShareCustomerIds.Contains(custId.Value));
+                    if (!hasActiveShares && matchingVds.Count == 0)
                     {
-                        var hasVouchers = voucherDetails.Any(vd => vd.MemberID == member.MemberID);
-                        if (!hasVouchers)
-                        {
-                            orphanMobsToRemove.Add(opBal);
-                            continue; // Skip orphan member from report
-                        }
+                        orphanMobsToRemove.AddRange(matchingObs);
+                        continue;
                     }
-
-                    opAmt = opBal.Amount;
-                    opType = opBal.BalanceType;
                 }
-                
-                var drSum = voucherDetails.Where(vd => vd.MemberID == member.MemberID && vd.DrCr == "Dr").Sum(vd => vd.Amount);
-                var crSum = voucherDetails.Where(vd => vd.MemberID == member.MemberID && vd.DrCr == "Cr").Sum(vd => vd.Amount);
-                
-                // standard accounting logic: positive = Dr, negative = Cr
-                decimal netBal = (opType == "Dr" ? opAmt : -opAmt) + drSum - crSum;
-                
-                // Only include if they have a non-zero balance
+
+                decimal obNet = matchingObs.Sum(ob => ob.BalanceType == "Dr" ? ob.Amount : -ob.Amount);
+                decimal drSum = matchingVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+                decimal crSum = matchingVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+
+                decimal netBal = obNet + drSum - crSum;
                 if (netBal != 0)
                 {
                     result.Add(new MemberBalanceReportDto
                     {
                         MemberId = member.MemberID,
+                        CustomerID = custId,
                         MemberCode = member.MemberCode ?? "",
                         LegacyMemberNo = member.LegacyMemberNo ?? "",
                         CIFNo = member.Customer?.CIFNo ?? "",
@@ -2945,7 +3017,48 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Cleanup any detected orphan MemberOpeningBalances in background
+            // Include non-member Customers (CustomerID-only depositors/borrowers without a Member record)
+            var nonMemberCustomerIds = voucherDetails.Where(vd => vd.CustomerID.HasValue && !memberCustomerIds.Contains(vd.CustomerID.Value)).Select(vd => vd.CustomerID!.Value)
+                .Union(openingBalancesList.Where(ob => ob.CustomerID.HasValue && !memberCustomerIds.Contains(ob.CustomerID.Value)).Select(ob => ob.CustomerID!.Value))
+                .Distinct()
+                .ToList();
+
+            if (nonMemberCustomerIds.Count > 0)
+            {
+                var nonMemberCustomersQuery = _context.Customers.AsNoTracking().Where(c => nonMemberCustomerIds.Contains(c.CustomerID));
+                if (branchId.HasValue)
+                {
+                    nonMemberCustomersQuery = nonMemberCustomersQuery.Where(c => c.BranchID == branchId.Value);
+                }
+                var nonMemberCustomers = await nonMemberCustomersQuery.ToListAsync();
+
+                foreach (var cust in nonMemberCustomers)
+                {
+                    var matchingObs = openingBalancesList.Where(ob => ob.CustomerID == cust.CustomerID).ToList();
+                    var matchingVds = voucherDetails.Where(vd => vd.CustomerID == cust.CustomerID).ToList();
+
+                    decimal obNet = matchingObs.Sum(ob => ob.BalanceType == "Dr" ? ob.Amount : -ob.Amount);
+                    decimal drSum = matchingVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+                    decimal crSum = matchingVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+
+                    decimal netBal = obNet + drSum - crSum;
+                    if (netBal != 0)
+                    {
+                        result.Add(new MemberBalanceReportDto
+                        {
+                            MemberId = cust.CustomerID,
+                            CustomerID = cust.CustomerID,
+                            MemberCode = cust.CIFNo ?? $"CUST-{cust.CustomerID}",
+                            LegacyMemberNo = "",
+                            CIFNo = cust.CIFNo ?? "",
+                            MemberName = string.Join(" ", new[] { cust.FirstName, cust.MiddleName, cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(),
+                            Balance = Math.Abs(netBal),
+                            BalanceType = netBal > 0 ? "Dr" : "Cr"
+                        });
+                    }
+                }
+            }
+
             if (orphanMobsToRemove.Any())
             {
                 try
@@ -2972,8 +3085,7 @@ namespace Bhisi.Api.Controllers
                 }
                 catch { }
             }
-            
-            // Return sorted by member code or ID
+
             return Ok(result.OrderBy(r => r.MemberCode).ToList());
         }
 
@@ -2981,6 +3093,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<LoanDisbursementRegisterDto>>> GetLoanDisbursementRegister([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
         {
             var query = _context.LoanDisbursements
+                .Include(d => d.Voucher)
                 .Include(d => d.LoanAccount!)
                     .ThenInclude(a => a!.Customer)
                 .Include(d => d.LoanAccount!)
@@ -3039,7 +3152,9 @@ namespace Bhisi.Api.Controllers
                     OtherDeductions = d.ProcessingFee + d.InsuranceDeduction + d.StationeryCharges + d.OtherDeductions,
                     NetAmountPaid = d.NetAmountPaid,
                     Guarantor1Name = g1Cust != null ? string.Join(" ", new[] { g1Cust.FirstName, g1Cust.MiddleName, g1Cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "",
-                    Guarantor2Name = g2Cust != null ? string.Join(" ", new[] { g2Cust.FirstName, g2Cust.MiddleName, g2Cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : ""
+                    Guarantor2Name = g2Cust != null ? string.Join(" ", new[] { g2Cust.FirstName, g2Cust.MiddleName, g2Cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "",
+                    VoucherNo = d.Voucher?.VoucherNo,
+                    PassingStatus = d.Voucher != null ? (string.IsNullOrWhiteSpace(d.Voucher.Status) ? "Approved" : d.Voucher.Status) : null
                 };
             });
 
@@ -3050,6 +3165,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<LoanCollectionRegisterDto>>> GetLoanCollectionRegister([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
         {
             var query = _context.LoanCollections
+                .Include(c => c.Voucher)
                 .Include(c => c.Branch)
                 .Include(c => c.LoanAccount!)
                     .ThenInclude(a => a!.Branch)
@@ -3113,7 +3229,9 @@ namespace Bhisi.Api.Controllers
                     HomeBranchName = acc?.Branch?.BranchName ?? (c.HomeBranchID.HasValue ? $"शाखा #{c.HomeBranchID}" : ""),
                     IsCrossBranch = c.IsCrossBranch || (c.HomeBranchID.HasValue && c.HomeBranchID != c.BranchID) || (acc != null && acc.BranchID != c.BranchID),
                     VoucherID = c.VoucherID,
-                    HomeBranchVoucherID = c.HomeBranchVoucherID
+                    HomeBranchVoucherID = c.HomeBranchVoucherID,
+                    VoucherNo = c.Voucher?.VoucherNo,
+                    PassingStatus = c.Voucher != null ? (string.IsNullOrWhiteSpace(c.Voucher.Status) ? "Approved" : c.Voucher.Status) : null
                 };
             });
 
@@ -3634,6 +3752,7 @@ namespace Bhisi.Api.Controllers
 
                 // Disbursements (For Opening Balance loans, exclude any disbursement on/before OpeningDate to prevent double-counting)
                 var disbursementsQuery = _context.LoanDisbursements
+                    .Include(d => d.Voucher)
                     .Where(d => d.LoanAccountID == loanAccountId 
                              && d.DisbursementDate >= fromDate 
                              && d.DisbursementDate <= toDate);
@@ -3650,7 +3769,9 @@ namespace Bhisi.Api.Controllers
                     transactions.Add(new LoanLedgerTransactionDto
                     {
                         Date = d.DisbursementDate,
-                        ReceiptNo = d.VoucherID?.ToString() ?? "-",
+                        ReceiptNo = !string.IsNullOrWhiteSpace(d.Voucher?.VoucherNo) ? d.Voucher.VoucherNo : (d.VoucherID?.ToString() ?? "-"),
+                        VoucherNo = d.Voucher?.VoucherNo,
+                        PassingStatus = d.Voucher != null ? (string.IsNullOrWhiteSpace(d.Voucher.Status) ? "Approved" : d.Voucher.Status) : null,
                         Particulars = "Loan Disbursement",
                         LoanDisbursement = d.DisbursementAmount
                     });
@@ -3658,6 +3779,7 @@ namespace Bhisi.Api.Controllers
 
                 // Collections
                 var collections = await _context.LoanCollections
+                    .Include(c => c.Voucher)
                     .Where(c => c.LoanAccountID == loanAccountId && c.CollectionDate >= fromDate && c.CollectionDate <= toDate)
                     .ToListAsync();
 
@@ -3667,6 +3789,8 @@ namespace Bhisi.Api.Controllers
                     {
                         Date = c.CollectionDate,
                         ReceiptNo = c.ReceiptNo ?? "",
+                        VoucherNo = c.Voucher?.VoucherNo,
+                        PassingStatus = c.Voucher != null ? (string.IsNullOrWhiteSpace(c.Voucher.Status) ? "Approved" : c.Voucher.Status) : null,
                         Particulars = "Loan Collection",
                         PrincipalDeposit = c.PrincipalCollected,
                         ReceivableInterest = c.ReceivableInterestCollected,
@@ -4479,10 +4603,18 @@ namespace Bhisi.Api.Controllers
                 .Where(m => m.LedgerID == ledgerId)
                 .ToListAsync();
 
-            // Get Voucher Details
-            var voucherQuery = _context.VoucherDetails
+            var asOfEnd = asOfDate.Date.AddDays(1).AddTicks(-1);
+
+            // CustomerID-First: Get APPROVED Voucher Details
+            var voucherQuery = _context.VoucherDetails.AsNoTracking()
                 .Include(vd => vd.Voucher)
-                .Where(vd => vd.LedgerID == ledgerId && vd.MemberID != null && vd.Voucher != null && vd.Voucher.VoucherDate.Date <= asOfDate.Date);
+                .Where(vd => vd.LedgerID == ledgerId
+                          && (vd.CustomerID != null || vd.MemberID != null)
+                          && vd.Voucher != null
+                          && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted")
+                          && vd.Voucher.Status != "Rejected"
+                          && vd.Voucher.Status != "Cancelled"
+                          && vd.Voucher.VoucherDate <= asOfEnd);
 
             if (branchId.HasValue && branchId.Value > 0)
             {
@@ -4494,59 +4626,107 @@ namespace Bhisi.Api.Controllers
             var activeShareMemberIds = isShareLedger 
                 ? await _context.ShareAccounts.Where(s => s.TotalShareCount > 0).Select(s => s.MemberId).ToHashSetAsync()
                 : null;
+            var activeShareCustomerIds = isShareLedger
+                ? await _context.ShareAccounts.Where(s => s.TotalShareCount > 0 && s.CustomerID > 0).Select(s => s.CustomerID).ToHashSetAsync()
+                : null;
 
-            var memberIds = openingBalances.Select(ob => ob.MemberID)
-                .Union(voucherDetails.Select(vd => vd.MemberID!.Value))
+            var referencedMemberIds = openingBalances.Select(ob => ob.MemberID)
+                .Union(voucherDetails.Where(vd => vd.MemberID.HasValue).Select(vd => vd.MemberID!.Value))
                 .Distinct()
-                .ToList();
+                .ToHashSet();
 
-            var membersQuery = _context.Members.Include(m => m.Customer).Where(m => memberIds.Contains(m.MemberID));
+            var referencedCustomerIds = openingBalances.Where(ob => ob.CustomerID.HasValue).Select(ob => ob.CustomerID!.Value)
+                .Union(voucherDetails.Where(vd => vd.CustomerID.HasValue).Select(vd => vd.CustomerID!.Value))
+                .Distinct()
+                .ToHashSet();
+
+            var membersQuery = _context.Members.Include(m => m.Customer)
+                .Where(m => referencedMemberIds.Contains(m.MemberID) || (m.CustomerID.HasValue && referencedCustomerIds.Contains(m.CustomerID.Value)));
             if (branchId.HasValue && branchId.Value > 0)
             {
                 membersQuery = membersQuery.Where(m => m.BranchID == branchId.Value);
             }
-
-            var members = await membersQuery.ToDictionaryAsync(m => m.MemberID, m => m);
+            var members = await membersQuery.ToListAsync();
+            var memberCustomerIds = members.Where(m => m.CustomerID.HasValue).Select(m => m.CustomerID!.Value).ToHashSet();
 
             var rows = new List<MemberLedgerBalanceDto>();
 
-            foreach (var memberId in memberIds)
+            foreach (var member in members)
             {
-                if (!members.TryGetValue(memberId, out var member))
-                    continue;
+                int? custId = member.CustomerID;
+                int memId = member.MemberID;
 
-                // Self-healing check for share ledgers
-                if (isShareLedger && activeShareMemberIds != null && !activeShareMemberIds.Contains(memberId))
+                var matchingObs = openingBalances.Where(ob =>
+                    custId.HasValue
+                        ? (ob.CustomerID.HasValue ? ob.CustomerID.Value == custId.Value : ob.MemberID == memId)
+                        : (!ob.CustomerID.HasValue && ob.MemberID == memId)).ToList();
+
+                var matchingVds = voucherDetails.Where(vd =>
+                    custId.HasValue
+                        ? (vd.CustomerID.HasValue ? vd.CustomerID.Value == custId.Value : vd.MemberID == memId)
+                        : (!vd.CustomerID.HasValue && vd.MemberID == memId)).ToList();
+
+                if (isShareLedger)
                 {
-                    var hasVouchers = voucherDetails.Any(vd => vd.MemberID == memberId);
-                    if (!hasVouchers) continue;
+                    bool hasActiveShares = (activeShareMemberIds != null && activeShareMemberIds.Contains(memId)) ||
+                                           (custId.HasValue && activeShareCustomerIds != null && activeShareCustomerIds.Contains(custId.Value));
+                    if (!hasActiveShares && matchingVds.Count == 0) continue;
                 }
 
-                decimal obDr = openingBalances.Where(ob => ob.MemberID == memberId && ob.BalanceType == "Dr").Sum(ob => ob.Amount);
-                decimal obCr = openingBalances.Where(ob => ob.MemberID == memberId && ob.BalanceType == "Cr").Sum(ob => ob.Amount);
+                decimal obDr = matchingObs.Where(ob => ob.BalanceType == "Dr").Sum(ob => ob.Amount);
+                decimal obCr = matchingObs.Where(ob => ob.BalanceType == "Cr").Sum(ob => ob.Amount);
 
-                decimal vDr = voucherDetails.Where(vd => vd.MemberID == memberId && vd.DrCr == "Dr").Sum(vd => vd.Amount);
-                decimal vCr = voucherDetails.Where(vd => vd.MemberID == memberId && vd.DrCr == "Cr").Sum(vd => vd.Amount);
+                decimal vDr = matchingVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+                decimal vCr = matchingVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
 
-                decimal totalDr = obDr + vDr;
-                decimal totalCr = obCr + vCr;
-                
-                decimal netBalance = totalCr - totalDr;
-                
-                // If it's a zero balance, don't show
+                decimal netBalance = (obCr + vCr) - (obDr + vDr);
                 if (netBalance == 0) continue;
-
-                string balanceType = netBalance > 0 ? "Cr" : "Dr";
-                decimal displayBalance = Math.Abs(netBalance);
 
                 rows.Add(new MemberLedgerBalanceDto
                 {
                     MemberID = member.MemberID,
+                    CustomerID = custId,
                     MemberNo = member.MemberCode ?? "",
-                    MemberName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.MiddleName} {member.Customer.LastName}".Trim() : "",
-                    Balance = displayBalance,
-                    BalanceType = balanceType
+                    MemberName = member.Customer != null ? string.Join(" ", new[] { member.Customer.FirstName, member.Customer.MiddleName, member.Customer.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "",
+                    Balance = Math.Abs(netBalance),
+                    BalanceType = netBalance > 0 ? "Cr" : "Dr"
                 });
+            }
+
+            // Also include non-member Customers (CustomerID-First)
+            var nonMemberCustIds = referencedCustomerIds.Where(cid => !memberCustomerIds.Contains(cid)).ToList();
+            if (nonMemberCustIds.Count > 0)
+            {
+                var nonMemberCustQuery = _context.Customers.AsNoTracking().Where(c => nonMemberCustIds.Contains(c.CustomerID));
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    nonMemberCustQuery = nonMemberCustQuery.Where(c => c.BranchID == branchId.Value);
+                }
+                var nonMemberCusts = await nonMemberCustQuery.ToListAsync();
+
+                foreach (var cust in nonMemberCusts)
+                {
+                    var matchingObs = openingBalances.Where(ob => ob.CustomerID == cust.CustomerID).ToList();
+                    var matchingVds = voucherDetails.Where(vd => vd.CustomerID == cust.CustomerID).ToList();
+
+                    decimal obDr = matchingObs.Where(ob => ob.BalanceType == "Dr").Sum(ob => ob.Amount);
+                    decimal obCr = matchingObs.Where(ob => ob.BalanceType == "Cr").Sum(ob => ob.Amount);
+                    decimal vDr = matchingVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+                    decimal vCr = matchingVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+
+                    decimal netBalance = (obCr + vCr) - (obDr + vDr);
+                    if (netBalance == 0) continue;
+
+                    rows.Add(new MemberLedgerBalanceDto
+                    {
+                        MemberID = cust.CustomerID,
+                        CustomerID = cust.CustomerID,
+                        MemberNo = cust.CIFNo ?? $"CUST-{cust.CustomerID}",
+                        MemberName = string.Join(" ", new[] { cust.FirstName, cust.MiddleName, cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(),
+                        Balance = Math.Abs(netBalance),
+                        BalanceType = netBalance > 0 ? "Cr" : "Dr"
+                    });
+                }
             }
 
             var report = new MemberLedgerBalanceReportDto
@@ -4561,39 +4741,87 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpGet("member-ledger-statement")]
-        public async Task<IActionResult> GetMemberLedgerStatement([FromQuery] int memberId, [FromQuery] int ledgerId, [FromQuery] DateTime fromDate, [FromQuery] DateTime toDate)
+        public async Task<IActionResult> GetMemberLedgerStatement([FromQuery] int memberId, [FromQuery] int ledgerId, [FromQuery] DateTime fromDate, [FromQuery] DateTime toDate, [FromQuery] int? customerId = null)
         {
             var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
-            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberId);
-            if (member == null) return NotFound("Member not found.");
+            Member? member = null;
+            Customer? customer = null;
+
+            if (customerId.HasValue && customerId.Value > 0)
+            {
+                customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
+                member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == customerId.Value);
+            }
+            else
+            {
+                member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberId);
+                if (member != null)
+                {
+                    customer = member.Customer;
+                }
+                else
+                {
+                    customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == memberId);
+                    if (customer != null)
+                    {
+                        member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                    }
+                }
+            }
+
+            if (member == null && customer == null) return NotFound("Customer/Member not found.");
 
             var ledger = await _context.Ledgers.FindAsync(ledgerId);
             if (ledger == null) return NotFound("Ledger not found.");
 
-            // 1. Opening Balance up to fromDate
-            var memberOpBals = await _context.MemberOpeningBalances
-                .Where(m => m.MemberID == memberId && m.LedgerID == ledgerId)
+            int? resolvedCustomerId = customer?.CustomerID ?? member?.CustomerID;
+            int? resolvedMemberId = member?.MemberID;
+
+            // 1. Opening Balance up to fromDate (CustomerID-First)
+            var allLedgerOpBals = await _context.MemberOpeningBalances
+                .Where(m => m.LedgerID == ledgerId && ((resolvedCustomerId.HasValue && m.CustomerID == resolvedCustomerId.Value) || (resolvedMemberId.HasValue && m.MemberID == resolvedMemberId.Value)))
                 .ToListAsync();
+
+            var memberOpBals = allLedgerOpBals.Where(ob =>
+                resolvedCustomerId.HasValue
+                    ? (ob.CustomerID.HasValue ? ob.CustomerID.Value == resolvedCustomerId.Value : (resolvedMemberId.HasValue && ob.MemberID == resolvedMemberId.Value))
+                    : (!ob.CustomerID.HasValue && resolvedMemberId.HasValue && ob.MemberID == resolvedMemberId.Value)).ToList();
 
             decimal obDr = memberOpBals.Where(ob => ob.BalanceType == "Dr").Sum(ob => ob.Amount);
             decimal obCr = memberOpBals.Where(ob => ob.BalanceType == "Cr").Sum(ob => ob.Amount);
 
-            var prevVouchers = await _context.VoucherDetails
+            var fromStart = fromDate.Date;
+            var toEnd = toDate.Date.AddDays(1).AddTicks(-1);
+
+            var prevVouchersRaw = await _context.VoucherDetails.AsNoTracking()
                 .Include(vd => vd.Voucher)
-                .Where(vd => vd.MemberID == memberId && vd.LedgerID == ledgerId && vd.Voucher != null && vd.Voucher.VoucherDate.Date < fromDate.Date)
+                .Where(vd => vd.LedgerID == ledgerId
+                          && ((resolvedCustomerId.HasValue && vd.CustomerID == resolvedCustomerId.Value) || (vd.CustomerID == null && resolvedMemberId.HasValue && vd.MemberID == resolvedMemberId.Value))
+                          && vd.Voucher != null
+                          && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted")
+                          && vd.Voucher.Status != "Rejected"
+                          && vd.Voucher.Status != "Cancelled"
+                          && vd.Voucher.VoucherDate < fromStart)
                 .ToListAsync();
 
-            obDr += prevVouchers.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
-            obCr += prevVouchers.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+            obDr += prevVouchersRaw.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+            obCr += prevVouchersRaw.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
 
             decimal runningBalance = obCr - obDr; // Positive means Cr balance, negative means Dr balance
             decimal openingNetBalance = obCr - obDr;
             int openingShares = (int)(Math.Abs(openingNetBalance) / 100M);
 
-            // 2. Current period transactions
-            var currVouchers = await _context.VoucherDetails
+            // 2. Current period APPROVED transactions (CustomerID-First)
+            var currVouchers = await _context.VoucherDetails.AsNoTracking()
                 .Include(vd => vd.Voucher)
-                .Where(vd => vd.MemberID == memberId && vd.LedgerID == ledgerId && vd.Voucher != null && vd.Voucher.VoucherDate.Date >= fromDate.Date && vd.Voucher.VoucherDate.Date <= toDate.Date)
+                .Where(vd => vd.LedgerID == ledgerId
+                          && ((resolvedCustomerId.HasValue && vd.CustomerID == resolvedCustomerId.Value) || (vd.CustomerID == null && resolvedMemberId.HasValue && vd.MemberID == resolvedMemberId.Value))
+                          && vd.Voucher != null
+                          && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted")
+                          && vd.Voucher.Status != "Rejected"
+                          && vd.Voucher.Status != "Cancelled"
+                          && vd.Voucher.VoucherDate >= fromStart
+                          && vd.Voucher.VoucherDate <= toEnd)
                 .OrderBy(vd => vd.Voucher!.VoucherDate)
                 .ThenBy(vd => vd.VoucherID)
                 .ToListAsync();
@@ -4636,18 +4864,19 @@ namespace Bhisi.Api.Controllers
                 });
             }
 
+            var partyCust = customer ?? member?.Customer;
             var report = new MemberLedgerStatementReportDto
             {
                 SansthaInfo = sanstha,
-                MemberNo = member.MemberCode ?? "",
-                LegacyMemberNo = member.LegacyMemberNo ?? string.Empty,
-                MemberName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.MiddleName} {member.Customer.LastName}".Trim() : "",
-                MobileNo = member.Customer?.MobileNo ?? string.Empty,
-                Village = member.Customer?.Village ?? string.Empty,
-                Taluka = member.Customer?.Taluka ?? string.Empty,
-                Address = member.Customer?.Address ?? string.Empty,
-                AadhaarNo = member.Customer?.AadhaarNo ?? string.Empty,
-                PANNo = member.Customer?.PANNo ?? string.Empty,
+                MemberNo = member?.MemberCode ?? partyCust?.CIFNo ?? "",
+                LegacyMemberNo = member?.LegacyMemberNo ?? string.Empty,
+                MemberName = partyCust != null ? string.Join(" ", new[] { partyCust.FirstName, partyCust.MiddleName, partyCust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "",
+                MobileNo = partyCust?.MobileNo ?? string.Empty,
+                Village = partyCust?.Village ?? string.Empty,
+                Taluka = partyCust?.Taluka ?? string.Empty,
+                Address = partyCust?.Address ?? string.Empty,
+                AadhaarNo = partyCust?.AadhaarNo ?? string.Empty,
+                PANNo = partyCust?.PANNo ?? string.Empty,
                 LedgerName = ledger.LedgerName,
                 FromDate = fromDate,
                 ToDate = toDate,
@@ -5405,11 +5634,27 @@ namespace Bhisi.Api.Controllers
             decimal periodOpeningBal = runningBalance;
 
             // 2. Filter transactions within the selected date range
-            var periodTxns = allTransactions.AsEnumerable();
+            var periodTxnsQuery = allTransactions.AsEnumerable();
             if (fromDate.HasValue)
-                periodTxns = periodTxns.Where(t => t.TransactionDate.Date >= fromDate.Value.Date);
+                periodTxnsQuery = periodTxnsQuery.Where(t => t.TransactionDate.Date >= fromDate.Value.Date);
             if (toDate.HasValue)
-                periodTxns = periodTxns.Where(t => t.TransactionDate.Date <= toDate.Value.Date);
+                periodTxnsQuery = periodTxnsQuery.Where(t => t.TransactionDate.Date <= toDate.Value.Date);
+
+            var periodTxns = periodTxnsQuery.ToList();
+            var savingVoucherNos = periodTxns
+                .Where(t => !string.IsNullOrWhiteSpace(t.VoucherNo))
+                .Select(t => t.VoucherNo!)
+                .Distinct()
+                .ToList();
+
+            var savingVoucherStatusMap = savingVoucherNos.Count > 0
+                ? (await _context.Vouchers.AsNoTracking()
+                    .Where(v => v.VoucherNo != null && savingVoucherNos.Contains(v.VoucherNo))
+                    .Select(v => new { v.VoucherNo, v.Status })
+                    .ToListAsync())
+                    .GroupBy(v => v.VoucherNo!)
+                    .ToDictionary(g => g.Key, g => string.IsNullOrWhiteSpace(g.First().Status) ? "Approved" : g.First().Status)
+                : new Dictionary<string, string>();
 
             decimal periodTotalDr = 0;
             decimal periodTotalCr = 0;
@@ -5453,7 +5698,8 @@ namespace Bhisi.Api.Controllers
                     Particulars = particulars,
                     Debit = dr,
                     Credit = cr,
-                    Balance = runningBalance
+                    Balance = runningBalance,
+                    PassingStatus = (!string.IsNullOrWhiteSpace(t.VoucherNo) && savingVoucherStatusMap.TryGetValue(t.VoucherNo, out var savVSt)) ? savVSt : null
                 });
             }
 
@@ -5541,7 +5787,8 @@ namespace Bhisi.Api.Controllers
                 PenaltyCharged = s.PenaltyCharged,
                 PenaltyWaived = s.PenaltyWaived,
                 Status = s.Status,
-                VoucherNo = s.Voucher?.VoucherNo
+                VoucherNo = s.Voucher?.VoucherNo,
+                PassingStatus = s.Voucher != null ? (string.IsNullOrWhiteSpace(s.Voucher.Status) ? "Approved" : s.Voucher.Status) : null
             }).ToList();
 
             // Calculate Period Running Balance
@@ -5652,7 +5899,8 @@ namespace Bhisi.Api.Controllers
                     Credit = cr,
                     InterestAmount = t.InterestAmount,
                     PenaltyAmount = t.PenaltyAmount,
-                    Balance = runningBalance
+                    Balance = runningBalance,
+                    PassingStatus = t.Voucher != null ? (string.IsNullOrWhiteSpace(t.Voucher.Status) ? "Approved" : t.Voucher.Status) : null
                 });
             }
 
@@ -5801,11 +6049,27 @@ namespace Bhisi.Api.Controllers
             decimal periodOpeningBal = runningBalance;
 
             // 2. Filter transactions within date range (based on collection/effective date)
-            var periodTxns = allTransactions.AsEnumerable();
+            var periodTxnsQuery = allTransactions.AsEnumerable();
             if (fromDate.HasValue)
-                periodTxns = periodTxns.Where(t => (t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date) >= fromDate.Value.Date);
+                periodTxnsQuery = periodTxnsQuery.Where(t => (t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date) >= fromDate.Value.Date);
             if (toDate.HasValue)
-                periodTxns = periodTxns.Where(t => (t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date) <= toDate.Value.Date);
+                periodTxnsQuery = periodTxnsQuery.Where(t => (t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date) <= toDate.Value.Date);
+
+            var periodTxns = periodTxnsQuery.ToList();
+            var pigmyVoucherRefs = periodTxns
+                .Where(t => !string.IsNullOrWhiteSpace(t.ReferenceId))
+                .Select(t => t.ReferenceId!)
+                .Distinct()
+                .ToList();
+
+            var pigmyVoucherStatusMap = pigmyVoucherRefs.Count > 0
+                ? (await _context.Vouchers.AsNoTracking()
+                    .Where(v => v.VoucherNo != null && pigmyVoucherRefs.Contains(v.VoucherNo))
+                    .Select(v => new { v.VoucherNo, v.Status })
+                    .ToListAsync())
+                    .GroupBy(v => v.VoucherNo!)
+                    .ToDictionary(g => g.Key, g => string.IsNullOrWhiteSpace(g.First().Status) ? "Approved" : g.First().Status)
+                : new Dictionary<string, string>();
 
             decimal periodTotalDr = 0;
             decimal periodTotalCr = 0;
@@ -5864,7 +6128,8 @@ namespace Bhisi.Api.Controllers
                     Credit = t.CrAmount,
                     InterestAmount = interestAmt,
                     IsInterest = isInterestTxn,
-                    Balance = runningBalance
+                    Balance = runningBalance,
+                    PassingStatus = (!string.IsNullOrWhiteSpace(t.ReferenceId) && pigmyVoucherStatusMap.TryGetValue(t.ReferenceId, out var pgVSt)) ? pgVSt : null
                 });
             }
 
@@ -7172,7 +7437,7 @@ namespace Bhisi.Api.Controllers
                 if (toDate.HasValue)
                     query = query.Where(f => f.OpeningDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
-                var accounts = await query
+                var rawAccounts = await query
                     .OrderBy(f => f.AccountNo)
                     .ThenBy(f => f.FdAccountID)
                     .Select(f => new
@@ -7198,6 +7463,61 @@ namespace Bhisi.Api.Controllers
                         Status = f.Status ?? "Active"
                     })
                     .ToListAsync();
+
+                var fdIds = rawAccounts.Select(a => a.FdAccountID).ToList();
+                var fdVoucherTxs = fdIds.Count > 0
+                    ? await _context.FdTransactions.AsNoTracking()
+                        .Include(t => t.Voucher)
+                        .Where(t => fdIds.Contains(t.FdAccountID) && t.VoucherID != null && t.Voucher != null)
+                        .OrderByDescending(t => t.FdTransactionID)
+                        .Select(t => new
+                        {
+                            t.FdAccountID,
+                            VoucherNo = t.Voucher!.VoucherNo,
+                            Status = string.IsNullOrWhiteSpace(t.Voucher.Status) ? "Approved" : t.Voucher.Status
+                        })
+                        .ToListAsync()
+                    : new();
+
+                var fdVoucherMap = fdVoucherTxs
+                    .GroupBy(t => t.FdAccountID)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => new
+                        {
+                            VoucherNo = g.First().VoucherNo,
+                            // If any voucher on this FD is Pending, surface Pending so checker approval status is clear
+                            PassingStatus = g.Any(x => x.Status == "Pending") ? "Pending" : g.First().Status
+                        });
+
+                var accounts = rawAccounts.Select(f =>
+                {
+                    fdVoucherMap.TryGetValue(f.FdAccountID, out var vInfo);
+                    return new
+                    {
+                        f.FdAccountID,
+                        f.FdSchemeID,
+                        f.SchemeCode,
+                        f.BranchName,
+                        f.CustomerID,
+                        f.CIFNo,
+                        f.CustomerName,
+                        f.MemberCode,
+                        f.MemberName,
+                        f.AccountNo,
+                        f.LegacyAccountNumber,
+                        f.SchemeName,
+                        f.OpeningDate,
+                        f.DepositAmount,
+                        f.InterestRate,
+                        f.MaturityDate,
+                        f.MaturityAmount,
+                        f.LegacyAccruedInt,
+                        f.Status,
+                        VoucherNo = vInfo?.VoucherNo,
+                        PassingStatus = vInfo?.PassingStatus
+                    };
+                }).ToList();
 
                 return Ok(accounts);
             }
@@ -7620,10 +7940,11 @@ namespace Bhisi.Api.Controllers
                         {
                             t.FdTransactionID,
                             t.TransactionDate,
-                            t.TransactionType,
+                            TransactionType = (string?)t.TransactionType,
                             DebitCredit = drcr,
                             t.Amount,
-                            VoucherNo = t.Voucher != null ? t.Voucher.VoucherNo : "",
+                            VoucherNo = (string?)(t.Voucher != null ? t.Voucher.VoucherNo : ""),
+                            PassingStatus = (string?)(t.Voucher != null ? (string.IsNullOrWhiteSpace(t.Voucher.Status) ? "Approved" : t.Voucher.Status) : null),
                             Narration = narration
                         };
                     }).ToList();
@@ -7637,10 +7958,11 @@ namespace Bhisi.Api.Controllers
                         {
                             FdTransactionID = -1,
                             TransactionDate = acc.OpeningDate,
-                            TransactionType = "Accrual",
+                            TransactionType = (string?)"Accrual",
                             DebitCredit = "Cr",
                             Amount = missingLegacyInt,
-                            VoucherNo = "LEG-INT-MIG",
+                            VoucherNo = (string?)"LEG-INT-MIG",
+                            PassingStatus = (string?)null,
                             Narration = $"साचलेले जुने व्याज जमा{legPart}"
                         });
                     }
@@ -7672,10 +7994,11 @@ namespace Bhisi.Api.Controllers
                                 {
                                     FdTransactionID = -2,
                                     TransactionDate = closeTx.TransactionDate,
-                                    TransactionType = "Accrual",
+                                    TransactionType = (string?)"Accrual",
                                     DebitCredit = "Cr",
                                     Amount = closureInterest,
-                                    VoucherNo = closeTx.VoucherNo,
+                                    VoucherNo = (string?)closeTx.VoucherNo,
+                                    PassingStatus = (string?)closeTx.PassingStatus,
                                     Narration = isPremature ? "मुदतपूर्व व्याज जमा" : (isRenewal ? "नूतनीकरण मुदतपूर्ती व्याज जमा" : "मुदतपूर्ती व्याज जमा")
                                 });
                             }
@@ -7739,6 +8062,7 @@ namespace Bhisi.Api.Controllers
                             Balance = runningBal,
                             tx.Amount,
                             tx.VoucherNo,
+                            tx.PassingStatus,
                             tx.Narration
                         });
                     }
@@ -8814,13 +9138,23 @@ namespace Bhisi.Api.Controllers
                 }
                 else
                 {
-                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerID);
-                    if (!bankCheck.IsValid)
+                    int? reqFromBankId = request.FromBankLedgerID ?? request.BankLedgerID;
+                    int? reqToBankId = request.ToBankLedgerID ?? request.FromBankLedgerID ?? request.BankLedgerID;
+
+                    var fromBankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, reqFromBankId);
+                    if (!fromBankCheck.IsValid)
                     {
-                        return BadRequest(bankCheck.ErrorMessage);
+                        return BadRequest(fromBankCheck.ErrorMessage);
                     }
-                    fromFundLedgerId = bankCheck.LedgerId;
-                    toFundLedgerId = bankCheck.LedgerId;
+
+                    var toBankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, reqToBankId);
+                    if (!toBankCheck.IsValid)
+                    {
+                        return BadRequest(toBankCheck.ErrorMessage);
+                    }
+
+                    fromFundLedgerId = fromBankCheck.LedgerId;
+                    toFundLedgerId = toBankCheck.LedgerId;
                 }
 
                 // 1. Voucher in FromBranch (Payment: Dr IBT, Cr Fund)
@@ -8931,6 +9265,7 @@ namespace Bhisi.Api.Controllers
     public class MemberLedgerBalanceDto
     {
         public int MemberID { get; set; }
+        public int? CustomerID { get; set; }
         public string MemberNo { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
         public decimal Balance { get; set; }

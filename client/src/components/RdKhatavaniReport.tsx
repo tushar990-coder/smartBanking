@@ -487,7 +487,18 @@ export default function RdKhatavaniReport() {
                     {formatDisplayDate(row.date)}
                   </td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-slate-900">
-                    {row.voucherNo || '-'}
+                    <div>{row.voucherNo || '-'}</div>
+                    {row.passingStatus && (
+                      <span
+                        className={`inline-block mt-0.5 px-1 py-0.2 rounded text-[8.5px] font-bold border ${
+                          row.passingStatus === 'Pending'
+                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        }`}
+                      >
+                        {row.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'}
+                      </span>
+                    )}
                   </td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono">
                     {row.installmentNo ? `हप्ता ${row.installmentNo}` : '-'}
@@ -578,6 +589,17 @@ export default function RdKhatavaniReport() {
                   </td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono text-[10.5px]">
                     <span className="font-semibold text-slate-800">{s.voucherNo || '-'}</span>
+                    {s.passingStatus && (
+                      <span
+                        className={`inline-block ml-1 px-1 py-0.2 rounded text-[8.5px] font-bold border ${
+                          s.passingStatus === 'Pending'
+                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        }`}
+                      >
+                        {s.passingStatus === 'Pending' ? 'व्हा.प्रलंबित' : 'व्हा.मंजूर'}
+                      </span>
+                    )}
                     <span className="block text-[9.5px]">
                       {isPaid ? '(जमा / Paid)' : isOverdue ? '(थकीत / Overdue)' : '(प्रलंबित / Pending)'}
                     </span>

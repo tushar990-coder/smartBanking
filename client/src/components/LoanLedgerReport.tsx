@@ -37,6 +37,8 @@ interface LoanLedgerDepositCollateralDto {
 interface LoanLedgerTransactionDto {
   date: string;
   receiptNo: string;
+  voucherNo?: string;
+  passingStatus?: string;
   particulars: string;
   loanDisbursement: number;
   principalDeposit: number;
@@ -1057,7 +1059,18 @@ const LoanLedgerReport: React.FC = () => {
                           {formatDisplayDate(t.date)}
                         </td>
                         <td className="border border-slate-900 py-1 px-1.5 text-center font-mono font-bold text-slate-900">
-                          {t.receiptNo || '-'}
+                          <div>{t.receiptNo || '-'}</div>
+                          {t.passingStatus && (
+                            <span
+                              className={`inline-block mt-0.5 px-1 py-0.2 rounded text-[8.5px] font-bold border ${
+                                t.passingStatus === 'Pending'
+                                  ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                  : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                              }`}
+                            >
+                              {t.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'}
+                            </span>
+                          )}
                         </td>
                         <td
                           className={`border border-slate-900 py-1 px-2 text-left ${

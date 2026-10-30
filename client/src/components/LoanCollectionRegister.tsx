@@ -36,6 +36,8 @@ interface LoanCollectionRegisterDto {
   isCrossBranch?: boolean;
   voucherID?: number;
   homeBranchVoucherID?: number;
+  voucherNo?: string;
+  passingStatus?: string;
 }
 
 const fmtCurrency = (n: number | null | undefined) => {
@@ -580,7 +582,19 @@ export default function LoanCollectionRegister() {
                               {formatDisplayDate(row.collectionDate)}
                             </td>
                             <td className="border border-gray-900 py-1 px-1.5 text-center font-mono font-bold text-gray-900">
-                              {row.receiptNo || '-'}
+                              <div>{row.receiptNo || '-'}</div>
+                              {row.passingStatus && (
+                                <span
+                                  className={`inline-block mt-0.5 px-1 py-0.2 rounded text-[8.5px] font-bold border ${
+                                    row.passingStatus === 'Pending'
+                                      ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                      : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                  }`}
+                                  title={row.voucherNo ? `व्हाउचर क्र.: ${row.voucherNo}` : undefined}
+                                >
+                                  {row.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'}
+                                </span>
+                              )}
                             </td>
                             <td className="border border-gray-900 py-1 px-1.5 text-center font-mono font-bold text-gray-900">
                               {row.loanAccountNo}

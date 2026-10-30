@@ -678,7 +678,14 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? cashierId = null,
             [FromQuery] DateTime? date = null)
         {
-            var targetDate = date.HasValue ? date.Value.Date : DateTime.Today;
+            var activeBranchDay = !date.HasValue
+                ? await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == GetEffectiveBranchId(branchId) && !b.IsDayClosed)
+                    .OrderByDescending(b => b.BusinessDate)
+                    .Select(b => (DateTime?)b.BusinessDate)
+                    .FirstOrDefaultAsync()
+                : null;
+            var targetDate = date.HasValue ? date.Value.Date : (activeBranchDay?.Date ?? DateTime.Today);
             int targetBranchId = GetEffectiveBranchId(branchId);
 
             // 1. Cashiers list strictly filtered by target branch
@@ -754,6 +761,7 @@ namespace Bhisi.Api.Controllers
                     .Where(vd => vd.Voucher != null &&
                                  vd.Voucher.VoucherDate.Date == targetDate &&
                                  vd.Voucher.BranchID == targetBranchId &&
+                                 (vd.Voucher.Status == "Approved" || vd.Voucher.Status == "Posted") &&
                                  targetCashLedgerIds.Contains(vd.LedgerID))
                     .ToListAsync();
 

@@ -169,7 +169,7 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
               return (groups || []).map(g => {
                 const cleanEntries = (g.entries || []).filter(e => {
                   const n = (e.narration || '').toLowerCase();
-                  return !n.includes('opening balance') && !n.includes('आरंभीची शिल्लक') && !n.includes('स्थलांतर');
+                  return !n.includes('opening balance') && !n.includes('आरंभीची शिल्लक');
                 });
                 const cashTotal = cleanEntries.reduce((sum, e) => sum + (e.cashAmount || 0), 0);
                 const transferTotal = cleanEntries.reduce((sum, e) => sum + (e.transferAmount || 0), 0);

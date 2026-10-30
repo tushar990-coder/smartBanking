@@ -1115,7 +1115,12 @@ namespace Bhisi.Api.Controllers
                         CreatedBy = userId,
                         ApprovedBy = null,
                         ApprovedOn = null,
-                        VoucherDetails = voucherDetailsList
+                        VoucherDetails = voucherDetailsList.Select((d, idx) => {
+                            d.MemberID = null;
+                            bool keepCustomer = (idx == 0 && pMode.Equals("Transfer", StringComparison.OrdinalIgnoreCase)) || (idx == 1 && shareCapitalAmount > 0);
+                            d.CustomerID = keepCustomer ? custId : null;
+                            return d;
+                        }).ToList()
                     };
                     _context.Vouchers.Add(voucher);
                     await _context.SaveChangesAsync();
@@ -1464,8 +1469,8 @@ namespace Bhisi.Api.Controllers
                         CreatedBy = userId,
                         VoucherDetails = new List<VoucherDetail>
                         {
-                            new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Dr", Amount = totalShareAmount, MemberID = member.MemberID },
-                            new VoucherDetail { LedgerID = isCloseBankMode ? validatedCloseBankLedgerId : cashLedger.LedgerID, DrCr = "Cr", Amount = totalShareAmount, MemberID = member.MemberID }
+                            new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Dr", Amount = totalShareAmount, CustomerID = member.CustomerID ?? member.Customer?.CustomerID },
+                            new VoucherDetail { LedgerID = isCloseBankMode ? validatedCloseBankLedgerId : cashLedger.LedgerID, DrCr = "Cr", Amount = totalShareAmount }
                         }
                     };
                     _context.Vouchers.Add(voucher);
@@ -1731,8 +1736,8 @@ namespace Bhisi.Api.Controllers
                         CreatedBy = userId,
                         VoucherDetails = new List<VoucherDetail>
                         {
-                            new VoucherDetail { LedgerID = claimLedger.LedgerID, DrCr = "Dr", Amount = netAmount, MemberID = member.MemberID },
-                            new VoucherDetail { LedgerID = isClaimBankMode ? validatedClaimBankLedgerId : cashLedger.LedgerID, DrCr = "Cr", Amount = netAmount, MemberID = member.MemberID }
+                            new VoucherDetail { LedgerID = claimLedger.LedgerID, DrCr = "Dr", Amount = netAmount, CustomerID = member.CustomerID ?? member.Customer?.CustomerID },
+                            new VoucherDetail { LedgerID = isClaimBankMode ? validatedClaimBankLedgerId : cashLedger.LedgerID, DrCr = "Cr", Amount = netAmount }
                         }
                     };
                     _context.Vouchers.Add(voucher);

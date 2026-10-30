@@ -394,7 +394,7 @@ namespace Bhisi.Api.Controllers
                             LedgerID = cashBankLedgerID,
                             DrCr = "Dr",
                             Amount = txn.Amount,
-                            CustomerID = targetAccount?.CustomerID ?? account.CustomerID
+                            CustomerID = targetAccount?.CustomerID
                         });
                         voucher.VoucherDetails.Add(new VoucherDetail
                         {
@@ -418,7 +418,7 @@ namespace Bhisi.Api.Controllers
                             LedgerID = cashBankLedgerID,
                             DrCr = "Cr",
                             Amount = txn.Amount,
-                            CustomerID = targetAccount?.CustomerID ?? account.CustomerID
+                            CustomerID = targetAccount?.CustomerID
                         });
                     }
 

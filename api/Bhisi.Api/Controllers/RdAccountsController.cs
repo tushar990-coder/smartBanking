@@ -693,8 +693,8 @@ namespace Bhisi.Api.Controllers
                         }
 
                         // Dr Cash / Saving Liability, Cr RD Liability
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitGlLedger.LedgerID, DrCr = "Dr", Amount = account.InstallmentAmount, CustomerID = autoDebitSavingCustomerId ?? account.CustomerID, MemberID = linkedMemberId });
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = account.InstallmentAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitGlLedger.LedgerID, DrCr = "Dr", Amount = account.InstallmentAmount, CustomerID = autoDebitSavingCustomerId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = account.InstallmentAmount, CustomerID = account.CustomerID });
                         
                         await _context.SaveChangesAsync();
 
@@ -1462,15 +1462,15 @@ namespace Bhisi.Api.Controllers
                         int? linkedMemberId = linkedMember?.MemberID;
 
                         // Dr Cash / Bank / Saving / Pigmy
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = totalReceived, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = totalReceived, CustomerID = sourceSavingAcc != null ? sourceSavingAcc.CustomerID : (sourcePigmyAcc != null ? sourcePigmyAcc.CustomerID : null) });
 
                         // Cr RD Liability
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalInstallmentPrincipal, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalInstallmentPrincipal, CustomerID = account.CustomerID });
 
                         // Cr Penalty Income
                         if (penaltyAmount > 0 && penaltyLedger != null)
                         {
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = penaltyLedger.LedgerID, DrCr = "Cr", Amount = penaltyAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = penaltyLedger.LedgerID, DrCr = "Cr", Amount = penaltyAmount });
                         }
                         await _context.SaveChangesAsync();
                         finalVoucherId = voucher.VoucherID;
@@ -1513,9 +1513,9 @@ namespace Bhisi.Api.Controllers
                         await _context.SaveChangesAsync();
 
                         // Dr Cash/Bank/Saving/Pigmy
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = totalReceived, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = totalReceived, CustomerID = sourceSavingAcc != null ? sourceSavingAcc.CustomerID : (sourcePigmyAcc != null ? sourcePigmyAcc.CustomerID : null) });
                         // Cr IBT
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalReceived, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalReceived });
 
                         // 2. Home Branch Voucher (Branch B, Journal): Dr IBT, Cr RD Liability, Cr Penalty Income
                         var homeVoucher = new Voucher
@@ -1541,13 +1541,13 @@ namespace Bhisi.Api.Controllers
                         counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
 
                         // Dr IBT
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalReceived, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalReceived });
                         // Cr RD Liability
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalInstallmentPrincipal, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalInstallmentPrincipal, CustomerID = account.CustomerID });
                         // Cr Penalty Income
                         if (penaltyAmount > 0 && penaltyLedger != null)
                         {
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = penaltyLedger.LedgerID, DrCr = "Cr", Amount = penaltyAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = penaltyLedger.LedgerID, DrCr = "Cr", Amount = penaltyAmount });
                         }
                         await _context.SaveChangesAsync();
 

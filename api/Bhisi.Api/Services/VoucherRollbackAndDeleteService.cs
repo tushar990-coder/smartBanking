@@ -1665,10 +1665,23 @@ namespace Bhisi.Api.Services
                 }
 
                 // Pigmy Full Account Closure (VCH-CLO-* / PV-*-PIGMY-CLO-* / JV-PIGMY-CLO-*)
-                var closurePigmyTxs = await _context.PigmyTransactions
+                var closurePigmyTxsByRef = await _context.PigmyTransactions
                     .Where(pt => pt.TransactionType == "WITHDRAWAL" &&
-                                 vNoList.Any(vn => pt.Narration.Contains(vn) || (pt.ReferenceId != null && pt.ReferenceId == vn)))
+                                 pt.ReferenceId != null &&
+                                 vNoList.Contains(pt.ReferenceId))
                     .ToListAsync();
+
+                var closurePigmyTxsByNarr = await _context.PigmyTransactions
+                    .Where(pt => pt.TransactionType == "WITHDRAWAL" &&
+                                 pt.Narration != null &&
+                                 vNoList.Any(vn => pt.Narration.Contains(vn)))
+                    .ToListAsync();
+
+                var closurePigmyTxs = closurePigmyTxsByRef
+                    .Concat(closurePigmyTxsByNarr)
+                    .GroupBy(pt => pt.PigmyTransactionID)
+                    .Select(g => g.First())
+                    .ToList();
 
                 foreach (var cloTx in closurePigmyTxs)
                 {

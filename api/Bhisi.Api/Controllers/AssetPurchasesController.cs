@@ -101,7 +101,7 @@ namespace Bhisi.Api.Controllers
                 {
                     // Find credit ledger based on payment mode
                     int creditLedgerId = 0;
-                    if (request.Purchase.PaymentMode == "Bank") { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.Purchase.BankLedgerID); if (!bankCheck.IsValid) return BadRequest(bankCheck.ErrorMessage); creditLedgerId = bankCheck.LedgerId; } else if (false && request.Purchase.BankLedgerID.HasValue)
+                    if (Helpers.BankLedgerHelper.IsBankPaymentMode(request.Purchase.PaymentMode)) { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.Purchase.BankLedgerID); if (!bankCheck.IsValid) return BadRequest(bankCheck.ErrorMessage); creditLedgerId = bankCheck.LedgerId; } else if (false && request.Purchase.BankLedgerID.HasValue)
                     {
                         creditLedgerId = request.Purchase.BankLedgerID.Value;
                     }
@@ -201,7 +201,7 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            int count = await _context.Vouchers.CountAsync(v => v.BranchID == branchId && v.VoucherType == voucherType) + 1;
+            int count = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{branchCode}-{typeCode}-{fy}-", 5);
             return $"{branchCode}-{typeCode}-{fy}-{count:D5}";
         }
 

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
+import { formatLocalYmd, getBusinessDateStr, parseYmdAsLocalDate } from '../utils/businessDateUtils';
 
 interface InterestPreviewResult {
   pigmyAccountId: number;
@@ -12,9 +14,22 @@ interface InterestPreviewResult {
 }
 
 const PigmyInterestPosting: React.FC = () => {
-  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 3, 1).toISOString().split('T')[0]); // April 1
-  const [endDate, setEndDate] = useState(new Date(new Date().getFullYear(), 8, 30).toISOString().split('T')[0]); // Sept 30
-  const [postingDate, setPostingDate] = useState(new Date().toISOString().split('T')[0]);
+  const { user } = useAuth();
+  const activeBizStr = getBusinessDateStr(user?.businessDate);
+  const activeBizDate = parseYmdAsLocalDate(activeBizStr);
+  const [startDate, setStartDate] = useState(formatLocalYmd(new Date(activeBizDate.getFullYear(), 3, 1))); // April 1
+  const [endDate, setEndDate] = useState(formatLocalYmd(new Date(activeBizDate.getFullYear(), 8, 30))); // Sept 30
+  const [postingDate, setPostingDate] = useState(activeBizStr);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bStr = getBusinessDateStr(user.businessDate);
+      const bDate = parseYmdAsLocalDate(bStr);
+      setStartDate(formatLocalYmd(new Date(bDate.getFullYear(), 3, 1)));
+      setEndDate(formatLocalYmd(new Date(bDate.getFullYear(), 8, 30)));
+      setPostingDate(bStr);
+    }
+  }, [user?.businessDate]);
   
   const [previews, setPreviews] = useState<InterestPreviewResult[]>([]);
   const [loading, setLoading] = useState(false);

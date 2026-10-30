@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import BankLedgerSelect from './common/BankLedgerSelect';
+import { useAuth } from '../context/AuthContext';
+import { getBusinessDateStr } from '../utils/businessDateUtils';
 
 interface Agent {
   pigmyAgentID: number;
@@ -83,14 +85,24 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
   const [rejectModalOpen, setRejectModalOpen] = useState<boolean>(false);
   const [rejectReason, setRejectReason] = useState<string>('');
 
+  const { user } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
   
   // 3-Date States
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getBusinessDateStr(user?.businessDate);
   const [collectionDateFrom, setCollectionDateFrom] = useState<string>(todayStr);
   const [collectionDateTo, setCollectionDateTo] = useState<string>(todayStr);
   const [depositDate, setDepositDate] = useState<string>(todayStr);
+
+  useEffect(() => {
+    if (!isPassingMode && user?.businessDate) {
+      const bStr = getBusinessDateStr(user.businessDate);
+      setCollectionDateFrom(bStr);
+      setCollectionDateTo(bStr);
+      setDepositDate(bStr);
+    }
+  }, [user?.businessDate, isPassingMode]);
 
   const [summary, setSummary] = useState<DayBookSummary | null>(null);
 
@@ -377,7 +389,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         paymentMode: paymentMode,
         bankLedgerId: paymentMode !== 'CASH' ? bankLedgerId : null,
         narration: narration,
-        branchId: 1
+        branchId: user?.branchID || 1
       };
 
       if (paymentMode === 'CASH' && totalDenominationAmount > 0) {

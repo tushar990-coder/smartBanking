@@ -299,9 +299,39 @@ export default function LedgerMaster() {
       }
 
       const gName = (selectedGroup.groupName + ' ' + (selectedGroup.groupNameEnglish || '')).toLowerCase();
-      if (gName.includes('बँक') || gName.includes('bank')) {
+      const lName = (formData.ledgerName + ' ' + (formData.ledgerNameEnglish || '')).toLowerCase();
+      const hasBankInGroup =
+        gName.includes('बँक') ||
+        gName.includes('bank') ||
+        gName.includes('चालू खात') ||
+        gName.includes('current account') ||
+        gName.includes('overdraft') ||
+        gName.includes('od/cc') ||
+        gName.includes('od ') ||
+        gName.includes('cc ') ||
+        gName.includes('dccb');
+      const hasCashInGroup = gName.includes('रोख') || gName.includes('cash');
+      const isNonBankGroup =
+        gName.includes('कर्ज') ||
+        gName.includes('loan') ||
+        gName.includes('गुंतवणूक') ||
+        gName.includes('investment') ||
+        gName.includes('मुदत') ||
+        gName.includes('आवर्ती') ||
+        gName.includes('पिग्मी') ||
+        gName.includes('बचत ठेव') ||
+        gName.includes('व्याज') ||
+        gName.includes('interest');
+
+      if (!isNonBankGroup && hasBankInGroup && hasCashInGroup) {
+        if (lName.includes('रोख') || lName.includes('हात') || lName.includes('cash')) {
+          suggestedAccountType = 'Cash In Hand';
+        } else {
+          suggestedAccountType = 'Bank Account';
+        }
+      } else if (!isNonBankGroup && hasBankInGroup) {
         suggestedAccountType = 'Bank Account';
-      } else if (gName.includes('रोख') || gName.includes('cash')) {
+      } else if (hasCashInGroup) {
         suggestedAccountType = 'Cash In Hand';
       } else if (gName.includes('कर्ज') || gName.includes('loan')) {
         suggestedAccountType = 'Loan Account';
@@ -346,6 +376,41 @@ export default function LedgerMaster() {
     try {
       const assignedId = formData.ledgerID ? parseInt(formData.ledgerID) : (editId || 0);
       const existingLedger = editId ? ledgers.find(l => l.ledgerID === editId) : null;
+      const selectedGroup = groups.find(g => g.groupID.toString() === formData.groupID.toString());
+      let resolvedAccountType = formData.accountType;
+      if (selectedGroup) {
+        const gName = (selectedGroup.groupName + ' ' + (selectedGroup.groupNameEnglish || '')).toLowerCase();
+        const lName = (formData.ledgerName + ' ' + (formData.ledgerNameEnglish || '')).toLowerCase();
+        const hasBankInGroup =
+          gName.includes('बँक') ||
+          gName.includes('bank') ||
+          gName.includes('चालू खात') ||
+          gName.includes('current account') ||
+          gName.includes('overdraft') ||
+          gName.includes('od/cc') ||
+          gName.includes('dccb');
+        const hasCashInGroup = gName.includes('रोख') || gName.includes('cash');
+        const isCashName = lName.includes('रोख') || lName.includes('हात') || lName.includes('cash');
+        const isBankName = lName.includes('बँक') || lName.includes('bank') || lName.includes('dccb');
+        const isNonBankGroup =
+          gName.includes('कर्ज') || gName.includes('loan') ||
+          gName.includes('गुंतवणूक') || gName.includes('investment') ||
+          gName.includes('मुदत') || gName.includes('आवर्ती') || gName.includes('पिग्मी') || gName.includes('बचत ठेव') ||
+          gName.includes('व्याज') || gName.includes('interest');
+
+        if (!isNonBankGroup && hasBankInGroup && hasCashInGroup) {
+          if (isCashName && !isBankName && (resolvedAccountType === 'Bank Account' || resolvedAccountType === 'GL' || !resolvedAccountType)) {
+            resolvedAccountType = 'Cash In Hand';
+          } else if (!isCashName && (resolvedAccountType === 'GL' || !resolvedAccountType)) {
+            resolvedAccountType = 'Bank Account';
+          }
+        } else if (!isNonBankGroup && hasBankInGroup && !isCashName && (resolvedAccountType === 'GL' || !resolvedAccountType)) {
+          resolvedAccountType = 'Bank Account';
+        } else if (hasCashInGroup && !hasBankInGroup && !isBankName && (resolvedAccountType === 'GL' || !resolvedAccountType)) {
+          resolvedAccountType = 'Cash In Hand';
+        }
+      }
+
       const payload = {
         ...(existingLedger ? {
           ledgerCode: (existingLedger as any).ledgerCode,
@@ -353,6 +418,7 @@ export default function LedgerMaster() {
           legacyLedgerId: (existingLedger as any).legacyLedgerId,
         } : {}),
         ...formData,
+        accountType: resolvedAccountType,
         ledgerID: assignedId,
         groupID: parseInt(formData.groupID),
         openingBalance: existingLedger ? existingLedger.openingBalance : 0,

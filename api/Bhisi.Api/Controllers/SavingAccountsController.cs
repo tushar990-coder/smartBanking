@@ -537,6 +537,10 @@ namespace Bhisi.Api.Controllers
             bool willBeLegacyAccount = dto.IsLegacyAccount || !string.IsNullOrWhiteSpace(previewLegacyNo);
 
             int validatedInitialBankLedgerId = 0;
+            if (dto.OpeningBalance > 0 && !willBeLegacyAccount && !string.IsNullOrWhiteSpace(dto.InitialPaymentMode) && !string.Equals(dto.InitialPaymentMode.Trim(), "Cash", StringComparison.OrdinalIgnoreCase) && !BankLedgerHelper.IsBankPaymentMode(dto.InitialPaymentMode))
+            {
+                return BadRequest($"अवैध आरंभिक पेमेंट पद्धत '{dto.InitialPaymentMode}'. कृपया रोख (Cash) किंवा बँक (Bank) निवडा.");
+            }
             if (dto.OpeningBalance > 0 && !willBeLegacyAccount && BankLedgerHelper.IsBankPaymentMode(dto.InitialPaymentMode))
             {
                 var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID);

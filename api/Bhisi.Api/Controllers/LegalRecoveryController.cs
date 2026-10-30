@@ -935,8 +935,8 @@ namespace Bhisi.Api.Controllers
                     VoucherNo = x.Voucher != null ? x.Voucher.VoucherNo : "",
                     VoucherNumber = x.Voucher != null ? x.Voucher.VoucherNo : "",
                     MemberName = (x.Case != null && x.Case.Member != null && x.Case.Member.Customer != null) ? $"{x.Case.Member.Customer.FirstName} {x.Case.Member.Customer.LastName}".Trim() : "",
-                    PaymentMode = (x.Voucher != null && x.Voucher.VoucherDetails.Any(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank"))) ? "BANK_TRANSFER" : "CASH",
-                    BankLedgerId = x.Voucher != null ? (x.Voucher.VoucherDetails.Where(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank")).Select(d => (int?)d.LedgerID).FirstOrDefault() ?? 0) : 0,
+                    PaymentMode = (x.Voucher != null && x.Voucher.VoucherDetails.Any(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank" || d.Ledger.AccountType == "बँक खाते" || d.Ledger.AccountType == "बँक" || d.Ledger.AccountType == "Current Account" || d.Ledger.AccountType == "OD Account" || d.Ledger.AccountType == "CC Account"))) ? "BANK_TRANSFER" : "CASH",
+                    BankLedgerId = x.Voucher != null ? (x.Voucher.VoucherDetails.Where(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank" || d.Ledger.AccountType == "बँक खाते" || d.Ledger.AccountType == "बँक" || d.Ledger.AccountType == "Current Account" || d.Ledger.AccountType == "OD Account" || d.Ledger.AccountType == "CC Account")).Select(d => (int?)d.LedgerID).FirstOrDefault() ?? 0) : 0,
                     IsDebitedToBorrower = x.IsDebitedToLoan,
                     x.IsDebitedToLoan,
                     x.Remarks
@@ -964,10 +964,20 @@ namespace Bhisi.Api.Controllers
                 if (!debitLedgerId.HasValue || debitLedgerId.Value == 0)
                 {
                     var dynDr = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कायदेशीर") || l.LedgerName.Contains("Legal") || l.LedgerName.Contains("Court"));
-                    debitLedgerId = dynDr?.LedgerID ?? 1;
+                    dynDr ??= await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && (l.LedgerName.Contains("नोटीस") || l.LedgerName.Contains("वसुली खर्च")))
+                        ?? await _context.Ledgers.Include(l => l.AccountGroup).FirstOrDefaultAsync(l => l.IsActive && (l.AccountType == "Expenses" || (l.AccountGroup != null && l.AccountGroup.NatureOfGroup == "Expenses")));
+                    if (dynDr == null) return null;
+                    debitLedgerId = dynDr.LedgerID;
                 }
 
-                bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode) && bankLedgerId.HasValue && bankLedgerId.Value > 0;
+                bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode);
+                if (isBankMode)
+                {
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, bankLedgerId);
+                    if (!bankCheck.IsValid) return null;
+                    creditLedgerId = bankCheck.LedgerId;
+                }
+                if (!isBankMode && !string.Equals((paymentMode ?? "CASH").Trim(), "JOURNAL", StringComparison.OrdinalIgnoreCase)) { creditLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId > 0 ? branchId : 1, "LEGAL"); } else if (false)
                 if (isBankMode)
                 {
                     creditLedgerId = bankLedgerId!.Value;
@@ -979,7 +989,8 @@ namespace Bhisi.Api.Controllers
                 if (!creditLedgerId.HasValue || creditLedgerId.Value == 0)
                 {
                     var dynCr = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("रोख") || l.LedgerName.Contains("Cash") || l.AccountType == "Cash");
-                    creditLedgerId = dynCr?.LedgerID ?? 1;
+                    if (dynCr == null) return null;
+                    creditLedgerId = dynCr.LedgerID;
                 }
 
                 var loan = await _context.LoanAccounts.FindAsync(loanAccountId);
@@ -995,7 +1006,7 @@ namespace Bhisi.Api.Controllers
                     BranchID = branchId > 0 ? branchId : 1,
                     VoucherNo = vNo,
                     VoucherDate = expenseDate,
-                    VoucherType = isBankMode ? "Payment" : "Journal",
+                        VoucherType = string.Equals((paymentMode ?? "CASH").Trim(), "JOURNAL", StringComparison.OrdinalIgnoreCase) ? "Journal" : "Payment",
                     Status = "Pending",
                     Narration = finalNarration,
                     TotalAmount = amount,

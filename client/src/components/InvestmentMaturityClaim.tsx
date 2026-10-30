@@ -28,7 +28,11 @@ import BankLedgerSelect from './common/BankLedgerSelect';
 
 const InvestmentMaturityClaim: React.FC = () => {
   const { user } = useAuth();
-  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  const getLocalTodayStr = () => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  };
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : getLocalTodayStr();
   const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
   const [allowDateOverride, setAllowDateOverride] = useState(false);
 
@@ -78,7 +82,9 @@ const InvestmentMaturityClaim: React.FC = () => {
   useEffect(() => {
     if (user?.businessDate) {
       const bDate = user.businessDate.split('T')[0];
+      setMaturityForm(prev => ({ ...prev, maturityDate: bDate }));
       setPrematureForm(prev => ({ ...prev, withdrawalDate: bDate }));
+      setRenewalForm(prev => ({ ...prev, renewalDate: bDate }));
     }
   }, [user?.businessDate]);
 
@@ -128,7 +134,7 @@ const InvestmentMaturityClaim: React.FC = () => {
       const interest = Math.max(0, expectedTotal - principal);
 
       setMaturityForm(prev => ({
-        maturityDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : activeBusinessDate,
+        maturityDate: activeBusinessDate,
         principalReceived: principal,
         interestReceived: Math.round(interest * 100) / 100,
         paymentMode: prev.paymentMode || 'Bank',
@@ -148,7 +154,7 @@ const InvestmentMaturityClaim: React.FC = () => {
       }));
 
       setRenewalForm({
-        renewalDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : activeBusinessDate,
+        renewalDate: activeBusinessDate,
         renewalType: 'PrincipalOnly',
         renewalAmount: principal,
         newSchemeID: acc.schemeID || (schemes[0]?.schemeID || 0),

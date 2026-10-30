@@ -220,7 +220,7 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            int count = await _context.Vouchers.CountAsync(v => v.BranchID == branchId && v.VoucherType == voucherType) + 1;
+            int count = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{branchCode}-{typeCode}-{fy}-", 5);
             return $"{branchCode}-{typeCode}-{fy}-{count:D5}";
         }
     }

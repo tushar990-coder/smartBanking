@@ -225,7 +225,7 @@ export default function VoucherMappingMaster() {
   const handleAutoSyncFromScheme = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/VoucherMappings/AutoConfigure`, {
+      const res = await fetch(`${API_URL}/AutoConfigure`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });

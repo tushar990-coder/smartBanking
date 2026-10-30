@@ -1095,7 +1095,7 @@ namespace Bhisi.Api.Controllers
                         });
                     }
 
-                    int vchCount = await _context.Vouchers.CountAsync() + 1;
+                    // VoucherNo sequence generated via VoucherNumberHelper
 
                     string vchPrefix = numShares > 0 ? "VCH-SHR" : "VCH-ADM";
                     string vchNarration = numShares > 0
@@ -1105,7 +1105,7 @@ namespace Bhisi.Api.Controllers
                     var voucher = new Voucher
                     {
                         BranchID = member.BranchID,
-                        VoucherNo = $"{vchPrefix}-{allotDate:yyyyMMdd}-{vchCount:D4}",
+                        VoucherNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"{vchPrefix}-{allotDate:yyyyMMdd}-", 4),
                         VoucherDate = allotDate,
                         ScrollNo = null, // 🌟 CBS Maker-Checker: Scroll is only assigned upon Checker passing!
                         VoucherType = pMode.Equals("Transfer", StringComparison.OrdinalIgnoreCase) ? "Journal" : "Receipt",
@@ -1446,12 +1446,12 @@ namespace Bhisi.Api.Controllers
                     int branchCashId = isCloseBankMode ? validatedCloseBankLedgerId : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "SHARE");
                     var cashLedger = await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Assets") ?? await _context.Ledgers.FirstAsync();
 
-                    int vchCount = await _context.Vouchers.CountAsync() + 1;
+                    // VoucherNo sequence generated via VoucherNumberHelper
                     DateTime effCloseDate = request.ClosureDate?.Date ?? DateTime.Today;
                     var voucher = new Voucher
                     {
                         BranchID = request.BranchId,
-                        VoucherNo = $"VCH-SHR-WD-{effCloseDate:yyyyMMdd}-{vchCount:D4}",
+                        VoucherNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-SHR-WD-{effCloseDate:yyyyMMdd}-", 4),
                         VoucherDate = effCloseDate,
                         VoucherType = "Payment",
                         TotalAmount = totalShareAmount,
@@ -1695,14 +1695,14 @@ namespace Bhisi.Api.Controllers
                     var cashLedger = await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Assets") ?? await _context.Ledgers.FirstAsync();
                     var claimLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("दावा") || l.LedgerName.Contains("Claim") || l.LedgerName.Contains("वारस")) ?? cashLedger;
 
-                    int vchCount = await _context.Vouchers.CountAsync() + 1;
+                    // VoucherNo sequence generated via VoucherNumberHelper
                     string memberCustName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
                     DateTime effClaimDate = req.SettlementDate?.Date ?? (req.ResolutionDate?.Date ?? DateTime.Today);
 
                     var voucher = new Voucher
                     {
                         BranchID = req.BranchId,
-                        VoucherNo = $"VCH-CLM-{effClaimDate:yyyyMMdd}-{vchCount:D4}",
+                        VoucherNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-CLM-{effClaimDate:yyyyMMdd}-", 4),
                         VoucherDate = effClaimDate,
                         VoucherType = "Payment",
                         TotalAmount = netAmount,

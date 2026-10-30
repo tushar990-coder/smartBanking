@@ -806,7 +806,7 @@ namespace Bhisi.Api.Controllers
                 // Create Voucher under the Collecting Branch (where cash is physically received)
                 var branch = await _context.Branches.FindAsync(collectingBranch);
                 string branchCode = branch?.BranchCode ?? "HQ";
-                string voucherType = collection.PaymentMode == "Cash" ? "Receipt" : "Journal";
+                string voucherType = (collection.PaymentMode == "Cash" || isBankMode) ? "Receipt" : "Journal";
                 string typeCode = voucherType == "Receipt" ? "REC" : "JV";
 
                 var activeYear = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
@@ -826,7 +826,7 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                int count = await _context.Vouchers.CountAsync(v => v.BranchID == collectingBranch && v.VoucherType == voucherType) + 1;
+                int count = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{branchCode}-{typeCode}-{fy}-", 5);
                 string voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
                 while (await _context.Vouchers.AnyAsync(v => v.VoucherNo == voucherNo))
                 {
@@ -1234,7 +1234,13 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला इतर शाखेची कर्ज वसुली पावती संपादित करण्याची परवानगी नाही." });
             }
 
+            bool isOrigPigmy = existingCollection.PaymentMode == "Pigmy Transfer" || existingCollection.PaymentMode == "Pigmy";
+            bool isOrigSaving = existingCollection.PaymentMode == "Saving Transfer" || existingCollection.PaymentMode == "Saving";
             bool isMinorPigmy = updatedData.PaymentMode == "Pigmy Transfer" || updatedData.PaymentMode == "Pigmy";
+            if ((isOrigPigmy != isMinorPigmy) || (isOrigSaving != (updatedData.PaymentMode == "Saving Transfer" || updatedData.PaymentMode == "Saving")))
+            {
+                return BadRequest(new { message = "बचत / पिग्मी खाते वर्ग (Transfer) पावतीची पेमेंट पद्धत थेट बदलता येत नाही. कृपया पावती रद्द करून नवीन पावती नोंदवा." });
+            }
             bool isMinorSaving = updatedData.PaymentMode == "Saving Transfer" || updatedData.PaymentMode == "Saving";
             bool isMinorBank = !isMinorPigmy && !isMinorSaving && Helpers.BankLedgerHelper.IsBankPaymentMode(updatedData.PaymentMode);
             if (isMinorBank)
@@ -1272,7 +1278,7 @@ namespace Bhisi.Api.Controllers
                     if (voucher.Status == "Approved") return BadRequest(new { message = "मंजूर (Approved) वसुली पावतीत बदल करण्यापूर्वी कृपया व्हाउचर पासिंगमधून ती अन-पास (Unpass) करा." });
                     _context.Entry(voucher).State = EntityState.Modified;
 
-                    if (!isMinorPigmy && !isMinorSaving && voucher.VoucherDetails != null)
+                    if (!isMinorPigmy && !isMinorSaving) { voucher.VoucherType = "Receipt"; } if (!isMinorPigmy && !isMinorSaving && voucher.VoucherDetails != null)
                     {
                         var drDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr");
                         if (drDetail != null)

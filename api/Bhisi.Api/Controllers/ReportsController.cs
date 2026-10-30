@@ -7835,7 +7835,7 @@ namespace Bhisi.Api.Controllers
                             v.VoucherNo.StartsWith("JV-FD-") ||
                             v.VoucherNo.StartsWith("PAY-FD-") ||
                             v.VoucherNo.StartsWith("PMT-FD-") ||
-                            v.VoucherNo.StartsWith("REC-FD-"))) ||
+                            v.VoucherNo.StartsWith("REC-FD-") || v.VoucherNo.StartsWith("RV-FD-") || v.VoucherNo.StartsWith("PV-MIS-") || v.VoucherNo.StartsWith("JV-MIS-"))) ||
                         (v.Narration != null && (v.Narration.Contains("मुदत ठेव") || v.Narration.Contains("FD Renewal") || v.Narration.Contains("FD Maturity"))))
                     .AsQueryable();
 
@@ -7862,7 +7862,7 @@ namespace Bhisi.Api.Controllers
                     "REC-FD-OP-", "JV-FD-OP-", "REC-FD-", "JV-FD-",
                     "JV-FD-PRECLOSE-", "PAY-FD-PRECLOSE-", "PMT-FD-PRECLOSE-",
                     "JV-FD-CLOSE-", "PAY-FD-CLOSE-", "PMT-FD-CLOSE-",
-                    "JV-FD-PROV-", "JV-FD-ACC-"
+                    "REC-FD-BLK-", "JV-FD-BLK-", "PV-MIS-", "JV-MIS-", "RV-FD-", "JV-FD-PROV-", "JV-FD-ACC-"
                 };
 
                 var list = rawVouchers.Select(v =>
@@ -7890,7 +7890,7 @@ namespace Bhisi.Api.Controllers
                         txType = "नूतनीकरण व्याज परतावा";
                         badge = "bg-purple-100 text-purple-800";
                     }
-                    else if (vNo.Contains("PRECLOSE", StringComparison.OrdinalIgnoreCase))
+                    else if (vNo.StartsWith("PV-MIS-", StringComparison.OrdinalIgnoreCase) || vNo.StartsWith("JV-MIS-", StringComparison.OrdinalIgnoreCase)) { txType = "मासिक व्याज परतावा (MIS)"; badge = "bg-teal-100 text-teal-800"; } else if (vNo.Contains("PRECLOSE", StringComparison.OrdinalIgnoreCase))
                     {
                         txType = "मुदतपूर्व परतावा";
                         badge = "bg-rose-100 text-rose-800";
@@ -7902,7 +7902,7 @@ namespace Bhisi.Api.Controllers
                     }
                     else if (vNo.StartsWith("REC-FD-OP-", StringComparison.OrdinalIgnoreCase) ||
                              vNo.StartsWith("REC-FD-", StringComparison.OrdinalIgnoreCase) ||
-                             vNo.StartsWith("JV-FD-", StringComparison.OrdinalIgnoreCase))
+                             vNo.StartsWith("RV-FD-", StringComparison.OrdinalIgnoreCase) || vNo.StartsWith("JV-FD-", StringComparison.OrdinalIgnoreCase))
                     {
                         txType = "नवीन मुदत ठेव जमा";
                         badge = "bg-blue-100 text-blue-800";
@@ -8824,7 +8824,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // 1. Voucher in FromBranch (Payment: Dr IBT, Cr Fund)
-                int countFrom = await _context.Vouchers.CountAsync(v => v.BranchID == request.FromBranchID && v.VoucherType == "Payment") + 1;
+                int countFrom = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{fromBranch.BranchCode}-BP-{fyCode}-", 5);
                 string vNoFrom = $"{fromBranch.BranchCode}-BP-{fyCode}-{countFrom:D5}";
 
                 string narrFrom = string.IsNullOrWhiteSpace(request.Narration)
@@ -8866,7 +8866,7 @@ namespace Bhisi.Api.Controllers
                 });
 
                 // 2. Voucher in ToBranch (Receipt: Dr Fund, Cr IBT)
-                int countTo = await _context.Vouchers.CountAsync(v => v.BranchID == request.ToBranchID && v.VoucherType == "Receipt") + 1;
+                int countTo = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{toBranch.BranchCode}-BR-{fyCode}-", 5);
                 string vNoTo = $"{toBranch.BranchCode}-BR-{fyCode}-{countTo:D5}";
 
                 string narrTo = string.IsNullOrWhiteSpace(request.Narration)

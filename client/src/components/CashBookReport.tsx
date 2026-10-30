@@ -44,8 +44,21 @@ interface SansthaDetails {
 export default function CashBookReport() {
   const { user } = useAuth();
   const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
-  const [fromDate, setFromDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const getBizDateStr = (b?: string) => {
+    if (b && b.trim()) return b.split('T')[0];
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  };
+  const [fromDate, setFromDate] = useState<string>(getBizDateStr(user?.businessDate));
+  const [toDate, setToDate] = useState<string>(getBizDateStr(user?.businessDate));
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bStr = getBizDateStr(user.businessDate);
+      setFromDate(bStr);
+      setToDate(bStr);
+    }
+  }, [user?.businessDate]);
   const [pages, setPages] = useState<{ date: string; data: CashBookResponse }[]>([]);
   const [sanstha, setSanstha] = useState<SansthaDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(false);

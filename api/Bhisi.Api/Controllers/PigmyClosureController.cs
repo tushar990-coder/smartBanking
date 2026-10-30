@@ -34,6 +34,7 @@ namespace Bhisi.Api.Controllers
         public class ClosurePreviewResult
         {
             public int PigmyAccountId { get; set; }
+            public int CustomerId { get; set; }
             public string AccountNo { get; set; } = string.Empty;
             public string? LegacyAccountNumber { get; set; }
             public string MemberName { get; set; } = string.Empty;
@@ -65,6 +66,7 @@ namespace Bhisi.Api.Controllers
             public DateTime? ClosureDate { get; set; }
             public string PaymentMode { get; set; } = "Cash";
             public int? BankLedgerId { get; set; }
+            public int? SavingAccountId { get; set; }
             public string? ReferenceNo { get; set; }
             public string Narration { get; set; } = string.Empty;
             public bool ManagerOverrideConfirmed { get; set; } = false;
@@ -73,6 +75,7 @@ namespace Bhisi.Api.Controllers
         public class WithdrawalPreviewResult
         {
             public int PigmyAccountId { get; set; }
+            public int CustomerId { get; set; }
             public string AccountNo { get; set; } = string.Empty;
             public string? LegacyAccountNumber { get; set; }
             public string MemberName { get; set; } = string.Empty;
@@ -105,9 +108,34 @@ namespace Bhisi.Api.Controllers
             public DateTime? WithdrawalDate { get; set; }
             public string PaymentMode { get; set; } = "Cash";
             public int? BankLedgerId { get; set; }
+            public int? SavingAccountId { get; set; }
             public string? ReferenceNo { get; set; }
             public string Narration { get; set; } = string.Empty;
             public bool ManagerOverrideConfirmed { get; set; } = false;
+        }
+
+        private async Task<int> ResolvePenaltyIncomeLedgerIdAsync()
+        {
+            var penaltyLedger = await _context.Ledgers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(l => l.IsActive && (
+                    l.LedgerName.Contains("पिग्मी दंड") ||
+                    l.LedgerName.Contains("दंड") ||
+                    l.LedgerName.Contains("Penalty") ||
+                    l.LedgerName.Contains("इतर उत्पन्न") ||
+                    l.LedgerName.Contains("Other Income") ||
+                    (l.AccountType == "Income" && (l.LedgerName.Contains("विविध") || l.LedgerName.Contains("शुल्क") || l.LedgerName.Contains("फी")))));
+
+            if (penaltyLedger != null) return penaltyLedger.LedgerID;
+
+            var anyIncomeLedger = await _context.Ledgers
+                .AsNoTracking()
+                .Include(l => l.AccountGroup)
+                .FirstOrDefaultAsync(l => l.IsActive && (
+                    l.AccountType == "Income" ||
+                    (l.AccountGroup != null && l.AccountGroup.NatureOfGroup == "Income")));
+
+            return anyIncomeLedger?.LedgerID ?? 0;
         }
 
         private static (PigmySchemeInterestSlab? slab, decimal penaltyRate, decimal interestRate, string note) GetApplicableSlab(
@@ -202,6 +230,7 @@ namespace Bhisi.Api.Controllers
             return Ok(new ClosurePreviewResult
             {
                 PigmyAccountId = account.PigmyAccountID,
+                CustomerId = account.CustomerID,
                 AccountNo = account.AccountNo,
                 LegacyAccountNumber = account.LegacyAccountNumber ?? account.OldAccountNo,
                 MemberName = account.Customer != null ? (account.Customer.FirstName + " " + (account.Customer.LastName ?? "")).Trim() : "",
@@ -288,6 +317,7 @@ namespace Bhisi.Api.Controllers
             return Ok(new WithdrawalPreviewResult
             {
                 PigmyAccountId = account.PigmyAccountID,
+                CustomerId = account.CustomerID,
                 AccountNo = account.AccountNo,
                 LegacyAccountNumber = account.LegacyAccountNumber ?? account.OldAccountNo,
                 MemberName = account.Customer != null ? (account.Customer.FirstName + " " + (account.Customer.LastName ?? "")).Trim() : "",
@@ -392,6 +422,34 @@ namespace Bhisi.Api.Controllers
             decimal interestAmount = Math.Round(request.Amount * (interestRate / 100m), 2);
             decimal netPaid = Math.Max(0, request.Amount - penaltyAmount + interestAmount);
             decimal newBalance = Math.Max(0, account.TotalDepositedAmount - request.Amount);
+            string wdrModeNorm = (request.PaymentMode ?? "Cash").Trim();
+            bool isWdrCashMode = string.Equals(wdrModeNorm, "Cash", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(wdrModeNorm);
+            bool isWdrSavingTransfer = string.Equals(wdrModeNorm, "Saving Transfer", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(wdrModeNorm, "Saving", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(wdrModeNorm, "Transfer", StringComparison.OrdinalIgnoreCase);
+            if (!isWdrCashMode && !isWdrSavingTransfer && !Helpers.BankLedgerHelper.IsBankPaymentMode(wdrModeNorm))
+            {
+                return BadRequest(new { message = $"अवैध पेमेंट पद्धत '{request.PaymentMode}'. कृपया रोख, बँक किंवा बचत खाते वर्ग निवडा." });
+            }
+            SavingAccountMaster? targetWdrSavingAcc = null;
+            int targetWdrSavingLedgerId = 0;
+            if (isWdrSavingTransfer)
+            {
+                if (!request.SavingAccountId.HasValue || request.SavingAccountId.Value <= 0)
+                {
+                    return BadRequest(new { message = "पिग्मी विड्रॉल रक्कम वर्ग करण्यासाठी कृपया वैध सक्रिय बचत खाते निवडा." });
+                }
+                targetWdrSavingAcc = await _context.SavingAccountMasters.FindAsync(request.SavingAccountId.Value);
+                if (targetWdrSavingAcc == null || targetWdrSavingAcc.Status == "Closed")
+                {
+                    return BadRequest(new { message = "निवडलेले बचत खाते सापडले नाही किंवा बंद (Closed) आहे." });
+                }
+                targetWdrSavingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, targetWdrSavingAcc);
+                if (targetWdrSavingLedgerId <= 0)
+                {
+                    return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(targetWdrSavingAcc.AccountNo) });
+                }
+            }
 
             bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
             int resolvedBankLedgerId = 0;
@@ -419,7 +477,12 @@ namespace Bhisi.Api.Controllers
                 {
                     liabilityLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("Pigmy Deposit"))
                         ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"))
-                        ?? await _context.Ledgers.FirstAsync();
+                        ;
+                }
+                if (liabilityLedger == null)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = "पिग्मी ठेव योजनेसाठी देयता जी.एल. खाते (Pigmy Liability Ledger) मॅप केलेले नाही. कृपया पिग्मी योजना सेटिंग तपासा." });
                 }
 
                 int userBranchId = User.GetOperatingBranchId();
@@ -433,6 +496,12 @@ namespace Bhisi.Api.Controllers
                     ?? await _context.Ledgers.FirstAsync();
 
                 DateTime effDate = request.WithdrawalDate?.Date ?? DateTime.Today;
+                if (isWdrSavingTransfer && targetWdrSavingAcc != null && targetWdrSavingLedgerId > 0)
+                {
+                    cashLedger = await _context.Ledgers.FindAsync(targetWdrSavingLedgerId) ?? cashLedger;
+                    counterBranchId = targetWdrSavingAcc.BranchID > 0 ? targetWdrSavingAcc.BranchID : homeBranchId;
+                    isCrossBranchTxn = (counterBranchId != homeBranchId);
+                }
                 var todayStr = effDate.ToString("yyyyMMdd");
                 var lastVoucher = await _context.Vouchers.OrderByDescending(v => v.VoucherID).FirstOrDefaultAsync();
                 int nextSeq = (lastVoucher?.VoucherID ?? 0) + 1;
@@ -448,7 +517,12 @@ namespace Bhisi.Api.Controllers
                         l.LedgerName.Contains("Penalty") ||
                         (l.AccountType == "Income" && l.LedgerName.Contains("विविध")));
 
-                    penaltyLedgerId = penaltyLedger?.LedgerID ?? cashLedger.LedgerID;
+                    penaltyLedgerId = penaltyLedger?.LedgerID ?? await ResolvePenaltyIncomeLedgerIdAsync();
+                    if (penaltyLedgerId <= 0 || penaltyLedgerId == cashLedger.LedgerID)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "पिग्मी दंड रकमेसाठी दंड उत्पन्न जी.एल. खाते (Penalty Income Ledger) सापडले नाही. कृपया लेजर मास्टरमध्ये दंड उत्पन्न खाते तयार करा." });
+                    }
                 }
 
                 int expenseLedgerId = account.PigmyScheme?.InterestExpenseLedgerID ?? liabilityLedger.LedgerID;
@@ -651,6 +725,29 @@ namespace Bhisi.Api.Controllers
                     CreatedDate = DateTime.UtcNow
                 };
                 _context.PigmyWithdrawals.Add(withdrawalRecord);
+                if (isWdrSavingTransfer && targetWdrSavingAcc != null && netPaid > 0)
+                {
+                    var wVch = _context.Vouchers.Local.FirstOrDefault(v => v.VoucherNo == finalVoucherNo);
+                    if (wVch != null && !wVch.IsIbtVoucher) wVch.VoucherType = "Journal";
+
+                    targetWdrSavingAcc.CurrentBalance += netPaid;
+                    _context.Entry(targetWdrSavingAcc).State = EntityState.Modified;
+                    _context.SavingTransactions.Add(new SavingTransaction
+                    {
+                        SavingAccountID = targetWdrSavingAcc.SavingAccountID,
+                        CustomerID = targetWdrSavingAcc.CustomerID,
+                        BranchID = targetWdrSavingAcc.BranchID > 0 ? targetWdrSavingAcc.BranchID : homeBranchId,
+                        TransactionDate = effDate,
+                        TransactionType = "Deposit",
+                        PaymentMode = "Transfer",
+                        Amount = netPaid,
+                        BalanceAfterTxn = targetWdrSavingAcc.CurrentBalance,
+                        Narration = $"पिग्मी अंशतः विड्रॉल जमा - पिग्मी खाते {account.AccountNo}",
+                        VoucherNo = finalVoucherNo,
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.Now
+                    });
+                }
 
                 // Record PigmyTransaction for Passbook
                 int oldCycle = account.CurrentCycleNumber;
@@ -793,6 +890,34 @@ namespace Bhisi.Api.Controllers
 
             // 2. Compute Final Cycle Tenure & Dynamic Slab Outcome (Option B: Fixed Expiry Date)
             DateTime effClosureDate = request.ClosureDate?.Date ?? DateTime.Today;
+            string cloModeNorm = (request.PaymentMode ?? "Cash").Trim();
+            bool isCloCashMode = string.Equals(cloModeNorm, "Cash", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(cloModeNorm);
+            bool isCloSavingTransfer = string.Equals(cloModeNorm, "Saving Transfer", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(cloModeNorm, "Saving", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(cloModeNorm, "Transfer", StringComparison.OrdinalIgnoreCase);
+            if (!isCloCashMode && !isCloSavingTransfer && !Helpers.BankLedgerHelper.IsBankPaymentMode(cloModeNorm))
+            {
+                return BadRequest(new { message = $"अवैध पेमेंट पद्धत '{request.PaymentMode}'. कृपया रोख, बँक किंवा बचत खाते वर्ग निवडा." });
+            }
+            SavingAccountMaster? targetCloSavingAcc = null;
+            int targetCloSavingLedgerId = 0;
+            if (account.TotalDepositedAmount > 0 && isCloSavingTransfer)
+            {
+                if (!request.SavingAccountId.HasValue || request.SavingAccountId.Value <= 0)
+                {
+                    return BadRequest(new { message = "पिग्मी परतावा रक्कम वर्ग करण्यासाठी कृपया वैध सक्रिय बचत खाते निवडा." });
+                }
+                targetCloSavingAcc = await _context.SavingAccountMasters.FindAsync(request.SavingAccountId.Value);
+                if (targetCloSavingAcc == null || targetCloSavingAcc.Status == "Closed")
+                {
+                    return BadRequest(new { message = "निवडलेले बचत खाते सापडले नाही किंवा बंद (Closed) आहे." });
+                }
+                targetCloSavingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, targetCloSavingAcc);
+                if (targetCloSavingLedgerId <= 0)
+                {
+                    return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(targetCloSavingAcc.AccountNo) });
+                }
+            }
             bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
             int resolvedBankLedgerId = 0;
             if (account.TotalDepositedAmount > 0 && isBankMode)
@@ -836,7 +961,12 @@ namespace Bhisi.Api.Controllers
                 {
                     liabilityLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("Pigmy Deposit"))
                         ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"))
-                        ?? await _context.Ledgers.FirstAsync();
+                        ;
+                }
+                if (liabilityLedger == null)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = "पिग्मी ठेव योजनेसाठी देयता जी.एल. खाते (Pigmy Liability Ledger) मॅप केलेले नाही. कृपया पिग्मी योजना सेटिंग तपासा." });
                 }
 
                 int userBranchId = User.GetOperatingBranchId();
@@ -856,6 +986,12 @@ namespace Bhisi.Api.Controllers
                 int nextSeq = (lastVoucher?.VoucherID ?? 0) + 1;
 
                 string typeLabel = isPremature ? "Premature " : "Maturity ";
+                if (isCloSavingTransfer && targetCloSavingAcc != null && targetCloSavingLedgerId > 0)
+                {
+                    cashLedger = await _context.Ledgers.FindAsync(targetCloSavingLedgerId) ?? cashLedger;
+                    counterBranchId = targetCloSavingAcc.BranchID > 0 ? targetCloSavingAcc.BranchID : homeBranchId;
+                    isCrossBranchTxn = (counterBranchId != homeBranchId);
+                }
                 string overrideNotice = request.ManagerOverrideConfirmed ? " [Manager Override Active Loan Lien]" : "";
                 string penaltyNotice = penaltyAmount > 0 ? $" (दंड: ₹{penaltyAmount:N2} @ {penaltyRate}%)" : "";
                 string interestNotice = interestAmount > 0 ? $" (व्याज: ₹{interestAmount:N2} @ {interestRate}%)" : "";
@@ -869,7 +1005,12 @@ namespace Bhisi.Api.Controllers
                         l.LedgerName.Contains("Penalty") || 
                         (l.AccountType == "Income" && l.LedgerName.Contains("विविध")));
 
-                    penaltyLedgerId = penaltyLedger?.LedgerID ?? cashLedger.LedgerID;
+                    penaltyLedgerId = penaltyLedger?.LedgerID ?? await ResolvePenaltyIncomeLedgerIdAsync();
+                    if (penaltyLedgerId <= 0 || penaltyLedgerId == cashLedger.LedgerID)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "पिग्मी दंड रकमेसाठी दंड उत्पन्न जी.एल. खाते (Penalty Income Ledger) सापडले नाही. कृपया लेजर मास्टरमध्ये दंड उत्पन्न खाते तयार करा." });
+                    }
                 }
 
                 int expenseLedgerId = account.PigmyScheme?.InterestExpenseLedgerID ?? liabilityLedger.LedgerID;
@@ -1065,6 +1206,29 @@ namespace Bhisi.Api.Controllers
                     PostedOn = DateTime.Now
                 };
                 _context.PigmyTransactions.Add(closureTx);
+                if (isCloSavingTransfer && targetCloSavingAcc != null && netPayable > 0)
+                {
+                    var cVch = _context.Vouchers.Local.FirstOrDefault(v => v.VoucherNo == finalVoucherNo);
+                    if (cVch != null && !cVch.IsIbtVoucher) cVch.VoucherType = "Journal";
+
+                    targetCloSavingAcc.CurrentBalance += netPayable;
+                    _context.Entry(targetCloSavingAcc).State = EntityState.Modified;
+                    _context.SavingTransactions.Add(new SavingTransaction
+                    {
+                        SavingAccountID = targetCloSavingAcc.SavingAccountID,
+                        CustomerID = targetCloSavingAcc.CustomerID,
+                        BranchID = targetCloSavingAcc.BranchID > 0 ? targetCloSavingAcc.BranchID : homeBranchId,
+                        TransactionDate = effClosureDate,
+                        TransactionType = "Deposit",
+                        PaymentMode = "Transfer",
+                        Amount = netPayable,
+                        BalanceAfterTxn = targetCloSavingAcc.CurrentBalance,
+                        Narration = $"पिग्मी खाते बंद अंतिम परतावा जमा - पिग्मी खाते {account.AccountNo}",
+                        VoucherNo = finalVoucherNo,
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.Now
+                    });
+                }
 
                 // Set account status to Closed
                 account.Status = "Closed";

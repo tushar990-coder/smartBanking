@@ -25,6 +25,7 @@ interface ActiveLoan {
 
 interface ClosurePreview {
   pigmyAccountId: number;
+  customerId?: number;
   accountNo: string;
   legacyAccountNumber?: string;
   customerName?: string;
@@ -126,9 +127,34 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
   // Form States
   const [transactionDate, setTransactionDate] = useState<string>(activeBusinessDate);
   const [narration, setNarration] = useState('');
-  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank' | 'Saving Transfer'>('Cash');
   const [bankLedgerId, setBankLedgerId] = useState<number>(0);
+  const [savingAccountId, setSavingAccountId] = useState<number>(0);
+  const [customerSavingAccounts, setCustomerSavingAccounts] = useState<any[]>([]);
   const [referenceNo, setReferenceNo] = useState<string>('');
+
+  const fetchCustomerSavingAccounts = async (custId?: number, cif?: string) => {
+    try {
+      const url = custId && custId > 0 ? `/api/SavingAccounts?customerId=${custId}` : '/api/SavingAccounts';
+      const res = await axios.get(url);
+      let list = Array.isArray(res.data) ? res.data.filter((s: any) => s.status === 'Active') : [];
+      if ((!custId || custId <= 0) && cif) {
+        const cleanCif = cif.trim().toUpperCase();
+        const cifFiltered = list.filter((s: any) => String(s.cifNo || s.customer?.cifNo || '').trim().toUpperCase() === cleanCif);
+        if (cifFiltered.length > 0) list = cifFiltered;
+      }
+      setCustomerSavingAccounts(list);
+      if (list.length > 0) {
+        setSavingAccountId(list[0].savingAccountID);
+      } else {
+        setSavingAccountId(0);
+      }
+    } catch (e) {
+      console.error('Failed to load saving accounts for Pigmy transfer:', e);
+      setCustomerSavingAccounts([]);
+      setSavingAccountId(0);
+    }
+  };
 
   useEffect(() => {
     if (user?.businessDate) {
@@ -246,6 +272,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       if (activeTab === 'closure') {
         const res = await axios.get(`/api/PigmyClosure/Preview/${encodeURIComponent(accountNo.trim())}`);
         setClosurePreview(res.data);
+        fetchCustomerSavingAccounts(res.data?.customerId, res.data?.cifNo);
         toast.success('पिग्मी खाते माहिती उपलब्ध झाली.');
       } else {
         // In withdrawal tab, fetch closure preview as basic account snapshot + withdrawal history
@@ -255,6 +282,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
         ]);
         setClosurePreview(cRes.data);
         setWithdrawalHistory(hRes.data || []);
+        fetchCustomerSavingAccounts(cRes.data?.customerId, cRes.data?.cifNo);
         toast.success('पिग्मी खाते माहिती व सायकल इतिहास लोड झाला.');
       }
     } catch (error: any) {
@@ -302,6 +330,11 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       return;
     }
 
+    if (paymentMode === 'Saving Transfer' && (!savingAccountId || savingAccountId <= 0)) {
+      toast.error('रक्कम वर्ग करण्यासाठी कृपया सक्रिय बचत खाते निवडा.');
+      return;
+    }
+
     const confirmMsg = `खाते '${withdrawalPreview.accountNo}' मधून ₹${withdrawalPreview.requestedAmount.toLocaleString('en-IN')} विड्रॉल करून उर्वरित शिल्लक ₹${withdrawalPreview.remainingBalance.toLocaleString('en-IN')} साठी नवीन सायकल #${withdrawalPreview.currentCycleNumber + 1} (Day 1) सुरू करायची का?`;
     if (!window.confirm(confirmMsg)) return;
 
@@ -314,6 +347,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
         withdrawalDate: transactionDate,
         paymentMode,
         bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : null,
+        savingAccountId: paymentMode === 'Saving Transfer' ? savingAccountId : null,
         referenceNo: paymentMode === 'Bank' && referenceNo.trim() ? referenceNo.trim() : null,
         narration,
         managerOverrideConfirmed: managerOverride
@@ -353,6 +387,11 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       return;
     }
 
+    if (closurePreview.totalDepositedAmount > 0 && paymentMode === 'Saving Transfer' && (!savingAccountId || savingAccountId <= 0)) {
+      toast.error('परतावा रक्कम वर्ग करण्यासाठी कृपया सक्रिय बचत खाते निवडा.');
+      return;
+    }
+
     const confirmMsg = closurePreview.isPremature
       ? `हे मुदतपूर्व बंद (Premature) आहे. ₹${closurePreview.prematurePenaltyAmount.toLocaleString('en-IN')} कपात करून सभासदास निव्वळ ₹${closurePreview.netPayable.toLocaleString('en-IN')} अदा करण्यात येतील. पुढे जायचे का?`
       : `तुम्हाला खात्री आहे का? तुम्ही खाते '${closurePreview.accountNo}' बंद करून सभासदास ₹${closurePreview.netPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} अदा करत आहात?`;
@@ -367,6 +406,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
         closureDate: transactionDate,
         paymentMode,
         bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : null,
+        savingAccountId: paymentMode === 'Saving Transfer' ? savingAccountId : null,
         referenceNo: paymentMode === 'Bank' && referenceNo.trim() ? referenceNo.trim() : null,
         narration,
         managerOverrideConfirmed: managerOverride
@@ -693,7 +733,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                             <select
                               value={paymentMode}
                               onChange={(e) => {
-                                const mode = e.target.value as 'Cash' | 'Bank';
+                                const mode = e.target.value as 'Cash' | 'Bank' | 'Saving Transfer';
                                 setPaymentMode(mode);
                                 if (mode !== 'Bank') {
                                   setBankLedgerId(0);
@@ -704,6 +744,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                             >
                               <option value="Cash">💵 रोख (Cash)</option>
                               <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                              <option value="Saving Transfer">🔄 बचत खात्यात वर्ग (Saving Transfer)</option>
                             </select>
                           </div>
                           <div>
@@ -727,6 +768,27 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                             />
                           </div>
                         </div>
+
+                        {paymentMode === 'Saving Transfer' && (
+                          <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded">
+                            <label className="block text-[11px] font-bold text-emerald-950 mb-0.5">
+                              रक्कम जमा करण्याचे बचत खाते (Target Saving Account) <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                              value={savingAccountId}
+                              onChange={(e) => setSavingAccountId(parseInt(e.target.value, 10) || 0)}
+                              disabled={isPassingMode}
+                              className="w-full border border-emerald-300 rounded px-2 py-1 text-xs font-bold bg-white text-gray-900"
+                            >
+                              <option value={0}>-- सक्रिय बचत खाते निवडा --</option>
+                              {customerSavingAccounts.map((sa: any) => (
+                                <option key={sa.savingAccountID} value={sa.savingAccountID}>
+                                  {sa.accountNo} - {sa.customerName || sa.customer?.firstName || ''} (शिल्लक: ₹{Number(sa.currentBalance || 0).toFixed(2)})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
 
                         {paymentMode === 'Bank' && (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-2.5 bg-white border border-blue-200 rounded">
@@ -846,7 +908,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                       <select
                         value={paymentMode}
                         onChange={(e) => {
-                          const mode = e.target.value as 'Cash' | 'Bank';
+                          const mode = e.target.value as 'Cash' | 'Bank' | 'Saving Transfer';
                           setPaymentMode(mode);
                           if (mode !== 'Bank') {
                             setBankLedgerId(0);
@@ -857,6 +919,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                       >
                         <option value="Cash">💵 रोख (Cash)</option>
                         <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                        <option value="Saving Transfer">🔄 बचत खात्यात वर्ग (Saving Transfer)</option>
                       </select>
                     </div>
                     <div>
@@ -880,6 +943,27 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                       />
                     </div>
                   </div>
+
+                  {paymentMode === 'Saving Transfer' && (
+                    <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-sm">
+                      <label className="block text-[11px] font-bold text-emerald-950 mb-0.5">
+                        परतावा जमा करण्याचे बचत खाते (Target Saving Account) <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={savingAccountId}
+                        onChange={(e) => setSavingAccountId(parseInt(e.target.value, 10) || 0)}
+                        disabled={isPassingMode}
+                        className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs font-bold bg-white text-gray-900"
+                      >
+                        <option value={0}>-- सक्रिय बचत खाते निवडा --</option>
+                        {customerSavingAccounts.map((sa: any) => (
+                          <option key={sa.savingAccountID} value={sa.savingAccountID}>
+                            {sa.accountNo} - {sa.customerName || sa.customer?.firstName || ''} (शिल्लक: ₹{Number(sa.currentBalance || 0).toFixed(2)})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {paymentMode === 'Bank' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-2.5 bg-blue-50/50 border border-blue-200 rounded-sm">

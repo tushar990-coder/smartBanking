@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { formatLocalYmd, getBusinessDateStr, parseYmdAsLocalDate } from '../utils/businessDateUtils';
 
 interface CalculatedInterest {
   savingAccountID: number;
@@ -30,13 +31,26 @@ const SavingInterestPostingMaster: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const activeBizStr = getBusinessDateStr(user?.businessDate);
+  const activeBizDate = parseYmdAsLocalDate(activeBizStr);
+
   const [dateRange, setDateRange] = useState({
-    periodStart: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().split('T')[0],
-    periodEnd: new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0]
+    periodStart: formatLocalYmd(new Date(activeBizDate.getFullYear(), activeBizDate.getMonth() - 1, 1)),
+    periodEnd: formatLocalYmd(new Date(activeBizDate.getFullYear(), activeBizDate.getMonth(), 0))
   });
-  const [postingDate, setPostingDate] = useState<string>(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0]
-  );
+  const [postingDate, setPostingDate] = useState<string>(activeBizStr);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bStr = getBusinessDateStr(user.businessDate);
+      const bDate = parseYmdAsLocalDate(bStr);
+      setDateRange({
+        periodStart: formatLocalYmd(new Date(bDate.getFullYear(), bDate.getMonth() - 1, 1)),
+        periodEnd: formatLocalYmd(new Date(bDate.getFullYear(), bDate.getMonth(), 0))
+      });
+      setPostingDate(bStr);
+    }
+  }, [user?.businessDate]);
 
   const API_URL = '/api/SavingInterestPostings';
 

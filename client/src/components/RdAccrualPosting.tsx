@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { getBusinessDateStr } from '../utils/businessDateUtils';
 
 interface Branch {
   branchID: number;
@@ -7,12 +9,19 @@ interface Branch {
 }
 
 export default function RdAccrualPosting() {
+  const { user } = useAuth();
   const [branches, setBranches] = useState<Branch[]>([]);
   const globalBranchStr = localStorage.getItem('globalBranchId');
-    const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-    const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : 1;
-    const [branchID, setBranchID] = useState<number>(initialBranchId);
-  const [accrualDate, setAccrualDate] = useState(new Date().toISOString().split('T')[0]);
+  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
+  const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string) : 1);
+  const [branchID, setBranchID] = useState<number>(initialBranchId);
+  const [accrualDate, setAccrualDate] = useState(getBusinessDateStr(user?.businessDate));
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setAccrualDate(getBusinessDateStr(user.businessDate));
+    }
+  }, [user?.businessDate]);
   
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');

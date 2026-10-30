@@ -442,7 +442,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var voucherDate = txnDate;
-                int vchCount = await _context.Vouchers.CountAsync() + 1;
+                // VoucherNo sequence generated via VoucherNumberHelper
 
                 // Day-wise and branch-wise ScrollNo
                 int maxScroll = await _context.Vouchers
@@ -500,7 +500,7 @@ namespace Bhisi.Api.Controllers
                 var voucher = new Voucher
                 {
                     BranchID = targetBranch,
-                    VoucherNo = $"VCH-SHR-{voucherDate:yyyyMMdd}-{vchCount:D4}",
+                    VoucherNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-SHR-{voucherDate:yyyyMMdd}-", 4),
                     ScrollNo = null, // 🌟 CBS Maker-Checker: Scroll is only assigned upon Checker passing!
                     VoucherDate = voucherDate,
                     VoucherType = (request.PaymentMode == "Transfer" || request.PaymentMode == "LedgerTransfer") ? "Journal" : "Receipt",
@@ -721,7 +721,7 @@ namespace Bhisi.Api.Controllers
 
                 DateTime effWdDate = request.WithdrawalDate?.Date ?? DateTime.Today;
                 var voucherDate = effWdDate;
-                int vchCount = await _context.Vouchers.CountAsync() + 1;
+                // VoucherNo sequence generated via VoucherNumberHelper
 
                 int maxScroll = await _context.Vouchers
                     .Where(v => v.BranchID == targetBranch && v.VoucherDate.Date == voucherDate.Date && v.ScrollNo != null)
@@ -732,7 +732,7 @@ namespace Bhisi.Api.Controllers
                 var voucher = new Voucher
                 {
                     BranchID = targetBranch,
-                    VoucherNo = $"VCH-SHR-WD-{voucherDate:yyyyMMdd}-{vchCount:D4}",
+                    VoucherNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-SHR-WD-{voucherDate:yyyyMMdd}-", 4),
                     ScrollNo = null, // 🌟 CBS Maker-Checker: Scroll is only assigned upon Checker passing!
                     VoucherDate = voucherDate,
                     VoucherType = (request.PaymentMode == "Transfer" || request.PaymentMode == "LedgerTransfer") ? "Journal" : "Payment",
@@ -2671,8 +2671,8 @@ namespace Bhisi.Api.Controllers
                 // 2. Create Journal Voucher for Transfer
                 DateTime effDate = request.TransferDate?.Date ?? (request.ResolutionDate?.Date ?? DateTime.Today);
                 var voucherDate = effDate;
-                int vchCount = await _context.Vouchers.CountAsync() + 1;
-                string vchNo = $"VCH-SHR-TRF-{voucherDate:yyyyMMdd}-{vchCount:D4}";
+                // VoucherNo sequence generated via VoucherNumberHelper
+                string vchNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-SHR-TRF-{voucherDate:yyyyMMdd}-", 4);
 
                 string fromMemberName = fromMember.Customer != null ? $"{fromMember.Customer.FirstName} {fromMember.Customer.LastName}".Trim() : "";
                 string toMemberName = toMember.Customer != null ? $"{toMember.Customer.FirstName} {toMember.Customer.LastName}".Trim() : "";
@@ -2751,8 +2751,8 @@ namespace Bhisi.Api.Controllers
                         feeDebitLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "SHARE");
                     }
 
-                    int feeCount = await _context.Vouchers.CountAsync() + 1;
-                    feeVoucherNo = $"VCH-SHR-FEE-{voucherDate:yyyyMMdd}-{feeCount:D4}";
+                    // Fee VoucherNo sequence generated via VoucherNumberHelper
+                    feeVoucherNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-SHR-FEE-{voucherDate:yyyyMMdd}-", 4);
                     var feeVoucher = new Voucher
                     {
                         BranchID = request.BranchId,

@@ -27,7 +27,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<object>>> GetSavingTransactions(
             [FromQuery] int? branchId = null,
-            [FromQuery] int? page = null, 
+            [FromQuery] int? page = null,
             [FromQuery] int? pageSize = null)
         {
             var query = _context.SavingTransactions
@@ -49,7 +49,8 @@ namespace Bhisi.Api.Controllers
             var projected = query
                 .OrderByDescending(t => t.TransactionDate)
                 .ThenByDescending(t => t.TransactionID)
-                .Select(t => new {
+                .Select(t => new
+                {
                     t.TransactionID,
                     t.TransactionDate,
                     t.TransactionType,
@@ -129,6 +130,27 @@ namespace Bhisi.Api.Controllers
             }
 
             SavingAccountMaster? targetAccount = null;
+            string normalizedTxnMode = (txn.PaymentMode ?? "Cash").Trim();
+            bool isTxnCash = string.Equals(normalizedTxnMode, "Cash", StringComparison.OrdinalIgnoreCase);
+            bool isTxnTransfer = string.Equals(normalizedTxnMode, "Transfer", StringComparison.OrdinalIgnoreCase);
+            bool isTxnBank = Helpers.BankLedgerHelper.IsBankPaymentMode(normalizedTxnMode);
+            if (!isTxnCash && !isTxnTransfer && !isTxnBank)
+            {
+                return BadRequest($"अवैध पेमेंट पद्धत '{txn.PaymentMode}'. कृपया रोख (Cash), बँक (Bank) किंवा ट्रान्सफर (Transfer) निवडा.");
+            }
+            if (isTxnTransfer && (!txn.TargetSavingAccountID.HasValue || txn.TargetSavingAccountID.Value <= 0))
+            {
+                return BadRequest("हस्तांतरण (Transfer) व्यवहारासाठी टार्गेट बचत खाते निवडणे बंधनकारक आहे.");
+            }
+            if (isTxnBank)
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, txn.BankLedgerID);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                txn.BankLedgerID = bankCheck.LedgerId;
+            }
             if (txn.PaymentMode == "Transfer" && txn.TargetSavingAccountID.HasValue)
             {
                 if (txn.TargetSavingAccountID.Value == txn.SavingAccountID)
@@ -150,7 +172,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var bankLedger = await _context.Ledgers.FindAsync(txn.BankLedgerID.Value);
-                if (bankLedger == null || !bankLedger.IsActive || !Helpers.BankLedgerHelper.IsBankAccountType(bankLedger.AccountType))
+                if (!(await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, txn.BankLedgerID)).IsValid)
                 {
                     return BadRequest("निवडलेले बँक लेजर सापडले नाही.");
                 }
@@ -256,20 +278,21 @@ namespace Bhisi.Api.Controllers
                 }
 
                 await _context.SaveChangesAsync();
-                
+
                 // === Auto Voucher Generation ===
                 int savingControlLedgerID = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, account);
-                
+
                 // Get customer info and BranchID for narration, branch routing and numbering
                 var customerInfo = await _context.SavingAccountMasters
                     .Include(s => s.Customer)
                     .Where(s => s.SavingAccountID == txn.SavingAccountID)
-                    .Select(s => new { 
-                        s.AccountNo, 
-                        s.BranchID, 
-                        CustomerName = s.Customer != null 
-                            ? (s.Customer.FirstName + " " + s.Customer.LastName).Trim() 
-                            : "" 
+                    .Select(s => new
+                    {
+                        s.AccountNo,
+                        s.BranchID,
+                        CustomerName = s.Customer != null
+                            ? (s.Customer.FirstName + " " + s.Customer.LastName).Trim()
+                            : ""
                     })
                     .FirstOrDefaultAsync();
 
@@ -286,7 +309,16 @@ namespace Bhisi.Api.Controllers
                 {
                     cashBankLedgerID = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, targetAccount);
                 }
-                else if (txn.PaymentMode == "Bank" && txn.BankLedgerID.HasValue && txn.BankLedgerID.Value > 0)
+                else if (Helpers.BankLedgerHelper.IsBankPaymentMode(txn.PaymentMode) && txn.BankLedgerID.HasValue && txn.BankLedgerID.Value > 0)
+                {
+                    cashBankLedgerID = txn.BankLedgerID.Value;
+                }
+                else if (!string.Equals((txn.PaymentMode ?? "Cash").Trim(), "Cash", StringComparison.OrdinalIgnoreCase))
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest($"अवैध पेमेंट पद्धत '{txn.PaymentMode}' किंवा संबंधित खाते निवडलेले नाही.");
+                }
+                else if (false)
                 {
                     cashBankLedgerID = txn.BankLedgerID.Value;
                 }
@@ -322,7 +354,7 @@ namespace Bhisi.Api.Controllers
                 string narration = targetAccount != null
                     ? $"बचत हस्तांतरण - खाते {customerInfo?.AccountNo} ({customerInfo?.CustomerName}) ➔ खाते {targetAccount.AccountNo}"
                     : $"बचत {(txn.TransactionType == "Deposit" ? "जमा" : "नावे")} - {customerInfo?.AccountNo} {customerInfo?.CustomerName}";
-                
+
                 if (customerInfo?.BranchID != null && customerInfo.BranchID > 0 && customerInfo.BranchID != targetBranchId)
                 {
                     narration += $" [आंतर-शाखा / Cross-Branch: खाते मूळ शाखा #{customerInfo.BranchID}]";
@@ -572,7 +604,8 @@ namespace Bhisi.Api.Controllers
 
                 await dbTransaction.CommitAsync();
 
-                return Ok(new {
+                return Ok(new
+                {
                     txn.TransactionID,
                     txn.SavingAccountID,
                     txn.TransactionDate,
@@ -666,9 +699,9 @@ namespace Bhisi.Api.Controllers
 
                     var pairedTxn = await _context.SavingTransactions
                         .FirstOrDefaultAsync(t => t.TransactionID != id &&
-                                                  t.SavingAccountID == txn.TargetSavingAccountID.Value && 
-                                                  t.TargetSavingAccountID == txn.SavingAccountID && 
-                                                  t.TransactionDate.Date == txn.TransactionDate.Date && 
+                                                  t.SavingAccountID == txn.TargetSavingAccountID.Value &&
+                                                  t.TargetSavingAccountID == txn.SavingAccountID &&
+                                                  t.TransactionDate.Date == txn.TransactionDate.Date &&
                                                   t.Amount == txn.Amount);
                     if (pairedTxn != null)
                     {

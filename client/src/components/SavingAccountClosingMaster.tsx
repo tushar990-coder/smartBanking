@@ -47,6 +47,11 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const { user } = useAuth();
+  const getActiveBusinessDate = () => {
+    if (user?.businessDate && user.businessDate.trim()) return user.businessDate.split('T')[0];
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
 
   const [activeAccounts, setActiveAccounts] = useState<SavingAccount[]>([]);
   const [closings, setClosings] = useState<SavingAccountClosing[]>([]);
@@ -57,12 +62,19 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
 
   const [formData, setFormData] = useState({
     savingAccountID: 0,
-    closureDate: new Date().toISOString().split('T')[0],
+    closureDate: getActiveBusinessDate(),
     closingCharges: '0',
     paymentMode: 'Cash',
     bankLedgerID: 0,
+    targetSavingAccountID: 0,
     checkNo: ''
   });
+
+  useEffect(() => {
+    if (!isPassingMode && user?.businessDate) {
+      setFormData(prev => ({ ...prev, closureDate: user.businessDate!.split('T')[0] }));
+    }
+  }, [user?.businessDate, isPassingMode]);
 
   const API_URL = '/api';
 
@@ -85,10 +97,11 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
         setPassingVoucher(d.voucher);
         setFormData({
           savingAccountID: d.savingAccountID || d.savingAccount?.savingAccountID || 0,
-          closureDate: d.closureDate ? d.closureDate.split('T')[0] : new Date().toISOString().split('T')[0],
+          closureDate: d.closureDate ? d.closureDate.split('T')[0] : getActiveBusinessDate(),
           closingCharges: String(d.closingCharges || '0'),
           paymentMode: d.paymentMode || 'Cash',
           bankLedgerID: d.bankLedgerID || 0,
+          targetSavingAccountID: d.targetSavingAccountID || 0,
           checkNo: d.checkNo || ''
         });
 
@@ -205,7 +218,11 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
 
   const handleAccountChange = (e: any) => {
     const accountId = parseInt(e.target.value);
-    setFormData((prev) => ({ ...prev, savingAccountID: accountId }));
+    setFormData((prev) => ({
+      ...prev,
+      savingAccountID: accountId,
+      targetSavingAccountID: prev.targetSavingAccountID === accountId ? 0 : prev.targetSavingAccountID
+    }));
     const acc = activeAccounts.find(a => a.savingAccountID === accountId) || null;
     setSelectedAccount(acc);
     setError('');
@@ -217,7 +234,8 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
     setFormData((prev) => ({
       ...prev,
       [name]: value,
-      ...(name === 'paymentMode' && value !== 'Bank' ? { bankLedgerID: 0, checkNo: '' } : {})
+      ...(name === 'paymentMode' && value !== 'Bank' ? { bankLedgerID: 0, checkNo: '' } : {}),
+      ...(name === 'paymentMode' && value !== 'Transfer' ? { targetSavingAccountID: 0 } : {})
     }));
   };
 
@@ -234,9 +252,22 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
       return;
     }
 
-    if (formData.paymentMode === 'Bank' && (!formData.bankLedgerID || formData.bankLedgerID <= 0)) {
+    const netAmt = Math.max(0, (selectedAccount ? selectedAccount.currentBalance : 0) - charges);
+
+    if (netAmt > 0 && formData.paymentMode === 'Bank' && (!formData.bankLedgerID || formData.bankLedgerID <= 0)) {
       setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
+    }
+
+    if (netAmt > 0 && formData.paymentMode === 'Transfer') {
+      if (!formData.targetSavingAccountID || formData.targetSavingAccountID <= 0) {
+        setError('हस्तांतरण (Transfer) पद्धतीसाठी रक्कम जमा करण्याचे दुसरे सक्रिय बचत खाते निवडा.');
+        return;
+      }
+      if (Number(formData.targetSavingAccountID) === Number(formData.savingAccountID)) {
+        setError('जे बचत खाते बंद करत आहात त्याच खात्यात रक्कम वर्ग करता येत नाही. कृपया दुसरे सक्रिय बचत खाते निवडा.');
+        return;
+      }
     }
 
     if (!window.confirm("तुम्हाला खात्री आहे का की हे खाते कायमचे बंद करायचे आहे?")) return;
@@ -252,6 +283,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
         closingCharges: charges,
         paymentMode: formData.paymentMode,
         bankLedgerID: formData.paymentMode === 'Bank' ? formData.bankLedgerID : null,
+        targetSavingAccountID: formData.paymentMode === 'Transfer' ? Number(formData.targetSavingAccountID) : null,
         checkNo: formData.paymentMode === 'Bank' && formData.checkNo.trim() ? formData.checkNo.trim() : null,
         createdBy: user?.userID || 1
       });
@@ -259,17 +291,21 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
       setSuccess('खाते यशस्वीरित्या बंद करण्यात आले आहे व अंतिम सेटलमेंट पूर्ण झाली आहे!');
       setFormData({
         savingAccountID: 0,
-        closureDate: new Date().toISOString().split('T')[0],
+        closureDate: getActiveBusinessDate(),
         closingCharges: '0',
         paymentMode: 'Cash',
         bankLedgerID: 0,
+        targetSavingAccountID: 0,
         checkNo: ''
       });
       setSelectedAccount(null);
       fetchActiveAccounts();
       fetchClosings();
     } catch (err: any) {
-      setError(err.response?.data || 'An error occurred during closure.');
+      const errMsg = typeof err.response?.data === 'string'
+        ? err.response.data
+        : (err.response?.data?.message || err.response?.data?.title || 'खाते बंद करताना त्रुटी आली.');
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -289,6 +325,10 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
       label: `${a.accountNo}${legPart}${cifPart} - ${namePart} (शिल्लक: ₹${a.currentBalance.toFixed(2)})`
     };
   });
+
+  const targetAccountOptions = accountOptions.filter(
+    opt => Number(opt.value) !== Number(formData.savingAccountID)
+  );
 
   const handlePassVoucher = async () => {
     const vId = passingVoucher?.voucherID || voucherIdFromUrl;
@@ -488,6 +528,22 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                   <span className="font-bold text-red-600 ml-1">₹{netPayable.toFixed(2)}</span>
                 </div>
               </div>
+
+              {formData.paymentMode === 'Transfer' && (
+                <div className="md:col-span-3 bg-emerald-50/70 border border-emerald-200 p-2 rounded-sm">
+                  <label className="block text-[11px] font-bold text-emerald-950 mb-0.5">
+                    रक्कम वर्ग करण्याचे बचत खाते (Target Saving Account) <span className="text-red-500">*</span>
+                  </label>
+                  <SearchableSelect
+                    options={targetAccountOptions}
+                    value={formData.targetSavingAccountID}
+                    onChange={(e: any) => setFormData((prev) => ({ ...prev, targetSavingAccountID: parseInt(e.target.value) || 0 }))}
+                    name="targetSavingAccountID"
+                    disabled={isPassingMode}
+                    placeholder="-- रक्कम जमा करण्याचे दुसरे सक्रिय बचत खाते निवडा --"
+                  />
+                </div>
+              )}
 
               {formData.paymentMode === 'Bank' && (
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-3 bg-blue-50/60 border border-blue-200 p-2 rounded-sm">

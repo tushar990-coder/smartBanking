@@ -1559,10 +1559,10 @@ namespace Bhisi.Api.Controllers
                 string firstAccFormatted = Helpers.AccountNumberHelper.Format14Digit(firstAcc);
                 string lastAccFormatted = Helpers.AccountNumberHelper.Format14Digit(lastAcc);
 
-                string voucherNo = $"REC-FD-BLK-{firstAcc}-TO-{lastAcc}";
+                bool isBulkTransfer = string.Equals(req.PaymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(req.PaymentMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(req.PaymentMode, "Savings", StringComparison.OrdinalIgnoreCase) || string.Equals(req.PaymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase); string bulkPfx = isBulkTransfer ? "JV-FD-BLK" : "REC-FD-BLK"; string voucherNo = $"{bulkPfx}-{firstAcc}-TO-{lastAcc}";
                 if (voucherNo.Length > 50)
                 {
-                    voucherNo = $"REC-FD-BLK-{DateTime.Now:yyyyMMddHHmmss}";
+                    voucherNo = $"{bulkPfx}-{DateTime.Now:yyyyMMddHHmmss}";
                 }
 
                 var voucher = new Voucher
@@ -1583,7 +1583,7 @@ namespace Bhisi.Api.Controllers
                 _context.Vouchers.Add(voucher);
                 await _context.SaveChangesAsync();
 
-                // Debit Leg: Cash / Bank / SB
+                voucher.VoucherType = isBulkTransfer ? "Journal" : "Receipt"; // Debit Leg: Cash / Bank / SB
                 bool isDebitCustomerPersonal = (req.PaymentMode == "Transfer" || req.PaymentMode == "Savings") 
                     && debitLedger.AccountType != "Cash In Hand" 
                     && !debitLedger.LedgerName.Contains("रोख")
@@ -2659,7 +2659,17 @@ namespace Bhisi.Api.Controllers
                                 }
                                 surplusLedgerId = surplusBankCheck.LedgerId;
                             }
-                            else if (surplusMode == "Transfer" && req.SurplusSavingAccountID > 0)
+                            else if ((string.Equals(surplusMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(surplusMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(surplusMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && (!req.SurplusSavingAccountID.HasValue || req.SurplusSavingAccountID.Value <= 0 || !await _context.SavingAccountMasters.AnyAsync(s => s.SavingAccountID == req.SurplusSavingAccountID.Value && s.Status != "Closed")))
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest("शिल्लक परतावा बचत खात्यात वर्ग करण्यासाठी वैध सक्रिय बचत खाते निवडणे बंधनकारक आहे.");
+                            }
+                            else if (!string.Equals(surplusMode, "Cash", StringComparison.OrdinalIgnoreCase) && !string.Equals(surplusMode, "Transfer", StringComparison.OrdinalIgnoreCase) && !string.Equals(surplusMode, "Saving", StringComparison.OrdinalIgnoreCase) && !string.Equals(surplusMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase))
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest($"शिल्लक परताव्यासाठी अवैध पेमेंट पद्धत '{surplusMode}'.");
+                            }
+                            else if ((string.Equals(surplusMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(surplusMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(surplusMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && req.SurplusSavingAccountID > 0)
                             {
                                 var savAccount = await _context.SavingAccountMasters
                                     .Include(s => s.Ledger)
@@ -2821,7 +2831,17 @@ namespace Bhisi.Api.Controllers
                             }
                             payoutLedgerId = payoutBankCheck.LedgerId;
                         }
-                        else if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
+                        else if ((string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && (req?.SavingAccountID == null || req.SavingAccountID <= 0 || !await _context.SavingAccountMasters.AnyAsync(s => s.SavingAccountID == req.SavingAccountID.Value && s.Status != "Closed")))
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest("मुदत ठेव परतावा बचत खात्यात वर्ग करण्यासाठी वैध सक्रिय बचत खाते निवडणे बंधनकारक आहे.");
+                        }
+                        else if (!string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase))
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"परताव्यासाठी अवैध पेमेंट पद्धत '{paymentMode}'.");
+                        }
+                        else if ((string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && req?.SavingAccountID > 0)
                         {
                             var savAccount = await _context.SavingAccountMasters
                                 .Include(s => s.Ledger)
@@ -2875,7 +2895,7 @@ namespace Bhisi.Api.Controllers
                                 BranchID = account.BranchID,
                                 VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
                                 VoucherDate = closureDate,
-                                VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                                VoucherType = (string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) || Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode)) ? "Payment" : "Journal",
                                 TotalAmount = totalMaturityPayout,
                                 Narration = (string.IsNullOrWhiteSpace(req?.Narration) 
                                     ? $"मुदत ठेव पूर्ण क्लोजर (FD Maturity Payout - {paymentMode}): {account.AccountNo} [मुदतपूर्ती: {account.MaturityDate:dd/MM/yyyy}, प्रक्रिया: {DateTime.Now:dd/MM/yyyy}{(closureDate.Date < DateTime.Today ? $", As-on: {closureDate:dd/MM/yyyy}" : "")}]{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
@@ -2919,7 +2939,7 @@ namespace Bhisi.Api.Controllers
                                 BranchID = counterBranchId,
                                 VoucherNo = $"PV-{counterBranchId}-{closureDate:yyyyMMdd}-FD-CLOSE-{account.AccountNo}",
                                 VoucherDate = closureDate,
-                                VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                                VoucherType = (string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) || Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode)) ? "Payment" : "Journal",
                                 TotalAmount = totalMaturityPayout,
                                 Narration = (string.IsNullOrWhiteSpace(req?.Narration)
                                     ? $"[आंतर-शाखा मुदत ठेव परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा"
@@ -3529,7 +3549,17 @@ namespace Bhisi.Api.Controllers
                                 }
                                 surplusLedgerId = surplusBankCheck.LedgerId;
                             }
-                            else if (surplusMode == "Transfer" && req.SurplusSavingAccountID > 0)
+                            else if ((string.Equals(surplusMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(surplusMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(surplusMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && (!req.SurplusSavingAccountID.HasValue || req.SurplusSavingAccountID.Value <= 0 || !await _context.SavingAccountMasters.AnyAsync(s => s.SavingAccountID == req.SurplusSavingAccountID.Value && s.Status != "Closed")))
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest("शिल्लक परतावा बचत खात्यात वर्ग करण्यासाठी वैध सक्रिय बचत खाते निवडणे बंधनकारक आहे.");
+                            }
+                            else if (!string.Equals(surplusMode, "Cash", StringComparison.OrdinalIgnoreCase) && !string.Equals(surplusMode, "Transfer", StringComparison.OrdinalIgnoreCase) && !string.Equals(surplusMode, "Saving", StringComparison.OrdinalIgnoreCase) && !string.Equals(surplusMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase))
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest($"शिल्लक परताव्यासाठी अवैध पेमेंट पद्धत '{surplusMode}'.");
+                            }
+                            else if ((string.Equals(surplusMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(surplusMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(surplusMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && req.SurplusSavingAccountID > 0)
                             {
                                 var savAccount = await _context.SavingAccountMasters
                                     .Include(s => s.Ledger)
@@ -3704,7 +3734,17 @@ namespace Bhisi.Api.Controllers
                             }
                             payoutLedgerId = payoutBankCheck.LedgerId;
                         }
-                        else if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
+                        else if ((string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && (req?.SavingAccountID == null || req.SavingAccountID <= 0 || !await _context.SavingAccountMasters.AnyAsync(s => s.SavingAccountID == req.SavingAccountID.Value && s.Status != "Closed")))
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest("मुदत ठेव परतावा बचत खात्यात वर्ग करण्यासाठी वैध सक्रिय बचत खाते निवडणे बंधनकारक आहे.");
+                        }
+                        else if (!string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase))
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"परताव्यासाठी अवैध पेमेंट पद्धत '{paymentMode}'.");
+                        }
+                        else if ((string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && req?.SavingAccountID > 0)
                         {
                             var savAccount = await _context.SavingAccountMasters
                                 .Include(s => s.Ledger)
@@ -3758,7 +3798,7 @@ namespace Bhisi.Api.Controllers
                                 BranchID = account.BranchID,
                                 VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
                                 VoucherDate = effectiveClosureDate,
-                                VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                                VoucherType = (string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) || Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode)) ? "Payment" : "Journal",
                                 TotalAmount = netPayoutAmount,
                                 Narration = (string.IsNullOrWhiteSpace(req?.Narration)
                                     ? $"मुदतपूर्व बंद (Premature Close - {paymentMode}) - कालावधी: {actualDays} दिवस{(effectiveClosureDate.Date < DateTime.Today ? $" ({effectiveClosureDate:dd/MM/yyyy} As-on)" : "")}, पुनर्हिशोब व्याज: ₹{recalculatedInterest}, दंड कपात: ₹{penaltyClawback}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
@@ -3825,7 +3865,7 @@ namespace Bhisi.Api.Controllers
                                 BranchID = counterBranchId,
                                 VoucherNo = $"PV-{counterBranchId}-{effectiveClosureDate:yyyyMMdd}-FD-PRECLOSE-{account.AccountNo}",
                                 VoucherDate = effectiveClosureDate,
-                                VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                                VoucherType = (string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) || Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode)) ? "Payment" : "Journal",
                                 TotalAmount = netPayoutAmount,
                                 Narration = (string.IsNullOrWhiteSpace(req?.Narration)
                                     ? $"[आंतर-शाखा मुदत ठेव मुदतपूर्व परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा"
@@ -4328,7 +4368,17 @@ namespace Bhisi.Api.Controllers
                             }
                             interestPayoutLedgerId = intBankCheck.LedgerId;
                         }
-                        else if (paymentMode == "Transfer" && request.SavingAccountID > 0)
+                        else if ((string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && (!request.SavingAccountID.HasValue || request.SavingAccountID.Value <= 0 || !await _context.SavingAccountMasters.AnyAsync(s => s.SavingAccountID == request.SavingAccountID.Value && s.Status != "Closed")))
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest("नूतनीकरणाचे व्याज बचत खात्यात वर्ग करण्यासाठी वैध सक्रिय बचत खाते निवडणे बंधनकारक आहे.");
+                        }
+                        else if (!string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) && !string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase))
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"व्याज परताव्यासाठी अवैध पेमेंट पद्धत '{paymentMode}'.");
+                        }
+                        else if ((string.Equals(paymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving", StringComparison.OrdinalIgnoreCase) || string.Equals(paymentMode, "Saving Transfer", StringComparison.OrdinalIgnoreCase)) && request.SavingAccountID > 0)
                         {
                             var savAccount = await _context.SavingAccountMasters
                                 .Include(s => s.Ledger)

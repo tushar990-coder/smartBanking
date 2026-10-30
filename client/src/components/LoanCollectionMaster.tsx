@@ -807,11 +807,20 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         try {
             const original = collections.find(c => c.loanCollectionID === editingReceiptId);
             if (!original) return;
+
+            const isBankOrChequeEdit = editData.paymentMode === 'Bank' || editData.paymentMode === 'Cheque';
+            if (isBankOrChequeEdit && (!editData.bankAccountLedgerID || Number(editData.bankAccountLedgerID) <= 0)) {
+                alert("बँक / चेक मोडसाठी कृपया वैध बँक जी.एल. खाते (Bank GL Account) निवडा.");
+                return;
+            }
             
             const payload = {
                 ...original,
                 collectionDate: editData.collectionDate,
                 paymentMode: editData.paymentMode,
+                bankAccountLedgerID: isBankOrChequeEdit ? Number(editData.bankAccountLedgerID) : null,
+                bankName: isBankOrChequeEdit ? (editData.bankName || original.bankName || null) : null,
+                chequeNo: editData.paymentMode === 'Cheque' ? (editData.chequeNo || original.chequeNo || null) : null,
                 remarks: editData.remarks
             };
             
@@ -819,9 +828,12 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             setEditingReceiptId(null);
             alert("पावती यशस्वीरित्या अपडेट झाली!");
             fetchData();
-        } catch (err) {
+        } catch (err: any) {
             console.error("Failed to update receipt", err);
-            alert("पावती अपडेट करताना त्रुटी आली.");
+            const msg = typeof err.response?.data === 'string'
+                ? err.response.data
+                : (err.response?.data?.message || "पावती अपडेट करताना त्रुटी आली.");
+            alert(msg);
         }
     };
 
@@ -3906,12 +3918,47 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 <td className="p-1 border-r text-right font-bold text-green-700" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | चालू व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}`}>
                                                     ₹{c.totalAmountReceived.toFixed(2)}
                                                 </td>
-                                                <td className="p-1 border-r">
+                                                <td className="p-1 border-r min-w-[140px]">
                                                     {isEditing ? (
-                                                        <select value={editData.paymentMode || 'Cash'} onChange={e => setEditData({...editData, paymentMode: e.target.value})} className="border p-0.5 text-[11px] h-[22px] w-full">
-                                                            <option value="Cash">Cash</option>
-                                                            <option value="Bank">Bank</option>
-                                                        </select>
+                                                        (c.paymentMode === 'Saving Transfer' || c.paymentMode === 'Saving' || c.paymentMode === 'Pigmy Transfer' || c.paymentMode === 'Pigmy') ? (
+                                                            <div className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded-sm text-[10px] font-bold text-slate-700" title="खाते वर्ग (Transfer) पावतीची पेमेंट पद्धत बदलता येत नाही">
+                                                                🔒 {c.paymentMode}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="space-y-1">
+                                                                <select
+                                                                    value={editData.paymentMode || 'Cash'}
+                                                                    onChange={e => {
+                                                                        const nextMode = e.target.value;
+                                                                        setEditData({
+                                                                            ...editData,
+                                                                            paymentMode: nextMode,
+                                                                            ...(nextMode === 'Cash' ? { bankAccountLedgerID: 0, bankName: '', chequeNo: '' } : {})
+                                                                        });
+                                                                    }}
+                                                                    className="border p-0.5 text-[11px] h-[22px] w-full bg-white"
+                                                                >
+                                                                    <option value="Cash">Cash (रोख)</option>
+                                                                    <option value="Bank">Bank (बँक)</option>
+                                                                    <option value="Cheque">Cheque (चेक)</option>
+                                                                </select>
+                                                                {(editData.paymentMode === 'Bank' || editData.paymentMode === 'Cheque') && (
+                                                                    <BankLedgerSelect
+                                                                        label=""
+                                                                        required={false}
+                                                                        ledgers={ledgers}
+                                                                        value={editData.bankAccountLedgerID || 0}
+                                                                        onChange={(bankLId, selectedLedger) => setEditData({
+                                                                            ...editData,
+                                                                            bankAccountLedgerID: bankLId,
+                                                                            bankName: selectedLedger?.ledgerName || editData.bankName || ''
+                                                                        })}
+                                                                        placeholder="-- बँक खाते निवडा --"
+                                                                        className="border border-blue-400 p-0.5 text-[10px] h-[22px] w-full bg-blue-50/40 font-semibold"
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        )
                                                     ) : c.paymentMode}
                                                 </td>
                                                 <td className="p-1 border-r text-gray-500">
@@ -3922,16 +3969,19 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 <td className="p-1 text-center flex justify-center gap-1">
                                                     {isEditing ? (
                                                         <>
-                                                            <button onClick={handleSaveEdit} className="bg-green-600 hover:bg-green-700 text-white p-1 rounded-sm shadow-sm" title="Save"><Save size={12} /></button>
-                                                            <button onClick={() => setEditingReceiptId(null)} className="bg-gray-500 hover:bg-gray-600 text-white p-1 rounded-sm shadow-sm" title="Cancel"><X size={12} /></button>
+                                                            <button type="button" onClick={handleSaveEdit} className="bg-green-600 hover:bg-green-700 text-white p-1 rounded-sm shadow-sm" title="Save"><Save size={12} /></button>
+                                                            <button type="button" onClick={() => setEditingReceiptId(null)} className="bg-gray-500 hover:bg-gray-600 text-white p-1 rounded-sm shadow-sm" title="Cancel"><X size={12} /></button>
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <button onClick={() => {
+                                                            <button type="button" onClick={() => {
                                                                 setEditingReceiptId(c.loanCollectionID);
                                                                 setEditData({
                                                                     collectionDate: c.collectionDate,
                                                                     paymentMode: c.paymentMode,
+                                                                    bankAccountLedgerID: c.bankAccountLedgerID || 0,
+                                                                    bankName: c.bankName || '',
+                                                                    chequeNo: c.chequeNo || '',
                                                                     remarks: c.remarks || ''
                                                                 });
                                                             }} className="bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-sm shadow-sm" title="Edit"><Edit size={12} /></button>

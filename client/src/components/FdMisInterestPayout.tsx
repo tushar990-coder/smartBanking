@@ -106,10 +106,28 @@ export const FdMisInterestPayout: React.FC = () => {
   const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string) : 1);
   const [branchID, setBranchID] = useState<number>(initialBranchId);
 
-  const today = new Date();
-  const [payoutYear, setPayoutYear] = useState<number>(today.getFullYear());
-  const [payoutMonth, setPayoutMonth] = useState<number>(today.getMonth() + 1);
-  const [payoutDate, setPayoutDate] = useState<string>(today.toISOString().split('T')[0]);
+  const getBizDateStr = (b?: string) => {
+    if (b && b.trim()) return b.split('T')[0];
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  };
+  const initialBizStr = getBizDateStr(user?.businessDate);
+  const initialBizParts = initialBizStr.split('-').map(Number);
+  const [payoutYear, setPayoutYear] = useState<number>(initialBizParts[0] || new Date().getFullYear());
+  const [payoutMonth, setPayoutMonth] = useState<number>(initialBizParts[1] || (new Date().getMonth() + 1));
+  const [payoutDate, setPayoutDate] = useState<string>(initialBizStr);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bStr = getBizDateStr(user.businessDate);
+      const parts = bStr.split('-').map(Number);
+      if (parts.length === 3 && !parts.some(Number.isNaN)) {
+        setPayoutYear(parts[0]);
+        setPayoutMonth(parts[1]);
+      }
+      setPayoutDate(bStr);
+    }
+  }, [user?.businessDate]);
   const [accountingMode, setAccountingMode] = useState<'DirectExpense' | 'ClearPayable'>('DirectExpense');
   const [batchPayoutOverride, setBatchPayoutOverride] = useState<'Auto' | 'Bank' | 'Cash'>('Auto');
   const [bankLedgerID, setBankLedgerID] = useState<number>(0);

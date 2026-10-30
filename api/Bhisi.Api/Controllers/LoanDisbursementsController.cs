@@ -644,7 +644,7 @@ namespace Bhisi.Api.Controllers
                 // Create Voucher
                 var vBranch = await _context.Branches.FindAsync(targetBranchId);
                 string branchCode = vBranch?.BranchCode ?? "HQ";
-                string voucherType = disbursement.PaymentMode == "Cash" ? "Payment" : "Journal";
+                string voucherType = isSavingTransfer ? "Journal" : "Payment";
                 string typeCode = voucherType == "Payment" ? "PAY" : "JV";
 
                 var activeYear = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
@@ -664,7 +664,7 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                int count = await _context.Vouchers.CountAsync(v => v.BranchID == targetBranchId && v.VoucherType == voucherType) + 1;
+                int count = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"{branchCode}-{typeCode}-{fy}-", 5);
                 string voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
                 while (await _context.Vouchers.AnyAsync(v => v.VoucherNo == voucherNo))
                 {
@@ -1276,7 +1276,7 @@ namespace Bhisi.Api.Controllers
                         existingDisbursement.Voucher.ApprovedOn ??= approvedOn;
                     }
 
-                    var voucherType = disbursement.PaymentMode == "Cash" ? "Payment" : "Journal";
+                    var voucherType = isSavingTransfer ? "Journal" : "Payment";
                     existingDisbursement.Voucher.VoucherType = voucherType;
                     existingDisbursement.Voucher.Narration = (isSavingTransfer && savingTransferTarget != null)
                         ? $"Loan Disbursed to {borrowerName} (Loan A/C: {loanAccFetched?.LoanAccountNo}) | Saving Transfer to A/C: {savingTransferTarget.SavingAccount.AccountNo} ({savingTransferTarget.SavingHolderFullName})"

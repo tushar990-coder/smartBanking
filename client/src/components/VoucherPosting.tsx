@@ -433,20 +433,28 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
     // 7. Recurring Deposit (RD)
     const isRdOpening =
+      vNo.startsWith('REC-RD-OPEN-') ||
+      vNo.startsWith('JV-RD-OPEN-') ||
       vNo.startsWith('REC-RD-OP-') ||
+      vNo.startsWith('JV-RD-OP-') ||
+      v.narration?.includes('नवीन आरडी खाते') ||
       v.narration?.includes('आवर्ती ठेव खाते उघडले') ||
       narr.includes('rd account opened');
 
     const isRdWithdrawal =
       vNo.startsWith('JV-RD-CLOSE-') ||
+      vNo.startsWith('JV-RD-PRECLOSE-') ||
       v.narration?.includes('आवर्ती ठेव बंद') ||
       narr.includes('rd maturity') ||
       narr.includes('rd closed');
 
     const isRdCollection =
-      vNo.startsWith('REC-RD-') ||
-      v.narration?.includes('आवर्ती ठेव हप्ता') ||
-      narr.includes('rd installment');
+      !isRdOpening &&
+      (vNo.startsWith('REC-RD-') ||
+        vNo.startsWith('JV-RD-COLL-') ||
+        vNo.includes('-RD-COLL-') ||
+        v.narration?.includes('आवर्ती ठेव हप्ता') ||
+        narr.includes('rd installment'));
 
     // 8. Pigmy Deposit
     const isPigmyDaybook =

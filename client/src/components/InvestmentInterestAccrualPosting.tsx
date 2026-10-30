@@ -41,20 +41,34 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
 
   const API_URL = '/api';
 
+  const getActiveBizDate = () => {
+    if (user?.businessDate && user.businessDate.trim()) return user.businessDate.split('T')[0];
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  };
+
   const [accrualForm, setAccrualForm] = useState({
     branchID: initialBranchId,
-    accrualDate: new Date().toISOString().split('T')[0],
+    accrualDate: getActiveBizDate(),
   });
 
   const [receiptForm, setReceiptForm] = useState({
     investmentAccountID: 0,
-    receiptDate: new Date().toISOString().split('T')[0],
+    receiptDate: getActiveBizDate(),
     receivedAmount: 0,
     remarks: 'व्याज प्राप्ती',
     paymentMode: 'Bank',
     bankLedgerID: 0,
     referenceNo: '',
   });
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bStr = getActiveBizDate();
+      setAccrualForm(prev => ({ ...prev, accrualDate: bStr }));
+      setReceiptForm(prev => ({ ...prev, receiptDate: bStr }));
+    }
+  }, [user?.businessDate]);
 
   useEffect(() => {
     fetchBranches();
@@ -147,7 +161,7 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
       setSuccess(response.data.message || 'उत्पन्न प्राप्ती यशस्वीरीत्या नोंदवली!');
       setReceiptForm({
         investmentAccountID: 0,
-        receiptDate: new Date().toISOString().split('T')[0],
+        receiptDate: getActiveBizDate(),
         receivedAmount: 0,
         remarks: 'व्याज प्राप्ती',
         paymentMode: 'Bank',

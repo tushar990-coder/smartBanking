@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import BankLedgerSelect from './common/BankLedgerSelect';
+import { useAuth } from '../context/AuthContext';
+import { formatLocalYmd, getBusinessDateStr, parseYmdAsLocalDate } from '../utils/businessDateUtils';
 import { 
   Calculator, 
   Settings, 
@@ -85,6 +87,7 @@ interface SavingAccount {
 }
 
 export default function AgentCommissionMaster() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'payouts' | 'settings' | 'history'>('payouts');
 
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -101,10 +104,11 @@ export default function AgentCommissionMaster() {
   // Filters
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : 0;
+  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : (user?.branchID || 0);
 
-  const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getBusinessDateStr(user?.businessDate);
+  const activeBizDate = parseYmdAsLocalDate(todayStr);
+  const firstDayOfMonth = formatLocalYmd(new Date(activeBizDate.getFullYear(), activeBizDate.getMonth(), 1));
 
   const [selectedBranchId, setSelectedBranchId] = useState<number>(initialBranchId);
   const [selectedAgentId, setSelectedAgentId] = useState<number | 'ALL'>('ALL');
@@ -126,7 +130,17 @@ export default function AgentCommissionMaster() {
   const [bankLedgerId, setBankLedgerId] = useState<number>(0);
   const [referenceNo, setReferenceNo] = useState<string>('');
   const [selectedAgentSbAccountId, setSelectedAgentSbAccountId] = useState<number | ''>('');
-  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState<string>(todayStr);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bStr = getBusinessDateStr(user.businessDate);
+      const bDate = parseYmdAsLocalDate(bStr);
+      setFromDate(formatLocalYmd(new Date(bDate.getFullYear(), bDate.getMonth(), 1)));
+      setToDate(bStr);
+      setPaymentDate(bStr);
+    }
+  }, [user?.businessDate]);
   const [payProcessing, setPayProcessing] = useState(false);
 
   // Print Advice State

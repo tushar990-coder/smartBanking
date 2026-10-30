@@ -33,7 +33,18 @@ const AssetReports: React.FC = () => {
   const [depLoading, setDepLoading] = useState(false);
   const [depBranch, setDepBranch] = useState<number>(isHeadOfficeOrAdmin ? 0 : effectiveBranchId);
   const [depCategory, setDepCategory] = useState('all');
-  const [depDate, setDepDate] = useState(new Date().toISOString().split('T')[0]);
+  const getBizDateStr = (b?: string) => {
+    if (b && b.trim()) return b.split('T')[0];
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  };
+  const [depDate, setDepDate] = useState(getBizDateStr(user?.businessDate));
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setDepDate(getBizDateStr(user.businessDate));
+    }
+  }, [user?.businessDate]);
   const [depPostVoucher, setDepPostVoucher] = useState(true);
   const [depDebitLedger, setDepDebitLedger] = useState(0);
   const [depCreditLedger, setDepCreditLedger] = useState(0);

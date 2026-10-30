@@ -669,7 +669,7 @@ namespace Bhisi.Api.Controllers
                         var voucher = new Voucher
                         {
                             BranchID = account.BranchID,
-                            VoucherNo = $"JV-RD-OP-{account.AccountNo}",
+                            VoucherNo = autoDebitSavingLedgerId.HasValue ? $"JV-RD-OPEN-{account.AccountNo}" : $"REC-RD-OPEN-{account.AccountNo}",
                             VoucherDate = account.OpeningDate,
                             VoucherType = autoDebitSavingLedgerId.HasValue ? "Journal" : "Receipt",
                             Status = vStatus,
@@ -1159,7 +1159,7 @@ namespace Bhisi.Api.Controllers
                             if (bLedger != null)
                             {
                                 debitLedgerId = bLedger.LedgerID;
-                                modeNarration = $"बँक ट्रान्सफर ({bLedger.LedgerName})";
+                                finalVoucherType = "Receipt"; modeNarration = $"बँक ट्रान्सफर ({bLedger.LedgerName})";
                                 if (!string.IsNullOrWhiteSpace(chequeNo)) modeNarration += $", Ref/Cheque: {chequeNo.Trim()}";
                             }
                             else
@@ -1285,9 +1285,19 @@ namespace Bhisi.Api.Controllers
                             if (pigmyLedger != null) pigmyLedgerId = pigmyLedger.LedgerID;
                         }
 
-                        debitLedgerId = pigmyLedgerId > 0 ? pigmyLedgerId : branchCashId;
+                        if (pigmyLedgerId <= 0)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest("पिग्मी ठेव योजनेसाठी Liability GL खाते मॅप केलेले नाही. कृपया पिग्मी योजना सेटिंग तपासा.");
+                        }
+                        debitLedgerId = pigmyLedgerId;
                         modeNarration = $"पिग्मी खात्यातून वर्ग ({sourcePigmyAcc.AccountNo})";
                         normalizedMode = "Pigmy";
+                    }
+                    else if (!string.Equals(normalizedMode, "Cash", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(normalizedMode))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest($"आरडी हप्ता भरण्यासाठी अवैध पेमेंट पद्धत '{payMode}'. कृपया रोख, बँक, बचत किंवा पिग्मी निवडा.");
                     }
                     else
                     {
@@ -2808,9 +2818,9 @@ namespace Bhisi.Api.Controllers
             string vNo = voucher.VoucherNo ?? "";
 
             // 1. Try parsing AccountNo from VoucherNo (e.g. JV-RD-OP-00150100000001)
-            if (vNo.StartsWith("JV-RD-OP-"))
+            string? matchedRdOpenPfx = new[] { "REC-RD-OPEN-", "JV-RD-OPEN-", "REC-RD-OP-", "JV-RD-OP-" }.FirstOrDefault(p => vNo.StartsWith(p, StringComparison.OrdinalIgnoreCase)); if (matchedRdOpenPfx != null)
             {
-                string accNoCandidate = vNo.Substring("JV-RD-OP-".Length).Trim();
+                string accNoCandidate = vNo.Substring(matchedRdOpenPfx.Length).Trim();
                 account = await _context.RdAccounts
                     .Include(a => a.Customer)
                     .Include(a => a.RdScheme)
@@ -2847,7 +2857,7 @@ namespace Bhisi.Api.Controllers
             var debitDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr");
             if (debitDetail?.Ledger != null)
             {
-                if (BankLedgerHelper.IsBankAccountType(debitDetail.Ledger.AccountType))
+                if (BankLedgerHelper.IsBankAccountType(debitDetail.Ledger.AccountType) || BankLedgerHelper.IsBankLedger(debitDetail.Ledger))
                 {
                     paymentMode = "Bank";
                     bankLedgerId = debitDetail.LedgerID;

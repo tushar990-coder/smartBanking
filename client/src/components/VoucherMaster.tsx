@@ -8,6 +8,8 @@ import {
 import SearchableSelect from './SearchableSelect';
 import VoucherPrint from './VoucherPrint';
 import MemberSearchSelect from './common/MemberSearchSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { filterBankLedgers, isBankAccountLedger, isCashLedgerOption } from '../utils/bankLedgerUtils';
 import { useAuth } from '../context/AuthContext';
 
 interface Ledger {
@@ -144,6 +146,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const [voucherNo, setVoucherNo] = useState('AUTO');
   const [voucherDate, setVoucherDate] = useState(user?.businessDate || new Date().toISOString().split('T')[0]);
   const [voucherType, setVoucherType] = useState('Receipt');
+  const [voucherPaymentMode, setVoucherPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
   const [narration, setNarration] = useState('');
   const [details, setDetails] = useState<VoucherDetail[]>([]);
   const formContainerRef = useRef<HTMLDivElement>(null);
@@ -301,18 +304,20 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
     const currentBranch = branchesList.find(b => b.branchID === branchId);
 
+    const nonBankLedgers = ledgersList.filter(l => !isBankAccountLedger(l as any));
+
     // 1. Check if the branch has a mapped defaultCashLedgerID
     if (currentBranch?.defaultCashLedgerID) {
-      const mappedLedger = ledgersList.find(l => l.ledgerID === currentBranch.defaultCashLedgerID);
+      const mappedLedger = nonBankLedgers.find(l => l.ledgerID === currentBranch.defaultCashLedgerID);
       if (mappedLedger) return mappedLedger.ledgerID;
     }
 
     // 2. If branch is Head Office / मुख्य शाखा, prioritize main cash ledger
     const isHeadOffice = currentBranch?.branchType === 'HeadOffice' || branchId === 1 || (currentBranch?.branchName && currentBranch.branchName.includes('मुख्य'));
     if (isHeadOffice) {
-      const mainCash = ledgersList.find(l => 
-        (l.ledgerName.includes('हातातील रोख शिल्लक') || l.ledgerName.includes('हातावरील रोख शिल्लक (मुख्य') || l.ledgerName === 'हातावरील रोख शिल्लक' || l.ledgerName === 'रोख खाते' || l.ledgerName.toLowerCase() === 'cash') &&
-        !l.ledgerName.includes('शाखा')
+      const mainCash = nonBankLedgers.find(l => 
+        (l.ledgerName.includes('हातातील रोख शिल्लक') || l.ledgerName.includes('हातावरील रोख शिल्लक (मुख्य') || l.ledgerName.includes('हाता. रोख') || l.ledgerName === 'हातावरील रोख शिल्लक' || l.ledgerName === 'रोख खाते' || l.ledgerName.toLowerCase() === 'cash') &&
+        (!l.ledgerName.includes('शाखा') || l.ledgerName.includes('मेन') || l.ledgerName.includes('मुख्य'))
       );
       if (mainCash) return mainCash.ledgerID;
     }
@@ -321,22 +326,30 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     if (currentBranch?.branchName) {
       const cleanBranchName = currentBranch.branchName.replace(/शाखा/g, '').trim();
       if (cleanBranchName) {
-        const branchCash = ledgersList.find(l => 
-          (l.ledgerName.includes('रोख') || l.ledgerName.toLowerCase().includes('cash')) && 
+        const branchCash = nonBankLedgers.find(l => 
+          isCashLedgerOption(l as any) && 
           l.ledgerName.includes(cleanBranchName)
         );
         if (branchCash) return branchCash.ledgerID;
       }
     }
 
-    // 4. Fallback: First ledger containing रोख / Cash
-    const fallbackCash = ledgersList.find(l => 
-      l.ledgerName.includes('हातातील रोख शिल्लक') || 
-      l.ledgerName.includes('हातावरील रोख शिल्लक') || 
-      l.ledgerName.toLowerCase().includes('cash') ||
-      l.ledgerName.includes('रोख')
-    );
-    return fallbackCash?.ledgerID || (ledgersList[0]?.ledgerID || 0);
+    // 4. Fallback: First true Cash ledger (strictly excluding Bank ledgers)
+    const fallbackCash = nonBankLedgers.find(l => isCashLedgerOption(l as any));
+    return fallbackCash?.ledgerID || 0;
+  };
+
+  const getDefaultPrimaryLedgerId = (
+    mode: 'Cash' | 'Bank' = voucherPaymentMode,
+    ledgersList: Ledger[] = ledgers,
+    branchId: number = selectedBranchId,
+    branchesList: any[] = branches
+  ): number => {
+    if (mode === 'Bank') {
+      const bankList = filterBankLedgers(ledgersList as any);
+      return bankList.length === 1 ? bankList[0].ledgerID : 0;
+    }
+    return getCashLedger(ledgersList, branchId, branchesList);
   };
 
   const fetchNextVoucherNo = async (type: string, branchId: number = selectedBranchId) => {
@@ -403,7 +416,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     fetchNextVoucherNo(voucherType, newBranchId);
     fetchCustomers(newBranchId);
 
-    if (voucherType === 'Receipt' || voucherType === 'Payment') {
+    if ((voucherType === 'Receipt' || voucherType === 'Payment') && voucherPaymentMode === 'Cash') {
       const cashLId = getCashLedger(ledgers, newBranchId, branches);
       setDetails(prev => {
         return prev.map(d => {
@@ -416,22 +429,75 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     }
   };
 
+  const handleVoucherPaymentModeChange = (newMode: 'Cash' | 'Bank') => {
+    setVoucherPaymentMode(newMode);
+    if (voucherType !== 'Receipt' && voucherType !== 'Payment') return;
+
+    const primaryLId = getDefaultPrimaryLedgerId(newMode, ledgers, selectedBranchId, branches);
+    const sel = primaryLId > 0 ? ledgers.find(l => l.ledgerID === primaryLId) : undefined;
+    let lockedRowIdx = -1;
+
+    setDetails(prev =>
+      prev.map((d, idx) => {
+        if (!d.isLocked) return d;
+        lockedRowIdx = idx;
+        return {
+          ...d,
+          ledgerID: primaryLId,
+          searchQuery: sel?.ledgerName || '',
+          accountType: sel?.accountType || '',
+          ledgerBalance: undefined,
+          ledgerBalanceType: undefined,
+          ledgerPath: undefined,
+        };
+      })
+    );
+
+    if (primaryLId > 0 && lockedRowIdx >= 0) {
+      fetchLedgerBalanceAndPath(primaryLId, lockedRowIdx);
+    }
+  };
+
+  const handleLockedBankLedgerSelect = (index: number, bankLedgerId: number, selectedLedger?: any) => {
+    const lId = Number(bankLedgerId) || 0;
+    const sel = selectedLedger || (lId > 0 ? ledgers.find(l => l.ledgerID === lId) : undefined);
+
+    setDetails(prev => {
+      if (!prev[index]) return prev;
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        ledgerID: lId,
+        searchQuery: sel?.ledgerName || '',
+        accountType: sel?.accountType || 'Bank Account',
+        ledgerBalance: undefined,
+        ledgerBalanceType: undefined,
+        ledgerPath: undefined,
+      };
+      return updated;
+    });
+
+    if (lId > 0) {
+      fetchLedgerBalanceAndPath(lId, index);
+    }
+  };
+
   const handleVoucherTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newType = e.target.value;
     setVoucherType(newType);
     fetchNextVoucherNo(newType, selectedBranchId);
 
-    const cashLId = getCashLedger(ledgers, selectedBranchId, branches);
+    const primaryLId = getDefaultPrimaryLedgerId(voucherPaymentMode, ledgers, selectedBranchId, branches);
 
     if (newType === 'Receipt') {
       setDetails([
-        { ledgerID: cashLId, drCr: 'Dr', amount: 0, isLocked: true, searchQuery: '' },
+        { ledgerID: primaryLId, drCr: 'Dr', amount: 0, isLocked: true, searchQuery: '' },
         { ledgerID: 0, drCr: 'Cr', amount: 0, searchQuery: '' }
       ]);
     } else if (newType === 'Payment') {
       setDetails([
         { ledgerID: 0, drCr: 'Dr', amount: 0, searchQuery: '' },
-        { ledgerID: cashLId, drCr: 'Cr', amount: 0, isLocked: true, searchQuery: '' }
+        { ledgerID: primaryLId, drCr: 'Cr', amount: 0, isLocked: true, searchQuery: '' }
       ]);
     } else {
       setDetails([
@@ -602,6 +668,15 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       return;
     }
 
+    if ((voucherType === 'Receipt' || voucherType === 'Payment') && voucherPaymentMode === 'Bank') {
+      const lockedRow = details.find(d => d.isLocked);
+      const selectedBankLedger = lockedRow?.ledgerID ? ledgers.find(l => l.ledgerID === lockedRow.ledgerID) : undefined;
+      if (!lockedRow || !lockedRow.ledgerID || !isBankAccountLedger(selectedBankLedger as any)) {
+        alert("बँक रिसिप्ट / पेमेंट व्हाउचरसाठी कृपया वैध बँक जी.एल. खाते (Bank GL Account) निवडा.");
+        return;
+      }
+    }
+
     const hasZeroLedger = details.some(d => !d.ledgerID);
     if (hasZeroLedger) {
       alert("कृपया सर्व ओळींसाठी खाते (Ledger) निवडा.");
@@ -681,10 +756,25 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     }
 
     const cashLId = getCashLedger(ledgers, (v as any).branchID || selectedBranchId, branches);
+    const primarySide = v.voucherType === 'Receipt' ? 'Dr' : v.voucherType === 'Payment' ? 'Cr' : null;
+    const rawVds = v.voucherDetails || [];
+    const hasPrimaryCashRow = primarySide
+      ? rawVds.some(vd => vd.drCr === primarySide && vd.ledgerID === cashLId)
+      : false;
+    let firstBankPrimaryIdx = -1;
+    if (primarySide && !hasPrimaryCashRow) {
+      firstBankPrimaryIdx = rawVds.findIndex(vd => {
+        if (vd.drCr !== primarySide) return false;
+        const mLedger = vd.ledger || ledgers.find(l => l.ledgerID === vd.ledgerID);
+        return isBankAccountLedger(mLedger as any);
+      });
+    }
+    setVoucherPaymentMode(firstBankPrimaryIdx >= 0 ? 'Bank' : 'Cash');
 
-    const loadedDetails: VoucherDetail[] = (v.voucherDetails || []).map((vd) => {
+    const loadedDetails: VoucherDetail[] = rawVds.map((vd, idx) => {
       const isAutoCashRow = (v.voucherType === 'Receipt' && vd.drCr === 'Dr' && vd.ledgerID === cashLId) ||
                             (v.voucherType === 'Payment' && vd.drCr === 'Cr' && vd.ledgerID === cashLId);
+      const isAutoBankRow = idx === firstBankPrimaryIdx;
       const matchedLedger = vd.ledger || ledgers.find(l => l.ledgerID === vd.ledgerID);
       const resolvedCustId = vd.customerID || vd.customer?.customerID || vd.member?.customerID || vd.member?.customer?.customerID || '';
       return {
@@ -693,7 +783,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
         amount: vd.amount,
         customerID: resolvedCustId,
         showCustomerSelect: Boolean(resolvedCustId),
-        isLocked: isAutoCashRow,
+        isLocked: isAutoCashRow || isAutoBankRow,
         searchQuery: matchedLedger?.ledgerName || '',
         accountType: matchedLedger?.accountType || ''
       };
@@ -717,6 +807,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const cancelEdit = () => {
     setEditingVoucherId(null);
     setNarration('');
+    setVoucherPaymentMode('Cash');
     fetchNextVoucherNo(voucherType, selectedBranchId);
 
     const cashLId = getCashLedger(ledgers, selectedBranchId, branches);
@@ -958,7 +1049,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${voucherType === 'Receipt' || voucherType === 'Payment' ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-2.5`}>
               <div>
                 <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
                 <select 
@@ -981,12 +1072,27 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                   disabled={isPassingMode || editingVoucherId !== null}
                   className={`${inputClass} font-bold disabled:bg-slate-100 disabled:text-slate-500`}
                 >
-                  <option value="Receipt">📥 रिसिप्ट (Receipt - रोख आवक)</option>
-                  <option value="Payment">📤 पेमेंट (Payment - रोख जावक)</option>
+                  <option value="Receipt">📥 रिसिप्ट (Receipt - रोख / बँक आवक)</option>
+                  <option value="Payment">📤 पेमेंट (Payment - रोख / बँक जावक)</option>
                   <option value="Journal">🔄 जर्नल (Journal - ट्रान्सफर नोंद)</option>
                   <option value="Contra">🏦 कॉन्ट्रा (Contra - बँक / रोख)</option>
                 </select>
               </div>
+
+              {(voucherType === 'Receipt' || voucherType === 'Payment') && (
+                <div>
+                  <label className={labelClass}>पेमेंट पद्धत (Mode) <span className="text-red-500">*</span></label>
+                  <select
+                    value={voucherPaymentMode}
+                    onChange={(e) => handleVoucherPaymentModeChange(e.target.value as 'Cash' | 'Bank')}
+                    disabled={isPassingMode}
+                    className={`${inputClass} font-bold ${voucherPaymentMode === 'Bank' ? 'border-blue-500 bg-blue-50/40 text-blue-900' : ''} disabled:bg-slate-100 disabled:text-slate-500`}
+                  >
+                    <option value="Cash">💵 रोख (Cash)</option>
+                    <option value="Bank">🏦 बँक / चेक / ऑनलाईन (Bank)</option>
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className={labelClass}>व्हाउचर तारीख (Voucher Date) <span className="text-red-500">*</span></label>
@@ -1059,18 +1165,31 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                       </td>
 
                       <td className="p-2 border-r border-gray-200 text-left min-w-[280px]">
-                        <SearchableSelect
-                          id={`voucher-ledger-${index}`}
-                          disabled={isPassingMode || detail.isLocked}
-                          value={detail.ledgerID ? detail.ledgerID.toString() : ''}
-                          onChange={(e) => handleLedgerSelect(index, e.target.value)}
-                          options={ledgerOptions}
-                          placeholder="-- खाते नाव किंवा नंबर शोधा (Search Ledger) --"
-                          className={isPassingMode || detail.isLocked 
-                            ? "w-full border border-gray-300 px-2 py-1 rounded-sm text-[11px] bg-slate-100 font-bold text-gray-700 cursor-not-allowed flex justify-between items-center h-[28px]"
-                            : "w-full border border-gray-300 px-2 py-1 rounded-sm text-[11px] bg-white flex justify-between items-center hover:border-primary cursor-pointer focus-within:border-primary focus-within:ring-1 focus-within:ring-primary h-[28px]"
-                          }
-                        />
+                        {detail.isLocked && (voucherType === 'Receipt' || voucherType === 'Payment') && voucherPaymentMode === 'Bank' ? (
+                          <BankLedgerSelect
+                            label=""
+                            required={false}
+                            ledgers={ledgers as any}
+                            value={detail.ledgerID}
+                            disabled={isPassingMode}
+                            onChange={(bankLId, selectedLedger) => handleLockedBankLedgerSelect(index, bankLId, selectedLedger)}
+                            placeholder="-- बँक जी.एल. खाते निवडा (Select Bank GL Account) --"
+                            className="w-full border border-blue-400 px-2 py-1 rounded-sm text-[11px] bg-blue-50/40 font-bold text-slate-800 focus:outline-none focus:border-primary h-[28px]"
+                          />
+                        ) : (
+                          <SearchableSelect
+                            id={`voucher-ledger-${index}`}
+                            disabled={isPassingMode || detail.isLocked}
+                            value={detail.ledgerID ? detail.ledgerID.toString() : ''}
+                            onChange={(e) => handleLedgerSelect(index, e.target.value)}
+                            options={ledgerOptions}
+                            placeholder="-- खाते नाव किंवा नंबर शोधा (Search Ledger) --"
+                            className={isPassingMode || detail.isLocked 
+                              ? "w-full border border-gray-300 px-2 py-1 rounded-sm text-[11px] bg-slate-100 font-bold text-gray-700 cursor-not-allowed flex justify-between items-center h-[28px]"
+                              : "w-full border border-gray-300 px-2 py-1 rounded-sm text-[11px] bg-white flex justify-between items-center hover:border-primary cursor-pointer focus-within:border-primary focus-within:ring-1 focus-within:ring-primary h-[28px]"
+                            }
+                          />
+                        )}
 
                         {detail.ledgerID > 0 && (
                           detail.ledgerPath ||

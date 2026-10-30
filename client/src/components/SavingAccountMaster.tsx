@@ -94,6 +94,17 @@ const SavingAccountMaster: React.FC = () => {
   const [showDuplicateConfirmModal, setShowDuplicateConfirmModal] = useState(false);
   const [confirmedCustomerID, setConfirmedCustomerID] = useState<number | null>(null);
 
+  const getTodayDate = () => {
+    if (user?.businessDate && user.businessDate.trim()) {
+      return user.businessDate.split('T')[0];
+    }
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Quick Scheme Creation Modal State
   const [showQuickSchemeModal, setShowQuickSchemeModal] = useState(false);
   const [allGlLedgers, setAllGlLedgers] = useState<Ledger[]>([]);
@@ -104,7 +115,7 @@ const SavingAccountMaster: React.FC = () => {
     minimumBalance: 500,
     calculationMethod: 'DailyProduct',
     postingFrequency: 'Quarterly',
-    effectiveDate: new Date().toISOString().split('T')[0],
+    effectiveDate: getTodayDate(),
     savingLiabilityLedgerID: 7,
     interestExpenseLedgerID: 0
   });
@@ -112,14 +123,6 @@ const SavingAccountMaster: React.FC = () => {
   const [schemeModalError, setSchemeModalError] = useState('');
 
   const API_URL = '/api';
-
-  const getTodayDate = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
 
   const [formData, setFormData] = useState({
     branchID: user?.branchID || 1,
@@ -574,7 +577,7 @@ const SavingAccountMaster: React.FC = () => {
     setIsCustomAccountNo(true);
     const dateStr = acc.openingDate 
       ? (acc.openingDate.includes('T') ? acc.openingDate.split('T')[0] : acc.openingDate) 
-      : new Date().toISOString().split('T')[0];
+      : getTodayDate();
 
     setFormData({
       branchID: acc.branchID || 1,

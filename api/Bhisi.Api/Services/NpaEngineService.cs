@@ -768,7 +768,7 @@ namespace Bhisi.Api.Services
                 // Post Journal Voucher to reverse interest income
                 var activeYear = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
                 string fyCode = activeYear?.YearCode ?? "26-27";
-                int count = await _context.Vouchers.CountAsync(v => v.VoucherType == "Journal") + 1;
+                int count = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"HQ-JV-{fyCode}-", 5);
                 string voucherNo = $"HQ-JV-{fyCode}-{count:D5}";
 
                 var jv = new Voucher

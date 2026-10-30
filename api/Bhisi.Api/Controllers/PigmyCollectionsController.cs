@@ -785,18 +785,21 @@ namespace Bhisi.Api.Controllers
                 var processedDates = new HashSet<string>();
 
                 var businessDate = (request.ActiveBusinessDate ?? DateTime.Today).Date;
+
+                // Core Banking Safeguard: Check upfront if ANY entry is in the future beyond active business date
+                var futureEntries = validEntries.Where(e => e.CollectionDate.Date > businessDate).ToList();
+                if (futureEntries.Any())
+                {
+                    var minFutureDate = futureEntries.Min(e => e.CollectionDate.Date);
+                    var maxFutureDate = futureEntries.Max(e => e.CollectionDate.Date);
+                    return BadRequest($"आयात अयशस्वी! निवडलेल्या पत्रकामध्ये चालू कामकाजाच्या तारखेपुढील ({businessDate:dd/MM/yyyy}) भविष्यकालीन {futureEntries.Count} नोंदी (दि. {minFutureDate:dd/MM/yyyy} ते {maxFutureDate:dd/MM/yyyy}) आढळल्या आहेत. चालू तारखेपुढील कलेक्शन सिस्टीममध्ये जमा करता येत नाही. अर्धवट किंवा अवैध डेटा जमा होऊ नये म्हणून आयात थांबवण्यात आली आहे.");
+                }
+
                 var groupedByDate = validEntries.GroupBy(e => e.CollectionDate.Date).OrderBy(g => g.Key);
 
                 foreach (var dateGroup in groupedByDate)
                 {
                     var targetDate = dateGroup.Key;
-
-                    // Safely ignore future collections beyond current active business date
-                    if (targetDate > businessDate)
-                    {
-                        skippedFutureEntriesCount += dateGroup.Count();
-                        continue;
-                    }
 
                     // True Opening Balance is strictly on or prior to 31/03/2026; dates after 31/03/2026 are regular transactional collections
                     bool isOpeningBalance = targetDate <= new DateTime(2026, 3, 31);
@@ -949,6 +952,8 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
+                // Persist all collection records, transactions, and account balance updates
+                await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 string messageText = $"एजंट '{agent.AgentName}' अंतर्गत {affectedAccounts.Count} खात्यांच्या एकूण {processedEntriesCount} दैनंदिन नोंदी (एकूण रक्कम ₹{grandTotalAmount:N2}) यशस्वीरीत्या जमा झाल्या! एजंटने रक्कम बँकेत जमा केल्यावर (एजंट डे बुक) त्या दिवसाचे १ एकत्रित व्हाउचर तयार होईल.";

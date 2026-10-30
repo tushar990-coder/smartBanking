@@ -246,6 +246,10 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       rawName: string;
       reason: string;
     }>;
+    hasFutureDates?: boolean;
+    futureDatesCount?: number;
+    minFutureDate?: string;
+    maxFutureDate?: string;
   } | null>(null);
   const [previewFilter, setPreviewFilter] = useState<'all' | 'valid' | 'invalid'>('all');
   const [dailyInvalidImports, setDailyInvalidImports] = useState<Array<{ rawAcc: string; rawAmt: number; reason: string }>>([]);
@@ -714,8 +718,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
                    format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
                    (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                   legacyAcc === rawAcc ||
-                   String(a.pigmyAccountID) === rawAcc;
+                   legacyAcc === rawAcc;
           });
 
           if (matchedAcc) {
@@ -723,28 +726,28 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             matchedCount++;
             totalAmt += rawAmt;
           } else {
-            let reason = 'या एजंटचे सक्रिय खाते सापडले नाही';
-            const anyAcc = accounts.find(a => {
+            let reason = 'या एजंटकडे हे खाते सापडले नाही';
+            const thisAgentAcc = accounts.find(a => {
+              const aId = a.pigmyAgentID || getAgentId(a.pigmyAgent) || getAgentId(a.agent);
+              if (aId !== Number(selectedAgentId)) return false;
+
               const accClean = a.accountNo.replace(/\D/g, '');
               const rawClean = rawAcc.replace(/\D/g, '');
               const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
+
               return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
                      format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
                      (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                     legacyAcc === rawAcc ||
-                     String(a.pigmyAccountID) === rawAcc;
+                     legacyAcc === rawAcc;
             });
-            if (anyAcc) {
-              if (anyAcc.openingDate && new Date(anyAcc.openingDate.split('T')[0]) > new Date(collectionDate)) {
-                reason = `खाते उघडल्याची तारीख (${anyAcc.openingDate.split('T')[0]}) ${collectionDate} नंतरची आहे`;
+
+            if (thisAgentAcc) {
+              if (thisAgentAcc.openingDate && new Date(thisAgentAcc.openingDate.split('T')[0]) > new Date(collectionDate)) {
+                reason = `खाते उघडल्याची तारीख (${thisAgentAcc.openingDate.split('T')[0]}) ${collectionDate} नंतरची आहे`;
                 skippedFuture++;
-              } else if (anyAcc.status !== 'Active') {
-                reason = `खाते ${anyAcc.status === 'Closed' ? 'बंद' : anyAcc.status} आहे`;
-              } else {
-                reason = `हे खाते इतर एजंटचे (${anyAcc.pigmyAgent?.agentName || anyAcc.agent?.agentName || 'अन्य'}) आहे`;
+              } else if (thisAgentAcc.status !== 'Active') {
+                reason = `या एजंटचे हे खाते ${thisAgentAcc.status === 'Closed' ? 'बंद' : thisAgentAcc.status} आहे`;
               }
-            } else {
-              reason = 'खाते क्रमांक सिस्टीममध्ये सापडले नाही';
             }
             invalidDailyList.push({ rawAcc, rawAmt, reason });
           }
@@ -1056,31 +1059,29 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
                    format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
                    (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                   legacyAcc === rawAcc ||
-                   String(a.pigmyAccountID) === rawAcc;
+                   legacyAcc === rawAcc;
           });
 
           if (!matchedAcc) {
-            let failureReason = 'या एजंटचे सक्रिय खाते सापडले नाही';
-            const anyAcc = accounts.find(a => {
+            let failureReason = 'या एजंटकडे हे खाते सापडले नाही';
+            const thisAgentAcc = accounts.find(a => {
+              const aId = a.pigmyAgentID || getAgentId(a.pigmyAgent) || getAgentId(a.agent);
+              if (aId !== Number(selectedMonthlyAgentId)) return false;
+
               const accClean = a.accountNo.replace(/\D/g, '');
               const rawClean = rawAcc.replace(/\D/g, '');
               const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
+
               return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
                      format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
                      (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                     legacyAcc === rawAcc ||
-                     String(a.pigmyAccountID) === rawAcc;
+                     legacyAcc === rawAcc;
             });
 
-            if (anyAcc) {
-              if (anyAcc.status !== 'Active') {
-                failureReason = `खाते ${anyAcc.status === 'Closed' ? 'बंद' : anyAcc.status} आहे`;
-              } else {
-                failureReason = `हे खाते इतर एजंटचे (${anyAcc.pigmyAgent?.agentName || anyAcc.agent?.agentName || 'अन्य'}) आहे`;
+            if (thisAgentAcc) {
+              if (thisAgentAcc.status !== 'Active') {
+                failureReason = `या एजंटचे हे खाते ${thisAgentAcc.status === 'Closed' ? 'बंद' : thisAgentAcc.status} आहे`;
               }
-            } else {
-              failureReason = 'खाते सिस्टीममध्ये अस्तित्वात नाही';
             }
 
             skippedRows.push({
@@ -1158,6 +1159,24 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
         const dayLabels = dayColMap.map(d => d.label);
 
+        const effectiveBusinessDate = activeBusinessDate || collectionDate;
+        let futureDatesCount = 0;
+        let minFutureDate = '';
+        let maxFutureDate = '';
+
+        previewRows.forEach(row => {
+          if (row.pigmyAccountId > 0 && row.isValid) {
+            Object.keys(row.dailyAmounts).forEach(dStr => {
+              if (row.dailyAmounts[dStr] > 0 && dStr > effectiveBusinessDate) {
+                futureDatesCount++;
+                if (!minFutureDate || dStr < minFutureDate) minFutureDate = dStr;
+                if (!maxFutureDate || dStr > maxFutureDate) maxFutureDate = dStr;
+              }
+            });
+          }
+        });
+        const hasFutureDates = futureDatesCount > 0;
+
         setMonthlyImportPreview({
           fileName: file.name,
           totalRows: previewRows.length + skippedRows.length,
@@ -1166,8 +1185,19 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           totalAmount: grandTotal,
           columns: dayLabels,
           rows: previewRows,
-          skippedRows
+          skippedRows,
+          hasFutureDates,
+          futureDatesCount,
+          minFutureDate,
+          maxFutureDate
         });
+
+        if (hasFutureDates) {
+          toast.error(
+            `⚠️ सावधान: या पत्रकातील ${futureDatesCount} नोंदी चालू कामकाजाच्या तारखेपुढील (${effectiveBusinessDate}) आहेत! भविष्यकालीन नोंदी जमा करता येणार नाहीत.`,
+            { duration: 8000 }
+          );
+        }
 
         toast.success(`एक्सेल वाचले: ${previewRows.length} खाती, एकूण ₹${grandTotal.toLocaleString('en-IN')}`);
 
@@ -1206,6 +1236,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
   const handleSaveMonthlyImport = async () => {
     if (!monthlyImportPreview || monthlyImportPreview.rows.length === 0) {
       toast.error('जमा करण्यासाठी कोणत्याही वैध नोंदी नाहीत.');
+      return;
+    }
+
+    if (monthlyImportPreview.hasFutureDates) {
+      toast.error(`या पत्रकात चालू कामकाजाच्या तारखेपुढील (${activeBusinessDate || collectionDate}) भविष्यकालीन नोंदी असल्याने डेटा जमा करता येणार नाही.`);
       return;
     }
 
@@ -2072,6 +2107,19 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 </div>
               </div>
 
+              {/* Future Dates Warning Banner if collections beyond business date */}
+              {monthlyImportPreview.hasFutureDates && (
+                <div className="bg-red-50 p-3 rounded border-2 border-red-500 text-xs text-red-900 flex items-start gap-2 shadow-2xs">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-extrabold text-red-700 block text-sm">
+                      🚫 भविष्यकालीन व्यवहार बंदी (Future Transactions Detected):
+                    </span>
+                    या एक्सेल पत्रकामध्ये चालू कामकाजाच्या तारखेपुढील ({monthlyImportPreview.minFutureDate} ते {monthlyImportPreview.maxFutureDate}) एकूण <strong>{monthlyImportPreview.futureDatesCount}</strong> भविष्यकालीन नोंदी आढळल्या आहेत. चालू कामकाजाच्या तारखेपुढील (चालू तारीख: {activeBusinessDate || collectionDate}) कलेक्शन सिस्टीममध्ये जमा करता येत नाही. अर्धवट किंवा अवैध डेटा जमा होऊ नये म्हणून आयात रोखण्यात आली आहे.
+                  </div>
+                </div>
+              )}
+
               {/* Skipped / Invalid Rows Notification if any */}
               {monthlyImportPreview.skippedRows.length > 0 && (
                 <div className="bg-red-50 p-2.5 rounded border border-red-300 text-xs text-red-900 flex items-start gap-2 shadow-2xs">
@@ -2342,16 +2390,16 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   <button
                     type="button"
                     onClick={handleSaveMonthlyImport}
-                    disabled={monthlySaving || monthlyImportPreview.totalAmount <= 0 || Boolean(existingMonthlyWarning)}
+                    disabled={monthlySaving || monthlyImportPreview.totalAmount <= 0 || Boolean(existingMonthlyWarning) || Boolean(monthlyImportPreview.hasFutureDates)}
                     className={`px-4 py-1.5 font-bold rounded-sm shadow-sm flex items-center gap-2 text-xs transition-all ${
-                      existingMonthlyWarning 
+                      existingMonthlyWarning || monthlyImportPreview.hasFutureDates
                         ? 'bg-red-100 text-red-700 border border-red-300 cursor-not-allowed' 
                         : 'bg-primary hover:bg-blue-800 text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
                   >
                     {monthlySaving ? (
                       <ArrowPathIcon className="w-4 h-4 animate-spin text-white" />
-                    ) : existingMonthlyWarning ? (
+                    ) : existingMonthlyWarning || monthlyImportPreview.hasFutureDates ? (
                       <ExclamationTriangleIcon className="w-4 h-4 text-red-600" />
                     ) : (
                       <CheckCircleIcon className="w-4 h-4 text-emerald-300" />
@@ -2359,6 +2407,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                     <span>
                       {existingMonthlyWarning
                         ? '🚫 दुबार नोंद बंदी: या महिन्याचे कलेक्शन आधीच जमा आहे'
+                        : monthlyImportPreview.hasFutureDates
+                        ? `🚫 भविष्यकालीन तारीख बंदी: चालू तारखेपुढील (${monthlyImportPreview.futureDatesCount}) नोंदी जमा करता येणार नाहीत`
                         : `सर्व मासिक कलेक्शन खात्यांवर जमा करा (₹${monthlyImportPreview.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })})`
                       }
                     </span>

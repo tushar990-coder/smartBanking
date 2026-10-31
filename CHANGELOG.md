@@ -1,5 +1,21 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-31] - आवृत्ती v2.6.09 (FD Account Direct Secure Deletion, Opening Voucher Rollback & Orphan Account Cleanup Master Patch)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **नवीन मुदत ठेव खाते स्क्रीनवर थेट सुरक्षित डिलीट बटण पूर्ववत (`FdAccountOpening.tsx`):**
+  * उघडलेल्या मुदत ठेव खात्यांच्या यादीत (FD Accounts List) प्रत्येक खात्यासमोर '🖨️ प्रिंट' सोबत सुरक्षित **'🗑️ डिलीट'** बटण पूर्ववत केले.
+  * हे बटण अधिकृत ॲडमिनला उपलब्ध असून, मंजूर व्हाउचर नसल्यास किंवा अनाथ खाते असल्यास थेट स्क्रीनवरून पुष्टीकरण पॉपअपद्वारे खाते सुरक्षितपणे नष्ट (Delete) करता येते.
+* **व्हाउचर रोलबॅक व डिलीट सुधारणा (`VoucherRollbackAndDeleteService.cs` & `FdAccountsController.cs`):**
+  * व्हाउचर पासिंग किंवा व्हाउचर मास्टरमधून FD ओपनिंग व्हाउचर (`JV-FD-*` / `REC-FD-*`) डिलीट करताना व्हाउचर नंबर व नॅरेशनवरून संबंधित `FdAccount` थेट शोधून १००% कॅस्केड डिलीट (`FdTransactions`, `FdInterestAccruals`, `FdMisPayouts`, `FdAccounts` आणि सेव्हिंग ट्रान्सफर रिफंड) करण्याची सुरक्षा जोडली.
+  * नवीन मुदत ठेव खाते उघडताना थेट तयार झालेल्या व्हाउचरचा अचूक `VoucherID` (`voucher.VoucherID`) `FdTransactions` मध्ये जोडला.
+* **पडवळवाडी संस्था तात्काळ डेटाबेस क्लीनअप (`padvalwadi_delete_fd_00140100008444.sql`):**
+  * पडवळवाडी संस्थेतील अनाथ मुदत ठेव खाते `00140100008444` (जुना क्र. 1, शामराव सुर्वे ₹100) चे सर्व रेकॉर्ड्स (`FdTransactions`, `FdAccounts`, अनाथ व्हाउचर्स) आणि बचत खात्यातील वर्ग रक्कम सुरक्षित `TRANSACTION` मध्ये पूर्ण नष्ट करणारी तयार SQL स्क्रिप्ट.
+* **१-क्लिक मल्टि-ॲप मास्टर पॅच (`SmartBanking_VPS_Multi_App_Master_Patch.zip` & `SmartBanking_Patch_v2.6.09.patch`):**
+  * सर्व संस्थांसाठी तयार केलेला मास्टर पॅच व गिट पॅच उपलब्ध.
+
+---
+
 ## 📅 [2026-10-31] - आवृत्ती v2.6.08 (Pigmy Closure Voucher Rollback EF Core Conflicting Type Mapping Fix & Unified ERP Theme Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

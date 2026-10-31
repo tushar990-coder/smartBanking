@@ -1120,14 +1120,58 @@ namespace Bhisi.Api.Services
                     .Where(t => voucherIds.Contains(t.VoucherID) && t.TransactionType == "Opening")
                     .ToListAsync();
 
-                if (fdOpeningTxs.Any())
+                var openedFdsInitial = fdOpeningTxs
+                    .Where(t => t.FdAccount != null)
+                    .Select(t => t.FdAccount!)
+                    .GroupBy(f => f.FdAccountID)
+                    .Select(g => g.First())
+                    .ToList();
+
+                var discoveredFdAccNos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var vNo in voucherNos)
                 {
-                    var openedFds = fdOpeningTxs
-                        .Where(t => t.FdAccount != null)
-                        .Select(t => t.FdAccount!)
-                        .GroupBy(f => f.FdAccountID)
-                        .Select(g => g.First())
-                        .ToList();
+                    string ext = "";
+                    if (vNo.StartsWith("REC-FD-OP-", StringComparison.OrdinalIgnoreCase)) ext = vNo.Substring("REC-FD-OP-".Length).Trim();
+                    else if (vNo.StartsWith("JV-FD-OP-", StringComparison.OrdinalIgnoreCase)) ext = vNo.Substring("JV-FD-OP-".Length).Trim();
+                    else if (vNo.StartsWith("REC-FD-", StringComparison.OrdinalIgnoreCase) && !vNo.StartsWith("REC-FD-BLK-", StringComparison.OrdinalIgnoreCase)) ext = vNo.Substring("REC-FD-".Length).Trim();
+                    else if (vNo.StartsWith("JV-FD-", StringComparison.OrdinalIgnoreCase) && 
+                             !vNo.StartsWith("JV-FD-CLOSE-", StringComparison.OrdinalIgnoreCase) &&
+                             !vNo.StartsWith("JV-FD-PRECLOSE-", StringComparison.OrdinalIgnoreCase) &&
+                             !vNo.StartsWith("JV-FD-REN-", StringComparison.OrdinalIgnoreCase) &&
+                             !vNo.StartsWith("JV-FD-AUTOREN-", StringComparison.OrdinalIgnoreCase) &&
+                             !vNo.StartsWith("JV-FD-INT-", StringComparison.OrdinalIgnoreCase) &&
+                             !vNo.StartsWith("JV-FD-BLK-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ext = vNo.Substring("JV-FD-".Length).Trim();
+                    }
+
+                    if (!string.IsNullOrEmpty(ext)) discoveredFdAccNos.Add(ext);
+                }
+
+                if (!string.IsNullOrWhiteSpace(primaryVoucher.Narration))
+                {
+                    var narrMatch = Regex.Match(primaryVoucher.Narration, @"(?:खाते|Account|FD|खाते क्र\.?)\s*:?\s*([A-Za-z0-9-]+)");
+                    if (narrMatch.Success) discoveredFdAccNos.Add(narrMatch.Groups[1].Value.Trim());
+                }
+
+                var openedFds = new List<FdAccount>(openedFdsInitial);
+                foreach (var accNoCandidate in discoveredFdAccNos)
+                {
+                    var fallbackFd = await FdRenewalRollbackHelper.FindFdAccountByAnyNumberAsync(_context, accNoCandidate);
+                    if (fallbackFd != null && openedFds.All(f => f.FdAccountID != fallbackFd.FdAccountID))
+                    {
+                        openedFds.Add(fallbackFd);
+                    }
+                }
+
+                if (openedFds.Any())
+                {
+
+
+
+
+
+
 
                     var nonLegacyFds = openedFds.Where(f => !f.IsLegacyAccount).ToList();
                     var legacyFds = openedFds.Where(f => f.IsLegacyAccount).ToList();
@@ -1135,7 +1179,7 @@ namespace Bhisi.Api.Services
                     if (legacyFds.Any())
                     {
                         var legacyFdIds = legacyFds.Select(f => f.FdAccountID).ToList();
-                        var legacyTxs = fdOpeningTxs.Where(t => legacyFdIds.Contains(t.FdAccountID)).ToList();
+                        var legacyTxs = await _context.FdTransactions.Where(t => legacyFdIds.Contains(t.FdAccountID) && (voucherIds.Contains(t.VoucherID) || t.TransactionType == "Opening")).ToListAsync();
                         if (legacyTxs.Any()) _context.FdTransactions.RemoveRange(legacyTxs);
                         await _context.SaveChangesAsync();
                     }
@@ -1185,6 +1229,15 @@ namespace Bhisi.Api.Services
                         {
                             _context.FdTransactions.RemoveRange(allOpeningFdTxs);
                         }
+
+                        var extraAccruals = await _context.FdInterestAccruals.Where(a => openedFdIds.Contains(a.FdAccountID)).ToListAsync();
+                        if (extraAccruals.Any()) _context.FdInterestAccruals.RemoveRange(extraAccruals);
+
+                        var extraMis = await _context.FdMisPayouts.Where(m => openedFdIds.Contains(m.FdAccountID)).ToListAsync();
+                        if (extraMis.Any()) _context.FdMisPayouts.RemoveRange(extraMis);
+
+                        var extraRenLogs = await _context.FdAutoRenewalLogs.Where(l => openedFdIds.Contains(l.OldFdAccountID) || (l.NewFdAccountID.HasValue && openedFdIds.Contains(l.NewFdAccountID.Value))).ToListAsync();
+                        if (extraRenLogs.Any()) _context.FdAutoRenewalLogs.RemoveRange(extraRenLogs);
 
                         _context.FdAccounts.RemoveRange(nonLegacyFds);
                         await _context.SaveChangesAsync();

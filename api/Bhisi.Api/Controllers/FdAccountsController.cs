@@ -859,7 +859,7 @@ namespace Bhisi.Api.Controllers
                         {
                             BranchID = account.BranchID,
                             FdAccountID = account.FdAccountID,
-                            VoucherID = _context.Vouchers.Local.FirstOrDefault()?.VoucherID ?? 1,
+                            VoucherID = voucher?.VoucherID ?? (_context.Vouchers.Local.FirstOrDefault()?.VoucherID ?? 1),
                             TransactionDate = account.OpeningDate,
                             TransactionType = "Opening",
                             DebitCredit = "Cr",

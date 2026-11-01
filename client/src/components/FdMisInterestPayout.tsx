@@ -22,6 +22,14 @@ import BankLedgerSelect from './common/BankLedgerSelect';
 
 type MisDisbursementMode = 'SavingTransfer' | 'LoanRecovery' | 'Suspense' | 'Bank' | 'Cash';
 
+interface CustomerSavingAccountOption {
+  savingAccountID: number;
+  accountNo: string;
+  currentBalance: number;
+  branchID: number;
+  branchName: string;
+}
+
 interface PreviewItem {
   fdAccountID: number;
   accountNo: string;
@@ -36,10 +44,12 @@ interface PreviewItem {
   depositPrincipal: number;
   interestRate: number;
   elapsedDays: number;
+  autoElapsedDays?: number;
   periodFromDate: string;
   periodToDate: string;
   isBrokenPeriod: boolean;
   grossInterest: number;
+  autoGrossInterest?: number;
   tdsAmount: number;
   loanAdjustedAmount: number;
   netDisbursedAmount: number;
@@ -48,6 +58,7 @@ interface PreviewItem {
   targetSavingAccountID?: number;
   targetSavingAccountNo?: string;
   targetSavingAccountBalance?: number;
+  customerSavingAccounts?: CustomerSavingAccountOption[];
   targetLoanAccountID?: number;
   targetLoanAccountNo?: string;
   targetLoanBalance?: number;
@@ -101,10 +112,24 @@ export const FdMisInterestPayout: React.FC = () => {
 
   // Branch & Filter states
   const [branches, setBranches] = useState<any[]>([]);
+  const [schemes, setSchemes] = useState<any[]>([]);
+  const [selectedSchemeId, setSelectedSchemeId] = useState<number | ''>('');
+
+  const isHeadOfficeOrAdmin = Boolean(
+    user?.role === 'Admin' ||
+    (user as any)?.roleName === 'Admin' ||
+    (user as any)?.isHeadOffice ||
+    user?.branchID === 0 ||
+    !user?.branchID
+  );
+
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
   const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string) : 1);
   const [branchID, setBranchID] = useState<number>(initialBranchId);
+
+  const currentYear = new Date().getFullYear();
+  const availableYears = Array.from({ length: 6 }, (_, idx) => currentYear - 3 + idx);
 
   const getBizDateStr = (b?: string) => {
     if (b && b.trim()) return b.split('T')[0];
@@ -152,6 +177,7 @@ export const FdMisInterestPayout: React.FC = () => {
 
   useEffect(() => {
     fetchBranches();
+    fetchSchemes();
   }, []);
 
   const fetchBranches = async () => {
@@ -160,6 +186,15 @@ export const FdMisInterestPayout: React.FC = () => {
       setBranches(res.data || []);
     } catch (err) {
       console.error('Branches fetch error', err);
+    }
+  };
+
+  const fetchSchemes = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/FdSchemes`);
+      setSchemes(res.data || []);
+    } catch (err) {
+      console.error('Schemes fetch error', err);
     }
   };
 
@@ -173,6 +208,7 @@ export const FdMisInterestPayout: React.FC = () => {
     try {
       const payload = {
         branchID,
+        fdSchemeID: selectedSchemeId ? Number(selectedSchemeId) : null,
         payoutYear,
         payoutMonth,
         payoutDate,
@@ -189,6 +225,8 @@ export const FdMisInterestPayout: React.FC = () => {
         const netAmt = Math.max(0, (i.grossInterest || 0) - (i.tdsAmount || 0));
         return {
           ...i,
+          autoGrossInterest: i.autoGrossInterest ?? i.grossInterest,
+          autoElapsedDays: i.autoElapsedDays ?? i.elapsedDays,
           originalDisbursementMode: origMode,
           disbursementMode: effectiveMode,
           loanAdjustedAmount: effectiveMode === 'LoanRecovery' ? i.loanAdjustedAmount : 0,
@@ -244,6 +282,105 @@ export const FdMisInterestPayout: React.FC = () => {
   const toggleSelectAll = (checked: boolean) => {
     setPreviewItems(prev =>
       prev.map(i => (!i.isAlreadyPaid && i.grossInterest > 0 ? { ...i, isSelected: checked } : i))
+    );
+  };
+
+  const handleGrossInterestChange = (fdAccountId: number, newGross: number) => {
+    setPreviewItems(prev =>
+      prev.map(i => {
+        if (i.fdAccountID !== fdAccountId || i.isAlreadyPaid) return i;
+        const gross = Math.max(0, newGross);
+        const netAmt = Math.max(0, gross - i.tdsAmount);
+        if (i.disbursementMode === 'LoanRecovery') {
+          return {
+            ...i,
+            grossInterest: gross,
+            loanAdjustedAmount: netAmt,
+            netDisbursedAmount: 0
+          };
+        }
+        return {
+          ...i,
+          grossInterest: gross,
+          loanAdjustedAmount: 0,
+          netDisbursedAmount: netAmt
+        };
+      })
+    );
+  };
+
+  const handleResetGrossInterest = (fdAccountId: number) => {
+    setPreviewItems(prev =>
+      prev.map(i => {
+        if (i.fdAccountID !== fdAccountId || i.isAlreadyPaid) return i;
+        const gross = i.autoGrossInterest ?? Math.round((i.depositPrincipal * i.interestRate) / 1200);
+        const days = i.autoElapsedDays ?? (i.isBrokenPeriod ? i.elapsedDays : 30);
+        const netAmt = Math.max(0, gross - i.tdsAmount);
+        if (i.disbursementMode === 'LoanRecovery') {
+          return {
+            ...i,
+            grossInterest: gross,
+            elapsedDays: days,
+            loanAdjustedAmount: netAmt,
+            netDisbursedAmount: 0
+          };
+        }
+        return {
+          ...i,
+          grossInterest: gross,
+          elapsedDays: days,
+          loanAdjustedAmount: 0,
+          netDisbursedAmount: netAmt
+        };
+      })
+    );
+  };
+
+  const handleElapsedDaysChange = (fdAccountId: number, newDays: number) => {
+    setPreviewItems(prev =>
+      prev.map(i => {
+        if (i.fdAccountID !== fdAccountId || i.isAlreadyPaid) return i;
+        const days = Math.max(1, Math.min(31, newDays));
+        const recalculatedGross = Math.round((i.depositPrincipal * i.interestRate * days) / 36500.0);
+        const netAmt = Math.max(0, recalculatedGross - i.tdsAmount);
+        if (i.disbursementMode === 'LoanRecovery') {
+          return {
+            ...i,
+            elapsedDays: days,
+            grossInterest: recalculatedGross,
+            loanAdjustedAmount: netAmt,
+            netDisbursedAmount: 0
+          };
+        }
+        return {
+          ...i,
+          elapsedDays: days,
+          grossInterest: recalculatedGross,
+          loanAdjustedAmount: 0,
+          netDisbursedAmount: netAmt
+        };
+      })
+    );
+  };
+
+  const handleSavingAccountChange = (fdAccountId: number, savingAccountId: number) => {
+    setPreviewItems(prev =>
+      prev.map(i => {
+        if (i.fdAccountID !== fdAccountId) return i;
+        const selectedSb = i.customerSavingAccounts?.find(s => s.savingAccountID === savingAccountId);
+        if (!selectedSb) return i;
+        const netAmt = Math.max(0, i.grossInterest - i.tdsAmount);
+        return {
+          ...i,
+          targetSavingAccountID: selectedSb.savingAccountID,
+          targetSavingAccountNo: selectedSb.accountNo,
+          targetSavingAccountBalance: selectedSb.currentBalance,
+          disbursementMode: 'SavingTransfer',
+          netDisbursedAmount: netAmt,
+          loanAdjustedAmount: 0,
+          warningNote: undefined
+        };
+      })
     );
   };
 
@@ -453,15 +590,20 @@ export const FdMisInterestPayout: React.FC = () => {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 items-end">
           {/* Branch */}
-          <div className="md:col-span-2">
+          <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch) *</label>
-            {user?.role === 'Admin' ? (
+            {isHeadOfficeOrAdmin ? (
               <select
                 value={branchID}
-                onChange={(e) => setBranchID(parseInt(e.target.value, 10))}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white"
+                onChange={(e) => {
+                  setBranchID(parseInt(e.target.value, 10));
+                  setPreviewItems([]);
+                  setError('');
+                  setSuccess('');
+                }}
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-medium"
               >
                 {branches.map((b) => (
                   <option key={b.branchID} value={b.branchID}>
@@ -472,9 +614,29 @@ export const FdMisInterestPayout: React.FC = () => {
             ) : (
               <div className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-gray-100 font-bold text-gray-800 flex items-center gap-1">
                 <span>🔒</span>
-                <span>{branches.find(b => b.branchID === branchID)?.branchName || user?.branchName || 'Branch'}</span>
+                <span className="truncate">{branches.find(b => b.branchID === branchID)?.branchName || user?.branchName || 'Branch'}</span>
               </div>
             )}
+          </div>
+
+          {/* Scheme Filter */}
+          <div>
+            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मुदत ठेव योजना (Scheme)</label>
+            <select
+              value={selectedSchemeId}
+              onChange={(e) => {
+                setSelectedSchemeId(e.target.value ? parseInt(e.target.value, 10) : '');
+                setPreviewItems([]);
+              }}
+              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-medium"
+            >
+              <option value="">सर्व योजना (All Schemes)</option>
+              {schemes.map((s) => (
+                <option key={s.fdSchemeID || s.schemeID} value={s.fdSchemeID || s.schemeID}>
+                  {s.schemeName}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Year */}
@@ -482,10 +644,13 @@ export const FdMisInterestPayout: React.FC = () => {
             <label className="block text-[11px] font-medium text-gray-600 mb-0.5">वर्ष (Year) *</label>
             <select
               value={payoutYear}
-              onChange={(e) => setPayoutYear(parseInt(e.target.value, 10))}
-              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white"
+              onChange={(e) => {
+                setPayoutYear(parseInt(e.target.value, 10));
+                setPreviewItems([]);
+              }}
+              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-medium"
             >
-              {[2024, 2025, 2026, 2027, 2028].map((y) => (
+              {availableYears.map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
@@ -496,8 +661,11 @@ export const FdMisInterestPayout: React.FC = () => {
             <label className="block text-[11px] font-medium text-gray-600 mb-0.5">महिना (Month) *</label>
             <select
               value={payoutMonth}
-              onChange={(e) => setPayoutMonth(parseInt(e.target.value, 10))}
-              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white"
+              onChange={(e) => {
+                setPayoutMonth(parseInt(e.target.value, 10));
+                setPreviewItems([]);
+              }}
+              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-medium"
             >
               {MARATHI_MONTHS.map((m) => (
                 <option key={m.value} value={m.value}>{m.label}</option>
@@ -770,16 +938,49 @@ export const FdMisInterestPayout: React.FC = () => {
                           </td>
 
                           <td className="p-2 text-center">
-                            <span className="font-bold text-gray-800 block">{item.elapsedDays} दिवस</span>
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="1"
+                                max="31"
+                                disabled={isDisabled}
+                                value={item.elapsedDays}
+                                onChange={(e) => handleElapsedDaysChange(item.fdAccountID, parseInt(e.target.value, 10) || 0)}
+                                className="w-12 text-center font-bold text-gray-800 border border-gray-300 rounded-sm py-0.5 text-xs focus:outline-none focus:border-primary disabled:bg-gray-100"
+                                title="कालावधी दिवस बदला (Recalculate Pro-rata)"
+                              />
+                              <span className="text-[10px] text-gray-500">दिवस</span>
+                            </div>
                             {item.isBrokenPeriod && (
-                              <span className="text-[9px] bg-amber-50 border border-amber-200 text-amber-800 px-1 py-0.2 rounded-sm font-semibold">
+                              <span className="text-[9px] bg-amber-50 border border-amber-200 text-amber-800 px-1 py-0.2 rounded-sm font-semibold block mt-0.5">
                                 अपूर्ण महिना (Odd Days)
                               </span>
                             )}
                           </td>
 
                           <td className="p-2 text-right font-bold text-gray-900 text-xs">
-                            ₹ {item.grossInterest.toLocaleString('en-IN')}
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-gray-500 text-[11px]">₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                disabled={isDisabled}
+                                value={item.grossInterest}
+                                onChange={(e) => handleGrossInterestChange(item.fdAccountID, parseFloat(e.target.value) || 0)}
+                                className="w-20 text-right font-bold text-gray-900 border border-gray-300 rounded-sm px-1.5 py-0.5 text-xs focus:outline-none focus:border-primary disabled:bg-gray-100"
+                                title="मासिक व्याज मॅन्युअल भरा (Editable Interest)"
+                              />
+                              <button
+                                type="button"
+                                title="मूळ सिस्टीम गणना पूर्ववत करा (Reset to Auto-calculated)"
+                                disabled={isDisabled}
+                                onClick={() => handleResetGrossInterest(item.fdAccountID)}
+                                className="p-0.5 text-gray-400 hover:text-primary transition rounded-sm hover:bg-gray-100 disabled:opacity-30 cursor-pointer font-bold text-sm"
+                              >
+                                ↺
+                              </button>
+                            </div>
                           </td>
 
                           <td className="p-2 text-right font-semibold text-amber-700">
@@ -798,6 +999,25 @@ export const FdMisInterestPayout: React.FC = () => {
                                 </span>
                                 <span className="text-[10px] text-gray-500">
                                   शिल्लक: ₹ {(item.targetLoanBalance || 0).toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            ) : item.customerSavingAccounts && item.customerSavingAccounts.length > 0 ? (
+                              <div>
+                                <select
+                                  value={item.targetSavingAccountID || ''}
+                                  disabled={isDisabled}
+                                  onChange={(e) => handleSavingAccountChange(item.fdAccountID, Number(e.target.value))}
+                                  className="w-full border border-gray-300 rounded-sm px-1 py-0.5 text-[11px] font-bold bg-white text-gray-800 focus:outline-none focus:border-primary cursor-pointer"
+                                  title="ठेवीदाराचे सक्रिय बचत खाते निवडा"
+                                >
+                                  {item.customerSavingAccounts.map((sb) => (
+                                    <option key={sb.savingAccountID} value={sb.savingAccountID}>
+                                      {sb.accountNo} (₹ {sb.currentBalance.toLocaleString('en-IN')})
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="text-[9px] text-emerald-700 block font-semibold mt-0.5">
+                                  ✓ सक्रिय बचत खाते
                                 </span>
                               </div>
                             ) : item.targetSavingAccountNo ? (
@@ -832,7 +1052,7 @@ export const FdMisInterestPayout: React.FC = () => {
                                 onChange={(e) => handleRowModeChange(item.fdAccountID, e.target.value as MisDisbursementMode)}
                                 className="border border-gray-300 rounded-sm px-1.5 py-0.5 text-[11px] font-bold bg-white text-gray-800 focus:outline-none focus:border-primary cursor-pointer"
                               >
-                                {item.targetSavingAccountID && (
+                                {(item.targetSavingAccountID || (item.customerSavingAccounts && item.customerSavingAccounts.length > 0)) && (
                                   <option value="SavingTransfer">बचत खात्यात (SB)</option>
                                 )}
                                 <option value="Bank">🏦 बँक (Bank)</option>

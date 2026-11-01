@@ -11,9 +11,19 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace Bhisi.Api.Controllers
 {
+    public class CustomerSavingAccountOptionDto
+    {
+        public int SavingAccountID { get; set; }
+        public string AccountNo { get; set; } = string.Empty;
+        public decimal CurrentBalance { get; set; }
+        public int BranchID { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+    }
+
     public class FdMisPreviewRequestDto
     {
         public int BranchID { get; set; } = 1;
+        public int? FdSchemeID { get; set; }
         public int PayoutYear { get; set; } = DateTime.Today.Year;
         public int PayoutMonth { get; set; } = DateTime.Today.Month;
         public DateTime PayoutDate { get; set; } = DateTime.Today;
@@ -35,10 +45,12 @@ namespace Bhisi.Api.Controllers
         public decimal DepositPrincipal { get; set; }
         public decimal InterestRate { get; set; }
         public int ElapsedDays { get; set; }
+        public int AutoElapsedDays { get; set; }
         public DateTime PeriodFromDate { get; set; }
         public DateTime PeriodToDate { get; set; }
         public bool IsBrokenPeriod { get; set; }
         public decimal GrossInterest { get; set; }
+        public decimal AutoGrossInterest { get; set; }
         public decimal TdsAmount { get; set; }
         public decimal LoanAdjustedAmount { get; set; }
         public decimal NetDisbursedAmount { get; set; }
@@ -46,6 +58,7 @@ namespace Bhisi.Api.Controllers
         public int? TargetSavingAccountID { get; set; }
         public string? TargetSavingAccountNo { get; set; }
         public decimal? TargetSavingAccountBalance { get; set; }
+        public List<CustomerSavingAccountOptionDto> CustomerSavingAccounts { get; set; } = new();
         public int? TargetLoanAccountID { get; set; }
         public string? TargetLoanAccountNo { get; set; }
         public decimal? TargetLoanBalance { get; set; }
@@ -175,7 +188,7 @@ namespace Bhisi.Api.Controllers
             var monthEnd = monthStart.AddMonths(1).AddDays(-1);
 
             // Fetch all active FD accounts in this branch where scheme is MIS or Monthly Payout
-            var activeMisAccounts = await _context.FdAccounts
+            var misQuery = _context.FdAccounts
                 .Include(a => a.Customer)
                 .Include(a => a.SavingAccount)
                 .Include(a => a.FdScheme)
@@ -188,8 +201,14 @@ namespace Bhisi.Api.Controllers
                     a.FdScheme.InterestType == "Monthly Interest" || 
                     a.FdScheme.InterestPayoutFrequency == "Monthly" ||
                     (a.FdScheme.InterestPayoutFrequency != null && a.FdScheme.InterestPayoutFrequency.ToLower().Contains("monthly"))
-                ))
-                .ToListAsync();
+                ));
+
+            if (req.FdSchemeID.HasValue && req.FdSchemeID.Value > 0)
+            {
+                misQuery = misQuery.Where(a => a.FdSchemeID == req.FdSchemeID.Value);
+            }
+
+            var activeMisAccounts = await misQuery.ToListAsync();
 
             // Load existing successful payouts for this month/year to prevent duplicate payout attempts
             var existingPayouts = await _context.FdMisPayouts
@@ -209,8 +228,8 @@ namespace Bhisi.Api.Controllers
                 DateTime fromDate;
                 bool isBrokenPeriod = false;
 
-                // Broken Period check on opening
-                if (acc.OpeningDate.Date >= monthStart)
+                // Broken Period check on opening: strictly after 1st of month
+                if (acc.OpeningDate.Date > monthStart)
                 {
                     fromDate = acc.OpeningDate.Date;
                     isBrokenPeriod = true;
@@ -220,9 +239,9 @@ namespace Bhisi.Api.Controllers
                     fromDate = monthStart;
                 }
 
-                // Broken Period check on maturity
+                // Broken Period check on maturity: strictly before end of month
                 DateTime toDate;
-                if (acc.MaturityDate.Date <= monthEnd)
+                if (acc.MaturityDate.Date < monthEnd)
                 {
                     toDate = acc.MaturityDate.Date;
                     isBrokenPeriod = true;
@@ -234,16 +253,19 @@ namespace Bhisi.Api.Controllers
 
                 if (toDate < fromDate) continue;
 
-                int elapsedDays = (toDate - fromDate).Days + 1;
+                int elapsedDays;
                 decimal grossInterest;
 
                 if (isBrokenPeriod)
                 {
-                    // Broken period pro-rata daily formula
+                    elapsedDays = (toDate - fromDate).Days + 1;
+                    // Broken period pro-rata daily formula: (P * R * elapsedDays) / 36500
                     grossInterest = Math.Round((acc.DepositAmount * acc.InterestRate * elapsedDays) / 36500.0m, 0, MidpointRounding.AwayFromZero);
                 }
                 else
                 {
+                    // Full month: Standard CBS convention is 30 days (1 full month)
+                    elapsedDays = 30;
                     // Standard banking monthly formula: (P * R) / 1200
                     grossInterest = Math.Round((acc.DepositAmount * acc.InterestRate) / 1200.0m, 0, MidpointRounding.AwayFromZero);
                 }
@@ -261,12 +283,41 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // Saving Account Health Check
+                // Saving Account Resolution
                 var sb = acc.SavingAccount;
                 if (sb == null && acc.SavingAccountID.HasValue && acc.SavingAccountID.Value > 0)
                 {
-                    sb = await _context.SavingAccountMasters.FindAsync(acc.SavingAccountID.Value);
+                    sb = await _context.SavingAccountMasters.Include(s => s.Branch).FirstOrDefaultAsync(s => s.SavingAccountID == acc.SavingAccountID.Value);
                 }
+
+                // Fetch all active saving accounts for this customer to enable selection in UI
+                var customerSavingAccounts = new List<CustomerSavingAccountOptionDto>();
+                if (acc.CustomerID > 0)
+                {
+                    var activeSbs = await _context.SavingAccountMasters
+                        .Include(s => s.Branch)
+                        .Where(s => s.CustomerID == acc.CustomerID && s.Status == "Active")
+                        .OrderByDescending(s => s.SavingAccountID == acc.SavingAccountID)
+                        .ThenByDescending(s => s.BranchID == acc.BranchID)
+                        .ThenBy(s => s.SavingAccountID)
+                        .ToListAsync();
+
+                    customerSavingAccounts = activeSbs.Select(s => new CustomerSavingAccountOptionDto
+                    {
+                        SavingAccountID = s.SavingAccountID,
+                        AccountNo = s.AccountNo,
+                        CurrentBalance = s.CurrentBalance,
+                        BranchID = s.BranchID,
+                        BranchName = s.Branch?.BranchName ?? $"शाखा {s.BranchID}"
+                    }).ToList();
+
+                    // If original account is null or inactive, default to the customer's first active saving account
+                    if ((sb == null || sb.Status != "Active") && activeSbs.Any())
+                    {
+                        sb = activeSbs.First();
+                    }
+                }
+
                 bool isSbActive = sb != null && sb.Status == "Active";
 
                 // Lien & Active Loan Check
@@ -332,6 +383,8 @@ namespace Bhisi.Api.Controllers
                     PeriodToDate = toDate,
                     IsBrokenPeriod = isBrokenPeriod,
                     GrossInterest = grossInterest,
+                    AutoGrossInterest = grossInterest,
+                    AutoElapsedDays = elapsedDays,
                     TdsAmount = 0m, // Standard threshold evaluation can be expanded
                     LoanAdjustedAmount = loanAdjAmount,
                     NetDisbursedAmount = netDisbursed,
@@ -339,6 +392,7 @@ namespace Bhisi.Api.Controllers
                     TargetSavingAccountID = sb?.SavingAccountID,
                     TargetSavingAccountNo = sb?.AccountNo,
                     TargetSavingAccountBalance = sb?.CurrentBalance,
+                    CustomerSavingAccounts = customerSavingAccounts,
                     TargetLoanAccountID = targetLoan?.LoanAccountID,
                     TargetLoanAccountNo = targetLoan?.LoanAccountNo,
                     TargetLoanBalance = targetLoan != null ? (targetLoan.PrincipalBalance + targetLoan.InterestBalance) : null,
@@ -447,6 +501,7 @@ namespace Bhisi.Api.Controllers
                 {
                     // 1. Create Combined Master Voucher (Payment when Cash/Bank disbursement is present, else Journal)
                     string vPrefix = hasCashOrBankPayout ? "PV" : "JV";
+                    int currentUserId = User.GetUserId();
                     var voucher = new Voucher
                     {
                         BranchID = req.BranchID,
@@ -455,7 +510,7 @@ namespace Bhisi.Api.Controllers
                         VoucherType = hasCashOrBankPayout ? "Payment" : "Journal",
                         TotalAmount = totalBatchGross,
                         Narration = $"मुदत ठेव मासिक व्याज ट्रान्सफर (FD MIS Interest Payout [{req.AccountingMode}]): {req.PayoutMonth:D2}/{req.PayoutYear}",
-                        CreatedBy = 1,
+                        CreatedBy = currentUserId,
                         CreatedOn = DateTime.Now
                     };
                     _context.Vouchers.Add(voucher);
@@ -496,7 +551,21 @@ namespace Bhisi.Api.Controllers
                                 (l.LedgerName.Contains("मुदत ठेवीवरील व्याज") || l.LedgerName.Contains("देणे मुदत ठेव व्याज")));
                         }
 
-                        int debitLedgerId = debitLedger?.LedgerID ?? 17;
+                        int debitLedgerId = debitLedger?.LedgerID ?? 0;
+                        if (debitLedgerId == 0)
+                        {
+                            var genExp = await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive &&
+                                (l.LedgerName.Contains("मुदत ठेव") || l.LedgerName.Contains("ठेव व्याज") || l.LedgerName.Contains("Interest on FD")));
+                            if (genExp != null)
+                            {
+                                debitLedgerId = genExp.LedgerID;
+                            }
+                            else
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest($"योजना '{acc.FdScheme?.SchemeName}' साठी व्याज खर्च लेजर (Debit Expense Ledger) सेट केलेले नाही.");
+                            }
+                        }
                         voucherDebitGroups[debitLedgerId] = voucherDebitGroups.GetValueOrDefault(debitLedgerId) + item.GrossInterest;
 
                         // B. Handle Loan Recovery Set-off
@@ -525,11 +594,29 @@ namespace Bhisi.Api.Controllers
                                     PrincipalCollected = prinPaid,
                                     InterestCollected = intPaid,
                                     Remarks = $"FD MIS व्याज वळती: खाते {acc.AccountNo}",
-                                    CreatedByUserID = 1
+                                    CreatedByUserID = currentUserId
                                 };
                                 _context.LoanCollections.Add(loanColl);
 
-                                int loanCreditLedgerId = loanAcc.LoanRate?.LoanLedgerID ?? (loanAcc.LoanRate?.InterestLedgerID ?? 1);
+                                int loanCreditLedgerId = loanAcc.LoanRate?.LoanLedgerID ?? 0;
+                                if (loanCreditLedgerId == 0 && loanAcc.LoanRate?.InterestLedgerID > 0)
+                                {
+                                    loanCreditLedgerId = loanAcc.LoanRate.InterestLedgerID.Value;
+                                }
+                                if (loanCreditLedgerId == 0)
+                                {
+                                    var genLoanLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive &&
+                                        (l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan")));
+                                    if (genLoanLedger != null)
+                                    {
+                                        loanCreditLedgerId = genLoanLedger.LedgerID;
+                                    }
+                                    else
+                                    {
+                                        await transaction.RollbackAsync();
+                                        return BadRequest($"तारण कर्ज क्र. {loanAcc.LoanAccountNo} साठी क्रेडिट लेजर सापडले नाही.");
+                                    }
+                                }
                                 voucherCreditGroups[loanCreditLedgerId] = voucherCreditGroups.GetValueOrDefault(loanCreditLedgerId) + loanDeduct;
                             }
                         }
@@ -579,7 +666,7 @@ namespace Bhisi.Api.Controllers
                                         BalanceAfterTxn = sbAcc.CurrentBalance,
                                         Narration = $"मुदत ठेव मासिक व्याज जमा (FD MIS): {acc.AccountNo} ({req.PayoutMonth:D2}/{req.PayoutYear})",
                                         VoucherNo = voucher.VoucherNo,
-                                        CreatedBy = 1,
+                                        CreatedBy = currentUserId,
                                         CreatedOn = DateTime.Now
                                     };
                                     _context.SavingTransactions.Add(savTx);
@@ -606,7 +693,7 @@ namespace Bhisi.Api.Controllers
                         // D. Create Payout Log in FdMisPayouts
                         var payoutLog = new FdMisPayout
                         {
-                            InstitutionID = 1,
+                            InstitutionID = acc.InstitutionID > 0 ? acc.InstitutionID : 1,
                             BranchID = req.BranchID,
                             FinancialYearID = acc.FinancialYearID > 0 ? acc.FinancialYearID : 1,
                             FdAccountID = acc.FdAccountID,
@@ -624,7 +711,7 @@ namespace Bhisi.Api.Controllers
                             TargetLoanAccountID = item.TargetLoanAccountID,
                             VoucherID = voucher.VoucherID,
                             Status = "Success",
-                            CreatedBy = 1,
+                            CreatedBy = currentUserId,
                             CreatedDate = DateTime.Now,
                             Remarks = item.Remarks ?? $"MIS Payout {req.PayoutMonth:D2}/{req.PayoutYear}"
                         };

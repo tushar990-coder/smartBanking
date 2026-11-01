@@ -15,16 +15,41 @@ namespace Bhisi.Api.Controllers
     public class FdSchemesController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private static bool _schemeColumnsVerified = false;
 
         public FdSchemesController(AppDbContext context)
         {
             _context = context;
         }
 
+        private async Task EnsureFdSchemeColumnsAsync()
+        {
+            if (_schemeColumnsVerified) return;
+            try
+            {
+                string sql = @"
+                    IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdSchemes')
+                    BEGIN
+                        IF COL_LENGTH('FdSchemes', 'InterestCalculationMethod') IS NULL
+                        BEGIN
+                            ALTER TABLE [FdSchemes] ADD [InterestCalculationMethod] nvarchar(20) NOT NULL CONSTRAINT [DF_FdSchemes_InterestCalculationMethod] DEFAULT 'Monthly';
+                            EXEC(N'UPDATE [FdSchemes] SET [InterestCalculationMethod] = ''Daily'' WHERE [DurationType] = ''Days'' OR [SchemeDurationModel] = ''Slab'';');
+                        END
+                    END";
+                await _context.Database.ExecuteSqlRawAsync(sql);
+                _schemeColumnsVerified = true;
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine($"[WARN] EnsureFdSchemeColumnsAsync: {ex.Message}");
+            }
+        }
+
         // GET: api/FdSchemes
         [HttpGet]
         public async Task<ActionResult<IEnumerable<FdScheme>>> GetFdSchemes([FromQuery] int? branchId, [FromQuery] bool includeAll = false)
         {
+            await EnsureFdSchemeColumnsAsync();
             var query = _context.FdSchemes
                 .Include(s => s.Branch)
                 .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
@@ -49,6 +74,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<FdScheme>> GetFdScheme(int id)
         {
+            await EnsureFdSchemeColumnsAsync();
             var fdScheme = await _context.FdSchemes
                 .Include(s => s.Branch)
                 .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
@@ -95,6 +121,7 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "Admin,Manager,SuperAdmin,HeadOffice")]
         public async Task<ActionResult<FdScheme>> PostFdScheme(FdScheme fdScheme)
         {
+            await EnsureFdSchemeColumnsAsync();
             if (string.IsNullOrWhiteSpace(fdScheme.SchemeCode))
             {
                 var codes = await _context.FdSchemes.Select(s => s.SchemeCode).ToListAsync();
@@ -151,6 +178,10 @@ namespace Bhisi.Api.Controllers
             fdScheme.Branch = null;
             fdScheme.IsActive = true;
             fdScheme.CreatedDate = DateTime.Now;
+            if (string.IsNullOrWhiteSpace(fdScheme.InterestCalculationMethod))
+            {
+                fdScheme.InterestCalculationMethod = (fdScheme.DurationType == "Days" || fdScheme.SchemeDurationModel == "Slab") ? "Daily" : "Monthly";
+            }
 
             // Handle incoming Slabs
             var incomingSlabs = fdScheme.Slabs?.ToList() ?? new List<FdSchemeInterestSlab>();
@@ -203,6 +234,7 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "Admin,Manager,SuperAdmin,HeadOffice")]
         public async Task<IActionResult> PutFdScheme(int id, FdScheme fdScheme)
         {
+            await EnsureFdSchemeColumnsAsync();
             if (id != fdScheme.FdSchemeID)
             {
                 return BadRequest("Scheme ID mismatch.");
@@ -250,6 +282,9 @@ namespace Bhisi.Api.Controllers
             existingScheme.InterestPostingMethod = fdScheme.InterestPostingMethod;
             existingScheme.InterestCompoundingFrequency = fdScheme.InterestCompoundingFrequency;
             existingScheme.InterestPayoutFrequency = string.IsNullOrWhiteSpace(fdScheme.InterestPayoutFrequency) ? "At Maturity" : fdScheme.InterestPayoutFrequency;
+            existingScheme.InterestCalculationMethod = string.IsNullOrWhiteSpace(fdScheme.InterestCalculationMethod)
+                ? ((existingScheme.DurationType == "Days" || existingScheme.SchemeDurationModel == "Slab") ? "Daily" : "Monthly")
+                : fdScheme.InterestCalculationMethod.Trim();
             existingScheme.MinimumAmount = fdScheme.MinimumAmount;
             existingScheme.MaximumAmount = fdScheme.MaximumAmount;
             existingScheme.PrematureInterestRate = fdScheme.PrematureInterestRate;

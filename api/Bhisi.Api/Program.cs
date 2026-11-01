@@ -1416,6 +1416,11 @@ try
                 BEGIN
                     ALTER TABLE [FdSchemes] ADD [InterestPayoutFrequency] nvarchar(30) NOT NULL CONSTRAINT [DF_FdSchemes_InterestPayoutFrequency] DEFAULT 'At Maturity';
                 END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdSchemes]') AND name = 'InterestCalculationMethod')
+                BEGIN
+                    ALTER TABLE [FdSchemes] ADD [InterestCalculationMethod] nvarchar(20) NOT NULL CONSTRAINT [DF_FdSchemes_InterestCalculationMethod] DEFAULT 'Monthly';
+                    EXEC(N'UPDATE [FdSchemes] SET [InterestCalculationMethod] = ''Daily'' WHERE [DurationType] = ''Days'' OR [SchemeDurationModel] = ''Slab'';');
+                END
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')

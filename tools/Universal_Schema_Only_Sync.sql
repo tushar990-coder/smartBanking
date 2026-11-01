@@ -4499,6 +4499,13 @@ BEGIN
     PRINT '  + Added column [PrematurePenaltyLedgerID] to [dbo].[FdSchemes]';
 END
 GO
+IF COL_LENGTH(N'[dbo].[FdSchemes]', N'InterestCalculationMethod') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [InterestCalculationMethod] NVARCHAR(20) NOT NULL CONSTRAINT [DF_FdSchemes_InterestCalculationMethod] DEFAULT 'Monthly';
+    EXEC(N'UPDATE [dbo].[FdSchemes] SET [InterestCalculationMethod] = ''Daily'' WHERE [DurationType] = ''Days'' OR [SchemeDurationModel] = ''Slab'';');
+    PRINT '  + Added column [InterestCalculationMethod] to [dbo].[FdSchemes]';
+END
+GO
 
 ----------------------------------------------------------------------------------------------------
 -- [42/126] TABLE: [dbo].[FdTransactions]

@@ -62,6 +62,7 @@ interface FdScheme {
   interestPostingMethod: string;
   interestCompoundingFrequency: string;
   interestPayoutFrequency?: string;
+  interestCalculationMethod?: string; // 'Monthly' | 'Daily'
   minimumAmount: number;
   maximumAmount: number;
   prematureInterestRate: number;
@@ -98,6 +99,7 @@ interface FdSchemeFormData {
   interestPostingMethod: string;
   interestCompoundingFrequency: string;
   interestPayoutFrequency: string;
+  interestCalculationMethod: string; // 'Monthly' | 'Daily'
   minimumAmount: number | string;
   maximumAmount: number | string;
   prematureInterestRate: number | string;
@@ -149,6 +151,7 @@ const FdSchemeMaster: React.FC = () => {
     interestPostingMethod: 'On Principal',
     interestCompoundingFrequency: 'N/A',
     interestPayoutFrequency: 'At Maturity',
+    interestCalculationMethod: 'Monthly',
     minimumAmount: 1000,
     maximumAmount: 1000000,
     prematureInterestRate: 6.0,
@@ -333,6 +336,11 @@ const FdSchemeMaster: React.FC = () => {
         ...prev,
         [name]: val
       };
+      if (name === 'durationType' && val === 'Days') {
+        updated.interestCalculationMethod = 'Daily';
+      } else if (name === 'schemeDurationModel' && val === 'Slab') {
+        updated.interestCalculationMethod = 'Daily';
+      }
       if (name === 'interestType') {
         if (val === 'MIS') {
           updated.interestPayoutFrequency = 'Monthly';
@@ -422,6 +430,7 @@ const FdSchemeMaster: React.FC = () => {
       interestPostingMethod: formData.interestPostingMethod,
       interestCompoundingFrequency: formData.interestCompoundingFrequency,
       interestPayoutFrequency: formData.interestPayoutFrequency || 'At Maturity',
+      interestCalculationMethod: formData.interestCalculationMethod || 'Monthly',
       minimumAmount: parseFloat(formData.minimumAmount.toString()) || 0,
       maximumAmount: parseFloat(formData.maximumAmount.toString()) || 0,
       prematureInterestRate: parseFloat(formData.prematureInterestRate.toString()) || 0,
@@ -491,6 +500,7 @@ const FdSchemeMaster: React.FC = () => {
       interestPostingMethod: scheme.interestPostingMethod || 'On Principal',
       interestCompoundingFrequency: scheme.interestCompoundingFrequency || 'N/A',
       interestPayoutFrequency: scheme.interestPayoutFrequency || (scheme.interestType === 'MIS' ? 'Monthly' : 'At Maturity'),
+      interestCalculationMethod: scheme.interestCalculationMethod || ((scheme.durationType === 'Days' || scheme.schemeDurationModel === 'Slab') ? 'Daily' : 'Monthly'),
       minimumAmount: scheme.minimumAmount || 1000,
       maximumAmount: scheme.maximumAmount || 1000000,
       prematureInterestRate: scheme.prematureInterestRate || 0,
@@ -553,6 +563,7 @@ const FdSchemeMaster: React.FC = () => {
       interestPostingMethod: 'On Principal',
       interestCompoundingFrequency: 'N/A',
       interestPayoutFrequency: 'At Maturity',
+      interestCalculationMethod: 'Monthly',
       minimumAmount: 1000,
       maximumAmount: 1000000,
       prematureInterestRate: 6.0,
@@ -1150,7 +1161,7 @@ const FdSchemeMaster: React.FC = () => {
             <h2 className="text-xs font-bold text-primary">२. व्याज नियम व मर्यादा (Interest Calculation Rules & Limits)</h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
             <div>
               <label className={labelClass}>व्याज प्रकार (Interest Type) <span className="text-red-500">*</span></label>
               <select name="interestType" value={formData.interestType} onChange={handleChange} className={inputClass}>
@@ -1174,6 +1185,19 @@ const FdSchemeMaster: React.FC = () => {
                 <option value="Monthly">मासिक परतावा (Monthly Payout - दरमहा)</option>
                 <option value="Half-Yearly">सहामाही परतावा (Half-Yearly - दर ६ महिने)</option>
                 <option value="Yearly">वार्षिक परतावा (Yearly - दरवर्षी)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>मासिक व्याज गणना पद्धत (Calculation Basis) <span className="text-red-500">*</span></label>
+              <select
+                name="interestCalculationMethod"
+                value={formData.interestCalculationMethod}
+                onChange={handleChange}
+                className={`${inputClass} font-bold text-emerald-800`}
+              >
+                <option value="Monthly">१. दरमहा समान हप्ता ((P×R)/1200)</option>
+                <option value="Daily">२. प्रत्यक्ष दिवसानुसार ((P×R×दिवस)/३६५००)</option>
               </select>
             </div>
 
@@ -1234,10 +1258,18 @@ const FdSchemeMaster: React.FC = () => {
               </div>
               <div className="bg-white px-3 py-1 rounded border border-emerald-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
                 <span className="text-slate-600">दर ₹ १,००,००० ठेवीवर अंदाजे दरमहा व्याज:</span>
-                <span className="text-emerald-700 font-extrabold font-mono text-sm">
-                  ₹ {Math.round((100000 * (Number(formData.interestRate) || 0)) / 1200).toLocaleString('en-IN')}
-                </span>
-                <span className="text-[10px] text-slate-500 font-normal">/ महा</span>
+                {formData.interestCalculationMethod === 'Daily' ? (
+                  <span className="text-emerald-700 font-extrabold font-mono text-xs">
+                    ३० दिवस: ₹ {Math.round((100000 * (Number(formData.interestRate) || 0) * 30) / 36500).toLocaleString('en-IN')} | ३१ दिवस: ₹ {Math.round((100000 * (Number(formData.interestRate) || 0) * 31) / 36500).toLocaleString('en-IN')}
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-emerald-700 font-extrabold font-mono text-sm">
+                      ₹ {Math.round((100000 * (Number(formData.interestRate) || 0)) / 1200).toLocaleString('en-IN')}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-normal">/ महा</span>
+                  </>
+                )}
               </div>
             </div>
           )}

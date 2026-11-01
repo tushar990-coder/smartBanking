@@ -11,13 +11,26 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace Bhisi.Api.Controllers
 {
+    public class PayoutLedgerOptionDto
+    {
+        public int LedgerID { get; set; }
+        public string LedgerName { get; set; } = string.Empty;
+        public string LedgerCode { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty; // "SavingTransfer", "Cash", "Bank", "Suspense"
+        public bool IsDefault { get; set; }
+    }
+
     public class CustomerSavingAccountOptionDto
     {
         public int SavingAccountID { get; set; }
         public string AccountNo { get; set; } = string.Empty;
+        public string OldAccountNo { get; set; } = string.Empty;
+        public string CifNo { get; set; } = string.Empty;
         public decimal CurrentBalance { get; set; }
         public int BranchID { get; set; }
         public string BranchName { get; set; } = string.Empty;
+        public int LedgerID { get; set; }
+        public string LedgerName { get; set; } = string.Empty;
     }
 
     public class FdMisPreviewRequestDto
@@ -28,12 +41,13 @@ namespace Bhisi.Api.Controllers
         public int PayoutMonth { get; set; } = DateTime.Today.Month;
         public DateTime PayoutDate { get; set; } = DateTime.Today;
         public string AccountingMode { get; set; } = "DirectExpense"; // DirectExpense or ClearPayable
-        public string CalculationMethod { get; set; } = "Monthly"; // "Monthly" ((P*R)/1200) or "Daily" ((P*R*Days)/36500)
+        public string CalculationMethod { get; set; } = "SchemeDefault"; // "SchemeDefault", "Monthly" ((P*R)/1200), or "Daily" ((P*R*Days)/36500)
     }
 
     public class FdMisPreviewItemDto
     {
         public int FdAccountID { get; set; }
+        public int FdSchemeID { get; set; }
         public string AccountNo { get; set; } = string.Empty;
         public int CustomerID { get; set; }
         public string CustomerName { get; set; } = string.Empty;
@@ -41,6 +55,7 @@ namespace Bhisi.Api.Controllers
         public int? MemberID { get; set; }
         public string MemberNo { get; set; } = string.Empty;
         public string SchemeName { get; set; } = string.Empty;
+        public string SchemeCalculationMethod { get; set; } = "Monthly";
         public DateTime OpeningDate { get; set; }
         public DateTime MaturityDate { get; set; }
         public decimal DepositPrincipal { get; set; }
@@ -55,10 +70,14 @@ namespace Bhisi.Api.Controllers
         public decimal TdsAmount { get; set; }
         public decimal LoanAdjustedAmount { get; set; }
         public decimal NetDisbursedAmount { get; set; }
-        public string DisbursementMode { get; set; } = "SavingTransfer"; // SavingTransfer, LoanRecovery, Suspense
+        public string DisbursementMode { get; set; } = "SavingTransfer"; // SavingTransfer, LoanRecovery, Suspense, Cash, Bank
         public int? TargetSavingAccountID { get; set; }
         public string? TargetSavingAccountNo { get; set; }
+        public string? TargetSavingOldAccountNo { get; set; }
+        public string? TargetSavingCifNo { get; set; }
         public decimal? TargetSavingAccountBalance { get; set; }
+        public int? TargetCreditLedgerID { get; set; }
+        public string? TargetCreditLedgerName { get; set; }
         public List<CustomerSavingAccountOptionDto> CustomerSavingAccounts { get; set; } = new();
         public int? TargetLoanAccountID { get; set; }
         public string? TargetLoanAccountNo { get; set; }
@@ -72,6 +91,7 @@ namespace Bhisi.Api.Controllers
     public class FdMisBatchExecuteItemDto
     {
         public int FdAccountID { get; set; }
+        public int ElapsedDays { get; set; }
         public decimal GrossInterest { get; set; }
         public decimal TdsAmount { get; set; }
         public decimal LoanAdjustedAmount { get; set; }
@@ -80,6 +100,7 @@ namespace Bhisi.Api.Controllers
         public int? TargetSavingAccountID { get; set; }
         public int? TargetLoanAccountID { get; set; }
         public int? BankLedgerID { get; set; }
+        public int? CreditLedgerID { get; set; }
         public string? Remarks { get; set; }
     }
 
@@ -147,6 +168,15 @@ namespace Bhisi.Api.Controllers
                     CREATE UNIQUE INDEX [IX_FdMisPayouts_Account_Year_Month] 
                     ON [FdMisPayouts] ([FdAccountID], [PayoutYear], [PayoutMonth])
                     WHERE [Status] = 'Success';
+                END
+
+                IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdSchemes')
+                BEGIN
+                    IF COL_LENGTH('FdSchemes', 'InterestCalculationMethod') IS NULL
+                    BEGIN
+                        ALTER TABLE [FdSchemes] ADD [InterestCalculationMethod] nvarchar(20) NOT NULL CONSTRAINT [DF_FdSchemes_InterestCalcMethod_Auto] DEFAULT 'Monthly';
+                        EXEC(N'UPDATE [FdSchemes] SET [InterestCalculationMethod] = ''Daily'' WHERE [DurationType] = ''Days'' OR [SchemeDurationModel] = ''Slab'';');
+                    END
                 END";
 
             try
@@ -165,6 +195,186 @@ namespace Bhisi.Api.Controllers
             int? userBranchId = User.GetOperatingBranchId();
             bool isHO = User.IsHeadOfficeAdmin();
             return (isHO, userBranchId);
+        }
+
+        private async Task<List<PayoutLedgerOptionDto>> GetCategorizedPayoutLedgersAsync(int branchId)
+        {
+            var allLedgers = await _context.Ledgers
+                .AsNoTracking()
+                .Include(l => l.AccountGroup)
+                .Where(l => l.IsActive)
+                .OrderBy(l => l.LedgerID)
+                .ToListAsync();
+
+            var ledgerDict = allLedgers.ToDictionary(l => l.LedgerID);
+            var result = new List<PayoutLedgerOptionDto>();
+            var addedIds = new HashSet<int>();
+
+            void TryAddOption(Ledger? ledger, string category, bool isDefault = false)
+            {
+                if (ledger == null || ledger.LedgerID <= 0 || addedIds.Contains(ledger.LedgerID))
+                    return;
+                addedIds.Add(ledger.LedgerID);
+                result.Add(new PayoutLedgerOptionDto
+                {
+                    LedgerID = ledger.LedgerID,
+                    LedgerName = ledger.LedgerName ?? string.Empty,
+                    LedgerCode = ledger.LedgerCode ?? string.Empty,
+                    Category = category,
+                    IsDefault = isDefault
+                });
+            }
+
+            // 1. Saving Deposit Liability Ledgers (SavingTransfer)
+            var today = DateTime.Today;
+            var savingSchemes = await _context.SavingInterestSettings
+                .AsNoTracking()
+                .OrderByDescending(s => s.EffectiveDate <= today)
+                .ThenByDescending(s => s.EffectiveDate)
+                .ThenByDescending(s => s.SettingID)
+                .ToListAsync();
+
+            var interestPayableIds = savingSchemes
+                .Where(s => s.InterestPayableLedgerID.HasValue && s.InterestPayableLedgerID.Value > 0)
+                .Select(s => s.InterestPayableLedgerID!.Value)
+                .ToHashSet();
+
+            bool defaultSavingAssigned = false;
+            foreach (var scheme in savingSchemes)
+            {
+                int? candidateId = (scheme.SavingLiabilityLedgerID.HasValue && scheme.SavingLiabilityLedgerID.Value > 0)
+                    ? scheme.SavingLiabilityLedgerID
+                    : scheme.LedgerID;
+                if (candidateId.HasValue && ledgerDict.TryGetValue(candidateId.Value, out var savLedger) &&
+                    SavingLedgerHelper.IsValidSavingLiabilityLedger(savLedger) &&
+                    !BankLedgerHelper.IsBankLedger(savLedger) &&
+                    !BankLedgerHelper.IsCashLedger(savLedger))
+                {
+                    TryAddOption(savLedger, "SavingTransfer", !defaultSavingAssigned);
+                    defaultSavingAssigned = true;
+                }
+            }
+
+            var savingMappings = await _context.SavingVoucherMappings
+                .AsNoTracking()
+                .Where(m => m.OperationType == "SavingControl" || m.OperationType == "SavingLiability" || m.OperationType == "Deposit")
+                .Select(m => m.LedgerID)
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var mapId in savingMappings)
+            {
+                if (ledgerDict.TryGetValue(mapId, out var savLedger) &&
+                    SavingLedgerHelper.IsValidSavingLiabilityLedger(savLedger) &&
+                    !BankLedgerHelper.IsBankLedger(savLedger) &&
+                    !BankLedgerHelper.IsCashLedger(savLedger))
+                {
+                    TryAddOption(savLedger, "SavingTransfer", !defaultSavingAssigned);
+                    defaultSavingAssigned = true;
+                }
+            }
+
+            var distinctAccountLedgerIds = await _context.SavingAccountMasters
+                .AsNoTracking()
+                .Where(s => s.LedgerID > 0 && s.Status != "Closed" && s.Status != "बंद")
+                .Select(s => s.LedgerID)
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var accLedgerId in distinctAccountLedgerIds)
+            {
+                if (ledgerDict.TryGetValue(accLedgerId, out var savLedger) &&
+                    SavingLedgerHelper.IsValidSavingLiabilityLedger(savLedger) &&
+                    !BankLedgerHelper.IsBankLedger(savLedger) &&
+                    !BankLedgerHelper.IsCashLedger(savLedger))
+                {
+                    TryAddOption(savLedger, "SavingTransfer", !defaultSavingAssigned);
+                    defaultSavingAssigned = true;
+                }
+            }
+
+            foreach (var l in allLedgers)
+            {
+                if (addedIds.Contains(l.LedgerID) || interestPayableIds.Contains(l.LedgerID))
+                    continue;
+
+                string accType = (l.AccountType ?? string.Empty).Trim();
+                string grpText = $"{l.AccountGroup?.GroupName} {l.AccountGroup?.GroupNameEnglish}".ToLowerInvariant();
+                string lName = (l.LedgerName ?? string.Empty);
+                bool looksLikeSavingGroup = string.Equals(accType, "Savings", StringComparison.OrdinalIgnoreCase)
+                    || grpText.Contains("बचत")
+                    || grpText.Contains("saving")
+                    || (lName.Contains("बचत") && !lName.Contains("व्याज") && !lName.Contains("देणे"));
+
+                if (looksLikeSavingGroup &&
+                    SavingLedgerHelper.IsValidSavingLiabilityLedger(l) &&
+                    !BankLedgerHelper.IsBankLedger(l) &&
+                    !BankLedgerHelper.IsCashLedger(l))
+                {
+                    TryAddOption(l, "SavingTransfer", !defaultSavingAssigned);
+                    defaultSavingAssigned = true;
+                }
+            }
+
+            // 2. Cash Ledgers (Cash)
+            int defaultCashId = 0;
+            try
+            {
+                defaultCashId = await CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "FD");
+            }
+            catch
+            {
+                defaultCashId = 0;
+            }
+
+            if (defaultCashId > 0 && ledgerDict.TryGetValue(defaultCashId, out var defCashLedger))
+            {
+                TryAddOption(defCashLedger, "Cash", true);
+            }
+
+            foreach (var l in allLedgers.Where(BankLedgerHelper.IsCashLedger))
+            {
+                TryAddOption(l, "Cash", defaultCashId <= 0 && !result.Any(x => x.Category == "Cash"));
+            }
+
+            // 3. Bank Account GL Ledgers (Bank)
+            bool defaultBankAssigned = false;
+            foreach (var l in allLedgers.Where(BankLedgerHelper.IsBankLedger))
+            {
+                TryAddOption(l, "Bank", !defaultBankAssigned);
+                defaultBankAssigned = true;
+            }
+
+            // 4. Suspense Ledgers (Suspense)
+            bool defaultSuspAssigned = false;
+            foreach (var l in allLedgers)
+            {
+                if (addedIds.Contains(l.LedgerID) || BankLedgerHelper.IsBankLedger(l) || BankLedgerHelper.IsCashLedger(l))
+                    continue;
+                string lName = l.LedgerName ?? string.Empty;
+                if (lName.Contains("उचंत") || lName.Contains("न मागितलेले") || lName.Contains("Suspense", StringComparison.OrdinalIgnoreCase))
+                {
+                    TryAddOption(l, "Suspense", !defaultSuspAssigned);
+                    defaultSuspAssigned = true;
+                }
+            }
+
+            return result;
+        }
+
+        // GET: api/FdMisPayout/PayoutLedgers
+        [HttpGet("PayoutLedgers")]
+        [Authorize]
+        public async Task<IActionResult> GetPayoutLedgers([FromQuery] int? branchId)
+        {
+            await EnsureTableExistsAsync();
+            var (isHO, userBranchId) = GetUserBranchInfo();
+            int effectiveBranchId = (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+                ? userBranchId.Value
+                : (branchId.HasValue && branchId.Value > 0 ? branchId.Value : 1);
+
+            var ledgers = await GetCategorizedPayoutLedgersAsync(effectiveBranchId);
+            return Ok(ledgers);
         }
 
         // POST: api/FdMisPayout/Preview
@@ -221,6 +431,24 @@ namespace Bhisi.Api.Controllers
 
             var activeMisAccounts = await misQuery.ToListAsync();
 
+            // Preload categorized payout ledgers & active ledger dictionary for zero-hardcoding resolution
+            var payoutLedgers = await GetCategorizedPayoutLedgersAsync(req.BranchID);
+            var allLedgersList = await _context.Ledgers
+                .AsNoTracking()
+                .Include(l => l.AccountGroup)
+                .ToListAsync();
+            var allLedgersDict = allLedgersList.ToDictionary(l => l.LedgerID);
+
+            int defaultSavingLedgerId = payoutLedgers.FirstOrDefault(x => x.Category == "SavingTransfer" && x.IsDefault)?.LedgerID
+                ?? payoutLedgers.FirstOrDefault(x => x.Category == "SavingTransfer")?.LedgerID
+                ?? 0;
+            int defaultCashLedgerId = payoutLedgers.FirstOrDefault(x => x.Category == "Cash" && x.IsDefault)?.LedgerID
+                ?? payoutLedgers.FirstOrDefault(x => x.Category == "Cash")?.LedgerID
+                ?? 0;
+            int defaultSuspenseLedgerId = payoutLedgers.FirstOrDefault(x => x.Category == "Suspense" && x.IsDefault)?.LedgerID
+                ?? payoutLedgers.FirstOrDefault(x => x.Category == "Suspense")?.LedgerID
+                ?? 0;
+
             // Load existing successful payouts for this month/year to prevent duplicate payout attempts
             var existingPayouts = await _context.FdMisPayouts
                 .Where(p => p.PayoutYear == req.PayoutYear && p.PayoutMonth == req.PayoutMonth && p.Status == "Success")
@@ -275,8 +503,20 @@ namespace Bhisi.Api.Controllers
                     elapsedDays = daysInMonth;
                 }
 
+                string rawSchemeMethod = (acc.FdScheme?.InterestCalculationMethod ?? string.Empty).Trim();
+                string schemeCalcMethod = string.Equals(rawSchemeMethod, "Daily", StringComparison.OrdinalIgnoreCase)
+                    || (!string.Equals(rawSchemeMethod, "Monthly", StringComparison.OrdinalIgnoreCase) &&
+                        (acc.FdScheme?.DurationType == "Days" || acc.FdScheme?.SchemeDurationModel == "Slab"))
+                    ? "Daily"
+                    : "Monthly";
+
+                string effectiveMethod = (string.IsNullOrWhiteSpace(req.CalculationMethod) ||
+                                          string.Equals(req.CalculationMethod, "SchemeDefault", StringComparison.OrdinalIgnoreCase))
+                    ? schemeCalcMethod
+                    : req.CalculationMethod;
+
                 decimal grossInterest;
-                if (string.Equals(req.CalculationMethod, "Daily", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(effectiveMethod, "Daily", StringComparison.OrdinalIgnoreCase))
                 {
                     // Exact daily formula: (P * R * elapsedDays) / 36500
                     grossInterest = Math.Round((acc.DepositAmount * acc.InterestRate * elapsedDays) / 36500.0m, 0, MidpointRounding.AwayFromZero);
@@ -313,25 +553,36 @@ namespace Bhisi.Api.Controllers
                 {
                     sb = await _context.SavingAccountMasters
                         .Include(s => s.Branch)
+                        .Include(s => s.Customer)
+                        .Include(s => s.Ledger)
+                        .Include(s => s.SavingScheme)
                         .FirstOrDefaultAsync(s => s.SavingAccountID == acc.SavingAccountID.Value);
                 }
 
-                // Fetch all unclosed saving accounts for this customer to enable selection in UI
+                // Fetch all unclosed saving accounts for this customer (including joint accounts) to enable selection in UI
                 var customerSavingAccounts = new List<CustomerSavingAccountOptionDto>();
                 string customerCif = acc.Customer?.CIFNo ?? string.Empty;
 
                 var sbsQuery = _context.SavingAccountMasters
                     .Include(s => s.Branch)
                     .Include(s => s.Customer)
+                    .Include(s => s.Ledger)
+                    .Include(s => s.SavingScheme)
+                    .Include(s => s.JointHolders)
                     .Where(s => s.Status != "Closed" && s.Status != "बंद");
 
                 if (acc.CustomerID > 0 && !string.IsNullOrEmpty(customerCif))
                 {
-                    sbsQuery = sbsQuery.Where(s => s.CustomerID == acc.CustomerID || (s.Customer != null && s.Customer.CIFNo == customerCif));
+                    sbsQuery = sbsQuery.Where(s =>
+                        s.CustomerID == acc.CustomerID ||
+                        (s.Customer != null && s.Customer.CIFNo == customerCif) ||
+                        s.JointHolders.Any(jh => jh.CustomerID == acc.CustomerID));
                 }
                 else if (acc.CustomerID > 0)
                 {
-                    sbsQuery = sbsQuery.Where(s => s.CustomerID == acc.CustomerID);
+                    sbsQuery = sbsQuery.Where(s =>
+                        s.CustomerID == acc.CustomerID ||
+                        s.JointHolders.Any(jh => jh.CustomerID == acc.CustomerID));
                 }
                 else if (!string.IsNullOrEmpty(customerCif))
                 {
@@ -344,20 +595,46 @@ namespace Bhisi.Api.Controllers
                     .ThenBy(s => s.SavingAccountID)
                     .ToListAsync();
 
-                // If explicitly linked sb exists, ensure it is in the options list
-                if (sb != null && !activeSbs.Any(s => s.SavingAccountID == sb.SavingAccountID))
+                // If explicitly linked sb exists and is unclosed, ensure it is in the options list
+                if (sb != null && sb.Status != "Closed" && sb.Status != "बंद" && !activeSbs.Any(s => s.SavingAccountID == sb.SavingAccountID))
                 {
                     activeSbs.Insert(0, sb);
                 }
 
-                customerSavingAccounts = activeSbs.Select(s => new CustomerSavingAccountOptionDto
+                foreach (var s in activeSbs)
                 {
-                    SavingAccountID = s.SavingAccountID,
-                    AccountNo = s.AccountNo,
-                    CurrentBalance = s.CurrentBalance,
-                    BranchID = s.BranchID,
-                    BranchName = s.Branch?.BranchName ?? $"शाखा {s.BranchID}"
-                }).ToList();
+                    int resolvedSbLedgerId = await SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
+                        _context,
+                        s,
+                        preloadedLedgers: allLedgersDict);
+                    if (resolvedSbLedgerId <= 0)
+                    {
+                        resolvedSbLedgerId = s.LedgerID > 0 ? s.LedgerID : defaultSavingLedgerId;
+                    }
+                    string resolvedSbLedgerName = (resolvedSbLedgerId > 0 && allLedgersDict.TryGetValue(resolvedSbLedgerId, out var sbLed))
+                        ? (sbLed.LedgerName ?? "बचत ठेव")
+                        : (s.Ledger?.LedgerName ?? "बचत ठेव");
+
+                    string oldNo = !string.IsNullOrWhiteSpace(s.OldAccountNo)
+                        ? s.OldAccountNo.Trim()
+                        : (s.LegacyAccountNumber?.Trim() ?? string.Empty);
+                    string sbCif = !string.IsNullOrWhiteSpace(s.Customer?.CIFNo)
+                        ? s.Customer!.CIFNo!
+                        : customerCif;
+
+                    customerSavingAccounts.Add(new CustomerSavingAccountOptionDto
+                    {
+                        SavingAccountID = s.SavingAccountID,
+                        AccountNo = s.AccountNo,
+                        OldAccountNo = oldNo,
+                        CifNo = sbCif,
+                        CurrentBalance = s.CurrentBalance,
+                        BranchID = s.BranchID,
+                        BranchName = s.Branch?.BranchName ?? $"शाखा {s.BranchID}",
+                        LedgerID = resolvedSbLedgerId,
+                        LedgerName = resolvedSbLedgerName
+                    });
+                }
 
                 // If original account is null or closed, default to the customer's first unclosed saving account
                 if ((sb == null || sb.Status == "Closed" || sb.Status == "बंद") && activeSbs.Any())
@@ -366,6 +643,9 @@ namespace Bhisi.Api.Controllers
                 }
 
                 bool isSbActive = sb != null && sb.Status != "Closed" && sb.Status != "बंद";
+                var selectedSbOption = sb != null
+                    ? customerSavingAccounts.FirstOrDefault(x => x.SavingAccountID == sb.SavingAccountID)
+                    : customerSavingAccounts.FirstOrDefault();
 
                 // Lien & Active Loan Check
                 bool isLienMarked = acc.IsLienMarked;
@@ -386,11 +666,13 @@ namespace Bhisi.Api.Controllers
                         .FirstOrDefaultAsync();
                 }
 
-                // Distribution Mode Resolution
+                // Distribution Mode & Default Target Credit Ledger Resolution
                 string disbMode = "SavingTransfer";
                 string? warningNote = null;
                 decimal loanAdjAmount = 0m;
                 decimal netDisbursed = grossInterest;
+                int? targetCreditLedgerId = null;
+                string? targetCreditLedgerName = null;
 
                 if (isLienMarked && targetLoan != null)
                 {
@@ -403,17 +685,32 @@ namespace Bhisi.Api.Controllers
                 {
                     disbMode = "SavingTransfer";
                     netDisbursed = grossInterest;
+                    targetCreditLedgerId = selectedSbOption?.LedgerID > 0 ? selectedSbOption.LedgerID : (defaultSavingLedgerId > 0 ? defaultSavingLedgerId : null);
+                    if (targetCreditLedgerId.HasValue && allLedgersDict.TryGetValue(targetCreditLedgerId.Value, out var crLed))
+                    {
+                        targetCreditLedgerName = crLed.LedgerName;
+                    }
+                    else
+                    {
+                        targetCreditLedgerName = selectedSbOption?.LedgerName;
+                    }
                 }
                 else
                 {
                     disbMode = "Suspense";
                     netDisbursed = grossInterest;
-                    warningNote = "संलग्न बचत खाते बंद/निष्क्रिय आहे. व्याज 'न मागितलेले उचंत खात्यात' वर्ग होईल.";
+                    targetCreditLedgerId = defaultSuspenseLedgerId > 0 ? defaultSuspenseLedgerId : null;
+                    if (targetCreditLedgerId.HasValue && allLedgersDict.TryGetValue(targetCreditLedgerId.Value, out var suspLed))
+                    {
+                        targetCreditLedgerName = suspLed.LedgerName;
+                    }
+                    warningNote = "संलग्न बचत खाते बंद/निष्क्रिय आहे. आपण रोख, बँक किंवा बचत लेजर निवडू शकता.";
                 }
 
                 previewList.Add(new FdMisPreviewItemDto
                 {
                     FdAccountID = acc.FdAccountID,
+                    FdSchemeID = acc.FdSchemeID,
                     AccountNo = acc.AccountNo,
                     CustomerID = acc.CustomerID,
                     CustomerName = acc.Customer?.FullName ?? "अज्ञात ग्राहक",
@@ -421,6 +718,7 @@ namespace Bhisi.Api.Controllers
                     MemberID = memberId,
                     MemberNo = memberNo,
                     SchemeName = acc.FdScheme?.SchemeName ?? "मुदत ठेव योजना",
+                    SchemeCalculationMethod = schemeCalcMethod,
                     OpeningDate = acc.OpeningDate,
                     MaturityDate = acc.MaturityDate,
                     DepositPrincipal = acc.DepositAmount,
@@ -438,7 +736,11 @@ namespace Bhisi.Api.Controllers
                     DisbursementMode = disbMode,
                     TargetSavingAccountID = sb?.SavingAccountID,
                     TargetSavingAccountNo = sb?.AccountNo,
+                    TargetSavingOldAccountNo = selectedSbOption?.OldAccountNo ?? (!string.IsNullOrWhiteSpace(sb?.OldAccountNo) ? sb.OldAccountNo.Trim() : (sb?.LegacyAccountNumber?.Trim() ?? "")),
+                    TargetSavingCifNo = !string.IsNullOrWhiteSpace(selectedSbOption?.CifNo) ? selectedSbOption!.CifNo : (acc.Customer?.CIFNo ?? ""),
                     TargetSavingAccountBalance = sb?.CurrentBalance,
+                    TargetCreditLedgerID = targetCreditLedgerId,
+                    TargetCreditLedgerName = targetCreditLedgerName,
                     CustomerSavingAccounts = customerSavingAccounts,
                     TargetLoanAccountID = targetLoan?.LoanAccountID,
                     TargetLoanAccountNo = targetLoan?.LoanAccountNo,
@@ -463,6 +765,7 @@ namespace Bhisi.Api.Controllers
                 TotalLoanAdjustment = previewList.Where(x => !x.IsAlreadyPaid).Sum(x => x.LoanAdjustedAmount),
                 TotalSavingDisbursed = previewList.Where(x => !x.IsAlreadyPaid && x.DisbursementMode == "SavingTransfer").Sum(x => x.NetDisbursedAmount),
                 TotalSuspenseAmount = previewList.Where(x => !x.IsAlreadyPaid && x.DisbursementMode == "Suspense").Sum(x => x.NetDisbursedAmount),
+                PayoutLedgers = payoutLedgers,
                 Items = previewList
             });
         }
@@ -523,16 +826,25 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("निवडलेल्या सर्व खात्यांचे या महिन्याचे व्याज आधीच जमा झाले आहे किंवा रक्कम ० आहे.");
             }
 
-            // Upfront Bank GL validation if any item uses Bank disbursement mode
+            // Upfront Bank & Saving GL validation
             foreach (var bItem in validItems.Where(x => x.NetDisbursedAmount > 0 && BankLedgerHelper.IsBankPaymentMode(x.DisbursementMode)))
             {
-                int? candidateBankLedgerId = (bItem.BankLedgerID.HasValue && bItem.BankLedgerID.Value > 0)
-                    ? bItem.BankLedgerID
-                    : req.BankLedgerID;
+                int? candidateBankLedgerId = (bItem.CreditLedgerID.HasValue && bItem.CreditLedgerID.Value > 0)
+                    ? bItem.CreditLedgerID
+                    : ((bItem.BankLedgerID.HasValue && bItem.BankLedgerID.Value > 0) ? bItem.BankLedgerID : req.BankLedgerID);
                 var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, candidateBankLedgerId);
                 if (!bankCheck.IsValid)
                 {
                     return BadRequest(bankCheck.ErrorMessage);
+                }
+            }
+
+            foreach (var sItem in validItems.Where(x => x.NetDisbursedAmount > 0 && string.Equals(x.DisbursementMode, "SavingTransfer", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!sItem.TargetSavingAccountID.HasValue || sItem.TargetSavingAccountID.Value <= 0)
+                {
+                    string fdAccNo = accounts.TryGetValue(sItem.FdAccountID, out var fdAccObj) ? fdAccObj.AccountNo : sItem.FdAccountID.ToString();
+                    return BadRequest($"FD खाते क्र. {fdAccNo} साठी बचत लेजर निवडले आहे, परंतु ग्राहकाचे बचत खाते निवडलेले नाही. कृपया बचत खाते निवडा किंवा रोख / बँक / उचंत लेजर निवडा.");
                 }
             }
 
@@ -673,9 +985,9 @@ namespace Bhisi.Api.Controllers
                         {
                             if (BankLedgerHelper.IsBankPaymentMode(item.DisbursementMode))
                             {
-                                int? effBankLedgerId = (item.BankLedgerID.HasValue && item.BankLedgerID.Value > 0)
-                                    ? item.BankLedgerID
-                                    : req.BankLedgerID;
+                                int? effBankLedgerId = (item.CreditLedgerID.HasValue && item.CreditLedgerID.Value > 0)
+                                    ? item.CreditLedgerID
+                                    : ((item.BankLedgerID.HasValue && item.BankLedgerID.Value > 0) ? item.BankLedgerID : req.BankLedgerID);
                                 var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, effBankLedgerId);
                                 if (!bankCheck.IsValid)
                                 {
@@ -688,16 +1000,32 @@ namespace Bhisi.Api.Controllers
                             else if (string.Equals(item.DisbursementMode, "Cash", StringComparison.OrdinalIgnoreCase))
                             {
                                 item.DisbursementMode = "Cash";
-                                int cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, req.BranchID, "FD");
+                                int cashLedgerId = 0;
+                                if (item.CreditLedgerID.HasValue && item.CreditLedgerID.Value > 0)
+                                {
+                                    var candidateCash = await _context.Ledgers
+                                        .AsNoTracking()
+                                        .Include(l => l.AccountGroup)
+                                        .FirstOrDefaultAsync(l => l.LedgerID == item.CreditLedgerID.Value && l.IsActive);
+                                    if (candidateCash != null && BankLedgerHelper.IsCashLedger(candidateCash) && !BankLedgerHelper.IsBankLedger(candidateCash))
+                                    {
+                                        cashLedgerId = candidateCash.LedgerID;
+                                    }
+                                }
+                                if (cashLedgerId <= 0)
+                                {
+                                    cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, req.BranchID, "FD");
+                                }
                                 voucherCreditGroups[cashLedgerId] = voucherCreditGroups.GetValueOrDefault(cashLedgerId) + item.NetDisbursedAmount;
                             }
                             else if (item.DisbursementMode == "SavingTransfer" && item.TargetSavingAccountID.HasValue && item.TargetSavingAccountID.Value > 0)
                             {
                                 var sbAcc = await _context.SavingAccountMasters
                                     .Include(s => s.Ledger)
+                                    .Include(s => s.SavingScheme)
                                     .FirstOrDefaultAsync(s => s.SavingAccountID == item.TargetSavingAccountID.Value);
 
-                                if (sbAcc != null && sbAcc.Status == "Active")
+                                if (sbAcc != null && sbAcc.Status != "Closed" && sbAcc.Status != "बंद")
                                 {
                                     sbAcc.CurrentBalance += item.NetDisbursedAmount;
 
@@ -718,7 +1046,10 @@ namespace Bhisi.Api.Controllers
                                     };
                                     _context.SavingTransactions.Add(savTx);
 
-                                    int sbLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);
+                                    int sbLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(
+                                        _context,
+                                        sbAcc,
+                                        explicitLedgerId: item.CreditLedgerID);
                                     voucherCreditGroups[sbLedgerId] = voucherCreditGroups.GetValueOrDefault(sbLedgerId) + item.NetDisbursedAmount;
                                 }
                                 else
@@ -730,9 +1061,24 @@ namespace Bhisi.Api.Controllers
 
                             if (item.DisbursementMode == "Suspense")
                             {
-                                var suspLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && 
-                                    (l.LedgerName.Contains("उचंत") || l.LedgerName.Contains("न मागितलेले") || l.LedgerName.Contains("Suspense")));
-                                int suspLedgerId = suspLedger?.LedgerID ?? debitLedgerId;
+                                int suspLedgerId = 0;
+                                if (item.CreditLedgerID.HasValue && item.CreditLedgerID.Value > 0)
+                                {
+                                    var candidateSusp = await _context.Ledgers
+                                        .AsNoTracking()
+                                        .Include(l => l.AccountGroup)
+                                        .FirstOrDefaultAsync(l => l.LedgerID == item.CreditLedgerID.Value && l.IsActive);
+                                    if (candidateSusp != null && !BankLedgerHelper.IsBankLedger(candidateSusp) && !BankLedgerHelper.IsCashLedger(candidateSusp))
+                                    {
+                                        suspLedgerId = candidateSusp.LedgerID;
+                                    }
+                                }
+                                if (suspLedgerId <= 0)
+                                {
+                                    var suspLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && 
+                                        (l.LedgerName.Contains("उचंत") || l.LedgerName.Contains("न मागितलेले") || l.LedgerName.Contains("Suspense")));
+                                    suspLedgerId = suspLedger?.LedgerID ?? debitLedgerId;
+                                }
                                 voucherCreditGroups[suspLedgerId] = voucherCreditGroups.GetValueOrDefault(suspLedgerId) + item.NetDisbursedAmount;
                             }
                         }
@@ -747,6 +1093,7 @@ namespace Bhisi.Api.Controllers
                             PayoutYear = req.PayoutYear,
                             PayoutMonth = req.PayoutMonth,
                             PayoutDate = req.PayoutDate,
+                            ElapsedDays = item.ElapsedDays > 0 ? item.ElapsedDays : DateTime.DaysInMonth(req.PayoutYear, req.PayoutMonth),
                             DepositPrincipal = acc.DepositAmount,
                             InterestRate = acc.InterestRate,
                             GrossInterest = item.GrossInterest,
@@ -880,6 +1227,7 @@ namespace Bhisi.Api.Controllers
                     AccountNo = p.FdAccount != null ? p.FdAccount.AccountNo : "",
                     CustomerName = p.FdAccount != null && p.FdAccount.Customer != null ? p.FdAccount.Customer.FullName : "",
                     TargetSavingAccountNo = p.TargetSavingAccount != null ? p.TargetSavingAccount.AccountNo : "",
+                    TargetSavingOldAccountNo = p.TargetSavingAccount != null ? (p.TargetSavingAccount.OldAccountNo ?? p.TargetSavingAccount.LegacyAccountNumber ?? "") : "",
                     TargetLoanAccountNo = p.TargetLoanAccount != null ? p.TargetLoanAccount.LoanAccountNo : ""
                 })
                 .ToListAsync();

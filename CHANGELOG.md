@@ -1,5 +1,22 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-01] - आवृत्ती v2.6.12 (FD MIS Scheme-Wise Auto Calculation Basis, 1-Click Instant Daily/Monthly Recalculation, Dynamic Cash/Saving/Bank Ledger Selection & Auto Old Account No + CIF Display)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **योजनेनुसार `व्याज गणना पद्धत` स्वयंचलित निवड (`FdScheme.cs`, `FdSchemesController.cs`, `FdSchemeMaster.tsx` & `FdMisInterestPayout.tsx`):**
+  * `FdSchemes` टेबलमध्ये `InterestCalculationMethod` (`Monthly` / `Daily`) कॉलमचे सुरक्षित ऑटो-मायग्रेशन जोडले आणि योजना मास्टरमध्ये **"मासिक व्याज गणना पद्धत (Calculation Basis)"** सेटिंग दिले.
+  * FD MIS फॉर्म उघडताच किंवा योजना (`Scheme`) ड्रॉपडाउन बदलताच त्या योजनेची गणना पद्धत आपोआप सिलेक्ट होते.
+* **`प्रत्यक्ष दिवसानुसार` निवडताच १-क्लिकवर सर्व ओळींचे दिवस व व्याज तात्काळ लागू (`'↺'` क्लिकची गरज नाही):**
+  * **`प्रिव्ह्यू पहा`** दाबल्यावर तसेच `Monthly` किंवा `Daily` रेडिओ बटण बदलताच निवडलेल्या महिन्याचे अचूक कॅलेंडर दिवस (उदा. **एप्रिल = ३० दिवस → ₹ ८२२**, **मे = ३१ दिवस → ₹ ८४९**, **फेब्रुवारी = २८/२९ दिवस**) व व्याज तक्त्यातील **सर्व न वाटलेल्या ओळींवर एकाच क्लिकवर तात्काळ लागू** होते.
+* **रोख (Cash), बचत (Saving) व बँक (Bank Account) डायनॅमिक लेजर निवड (`FdMisPayoutController.cs` & `FdMisInterestPayout.tsx`):**
+  * शून्य हार्डकोडिंगसह `GET /api/FdMisPayout/PayoutLedgers` द्वारे अधिकृत `SavingLedgerHelper`, `CashLedgerHelper` आणि `BankLedgerHelper` वरून सर्व वैध बचत, रोख, बँक व उचंत लेजर्स उपलब्ध केले.
+  * वरच्या पट्टीत **सामूहिक जमा लेजर** आणि तक्त्यात प्रत्येक ओळीत **जमा लेजर (Cash / Saving / Bank)** ड्रॉपडाउन दिला.
+  * `ExecuteBatch` मध्ये निवडलेल्या `CreditLedgerID` वर अचूक पोस्टिंग आणि बचत खात्यासाठीची जुनी `Status == "Active"` त्रुटी बदलून `Status != "Closed" && Status != "बंद"` केली.
+* **Saving Ledger निवडताच `वाटप प्रकार` मध्ये जुना खाते क्र. (`Old A/c No`) व `CIF` क्र. ऑटो-डिस्प्ले:**
+  * बचत ठेव लेजर निवडल्यावर `वाटप प्रकार` रकान्यात ग्राहकाचे बचत खाते आपोआप मॅच होऊन **`जुना क्र.`**, **`CIF क्र.`**, नवीन बचत खाते क्र. आणि चालू शिल्लक स्पष्ट दिसतात, तसेच `+ खाते शोधा` पॉपअपमध्येही जुना क्र. व CIF ने शोध सुविधा जोडली.
+
+---
+
 ## 📅 [2026-11-01] - आवृत्ती v2.6.11 (FD MIS Payout Simplified Clutter-Free UI, Exact Calendar Days & Calculation Method Toggle, Unclosed Saving Accounts Resolution & Quick Search Modal Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

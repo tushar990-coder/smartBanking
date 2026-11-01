@@ -6669,6 +6669,17 @@ BEGIN
 END
 GO
 
+IF OBJECT_ID('dbo.FdSchemes', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('FdSchemes', 'InterestCalculationMethod') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[FdSchemes] ADD [InterestCalculationMethod] NVARCHAR(20) NOT NULL CONSTRAINT [DF_FdSchemes_InterestCalculationMethod] DEFAULT 'Monthly';
+        EXEC(N'UPDATE [dbo].[FdSchemes] SET [InterestCalculationMethod] = ''Daily'' WHERE [DurationType] = ''Days'' OR [SchemeDurationModel] = ''Slab'';');
+        PRINT 'Added InterestCalculationMethod to FdSchemes';
+    END
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

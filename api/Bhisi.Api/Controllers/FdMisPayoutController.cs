@@ -28,6 +28,7 @@ namespace Bhisi.Api.Controllers
         public int PayoutMonth { get; set; } = DateTime.Today.Month;
         public DateTime PayoutDate { get; set; } = DateTime.Today;
         public string AccountingMode { get; set; } = "DirectExpense"; // DirectExpense or ClearPayable
+        public string CalculationMethod { get; set; } = "Monthly"; // "Monthly" ((P*R)/1200) or "Daily" ((P*R*Days)/36500)
     }
 
     public class FdMisPreviewItemDto
@@ -184,10 +185,11 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("अवैध महिना निवडला आहे (१ ते १२ दरम्यान असावा).");
             }
 
+            int daysInMonth = DateTime.DaysInMonth(req.PayoutYear, req.PayoutMonth);
             var monthStart = new DateTime(req.PayoutYear, req.PayoutMonth, 1);
-            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            var monthEnd = new DateTime(req.PayoutYear, req.PayoutMonth, daysInMonth);
 
-            // Fetch all active FD accounts in this branch where scheme is MIS or Monthly Payout
+            // Fetch all active FD accounts in this branch
             var misQuery = _context.FdAccounts
                 .Include(a => a.Customer)
                 .Include(a => a.SavingAccount)
@@ -195,17 +197,26 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(s => s!.InterestExpenseLedger)
                 .Include(a => a.FdScheme)
                     .ThenInclude(s => s!.InterestPayableLedger)
-                .Where(a => a.BranchID == req.BranchID && a.Status == "Active")
-                .Where(a => a.FdScheme != null && (
-                    a.FdScheme.InterestType == "MIS" || 
-                    a.FdScheme.InterestType == "Monthly Interest" || 
-                    a.FdScheme.InterestPayoutFrequency == "Monthly" ||
-                    (a.FdScheme.InterestPayoutFrequency != null && a.FdScheme.InterestPayoutFrequency.ToLower().Contains("monthly"))
-                ));
+                .Where(a => a.BranchID == req.BranchID && a.Status == "Active");
 
             if (req.FdSchemeID.HasValue && req.FdSchemeID.Value > 0)
             {
                 misQuery = misQuery.Where(a => a.FdSchemeID == req.FdSchemeID.Value);
+            }
+            else
+            {
+                // Match MIS, Monthly Interest, or any common FD scheme (including मुदतबंद ठेव, मुदत ठेव, etc.)
+                misQuery = misQuery.Where(a => a.FdScheme != null && (
+                    a.FdScheme.InterestType == "MIS" || 
+                    a.FdScheme.InterestType == "Monthly Interest" || 
+                    a.FdScheme.InterestPayoutFrequency == "Monthly" ||
+                    (a.FdScheme.InterestPayoutFrequency != null && a.FdScheme.InterestPayoutFrequency.ToLower().Contains("monthly")) ||
+                    a.FdScheme.SchemeName.Contains("मासिक") ||
+                    a.FdScheme.SchemeName.Contains("MIS") ||
+                    a.FdScheme.SchemeName.Contains("मुदतबंद") ||
+                    a.FdScheme.SchemeName.Contains("मुदत ठेव") ||
+                    a.FdScheme.SchemeName.Contains("Thev")
+                ));
             }
 
             var activeMisAccounts = await misQuery.ToListAsync();
@@ -254,20 +265,33 @@ namespace Bhisi.Api.Controllers
                 if (toDate < fromDate) continue;
 
                 int elapsedDays;
-                decimal grossInterest;
-
                 if (isBrokenPeriod)
                 {
                     elapsedDays = (toDate - fromDate).Days + 1;
-                    // Broken period pro-rata daily formula: (P * R * elapsedDays) / 36500
+                }
+                else
+                {
+                    // Full month: Exact calendar days in this month (e.g. May = 31, April = 30, Feb = 28/29)
+                    elapsedDays = daysInMonth;
+                }
+
+                decimal grossInterest;
+                if (string.Equals(req.CalculationMethod, "Daily", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Exact daily formula: (P * R * elapsedDays) / 36500
                     grossInterest = Math.Round((acc.DepositAmount * acc.InterestRate * elapsedDays) / 36500.0m, 0, MidpointRounding.AwayFromZero);
                 }
                 else
                 {
-                    // Full month: Standard CBS convention is 30 days (1 full month)
-                    elapsedDays = 30;
-                    // Standard banking monthly formula: (P * R) / 1200
-                    grossInterest = Math.Round((acc.DepositAmount * acc.InterestRate) / 1200.0m, 0, MidpointRounding.AwayFromZero);
+                    // Standard CBS Monthly: if broken period, calculate pro-rata; if full month, calculate standard (P * R) / 1200
+                    if (isBrokenPeriod)
+                    {
+                        grossInterest = Math.Round((acc.DepositAmount * acc.InterestRate * elapsedDays) / 36500.0m, 0, MidpointRounding.AwayFromZero);
+                    }
+                    else
+                    {
+                        grossInterest = Math.Round((acc.DepositAmount * acc.InterestRate) / 1200.0m, 0, MidpointRounding.AwayFromZero);
+                    }
                 }
 
                 // Member lookup
@@ -287,38 +311,61 @@ namespace Bhisi.Api.Controllers
                 var sb = acc.SavingAccount;
                 if (sb == null && acc.SavingAccountID.HasValue && acc.SavingAccountID.Value > 0)
                 {
-                    sb = await _context.SavingAccountMasters.Include(s => s.Branch).FirstOrDefaultAsync(s => s.SavingAccountID == acc.SavingAccountID.Value);
-                }
-
-                // Fetch all active saving accounts for this customer to enable selection in UI
-                var customerSavingAccounts = new List<CustomerSavingAccountOptionDto>();
-                if (acc.CustomerID > 0)
-                {
-                    var activeSbs = await _context.SavingAccountMasters
+                    sb = await _context.SavingAccountMasters
                         .Include(s => s.Branch)
-                        .Where(s => s.CustomerID == acc.CustomerID && s.Status == "Active")
-                        .OrderByDescending(s => s.SavingAccountID == acc.SavingAccountID)
-                        .ThenByDescending(s => s.BranchID == acc.BranchID)
-                        .ThenBy(s => s.SavingAccountID)
-                        .ToListAsync();
-
-                    customerSavingAccounts = activeSbs.Select(s => new CustomerSavingAccountOptionDto
-                    {
-                        SavingAccountID = s.SavingAccountID,
-                        AccountNo = s.AccountNo,
-                        CurrentBalance = s.CurrentBalance,
-                        BranchID = s.BranchID,
-                        BranchName = s.Branch?.BranchName ?? $"शाखा {s.BranchID}"
-                    }).ToList();
-
-                    // If original account is null or inactive, default to the customer's first active saving account
-                    if ((sb == null || sb.Status != "Active") && activeSbs.Any())
-                    {
-                        sb = activeSbs.First();
-                    }
+                        .FirstOrDefaultAsync(s => s.SavingAccountID == acc.SavingAccountID.Value);
                 }
 
-                bool isSbActive = sb != null && sb.Status == "Active";
+                // Fetch all unclosed saving accounts for this customer to enable selection in UI
+                var customerSavingAccounts = new List<CustomerSavingAccountOptionDto>();
+                string customerCif = acc.Customer?.CIFNo ?? string.Empty;
+
+                var sbsQuery = _context.SavingAccountMasters
+                    .Include(s => s.Branch)
+                    .Include(s => s.Customer)
+                    .Where(s => s.Status != "Closed" && s.Status != "बंद");
+
+                if (acc.CustomerID > 0 && !string.IsNullOrEmpty(customerCif))
+                {
+                    sbsQuery = sbsQuery.Where(s => s.CustomerID == acc.CustomerID || (s.Customer != null && s.Customer.CIFNo == customerCif));
+                }
+                else if (acc.CustomerID > 0)
+                {
+                    sbsQuery = sbsQuery.Where(s => s.CustomerID == acc.CustomerID);
+                }
+                else if (!string.IsNullOrEmpty(customerCif))
+                {
+                    sbsQuery = sbsQuery.Where(s => s.Customer != null && s.Customer.CIFNo == customerCif);
+                }
+
+                var activeSbs = await sbsQuery
+                    .OrderByDescending(s => s.SavingAccountID == acc.SavingAccountID)
+                    .ThenByDescending(s => s.BranchID == acc.BranchID)
+                    .ThenBy(s => s.SavingAccountID)
+                    .ToListAsync();
+
+                // If explicitly linked sb exists, ensure it is in the options list
+                if (sb != null && !activeSbs.Any(s => s.SavingAccountID == sb.SavingAccountID))
+                {
+                    activeSbs.Insert(0, sb);
+                }
+
+                customerSavingAccounts = activeSbs.Select(s => new CustomerSavingAccountOptionDto
+                {
+                    SavingAccountID = s.SavingAccountID,
+                    AccountNo = s.AccountNo,
+                    CurrentBalance = s.CurrentBalance,
+                    BranchID = s.BranchID,
+                    BranchName = s.Branch?.BranchName ?? $"शाखा {s.BranchID}"
+                }).ToList();
+
+                // If original account is null or closed, default to the customer's first unclosed saving account
+                if ((sb == null || sb.Status == "Closed" || sb.Status == "बंद") && activeSbs.Any())
+                {
+                    sb = activeSbs.First();
+                }
+
+                bool isSbActive = sb != null && sb.Status != "Closed" && sb.Status != "बंद";
 
                 // Lien & Active Loan Check
                 bool isLienMarked = acc.IsLienMarked;

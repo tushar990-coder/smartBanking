@@ -8,15 +8,14 @@ import {
   AlertCircle, 
   ArrowRightLeft, 
   Search, 
-  Printer, 
   CheckSquare, 
   Square,
   ShieldAlert,
   Wallet,
-  Clock,
   Coins,
   History,
-  Info
+  X,
+  RotateCcw
 } from 'lucide-react';
 import BankLedgerSelect from './common/BankLedgerSelect';
 
@@ -92,18 +91,18 @@ interface RegisterRow {
 }
 
 const MARATHI_MONTHS = [
-  { value: 1, label: 'जानेवारी (January)' },
-  { value: 2, label: 'फेब्रुवारी (February)' },
-  { value: 3, label: 'मार्च (March)' },
-  { value: 4, label: 'एप्रिल (April)' },
+  { value: 1, label: 'जानेवारी (Jan)' },
+  { value: 2, label: 'फेब्रुवारी (Feb)' },
+  { value: 3, label: 'मार्च (Mar)' },
+  { value: 4, label: 'एप्रिल (Apr)' },
   { value: 5, label: 'मे (May)' },
-  { value: 6, label: 'जून (June)' },
-  { value: 7, label: 'जुलै (July)' },
-  { value: 8, label: 'ऑगस्ट (August)' },
-  { value: 9, label: 'सप्टेंबर (September)' },
-  { value: 10, label: 'ऑक्टोबर (October)' },
-  { value: 11, label: 'नोव्हेंबर (November)' },
-  { value: 12, label: 'डिसेंबर (December)' },
+  { value: 6, label: 'जून (Jun)' },
+  { value: 7, label: 'जुलै (Jul)' },
+  { value: 8, label: 'ऑगस्ट (Aug)' },
+  { value: 9, label: 'सप्टेंबर (Sep)' },
+  { value: 10, label: 'ऑक्टोबर (Oct)' },
+  { value: 11, label: 'नोव्हेंबर (Nov)' },
+  { value: 12, label: 'डिसेंबर (Dec)' },
 ];
 
 export const FdMisInterestPayout: React.FC = () => {
@@ -128,9 +127,6 @@ export const FdMisInterestPayout: React.FC = () => {
   const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string) : 1);
   const [branchID, setBranchID] = useState<number>(initialBranchId);
 
-  const currentYear = new Date().getFullYear();
-  const availableYears = Array.from({ length: 6 }, (_, idx) => currentYear - 3 + idx);
-
   const getBizDateStr = (b?: string) => {
     if (b && b.trim()) return b.split('T')[0];
     const n = new Date();
@@ -142,19 +138,12 @@ export const FdMisInterestPayout: React.FC = () => {
   const [payoutMonth, setPayoutMonth] = useState<number>(initialBizParts[1] || (new Date().getMonth() + 1));
   const [payoutDate, setPayoutDate] = useState<string>(initialBizStr);
 
-  useEffect(() => {
-    if (user?.businessDate) {
-      const bStr = getBizDateStr(user.businessDate);
-      const parts = bStr.split('-').map(Number);
-      if (parts.length === 3 && !parts.some(Number.isNaN)) {
-        setPayoutYear(parts[0]);
-        setPayoutMonth(parts[1]);
-      }
-      setPayoutDate(bStr);
-    }
-  }, [user?.businessDate]);
+  const currentYear = new Date().getFullYear();
+  const availableYears = Array.from({ length: 6 }, (_, idx) => currentYear - 3 + idx);
+
+  // Calculation Method: 'Monthly' ((P*R)/1200) or 'Daily' ((P*R*Days)/36500)
+  const [calcMethod, setCalcMethod] = useState<'Monthly' | 'Daily'>('Monthly');
   const [accountingMode, setAccountingMode] = useState<'DirectExpense' | 'ClearPayable'>('DirectExpense');
-  const [batchPayoutOverride, setBatchPayoutOverride] = useState<'Auto' | 'Bank' | 'Cash'>('Auto');
   const [bankLedgerID, setBankLedgerID] = useState<number>(0);
 
   // Preview & Processing states
@@ -167,6 +156,12 @@ export const FdMisInterestPayout: React.FC = () => {
 
   // Confirmation Modal
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // Quick Saving Account Search Modal
+  const [searchModalItem, setSearchModalItem] = useState<PreviewItem | null>(null);
+  const [sbSearchTerm, setSbSearchTerm] = useState('');
+  const [sbSearchResults, setSbSearchResults] = useState<any[]>([]);
+  const [sbSearchLoading, setSbSearchLoading] = useState(false);
 
   // Register states
   const [loadingRegister, setLoadingRegister] = useState(false);
@@ -212,32 +207,30 @@ export const FdMisInterestPayout: React.FC = () => {
         payoutYear,
         payoutMonth,
         payoutDate,
-        accountingMode
+        accountingMode,
+        calculationMethod: calcMethod
       };
 
       const res = await axios.post(`${API_URL}/FdMisPayout/Preview`, payload);
       const data = res.data;
       const items: PreviewItem[] = (data.Items || data.items || []).map((i: any) => {
         const origMode: MisDisbursementMode = i.disbursementMode || 'SavingTransfer';
-        const canOverride = !i.isAlreadyPaid && i.grossInterest > 0 && !i.isLienMarked;
-        const effectiveMode: MisDisbursementMode =
-          canOverride && batchPayoutOverride !== 'Auto' ? batchPayoutOverride : origMode;
         const netAmt = Math.max(0, (i.grossInterest || 0) - (i.tdsAmount || 0));
         return {
           ...i,
           autoGrossInterest: i.autoGrossInterest ?? i.grossInterest,
           autoElapsedDays: i.autoElapsedDays ?? i.elapsedDays,
           originalDisbursementMode: origMode,
-          disbursementMode: effectiveMode,
-          loanAdjustedAmount: effectiveMode === 'LoanRecovery' ? i.loanAdjustedAmount : 0,
-          netDisbursedAmount: effectiveMode === 'LoanRecovery' ? 0 : netAmt,
+          disbursementMode: origMode,
+          loanAdjustedAmount: origMode === 'LoanRecovery' ? netAmt : 0,
+          netDisbursedAmount: origMode === 'LoanRecovery' ? 0 : netAmt,
           isSelected: !i.isAlreadyPaid && i.grossInterest > 0
         };
       });
 
       setPreviewItems(items);
       if (items.length === 0) {
-        setError('निवडलेल्या महिना व शाखेसाठी कोणतेही सक्रिय मुदत ठेव (MIS) खाते सापडले नाही.');
+        setError('निवडलेल्या महिना व शाखेसाठी कोणतेही सक्रिय मुदत ठेव खाते सापडले नाही.');
       }
     } catch (err: any) {
       const msg = err.response?.data?.message || err.response?.data || err.message || 'प्रिव्ह्यू आणताना त्रुटी आली.';
@@ -245,6 +238,31 @@ export const FdMisInterestPayout: React.FC = () => {
     } finally {
       setLoadingPreview(false);
     }
+  };
+
+  // Toggle Calculation Method in UI (Monthly vs Daily)
+  const handleCalcMethodChange = (newMethod: 'Monthly' | 'Daily') => {
+    setCalcMethod(newMethod);
+    setPreviewItems(prev =>
+      prev.map(i => {
+        if (i.isAlreadyPaid) return i;
+        let newGross = 0;
+        if (newMethod === 'Daily') {
+          newGross = Math.round((i.depositPrincipal * i.interestRate * i.elapsedDays) / 36500);
+        } else {
+          if (i.isBrokenPeriod) {
+            newGross = Math.round((i.depositPrincipal * i.interestRate * i.elapsedDays) / 36500);
+          } else {
+            newGross = Math.round((i.depositPrincipal * i.interestRate) / 1200);
+          }
+        }
+        const netAmt = Math.max(0, newGross - i.tdsAmount);
+        if (i.disbursementMode === 'LoanRecovery') {
+          return { ...i, grossInterest: newGross, loanAdjustedAmount: netAmt, netDisbursedAmount: 0 };
+        }
+        return { ...i, grossInterest: newGross, loanAdjustedAmount: 0, netDisbursedAmount: netAmt };
+      })
+    );
   };
 
   // 2. Fetch Register
@@ -313,14 +331,19 @@ export const FdMisInterestPayout: React.FC = () => {
     setPreviewItems(prev =>
       prev.map(i => {
         if (i.fdAccountID !== fdAccountId || i.isAlreadyPaid) return i;
-        const gross = i.autoGrossInterest ?? Math.round((i.depositPrincipal * i.interestRate) / 1200);
-        const days = i.autoElapsedDays ?? (i.isBrokenPeriod ? i.elapsedDays : 30);
+        let gross = 0;
+        if (calcMethod === 'Daily') {
+          gross = Math.round((i.depositPrincipal * i.interestRate * i.elapsedDays) / 36500);
+        } else {
+          gross = i.isBrokenPeriod 
+            ? Math.round((i.depositPrincipal * i.interestRate * i.elapsedDays) / 36500)
+            : Math.round((i.depositPrincipal * i.interestRate) / 1200);
+        }
         const netAmt = Math.max(0, gross - i.tdsAmount);
         if (i.disbursementMode === 'LoanRecovery') {
           return {
             ...i,
             grossInterest: gross,
-            elapsedDays: days,
             loanAdjustedAmount: netAmt,
             netDisbursedAmount: 0
           };
@@ -328,34 +351,6 @@ export const FdMisInterestPayout: React.FC = () => {
         return {
           ...i,
           grossInterest: gross,
-          elapsedDays: days,
-          loanAdjustedAmount: 0,
-          netDisbursedAmount: netAmt
-        };
-      })
-    );
-  };
-
-  const handleElapsedDaysChange = (fdAccountId: number, newDays: number) => {
-    setPreviewItems(prev =>
-      prev.map(i => {
-        if (i.fdAccountID !== fdAccountId || i.isAlreadyPaid) return i;
-        const days = Math.max(1, Math.min(31, newDays));
-        const recalculatedGross = Math.round((i.depositPrincipal * i.interestRate * days) / 36500.0);
-        const netAmt = Math.max(0, recalculatedGross - i.tdsAmount);
-        if (i.disbursementMode === 'LoanRecovery') {
-          return {
-            ...i,
-            elapsedDays: days,
-            grossInterest: recalculatedGross,
-            loanAdjustedAmount: netAmt,
-            netDisbursedAmount: 0
-          };
-        }
-        return {
-          ...i,
-          elapsedDays: days,
-          grossInterest: recalculatedGross,
           loanAdjustedAmount: 0,
           netDisbursedAmount: netAmt
         };
@@ -397,29 +392,52 @@ export const FdMisInterestPayout: React.FC = () => {
     );
   };
 
-  const handleBatchPayoutOverrideChange = (mode: 'Auto' | 'Bank' | 'Cash') => {
-    setBatchPayoutOverride(mode);
+  // Quick Saving Account Search Modal Handlers
+  const handleOpenSbSearchModal = (item: PreviewItem) => {
+    setSearchModalItem(item);
+    setSbSearchTerm(item.customerName || '');
+    setSbSearchResults([]);
+    performSbSearch(item.customerName || '');
+  };
+
+  const performSbSearch = async (term: string) => {
+    if (!term || term.trim().length < 2) return;
+    setSbSearchLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/SavingAccounts`, {
+        params: { search: term.trim() }
+      });
+      setSbSearchResults(res.data || []);
+    } catch (err) {
+      console.error('Saving account search error', err);
+    } finally {
+      setSbSearchLoading(false);
+    }
+  };
+
+  const handleSelectSearchedSb = (sb: any) => {
+    if (!searchModalItem) return;
+    const sbId = sb.savingAccountID || sb.id;
+    const accNo = sb.accountNo;
+    const bal = sb.currentBalance ?? sb.balance ?? 0;
+
     setPreviewItems(prev =>
       prev.map(i => {
-        if (i.isAlreadyPaid || i.grossInterest <= 0 || i.isLienMarked) return i;
+        if (i.fdAccountID !== searchModalItem.fdAccountID) return i;
         const netAmt = Math.max(0, i.grossInterest - i.tdsAmount);
-        if (mode === 'Auto') {
-          const restored: MisDisbursementMode = i.originalDisbursementMode || 'SavingTransfer';
-          return {
-            ...i,
-            disbursementMode: restored,
-            loanAdjustedAmount: restored === 'LoanRecovery' ? netAmt : 0,
-            netDisbursedAmount: restored === 'LoanRecovery' ? 0 : netAmt
-          };
-        }
         return {
           ...i,
-          disbursementMode: mode,
+          targetSavingAccountID: sbId,
+          targetSavingAccountNo: accNo,
+          targetSavingAccountBalance: bal,
+          disbursementMode: 'SavingTransfer',
+          netDisbursedAmount: netAmt,
           loanAdjustedAmount: 0,
-          netDisbursedAmount: netAmt
+          warningNote: undefined
         };
       })
     );
+    setSearchModalItem(null);
   };
 
   // Summary Metrics
@@ -430,25 +448,10 @@ export const FdMisInterestPayout: React.FC = () => {
   const totalSelectedSbDisb = selectedItems
     .filter(i => i.disbursementMode === 'SavingTransfer')
     .reduce((sum, i) => sum + i.netDisbursedAmount, 0);
-  const totalSelectedBankDisb = selectedItems
-    .filter(i => i.disbursementMode === 'Bank')
-    .reduce((sum, i) => sum + i.netDisbursedAmount, 0);
-  const totalSelectedCashDisb = selectedItems
-    .filter(i => i.disbursementMode === 'Cash')
-    .reduce((sum, i) => sum + i.netDisbursedAmount, 0);
-  const totalSelectedSuspense = selectedItems
-    .filter(i => i.disbursementMode === 'Suspense')
-    .reduce((sum, i) => sum + i.netDisbursedAmount, 0);
-  const anySelectedUsesBank =
-    batchPayoutOverride === 'Bank' || selectedItems.some(i => i.disbursementMode === 'Bank');
 
   const handleOpenConfirmModal = () => {
     if (selectedItems.length === 0) {
       setError('कृपया किमान एक खाते निवडा.');
-      return;
-    }
-    if (selectedItems.some(i => i.disbursementMode === 'Bank') && (!bankLedgerID || bankLedgerID <= 0)) {
-      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
     }
     setError('');
@@ -459,13 +462,6 @@ export const FdMisInterestPayout: React.FC = () => {
   const handleExecuteBatch = async () => {
     if (selectedItems.length === 0) {
       setError('कृपया किमान एक खाते निवडा.');
-      setShowConfirmModal(false);
-      return;
-    }
-
-    const usesBank = selectedItems.some(i => i.disbursementMode === 'Bank');
-    if (usesBank && (!bankLedgerID || bankLedgerID <= 0)) {
-      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       setShowConfirmModal(false);
       return;
     }
@@ -481,7 +477,7 @@ export const FdMisInterestPayout: React.FC = () => {
         payoutMonth,
         payoutDate,
         accountingMode,
-        bankLedgerID: usesBank ? bankLedgerID : null,
+        bankLedgerID: bankLedgerID > 0 ? bankLedgerID : null,
         selectedItems: selectedItems.map(i => ({
           fdAccountID: i.fdAccountID,
           grossInterest: i.grossInterest,
@@ -499,7 +495,6 @@ export const FdMisInterestPayout: React.FC = () => {
       const res = await axios.post(`${API_URL}/FdMisPayout/ExecuteBatch`, payload);
       setSuccess(`✅ ${res.data.message} (व्हाउचर क्र: ${res.data.voucherNo})`);
       setShowConfirmModal(false);
-      // Refresh preview list
       handleFetchPreview();
     } catch (err: any) {
       const msg = err.response?.data?.message || err.response?.data || err.message || 'व्याज ट्रान्सफर करताना त्रुटी आली.';
@@ -547,7 +542,7 @@ export const FdMisInterestPayout: React.FC = () => {
               </span>
             </h1>
             <p className="text-[10px] text-blue-100 font-normal">
-              दरमहा ठेवीदारांच्या बचत खात्यात व्याज जमा करणे, तारण कर्जात वळती व संतुलित दुहेरी-नोंद व्हाउचर
+              दरमहा ठेवीदारांच्या बचत खात्यात मासिक व्याज थेट वर्ग करणे किंवा कर्जात वळती
             </p>
           </div>
         </div>
@@ -564,7 +559,7 @@ export const FdMisInterestPayout: React.FC = () => {
             }`}
           >
             <Coins size={13} />
-            मासिक वाटप विझार्ड
+            मासिक वाटप
           </button>
           <button
             type="button"
@@ -581,16 +576,9 @@ export const FdMisInterestPayout: React.FC = () => {
         </div>
       </div>
 
-      {/* Control Filter Bar */}
-      <div className="bg-gray-50/80 p-2.5 rounded-sm border border-gray-200 shadow-2xs">
-        <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200 flex items-center justify-between">
-          <span>१. वाटप निकष व शाखा निवड (Payout Criteria & Branch Selection)</span>
-          <span className="text-[10px] text-gray-500 font-normal normal-case">
-            💡 {accountingMode === 'DirectExpense' ? 'थेट ठेवीवरील व्याज खर्च (P&L Expense)' : 'मुदत ठेव देणे व्याज वळती (Clear Payable)'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 items-end">
+      {/* Simplified, Clean Filter Bar */}
+      <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 items-end">
           {/* Branch */}
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch) *</label>
@@ -601,7 +589,6 @@ export const FdMisInterestPayout: React.FC = () => {
                   setBranchID(parseInt(e.target.value, 10));
                   setPreviewItems([]);
                   setError('');
-                  setSuccess('');
                 }}
                 className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-medium"
               >
@@ -639,38 +626,35 @@ export const FdMisInterestPayout: React.FC = () => {
             </select>
           </div>
 
-          {/* Year */}
+          {/* Year & Month Grouped */}
           <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">वर्ष (Year) *</label>
-            <select
-              value={payoutYear}
-              onChange={(e) => {
-                setPayoutYear(parseInt(e.target.value, 10));
-                setPreviewItems([]);
-              }}
-              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-medium"
-            >
-              {availableYears.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Month */}
-          <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">महिना (Month) *</label>
-            <select
-              value={payoutMonth}
-              onChange={(e) => {
-                setPayoutMonth(parseInt(e.target.value, 10));
-                setPreviewItems([]);
-              }}
-              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-medium"
-            >
-              {MARATHI_MONTHS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">वर्ष व महिना *</label>
+            <div className="flex gap-1">
+              <select
+                value={payoutYear}
+                onChange={(e) => {
+                  setPayoutYear(parseInt(e.target.value, 10));
+                  setPreviewItems([]);
+                }}
+                className="w-20 border border-gray-300 rounded-sm px-1.5 py-1 text-xs focus:outline-none focus:border-primary bg-white font-bold"
+              >
+                {availableYears.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <select
+                value={payoutMonth}
+                onChange={(e) => {
+                  setPayoutMonth(parseInt(e.target.value, 10));
+                  setPreviewItems([]);
+                }}
+                className="flex-1 border border-gray-300 rounded-sm px-1.5 py-1 text-xs focus:outline-none focus:border-primary bg-white font-bold"
+              >
+                {MARATHI_MONTHS.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Payout Date */}
@@ -684,52 +668,72 @@ export const FdMisInterestPayout: React.FC = () => {
             />
           </div>
 
-          {/* Accounting Mode */}
+          {/* Fetch Preview Button */}
           <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">लेखांकन पद्धत</label>
-            <select
-              value={accountingMode}
-              onChange={(e) => setAccountingMode(e.target.value as any)}
-              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-medium"
-            >
-              <option value="DirectExpense">थेट व्याज खर्च (P&L)</option>
-              <option value="ClearPayable">देणे व्याज वळती</option>
-            </select>
+            {activeTab === 'payout' ? (
+              <button
+                type="button"
+                onClick={handleFetchPreview}
+                disabled={loadingPreview}
+                className="w-full bg-primary hover:opacity-90 text-white px-3 py-1.5 rounded-sm shadow-xs text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+              >
+                {loadingPreview ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    शोधत आहे...
+                  </>
+                ) : (
+                  <>
+                    <Search size={14} />
+                    प्रिव्ह्यू पहा (Preview)
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFetchRegister}
+                disabled={loadingRegister}
+                className="w-full bg-primary hover:opacity-90 text-white px-3 py-1.5 rounded-sm shadow-xs text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+              >
+                <History size={14} />
+                नोंदवही रिफ्रेश
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Action Button Row */}
-        <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-200">
-          {activeTab === 'payout' ? (
-            <button
-              type="button"
-              onClick={handleFetchPreview}
-              disabled={loadingPreview}
-              className="bg-primary hover:opacity-90 text-white px-4 py-1.5 rounded-sm shadow-xs text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-            >
-              {loadingPreview ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  शोधत आहे...
-                </>
-              ) : (
-                <>
-                  <Search size={14} />
-                  प्रिव्ह्यू पहा (Preview Interest)
-                </>
-              )}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleFetchRegister}
-              disabled={loadingRegister}
-              className="bg-primary hover:opacity-90 text-white px-4 py-1.5 rounded-sm shadow-xs text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-            >
-              <History size={14} />
-              नोंदवही रिफ्रेश (Refresh Register)
-            </button>
-          )}
+        {/* Calculation Formula Toggle Strip */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-700">व्याज गणना पद्धत:</span>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer font-medium text-gray-800 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-sm">
+              <input
+                type="radio"
+                name="calcMethod"
+                value="Monthly"
+                checked={calcMethod === 'Monthly'}
+                onChange={() => handleCalcMethodChange('Monthly')}
+                className="text-primary focus:ring-primary"
+              />
+              <span>१. दरमहा समान हप्ता <strong>((P×R)/1200)</strong> - उदा. ₹ ७५०</span>
+            </label>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer font-medium text-gray-800 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-sm">
+              <input
+                type="radio"
+                name="calcMethod"
+                value="Daily"
+                checked={calcMethod === 'Daily'}
+                onChange={() => handleCalcMethodChange('Daily')}
+                className="text-primary focus:ring-primary"
+              />
+              <span>२. प्रत्यक्ष दिवसानुसार <strong>((P×R×दिवस)/३६५००)</strong> - उदा. मे (३१ दिवस): ₹ ७६४</span>
+            </label>
+          </div>
+
+          <div className="text-[11px] text-gray-500">
+            💡 तक्त्यातील कोणत्याही ओळीत व्याज किंवा बचत खाते थेट बदलता येईल.
+          </div>
         </div>
       </div>
 
@@ -747,151 +751,85 @@ export const FdMisInterestPayout: React.FC = () => {
         </div>
       )}
 
-      {/* MAIN TAB 1: PAYOUT WIZARD */}
+      {/* MAIN TAB 1: PAYOUT VIEW */}
       {activeTab === 'payout' && (
-        <div className="space-y-2.5">
-          {/* KPI Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs">
-              <span className="text-[10px] font-bold text-gray-500 uppercase block">एकूण पात्र खाती</span>
-              <span className="text-base font-bold text-gray-800 mt-0.5 block">
-                {previewItems.length} <span className="text-[11px] font-medium text-gray-500">({selectedItems.length} निवडलेली)</span>
-              </span>
-            </div>
-
-            <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs border-l-4 border-l-primary">
-              <span className="text-[10px] font-bold text-primary uppercase block">एकूण देय मासिक व्याज</span>
-              <span className="text-base font-bold text-primary mt-0.5 block">
-                ₹ {totalSelectedGross.toLocaleString('en-IN')}
-              </span>
-            </div>
-
-            <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs border-l-4 border-l-amber-500">
-              <span className="text-[10px] font-bold text-amber-700 uppercase block">तारण कर्जात वळती</span>
-              <span className="text-base font-bold text-amber-800 mt-0.5 block">
-                ₹ {totalSelectedLoanAdj.toLocaleString('en-IN')}
-              </span>
-            </div>
-
-            <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs border-l-4 border-l-emerald-600">
-              <span className="text-[10px] font-bold text-emerald-700 uppercase block">बचत खात्यात निव्वळ जमा</span>
-              <span className="text-base font-bold text-emerald-800 mt-0.5 block">
-                ₹ {totalSelectedSbDisb.toLocaleString('en-IN')}
-              </span>
-            </div>
-
-            <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs border-l-4 border-l-rose-500">
-              <span className="text-[10px] font-bold text-rose-700 uppercase block">उचंत खात्यात जमा</span>
-              <span className="text-base font-bold text-rose-800 mt-0.5 block">
-                ₹ {totalSelectedSuspense.toLocaleString('en-IN')}
-              </span>
-            </div>
-          </div>
-
-          {/* Table Container */}
-          <div className="bg-white rounded-sm shadow-xs border border-gray-200 p-2.5 space-y-2">
-            {/* Batch Payout Mode Override & Bank GL Account Selector */}
-            <div className="bg-blue-50/50 border border-blue-200 rounded-sm p-2.5 grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
-              <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                  वाटप माध्यम / पेमेंट पद्धत (Batch Payout Mode)
-                </label>
-                <select
-                  value={batchPayoutOverride}
-                  onChange={(e) => handleBatchPayoutOverrideChange(e.target.value as 'Auto' | 'Bank' | 'Cash')}
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-semibold cursor-pointer h-[30px]"
-                >
-                  <option value="Auto">स्वयंचलित (Auto: बचत खाते / तारण कर्ज / उचंत)</option>
-                  <option value="Bank">🏦 बँक ट्रान्सफर / धनादेश (All Non-Lien via Bank)</option>
-                  <option value="Cash">💵 रोख पेमेंट (All Non-Lien via Cash)</option>
-                </select>
-                <span className="text-[10px] text-gray-500 block mt-0.5">
-                  खालील तक्त्यात प्रत्येक खात्याची वाटप पद्धत स्वतंत्रपणे देखील बदलता येईल.
-                </span>
-              </div>
-
-              {anySelectedUsesBank && (
-                <div className="md:col-span-2">
-                  <BankLedgerSelect
-                    value={bankLedgerID}
-                    onChange={(id) => setBankLedgerID(id)}
-                    showCountBadge
-                  />
-                </div>
+        <div className="space-y-2">
+          {/* Streamlined Single-Row Summary & Action Bar */}
+          <div className="bg-white px-3 py-2 rounded-sm border border-gray-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5 text-xs">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span>एकूण खाती: <strong className="text-gray-900 font-bold">{previewItems.length}</strong></span>
+              <span className="text-gray-300">|</span>
+              <span>निवडलेली: <strong className="text-primary font-bold">{selectedItems.length}</strong></span>
+              <span className="text-gray-300">|</span>
+              <span>देय मासिक व्याज: <strong className="text-primary font-bold text-sm">₹ {totalSelectedGross.toLocaleString('en-IN')}</strong></span>
+              <span className="text-gray-300">|</span>
+              <span>बचत जमा: <strong className="text-emerald-700 font-bold">₹ {totalSelectedSbDisb.toLocaleString('en-IN')}</strong></span>
+              {totalSelectedLoanAdj > 0 && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <span>कर्ज वळती: <strong className="text-amber-700 font-bold">₹ {totalSelectedLoanAdj.toLocaleString('en-IN')}</strong></span>
+                </>
               )}
             </div>
 
-            {/* Table Header Action Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-gray-200">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-gray-800">
-                  २. खातेदार-निहाय मासिक व्याज वाटप तक्ता (Customer-wise List)
-                </span>
-                <span className="text-[11px] text-gray-500 font-medium">
-                  एकूण खाती: <strong className="text-primary font-bold">{previewItems.length}</strong> | निवडलेले: <strong className="text-emerald-700 font-bold">{selectedItems.length}</strong>
-                </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => toggleSelectAll(selectedItems.length !== selectableItems.length)}
+                disabled={selectableItems.length === 0}
+                className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-40"
+              >
+                {selectedItems.length === selectableItems.length && selectableItems.length > 0 ? (
+                  <CheckSquare size={14} className="text-primary" />
+                ) : (
+                  <Square size={14} className="text-gray-400" />
+                )}
+                सर्व निवडा ({selectedItems.length}/{selectableItems.length})
+              </button>
+
+              <div className="relative">
+                <Search size={13} className="absolute left-2.5 top-2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="खाते क्र., नाव किंवा CIF शोधा..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-7 pr-2 py-1 text-xs bg-white border border-gray-300 rounded-sm w-52 focus:outline-none focus:border-primary"
+                />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => toggleSelectAll(selectedItems.length !== selectableItems.length)}
-                  disabled={selectableItems.length === 0}
-                  className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-40"
-                >
-                  {selectedItems.length === selectableItems.length && selectableItems.length > 0 ? (
-                    <CheckSquare size={14} className="text-primary" />
-                  ) : (
-                    <Square size={14} className="text-gray-400" />
-                  )}
-                  सर्व निवडा ({selectedItems.length}/{selectableItems.length})
-                </button>
-
-                <div className="relative">
-                  <Search size={13} className="absolute left-2.5 top-2 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="खाते क्र., नाव किंवा बचत क्र. शोधा..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-7 pr-2 py-1 text-xs bg-white border border-gray-300 rounded-sm w-56 focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleOpenConfirmModal}
-                  disabled={selectedItems.length === 0 || loadingExecute}
-                  className="bg-primary hover:opacity-90 text-white px-3 py-1 rounded-sm shadow-xs text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <Wallet size={14} />
-                  निवडलेल्या खात्यांचे व्याज ट्रान्सफर करा ({selectedItems.length})
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleOpenConfirmModal}
+                disabled={selectedItems.length === 0 || loadingExecute}
+                className="bg-primary hover:opacity-90 text-white px-3 py-1 rounded-sm shadow-xs text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Wallet size={14} />
+                व्याज ट्रान्सफर करा ({selectedItems.length})
+              </button>
             </div>
+          </div>
 
-            {/* Grid Table */}
-            <div className="overflow-x-auto max-h-[550px] overflow-y-auto border border-gray-200 rounded-sm">
+          {/* Clean 8-Column Grid Table */}
+          <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto max-h-[580px] overflow-y-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-gray-100 text-gray-700 uppercase font-bold tracking-wider text-[10px] sticky top-0 z-10 border-b border-gray-200">
                   <tr>
                     <th className="p-2 w-10 text-center">निवड</th>
-                    <th className="p-2">FD खाते क्र.</th>
-                    <th className="p-2">खातेदार / सभासद</th>
-                    <th className="p-2 text-right">ठेव मुद्दल</th>
-                    <th className="p-2 text-center">व्याजदर</th>
-                    <th className="p-2 text-center">कालावधी (दिवस)</th>
-                    <th className="p-2 text-right">देय मासिक व्याज</th>
-                    <th className="p-2 text-right">कर्जात वळती</th>
-                    <th className="p-2 text-right font-bold">निव्वळ बचत जमा</th>
-                    <th className="p-2">संलग्न बचत / कर्ज खाते</th>
-                    <th className="p-2 text-center">स्थिती व शेरा</th>
+                    <th className="p-2 min-w-[200px]">FD खाते क्र. व खातेदार</th>
+                    <th className="p-2 text-right min-w-[120px]">ठेव मुद्दल व दर</th>
+                    <th className="p-2 text-center min-w-[90px]">कालावधी</th>
+                    <th className="p-2 text-right min-w-[140px]">देय मासिक व्याज (₹)</th>
+                    <th className="p-2 min-w-[220px]">जमा / वळती बचत खाते</th>
+                    <th className="p-2 min-w-[130px]">वाटप प्रकार</th>
+                    <th className="p-2 text-center w-24">स्थिती</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 font-medium">
                   {filteredPreview.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="p-6 text-center text-gray-400 font-semibold">
+                      <td colSpan={8} className="p-6 text-center text-gray-400 font-semibold">
                         {loadingPreview ? 'माहिती गोळा केली जात आहे...' : 'प्रदर्शनासाठी कोणतेही रेकॉर्ड सापडले नाही.'}
                       </td>
                     </tr>
@@ -905,6 +843,7 @@ export const FdMisInterestPayout: React.FC = () => {
                             item.isSelected ? 'bg-blue-50/30' : (isDisabled ? 'bg-gray-50/70 opacity-60' : '')
                           }`}
                         >
+                          {/* 1. Checkbox */}
                           <td className="p-2 text-center">
                             <input
                               type="checkbox"
@@ -915,52 +854,35 @@ export const FdMisInterestPayout: React.FC = () => {
                             />
                           </td>
 
+                          {/* 2. FD Account & Customer */}
                           <td className="p-2">
-                            <span className="font-bold text-gray-900 block">{item.accountNo}</span>
-                            <span className="text-[10px] text-gray-500 block truncate max-w-[140px]">
-                              {item.schemeName}
-                            </span>
-                          </td>
-
-                          <td className="p-2">
-                            <span className="font-bold text-gray-800 block">{item.customerName}</span>
-                            <span className="text-[10px] text-gray-500">
-                              CIF: {item.cifNo || '-'} {item.memberNo ? `| सभासद: ${item.memberNo}` : ''}
-                            </span>
-                          </td>
-
-                          <td className="p-2 text-right font-bold text-gray-800">
-                            ₹ {item.depositPrincipal.toLocaleString('en-IN')}
-                          </td>
-
-                          <td className="p-2 text-center font-bold text-primary">
-                            {item.interestRate}%
-                          </td>
-
-                          <td className="p-2 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <input
-                                type="number"
-                                min="1"
-                                max="31"
-                                disabled={isDisabled}
-                                value={item.elapsedDays}
-                                onChange={(e) => handleElapsedDaysChange(item.fdAccountID, parseInt(e.target.value, 10) || 0)}
-                                className="w-12 text-center font-bold text-gray-800 border border-gray-300 rounded-sm py-0.5 text-xs focus:outline-none focus:border-primary disabled:bg-gray-100"
-                                title="कालावधी दिवस बदला (Recalculate Pro-rata)"
-                              />
-                              <span className="text-[10px] text-gray-500">दिवस</span>
+                            <div className="font-bold text-gray-900">{item.accountNo}</div>
+                            <div className="text-gray-800 font-semibold">{item.customerName}</div>
+                            <div className="text-[10px] text-gray-500">
+                              CIF: {item.cifNo || '-'} | {item.schemeName}
                             </div>
+                          </td>
+
+                          {/* 3. Deposit Amount & Rate */}
+                          <td className="p-2 text-right">
+                            <div className="font-bold text-gray-900">₹ {item.depositPrincipal.toLocaleString('en-IN')}</div>
+                            <div className="text-[11px] font-semibold text-primary">{item.interestRate}% वार्षिक</div>
+                          </td>
+
+                          {/* 4. Days */}
+                          <td className="p-2 text-center">
+                            <div className="font-bold text-gray-800">{item.elapsedDays} दिवस</div>
                             {item.isBrokenPeriod && (
-                              <span className="text-[9px] bg-amber-50 border border-amber-200 text-amber-800 px-1 py-0.2 rounded-sm font-semibold block mt-0.5">
-                                अपूर्ण महिना (Odd Days)
+                              <span className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 px-1 py-0.2 rounded-sm font-semibold inline-block mt-0.5">
+                                अपूर्ण महिना
                               </span>
                             )}
                           </td>
 
-                          <td className="p-2 text-right font-bold text-gray-900 text-xs">
+                          {/* 5. Gross Monthly Interest (Editable with Reset) */}
+                          <td className="p-2 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <span className="text-gray-500 text-[11px]">₹</span>
+                              <span className="text-gray-500 font-bold">₹</span>
                               <input
                                 type="number"
                                 min="0"
@@ -969,46 +891,34 @@ export const FdMisInterestPayout: React.FC = () => {
                                 value={item.grossInterest}
                                 onChange={(e) => handleGrossInterestChange(item.fdAccountID, parseFloat(e.target.value) || 0)}
                                 className="w-20 text-right font-bold text-gray-900 border border-gray-300 rounded-sm px-1.5 py-0.5 text-xs focus:outline-none focus:border-primary disabled:bg-gray-100"
-                                title="मासिक व्याज मॅन्युअल भरा (Editable Interest)"
+                                title="मासिक व्याज मॅन्युअल भरा"
                               />
                               <button
                                 type="button"
-                                title="मूळ सिस्टीम गणना पूर्ववत करा (Reset to Auto-calculated)"
+                                title="मूळ सिस्टीम गणना पूर्ववत करा"
                                 disabled={isDisabled}
                                 onClick={() => handleResetGrossInterest(item.fdAccountID)}
-                                className="p-0.5 text-gray-400 hover:text-primary transition rounded-sm hover:bg-gray-100 disabled:opacity-30 cursor-pointer font-bold text-sm"
+                                className="p-0.5 text-gray-400 hover:text-primary transition rounded-sm cursor-pointer font-bold text-sm"
                               >
                                 ↺
                               </button>
                             </div>
                           </td>
 
-                          <td className="p-2 text-right font-semibold text-amber-700">
-                            {item.loanAdjustedAmount > 0 ? `₹ ${item.loanAdjustedAmount.toLocaleString('en-IN')}` : '-'}
-                          </td>
-
-                          <td className="p-2 text-right font-bold text-emerald-700">
-                            {item.netDisbursedAmount > 0 ? `₹ ${item.netDisbursedAmount.toLocaleString('en-IN')}` : '₹ ०'}
-                          </td>
-
+                          {/* 6. Saving Account Display / Selector */}
                           <td className="p-2">
                             {item.disbursementMode === 'LoanRecovery' ? (
-                              <div>
-                                <span className="font-bold text-amber-800 block text-xs">
-                                  कर्ज: {item.targetLoanAccountNo || 'तारण कर्ज'}
-                                </span>
-                                <span className="text-[10px] text-gray-500">
-                                  शिल्लक: ₹ {(item.targetLoanBalance || 0).toLocaleString('en-IN')}
-                                </span>
+                              <div className="text-amber-800">
+                                <span className="font-bold block text-xs">कर्ज: {item.targetLoanAccountNo || 'तारण कर्ज'}</span>
+                                <span className="text-[10px] text-gray-500">शिल्लक: ₹ {(item.targetLoanBalance || 0).toLocaleString('en-IN')}</span>
                               </div>
-                            ) : item.customerSavingAccounts && item.customerSavingAccounts.length > 0 ? (
+                            ) : item.customerSavingAccounts && item.customerSavingAccounts.length > 1 ? (
                               <div>
                                 <select
                                   value={item.targetSavingAccountID || ''}
                                   disabled={isDisabled}
                                   onChange={(e) => handleSavingAccountChange(item.fdAccountID, Number(e.target.value))}
-                                  className="w-full border border-gray-300 rounded-sm px-1 py-0.5 text-[11px] font-bold bg-white text-gray-800 focus:outline-none focus:border-primary cursor-pointer"
-                                  title="ठेवीदाराचे सक्रिय बचत खाते निवडा"
+                                  className="w-full border border-gray-300 rounded-sm px-1.5 py-0.5 text-xs font-bold bg-white text-gray-800 focus:outline-none focus:border-primary cursor-pointer"
                                 >
                                   {item.customerSavingAccounts.map((sb) => (
                                     <option key={sb.savingAccountID} value={sb.savingAccountID}>
@@ -1016,57 +926,72 @@ export const FdMisInterestPayout: React.FC = () => {
                                     </option>
                                   ))}
                                 </select>
-                                <span className="text-[9px] text-emerald-700 block font-semibold mt-0.5">
-                                  ✓ सक्रिय बचत खाते
+                                <span className="text-[9px] text-gray-500 block mt-0.5 font-medium">
+                                  {item.customerSavingAccounts.length} बचत खाती उपलब्ध
                                 </span>
                               </div>
                             ) : item.targetSavingAccountNo ? (
                               <div>
-                                <span className="font-bold text-gray-800 block text-xs">
+                                <span className="font-bold text-gray-900 block text-xs">
                                   बचत: {item.targetSavingAccountNo}
                                 </span>
-                                <span className="text-[10px] text-gray-500">
+                                <span className="text-[10px] text-emerald-700 font-semibold">
                                   चालू शिल्लक: ₹ {(item.targetSavingAccountBalance || 0).toLocaleString('en-IN')}
                                 </span>
                               </div>
                             ) : (
-                              <span className="text-rose-600 font-bold text-[10px]">
-                                बचत खाते उपलब्ध नाही
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-gray-400 text-xs">बचत खाते नाही</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSbSearchModal(item)}
+                                  className="text-primary hover:underline text-[11px] font-bold cursor-pointer"
+                                >
+                                  + शोधा
+                                </button>
+                              </div>
                             )}
                           </td>
 
-                          <td className="p-2 text-center">
-                            {item.isAlreadyPaid ? (
-                              <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-gray-200">
-                                <CheckCircle2 size={10} /> आधीच जमा झाले
+                          {/* 7. Disbursement Mode Badge / Selector */}
+                          <td className="p-2">
+                            {item.disbursementMode === 'LoanRecovery' ? (
+                              <span className="inline-block bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-sm font-bold text-[11px]">
+                                कर्जात वळती ₹ {item.loanAdjustedAmount.toLocaleString('en-IN')}
                               </span>
-                            ) : item.isLienMarked && item.disbursementMode === 'LoanRecovery' ? (
-                              <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-amber-200">
-                                <ShieldAlert size={10} /> तारण कर्जात वळती
+                            ) : item.disbursementMode === 'SavingTransfer' ? (
+                              <span className="inline-block bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-sm font-bold text-[11px]">
+                                बचत जमा ₹ {item.netDisbursedAmount.toLocaleString('en-IN')}
                               </span>
                             ) : (
                               <select
                                 value={item.disbursementMode}
                                 disabled={isDisabled}
                                 onChange={(e) => handleRowModeChange(item.fdAccountID, e.target.value as MisDisbursementMode)}
-                                className="border border-gray-300 rounded-sm px-1.5 py-0.5 text-[11px] font-bold bg-white text-gray-800 focus:outline-none focus:border-primary cursor-pointer"
+                                className="border border-gray-300 rounded-sm px-1.5 py-0.5 text-xs font-semibold bg-white text-gray-800 focus:outline-none focus:border-primary cursor-pointer"
                               >
                                 {(item.targetSavingAccountID || (item.customerSavingAccounts && item.customerSavingAccounts.length > 0)) && (
                                   <option value="SavingTransfer">बचत खात्यात (SB)</option>
                                 )}
-                                <option value="Bank">🏦 बँक (Bank)</option>
-                                <option value="Cash">💵 रोख (Cash)</option>
+                                <option value="Bank">बँक (Bank)</option>
+                                <option value="Cash">रोख (Cash)</option>
                                 <option value="Suspense">उचंत (Suspense)</option>
                                 {item.targetLoanAccountID && (
-                                  <option value="LoanRecovery">तारण कर्जात वळती</option>
+                                  <option value="LoanRecovery">कर्जात वळती</option>
                                 )}
                               </select>
                             )}
+                          </td>
 
-                            {item.warningNote && (
-                              <span className="block text-[9px] text-gray-500 mt-0.5 truncate max-w-[160px]" title={item.warningNote}>
-                                {item.warningNote}
+                          {/* 8. Status */}
+                          <td className="p-2 text-center">
+                            {item.isAlreadyPaid ? (
+                              <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-gray-200">
+                                <CheckCircle2 size={11} className="text-gray-500" /> जमा झाले
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 bg-blue-50 text-primary text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-blue-200">
+                                वाटप तयार
                               </span>
                             )}
                           </td>
@@ -1100,21 +1025,12 @@ export const FdMisInterestPayout: React.FC = () => {
                 <Search size={13} className="absolute left-2.5 top-2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="खाते क्र., व्हाउचर किंवा नाव शोधा..."
+                  placeholder="नोंदवहीत शोधा..."
                   value={registerSearch}
                   onChange={(e) => setRegisterSearch(e.target.value)}
-                  className="pl-7 pr-2 py-1 text-xs bg-white border border-gray-300 rounded-sm w-56 focus:outline-none focus:border-primary"
+                  className="pl-7 pr-2 py-1 text-xs bg-white border border-gray-300 rounded-sm w-52 focus:outline-none focus:border-primary"
                 />
               </div>
-
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-sm border border-gray-300 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer size={13} />
-                प्रिंट नोंदवही
-              </button>
             </div>
           </div>
 
@@ -1122,70 +1038,40 @@ export const FdMisInterestPayout: React.FC = () => {
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-gray-100 text-gray-700 uppercase font-bold tracking-wider text-[10px] sticky top-0 z-10 border-b border-gray-200">
                 <tr>
-                  <th className="p-2">वाटप तारीख</th>
+                  <th className="p-2">वाटप दिनांक</th>
                   <th className="p-2">व्हाउचर क्र.</th>
                   <th className="p-2">FD खाते क्र.</th>
-                  <th className="p-2">खातेदार नाव</th>
+                  <th className="p-2">खातेदार</th>
                   <th className="p-2 text-right">ठेव मुद्दल</th>
                   <th className="p-2 text-center">व्याजदर</th>
-                  <th className="p-2 text-right">एकूण व्याज</th>
-                  <th className="p-2 text-right">कर्जात वळती</th>
-                  <th className="p-2 text-right font-bold">बचत खात्यात जमा</th>
-                  <th className="p-2">वर्ग केलेले खाते</th>
-                  <th className="p-2 text-center">वाटप पद्धत</th>
+                  <th className="p-2 text-right">मासिक व्याज</th>
+                  <th className="p-2">जमा बचत खाते</th>
+                  <th className="p-2">वळती कर्ज खाते</th>
+                  <th className="p-2 text-center">स्थिती</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 font-medium">
                 {filteredRegister.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="p-6 text-center text-gray-400 font-semibold">
-                      {loadingRegister ? 'नोंदवही लोड होत आहे...' : 'या महिन्यासाठी कोणतीही वाटप नोंद आढळली नाही.'}
+                    <td colSpan={10} className="p-6 text-center text-gray-400 font-semibold">
+                      {loadingRegister ? 'नोंदवही लोड होत आहे...' : 'या कालावधीसाठी कोणतीही नोंद आढळली नाही.'}
                     </td>
                   </tr>
                 ) : (
-                  filteredRegister.map((row) => (
-                    <tr key={row.payoutID} className="hover:bg-blue-50/40 transition-colors">
-                      <td className="p-2 text-gray-700 font-semibold">
-                        {new Date(row.payoutDate).toLocaleDateString('en-GB')}
-                      </td>
-                      <td className="p-2 font-mono font-bold text-primary text-xs">
-                        {row.voucherNo || '-'}
-                      </td>
-                      <td className="p-2 font-bold text-gray-900">
-                        {row.accountNo}
-                      </td>
-                      <td className="p-2 text-gray-800 font-semibold">
-                        {row.customerName}
-                      </td>
-                      <td className="p-2 text-right font-bold text-gray-700">
-                        ₹ {row.depositPrincipal.toLocaleString('en-IN')}
-                      </td>
-                      <td className="p-2 text-center font-bold text-primary">
-                        {row.interestRate}%
-                      </td>
-                      <td className="p-2 text-right font-bold text-gray-900">
-                        ₹ {row.grossInterest.toLocaleString('en-IN')}
-                      </td>
-                      <td className="p-2 text-right font-semibold text-amber-700">
-                        {row.loanAdjustedAmount > 0 ? `₹ ${row.loanAdjustedAmount.toLocaleString('en-IN')}` : '-'}
-                      </td>
-                      <td className="p-2 text-right font-bold text-emerald-700">
-                        {row.netDisbursedAmount > 0 ? `₹ ${row.netDisbursedAmount.toLocaleString('en-IN')}` : '₹ ०'}
-                      </td>
-                      <td className="p-2 text-gray-600 text-xs">
-                        {row.disbursementMode === 'Bank'
-                          ? 'बँक ट्रान्सफर (Bank)'
-                          : row.disbursementMode === 'Cash'
-                            ? 'रोख पेमेंट (Cash)'
-                            : row.targetSavingAccountNo
-                              ? `बचत: ${row.targetSavingAccountNo}`
-                              : row.targetLoanAccountNo
-                                ? `कर्ज: ${row.targetLoanAccountNo}`
-                                : 'उचंत खाते'}
-                      </td>
+                  filteredRegister.map((r) => (
+                    <tr key={r.payoutID} className="hover:bg-gray-50/50">
+                      <td className="p-2 font-mono">{r.payoutDate ? r.payoutDate.split('T')[0] : '-'}</td>
+                      <td className="p-2 font-bold text-primary font-mono">{r.voucherNo || '-'}</td>
+                      <td className="p-2 font-bold text-gray-800">{r.accountNo}</td>
+                      <td className="p-2 text-gray-800 font-semibold">{r.customerName}</td>
+                      <td className="p-2 text-right font-bold text-gray-800">₹ {r.depositPrincipal.toLocaleString('en-IN')}</td>
+                      <td className="p-2 text-center font-bold text-gray-700">{r.interestRate}%</td>
+                      <td className="p-2 text-right font-bold text-primary">₹ {r.grossInterest.toLocaleString('en-IN')}</td>
+                      <td className="p-2 text-emerald-800 font-bold">{r.targetSavingAccountNo || '-'}</td>
+                      <td className="p-2 text-amber-800 font-bold">{r.targetLoanAccountNo || '-'}</td>
                       <td className="p-2 text-center">
-                        <span className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded-sm font-semibold border border-gray-200">
-                          {row.disbursementMode}
+                        <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded-sm text-[10px] font-bold">
+                          ✓ यशस्वी
                         </span>
                       </td>
                     </tr>
@@ -1197,143 +1083,160 @@ export const FdMisInterestPayout: React.FC = () => {
         </div>
       )}
 
-      {/* CONFIRMATION & BALANCED VOUCHER MODAL */}
+      {/* Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/50 backdrop-blur-2xs overflow-y-auto">
-          <div className="bg-white rounded-sm shadow-xl border border-gray-300 w-full max-w-2xl overflow-hidden animate-in fade-in duration-150">
-            {/* Header */}
-            <div className="bg-primary px-3 py-2 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Wallet size={16} className="text-blue-100" />
-                <h3 className="text-xs font-bold tracking-wide">
-                  मासिक व्याज ट्रान्सफर अंतिम पुष्टी (Confirm Batch Payout)
-                </h3>
-              </div>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3">
+          <div className="bg-white rounded-sm shadow-xl max-w-md w-full border border-gray-200 overflow-hidden">
+            <div className="bg-primary px-4 py-2.5 text-white flex items-center justify-between">
+              <span className="font-bold text-sm flex items-center gap-1.5">
+                <Wallet size={16} /> मासिक व्याज ट्रान्सफर पुष्टीकरण
+              </span>
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                className="text-white/80 hover:text-white text-base font-bold cursor-pointer"
+                className="text-white/80 hover:text-white cursor-pointer"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
-            {/* Body */}
-            <div className="p-3 space-y-2.5 text-xs">
-              <div className="bg-gray-50 border border-gray-200 p-2.5 rounded-sm space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 font-medium">निवडलेली खाती:</span>
-                  <span className="font-bold text-gray-900">{selectedItems.length} खाती</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 font-medium">कालावधी (महिना व वर्ष):</span>
-                  <span className="font-bold text-primary">
-                    {MARATHI_MONTHS.find(m => m.value === payoutMonth)?.label} {payoutYear}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 font-medium">व्हाउचर / वाटप तारीख:</span>
-                  <span className="font-bold text-gray-900">
-                    {new Date(payoutDate).toLocaleDateString('en-GB')}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 font-medium">लेखांकन पद्धत:</span>
-                  <span className="font-bold text-gray-900">
-                    {accountingMode === 'DirectExpense' ? 'थेट ठेवीवरील व्याज खर्च (P&L)' : 'मुदत ठेव देणे व्याज वळती'}
-                  </span>
-                </div>
-              </div>
+            <div className="p-4 space-y-3 text-xs">
+              <p className="text-gray-700 font-medium">
+                आपण निवडलेल्या <b>{selectedItems.length}</b> मुदत ठेव खात्यांचे मासिक व्याज वर्ग करत आहात:
+              </p>
 
-              {/* Financial Balance Breakdown */}
-              <div className="border border-gray-200 rounded-sm p-2.5 space-y-1.5 bg-white">
-                <span className="text-[11px] font-bold text-gray-700 block uppercase tracking-wider">
-                  व्हाउचर संतुलित लेजर सारांश (Balanced Multi-Leg Voucher):
-                </span>
-                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-gray-500 uppercase block">डेबिट बाजू (Dr.):</span>
-                    <div className="flex justify-between bg-gray-50 p-1.5 rounded-sm border border-gray-200">
-                      <span className="font-medium text-gray-700">
-                        {accountingMode === 'DirectExpense' ? 'ठेवीवरील व्याज खर्च' : 'मुदत ठेव देणे व्याज'}
-                      </span>
-                      <span className="font-bold text-primary">₹ {totalSelectedGross.toLocaleString('en-IN')}</span>
-                    </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-sm p-3 space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">एकूण देय मासिक व्याज:</span>
+                  <span className="font-bold text-gray-900 text-sm">₹ {totalSelectedGross.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-emerald-700 font-medium">बचत खात्यात थेट जमा:</span>
+                  <span className="font-bold text-emerald-800">₹ {totalSelectedSbDisb.toLocaleString('en-IN')}</span>
+                </div>
+                {totalSelectedLoanAdj > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-amber-700 font-medium">तारण कर्जात वळती:</span>
+                    <span className="font-bold text-amber-800">₹ {totalSelectedLoanAdj.toLocaleString('en-IN')}</span>
                   </div>
-
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-gray-500 uppercase block">क्रेडिट बाजू (Cr.):</span>
-                    <div className="space-y-1">
-                      {totalSelectedSbDisb > 0 && (
-                        <div className="flex justify-between bg-gray-50 p-1 rounded-sm border border-gray-200 text-[11px]">
-                          <span className="font-medium text-emerald-800">बचत ठेवी (SB Credits)</span>
-                          <span className="font-bold text-emerald-700">₹ {totalSelectedSbDisb.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                      {totalSelectedBankDisb > 0 && (
-                        <div className="flex justify-between bg-gray-50 p-1 rounded-sm border border-gray-200 text-[11px]">
-                          <span className="font-medium text-blue-800">बँक जी.एल. खाते (Bank Payout)</span>
-                          <span className="font-bold text-blue-700">₹ {totalSelectedBankDisb.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                      {totalSelectedCashDisb > 0 && (
-                        <div className="flex justify-between bg-gray-50 p-1 rounded-sm border border-gray-200 text-[11px]">
-                          <span className="font-medium text-teal-800">रोख खाते (Cash Payout)</span>
-                          <span className="font-bold text-teal-700">₹ {totalSelectedCashDisb.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                      {totalSelectedLoanAdj > 0 && (
-                        <div className="flex justify-between bg-gray-50 p-1 rounded-sm border border-gray-200 text-[11px]">
-                          <span className="font-medium text-amber-800">तारण कर्ज वळती</span>
-                          <span className="font-bold text-amber-700">₹ {totalSelectedLoanAdj.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                      {totalSelectedSuspense > 0 && (
-                        <div className="flex justify-between bg-gray-50 p-1 rounded-sm border border-gray-200 text-[11px]">
-                          <span className="font-medium text-rose-800">उचंत खाते (Suspense)</span>
-                          <span className="font-bold text-rose-700">₹ {totalSelectedSuspense.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-sm text-xs flex items-center gap-2">
-                <Info size={15} className="shrink-0 text-amber-700" />
-                <span>
-                  खात्री करा: ही कृती पूर्ण होताच सभासदांच्या बचत खात्यात शिल्लक त्वरित जमा होईल आणि संबंधित जनरल लेजर व्हाउचर पोस्ट होईल.
-                </span>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-2.5 bg-gray-100 border-t border-gray-200 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                className="px-3 py-1 bg-white border border-gray-300 text-gray-700 font-semibold text-xs rounded-sm hover:bg-gray-50 cursor-pointer"
-              >
-                रद्द करा
-              </button>
-              <button
-                type="button"
-                onClick={handleExecuteBatch}
-                disabled={loadingExecute}
-                className="bg-primary hover:opacity-90 text-white px-4 py-1 rounded-sm font-bold text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-              >
-                {loadingExecute ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    पोस्ट होत आहे...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={14} />
-                    होय, व्याज ट्रान्सफर करा
-                  </>
                 )}
+                <div className="flex justify-between border-t border-gray-200 pt-1.5">
+                  <span className="text-gray-600">वाटप दिनांक:</span>
+                  <span className="font-bold text-gray-900">{payoutDate}</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={loadingExecute}
+                  className="px-3 py-1.5 border border-gray-300 rounded-sm text-gray-700 hover:bg-gray-100 font-semibold cursor-pointer"
+                >
+                  रद्द करा
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteBatch}
+                  disabled={loadingExecute}
+                  className="bg-primary hover:opacity-90 text-white px-4 py-1.5 rounded-sm font-bold shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {loadingExecute ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ट्रान्सफर होत आहे...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={14} /> होय, व्याज वर्ग करा
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Saving Account Search Modal */}
+      {searchModalItem && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3">
+          <div className="bg-white rounded-sm shadow-xl max-w-lg w-full border border-gray-200 overflow-hidden">
+            <div className="bg-primary px-4 py-2.5 text-white flex items-center justify-between">
+              <span className="font-bold text-sm flex items-center gap-1.5">
+                <Search size={16} /> बचत खाते शोधा व जोडा
+              </span>
+              <button
+                type="button"
+                onClick={() => setSearchModalItem(null)}
+                className="text-white/80 hover:text-white cursor-pointer"
+              >
+                <X size={16} />
               </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              <div className="bg-blue-50/60 border border-blue-200 rounded-sm p-2 text-gray-800">
+                FD खाते क्र: <b>{searchModalItem.accountNo}</b> | खातेदार: <b>{searchModalItem.customerName}</b>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="बचत खाते क्र., नाव किंवा CIF शोधा..."
+                  value={sbSearchTerm}
+                  onChange={(e) => setSbSearchTerm(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && performSbSearch(sbSearchTerm)}
+                  className="flex-1 border border-gray-300 rounded-sm px-2 py-1.5 text-xs focus:outline-none focus:border-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => performSbSearch(sbSearchTerm)}
+                  disabled={sbSearchLoading}
+                  className="bg-primary text-white px-3 py-1.5 rounded-sm font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  <Search size={13} /> शोधा
+                </button>
+              </div>
+
+              <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-sm divide-y divide-gray-100">
+                {sbSearchLoading ? (
+                  <div className="p-4 text-center text-gray-500">शोधत आहे...</div>
+                ) : sbSearchResults.length === 0 ? (
+                  <div className="p-4 text-center text-gray-400">कोणतेही खाते आढळले नाही. वर खाते क्र. टाईप करून शोधा.</div>
+                ) : (
+                  sbSearchResults.map((sb) => (
+                    <div
+                      key={sb.savingAccountID || sb.id}
+                      onClick={() => handleSelectSearchedSb(sb)}
+                      className="p-2 hover:bg-blue-50/50 cursor-pointer flex items-center justify-between transition"
+                    >
+                      <div>
+                        <span className="font-bold text-gray-900 block">{sb.accountNo}</span>
+                        <span className="text-[11px] text-gray-600">
+                          {sb.customerName || sb.name} {sb.cifNo ? `| CIF: ${sb.cifNo}` : ''}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold text-emerald-800 block">
+                          ₹ {(sb.currentBalance ?? sb.balance ?? 0).toLocaleString('en-IN')}
+                        </span>
+                        <span className="text-[10px] text-primary font-bold">निवडा →</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setSearchModalItem(null)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-sm text-gray-700 hover:bg-gray-100 font-semibold cursor-pointer"
+                >
+                  बंद करा
+                </button>
+              </div>
             </div>
           </div>
         </div>

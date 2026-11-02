@@ -240,6 +240,10 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     // Automatic System-Generated Loan Account Number and Legacy Number state
     const [autoLoanAccountNo, setAutoLoanAccountNo] = useState<string>('');
     const [legacyLoanAccountNo, setLegacyLoanAccountNo] = useState<string>('');
+    const [newAccountData, setNewAccountData] = useState<Partial<LoanAccount>>({
+        loanAccountNo: '',
+        installmentFrequency: "मासिक"
+    });
 
     const formContainerRef = useRef<HTMLDivElement>(null);
 
@@ -317,11 +321,6 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
     const [deductions, setDeductions] = useState<LoanDisbursementDeduction[]>([]);
     const [sharePercent, setSharePercent] = useState<number>(5);
-
-    const [newAccountData, setNewAccountData] = useState<Partial<LoanAccount>>({
-        loanAccountNo: '',
-        installmentFrequency: "मासिक"
-    });
 
     const [sourceType, setSourceType] = useState<'Draft' | 'Application' | 'ExistingAccount'>('Application');
     const [selectedSourceId, setSelectedSourceId] = useState<number | ''>('');

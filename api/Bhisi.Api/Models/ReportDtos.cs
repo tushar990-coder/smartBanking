@@ -198,6 +198,7 @@ namespace Bhisi.Api.Models
         public int LoanDisbursementID { get; set; }
         public DateTime DisbursementDate { get; set; }
         public string LoanAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
         public string CifNo { get; set; } = string.Empty;
         public string MemberCode { get; set; } = string.Empty;
         public string BorrowerName { get; set; } = string.Empty;
@@ -219,6 +220,7 @@ namespace Bhisi.Api.Models
         public DateTime CollectionDate { get; set; }
         public string ReceiptNo { get; set; } = string.Empty;
         public string LoanAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
         public string CifNo { get; set; } = string.Empty;
         public string MemberCode { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
@@ -297,6 +299,7 @@ namespace Bhisi.Api.Models
         public int LoanRateID { get; set; }
         public string LoanAccountNo { get; set; } = string.Empty;
         public string? LegacyAccountNumber { get; set; }
+        public string? LegacyAccountNumber { get; set; }
         public decimal PrincipalBalance { get; set; }
         public decimal PurePrincipalBalance { get; set; } = 0;
         public decimal CapitalizedInterestAmount { get; set; } = 0;
@@ -314,7 +317,7 @@ namespace Bhisi.Api.Models
         public decimal InstallmentAmount { get; set; }
         public DateTime? FirstInstallmentDate { get; set; }
         public DateTime? MaturityDate { get; set; }
-        public string InstallmentFrequency { get; set; } = "मासिक (Monthly)";
+        public string InstallmentFrequency { get; set; } = "à¤®à¤¾à¤¸à¤¿à¤• (Monthly)";
         public DateTime? LastInstallmentPaidDate { get; set; }
         public string Guarantor1 { get; set; } = string.Empty;
         public string Guarantor2 { get; set; } = string.Empty;
@@ -383,6 +386,7 @@ namespace Bhisi.Api.Models
         public SansthaDetail? SansthaInfo { get; set; }
         public string LoanType { get; set; } = string.Empty;
         public string LoanAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
         public string? LegacyAccountNumber { get; set; }
         public string Status { get; set; } = string.Empty;
         public decimal SanctionedAmount { get; set; }
@@ -467,6 +471,7 @@ namespace Bhisi.Api.Models
     {
         public int LoanAccountID { get; set; }
         public string LoanAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
         public string LoanType { get; set; } = string.Empty;
         public int? CustomerID { get; set; }
         public string CifNo { get; set; } = string.Empty;
@@ -494,7 +499,7 @@ namespace Bhisi.Api.Models
         public decimal InterestRate { get; set; }
         public int NoOfInstallments { get; set; }
         public int DurationMonths { get; set; }
-        public string InstallmentFrequency { get; set; } = "मासिक (Monthly)";
+        public string InstallmentFrequency { get; set; } = "à¤®à¤¾à¤¸à¤¿à¤• (Monthly)";
         public DateTime LoanDisbursementDate { get; set; }
         public DateTime? FirstInstallmentDate { get; set; }
         public decimal? CustomInstallmentAmount { get; set; }
@@ -724,6 +729,7 @@ namespace Bhisi.Api.Models
         public long? GoldLoanDetailID { get; set; }
         public int LoanAccountID { get; set; }
         public string LoanAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
         public int? LoanApplicationID { get; set; }
         public int? CustomerID { get; set; }
         public string CifNo { get; set; } = string.Empty;
@@ -765,7 +771,7 @@ namespace Bhisi.Api.Models
     {
         public SansthaDetail? SansthaInfo { get; set; }
         public string ReportDate { get; set; } = string.Empty;
-        public string BranchName { get; set; } = "सर्व शाखा";
+        public string BranchName { get; set; } = "à¤¸à¤°à¥à¤µ à¤¶à¤¾à¤–à¤¾";
         public List<GoldJewelryReportItemDto> Items { get; set; } = new();
         public decimal TotalEstimatedValue { get; set; }
         public decimal TotalValuerValuation { get; set; }

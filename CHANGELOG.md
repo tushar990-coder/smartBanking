@@ -1,5 +1,20 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-02] - आवृत्ती v2.6.14 (Loan Disbursement Auto Next Legacy Account Number Generation, Manual Overwrite, Duplicate Warning & Register Display)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **योजनेनुसार पुढील जुना खाते क्रमांक स्वयंचलित शोधणे (`LoanAccountsController.cs`):**
+  * `GET /api/LoanAccounts/next-account-no` मध्ये निवडलेल्या कर्ज योजनेतील (`LoanRateID`) आणि शाखेतील सर्व खाती (ज्यामध्ये ३१/०३ ची आरंभिक शिल्लक `IsOpeningBalance == true` आणि नवीन कर्ज वाटपाची खाती समाविष्ट आहेत) तपासून त्या योजनेतील सर्वोच्च जुना खाते क्रमांक (उदा. शेवटचा १५० असल्यास) शोधून पुढील सलग क्रमांक **१५१** (`nextLegacyAccountNo`) स्वयंचलित तयार करून परत पाठवला.
+* **कर्ज वाटप फॉर्ममध्ये स्वयं-सुचवणे व मॅन्युअल बदल (`LoanDisbursementMaster.tsx`):**
+  * अर्ज निवडताच किंवा योजना बदलताच "जुना कर्ज खाते क्र." रकान्यात सुचवलेला क्रमांक आपोआप भरतो.
+  * ऑपरेटरला हवा असल्यास तो खोडून स्वतःचा इच्छित नंबर थेट मॅन्युअली टाईप / एडिट करता येतो (`Editable`).
+* **रिअल-टाइम डुप्लिकेट चेतावणी (Duplicate Warning Guard):**
+  * ऑपरेटरने टाईप केलेला जुना नंबर त्याच कर्ज योजनेतील दुसऱ्या खात्याला आधीच दिला असल्यास फॉर्मवर त्वरित लाल रंगात चेतावणी दिसते आणि सबमिट रोखले जाते.
+* **वाटप यादी व नोंदवहीत जुना क्रमांक स्पष्ट प्रदर्शन (`LoanDistributionListModal.tsx`, `LoanDisbursementRegister.tsx` & `ReportsController.cs`):**
+  * कर्ज वाटप यादी, एक्सेल रिपोर्ट व नोंदवहीत नवीन १४-अंकी क्रमांकासोबतच **`[जुना क्र: ...]`** चा ठळक बॅज दर्शवला.
+
+---
+
 ## 📅 [2026-11-02] - आवृत्ती v2.6.13 (FD MIS Display FD Legacy Receipt / Old Account Number in Column 2 & Register Tab)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

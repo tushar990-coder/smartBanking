@@ -270,11 +270,31 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     ...prev,
                     loanAccountNo: nextNo
                 }));
+                // Auto-suggest next legacy account number from the highest old account in this scheme
+                const nextLegacy = res.data.nextLegacyAccountNo ? String(res.data.nextLegacyAccountNo) : '1';
+                setLegacyLoanAccountNo(nextLegacy);
             }
         } catch (e) {
             console.error(e);
         }
     };
+
+    // Real-time duplicate detection of Old Loan Account No under the selected Loan Scheme
+    const duplicateLegacyAccount = useMemo(() => {
+        if (!legacyLoanAccountNo || !legacyLoanAccountNo.trim() || !newAccountData.loanRateID) {
+            return null;
+        }
+        const cleanLegacy = legacyLoanAccountNo.trim().toLowerCase();
+        const currentRateId = Number(newAccountData.loanRateID);
+        return (
+            accounts.find(
+                (acc) =>
+                    Number(acc.loanRateID) === currentRateId &&
+                    (acc.legacyAccountNumber || '').trim().toLowerCase() === cleanLegacy &&
+                    (!newAccountData.loanAccountID || acc.loanAccountID !== newAccountData.loanAccountID)
+            ) || null
+        );
+    }, [legacyLoanAccountNo, newAccountData.loanRateID, newAccountData.loanAccountID, accounts]);
 
     const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
     const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
@@ -1183,6 +1203,13 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             return;
         }
 
+        if (duplicateLegacyAccount) {
+            const m = `जुना कर्ज खाते क्रमांक '${legacyLoanAccountNo.trim()}' हा या कर्ज योजनेमध्ये आधीच खाते क्र. ${duplicateLegacyAccount.loanAccountNo} साठी नोंदवलेला आहे! एकाच योजनेत जुना खाते क्र. डबल घेता येत नाही.`;
+            setErrorMessage(m);
+            alert(m);
+            return;
+        }
+
         if (curDisbAmt <= 0) {
             const m = 'कृपया वैध कर्ज वाटप रक्कम टाका!';
             setErrorMessage(m);
@@ -1922,15 +1949,32 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                 <label className="text-[11px] font-bold text-gray-700">
                                                     जुना कर्ज खाते क्र. (Old/Legacy Loan No)
                                                 </label>
-                                                <span className="text-[9.5px] text-amber-700 font-medium">पर्यायी</span>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9.5px] font-bold px-1.5 py-0.2 rounded border bg-amber-100 text-amber-900 border-amber-300">
+                                                        ⚡ स्वयं-सुचवलेला (Auto)
+                                                    </span>
+                                                    <span className="text-[9.5px] text-gray-500 font-medium">बदल करता येईल</span>
+                                                </div>
                                             </div>
                                             <input 
                                                 type="text"
                                                 value={legacyLoanAccountNo}
                                                 onChange={(e) => setLegacyLoanAccountNo(e.target.value)}
-                                                placeholder="उदा. LN-101 / 45"
-                                                className="w-full text-[11px] border border-amber-300 bg-amber-50/30 rounded-sm px-2 py-1 font-semibold text-gray-900 focus:ring-1 focus:ring-blue-500 h-[30px]"
+                                                placeholder="उदा. 151"
+                                                className={`w-full text-[11px] border rounded-sm px-2 py-1 font-mono font-bold text-gray-900 focus:ring-1 focus:ring-primary h-[30px] ${
+                                                    duplicateLegacyAccount 
+                                                        ? 'border-red-500 bg-red-50 text-red-950 ring-1 ring-red-500' 
+                                                        : 'border-amber-300 bg-amber-50/40 text-amber-950'
+                                                }`}
                                             />
+                                            {duplicateLegacyAccount && (
+                                                <p className="text-[10px] text-red-600 font-bold mt-1 leading-tight flex items-start gap-1">
+                                                    <span>⚠️</span>
+                                                    <span>
+                                                        हा जुना क्र. '{duplicateLegacyAccount.legacyAccountNumber}' या योजनेत आधीच खाते {duplicateLegacyAccount.loanAccountNo} {duplicateLegacyAccount.customer ? `(${duplicateLegacyAccount.customer.firstName || ''} ${duplicateLegacyAccount.customer.lastName || ''})` : ''} साठी नोंदवला आहे!
+                                                    </span>
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 )}

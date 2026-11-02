@@ -81,12 +81,63 @@ namespace Bhisi.Api.Controllers
                 nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(targetBranchId, schemeCodeNum, nextSeq);
             }
 
+            // 2. Determine Next Legacy (Old) Account Number for the selected Loan Scheme
+            string nextLegacyAccountNo = "1";
+            if (loanRateId.HasValue && loanRateId.Value > 0)
+            {
+                var existingLegacyList = await _context.LoanAccounts
+                    .Where(a => a.BranchID == targetBranchId &&
+                                a.LoanRateID == loanRateId.Value &&
+                                a.LegacyAccountNumber != null &&
+                                a.LegacyAccountNumber != "")
+                    .Select(a => a.LegacyAccountNumber!)
+                    .ToListAsync();
+
+                if (existingLegacyList.Count == 0)
+                {
+                    existingLegacyList = await _context.LoanAccounts
+                        .Where(a => a.LoanRateID == loanRateId.Value &&
+                                    a.LegacyAccountNumber != null &&
+                                    a.LegacyAccountNumber != "")
+                        .Select(a => a.LegacyAccountNumber!)
+                        .ToListAsync();
+                }
+
+                int maxLegacySeq = 0;
+                foreach (var legacyStr in existingLegacyList)
+                {
+                    var trimmed = legacyStr.Trim();
+                    if (int.TryParse(trimmed, out int numVal))
+                    {
+                        if (numVal > maxLegacySeq) maxLegacySeq = numVal;
+                    }
+                    else
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"\d+$");
+                        if (match.Success && int.TryParse(match.Value, out int extractedVal))
+                        {
+                            if (extractedVal > maxLegacySeq) maxLegacySeq = extractedVal;
+                        }
+                    }
+                }
+
+                if (maxLegacySeq > 0)
+                {
+                    nextLegacyAccountNo = (maxLegacySeq + 1).ToString();
+                }
+                else
+                {
+                    nextLegacyAccountNo = "1";
+                }
+            }
+
             string formattedNo = Helpers.AccountNumberHelper.Format14Digit(nextAccNo);
             return Ok(new {
                 nextAccountNo = nextAccNo,
                 accountNo = nextAccNo,
                 formattedAccountNo = formattedNo,
-                displayAccountNo = formattedNo
+                displayAccountNo = formattedNo,
+                nextLegacyAccountNo = nextLegacyAccountNo
             });
         }
 

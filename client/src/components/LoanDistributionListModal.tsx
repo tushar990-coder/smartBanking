@@ -487,8 +487,13 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                                                 </td>
                                                 <td className="px-2 py-1.5 border-r border-gray-200 font-mono">
                                                     <div className="font-bold text-gray-900 tracking-tight">{format14DigitDisplay(acc.loanAccountNo) || `L-${d.loanAccountID}`}</div>
+                                                    {acc.legacyAccountNumber && (
+                                                        <div className="text-[9.5px] text-amber-950 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.2 mt-0.5 font-bold inline-block">
+                                                            जुना क्र: {acc.legacyAccountNumber}
+                                                        </div>
+                                                    )}
                                                     {hasMultipleTranches && (
-                                                        <span className="inline-block text-[9px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded border border-amber-300 mt-0.5">
+                                                        <span className="inline-block text-[9px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded border border-amber-300 mt-0.5 ml-1">
                                                             टप्पा {trancheNo}/{accountDisbursements.length}
                                                         </span>
                                                     )}

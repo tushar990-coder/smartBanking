@@ -17,6 +17,7 @@ interface LoanDisbursementRegisterDto {
   loanDisbursementID: number;
   disbursementDate: string;
   loanAccountNo: string;
+  legacyAccountNumber?: string;
   cifNo?: string;
   memberCode?: string;
   borrowerName: string;
@@ -157,6 +158,7 @@ export default function LoanDisbursementRegister() {
     const term = searchTerm.toLowerCase().trim();
     return (
       item.loanAccountNo.toLowerCase().includes(term) ||
+      (item.legacyAccountNumber && item.legacyAccountNumber.toLowerCase().includes(term)) ||
       item.borrowerName.toLowerCase().includes(term) ||
       (item.cifNo && item.cifNo.toLowerCase().includes(term)) ||
       (item.memberCode && item.memberCode.toLowerCase().includes(term)) ||
@@ -196,7 +198,7 @@ export default function LoanDisbursementRegister() {
       excelRows.push({
         'अ.क्र.': sr++,
         'दिनांक': formatDisplayDate(r.disbursementDate),
-        'कर्ज खाते नं': r.loanAccountNo,
+        'कर्ज खाते नं': r.legacyAccountNumber ? `${r.loanAccountNo} (जुना: ${r.legacyAccountNumber})` : r.loanAccountNo,
         'कर्जदाराचे नाव': r.borrowerName,
         'कर्ज प्रकार': r.loanType,
         'मंजूर / वाटप रक्कम (₹)': r.sanctionedAmount || 0,
@@ -551,6 +553,11 @@ export default function LoanDisbursementRegister() {
                             </td>
                             <td className="border border-gray-900 py-1 px-1.5 text-center font-mono font-bold text-gray-900">
                               <div>{row.loanAccountNo}</div>
+                              {row.legacyAccountNumber && (
+                                <div className="text-[9.5px] text-amber-950 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.2 mt-0.5 font-bold inline-block">
+                                  जुना क्र: {row.legacyAccountNumber}
+                                </div>
+                              )}
                               {row.passingStatus && (
                                 <span
                                   className={`inline-block mt-0.5 px-1 py-0.2 rounded text-[8.5px] font-bold border ${

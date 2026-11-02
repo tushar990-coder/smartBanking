@@ -267,6 +267,28 @@ namespace Bhisi.Api.Controllers
                     collection.BankName = null;
                     collection.ChequeNo = null;
                 }
+
+                if (isBankMode && string.Equals(collection.PaymentMode, "Cheque", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(collection.ChequeNo))
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest("चेक वसुलीसाठी कृपया वैध चेक क्रमांक (Cheque No) प्रविष्ट करा.");
+                }
+
+                if (!isPigmyMode)
+                {
+                    collection.SourcePigmyAccountID = null;
+                    collection.TransferFromPigmyAccountNo = null;
+                    collection.PigmyTransferType = null;
+                    collection.PigmyBalanceBefore = null;
+                    collection.PigmyBalanceAfter = null;
+                }
+
+                if (!isSavingMode)
+                {
+                    collection.SourceSavingAccountID = null;
+                    collection.TransferFromSavingAccountNo = null;
+                    collection.SavingCustomerName = null;
+                }
                 decimal overdueExpenses = await _context.OverdueRecoveryLedgers
                     .Where(l => l.LoanAccountID == collection.LoanAccountID)
                     .SumAsync(l => l.DebitAmount - l.CreditAmount);
@@ -326,34 +348,41 @@ namespace Bhisi.Api.Controllers
                 else
                 {
                     // STANDARD COLLECTION WATERFALL LOGIC
-                    bool isDailyReducing = loanRate != null && 
-                        ((loanRate.InterestCalculationMethod?.Contains("Daily Reducing") == true) || (loanRate.InterestCalculationMethod?.Contains("दैनिक घटती") == true));
+                    bool isFlatMethod = loanRate != null &&
+                        ((loanRate.InterestCalculationMethod?.Contains("Flat", StringComparison.OrdinalIgnoreCase) == true) ||
+                         (loanRate.InterestCalculationMethod?.Contains("फ्लॅट") == true));
+                    bool isDailyReducing = !isFlatMethod;
 
                     decimal existingReceivableInterest = loanAccount.InterestBalance;
                     decimal currentPeriodInterest = 0;
 
                     if (isDailyReducing)
                     {
-                        var fromDateStr = loanAccount.LastInterestPostingDate 
-                            ?? loanAccount.LastInstallmentPaidDate 
-                            ?? (loanAccount.IsOpeningBalance ? loanAccount.OpeningDate : (DateTime?)null)
-                            ?? loanAccount.LoanDisbursementDate 
-                            ?? loanAccount.OpeningDate;
+                        bool hasOpeningBookedInterest = loanAccount.IsOpeningBalance &&
+                            (loanAccount.InterestBalance > 0 || loanAccount.CapitalizedInterestAmount > 0);
 
+                        DateTime fromDateStr;
                         if (loanAccount.LastInstallmentPaidDate.HasValue && loanAccount.LastInterestPostingDate.HasValue)
                         {
                             fromDateStr = loanAccount.LastInstallmentPaidDate.Value > loanAccount.LastInterestPostingDate.Value
                                 ? loanAccount.LastInstallmentPaidDate.Value
                                 : loanAccount.LastInterestPostingDate.Value;
                         }
-
-                        // Core Banking Rule: For opening balance loans, interest begins from OpeningDate unless an installment/posting occurred after OpeningDate
-                        if (loanAccount.IsOpeningBalance)
+                        else if (loanAccount.LastInterestPostingDate.HasValue)
                         {
-                            if (fromDateStr < loanAccount.OpeningDate)
-                            {
-                                fromDateStr = loanAccount.OpeningDate;
-                            }
+                            fromDateStr = loanAccount.LastInterestPostingDate.Value;
+                        }
+                        else if (loanAccount.LastInstallmentPaidDate.HasValue)
+                        {
+                            fromDateStr = loanAccount.LastInstallmentPaidDate.Value;
+                        }
+                        else if (hasOpeningBookedInterest)
+                        {
+                            fromDateStr = loanAccount.OpeningDate;
+                        }
+                        else
+                        {
+                            fromDateStr = loanAccount.LoanDisbursementDate ?? loanAccount.OpeningDate;
                         }
 
                         var rate = loanRate?.InterestRate ?? loanAccount.InterestRate;
@@ -391,74 +420,46 @@ namespace Bhisi.Api.Controllers
                     expensesPaid = Math.Min(remaining, overdueExpenses);
                     remaining -= expensesPaid;
 
-                    // Check if explicit split was passed from frontend
+                    // Strict validation: TotalAmountReceived must match the sum of allocated recovery components (no auto-dumping excess into Surcharge)
                     decimal declaredTotal = collection.PrincipalCollected + collection.ReceivableInterestCollected + collection.InterestCollected + collection.PenaltyInterestCollected + collection.SurchargeCollected;
-                    bool hasExplicitSplit = declaredTotal > 0 && Math.Abs(declaredTotal - remaining) <= 0.05m;
+                    decimal allocationDiff = collection.TotalAmountReceived - (declaredTotal + expensesPaid);
 
-                    if (hasExplicitSplit)
+                    if (Math.Abs(allocationDiff) > 0.01m)
                     {
-                        penaltyPaid = Math.Min(collection.PenaltyInterestCollected, loanAccount.OverdueInterestBalance);
-                        receivablePaid = Math.Min(collection.ReceivableInterestCollected, existingReceivableInterest);
-                        regularInterestPaid = collection.InterestCollected;
-                        principalPaid = Math.Min(collection.PrincipalCollected, loanAccount.PrincipalBalance);
-                        surchargeCollected = collection.SurchargeCollected;
-                        decimal explicitDiff = remaining - (penaltyPaid + receivablePaid + regularInterestPaid + principalPaid + surchargeCollected);
-                        if (explicitDiff > 0m)
+                        await transaction.RollbackAsync();
+                        return BadRequest(new
                         {
-                            decimal addPrin = Math.Min(explicitDiff, Math.Max(0m, loanAccount.PrincipalBalance - principalPaid));
-                            principalPaid += addPrin;
-                            explicitDiff -= addPrin;
-                            surchargeCollected += explicitDiff;
-                        }
-                        else if (explicitDiff < 0m)
-                        {
-                            decimal trim = -explicitDiff;
-                            decimal cutSur = Math.Min(trim, surchargeCollected); surchargeCollected -= cutSur; trim -= cutSur;
-                            decimal cutInt = Math.Min(trim, regularInterestPaid); regularInterestPaid -= cutInt; trim -= cutInt;
-                            decimal cutPrin = Math.Min(trim, principalPaid); principalPaid -= cutPrin; trim -= cutPrin;
-                            decimal cutRec = Math.Min(trim, receivablePaid); receivablePaid -= cutRec; trim -= cutRec;
-                            decimal cutPen = Math.Min(trim, penaltyPaid); penaltyPaid -= cutPen;
-                        }
-
-                        loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - penaltyPaid);
-                        loanAccount.InterestBalance = Math.Max(0, (existingReceivableInterest - receivablePaid) + (currentPeriodInterest - regularInterestPaid));
-                        loanAccount.PrincipalBalance = Math.Max(0, loanAccount.PrincipalBalance - principalPaid);
+                            message = $"एकूण जमा रक्कम (₹{collection.TotalAmountReceived:N2}) आणि घेतलेला एकूण वसूल (₹{(declaredTotal + expensesPaid):N2}) यामध्ये ₹{Math.Abs(allocationDiff):N2} ची तफावत (फरक) आहे. कृपया रक्कम व वसुली विभागणी तपासून दुरुस्त करा."
+                        });
                     }
-                    else
+
+                    if (collection.ReceivableInterestCollected > existingReceivableInterest + 0.01m)
                     {
-                        // B. Overdue / Penal Interest
-                        penaltyPaid = Math.Min(remaining, loanAccount.OverdueInterestBalance);
-                        remaining -= penaltyPaid;
-                        loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - penaltyPaid);
-
-                        // C. Past Posted / Accrued Receivable Interest (येणे व्याज)
-                        receivablePaid = Math.Min(remaining, existingReceivableInterest);
-                        remaining -= receivablePaid;
-
-                        // D. Current Period Accrued Interest (चालू व्याज)
-                        regularInterestPaid = Math.Min(remaining, currentPeriodInterest);
-                        remaining -= regularInterestPaid;
-
-                        loanAccount.InterestBalance = Math.Max(0, (existingReceivableInterest - receivablePaid) + (currentPeriodInterest - regularInterestPaid));
-
-                        // E. Principal
-                        principalPaid = Math.Min(remaining, loanAccount.PrincipalBalance);
-                        remaining -= principalPaid;
-                        loanAccount.PrincipalBalance = Math.Max(0, loanAccount.PrincipalBalance - principalPaid);
-
-                        // F. Extra Principal / Surcharge
-                        if (remaining > 0)
+                        await transaction.RollbackAsync();
+                        return BadRequest(new
                         {
-                            if (loanAccount.PrincipalBalance > 0)
-                            {
-                                decimal extraPrincipal = Math.Min(remaining, loanAccount.PrincipalBalance);
-                                loanAccount.PrincipalBalance -= extraPrincipal;
-                                principalPaid += extraPrincipal;
-                                remaining -= extraPrincipal;
-                            }
-                            surchargeCollected = remaining;
-                        }
+                            message = $"येणे व्याज वसुली रक्कम (₹{collection.ReceivableInterestCollected:N2}) ही मागील येणे व्याजापेक्षा (₹{existingReceivableInterest:N2}) जास्त असू शकत नाही."
+                        });
                     }
+
+                    if (collection.PenaltyInterestCollected > loanAccount.OverdueInterestBalance + 0.01m)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new
+                        {
+                            message = $"जादा/दंड व्याज वसुली रक्कम (₹{collection.PenaltyInterestCollected:N2}) ही थकीत दंड व्याजापेक्षा (₹{loanAccount.OverdueInterestBalance:N2}) जास्त असू शकत नाही."
+                        });
+                    }
+
+                    penaltyPaid = collection.PenaltyInterestCollected;
+                    receivablePaid = collection.ReceivableInterestCollected;
+                    regularInterestPaid = collection.InterestCollected;
+                    principalPaid = collection.PrincipalCollected;
+                    surchargeCollected = collection.SurchargeCollected;
+
+                    loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - penaltyPaid);
+                    loanAccount.InterestBalance = Math.Max(0, (existingReceivableInterest - receivablePaid) + (currentPeriodInterest - regularInterestPaid));
+                    loanAccount.PrincipalBalance = Math.Max(0, loanAccount.PrincipalBalance - principalPaid);
 
                     // CBS Waterfall: Settle Capitalized Interest first, then Pure Principal
                     if (principalPaid > 0)
@@ -897,6 +898,9 @@ namespace Bhisi.Api.Controllers
                 bool isCrossBranchTxn = (collectingBranch != targetHomeBranchId);
                 int? custId = loanAccFetched?.CustomerID;
                 int? memId = loanAccFetched?.MemberID;
+                int? drCustId = (isSavingMode && sourceSavingAcc != null)
+                    ? sourceSavingAcc.CustomerID
+                    : ((isPigmyMode && sourcePigmyAcc != null) ? sourcePigmyAcc.CustomerID : custId);
 
                 if (!isCrossBranchTxn)
                 {
@@ -919,7 +923,7 @@ namespace Bhisi.Api.Controllers
 
                     // Add Voucher Details
                     if (cashLedgerId > 0 && totalReceiptAmount > 0)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = drCustId, MemberID = drCustId == custId ? memId : null });
 
                     if (waiverLedger != null && totalWaiverAmount > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = waiverLedger.LedgerID, DrCr = "Dr", Amount = totalWaiverAmount, CustomerID = custId, MemberID = memId });
@@ -1028,7 +1032,7 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     if (cashLedgerId > 0 && totalReceiptAmount > 0)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = drCustId, MemberID = drCustId == custId ? memId : null });
 
                     if (ibtLedgerId > 0 && totalReceiptAmount > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
@@ -1147,8 +1151,6 @@ namespace Bhisi.Api.Controllers
                     sourcePigmyAcc.TotalDepositedAmount = newPigmyBal;
                     sourcePigmyAcc.TotalWithdrawnAmount += totalReceiptAmount;
                     sourcePigmyAcc.LastWithdrawalDate = collection.CollectionDate;
-                    sourcePigmyAcc.EffectiveStartDate = collection.CollectionDate;
-                    sourcePigmyAcc.CurrentCycleNumber += 1;
 
                     if (collection.PigmyTransferType == "CLOSURE")
                     {
@@ -1318,9 +1320,13 @@ namespace Bhisi.Api.Controllers
                 {
                     return BadRequest(bankCheck.ErrorMessage);
                 }
+                if (string.Equals(updatedData.PaymentMode, "Cheque", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(updatedData.ChequeNo))
+                {
+                    return BadRequest(new { message = "चेक वसुलीसाठी कृपया वैध चेक क्रमांक (Cheque No) प्रविष्ट करा." });
+                }
                 existingCollection.BankAccountLedgerID = bankCheck.LedgerId;
                 if (!string.IsNullOrWhiteSpace(updatedData.BankName)) existingCollection.BankName = updatedData.BankName;
-                if (!string.IsNullOrWhiteSpace(updatedData.ChequeNo)) existingCollection.ChequeNo = updatedData.ChequeNo;
+                existingCollection.ChequeNo = string.IsNullOrWhiteSpace(updatedData.ChequeNo) ? null : updatedData.ChequeNo.Trim();
             }
             else if (string.Equals(updatedData.PaymentMode, "Cash", StringComparison.OrdinalIgnoreCase) || isMinorPigmy || isMinorSaving)
             {
@@ -1356,6 +1362,17 @@ namespace Bhisi.Api.Controllers
                             _context.Entry(drDetail).State = EntityState.Modified;
                         }
                     }
+                }
+            }
+
+            if (existingCollection.HomeBranchVoucherID.HasValue)
+            {
+                var homeVoucher = await _context.Vouchers.FirstOrDefaultAsync(v => v.VoucherID == existingCollection.HomeBranchVoucherID.Value);
+                if (homeVoucher != null)
+                {
+                    if (homeVoucher.Status == "Approved") return BadRequest(new { message = "मंजूर (Approved) आंतर-शाखा वसुली पावतीत बदल करण्यापूर्वी कृपया व्हाउचर पासिंगमधून ती अन-पास (Unpass) करा." });
+                    homeVoucher.VoucherDate = updatedData.CollectionDate;
+                    _context.Entry(homeVoucher).State = EntityState.Modified;
                 }
             }
 
@@ -1496,7 +1513,8 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // Strict Physical Hard Delete: Revert and Clean up Pigmy Account & Transactions
-                if (collection.SourcePigmyAccountID.HasValue && collection.SourcePigmyAccountID.Value > 0)
+                if ((collection.PaymentMode == "Pigmy Transfer" || collection.PaymentMode == "Pigmy") &&
+                    collection.SourcePigmyAccountID.HasValue && collection.SourcePigmyAccountID.Value > 0)
                 {
                     decimal totalDeducted = collection.TotalAmountReceived + (collection.Fees?.Sum(f => f.Amount) ?? 0);
                     var pigmyAcc = await _context.PigmyAccounts.FindAsync(collection.SourcePigmyAccountID.Value);

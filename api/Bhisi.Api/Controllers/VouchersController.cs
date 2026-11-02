@@ -182,6 +182,116 @@ namespace Bhisi.Api.Controllers
             return $"{prefix}{(maxNum + 1):D6}";
         }
 
+        private async Task<string?> ValidateVoucherTypeAndLedgersAsync(Voucher voucher, int branchId, int? excludeVoucherId = null)
+        {
+            if (voucher.VoucherDetails == null || !voucher.VoucherDetails.Any())
+            {
+                return "कृपया किमान एक व्हाउचर ओळ जोडा.";
+            }
+
+            string vType = (voucher.VoucherType ?? string.Empty).Trim();
+            if (vType != "Receipt" && vType != "Payment" && vType != "Journal" && vType != "Contra" && vType != "Opening")
+            {
+                return $"अवैध व्हाउचर प्रकार: '{vType}'. कृपया Receipt, Payment, Journal किंवा Contra निवडा.";
+            }
+
+            var ledgerIds = voucher.VoucherDetails.Select(d => d.LedgerID).Distinct().ToList();
+            if (ledgerIds.Any(id => id <= 0))
+            {
+                return "कृपया सर्व ओळींसाठी वैध खाते (Ledger) निवडा.";
+            }
+
+            var ledgersMap = await _context.Ledgers
+                .AsNoTracking()
+                .Include(l => l.AccountGroup)
+                .Where(l => ledgerIds.Contains(l.LedgerID))
+                .ToDictionaryAsync(l => l.LedgerID);
+
+            foreach (var d in voucher.VoucherDetails)
+            {
+                if (!ledgersMap.ContainsKey(d.LedgerID))
+                {
+                    return $"निवडलेले खाते (ID: {d.LedgerID}) सिस्टीममध्ये सापडले नाही.";
+                }
+            }
+
+            // Prevent debiting and crediting the exact same ledger (with same customer/member sub-ledger) in one voucher
+            var drKeys = voucher.VoucherDetails
+                .Where(d => d.DrCr == "Dr")
+                .Select(d => $"{d.LedgerID}_{d.CustomerID ?? 0}_{d.MemberID ?? 0}")
+                .ToHashSet();
+
+            var dupCr = voucher.VoucherDetails
+                .FirstOrDefault(d => d.DrCr == "Cr" && drKeys.Contains($"{d.LedgerID}_{d.CustomerID ?? 0}_{d.MemberID ?? 0}"));
+            if (dupCr != null && ledgersMap.TryGetValue(dupCr.LedgerID, out var dupLedger))
+            {
+                return $"एकाच व्हाउचरमध्ये एकाच खात्याला ('{dupLedger.LedgerName}') एकाच वेळी नावे (Dr) आणि जमा (Cr) करता येत नाही.";
+            }
+
+            if (vType == "Journal")
+            {
+                foreach (var d in voucher.VoucherDetails)
+                {
+                    var ledger = ledgersMap[d.LedgerID];
+                    if (BankLedgerHelper.IsCashLedger(ledger))
+                    {
+                        return $"जर्नल (Journal) व्हाउचरमध्ये रोख खाते ('{ledger.LedgerName}') वापरता येत नाही. रोख व्यवहारासाठी कृपया रिसिप्ट (रोख जमा) किंवा पेमेंट (रोख नावे) व्हाउचर वापरा.";
+                    }
+                }
+            }
+            else if (vType == "Contra" && false)
+            {
+                foreach (var d in voucher.VoucherDetails)
+                {
+                    var ledger = ledgersMap[d.LedgerID];
+                    if (BankLedgerHelper.IsCashLedger(ledger) || BankLedgerHelper.IsBankLedger(ledger))
+                    {
+                        return $"कॉन्ट्रा (Contra) व्हाउचरमध्ये रोख किंवा बँक खाते ('{ledger.LedgerName}') वापरता येत नाही.";
+                    }
+                }
+            }
+            else if (vType == "Receipt")
+            {
+                bool hasDrCash = voucher.VoucherDetails
+                    .Where(d => d.DrCr == "Dr")
+                    .Any(d => BankLedgerHelper.IsCashLedger(ledgersMap[d.LedgerID]));
+                if (!hasDrCash)
+                {
+                    return "रिसिप्ट (रोख जमा) व्हाउचरमध्ये नावे (Dr) बाजूला वैध रोख (Cash) खाते असणे आवश्यक आहे.";
+                }
+
+                var invalidCr = voucher.VoucherDetails
+                    .Where(d => d.DrCr == "Cr")
+                    .FirstOrDefault(d => BankLedgerHelper.IsCashLedger(ledgersMap[d.LedgerID]));
+                if (invalidCr != null)
+                {
+                    var lName = ledgersMap[invalidCr.LedgerID].LedgerName;
+                    return $"रिसिप्ट (रोख जमा) व्हाउचरमध्ये जमा (Cr) ओळीवर पुन्हा रोख खाते ('{lName}') निवडता येत नाही.";
+                }
+            }
+            else if (vType == "Payment")
+            {
+                bool hasCrCash = voucher.VoucherDetails
+                    .Where(d => d.DrCr == "Cr")
+                    .Any(d => BankLedgerHelper.IsCashLedger(ledgersMap[d.LedgerID]));
+                if (!hasCrCash)
+                {
+                    return "पेमेंट (रोख नावे) व्हाउचरमध्ये जमा (Cr) बाजूला वैध रोख (Cash) खाते असणे आवश्यक आहे.";
+                }
+
+                var invalidDr = voucher.VoucherDetails
+                    .Where(d => d.DrCr == "Dr")
+                    .FirstOrDefault(d => BankLedgerHelper.IsCashLedger(ledgersMap[d.LedgerID]));
+                if (invalidDr != null)
+                {
+                    var lName = ledgersMap[invalidDr.LedgerID].LedgerName;
+                    return $"पेमेंट (रोख नावे) व्हाउचरमध्ये नावे (Dr) ओळीवर पुन्हा रोख खाते ('{lName}') निवडता येत नाही.";
+                }
+            }
+
+            return null;
+        }
+
         // POST: api/Vouchers
         [HttpPost]
         public async Task<ActionResult<Voucher>> PostVoucher(Voucher voucher)
@@ -243,6 +353,12 @@ namespace Bhisi.Api.Controllers
             if (voucher.TotalAmount != totalDr)
             {
                 return BadRequest("Voucher TotalAmount does not match line totals.");
+            }
+
+            var typeRuleError = await ValidateVoucherTypeAndLedgersAsync(voucher, voucher.BranchID);
+            if (!string.IsNullOrEmpty(typeRuleError))
+            {
+                return BadRequest(typeRuleError);
             }
 
             // 2.5 Cross-Branch Customer / Member & Account Isolation Validation Check
@@ -375,7 +491,13 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"तारीख {existingVoucher.VoucherDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेचे वॉउचर बदलता येणार नाही.");
             }
 
-            // Cross-Branch Customer Isolation Check on Update
+            var putTypeRuleError = await ValidateVoucherTypeAndLedgersAsync(voucher, existingVoucher.BranchID, id);
+            if (!string.IsNullOrEmpty(putTypeRuleError))
+            {
+                return BadRequest(putTypeRuleError);
+            }
+
+            // Cross-Branch Customer & Member Isolation Check on Update
             foreach (var detail in voucher.VoucherDetails)
             {
                 if (detail.CustomerID.HasValue && detail.CustomerID.Value > 0)
@@ -388,6 +510,57 @@ namespace Bhisi.Api.Controllers
                     if (customerBranch > 0 && customerBranch != existingVoucher.BranchID)
                     {
                         return BadRequest("क्रॉस-ब्रांच व्यवहार बंदी! निवडलेला खातेदार वेगळ्या शाखेचा असल्यामुळे व्हाऊचर अपडेट करता येणार नाही.");
+                    }
+                }
+                if (detail.MemberID.HasValue && detail.MemberID.Value > 0)
+                {
+                    var memberBranch = await _context.Members
+                        .Where(m => m.MemberID == detail.MemberID.Value)
+                        .Select(m => m.BranchID)
+                        .FirstOrDefaultAsync();
+
+                    if (memberBranch > 0 && memberBranch != existingVoucher.BranchID)
+                    {
+                        return BadRequest("क्रॉस-ब्रांच व्यवहार बंदी! निवडलेला सभासद वेगळ्या शाखेचा असल्यामुळे व्हाऊचर अपडेट करता येणार नाही.");
+                    }
+                }
+            }
+
+            // Negative Cash Balance Check on Update
+            int branchCashLedgerId = await CashLedgerHelper.GetCashLedgerIdAsync(_context, existingVoucher.BranchID);
+            var cashLedger = await _context.Ledgers.FindAsync(branchCashLedgerId);
+            if (cashLedger != null)
+            {
+                var cashOutflow = voucher.VoucherDetails.Where(d => d.LedgerID == branchCashLedgerId && d.DrCr == "Cr").Sum(d => d.Amount);
+                if (cashOutflow > 0)
+                {
+                    decimal currentCash = 0;
+                    int activeFyId = await _context.FinancialYears
+                        .Where(fy => fy.IsActive)
+                        .Select(fy => fy.FinancialYearID)
+                        .FirstOrDefaultAsync();
+
+                    var branchOb = await _context.BranchLedgerOpeningBalances
+                        .FirstOrDefaultAsync(b => b.BranchID == existingVoucher.BranchID && b.LedgerID == branchCashLedgerId && (activeFyId == 0 || b.FinancialYearID == activeFyId));
+                    if (branchOb != null)
+                    {
+                        currentCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
+                    }
+                    else if (existingVoucher.BranchID == 1)
+                    {
+                        currentCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
+                    }
+                    var approvedCashVds = await _context.VoucherDetails
+                        .Include(vd => vd.Voucher)
+                        .Where(vd => vd.LedgerID == branchCashLedgerId && vd.VoucherID != id && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == existingVoucher.BranchID)
+                        .ToListAsync();
+
+                    currentCash += approvedCashVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+                    currentCash -= approvedCashVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+
+                    if (currentCash < cashOutflow)
+                    {
+                        return BadRequest($"शाखेत पुरेशी रोख शिल्लक उपलब्ध नाही. उपलब्ध रोख: ₹ {currentCash:N2}, आवश्यक रोख: ₹ {cashOutflow:N2}");
                     }
                 }
             }

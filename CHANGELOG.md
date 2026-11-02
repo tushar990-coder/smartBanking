@@ -1,5 +1,21 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-02] - आवृत्ती v2.6.16 (Loan Collection Mode & Schedule Fixes, Voucher Master Cr/Dr & Contra All-Ledger Support, FD Closure Business Date Validation)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) कर्ज वसुली मास्टर (`LoanCollectionMaster.tsx`, `LoanAccountsController.cs`, `LoanCollectionsController.cs` & `VoucherRollbackAndDeleteService.cs`):**
+  * उजव्या बाजूच्या कर्ज माहिती पॅनेलमध्ये **'व्याज आकारणी पासून'** तारीख आणि **'एकूण दिवस: X दिवस'** स्वतंत्र ओळींवर सुस्पष्ट प्रदर्शित केले.
+  * **'कर्ज हप्ता परतफेड वेळापत्रक चार्ट'** मधील वरच्या हेडर पट्टीमध्ये **'कर्ज वाटप दिनांक'** समाविष्ट केली.
+  * पेमेंट पद्धत (Mode) मध्ये पिग्मी खात्याच्या उपलब्ध शिल्लकेची (CurrentBalance >= TotalAmountReceived) पडताळणी, प्रलंबित खर्च मॅन्युअली भरल्यावर सेव्ह करताना मर्यादा समायोजन, बँक मोडसाठी Bank GL निवड बंधनकारक व कर्सर फोकस, आणि पिग्मी वसुली नोंदीत अचूक `VoucherID` व रोख शिल्लक/रोलबॅक सिंक.
+* **२) व्हाउचर एंट्री मास्टर (`VoucherMaster.tsx` & `VouchersController.cs`):**
+  * व्हाउचर प्रकार ड्रॉपडाउनमधील नावे सुस्पष्ट केली: **`📥 रिसिप्ट (Receipt - रोख जमा)`**, **`📤 पेमेंट (Payment - रोख नावे)`**, **`🔄 जर्नल (Journal - ट्रान्सफर नोंद)`**, आणि **`🏦 कॉन्ट्रा (Contra)`**.
+  * तक्त्यामध्ये कॉलम हेडर **`Cr / Dr`** आणि सर्व प्रकारच्या व्हाउचरमध्ये आधी **`Cr` (जमा)** व खाली **`Dr` (नावे)** ओळ दाखवण्याचा क्रम लागू केला.
+  * **कॉन्ट्रा (`Contra`) व्हाउचर:** कॉन्ट्रा व्हाउचरच्या ड्रॉपडाउनमध्ये **सर्व लेजर खाती (`All Ledgers`)** दिसण्याची आणि सेव्ह करण्याची पूर्ण मुभा दिली.
+* **३) मुदत ठेव क्लोजर आणि नूतनीकरण (`FdAccountsController.cs`):**
+  * मुदतपूर्ती बंद (`MaturedClose`), मुदतपूर्व बंद (`PrematureClose`) आणि नूतनीकरण (`Renew`) करताना **बचत खात्यात वर्ग (`Saving Account Transfer`)** पर्यायासाठी सर्व्हरच्या `DateTime.Today` ऐवजी शाखेच्या चालू व्यवसाय तारखेशी (`ResolveActiveBusinessDateAsync`) तुलना लागू केली, ज्यामुळे चालू EOD व्यवसाय तारखेवर बचत खात्यात परतावा वर्ग करताना येणारी तारीख त्रुटी दूर झाली.
+
+---
+
 ## 📅 [2026-11-02] - आवृत्ती v2.6.15 (Universal Scheme-Wise Auto Next Legacy Account Number Generation, Manual Overwrite, Duplicate Guard & Register Display Across All Modules)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

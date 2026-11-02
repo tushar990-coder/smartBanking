@@ -2122,7 +2122,8 @@ namespace Bhisi.Api.Services
             }
 
             // Reverse Pigmy Transfer if used
-            if (collection.SourcePigmyAccountID.HasValue && collection.SourcePigmyAccountID.Value > 0)
+            if ((collection.PaymentMode == "Pigmy Transfer" || collection.PaymentMode == "Pigmy") &&
+                collection.SourcePigmyAccountID.HasValue && collection.SourcePigmyAccountID.Value > 0)
             {
                 decimal totalDeducted = collection.TotalAmountReceived + (collection.Fees?.Sum(f => f.Amount) ?? 0m);
                 var pigmyAcc = await _context.PigmyAccounts.FindAsync(collection.SourcePigmyAccountID.Value);

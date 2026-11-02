@@ -69,7 +69,39 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        private (bool isHO, int? userBranchId) GetUserBranchInfo()
+        private (bool isHO, int? userBranchId) GetUserBranchInfo() { int? userBranchId = User.GetOperatingBranchId(); bool isHO = User.IsHeadOfficeAdmin(); return (isHO, userBranchId); }
+
+        private async Task<DateTime> ResolveActiveBusinessDateAsync(int branchId)
+        {
+            int targetBranchId = branchId > 0 ? branchId : (User.GetOperatingBranchId() > 0 ? User.GetOperatingBranchId() : 1);
+            DateTime? dbBusinessDate = null;
+
+            var activeRecord = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == targetBranchId && b.BusinessDate.Year >= 2000)
+                .OrderByDescending(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            if (activeRecord != null)
+            {
+                dbBusinessDate = activeRecord.IsDayClosed
+                    ? activeRecord.BusinessDate.Date.AddDays(1)
+                    : activeRecord.BusinessDate.Date;
+            }
+
+            var claimDate = User?.FindFirst("BusinessDate")?.Value;
+            if (!string.IsNullOrWhiteSpace(claimDate) && DateTime.TryParse(claimDate, out DateTime parsedClaimDate))
+            {
+                if (dbBusinessDate.HasValue)
+                {
+                    return parsedClaimDate.Date < dbBusinessDate.Value ? parsedClaimDate.Date : dbBusinessDate.Value;
+                }
+                return parsedClaimDate.Date;
+            }
+
+            return dbBusinessDate ?? DateTime.Today;
+        }
+
+        private (bool isHO, int? userBranchId) GetUserBranchInfoLegacyUnused()
         {
             int? userBranchId = User.GetOperatingBranchId();
             bool isHO = User.IsHeadOfficeAdmin();
@@ -2550,7 +2582,8 @@ namespace Bhisi.Api.Controllers
                     ? (account.MaturityAmount - account.DepositAmount)
                     : Math.Max(accruedFromTx, account.LegacyAccruedInt));
 
-            DateTime closureDate = req?.ClosureDate ?? DateTime.Today;
+            DateTime activeBusinessDate = await ResolveActiveBusinessDateAsync(operatingBranchId);
+            DateTime closureDate = req?.ClosureDate ?? activeBusinessDate;
             if (closureDate.Date < account.OpeningDate.Date)
             {
                 return BadRequest($"अवैध व्यवहाराची तारीख! व्यवहाराची तारीख ({closureDate:dd/MM/yyyy}) ही मुदत ठेव खाते उघडल्याच्या तारखेपेक्षा ({account.OpeningDate:dd/MM/yyyy}) आधीची असू शकत नाही.");
@@ -2598,9 +2631,9 @@ namespace Bhisi.Api.Controllers
             string paymentMode = string.IsNullOrWhiteSpace(req?.PaymentMode) ? "Cash" : req.PaymentMode;
             if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
             {
-                if (closureDate.Date < DateTime.Today)
+                if (closureDate.Date < activeBusinessDate.Date)
                 {
-                    return BadRequest($"अवैध व्यवहाराची तारीख! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख ({closureDate:dd/MM/yyyy}) अनुज्ञेय नाही. ग्राहकाच्या पासबुकमधील रनिंग शिल्लक (Running Balance) विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण आजच्याच तारखेने ({DateTime.Today:dd/MM/yyyy}) होणे बंधनकारक आहे. जर व्यवहार मागील तारखेने झाला असेल, तर कृपया 'रोख' किंवा इतर माध्यम निवडा.");
+                    return BadRequest($"अवैध व्यवहाराची तारीख! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख ({closureDate:dd/MM/yyyy}) अनुज्ञेय नाही. ग्राहकाच्या पासबुकमधील रनिंग शिल्लक (Running Balance) विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण चालू व्यवसाय तारखेने ({activeBusinessDate:dd/MM/yyyy}) होणे बंधनकारक आहे. जर व्यवहार मागील तारखेने झाला असेल, तर कृपया 'रोख' किंवा इतर माध्यम निवडा.");
                 }
                 var targetSav = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountID.Value);
                 if (targetSav == null || targetSav.Status != "Active")
@@ -3031,7 +3064,7 @@ namespace Bhisi.Api.Controllers
                                 VoucherType = (string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) || Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode)) ? "Payment" : "Journal",
                                 TotalAmount = totalMaturityPayout,
                                 Narration = (string.IsNullOrWhiteSpace(req?.Narration) 
-                                    ? $"मुदत ठेव पूर्ण क्लोजर (FD Maturity Payout - {paymentMode}): {account.AccountNo} [मुदतपूर्ती: {account.MaturityDate:dd/MM/yyyy}, प्रक्रिया: {DateTime.Now:dd/MM/yyyy}{(closureDate.Date < DateTime.Today ? $", As-on: {closureDate:dd/MM/yyyy}" : "")}]{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
+                                    ? $"मुदत ठेव पूर्ण क्लोजर (FD Maturity Payout - {paymentMode}): {account.AccountNo} [मुदतपूर्ती: {account.MaturityDate:dd/MM/yyyy}, प्रक्रिया: {DateTime.Now:dd/MM/yyyy}{(closureDate.Date < activeBusinessDate.Date ? $", As-on: {closureDate:dd/MM/yyyy}" : "")}]{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
                                     : req.Narration) + manualAuditNote,
                                 CreatedBy = 1,
                                 CreatedOn = DateTime.Now
@@ -3436,7 +3469,8 @@ namespace Bhisi.Api.Controllers
             int operatingBranchId = userBranchId > 0 ? userBranchId : (account.BranchID > 0 ? account.BranchID : 1);
             bool isCrossBranchTxn = (operatingBranchId != account.BranchID);
 
-            DateTime effectiveClosureDate = req?.ClosureDate ?? closureDate ?? DateTime.Today;
+            DateTime activeBusinessDate = await ResolveActiveBusinessDateAsync(operatingBranchId);
+            DateTime effectiveClosureDate = req?.ClosureDate ?? closureDate ?? activeBusinessDate;
             if (effectiveClosureDate.Date < account.OpeningDate.Date)
             {
                 return BadRequest($"अवैध व्यवहाराची तारीख! व्यवहाराची तारीख ({effectiveClosureDate:dd/MM/yyyy}) ही मुदत ठेव खाते उघडल्याच्या तारखेपेक्षा ({account.OpeningDate:dd/MM/yyyy}) आधीची असू शकत नाही.");
@@ -3484,9 +3518,9 @@ namespace Bhisi.Api.Controllers
             string paymentMode = string.IsNullOrWhiteSpace(req?.PaymentMode) ? "Cash" : req.PaymentMode;
             if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
             {
-                if (effectiveClosureDate.Date < DateTime.Today)
+                if (effectiveClosureDate.Date < activeBusinessDate.Date)
                 {
-                    return BadRequest($"अवैध व्यवहाराची तारीख! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख ({effectiveClosureDate:dd/MM/yyyy}) अनुज्ञेय नाही. ग्राहकाच्या पासबुकमधील रनिंग शिल्लक (Running Balance) विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण आजच्याच तारखेने ({DateTime.Today:dd/MM/yyyy}) होणे बंधनकारक आहे. जर व्यवहार मागील तारखेने झाला असेल, तर कृपया 'रोख' किंवा इतर माध्यम निवडा.");
+                    return BadRequest($"अवैध व्यवहाराची तारीख! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख ({effectiveClosureDate:dd/MM/yyyy}) अनुज्ञेय नाही. ग्राहकाच्या पासबुकमधील रनिंग शिल्लक (Running Balance) विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण चालू व्यवसाय तारखेने ({activeBusinessDate:dd/MM/yyyy}) होणे बंधनकारक आहे. जर व्यवहार मागील तारखेने झाला असेल, तर कृपया 'रोख' किंवा इतर माध्यम निवडा.");
                 }
                 var targetSav = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountID.Value);
                 if (targetSav == null || targetSav.Status != "Active")
@@ -3963,7 +3997,7 @@ namespace Bhisi.Api.Controllers
                                 VoucherType = (string.Equals(paymentMode, "Cash", StringComparison.OrdinalIgnoreCase) || Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode)) ? "Payment" : "Journal",
                                 TotalAmount = netPayoutAmount,
                                 Narration = (string.IsNullOrWhiteSpace(req?.Narration)
-                                    ? $"मुदतपूर्व बंद (Premature Close - {paymentMode}) - कालावधी: {actualDays} दिवस{(effectiveClosureDate.Date < DateTime.Today ? $" ({effectiveClosureDate:dd/MM/yyyy} As-on)" : "")}, पुनर्हिशोब व्याज: ₹{recalculatedInterest}, दंड कपात: ₹{penaltyClawback}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
+                                    ? $"मुदतपूर्व बंद (Premature Close - {paymentMode}) - कालावधी: {actualDays} दिवस{(effectiveClosureDate.Date < activeBusinessDate.Date ? $" ({effectiveClosureDate:dd/MM/yyyy} As-on)" : "")}, पुनर्हिशोब व्याज: ₹{recalculatedInterest}, दंड कपात: ₹{penaltyClawback}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
                                     : req.Narration) + manualAuditNote,
                                 CreatedBy = 1,
                                 CreatedOn = DateTime.Now
@@ -4225,7 +4259,9 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Target Scheme not found.");
             }
 
-            DateTime closureDate = request.ClosureDate ?? DateTime.Today;
+            int operatingBranchId = userBranchId > 0 ? userBranchId : (oldAccount.BranchID > 0 ? oldAccount.BranchID : 1);
+            DateTime activeBusinessDate = await ResolveActiveBusinessDateAsync(operatingBranchId);
+            DateTime closureDate = request.ClosureDate ?? activeBusinessDate;
             if (closureDate.Date < oldAccount.OpeningDate.Date)
             {
                 return BadRequest($"अवैध नूतनीकरण तारीख! नूतनीकरणाची तारीख ({closureDate:dd/MM/yyyy}) ही जुने मुदत ठेव खाते उघडल्याच्या तारखेपेक्षा ({oldAccount.OpeningDate:dd/MM/yyyy}) आधीची असू शकत नाही.");
@@ -4273,9 +4309,9 @@ namespace Bhisi.Api.Controllers
 
             if (request.RenewalType == "PrincipalOnly" && request.PaymentMode == "Transfer" && request.SavingAccountID.HasValue && request.SavingAccountID.Value > 0)
             {
-                if (closureDate.Date < DateTime.Today)
+                if (closureDate.Date < activeBusinessDate.Date)
                 {
-                    return BadRequest($"अवैध नूतनीकरण तारीख! मुदत ठेवीचे व्याज बचत खात्यात (Saving Account Transfer) वर्ग करताना मागील तारीख ({closureDate:dd/MM/yyyy}) अनुज्ञेय नाही. पासबुकमधील रनिंग शिल्लक विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण आजच्याच तारखेने ({DateTime.Today:dd/MM/yyyy}) होणे आवश्यक आहे.");
+                    return BadRequest($"अवैध नूतनीकरण तारीख! मुदत ठेवीचे व्याज बचत खात्यात (Saving Account Transfer) वर्ग करताना मागील तारीख ({closureDate:dd/MM/yyyy}) अनुज्ञेय नाही. पासबुकमधील रनिंग शिल्लक विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण चालू व्यवसाय तारखेने ({activeBusinessDate:dd/MM/yyyy}) होणे आवश्यक आहे.");
                 }
                 var targetSav = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == request.SavingAccountID.Value);
                 if (targetSav == null || targetSav.Status != "Active")

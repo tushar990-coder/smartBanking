@@ -281,6 +281,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [modalFilter, setModalFilter] = useState<'ALL' | 'OVERDUE' | 'PENDING' | 'PAID' | 'PARTIAL'>('ALL');
     const [isSchedulePrintView, setIsSchedulePrintView] = useState(false);
     const [showFeesPanel, setShowFeesPanel] = useState(false);
+    const [showAllocationMismatchModal, setShowAllocationMismatchModal] = useState(false);
 
     const [formData, setFormData] = useState<Partial<LoanCollection>>({
         collectionDate: activeBusinessDate,
@@ -341,21 +342,26 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         try {
             const res = await axios.get(`/api/PigmyAccounts/Customer/${cId}`);
             const list = res.data || [];
-            // Filter accounts with balance or active
-            const valid = list.filter((p: any) => p.status === 'Active' || (p.totalDepositedAmount || 0) > 0);
+            // Filter active accounts
+            const valid = list.filter((p: any) => p.status === 'Active');
             setCustomerPigmyAccounts(valid);
             if (valid.length > 0) {
                 const acc = valid[0];
                 setSelectedPigmyAccount(acc);
                 setPigmyAccountSourceType('SELF');
-                setFormData(p => ({
+                setFormData(p => p.paymentMode === 'Pigmy Transfer' ? ({
                     ...p,
                     sourcePigmyAccountID: acc.pigmyAccountID,
                     transferFromPigmyAccountNo: acc.accountNo
-                }));
+                }) : p);
             } else {
                 setSelectedPigmyAccount(null);
                 setPigmyAccountSourceType('OTHER');
+                setFormData(p => p.paymentMode === 'Pigmy Transfer' ? ({
+                    ...p,
+                    sourcePigmyAccountID: undefined,
+                    transferFromPigmyAccountNo: undefined
+                }) : p);
             }
         } catch (err) {
             console.error('Failed to load pigmy accounts for customer:', err);
@@ -374,7 +380,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         setLoadingOtherPigmySearch(true);
         try {
             const res = await axios.get(`/api/PigmyAccounts?search=${encodeURIComponent(query.trim())}`);
-            const list = (res.data || []).filter((p: any) => p.status === 'Active' || (p.totalDepositedAmount || 0) > 0);
+            const list = (res.data || []).filter((p: any) => p.status === 'Active');
             setOtherPigmySearchResults(list);
         } catch (err) {
             console.error('Failed to search other pigmy accounts:', err);
@@ -409,15 +415,21 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 const acc = valid[0];
                 setSelectedSavingAccount(acc);
                 setSavingAccountSourceType('SELF');
-                setFormData(p => ({
+                setFormData(p => p.paymentMode === 'Saving Transfer' ? ({
                     ...p,
                     sourceSavingAccountID: acc.savingAccountID,
                     transferFromSavingAccountNo: acc.accountNo,
                     savingCustomerName: acc.customerName || ''
-                }));
+                }) : p);
             } else {
                 setSelectedSavingAccount(null);
                 setSavingAccountSourceType('OTHER');
+                setFormData(p => p.paymentMode === 'Saving Transfer' ? ({
+                    ...p,
+                    sourceSavingAccountID: undefined,
+                    transferFromSavingAccountNo: undefined,
+                    savingCustomerName: undefined
+                }) : p);
             }
         } catch (err) {
             console.error('Failed to load saving accounts for customer:', err);
@@ -429,7 +441,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     };
 
     const searchOtherSavingAccounts = async (query: string) => {
-        if (!query || query.trim().length < 2) {
+        if (!query || query.trim().length < 1) {
             setOtherSavingSearchResults([]);
             return;
         }
@@ -791,8 +803,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             const res = await axios.get(`/api/LoanCollections${bId ? `?branchId=${bId}&pageSize=50` : '?pageSize=50'}`);
             setCollections(res.data);
             
-            // Calculate today's totals
-            const todayStr = new Date().toISOString().split('T')[0];
+            // Calculate active business date's totals
+            const todayStr = activeBusinessDate || new Date().toISOString().split('T')[0];
             let cash = 0;
             let bank = 0;
             res.data.forEach((c: any) => {
@@ -828,7 +840,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 paymentMode: editData.paymentMode,
                 bankAccountLedgerID: isBankOrChequeEdit ? Number(editData.bankAccountLedgerID) : null,
                 bankName: isBankOrChequeEdit ? (editData.bankName || original.bankName || null) : null,
-                chequeNo: editData.paymentMode === 'Cheque' ? (editData.chequeNo || original.chequeNo || null) : null,
+                chequeNo: isBankOrChequeEdit ? (editData.chequeNo !== undefined ? (editData.chequeNo || null) : (original.chequeNo || null)) : null,
                 remarks: editData.remarks
             };
             
@@ -1067,6 +1079,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         setAccountDetails(null);
         setNpaStatus(null);
 
+        if (custId && Number(custId) !== Number(selectedCustomerId)) {
+            fetchCustomerPigmyAccounts(Number(custId));
+            fetchCustomerSavingAccounts(Number(custId));
+        }
+
         fetchNextReceiptNo(selectedBranchId, acc.loanAccountID);
         if (acc.loanRate) {
             calculateInterest(acc, formData.collectionDate || new Date().toISOString().split('T')[0]);
@@ -1252,8 +1269,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         };
 
-        addCandidate(acc.lastInterestPostingDate);
-        addCandidate(acc.lastInstallmentPaidDate);
+        addCandidate(acc.lastInterestPostingDate || accountDetails?.lastInterestPostingDate);
+        addCandidate(acc.lastInstallmentPaidDate || accountDetails?.lastInstallmentPaidDate);
 
         let latest: { date: Date; dateStr: string } | null = null;
         for (const c of candidates) {
@@ -1262,21 +1279,41 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         }
 
-        // Core Banking Rule: For opening balance loans, interest begins from openingDate (migration cutoff date e.g. 31/03/2026), NOT historical disbursementDate (e.g. 31/03/2025)
-        if (acc.isOpeningBalance && acc.openingDate) {
-            const opDate = parseDateSafe(acc.openingDate);
-            if (!isNaN(opDate.getTime())) {
-                if (!latest || latest.date.getTime() < opDate.getTime()) {
-                    return acc.openingDate;
-                }
-            }
-        }
-
+        // Priority 1: Explicit last interest posting date or last installment paid date
         if (latest) {
             return latest.dateStr;
         }
 
-        return acc.loanDisbursementDate || acc.openingDate || null;
+        // Priority 2: For opening balance loans where 31/03 interest was already booked into opening receivable/capitalized interest,
+        // start new interest calculation from openingDate (31/03/2026).
+        const hasOpeningBookedInterest =
+            ((acc.interestBalance || 0) > 0) ||
+            ((acc.capitalizedInterestAmount || 0) > 0) ||
+            ((accountDetails?.currentInterestBalance || 0) > 0);
+
+        if (acc.isOpeningBalance && hasOpeningBookedInterest && acc.openingDate) {
+            return acc.openingDate;
+        }
+
+        // Priority 3: For Flat-rate multi-installment scheduled loans where earlier installments are fully 'Paid', use the latest paid installment's dueDate
+        const loanRate = acc.loanRate;
+        const isFlatMethod = Boolean(
+            loanRate &&
+            (loanRate.interestCalculationMethod?.toLowerCase().includes("flat") || loanRate.interestCalculationMethod?.includes("फ्लॅट"))
+        );
+        const isDailyReducing = !isFlatMethod;
+        if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 1) {
+            const paidInsts = accountDetails.schedule.filter(s => s.status === 'Paid');
+            if (paidInsts.length > 0) {
+                const lastPaidInst = paidInsts[paidInsts.length - 1];
+                if (lastPaidInst?.dueDate) {
+                    return lastPaidInst.dueDate;
+                }
+            }
+        }
+
+        // Priority 4: Actual Loan Disbursement Date, falling back to Opening Date
+        return acc.loanDisbursementDate || accountDetails?.disbursementDate || acc.openingDate || null;
     };
 
     // Core banking day count: (toDate - fromDate) inherently counts 1 day per night held (first day included, payment day excluded)
@@ -1297,6 +1334,53 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         return isIncludeBothDays ? rawDiffDays + 1 : rawDiffDays;
     };
 
+    // Helper to compute Overdue Principal (थकीत मुद्दल) and Collectible Principal (वसूलपात्र मुद्दल) consistently
+    const getPrincipalDuesBreakdown = (acc: any, dateVal: string | Date | null | undefined) => {
+        if (!acc) return { paikiThakbaki: 0, vasulpatra: 0 };
+        const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (acc.principalBalance || 0);
+        const collectionDateObj = parseDateSafe(dateVal || new Date());
+        collectionDateObj.setHours(0, 0, 0, 0);
+
+        let paikiThakbaki = 0;
+        let vasulpatra = 0;
+
+        if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
+            const overdueInstallments = accountDetails.schedule.filter(s => {
+                if (s.status === 'Paid') return false;
+                const dueDateObj = parseDateSafe(s.dueDate);
+                dueDateObj.setHours(0, 0, 0, 0);
+                if (acc.isOpeningBalance && acc.openingDate) {
+                    const openingDateObj = parseDateSafe(acc.openingDate);
+                    openingDateObj.setHours(0, 0, 0, 0);
+                    if (dueDateObj <= openingDateObj) return false;
+                }
+                return dueDateObj <= collectionDateObj;
+            });
+
+            if (overdueInstallments.length > 0) {
+                paikiThakbaki = overdueInstallments.reduce(
+                    (sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : (s.principalAmount || 0)),
+                    0
+                );
+                vasulpatra = paikiThakbaki;
+            } else {
+                const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
+                if (nextInstallment) {
+                    const nextP = nextInstallment.remainingPrincipal !== undefined ? nextInstallment.remainingPrincipal : (nextInstallment.principalAmount || 0);
+                    vasulpatra = nextP > 0 ? nextP : (acc.installmentAmount || yeneBaki);
+                } else {
+                    vasulpatra = acc.installmentAmount || yeneBaki;
+                }
+            }
+        } else {
+            vasulpatra = acc.installmentAmount || yeneBaki;
+        }
+
+        paikiThakbaki = Math.min(yeneBaki, Math.max(0, paikiThakbaki));
+        vasulpatra = Math.min(yeneBaki, Math.max(0, vasulpatra));
+        return { paikiThakbaki, vasulpatra };
+    };
+
     const calculateInterest = (acc: any, dateStr: string) => {
         if (!acc) return;
         const loanRate = acc.loanRate;
@@ -1308,7 +1392,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
              loanRate.loanType?.includes("सोने"));
 
         const rate = acc.loanRate?.interestRate || acc.interestRate || 0;
-        const principal = acc.principalBalance || 0;
+        const principal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (acc.principalBalance || 0);
         const fromDateStr = getInterestStartDate(acc);
         let daysInterest = 0;
         if (fromDateStr) {
@@ -1324,8 +1408,9 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             const totalDue = penal + yeneVyaj + daysInterest;
             autoApportion(totalDue, formData.fees || [], acc, dateStr);
         } else {
-            const installment = acc.installmentAmount || 0;
-            // 1 regular principal installment + old receivable interest + current days interest + penalty
+            const { vasulpatra } = getPrincipalDuesBreakdown(acc, dateStr);
+            const installment = vasulpatra > 0 ? vasulpatra : Math.min(principal, acc.installmentAmount || principal);
+            // Collectible principal + old receivable interest + current days interest + penalty
             const totalDue = installment + yeneVyaj + daysInterest + penal;
             autoApportion(totalDue, formData.fees || [], acc, dateStr);
         }
@@ -1336,8 +1421,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         if (isPassingMode) return;
         if (selectedAccount) {
             const loanRate = selectedAccount.loanRate;
-            const isDailyReducing = loanRate && 
-                (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
+            const isFlatMethod = Boolean(
+                loanRate &&
+                (loanRate.interestCalculationMethod?.toLowerCase().includes("flat") || loanRate.interestCalculationMethod?.includes("फ्लॅट"))
+            );
+            const isDailyReducing = !isFlatMethod;
 
             const isInterestOnly = loanRate && 
                 (loanRate.loanInstallmentType?.includes("व्याजवरती") || 
@@ -1366,40 +1454,44 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                     return dueDateObj <= collectionDateObj && s.status !== 'Paid';
                 });
 
+                const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (selectedAccount.principalBalance || 0);
                 let totalInstDue = 0;
                 if (overdueInstallments.length > 0) {
-                    const overduePrincipal = overdueInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
+                    const overduePrincipal = Math.min(yeneBaki, overdueInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0));
                     const overdueInterest = overdueInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
                     totalInstDue = overduePrincipal + overdueInterest;
                 } else {
                     const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
                     if (nextInstallment) {
-                        const nextP = nextInstallment.remainingPrincipal !== undefined ? nextInstallment.remainingPrincipal : nextInstallment.principalAmount;
+                        const nextP = Math.min(yeneBaki, nextInstallment.remainingPrincipal !== undefined ? nextInstallment.remainingPrincipal : nextInstallment.principalAmount);
                         totalInstDue = nextP + (nextInstallment.interestAmount || 0);
                     }
                 }
                 const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0);
-                autoApportion((totalInstDue > 0 ? totalInstDue : (selectedAccount.installmentAmount || 0)) + yeneVyaj, formData.fees || [], selectedAccount);
+                autoApportion((totalInstDue > 0 ? totalInstDue : Math.min(yeneBaki, selectedAccount.installmentAmount || yeneBaki)) + yeneVyaj, formData.fees || [], selectedAccount);
             } else {
                 calculateInterest(selectedAccount, formData.collectionDate || new Date().toISOString().split('T')[0]);
             }
         }
     }, [formData.collectionDate, accountDetails, selectedAccount]);
 
-    const applyQuickAmount = (type: '1_INST' | 'INTEREST_ONLY' | 'FULL_DUE') => {
+    const applyQuickAmount = (type: '1_INST' | 'OVERDUE_ONLY' | 'INTEREST_ONLY' | 'FULL_DUE') => {
         const account = selectedAccount;
         if (!account) return;
         const dateStr = formData.collectionDate || new Date().toISOString().split('T')[0];
-        const feesSum = (formData.fees || []).reduce((acc, f) => acc + (f.amount || 0), 0);
         const penal = account.overdueInterestBalance || 0;
         const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (account.interestBalance || 0);
 
         const loanRate = account.loanRate;
-        const isDailyReducing = loanRate && 
-            (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
+        const isFlatMethod = Boolean(
+            loanRate &&
+            (loanRate.interestCalculationMethod?.toLowerCase().includes("flat") || loanRate.interestCalculationMethod?.includes("फ्लॅट"))
+        );
+        const isDailyReducing = !isFlatMethod;
 
         let currentInterestDue = 0;
-        let principalDue = 0;
+        const { paikiThakbaki, vasulpatra } = getPrincipalDuesBreakdown(account, dateStr);
+        let principalDue = vasulpatra;
 
         if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
             const collectionDateObj = parseDateSafe(dateStr);
@@ -1426,11 +1518,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
             if (targetInstallments.length > 0) {
                 currentInterestDue = targetInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
-                principalDue = targetInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
             }
         } else {
             const rate = account.loanRate?.interestRate || account.interestRate || 0;
-            const principal = account.principalBalance || 0;
+            const principal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (account.principalBalance || 0);
             const fromDateStr = getInterestStartDate(account);
             if (fromDateStr) {
                 const diffDays = calculateElapsedDays(fromDateStr, dateStr);
@@ -1438,18 +1529,20 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                     currentInterestDue = Math.round((principal * rate * diffDays) / 36500);
                 }
             }
-            principalDue = account.installmentAmount || 0;
         }
 
         if (type === 'INTEREST_ONLY') {
-            const total = penal + yeneVyaj + currentInterestDue + feesSum;
+            const total = penal + yeneVyaj + currentInterestDue;
+            autoApportion(total, formData.fees || []);
+        } else if (type === 'OVERDUE_ONLY') {
+            const total = paikiThakbaki + penal + yeneVyaj + currentInterestDue;
             autoApportion(total, formData.fees || []);
         } else if (type === '1_INST') {
-            const total = principalDue + penal + yeneVyaj + currentInterestDue + feesSum;
+            const total = principalDue + penal + yeneVyaj + currentInterestDue;
             autoApportion(total, formData.fees || []);
         } else if (type === 'FULL_DUE') {
-            const maxPrincipal = account.principalBalance || 0;
-            const total = maxPrincipal + penal + yeneVyaj + currentInterestDue + feesSum;
+            const maxPrincipal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (account.principalBalance || 0);
+            const total = maxPrincipal + penal + yeneVyaj + currentInterestDue;
             autoApportion(total, formData.fees || []);
         }
     };
@@ -1464,30 +1557,30 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         if (!account) return;
         
         const dateStr = dateOverride || formData.collectionDate || new Date().toISOString().split('T')[0];
-        let remaining = totalAmt;
-        
-        // 1. Subtract Fees first
-        const feesSum = currentFees.reduce((acc, f) => acc + (f.amount || 0), 0);
-        remaining = Math.max(0, remaining - feesSum);
+        let remaining = Math.max(0, totalAmt);
 
-        // 2. Penalty Interest (Overdue)
+        // 1. Penalty Interest (Overdue)
         const penaltyDue = account.overdueInterestBalance || 0;
         const penaltyCollected = Math.min(remaining, penaltyDue);
         remaining -= penaltyCollected;
 
         const loanRate = account.loanRate;
-        const isDailyReducing = loanRate && 
-            (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
+        const isFlatMethod = Boolean(
+            loanRate &&
+            (loanRate.interestCalculationMethod?.toLowerCase().includes("flat") || loanRate.interestCalculationMethod?.includes("फ्लॅट"))
+        );
+        const isDailyReducing = !isFlatMethod;
 
-        // 3. Past Posted / Accrued Receivable Interest (येणे व्याज)
+        // 2. Past Posted / Accrued Receivable Interest (येणे व्याज)
         const receivableDue = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (account.interestBalance || 0);
         const receivableCollected = Math.min(remaining, receivableDue);
         remaining -= receivableCollected;
 
         let currentInterestDue = 0;
-        let principalDue = 0;
+        const { vasulpatra } = getPrincipalDuesBreakdown(account, dateStr);
+        let principalDue = vasulpatra;
 
-        // Check if we have schedule details loaded and is NOT daily reducing
+        // Check if we have schedule details loaded and is Flat rate
         if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
             const collectionDateObj = parseDateSafe(dateStr);
             collectionDateObj.setHours(0, 0, 0, 0);
@@ -1515,12 +1608,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
             if (targetInstallments.length > 0) {
                 currentInterestDue = targetInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
-                principalDue = targetInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
             }
         } else {
-            // Dynamic daily calculation for daily reducing
+            // Dynamic day-wise reducing balance calculation for all Reducing schemes
             const rate = account.loanRate?.interestRate || account.interestRate || 0;
-            const principal = account.principalBalance || 0;
+            const principal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (account.principalBalance || 0);
             const fromDateStr = getInterestStartDate(account);
             if (fromDateStr) {
                 const diffDays = calculateElapsedDays(fromDateStr, dateStr);
@@ -1528,22 +1620,20 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                     currentInterestDue = Math.round((principal * rate * diffDays) / 36500);
                 }
             }
-            principalDue = account.installmentAmount || 0;
         }
 
-        // 4. Current Period Interest (चालू व्याज)
+        // 3. Current Period Interest (मेंबर व्याज)
         const currentInterestCollected = Math.min(remaining, currentInterestDue);
         remaining -= currentInterestCollected;
 
-        // 5. Principal
-        const maxPrincipal = account.principalBalance || 0;
+        // 4. Principal (capped strictly at maxPrincipal; NEVER auto-send excess to Surcharge)
+        const maxPrincipal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (account.principalBalance || 0);
         const targetPrincipal = principalDue > 0 ? principalDue : maxPrincipal;
         const basePrincipalCollected = Math.min(remaining, targetPrincipal);
         remaining -= basePrincipalCollected;
 
-        // 6. Remaining to Extra Principal / Surcharge
         const actualPrincipalCol = Math.min(maxPrincipal, basePrincipalCollected + remaining);
-        const surchargeCol = (basePrincipalCollected + remaining) > maxPrincipal ? ((basePrincipalCollected + remaining) - maxPrincipal) : 0;
+        const surchargeCol = 0;
 
         setFormData(p => ({
             ...p,
@@ -1559,35 +1649,21 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
     const handleSplitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        const val = parseFloat(value) || 0;
-        
-        setFormData(p => {
-            const newForm = { ...p, [name]: val };
-            const feesSum = (newForm.fees || []).reduce((acc, f) => acc + (f.amount || 0), 0);
-            
-            if (name === 'interestCollected' || name === 'receivableInterestCollected' || name === 'penaltyInterestCollected' || name === 'surchargeCollected') {
-                // Keep total constant, adjust principal
-                let newPrincipal = (p.totalAmountReceived || 0) - feesSum - (newForm.receivableInterestCollected || 0) - (newForm.interestCollected || 0) - (newForm.penaltyInterestCollected || 0) - (newForm.surchargeCollected || 0);
-                
-                if (newPrincipal < 0) {
-                    newPrincipal = 0;
-                    // If principal goes below 0, adjust total instead
-                    newForm.totalAmountReceived = feesSum + (newForm.receivableInterestCollected || 0) + (newForm.interestCollected || 0) + (newForm.penaltyInterestCollected || 0) + (newForm.surchargeCollected || 0);
-                }
-                newForm.principalCollected = newPrincipal;
-            } else if (name === 'principalCollected') {
-                // If explicitly changing principal, recalculate total
-                newForm.totalAmountReceived = (newForm.principalCollected || 0) + (newForm.receivableInterestCollected || 0) + (newForm.interestCollected || 0) + (newForm.penaltyInterestCollected || 0) + (newForm.surchargeCollected || 0) + feesSum;
-            }
-            
-            return newForm;
-        });
+        const val = Math.max(0, parseFloat(value) || 0);
+
+        setFormData(p => ({
+            ...p,
+            [name]: val
+        }));
     };
 
     const handleFeeChange = (index: number, field: string, val: any) => {
         const newFees = [...(formData.fees || [])];
         newFees[index] = { ...newFees[index], [field]: field === 'amount' ? (parseFloat(val) || 0) : parseInt(val) };
-        autoApportion(formData.totalAmountReceived || 0, newFees);
+        setFormData(p => ({
+            ...p,
+            fees: newFees
+        }));
     };
 
     const addFeeRow = () => {
@@ -1599,7 +1675,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
     const removeFeeRow = (index: number) => {
         const newFees = formData.fees?.filter((_, i) => i !== index) || [];
-        autoApportion(formData.totalAmountReceived || 0, newFees);
+        setFormData(p => ({
+            ...p,
+            fees: newFees
+        }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1610,6 +1689,20 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         
         if ((formData.isOTS || (formData.interestWaived || 0) > 0 || (formData.penaltyWaived || 0) > 0) && !formData.resolutionNo?.trim()) {
             alert('एकरकम तडजोड (OTS) किंवा व्याज सूटीसाठी संचालक मंडळाचा ठराव क्रमांक (Resolution No.) प्रविष्ट करणे अनिवार्य आहे.');
+            return;
+        }
+
+        const enteredTotalAmt = Number(formData.totalAmountReceived) || 0;
+        const allocatedSplitSum =
+            (Number(formData.principalCollected) || 0) +
+            (Number(formData.receivableInterestCollected) || 0) +
+            (Number(formData.interestCollected) || 0) +
+            (Number(formData.penaltyInterestCollected) || 0) +
+            (Number(formData.surchargeCollected) || 0);
+        const splitDiff = Math.round((enteredTotalAmt - allocatedSplitSum) * 100) / 100;
+
+        if (!formData.isOTS && Math.abs(splitDiff) > 0.01) {
+            setShowAllocationMismatchModal(true);
             return;
         }
 
@@ -1655,6 +1748,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 alert('बँक / चेक वसुलीसाठी कृपया वैध बँक जी.एल. खाते (Bank GL Account) निवडा.');
                 return;
             }
+            if (formData.paymentMode === 'Cheque' && !formData.chequeNo?.trim()) {
+                alert('चेक वसुलीसाठी कृपया वैध चेक क्रमांक (Cheque No) प्रविष्ट करा.');
+                return;
+            }
         }
 
         const targetAccountId = formData.loanAccountID || selectedAccount?.loanAccountID || (window as any).selectedLoanAccountId;
@@ -1666,11 +1763,19 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         setIsSaving(true);
         try {
             const isBankOrCheque = formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque';
+            const isPigmy = formData.paymentMode === 'Pigmy Transfer';
+            const isSaving = formData.paymentMode === 'Saving Transfer';
             const payload = {
                 ...formData,
                 bankAccountLedgerID: isBankOrCheque ? Number(formData.bankAccountLedgerID) : null,
-                bankName: isBankOrCheque ? formData.bankName : null,
-                chequeNo: formData.paymentMode === 'Cheque' ? formData.chequeNo : null,
+                bankName: isBankOrCheque ? (formData.bankName || null) : null,
+                chequeNo: isBankOrCheque ? (formData.chequeNo?.trim() || null) : null,
+                sourcePigmyAccountID: isPigmy ? (formData.sourcePigmyAccountID || null) : null,
+                transferFromPigmyAccountNo: isPigmy ? (formData.transferFromPigmyAccountNo || null) : null,
+                pigmyTransferType: isPigmy ? (formData.pigmyTransferType || 'PARTIAL') : null,
+                sourceSavingAccountID: isSaving ? (formData.sourceSavingAccountID || null) : null,
+                transferFromSavingAccountNo: isSaving ? (formData.transferFromSavingAccountNo || null) : null,
+                savingCustomerName: isSaving ? (formData.savingCustomerName || null) : null,
                 loanAccountID: targetAccountId,
                 branchID: selectedBranchId
             };
@@ -1865,6 +1970,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         });
         setAllowDateOverride(false);
         setShowFeesPanel(false);
+        setShowAllocationMismatchModal(false);
         setNoLoanFoundAlert(null);
         setSelectedCustomerId(null);
         setSelectedBorrowerKey(null);
@@ -1899,13 +2005,24 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
     const effectiveSchemeId = selectedSchemeId || selectedAccount?.loanRateID || selectedAccount?.loanRate?.loanRateID || '';
     const totalMatchingLoansCount = Math.max(borrowerLoans.length, customerMatchingLoans.length);
 
+    const allocatedRecoveryTotal =
+        (Number(formData.principalCollected) || 0) +
+        (Number(formData.receivableInterestCollected) || 0) +
+        (Number(formData.interestCollected) || 0) +
+        (Number(formData.penaltyInterestCollected) || 0) +
+        (Number(formData.surchargeCollected) || 0);
+    const enteredTotalAmount = Number(formData.totalAmountReceived) || 0;
+    const allocationDifference = Math.round((enteredTotalAmount - allocatedRecoveryTotal) * 100) / 100;
+    const hasAllocationMismatch = !formData.isOTS && Math.abs(allocationDifference) > 0.01;
+
     const duesSummary = (() => {
         if (!selectedAccount) return null;
         const loanRate = selectedAccount.loanRate;
-        const isDailyReducing = Boolean(
+        const isFlatMethod = Boolean(
             loanRate &&
-            (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"))
+            (loanRate.interestCalculationMethod?.toLowerCase().includes("flat") || loanRate.interestCalculationMethod?.includes("फ्लॅट"))
         );
+        const isDailyReducing = !isFlatMethod;
 
         const disbursementDate = accountDetails?.disbursementDate || selectedAccount.loanDisbursementDate || selectedAccount.openingDate;
         const totalDisbursed = accountDetails?.totalDisbursedAmount || accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount || 0;
@@ -1914,8 +2031,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (selectedAccount.principalBalance || 0);
 
         let thakitDinank = "-";
-        let vasulpatra = 0;
-        let paikiThakbaki = 0;
+        const { paikiThakbaki, vasulpatra } = getPrincipalDuesBreakdown(selectedAccount, formData.collectionDate);
         let vyaj = 0;
         const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0);
         const dandVyaj = accountDetails?.currentOverdueInterestBalance !== undefined ? accountDetails.currentOverdueInterestBalance : (selectedAccount.overdueInterestBalance || 0);
@@ -1928,33 +2044,36 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         let thakitHapteCount = 0;
         if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
             thakitHapteCount = accountDetails.schedule.filter(s => {
+                if (s.status === 'Paid') return false;
                 const dDate = parseDateSafe(s.dueDate);
                 dDate.setHours(0, 0, 0, 0);
-                return dDate <= collectionDateObj && s.status !== 'Paid';
+                if (selectedAccount.isOpeningBalance && selectedAccount.openingDate) {
+                    const openingDateObj = parseDateSafe(selectedAccount.openingDate);
+                    openingDateObj.setHours(0, 0, 0, 0);
+                    if (dDate <= openingDateObj) return false;
+                }
+                return dDate <= collectionDateObj;
             }).length;
         }
 
         if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
             const overdueInstallments = accountDetails.schedule.filter(s => {
+                if (s.status === 'Paid') return false;
                 const dueDateObj = parseDateSafe(s.dueDate);
                 dueDateObj.setHours(0, 0, 0, 0);
-                return dueDateObj <= collectionDateObj && s.status !== 'Paid';
+                if (selectedAccount.isOpeningBalance && selectedAccount.openingDate) {
+                    const openingDateObj = parseDateSafe(selectedAccount.openingDate);
+                    openingDateObj.setHours(0, 0, 0, 0);
+                    if (dueDateObj <= openingDateObj) return false;
+                }
+                return dueDateObj <= collectionDateObj;
             });
 
             if (overdueInstallments.length > 0) {
-                vasulpatra = overdueInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
-                paikiThakbaki = overdueInstallments
-                    .filter(s => {
-                        const dDate = parseDateSafe(s.dueDate);
-                        dDate.setHours(0, 0, 0, 0);
-                        return dDate < collectionDateObj;
-                    })
-                    .reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
                 vyaj = overdueInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
             } else {
                 const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
                 if (nextInstallment) {
-                    vasulpatra = nextInstallment.remainingPrincipal !== undefined ? nextInstallment.remainingPrincipal : (nextInstallment.principalAmount || 0);
                     vyaj = nextInstallment.interestAmount || 0;
                 }
             }
@@ -1966,24 +2085,14 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                     vyaj = Math.round((yeneBaki * interestRate * diffDays) / 36500);
                 }
             }
-
-            if (accountDetails?.schedule) {
-                paikiThakbaki = accountDetails.schedule
-                    .filter(s => parseDateSafe(s.dueDate) <= collectionDateObj && s.status !== 'Paid')
-                    .reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
-                vasulpatra = paikiThakbaki;
-            }
         }
-
-        if (vasulpatra > yeneBaki) vasulpatra = yeneBaki;
-        if (paikiThakbaki > yeneBaki) paikiThakbaki = yeneBaki;
 
         if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
             const firstUnpaid = accountDetails.schedule.find(s => s.status !== 'Paid');
             if (firstUnpaid) {
                 const dDate = parseDateSafe(firstUnpaid.dueDate);
                 dDate.setHours(0, 0, 0, 0);
-                if (isDailyReducing || dDate < collectionDateObj) {
+                if (dDate <= collectionDateObj) {
                     thakitDinank = formatDateSafe(dDate);
                 }
             }
@@ -2407,20 +2516,26 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             const isBankOrCheque = val === 'Bank' || val === 'Cheque';
+                                            const isPigmy = val === 'Pigmy Transfer';
+                                            const isSaving = val === 'Saving Transfer';
                                             setFormData(p => ({
                                                 ...p,
                                                 paymentMode: val,
-                                                ...(!isBankOrCheque
-                                                    ? { bankAccountLedgerID: undefined, bankName: undefined, chequeNo: undefined }
-                                                    : val !== 'Cheque'
-                                                        ? { chequeNo: undefined }
-                                                        : {})
+                                                bankAccountLedgerID: isBankOrCheque ? p.bankAccountLedgerID : undefined,
+                                                bankName: isBankOrCheque ? p.bankName : undefined,
+                                                chequeNo: isBankOrCheque ? p.chequeNo : undefined,
+                                                sourcePigmyAccountID: isPigmy ? (selectedPigmyAccount?.pigmyAccountID || p.sourcePigmyAccountID) : undefined,
+                                                transferFromPigmyAccountNo: isPigmy ? (selectedPigmyAccount?.accountNo || p.transferFromPigmyAccountNo) : undefined,
+                                                sourceSavingAccountID: isSaving ? (selectedSavingAccount?.savingAccountID || p.sourceSavingAccountID) : undefined,
+                                                transferFromSavingAccountNo: isSaving ? (selectedSavingAccount?.accountNo || p.transferFromSavingAccountNo) : undefined,
+                                                savingCustomerName: isSaving ? (selectedSavingAccount?.customerName || p.savingCustomerName) : undefined
                                             }));
-                                            if (val === 'Pigmy Transfer' && selectedCustomerId) {
-                                                fetchCustomerPigmyAccounts(selectedCustomerId);
+                                            const cId = selectedCustomerId || selectedAccount?.customerID || selectedAccount?.customer?.customerID;
+                                            if (isPigmy && cId) {
+                                                fetchCustomerPigmyAccounts(Number(cId));
                                             }
-                                            if (val === 'Saving Transfer' && selectedCustomerId) {
-                                                fetchCustomerSavingAccounts(selectedCustomerId);
+                                            if (isSaving && cId) {
+                                                fetchCustomerSavingAccounts(Number(cId));
                                             }
                                         }}
                                         disabled={isPassingMode}
@@ -2450,7 +2565,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             {/* Conditional Bank / Cheque Sub-Panel */}
                             {(formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque') && (
                                 <div className="p-2.5 bg-slate-50/90 rounded-sm border border-gray-200 border-l-4 border-l-primary grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                                    <div className={formData.paymentMode === 'Cheque' ? 'md:col-span-8' : 'md:col-span-12'}>
+                                    <div className="md:col-span-8">
                                         <label className={labelClass}>
                                             बँक जी.एल. खाते निवडा (Bank GL Account) <span className="text-rose-600">*</span>
                                         </label>
@@ -2471,22 +2586,24 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             }}
                                         />
                                     </div>
-                                    {formData.paymentMode === 'Cheque' && (
-                                        <div className="md:col-span-4">
-                                            <label className={labelClass}>
-                                                चेक क्रमांक (Cheque No) <span className="text-rose-600">*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={formData.chequeNo || ''}
-                                                onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))}
-                                                placeholder="चेक क्र. टाका"
-                                                disabled={isPassingMode}
-                                                className={`${inputClass} font-mono font-bold`}
-                                                required
-                                            />
-                                        </div>
-                                    )}
+                                    <div className="md:col-span-4">
+                                        <label className={labelClass}>
+                                            {formData.paymentMode === 'Cheque' ? (
+                                                <>चेक क्रमांक (Cheque No) <span className="text-rose-600">*</span></>
+                                            ) : (
+                                                <>UTR / ट्रान्सफर संदर्भ क्र. (Ref No.)</>
+                                            )}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={formData.chequeNo || ''}
+                                            onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))}
+                                            placeholder={formData.paymentMode === 'Cheque' ? 'चेक क्र. टाका' : 'UTR / व्यवहार संदर्भ क्र. टाका'}
+                                            disabled={isPassingMode}
+                                            className={`${inputClass} font-mono font-bold`}
+                                            required={formData.paymentMode === 'Cheque'}
+                                        />
+                                    </div>
                                 </div>
                             )}
 
@@ -2823,16 +2940,25 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         className={`${inputClass} font-semibold`}
                                                         required
                                                     >
-                                                        {customerSavingAccounts.map(a => (
-                                                            <option key={a.savingAccountID} value={a.savingAccountID}>
-                                                                {format14DigitDisplay(a.accountNo)} - {a.schemeName || 'बचत ठेव'} (₹{(a.currentBalance || 0).toLocaleString('en-IN')})
-                                                            </option>
-                                                        ))}
+                                                        <option value="">-- बचत खाते निवडा --</option>
+                                                        {customerSavingAccounts.map(a => {
+                                                            const oldNo = a.oldAccountNo || a.legacyAccountNumber;
+                                                            return (
+                                                                <option key={a.savingAccountID} value={a.savingAccountID}>
+                                                                    {format14DigitDisplay(a.accountNo)} {oldNo ? `[जुना: ${oldNo}]` : ''} - {a.schemeName || 'बचत ठेव'} (₹{(a.currentBalance || 0).toLocaleString('en-IN')})
+                                                                </option>
+                                                            );
+                                                        })}
                                                     </select>
                                                 </div>
 
                                                 {selectedSavingAccount && (
                                                     <div className="md:col-span-6 flex flex-wrap gap-1.5 text-[10.5px] items-center pb-0.5">
+                                                        {(selectedSavingAccount.oldAccountNo || selectedSavingAccount.legacyAccountNumber) && (
+                                                            <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-sm border border-primary/20 font-bold font-mono">
+                                                                जुना: {selectedSavingAccount.oldAccountNo || selectedSavingAccount.legacyAccountNumber}
+                                                            </span>
+                                                        )}
                                                         <span className="bg-white px-2 py-0.5 rounded-sm border border-gray-300 text-gray-700 font-semibold">
                                                             शिल्लक: <b className="font-mono text-gray-900">₹{(selectedSavingAccount.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
                                                         </span>
@@ -2903,11 +3029,14 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         className={`${inputClass} border-primary font-semibold`}
                                                     >
                                                         <option value="" disabled>-- बचत खाते निवडा --</option>
-                                                        {otherSavingSearchResults.map(a => (
-                                                            <option key={a.savingAccountID} value={a.savingAccountID}>
-                                                                {format14DigitDisplay(a.accountNo)} - {a.customerName} (₹{(a.currentBalance || 0).toLocaleString('en-IN')})
-                                                            </option>
-                                                        ))}
+                                                        {otherSavingSearchResults.map(a => {
+                                                            const oldNo = a.oldAccountNo || a.legacyAccountNumber;
+                                                            return (
+                                                                <option key={a.savingAccountID} value={a.savingAccountID}>
+                                                                    {format14DigitDisplay(a.accountNo)} {oldNo ? `[जुना: ${oldNo}]` : ''} - {a.customerName} (₹{(a.currentBalance || 0).toLocaleString('en-IN')})
+                                                                </option>
+                                                            );
+                                                        })}
                                                     </select>
                                                 </div>
                                             )}
@@ -2915,7 +3044,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             {selectedSavingAccount && (
                                                 <div className="md:col-span-7 flex flex-wrap gap-1.5 text-[10.5px] items-center pb-0.5">
                                                     <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-sm border border-primary/20 font-bold">
-                                                        {selectedSavingAccount.customerName} ({format14DigitDisplay(selectedSavingAccount.accountNo)})
+                                                        {selectedSavingAccount.customerName} ({format14DigitDisplay(selectedSavingAccount.accountNo)}{selectedSavingAccount.oldAccountNo || selectedSavingAccount.legacyAccountNumber ? ` | जुना: ${selectedSavingAccount.oldAccountNo || selectedSavingAccount.legacyAccountNumber}` : ''})
                                                     </span>
                                                     <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-sm border border-emerald-300 font-bold">
                                                         वर्गपात्र: <b className="font-mono text-emerald-700">₹{Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
@@ -2943,8 +3072,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             )}
 
                             {/* STEP 3: Amount & Allocation Split Panel */}
-                            <div className="bg-slate-50/80 border border-gray-200 rounded-sm p-3 space-y-2.5">
-                                <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-gray-200">
+                            <div className="bg-sky-50/40 border border-sky-200/80 rounded-sm p-3 space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-sky-200/70">
                                     <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
                                         <Coins className="w-3.5 h-3.5 text-primary" />
                                         <span>३. रक्कम व वसुली विभागणी (Amount & Allocation)</span>
@@ -2955,28 +3084,37 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             <button
                                                 type="button"
                                                 onClick={() => applyQuickAmount('1_INST')}
-                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white border border-primary/25 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
+                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-sky-100/80 text-sky-900 hover:bg-sky-200/90 border border-sky-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
                                                 title="१ हप्ता मुद्दल + सर्व व्याज व फी"
                                             >
-                                                <Zap className="w-3 h-3" />
+                                                <Zap className="w-3 h-3 text-sky-700" />
                                                 <span>१ हप्ता</span>
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={() => applyQuickAmount('INTEREST_ONLY')}
-                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-emerald-50 text-emerald-800 hover:bg-emerald-600 hover:text-white border border-emerald-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
-                                                title="थकीत येणे व्याज + चालू व्याज + दंड"
+                                                onClick={() => applyQuickAmount('OVERDUE_ONLY')}
+                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-orange-100/80 text-orange-900 hover:bg-orange-200/90 border border-orange-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
+                                                title="थकीत मुद्दल + सर्व व्याज व दंड"
                                             >
-                                                <Zap className="w-3 h-3" />
+                                                <Zap className="w-3 h-3 text-orange-700" />
+                                                <span>थकीत मुद्दल</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => applyQuickAmount('INTEREST_ONLY')}
+                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-emerald-100/80 text-emerald-900 hover:bg-emerald-200/90 border border-emerald-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
+                                                title="थकीत येणे व्याज + मेंबर व्याज + दंड"
+                                            >
+                                                <Zap className="w-3 h-3 text-emerald-700" />
                                                 <span>फक्त व्याज</span>
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => applyQuickAmount('FULL_DUE')}
-                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-amber-50 text-amber-900 hover:bg-amber-600 hover:text-white border border-amber-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
+                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-amber-100/80 text-amber-900 hover:bg-amber-200/90 border border-amber-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
                                                 title="संपूर्ण मुद्दल + सर्व व्याज + दंड (पूर्ण नील)"
                                             >
-                                                <Zap className="w-3 h-3" />
+                                                <Zap className="w-3 h-3 text-amber-700" />
                                                 <span>पूर्ण नील</span>
                                             </button>
                                         </div>
@@ -2985,8 +3123,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                                 {/* Total Amount + 5 Split Inputs Grid */}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 items-end">
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-primary mb-0.5">
+                                    <div className="p-1.5 rounded-sm bg-sky-50/90 border border-sky-200">
+                                        <label className="block text-[11px] font-bold text-sky-950 mb-0.5">
                                             एकूण जमा (Total ₹) <span className="text-rose-600">*</span>
                                         </label>
                                         <input
@@ -2997,14 +3135,21 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             min="0"
                                             disabled={isPassingMode}
                                             placeholder="0.00"
-                                            className={`w-full border-2 border-primary px-2 py-1 rounded-sm font-mono font-bold text-xs text-right h-[32px] focus:outline-none focus:ring-1 focus:ring-primary ${
-                                                isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-primary'
+                                            className={`w-full border border-sky-400 px-2 py-1 rounded-sm font-mono font-bold text-xs text-right h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-500 ${
+                                                isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-sky-950'
                                             }`}
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className={labelClass}>मुद्दल (Principal ₹)</label>
+                                    <div className="p-1.5 rounded-sm bg-indigo-50/70 border border-indigo-200">
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <label className="text-[11px] font-bold text-indigo-950">मुद्दल (Principal ₹)</label>
+                                            {duesSummary && duesSummary.paikiThakbaki > 0 && (
+                                                <span className="text-[9.5px] font-mono font-bold text-orange-700" title="थकीत मुद्दल">
+                                                    थकीत: ₹{duesSummary.paikiThakbaki.toLocaleString('en-IN')}
+                                                </span>
+                                            )}
+                                        </div>
                                         <input
                                             type="number"
                                             name="principalCollected"
@@ -3013,13 +3158,13 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             min="0"
                                             disabled={isPassingMode}
                                             placeholder="0.00"
-                                            className={`${inputClass} h-[32px] text-right font-mono font-bold`}
+                                            className={`${inputClass} h-[30px] text-right font-mono font-bold border-indigo-300 text-indigo-950 bg-white focus:border-indigo-500`}
                                         />
                                     </div>
 
-                                    <div>
+                                    <div className="p-1.5 rounded-sm bg-emerald-50/70 border border-emerald-200">
                                         <div className="flex items-center justify-between mb-0.5">
-                                            <label className="text-[11px] font-bold text-emerald-800">येणे व्याज</label>
+                                            <label className="text-[11px] font-bold text-emerald-900">येणे व्याज</label>
                                             {duesSummary && duesSummary.yeneVyaj > 0 && (
                                                 <span className="text-[9.5px] font-mono font-bold text-emerald-700">
                                                     ₹{duesSummary.yeneVyaj.toLocaleString('en-IN')}
@@ -3034,16 +3179,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             min="0"
                                             disabled={isPassingMode}
                                             placeholder="0.00"
-                                            className={`${inputClass} h-[32px] text-right font-mono font-bold border-emerald-300 text-emerald-900 bg-emerald-50/40 focus:border-emerald-600`}
+                                            className={`${inputClass} h-[30px] text-right font-mono font-bold border-emerald-300 text-emerald-950 bg-white focus:border-emerald-600`}
                                         />
                                     </div>
 
-                                    <div>
+                                    <div className="p-1.5 rounded-sm bg-amber-50/80 border border-amber-200">
                                         <div className="flex items-center justify-between mb-0.5">
-                                            <label className="text-[11px] font-bold text-gray-700">चालू व्याज</label>
+                                            <label className="text-[11px] font-bold text-amber-950">मेंबर व्याज</label>
                                             {duesSummary && duesSummary.days > 0 && (
-                                                <span className="text-[9.5px] font-mono font-semibold text-gray-500">
-                                                    {duesSummary.days} दि.
+                                                <span className="text-[9.5px] font-mono font-semibold text-amber-800">
+                                                    {duesSummary.days} दिवस
                                                 </span>
                                             )}
                                         </div>
@@ -3055,15 +3200,15 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             min="0"
                                             disabled={isPassingMode}
                                             placeholder="0.00"
-                                            className={`${inputClass} h-[32px] text-right font-mono font-semibold`}
+                                            className={`${inputClass} h-[30px] text-right font-mono font-bold border-amber-300 text-amber-950 bg-white focus:border-amber-600`}
                                         />
                                     </div>
 
-                                    <div>
+                                    <div className="p-1.5 rounded-sm bg-rose-50/70 border border-rose-200">
                                         <div className="flex items-center justify-between mb-0.5">
-                                            <label className="text-[11px] font-bold text-gray-700">जादा/दंड व्याज</label>
+                                            <label className="text-[11px] font-bold text-rose-900">जादा/दंड व्याज</label>
                                             {duesSummary && duesSummary.dandVyaj > 0 && (
-                                                <span className="text-[9.5px] font-mono font-bold text-rose-600">
+                                                <span className="text-[9.5px] font-mono font-bold text-rose-700">
                                                     ₹{duesSummary.dandVyaj.toLocaleString('en-IN')}
                                                 </span>
                                             )}
@@ -3076,12 +3221,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             min="0"
                                             disabled={isPassingMode}
                                             placeholder="0.00"
-                                            className={`${inputClass} h-[32px] text-right font-mono font-semibold`}
+                                            className={`${inputClass} h-[30px] text-right font-mono font-semibold border-rose-300 text-rose-950 bg-white focus:border-rose-500`}
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className={labelClass}>सरचार्ज (₹)</label>
+                                    <div className="p-1.5 rounded-sm bg-purple-50/70 border border-purple-200">
+                                        <label className="block text-[11px] font-bold text-purple-950 mb-0.5 truncate">सरचार्ज (₹)</label>
                                         <input
                                             type="number"
                                             name="surchargeCollected"
@@ -3090,7 +3235,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             min="0"
                                             disabled={isPassingMode}
                                             placeholder="0.00"
-                                            className={`${inputClass} h-[32px] text-right font-mono font-semibold`}
+                                            className={`${inputClass} h-[30px] text-right font-mono font-semibold border-purple-300 text-purple-950 bg-white focus:border-purple-500`}
                                         />
                                     </div>
                                 </div>
@@ -3253,6 +3398,18 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     <span className="px-2.5 py-1 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-900 font-semibold">
                                         पावती एकूण: <b className="font-mono text-emerald-700">₹{(formData.totalAmountReceived || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
                                     </span>
+                                    <span className={`px-2.5 py-1 rounded-sm font-semibold border ${
+                                        hasAllocationMismatch
+                                            ? 'bg-rose-50 border-rose-300 text-rose-900'
+                                            : 'bg-slate-50 border-gray-200 text-gray-800'
+                                    }`}>
+                                        घेतलेला वसूल: <b className={`font-mono ${hasAllocationMismatch ? 'text-rose-700' : 'text-gray-900'}`}>₹{allocatedRecoveryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                    </span>
+                                    {hasAllocationMismatch && (
+                                        <span className="px-2.5 py-1 rounded-sm bg-rose-100 border border-rose-400 text-rose-900 font-bold">
+                                            तफावत: <b className="font-mono text-rose-700">{allocationDifference > 0 ? '+' : '-'}₹{Math.abs(allocationDifference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                        </span>
+                                    )}
                                     {duesSummary && (
                                         <span className="px-2.5 py-1 rounded-sm bg-primary/5 border border-primary/20 text-gray-800 font-semibold">
                                             नवीन मुद्दल बाकी: <b className="font-mono text-primary">₹{duesSummary.shillakKarjRakkam.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
@@ -3354,7 +3511,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                     {/* RIGHT 4 COLUMNS: CONSOLIDATED LOAN ACCOUNT & DUES PANEL */}
                     <div className="lg:col-span-4 bg-white rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col overflow-hidden">
                         {/* Card Strip */}
-                        <div className="px-3.5 py-2 bg-slate-50/80 border-b border-gray-200 flex items-center justify-between gap-2">
+                        <div className="px-3.5 py-2 bg-teal-50/70 border-b border-teal-200/70 flex items-center justify-between gap-2">
                             <span className="border-l-4 border-primary pl-2 text-primary font-bold text-xs">
                                 कर्ज खाते स्थिती व थकबाकी (Loan & Dues)
                             </span>
@@ -3374,7 +3531,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                         {selectedAccount && duesSummary ? (
                             <div className="p-3 space-y-2.5">
                                 {/* 1. Account Identity Box */}
-                                <div className="p-2.5 rounded-sm bg-primary/5 border border-primary/20 space-y-1.5">
+                                <div className="p-2.5 rounded-sm bg-teal-50/50 border border-teal-200/80 space-y-1.5">
                                     <div className="flex items-start justify-between gap-2">
                                         <div>
                                             <div className="text-xs font-bold text-gray-900 leading-snug">
@@ -3385,7 +3542,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                     {format14DigitDisplay(selectedAccount.loanAccountNo)}
                                                 </span>
                                                 {selectedBorrowerCif && (
-                                                    <span className="px-1.5 py-0.2 rounded-sm bg-white border border-gray-300 text-gray-600 font-mono text-[10px] font-semibold">
+                                                    <span className="px-1.5 py-0.2 rounded-sm bg-white border border-teal-200 text-gray-700 font-mono text-[10px] font-semibold">
                                                         CIF: {selectedBorrowerCif}
                                                     </span>
                                                 )}
@@ -3393,13 +3550,13 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         </div>
 
                                         {selectedAccount.legacyAccountNumber && (
-                                            <span className="px-2 py-0.5 rounded-sm bg-white border border-primary/30 text-primary font-mono text-[10.5px] font-bold shrink-0 shadow-2xs">
+                                            <span className="px-2 py-0.5 rounded-sm bg-white border border-teal-300 text-primary font-mono text-[10.5px] font-bold shrink-0 shadow-2xs">
                                                 जुना क्र.: {selectedAccount.legacyAccountNumber}
                                             </span>
                                         )}
                                     </div>
 
-                                    <div className="pt-1.5 border-t border-primary/15 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10.5px] text-gray-700">
+                                    <div className="pt-1.5 border-t border-teal-200/70 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10.5px] text-gray-700">
                                         <span>
                                             योजना: <b className="text-gray-900">{selectedAccount.loanRate?.shortName || selectedAccount.loanRate?.loanType || '-'}</b>
                                         </span>
@@ -3417,24 +3574,24 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </div>
                                 </div>
 
-                                {/* 2. Four Key KPI Tiles (2x2 Grid) */}
+                                {/* 2. Four Key KPI Tiles (2x2 Grid) in Soft Pastel Shades */}
                                 <div className="grid grid-cols-2 gap-2">
-                                    <div className="p-2 rounded-sm bg-slate-50 border border-gray-200">
-                                        <div className="text-[10px] font-bold text-gray-500">चालू मुद्दल बाकी</div>
-                                        <div className="text-sm font-black font-mono text-gray-900 mt-0.5">
+                                    <div className="p-2 rounded-sm bg-sky-50/80 border border-sky-200">
+                                        <div className="text-[10px] font-bold text-sky-900">चालू मुद्दल बाकी</div>
+                                        <div className="text-sm font-black font-mono text-sky-950 mt-0.5">
                                             ₹{duesSummary.yeneBaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </div>
                                     </div>
 
-                                    <div className="p-2 rounded-sm bg-amber-50/80 border border-amber-300">
+                                    <div className="p-2 rounded-sm bg-amber-50/80 border border-amber-200">
                                         <div className="text-[10px] font-bold text-amber-900">आज एकूण देय रक्कम</div>
                                         <div className="text-sm font-black font-mono text-amber-950 mt-0.5">
                                             ₹{duesSummary.ekunVasulpatra.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </div>
                                     </div>
 
-                                    <div className="p-2 rounded-sm bg-white border border-gray-200">
-                                        <div className="flex items-center justify-between text-[10px] font-bold text-gray-500">
+                                    <div className="p-2 rounded-sm bg-indigo-50/70 border border-indigo-200">
+                                        <div className="flex items-center justify-between text-[10px] font-bold text-indigo-900">
                                             <span>मंजूर / एकूण वाटप</span>
                                             {accountDetails?.disbursementCount && accountDetails.disbursementCount > 1 ? (
                                                 <span className="px-1 rounded-sm bg-amber-100 text-amber-900 text-[9px]">
@@ -3442,93 +3599,101 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 </span>
                                             ) : null}
                                         </div>
-                                        <div className="text-xs font-bold font-mono text-gray-800 mt-0.5">
+                                        <div className="text-xs font-bold font-mono text-indigo-950 mt-0.5">
                                             ₹{duesSummary.totalDisbursed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </div>
                                         {(accountDetails?.pendingSanctionedAmount || 0) > 0 && (
-                                            <div className="text-[9.5px] text-primary font-semibold mt-0.5">
+                                            <div className="text-[9.5px] text-indigo-800 font-semibold mt-0.5">
                                                 शिल्लक मंजुरी: ₹{accountDetails?.pendingSanctionedAmount?.toLocaleString('en-IN')}
                                             </div>
                                         )}
                                     </div>
 
-                                    <div className="p-2 rounded-sm bg-white border border-gray-200">
-                                        <div className="text-[10px] font-bold text-gray-500">
+                                    <div className="p-2 rounded-sm bg-emerald-50/70 border border-emerald-200">
+                                        <div className="text-[10px] font-bold text-emerald-900">
                                             {selectedAccount.loanRate?.loanInstallmentType?.includes('व्याजवरती') ? 'हप्ता प्रकार: व्याजवरती' : 'नियमित हप्ता (EMI)'}
                                         </div>
-                                        <div className="text-xs font-bold font-mono text-emerald-700 mt-0.5">
+                                        <div className="text-xs font-bold font-mono text-emerald-800 mt-0.5">
                                             ₹{(selectedAccount.installmentAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </div>
-                                        <div className="text-[9.5px] text-gray-500 mt-0.5">
+                                        <div className="text-[9.5px] text-emerald-900/80 mt-0.5">
                                             उचल: {duesSummary.disbursementDate ? formatDateSafe(duesSummary.disbursementDate) : '-'}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* 3. Clean Scannable Dues & Interest Breakdown List */}
-                                <div className="border border-gray-200 rounded-sm divide-y divide-gray-100 text-[11px]">
-                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-slate-50/60">
-                                        <span className="text-gray-600 font-medium">व्याज आकारणी पासून (दिवस)</span>
-                                        <span className="font-mono font-bold text-gray-900">
+                                {/* 3. Clean Scannable Dues & Interest Breakdown List in Soft Pastel Shades */}
+                                <div className="border border-gray-200 rounded-sm divide-y divide-gray-200/70 text-[11px] overflow-hidden">
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-cyan-50/60">
+                                        <span className="text-cyan-950 font-semibold">व्याज आकारणी पासून</span>
+                                        <span className="font-mono font-bold text-cyan-950">
                                             {duesSummary.fromDateStrGrid ? formatDateSafe(duesSummary.fromDateStrGrid) : '-'}
-                                            <span className="ml-1 text-primary">({duesSummary.days} दि.)</span>
                                         </span>
                                     </div>
 
-                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
-                                        <span className="text-gray-600 font-medium">थकीत हप्ते / थकीत दिनांक</span>
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-sky-50/60">
+                                        <span className="text-sky-950 font-semibold">व्याज आकारणी दिवस</span>
+                                        <span className="font-mono font-bold text-primary">
+                                            {duesSummary.days} दिवस
+                                        </span>
+                                    </div>
+
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-rose-50/60">
+                                        <span className="text-rose-950 font-semibold">थकीत हप्ते / थकीत दिनांक</span>
                                         <span className="font-mono font-bold text-rose-700">
                                             {duesSummary.thakitHapteCount} हप्ते
                                             {duesSummary.thakitDinank !== '-' && (
-                                                <span className="text-gray-500 font-normal ml-1">({duesSummary.thakitDinank})</span>
+                                                <span className="text-rose-800/80 font-normal ml-1">({duesSummary.thakitDinank})</span>
                                             )}
                                         </span>
                                     </div>
 
-                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
-                                        <span className="text-gray-600 font-medium">वसूलपात्र / थकीत मुद्दल</span>
-                                        <span className="font-mono font-bold text-gray-900">
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-orange-50/70">
+                                        <span className="text-orange-950 font-semibold">थकीत मुद्दल</span>
+                                        <span className="font-mono font-bold text-orange-800">
+                                            ₹{duesSummary.paikiThakbaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-blue-50/60">
+                                        <span className="text-blue-950 font-semibold">वसूलपात्र मुद्दल</span>
+                                        <span className="font-mono font-bold text-blue-950">
                                             ₹{duesSummary.vasulpatra.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                            {duesSummary.paikiThakbaki > 0 && duesSummary.paikiThakbaki !== duesSummary.vasulpatra && (
-                                                <span className="text-[10px] text-rose-600 ml-1">
-                                                    (थकीत: ₹{duesSummary.paikiThakbaki.toLocaleString('en-IN')})
-                                                </span>
-                                            )}
                                         </span>
                                     </div>
 
-                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
-                                        <span className="text-gray-600 font-medium">चालू आकारणी व्याज</span>
-                                        <span className="font-mono font-bold text-amber-800">
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-amber-50/70">
+                                        <span className="text-amber-950 font-semibold">मेंबर व्याज</span>
+                                        <span className="font-mono font-bold text-amber-900">
                                             ₹{duesSummary.vyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>
                                     </div>
 
-                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
-                                        <span className="text-gray-600 font-medium">मागील येणे व्याज</span>
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-emerald-50/60">
+                                        <span className="text-emerald-950 font-semibold">मागील येणे व्याज</span>
                                         <span className="font-mono font-bold text-emerald-800">
                                             ₹{duesSummary.yeneVyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>
                                     </div>
 
-                                    <div className="px-2.5 py-1.5 flex items-center justify-between">
-                                        <span className="text-gray-600 font-medium">दंड / जादा व्याज</span>
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-pink-50/60">
+                                        <span className="text-pink-950 font-semibold">दंड / जादा व्याज</span>
                                         <span className="font-mono font-bold text-rose-700">
                                             ₹{duesSummary.dandVyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>
                                     </div>
 
                                     {accountDetails && (
-                                        <div className="px-2.5 py-1.5 flex items-center justify-between bg-slate-50/40">
-                                            <span className="text-gray-600 font-medium">३१/३ अखेर बाकी</span>
-                                            <span className="font-mono font-semibold text-gray-800">
+                                        <div className="px-2.5 py-1.5 flex items-center justify-between bg-purple-50/50">
+                                            <span className="text-purple-950 font-semibold">३१/३ अखेर बाकी</span>
+                                            <span className="font-mono font-bold text-purple-950">
                                                 ₹{accountDetails.march31Balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                     )}
 
-                                    <div className="px-2.5 py-2 flex items-center justify-between bg-primary/5 border-l-4 border-l-primary">
-                                        <span className="text-gray-800 font-bold">वसुलीनंतर नवीन शिल्लक कर्ज</span>
+                                    <div className="px-2.5 py-2 flex items-center justify-between bg-teal-50/90 border-l-4 border-l-primary">
+                                        <span className="text-teal-950 font-bold">वसुलीनंतर नवीन शिल्लक कर्ज</span>
                                         <span className="font-mono font-black text-xs text-primary">
                                             ₹{duesSummary.shillakKarjRakkam.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>
@@ -3594,11 +3759,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     <Calendar className="w-4 h-4 text-white" />
                                 </div>
                                 <div>
-                                    <h2 className="text-sm font-bold flex items-center gap-2">
-                                        कर्ज हप्ता परतफेड वेळापत्रक चार्ट (Loan Installment Schedule)
+                                    <h2 className="text-sm font-bold flex items-center gap-2 flex-wrap">
+                                        <span>कर्ज हप्ता परतफेड वेळापत्रक चार्ट (Loan Installment Schedule)</span>
                                         <span className="bg-white/20 text-white text-[11px] px-2 py-0.5 rounded-sm font-mono font-bold">
                                             {selectedAccount.loanAccountNo}
                                         </span>
+                                        {selectedAccount.legacyAccountNumber && (
+                                            <span className="bg-amber-300 text-slate-950 text-[11px] px-2 py-0.5 rounded-sm font-mono font-bold">
+                                                जुना क्र.: {selectedAccount.legacyAccountNumber}
+                                            </span>
+                                        )}
                                     </h2>
                                     <p className="text-[11px] text-white/90 mt-0.5 flex flex-wrap items-center gap-2">
                                         <span>खातेदार: <strong className="text-white">{selectedBorrowerName}</strong></span>
@@ -3610,6 +3780,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         )}
                                         <span>•</span>
                                         <span>कर्ज प्रकार: <strong className="text-white">{selectedAccount.loanRate?.shortName || selectedAccount.loanRate?.loanType || '-'}</strong></span>
+                                        <span>•</span>
+                                        <span>कर्ज वाटप दिनांक: <strong className="text-amber-200 font-mono">{formatDateSafe(accountDetails?.disbursementDate || selectedAccount.loanDisbursementDate || selectedAccount.openingDate)}</strong></span>
                                         <span>•</span>
                                         <span>मंजूर रक्कम: <strong className="text-white">₹{(accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
                                         <span>•</span>
@@ -3795,8 +3967,14 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         );
                                     })}
                                 </div>
-                                <div className="text-[11px] text-gray-600 font-medium">
-                                    हप्ता वारंवारता: <span className="font-bold text-gray-800">{selectedAccount.loanRate?.loanInstallmentType || 'मासिक'}</span> | प्रकार: <span className="font-bold text-primary">{selectedAccount.loanRate?.shortName || selectedAccount.loanRate?.loanType}</span>
+                                <div className="text-[11px] text-gray-600 font-medium flex flex-wrap items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded-sm bg-sky-50 border border-sky-200 text-sky-950">
+                                        कर्ज वाटप दिनांक: <strong className="font-mono font-bold text-primary">{formatDateSafe(accountDetails?.disbursementDate || selectedAccount.loanDisbursementDate || selectedAccount.openingDate)}</strong>
+                                    </span>
+                                    <span>|</span>
+                                    <span>हप्ता वारंवारता: <span className="font-bold text-gray-800">{selectedAccount.loanRate?.loanInstallmentType || 'मासिक'}</span></span>
+                                    <span>|</span>
+                                    <span>प्रकार: <span className="font-bold text-primary">{selectedAccount.loanRate?.shortName || selectedAccount.loanRate?.loanType}</span></span>
                                 </div>
                             </div>
 
@@ -3938,7 +4116,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                                 </span>
                                                             ) : isOverdue ? (
                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                                                                    <AlertCircle size={10} /> थकीत {row.overdueDays ? `(${row.overdueDays} दि.)` : ''}
+                                                                    <AlertCircle size={10} /> थकीत {row.overdueDays ? `(${row.overdueDays} दिवस)` : ''}
                                                                 </span>
                                                             ) : (
                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
@@ -4056,7 +4234,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         {c.loanAccount?.loanAccountNo} {c.loanAccount?.legacyAccountNumber ? `| जुना क्र: ${c.loanAccount.legacyAccountNumber}` : ''} {c.loanAccount?.customer?.cifNo ? `| CIF: ${c.loanAccount.customer.cifNo}` : (c.loanAccount?.member?.memberCode ? `| ${c.loanAccount.member.memberCode}` : '')}
                                                     </span>
                                                 </td>
-                                                <td className="p-1 border-r text-right font-bold text-green-700" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | चालू व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}`}>
+                                                <td className="p-1 border-r text-right font-bold text-green-700" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | मेंबर व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}`}>
                                                     ₹{c.totalAmountReceived.toFixed(2)}
                                                 </td>
                                                 <td className="p-1 border-r min-w-[140px]">
@@ -4475,6 +4653,101 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-sm font-bold cursor-pointer transition-colors border border-slate-300"
                             >
                                 बंद करा (Close)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Allocation Discrepancy (तफावत) Pop-up Modal triggered on Save click (Soft Pastel Shades) */}
+            {showAllocationMismatchModal && (
+                <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-50 flex items-center justify-center p-3 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-sm shadow-xl w-full max-w-lg overflow-hidden border border-rose-200">
+                        {/* Modal Header in Soft Pastel Rose Shade */}
+                        <div className="bg-rose-100/90 text-rose-950 px-4 py-3 flex items-center justify-between border-b border-rose-200">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-white/80 border border-rose-200 rounded-sm">
+                                    <AlertCircle className="w-5 h-5 text-rose-700" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold leading-snug text-rose-950">
+                                        एकूण जमा रक्कम आणि घेतलेला वसूल यामध्ये तफावत (फरक) आहे!
+                                    </h3>
+                                    <p className="text-[11px] text-rose-800">
+                                        वसुली विभागणी तफावत सूचना (Allocation Discrepancy Alert)
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowAllocationMismatchModal(false)}
+                                className="text-rose-800 hover:text-rose-950 hover:bg-rose-200/60 p-1 rounded-sm transition-colors cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-4 space-y-3 bg-rose-50/40">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 font-mono text-xs">
+                                <div className="bg-sky-50/80 p-2.5 rounded-sm border border-sky-200 shadow-2xs">
+                                    <div className="font-sans text-[10.5px] text-sky-900 font-bold">
+                                        एकूण जमा (Total ₹)
+                                    </div>
+                                    <div className="text-sm font-black text-sky-950 mt-0.5">
+                                        ₹{enteredTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </div>
+                                </div>
+
+                                <div className="bg-emerald-50/80 p-2.5 rounded-sm border border-emerald-200 shadow-2xs">
+                                    <div className="font-sans text-[10.5px] text-emerald-900 font-bold">
+                                        घेतलेला वसूल (Allocated ₹)
+                                    </div>
+                                    <div className="text-sm font-black text-emerald-800 mt-0.5">
+                                        ₹{allocatedRecoveryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </div>
+                                </div>
+
+                                <div className="bg-rose-100/80 p-2.5 rounded-sm border border-rose-200 shadow-2xs">
+                                    <div className="font-sans text-[10.5px] text-rose-900 font-bold">
+                                        तफावत / फरक
+                                    </div>
+                                    <div className="text-sm font-black text-rose-800 mt-0.5">
+                                        {allocationDifference > 0 ? '+' : '-'}₹{Math.abs(allocationDifference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-3 bg-amber-50/70 rounded-sm border border-amber-200 border-l-4 border-l-rose-400 text-xs text-rose-950 leading-relaxed font-medium">
+                                {allocationDifference > 0
+                                    ? `एकूण जमा रकमेपेक्षा ₹${Math.abs(allocationDifference).toLocaleString('en-IN', { minimumFractionDigits: 2 })} रक्कम वसूल विभागणीत कमी घेतली आहे (अविभाजित शिल्लक). तफावत ₹0.00 असल्याशिवाय पावती सेव्ह होणार नाही.`
+                                    : `एकूण जमा रकमेपेक्षा ₹${Math.abs(allocationDifference).toLocaleString('en-IN', { minimumFractionDigits: 2 })} जास्त रक्कम वसूल विभागणीत टाकली आहे. तफावत ₹0.00 असल्याशिवाय पावती सेव्ह होणार नाही.`}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="bg-slate-50 px-4 py-2.5 border-t border-rose-200/70 flex flex-wrap items-center justify-end gap-2">
+                            {!isPassingMode && allocatedRecoveryTotal > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFormData(p => ({
+                                            ...p,
+                                            totalAmountReceived: allocatedRecoveryTotal
+                                        }));
+                                        setShowAllocationMismatchModal(false);
+                                    }}
+                                    className="px-3 py-1.5 rounded-sm bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold cursor-pointer transition-colors"
+                                >
+                                    एकूण जमा = ₹{allocatedRecoveryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} करा
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => setShowAllocationMismatchModal(false)}
+                                className="px-4 py-1.5 rounded-sm bg-rose-200/80 hover:bg-rose-300/80 text-rose-950 border border-rose-300 text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                            >
+                                ठीक आहे / दुरुस्त करा
                             </button>
                         </div>
                     </div>

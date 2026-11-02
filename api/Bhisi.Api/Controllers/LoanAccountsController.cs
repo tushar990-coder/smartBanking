@@ -297,7 +297,9 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             // Self-healing: Ensure LastInstallmentPaidDate matches actual collections in DB
-            if (!collections.Any() && account.LastInstallmentPaidDate.HasValue)
+            // Preserve historical LastInstallmentPaidDate on Opening Balance accounts when no post-migration collections exist yet
+            if (!collections.Any() && account.LastInstallmentPaidDate.HasValue &&
+                !(account.IsOpeningBalance && account.LastInstallmentPaidDate.Value.Date <= account.OpeningDate.Date))
             {
                 account.LastInstallmentPaidDate = null;
                 await _context.SaveChangesAsync();

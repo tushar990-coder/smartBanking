@@ -106,6 +106,8 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const [rejectionReason, setRejectionReason] = useState('');
   
   const { user } = useAuth();
+  const userRoleLower = String(user?.roleName || user?.role || '').trim().toLowerCase();
+  const isStrictlyCashier = userRoleLower === 'cashier';
   
   useEffect(() => {
     if (user?.branchID) {
@@ -115,32 +117,63 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   }, [user?.branchID]);
   
   // Form State - Rich Searchable Ledger Options
-  const ledgerOptions = useMemo(() => {
-    return ledgers.map(l => {
-      const legacyPart = l.legacyLedgerId ? ` [जुना क्र: ${l.legacyLedgerId}]` : '';
-      const engPart = l.ledgerNameEnglish ? ` (${l.ledgerNameEnglish})` : '';
-      const grpCode = l.accountGroup?.groupCode ? `[${l.accountGroup.groupCode}] ` : (l.accountGroup?.displayOrder ? `[${l.accountGroup.displayOrder}] ` : '');
-      const grpName = l.accountGroup?.groupName ? `${grpCode}${l.accountGroup.groupName}` : '';
-      const groupPart = grpName ? ` - ${grpName}` : '';
-      
-      const natureText = l.accountGroup?.natureOfGroup === 'Expenses' ? 'खर्च (Expenses)' :
-                         l.accountGroup?.natureOfGroup === 'Income' ? 'उत्पन्न (Income)' :
-                         l.accountGroup?.natureOfGroup === 'Assets' ? 'मालमत्ता (Assets)' :
-                         l.accountGroup?.natureOfGroup === 'Liabilities' ? 'देयता (Liabilities)' :
-                         (l.accountType || '');
+  const buildLedgerOption = (l: Ledger) => {
+    const legacyPart = l.legacyLedgerId ? ` [जुना क्र: ${l.legacyLedgerId}]` : '';
+    const engPart = l.ledgerNameEnglish ? ` (${l.ledgerNameEnglish})` : '';
+    const grpCode = l.accountGroup?.groupCode ? `[${l.accountGroup.groupCode}] ` : (l.accountGroup?.displayOrder ? `[${l.accountGroup.displayOrder}] ` : '');
+    const grpName = l.accountGroup?.groupName ? `${grpCode}${l.accountGroup.groupName}` : '';
+    const groupPart = grpName ? ` - ${grpName}` : '';
+    
+    const natureText = l.accountGroup?.natureOfGroup === 'Expenses' ? 'खर्च (Expenses)' :
+                       l.accountGroup?.natureOfGroup === 'Income' ? 'उत्पन्न (Income)' :
+                       l.accountGroup?.natureOfGroup === 'Assets' ? 'मालमत्ता (Assets)' :
+                       l.accountGroup?.natureOfGroup === 'Liabilities' ? 'देयता (Liabilities)' :
+                       (l.accountType || '');
 
-      return {
-        value: l.ledgerID.toString(),
-        label: `${l.ledgerID} - ${l.ledgerName}${engPart}${legacyPart}${groupPart}`,
-        subLabel: grpName ? `गट: ${grpName}${l.accountGroup?.groupNameEnglish ? ' (' + l.accountGroup.groupNameEnglish + ')' : ''}` : undefined,
-        badge: natureText,
-        badgeColor: l.accountGroup?.natureOfGroup === 'Expenses' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                    l.accountGroup?.natureOfGroup === 'Income' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    l.accountGroup?.natureOfGroup === 'Assets' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                    'bg-slate-100 text-slate-700 border-slate-200'
-      };
-    });
+    return {
+      value: l.ledgerID.toString(),
+      label: `${l.ledgerID} - ${l.ledgerName}${engPart}${legacyPart}${groupPart}`,
+      subLabel: grpName ? `गट: ${grpName}${l.accountGroup?.groupNameEnglish ? ' (' + l.accountGroup.groupNameEnglish + ')' : ''}` : undefined,
+      badge: natureText,
+      badgeColor: l.accountGroup?.natureOfGroup === 'Expenses' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                  l.accountGroup?.natureOfGroup === 'Income' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  l.accountGroup?.natureOfGroup === 'Assets' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                  'bg-slate-100 text-slate-700 border-slate-200'
+    };
+  };
+
+  const ledgerOptions = useMemo(() => {
+    return ledgers.map(buildLedgerOption);
   }, [ledgers]);
+
+  const nonCashLedgerOptions = useMemo(() => {
+    return ledgers
+      .filter(l => !isCashLedgerOption(l as any))
+      .map(buildLedgerOption);
+  }, [ledgers]);
+
+  const nonCashBankLedgerOptions = useMemo(() => {
+    return ledgers
+      .filter(l => !isCashLedgerOption(l as any) && !isBankAccountLedger(l as any))
+      .map(buildLedgerOption);
+  }, [ledgers]);
+
+  const getRowLedgerOptions = (detail: VoucherDetail) => {
+    if (detail.isLocked) return ledgerOptions;
+    let baseOptions = ledgerOptions;
+    if (voucherType === 'Contra') {
+      baseOptions = ledgerOptions;
+    } else if (voucherType === 'Journal' || voucherType === 'Receipt' || voucherType === 'Payment') {
+      baseOptions = nonCashLedgerOptions;
+    }
+    if (detail.ledgerID > 0 && !baseOptions.some(o => o.value === detail.ledgerID.toString())) {
+      const existing = ledgers.find(l => l.ledgerID === detail.ledgerID);
+      if (existing) {
+        return [buildLedgerOption(existing), ...baseOptions];
+      }
+    }
+    return baseOptions;
+  };
 
   const [editingVoucherId, setEditingVoucherId] = useState<number | null>(null);
   const [voucherNo, setVoucherNo] = useState('AUTO');
@@ -412,6 +445,54 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     }
   };
 
+  const initDefaultRowsForType = (
+    type: string,
+    mode: 'Cash' | 'Bank' = voucherPaymentMode,
+    ledgersList: Ledger[] = ledgers,
+    branchId: number = selectedBranchId,
+    branchesList: any[] = branches
+  ) => {
+    const primaryLId = getDefaultPrimaryLedgerId(mode, ledgersList, branchId, branchesList);
+    const sel = primaryLId > 0 ? ledgersList.find(l => l.ledgerID === primaryLId) : undefined;
+
+    if (type === 'Receipt') {
+      setDetails([
+        { ledgerID: 0, drCr: 'Cr', amount: 0, searchQuery: '' },
+        {
+          ledgerID: primaryLId,
+          drCr: 'Dr',
+          amount: 0,
+          isLocked: true,
+          searchQuery: sel?.ledgerName || '',
+          accountType: sel?.accountType || ''
+        }
+      ]);
+      if (primaryLId > 0) {
+        fetchLedgerBalanceAndPath(primaryLId, 1);
+      }
+    } else if (type === 'Payment') {
+      setDetails([
+        {
+          ledgerID: primaryLId,
+          drCr: 'Cr',
+          amount: 0,
+          isLocked: true,
+          searchQuery: sel?.ledgerName || '',
+          accountType: sel?.accountType || ''
+        },
+        { ledgerID: 0, drCr: 'Dr', amount: 0, searchQuery: '' }
+      ]);
+      if (primaryLId > 0) {
+        fetchLedgerBalanceAndPath(primaryLId, 0);
+      }
+    } else {
+      setDetails([
+        { ledgerID: 0, drCr: 'Cr', amount: 0, searchQuery: '' },
+        { ledgerID: 0, drCr: 'Dr', amount: 0, searchQuery: '' }
+      ]);
+    }
+  };
+
   const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newBranchId = parseInt(e.target.value);
     setSelectedBranchId(newBranchId);
@@ -421,14 +502,28 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
     if ((voucherType === 'Receipt' || voucherType === 'Payment') && voucherPaymentMode === 'Cash') {
       const cashLId = getCashLedger(ledgers, newBranchId, branches);
+      const sel = cashLId > 0 ? ledgers.find(l => l.ledgerID === cashLId) : undefined;
+      let lockedRowIdx = -1;
       setDetails(prev => {
-        return prev.map(d => {
+        return prev.map((d, idx) => {
           if (d.isLocked) {
-            return { ...d, ledgerID: cashLId };
+            lockedRowIdx = idx;
+            return {
+              ...d,
+              ledgerID: cashLId,
+              searchQuery: sel?.ledgerName || '',
+              accountType: sel?.accountType || '',
+              ledgerBalance: undefined,
+              ledgerBalanceType: undefined,
+              ledgerPath: undefined
+            };
           }
           return d;
         });
       });
+      if (cashLId > 0 && lockedRowIdx >= 0) {
+        fetchLedgerBalanceAndPath(cashLId, lockedRowIdx);
+      }
     }
   };
 
@@ -487,45 +582,54 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
   const handleVoucherTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newType = e.target.value;
+    if (isStrictlyCashier && newType !== 'Receipt' && newType !== 'Payment') {
+      alert("कॅशियर फक्त 'Receipt' (जमा) किंवा 'Payment' (नावे) व्हाउचर तयार करू शकतात. Journal किंवा Contra व्हाउचरची परवानगी नाही.");
+      return;
+    }
     setVoucherType(newType);
     fetchNextVoucherNo(newType, selectedBranchId);
 
-    const primaryLId = getDefaultPrimaryLedgerId(voucherPaymentMode, ledgers, selectedBranchId, branches);
-
-    if (newType === 'Receipt') {
-      setDetails([
-        { ledgerID: primaryLId, drCr: 'Dr', amount: 0, isLocked: true, searchQuery: '' },
-        { ledgerID: 0, drCr: 'Cr', amount: 0, searchQuery: '' }
-      ]);
-    } else if (newType === 'Payment') {
-      setDetails([
-        { ledgerID: 0, drCr: 'Dr', amount: 0, searchQuery: '' },
-        { ledgerID: primaryLId, drCr: 'Cr', amount: 0, isLocked: true, searchQuery: '' }
-      ]);
-    } else {
-      setDetails([
-        { ledgerID: 0, drCr: 'Dr', amount: 0, searchQuery: '' },
-        { ledgerID: 0, drCr: 'Cr', amount: 0, searchQuery: '' }
-      ]);
-    }
+    setVoucherPaymentMode('Cash');
+    initDefaultRowsForType(newType, 'Cash', ledgers, selectedBranchId, branches);
   };
 
   useEffect(() => {
     if (ledgers.length > 0 && details.length === 0 && editingVoucherId === null) {
-      const cashLId = getCashLedger(ledgers, selectedBranchId, branches);
-      setDetails([
-        { ledgerID: cashLId, drCr: 'Dr', amount: 0, isLocked: true, searchQuery: '' },
-        { ledgerID: 0, drCr: 'Cr', amount: 0, searchQuery: '' }
-      ]);
+      initDefaultRowsForType(voucherType, voucherPaymentMode, ledgers, selectedBranchId, branches);
     }
   }, [ledgers, branches]);
 
   const handleAddRow = () => {
-    let defaultDrCr: 'Dr' | 'Cr' = 'Dr';
-    if (voucherType === 'Receipt') defaultDrCr = 'Cr';
-    if (voucherType === 'Payment') defaultDrCr = 'Dr';
+    let defaultDrCr: 'Dr' | 'Cr' = 'Cr';
+    let defaultAmount = 0;
+    if (voucherType === 'Receipt') {
+      defaultDrCr = 'Cr';
+    } else if (voucherType === 'Payment') {
+      defaultDrCr = 'Dr';
+    } else {
+      const curDr = details.filter(d => d.drCr === 'Dr').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+      const curCr = details.filter(d => d.drCr === 'Cr').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+      if (curCr > curDr) {
+        defaultDrCr = 'Dr';
+        defaultAmount = Number((curCr - curDr).toFixed(2));
+      } else if (curDr > curCr) {
+        defaultDrCr = 'Cr';
+        defaultAmount = Number((curDr - curCr).toFixed(2));
+      }
+    }
 
-    setDetails(prev => [...prev, { ledgerID: 0, drCr: defaultDrCr, amount: 0, searchQuery: '' }]);
+    const newRow: VoucherDetail = { ledgerID: 0, drCr: defaultDrCr, amount: defaultAmount, searchQuery: '' };
+    setDetails(prev => {
+      if (voucherType === 'Receipt') {
+        const lockedDrIdx = prev.findIndex(d => d.isLocked && d.drCr === 'Dr');
+        if (lockedDrIdx !== -1) {
+          const next = [...prev];
+          next.splice(lockedDrIdx, 0, newRow);
+          return next;
+        }
+      }
+      return [...prev, newRow];
+    });
   };
 
   const handleRemoveRow = (index: number) => {
@@ -697,6 +801,39 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       return;
     }
 
+    // Strict Voucher Type Ledger Rule Validations
+    if (voucherType === 'Journal') {
+      const invalidJournalRow = details.find(d => {
+        const l = ledgers.find(item => item.ledgerID === d.ledgerID);
+        return l && isCashLedgerOption(l as any);
+      });
+      if (invalidJournalRow) {
+        const lName = ledgers.find(item => item.ledgerID === invalidJournalRow.ledgerID)?.ledgerName || '';
+        alert(`जर्नल (Journal) व्हाउचरमध्ये 'रोख (Cash)' खाते (${lName}) वापरता येत नाही. रोख व्यवहारासाठी कृपया रिसिप्ट (रोख जमा) किंवा पेमेंट (रोख नावे) व्हाउचर वापरा.`);
+        return;
+      }
+    } else if (voucherType === 'Receipt' || voucherType === 'Payment') {
+      const invalidCounterRow = details.find(d => {
+        if (d.isLocked) return false;
+        const l = ledgers.find(item => item.ledgerID === d.ledgerID);
+        return l && isCashLedgerOption(l as any);
+      });
+      if (invalidCounterRow) {
+        const lName = ledgers.find(item => item.ledgerID === invalidCounterRow.ledgerID)?.ledgerName || '';
+        alert(`रिसिप्ट / पेमेंट व्हाउचरमध्ये समोरच्या ओळीवर पुन्हा रोख खाते ('${lName}') निवडता येत नाही.`);
+        return;
+      }
+    }
+
+    // Prevent debiting and crediting the exact same ledger (with same customer sub-ledger) in one voucher
+    const drKeys = new Set(details.filter(d => d.drCr === 'Dr').map(d => `${d.ledgerID}_${d.customerID || 0}`));
+    const duplicateCr = details.find(d => d.drCr === 'Cr' && drKeys.has(`${d.ledgerID}_${d.customerID || 0}`));
+    if (duplicateCr) {
+      const lName = ledgers.find(item => item.ledgerID === duplicateCr.ledgerID)?.ledgerName || '';
+      alert(`एकाच व्हाउचरमध्ये एकाच खात्याला ('${lName}') एकाच वेळी नावे (Dr) आणि जमा (Cr) करता येत नाही.`);
+      return;
+    }
+
     const payload = {
       voucherNo: voucherNo && voucherNo.trim() ? voucherNo.trim() : 'AUTO',
       voucherDate,
@@ -760,12 +897,14 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
     const cashLId = getCashLedger(ledgers, (v as any).branchID || selectedBranchId, branches);
     const primarySide = v.voucherType === 'Receipt' ? 'Dr' : v.voucherType === 'Payment' ? 'Cr' : null;
-    const rawVds = v.voucherDetails || [];
-    const hasPrimaryCashRow = primarySide
-      ? rawVds.some(vd => vd.drCr === primarySide && vd.ledgerID === cashLId)
-      : false;
+    const rawVds = [...(v.voucherDetails || [])].sort((a, b) =>
+      a.drCr === 'Cr' && b.drCr !== 'Cr' ? -1 : a.drCr !== 'Cr' && b.drCr === 'Cr' ? 1 : 0
+    );
+    const firstCashPrimaryIdx = primarySide
+      ? rawVds.findIndex(vd => vd.drCr === primarySide && vd.ledgerID === cashLId)
+      : -1;
     let firstBankPrimaryIdx = -1;
-    if (primarySide && !hasPrimaryCashRow) {
+    if (primarySide && firstCashPrimaryIdx === -1) {
       firstBankPrimaryIdx = rawVds.findIndex(vd => {
         if (vd.drCr !== primarySide) return false;
         const mLedger = vd.ledger || ledgers.find(l => l.ledgerID === vd.ledgerID);
@@ -775,8 +914,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     setVoucherPaymentMode(firstBankPrimaryIdx >= 0 ? 'Bank' : 'Cash');
 
     const loadedDetails: VoucherDetail[] = rawVds.map((vd, idx) => {
-      const isAutoCashRow = (v.voucherType === 'Receipt' && vd.drCr === 'Dr' && vd.ledgerID === cashLId) ||
-                            (v.voucherType === 'Payment' && vd.drCr === 'Cr' && vd.ledgerID === cashLId);
+      const isAutoCashRow = idx === firstCashPrimaryIdx;
       const isAutoBankRow = idx === firstBankPrimaryIdx;
       const matchedLedger = vd.ledger || ledgers.find(l => l.ledgerID === vd.ledgerID);
       const resolvedCustId = vd.customerID || vd.customer?.customerID || vd.member?.customerID || vd.member?.customer?.customerID || '';
@@ -812,25 +950,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     setNarration('');
     setVoucherPaymentMode('Cash');
     fetchNextVoucherNo(voucherType, selectedBranchId);
-
-    const cashLId = getCashLedger(ledgers, selectedBranchId, branches);
-
-    if (voucherType === 'Receipt') {
-      setDetails([
-        { ledgerID: cashLId, drCr: 'Dr', amount: 0, isLocked: true, searchQuery: '' },
-        { ledgerID: 0, drCr: 'Cr', amount: 0, searchQuery: '' }
-      ]);
-    } else if (voucherType === 'Payment') {
-      setDetails([
-        { ledgerID: 0, drCr: 'Dr', amount: 0, searchQuery: '' },
-        { ledgerID: cashLId, drCr: 'Cr', amount: 0, isLocked: true, searchQuery: '' }
-      ]);
-    } else {
-      setDetails([
-        { ledgerID: 0, drCr: 'Dr', amount: 0, searchQuery: '' },
-        { ledgerID: 0, drCr: 'Cr', amount: 0, searchQuery: '' }
-      ]);
-    }
+    initDefaultRowsForType(voucherType, 'Cash', ledgers, selectedBranchId, branches);
   };
 
   const handleDelete = async (id: number) => {
@@ -1064,7 +1184,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
               </div>
             </div>
 
-            <div className={`grid grid-cols-1 sm:grid-cols-2 ${voucherType === 'Receipt' || voucherType === 'Payment' ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-2.5`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
               <div>
                 <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
                 <select 
@@ -1087,27 +1207,16 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                   disabled={isPassingMode || editingVoucherId !== null}
                   className={`${inputClass} font-bold disabled:bg-slate-100 disabled:text-slate-500`}
                 >
-                  <option value="Receipt">📥 रिसिप्ट (Receipt - रोख / बँक आवक)</option>
-                  <option value="Payment">📤 पेमेंट (Payment - रोख / बँक जावक)</option>
-                  <option value="Journal">🔄 जर्नल (Journal - ट्रान्सफर नोंद)</option>
-                  <option value="Contra">🏦 कॉन्ट्रा (Contra - बँक / रोख)</option>
+                  <option value="Receipt">📥 रिसिप्ट (Receipt - रोख जमा)</option>
+                  <option value="Payment">📤 पेमेंट (Payment - रोख नावे)</option>
+                  <option value="Journal" disabled={isStrictlyCashier && !isPassingMode && editingVoucherId === null}>
+                    🔄 जर्नल (Journal - ट्रान्सफर नोंद){isStrictlyCashier ? ' [कॅशियरसाठी बंद]' : ''}
+                  </option>
+                  <option value="Contra" disabled={isStrictlyCashier && !isPassingMode && editingVoucherId === null}>
+                    🏦 कॉन्ट्रा (Contra){isStrictlyCashier ? ' [कॅशियरसाठी बंद]' : ''}
+                  </option>
                 </select>
               </div>
-
-              {(voucherType === 'Receipt' || voucherType === 'Payment') && (
-                <div>
-                  <label className={labelClass}>पेमेंट पद्धत (Mode) <span className="text-red-500">*</span></label>
-                  <select
-                    value={voucherPaymentMode}
-                    onChange={(e) => handleVoucherPaymentModeChange(e.target.value as 'Cash' | 'Bank')}
-                    disabled={isPassingMode}
-                    className={`${inputClass} font-bold ${voucherPaymentMode === 'Bank' ? 'border-blue-500 bg-blue-50/40 text-blue-900' : ''} disabled:bg-slate-100 disabled:text-slate-500`}
-                  >
-                    <option value="Cash">💵 रोख (Cash)</option>
-                    <option value="Bank">🏦 बँक / चेक / ऑनलाईन (Bank)</option>
-                  </select>
-                </div>
-              )}
 
               <div>
                 <label className={labelClass}>व्हाउचर तारीख (Voucher Date) <span className="text-red-500">*</span></label>
@@ -1158,7 +1267,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
               <table className="min-w-full divide-y divide-gray-200 text-[11px] text-center border-collapse">
                 <thead className="bg-slate-100 text-slate-800 font-bold sticky top-0 z-10 shadow-xs border-b border-slate-300">
                   <tr>
-                    <th className="p-2 border-r border-slate-300 text-center w-16">Dr / Cr</th>
+                    <th className="p-2 border-r border-slate-300 text-center w-16">Cr / Dr</th>
                     <th className="p-2 border-r border-slate-300 text-left">खाते (Ledger Name & Code)</th>
                     <th className="p-2 border-r border-slate-300 text-right w-36">रक्कम (Amount ₹)</th>
                     <th className="p-2 text-center w-16">कृती</th>
@@ -1174,8 +1283,8 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                           disabled={isPassingMode || detail.isLocked || voucherType === 'Payment' || voucherType === 'Receipt'}
                           className="w-full text-center border border-gray-300 rounded-sm px-1 py-1 text-[11px] bg-white disabled:bg-slate-100 disabled:text-slate-500 font-bold cursor-pointer h-[28px]"
                         >
-                          <option value="Dr">Dr</option>
                           <option value="Cr">Cr</option>
+                          <option value="Dr">Dr</option>
                         </select>
                       </td>
 
@@ -1197,7 +1306,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                             disabled={isPassingMode || detail.isLocked}
                             value={detail.ledgerID ? detail.ledgerID.toString() : ''}
                             onChange={(e) => handleLedgerSelect(index, e.target.value)}
-                            options={ledgerOptions}
+                            options={getRowLedgerOptions(detail)}
                             placeholder="-- खाते नाव किंवा नंबर शोधा (Search Ledger) --"
                             className={isPassingMode || detail.isLocked 
                               ? "w-full border border-gray-300 px-2 py-1 rounded-sm text-[11px] bg-slate-100 font-bold text-gray-700 cursor-not-allowed flex justify-between items-center h-[28px]"
@@ -1318,8 +1427,8 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                     </td>
                     <td className="p-2 text-right border-r border-slate-300 font-mono">
                       <div className="flex justify-between items-center">
-                        <span className="text-emerald-700 font-bold">Dr: ₹{totalDr.toFixed(2)}</span>
                         <span className="text-primary font-bold">Cr: ₹{totalCr.toFixed(2)}</span>
+                        <span className="text-emerald-700 font-bold">Dr: ₹{totalDr.toFixed(2)}</span>
                       </div>
                     </td>
                     <td></td>

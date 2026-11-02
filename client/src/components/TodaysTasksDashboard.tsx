@@ -702,40 +702,175 @@ export default function TodaysTasksDashboard({
     return `₹ ${Number(val).toLocaleString('en-IN')}`;
   };
 
+  const getSectionShade = (sectionId: string) => {
+    switch (sectionId) {
+      case 'voucher-pending':
+        return {
+          cardBorder: 'border-orange-200/90 hover:border-orange-300',
+          headerBg: 'bg-gradient-to-r from-orange-50 via-amber-50/70 to-orange-50/40 border-b border-orange-200/80',
+          iconBox: 'bg-orange-100/90 text-orange-700 border border-orange-200',
+          subtitle: 'text-orange-700/80',
+          countBadge: 'bg-orange-100 text-orange-800 border-orange-300',
+          totalBar: 'bg-orange-50/70 border-orange-200/70 text-orange-800',
+          itemCard: 'bg-orange-50/30 border-orange-100 hover:border-orange-300',
+          itemBadge: 'bg-orange-50 text-orange-800 border-orange-200',
+          moreBadge: 'bg-orange-50/80 border-orange-200 text-orange-800',
+          actionBtn: 'bg-orange-50 hover:bg-orange-100/90 text-orange-900 border border-orange-300'
+        };
+      case 'loan-recovery':
+        return {
+          cardBorder: 'border-rose-200/90 hover:border-rose-300',
+          headerBg: 'bg-gradient-to-r from-rose-50 via-pink-50/70 to-rose-50/40 border-b border-rose-200/80',
+          iconBox: 'bg-rose-100/90 text-rose-700 border border-rose-200',
+          subtitle: 'text-rose-700/80',
+          countBadge: 'bg-rose-100 text-rose-800 border-rose-300',
+          totalBar: 'bg-rose-50/70 border-rose-200/70 text-rose-800',
+          itemCard: 'bg-rose-50/30 border-rose-100 hover:border-rose-300',
+          itemBadge: 'bg-rose-50 text-rose-800 border-rose-200',
+          moreBadge: 'bg-rose-50/80 border-rose-200 text-rose-800',
+          actionBtn: 'bg-rose-50 hover:bg-rose-100/90 text-rose-900 border border-rose-300'
+        };
+      case 'loan-application':
+        return {
+          cardBorder: 'border-indigo-200/90 hover:border-indigo-300',
+          headerBg: 'bg-gradient-to-r from-indigo-50 via-blue-50/70 to-indigo-50/40 border-b border-indigo-200/80',
+          iconBox: 'bg-indigo-100/90 text-indigo-700 border border-indigo-200',
+          subtitle: 'text-indigo-700/80',
+          countBadge: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+          totalBar: 'bg-indigo-50/70 border-indigo-200/70 text-indigo-800',
+          itemCard: 'bg-indigo-50/30 border-indigo-100 hover:border-indigo-300',
+          itemBadge: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+          moreBadge: 'bg-indigo-50/80 border-indigo-200 text-indigo-800',
+          actionBtn: 'bg-indigo-50 hover:bg-indigo-100/90 text-indigo-900 border border-indigo-300'
+        };
+      case 'fd-maturity':
+        return {
+          cardBorder: 'border-sky-200/90 hover:border-sky-300',
+          headerBg: 'bg-gradient-to-r from-sky-50 via-blue-50/70 to-sky-50/40 border-b border-sky-200/80',
+          iconBox: 'bg-sky-100/90 text-sky-700 border border-sky-200',
+          subtitle: 'text-sky-700/80',
+          countBadge: 'bg-sky-100 text-sky-800 border-sky-300',
+          totalBar: 'bg-sky-50/70 border-sky-200/70 text-sky-800',
+          itemCard: 'bg-sky-50/30 border-sky-100 hover:border-sky-300',
+          itemBadge: 'bg-sky-50 text-sky-800 border-sky-200',
+          moreBadge: 'bg-sky-50/80 border-sky-200 text-sky-800',
+          actionBtn: 'bg-sky-50 hover:bg-sky-100/90 text-sky-900 border border-sky-300'
+        };
+      case 'rd-due':
+        return {
+          cardBorder: 'border-teal-200/90 hover:border-teal-300',
+          headerBg: 'bg-gradient-to-r from-teal-50 via-cyan-50/70 to-teal-50/40 border-b border-teal-200/80',
+          iconBox: 'bg-teal-100/90 text-teal-700 border border-teal-200',
+          subtitle: 'text-teal-700/80',
+          countBadge: 'bg-teal-100 text-teal-800 border-teal-300',
+          totalBar: 'bg-teal-50/70 border-teal-200/70 text-teal-800',
+          itemCard: 'bg-teal-50/30 border-teal-100 hover:border-teal-300',
+          itemBadge: 'bg-teal-50 text-teal-800 border-teal-200',
+          moreBadge: 'bg-teal-50/80 border-teal-200 text-teal-800',
+          actionBtn: 'bg-teal-50 hover:bg-teal-100/90 text-teal-900 border border-teal-300'
+        };
+      case 'share-allotment':
+        return {
+          cardBorder: 'border-amber-200/90 hover:border-amber-300',
+          headerBg: 'bg-gradient-to-r from-amber-50 via-yellow-50/70 to-amber-50/40 border-b border-amber-200/80',
+          iconBox: 'bg-amber-100/90 text-amber-700 border border-amber-200',
+          subtitle: 'text-amber-700/80',
+          countBadge: 'bg-amber-100 text-amber-800 border-amber-300',
+          totalBar: 'bg-amber-50/70 border-amber-200/70 text-amber-800',
+          itemCard: 'bg-amber-50/30 border-amber-100 hover:border-amber-300',
+          itemBadge: 'bg-amber-50 text-amber-800 border-amber-200',
+          moreBadge: 'bg-amber-50/80 border-amber-200 text-amber-800',
+          actionBtn: 'bg-amber-50 hover:bg-amber-100/90 text-amber-900 border border-amber-300'
+        };
+      case 'pigmy-pending':
+        return {
+          cardBorder: 'border-emerald-200/90 hover:border-emerald-300',
+          headerBg: 'bg-gradient-to-r from-emerald-50 via-green-50/70 to-emerald-50/40 border-b border-emerald-200/80',
+          iconBox: 'bg-emerald-100/90 text-emerald-700 border border-emerald-200',
+          subtitle: 'text-emerald-700/80',
+          countBadge: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+          totalBar: 'bg-emerald-50/70 border-emerald-200/70 text-emerald-800',
+          itemCard: 'bg-emerald-50/30 border-emerald-100 hover:border-emerald-300',
+          itemBadge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+          moreBadge: 'bg-emerald-50/80 border-emerald-200 text-emerald-800',
+          actionBtn: 'bg-emerald-50 hover:bg-emerald-100/90 text-emerald-900 border border-emerald-300'
+        };
+      case 'npa-alert':
+        return {
+          cardBorder: 'border-red-200/90 hover:border-red-300',
+          headerBg: 'bg-gradient-to-r from-red-50 via-rose-50/70 to-red-50/40 border-b border-red-200/80',
+          iconBox: 'bg-red-100/90 text-red-700 border border-red-200',
+          subtitle: 'text-red-700/80',
+          countBadge: 'bg-red-100 text-red-800 border-red-300',
+          totalBar: 'bg-red-50/70 border-red-200/70 text-red-800',
+          itemCard: 'bg-red-50/30 border-red-100 hover:border-red-300',
+          itemBadge: 'bg-red-50 text-red-800 border-red-200',
+          moreBadge: 'bg-red-50/80 border-red-200 text-red-800',
+          actionBtn: 'bg-red-50 hover:bg-red-100/90 text-red-900 border border-red-300'
+        };
+      case 'locker-renewal':
+        return {
+          cardBorder: 'border-violet-200/90 hover:border-violet-300',
+          headerBg: 'bg-gradient-to-r from-violet-50 via-purple-50/70 to-violet-50/40 border-b border-violet-200/80',
+          iconBox: 'bg-violet-100/90 text-violet-700 border border-violet-200',
+          subtitle: 'text-violet-700/80',
+          countBadge: 'bg-violet-100 text-violet-800 border-violet-300',
+          totalBar: 'bg-violet-50/70 border-violet-200/70 text-violet-800',
+          itemCard: 'bg-violet-50/30 border-violet-100 hover:border-violet-300',
+          itemBadge: 'bg-violet-50 text-violet-800 border-violet-200',
+          moreBadge: 'bg-violet-50/80 border-violet-200 text-violet-800',
+          actionBtn: 'bg-violet-50 hover:bg-violet-100/90 text-violet-900 border border-violet-300'
+        };
+      default:
+        return {
+          cardBorder: 'border-purple-200/90 hover:border-purple-300',
+          headerBg: 'bg-gradient-to-r from-purple-50 via-fuchsia-50/70 to-purple-50/40 border-b border-purple-200/80',
+          iconBox: 'bg-purple-100/90 text-purple-700 border border-purple-200',
+          subtitle: 'text-purple-700/80',
+          countBadge: 'bg-purple-100 text-purple-800 border-purple-300',
+          totalBar: 'bg-purple-50/70 border-purple-200/70 text-purple-800',
+          itemCard: 'bg-purple-50/30 border-purple-100 hover:border-purple-300',
+          itemBadge: 'bg-purple-50 text-purple-800 border-purple-200',
+          moreBadge: 'bg-purple-50/80 border-purple-200 text-purple-800',
+          actionBtn: 'bg-purple-50 hover:bg-purple-100/90 text-purple-900 border border-purple-300'
+        };
+    }
+  };
+
   return (
-    <div className="p-2.5 max-w-full h-full flex flex-col bg-slate-100 text-[11px] font-sans relative overflow-y-auto">
+    <div className="p-2.5 max-w-full h-full flex flex-col bg-slate-50/80 text-[11px] font-sans relative overflow-y-auto">
       {/* Toast Notification */}
       {successToast && (
-        <div className="fixed bottom-5 right-5 z-50 bg-emerald-700 text-white px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 text-xs font-semibold animate-bounce">
-          <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+        <div className="fixed bottom-5 right-5 z-50 bg-emerald-50 text-emerald-900 border border-emerald-300 px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 text-xs font-semibold animate-bounce">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           <span>{successToast}</span>
         </div>
       )}
 
       {/* Main Container */}
-      <div className="bg-white rounded-lg shadow-xs border border-slate-300 overflow-hidden flex flex-col mb-4">
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200/90 overflow-hidden flex flex-col mb-4">
         {/* ========================================================
             HERO HEADER BANNER (Core Banking Command Center)
            ======================================================== */}
-        <div className="bg-primary text-white px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+        <div className="bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-sky-50/90 border-b border-emerald-200/80 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-2xs">
-              <FolderCheck className="w-4 h-4 text-sky-200" />
+            <div className="w-8 h-8 rounded-lg bg-emerald-100/90 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-sm">
+              <FolderCheck className="w-4 h-4 text-emerald-700" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xs md:text-sm font-black tracking-wide text-white flex items-center gap-1.5">
+                <h2 className="text-xs md:text-sm font-black tracking-wide text-slate-800 flex items-center gap-1.5">
                   <span>आजची कामे डॅशबोर्ड (Core Banking Operations Command Center)</span>
                 </h2>
-                <span className="bg-emerald-500/25 text-emerald-200 border border-emerald-300/40 text-[9px] font-bold px-2 py-0.2 rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="bg-emerald-100/90 text-emerald-800 border border-emerald-300 text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   डेटाबेस लाईव्ह
                 </span>
-                <span className="bg-white/20 text-white text-[9px] font-bold px-2 py-0.2 rounded-full">
+                <span className="bg-sky-100/80 text-sky-800 border border-sky-200 text-[9px] font-bold px-2 py-0.5 rounded-full">
                   शाखा #{effectiveBranchId}
                 </span>
               </div>
-              <p className="text-[10px] text-sky-100 hidden sm:block">
+              <p className="text-[10px] text-slate-600 hidden sm:block">
                 दैनंदिन व्यवहार, प्रलंबित मंजुऱ्या, मुदतपूर्ती व कायदेशीर वसुली नियंत्रण कक्ष
               </p>
             </div>
@@ -744,14 +879,14 @@ export default function TodaysTasksDashboard({
           {/* Top Controls: Refresh, View Mode Switch, Notifications Modal */}
           <div className="flex items-center gap-2 flex-wrap">
             {/* View Mode Switcher */}
-            <div className="inline-flex rounded-md bg-white/15 p-0.5 border border-white/25 text-xs">
+            <div className="inline-flex rounded-md bg-white/90 p-0.5 border border-emerald-200 text-xs shadow-sm">
               <button
                 type="button"
                 onClick={() => setViewMode('CARDS')}
                 className={`px-2 py-1 rounded flex items-center gap-1 text-[11px] font-bold transition-all cursor-pointer ${
                   viewMode === 'CARDS'
-                    ? 'bg-white text-primary shadow-xs'
-                    : 'text-white hover:bg-white/10'
+                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-sm'
+                    : 'text-slate-600 hover:bg-emerald-50/70'
                 }`}
                 title="१० विभागवार कार्ड्स दृश्य"
               >
@@ -763,8 +898,8 @@ export default function TodaysTasksDashboard({
                 onClick={() => setViewMode('GRID')}
                 className={`px-2 py-1 rounded flex items-center gap-1 text-[11px] font-bold transition-all cursor-pointer ${
                   viewMode === 'GRID'
-                    ? 'bg-white text-primary shadow-xs'
-                    : 'text-white hover:bg-white/10'
+                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-sm'
+                    : 'text-slate-600 hover:bg-emerald-50/70'
                 }`}
                 title="सर्व प्रलंबित कामांची तपशीलवार यादी"
               >
@@ -781,7 +916,7 @@ export default function TodaysTasksDashboard({
                 fetchAutoRenewalData();
               }}
               disabled={loading}
-              className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/20 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              className="px-2.5 py-1 rounded bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200 shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
               title="डेटाबेसमधून कामांची ताजी स्थिती पुन्हा तपासा"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -792,9 +927,9 @@ export default function TodaysTasksDashboard({
             <button
               type="button"
               onClick={() => setIsModalOpen(true)}
-              className="px-2.5 py-1 rounded bg-sky-500/30 hover:bg-sky-500/40 text-white border border-sky-300/40 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+              className="px-2.5 py-1 rounded bg-sky-100/90 hover:bg-sky-200/80 text-sky-900 border border-sky-300 text-xs font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer"
             >
-              <Bell className="w-3.5 h-3.5" />
+              <Bell className="w-3.5 h-3.5 text-sky-700" />
               <span>सूचना विंडो</span>
             </button>
           </div>
@@ -803,42 +938,42 @@ export default function TodaysTasksDashboard({
         {/* ========================================================
             EXECUTIVE KPI SUMMARY METRIC CARDS (शीर्ष सारांश - ५ निर्देशक)
            ======================================================== */}
-        <div className="bg-slate-50 border-b border-slate-200 p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        <div className="bg-slate-50/70 border-b border-slate-200/80 p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
           {/* 1. Total Pending */}
-          <div className="bg-white p-2.5 rounded-md border border-slate-200 shadow-2xs flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-sky-50 border border-sky-100 flex items-center justify-center text-primary shrink-0">
+          <div className="bg-gradient-to-br from-sky-50/90 via-white to-sky-50/40 p-2.5 rounded-md border border-sky-200/80 shadow-sm flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-sky-100/80 border border-sky-200 flex items-center justify-center text-sky-700 shrink-0">
               <FolderCheck className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[10px] text-slate-500 font-semibold">एकूण प्रलंबित कामे</div>
-              <div className="text-base font-black text-slate-900 leading-tight">
+              <div className="text-[10px] text-sky-800/80 font-semibold">एकूण प्रलंबित कामे</div>
+              <div className="text-base font-black text-slate-800 leading-tight">
                 {stats.totalPending}{' '}
-                <span className="text-[10px] font-normal text-slate-400">नोंदी</span>
+                <span className="text-[10px] font-normal text-slate-500">नोंदी</span>
               </div>
             </div>
           </div>
 
           {/* 2. Urgent / High Priority */}
-          <div className="bg-white p-2.5 rounded-md border border-rose-200 shadow-2xs flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+          <div className="bg-gradient-to-br from-rose-50/90 via-white to-rose-50/40 p-2.5 rounded-md border border-rose-200/80 shadow-sm flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-rose-100/80 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
               <AlertTriangle className="w-4 h-4 animate-pulse" />
             </div>
             <div>
               <div className="text-[10px] text-rose-700 font-semibold">अति तातडीची कामे</div>
               <div className="text-base font-black text-rose-700 leading-tight">
                 {stats.urgentTasks + stats.highPriorityTasks}{' '}
-                <span className="text-[10px] font-normal text-rose-400">तातडीने</span>
+                <span className="text-[10px] font-normal text-rose-500">तातडीने</span>
               </div>
             </div>
           </div>
 
           {/* 3. Total Amount */}
-          <div className="bg-white p-2.5 rounded-md border border-slate-200 shadow-2xs flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
+          <div className="bg-gradient-to-br from-emerald-50/90 via-white to-emerald-50/40 p-2.5 rounded-md border border-emerald-200/80 shadow-sm flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-emerald-100/80 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
               <TrendingUp className="w-4 h-4" />
             </div>
             <div className="overflow-hidden">
-              <div className="text-[10px] text-slate-500 font-semibold">एकूण थकीत / मुदत रक्कम</div>
+              <div className="text-[10px] text-emerald-800/80 font-semibold">एकूण थकीत / मुदत रक्कम</div>
               <div className="text-sm font-black text-emerald-700 leading-tight truncate">
                 ₹ {Number(stats.totalAmount).toLocaleString('en-IN')}
               </div>
@@ -846,32 +981,32 @@ export default function TodaysTasksDashboard({
           </div>
 
           {/* 4. Completed Today */}
-          <div className="bg-white p-2.5 rounded-md border border-slate-200 shadow-2xs flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
+          <div className="bg-gradient-to-br from-teal-50/90 via-white to-teal-50/40 p-2.5 rounded-md border border-teal-200/80 shadow-sm flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-teal-100/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0">
               <CheckCircle className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[10px] text-slate-500 font-semibold">आज पूर्ण झालेली कामे</div>
+              <div className="text-[10px] text-teal-800/80 font-semibold">आज पूर्ण झालेली कामे</div>
               <div className="text-base font-black text-teal-800 leading-tight">
                 {stats.completedToday}{' '}
-                <span className="text-[10px] font-normal text-slate-400">पूर्ण</span>
+                <span className="text-[10px] font-normal text-slate-500">पूर्ण</span>
               </div>
             </div>
           </div>
 
           {/* 5. Progress Bar */}
-          <div className="bg-white p-2.5 rounded-md border border-slate-200 shadow-2xs col-span-2 sm:col-span-1 flex flex-col justify-center">
+          <div className="bg-gradient-to-br from-indigo-50/80 via-white to-sky-50/40 p-2.5 rounded-md border border-indigo-200/80 shadow-sm col-span-2 sm:col-span-1 flex flex-col justify-center">
             <div className="flex justify-between items-center text-[10px] font-bold mb-1">
-              <span className="text-slate-600">दैनिक कामे पूर्णता प्रगती</span>
-              <span className="text-primary font-black">{stats.completionRate}%</span>
+              <span className="text-indigo-900/80">दैनिक कामे पूर्णता प्रगती</span>
+              <span className="text-indigo-700 font-black">{stats.completionRate}%</span>
             </div>
-            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+            <div className="w-full bg-indigo-100/60 rounded-full h-2 overflow-hidden border border-indigo-200/70">
               <div
-                className="bg-gradient-to-r from-sky-500 to-emerald-500 h-2 rounded-full transition-all duration-500"
+                className="bg-gradient-to-r from-sky-400 to-emerald-400 h-2 rounded-full transition-all duration-500"
                 style={{ width: `${Math.min(100, Math.max(0, stats.completionRate))}%` }}
               ></div>
             </div>
-            <div className="text-[9px] text-slate-400 mt-1 flex justify-between">
+            <div className="text-[9px] text-slate-500 mt-1 flex justify-between">
               <span>०%</span>
               <span>लक्ष्य १००%</span>
             </div>
@@ -881,11 +1016,11 @@ export default function TodaysTasksDashboard({
         {/* ========================================================
             ROLE-BASED TABS & QUICK PRIORITY FILTER BAR
            ======================================================== */}
-        <div className="px-3 py-2 bg-slate-100/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="px-3 py-2 bg-gradient-to-r from-slate-50 via-emerald-50/30 to-sky-50/30 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
           {/* Role Tabs */}
           <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-            <span className="text-[10px] font-bold text-slate-500 mr-1 flex items-center gap-0.5">
-              <Filter className="w-3 h-3" /> विभाग:
+            <span className="text-[10px] font-bold text-slate-600 mr-1 flex items-center gap-0.5">
+              <Filter className="w-3 h-3 text-emerald-600" /> विभाग:
             </span>
             {[
               { key: 'ALL', label: 'सर्व कामे' },
@@ -902,8 +1037,8 @@ export default function TodaysTasksDashboard({
                 onClick={() => setRoleFilter(tab.key as any)}
                 className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
                   roleFilter === tab.key
-                    ? 'bg-primary text-white shadow-2xs'
-                    : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-sm font-bold'
+                    : 'bg-white text-slate-700 hover:bg-emerald-50/60 border border-slate-200'
                 }`}
               >
                 {tab.label}
@@ -913,14 +1048,14 @@ export default function TodaysTasksDashboard({
 
           {/* Priority Quick Filter */}
           <div className="flex items-center gap-1">
-            <span className="text-[10px] font-bold text-slate-500 mr-0.5">प्राधान्य:</span>
-            <div className="inline-flex rounded bg-white p-0.5 border border-slate-200 text-xs">
+            <span className="text-[10px] font-bold text-slate-600 mr-0.5">प्राधान्य:</span>
+            <div className="inline-flex rounded bg-white p-0.5 border border-slate-200 text-xs shadow-sm">
               <button
                 type="button"
                 onClick={() => setSelectedFilter('ALL')}
                 className={`px-2 py-0.5 rounded transition-all cursor-pointer text-[10px] font-bold ${
                   selectedFilter === 'ALL'
-                    ? 'bg-slate-800 text-white'
+                    ? 'bg-sky-100 text-sky-900 border border-sky-300'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -931,7 +1066,7 @@ export default function TodaysTasksDashboard({
                 onClick={() => setSelectedFilter('URGENT')}
                 className={`px-2 py-0.5 rounded transition-all cursor-pointer text-[10px] font-bold ${
                   selectedFilter === 'URGENT'
-                    ? 'bg-rose-600 text-white'
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
                     : 'text-rose-700 hover:bg-rose-50'
                 }`}
               >
@@ -942,7 +1077,7 @@ export default function TodaysTasksDashboard({
                 onClick={() => setSelectedFilter('HIGH')}
                 className={`px-2 py-0.5 rounded transition-all cursor-pointer text-[10px] font-bold ${
                   selectedFilter === 'HIGH'
-                    ? 'bg-amber-500 text-white'
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
                     : 'text-amber-700 hover:bg-amber-50'
                 }`}
               >
@@ -953,35 +1088,35 @@ export default function TodaysTasksDashboard({
         </div>
 
         {/* Dashboard Body Content */}
-        <div className="p-3 bg-slate-50/60">
+        <div className="p-3 bg-slate-50/40">
           {/* ========================================================
-              🔄 CBS FD AUTO-RENEWAL ACTION CENTER (PRESERVED & ENHANCED)
+              🔄 CBS FD AUTO-RENEWAL ACTION CENTER (SOFT PASTEL SHADE)
              ======================================================== */}
-          <div className="mb-3.5 bg-gradient-to-r from-sky-950 via-sky-900 to-indigo-950 text-white rounded-md p-3 shadow-xs border border-sky-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-3.5 bg-gradient-to-r from-sky-50 via-indigo-50/70 to-emerald-50/70 text-slate-800 rounded-md p-3 shadow-sm border border-sky-200/90 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-300 shadow-2xs shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-sky-100/90 border border-sky-200 flex items-center justify-center text-sky-700 shadow-sm shrink-0">
                 <RotateCcw className={`w-4 h-4 ${runningBatch ? 'animate-spin' : ''}`} />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-xs font-black tracking-wide text-white flex items-center gap-1.5">
+                  <h3 className="text-xs font-black tracking-wide text-slate-800 flex items-center gap-1.5">
                     <span>मुदत ठेव स्वयंचलित नूतनीकरण केंद्र (CBS FD Auto-Renewal Center)</span>
                   </h3>
-                  <span className="bg-sky-400/20 text-sky-200 border border-sky-300/30 text-[9px] font-bold px-2 py-0.2 rounded-full">
+                  <span className="bg-indigo-100/80 text-indigo-800 border border-indigo-200 text-[9px] font-bold px-2 py-0.5 rounded-full">
                     आरबीआय १४-दिवसीय सवलत लागू
                   </span>
                 </div>
-                <div className="text-[10px] text-sky-100 flex items-center gap-2 mt-0.5 flex-wrap">
+                <div className="text-[10px] text-slate-600 flex items-center gap-2 mt-0.5 flex-wrap">
                   <span>
                     पात्र खाती:{' '}
-                    <strong className="text-amber-300 font-bold">
+                    <strong className="text-amber-700 font-extrabold">
                       {autoRenewalCandidates.length} पावत्या
                     </strong>
                   </span>
                   <span>•</span>
                   <span>
                     एकूण नूतनीकरण रक्कम:{' '}
-                    <strong className="text-emerald-300 font-bold">
+                    <strong className="text-emerald-700 font-extrabold">
                       ₹{' '}
                       {autoRenewalCandidates
                         .reduce(
@@ -993,7 +1128,7 @@ export default function TodaysTasksDashboard({
                     </strong>
                   </span>
                   <span>•</span>
-                  <span className="text-[9px] text-sky-200">
+                  <span className="text-[9px] text-sky-800 font-medium">
                     प्रचलित व्याजदर स्लॅब स्वयंचलित लागू होतील
                   </span>
                 </div>
@@ -1005,9 +1140,9 @@ export default function TodaysTasksDashboard({
               <button
                 type="button"
                 onClick={() => setShowAutoRenewalModal(true)}
-                className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                className="px-2.5 py-1 rounded bg-white hover:bg-sky-50 text-sky-900 border border-sky-300 shadow-sm text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
               >
-                <Eye className="w-3.5 h-3.5 text-sky-200" />
+                <Eye className="w-3.5 h-3.5 text-sky-700" />
                 <span>पात्र यादी पहा ({autoRenewalCandidates.length})</span>
               </button>
 
@@ -1015,10 +1150,10 @@ export default function TodaysTasksDashboard({
                 type="button"
                 disabled={runningBatch || autoRenewalCandidates.length === 0}
                 onClick={() => handleRunBatch()}
-                className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-extrabold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3 py-1 rounded bg-emerald-100 hover:bg-emerald-200/90 active:scale-95 text-emerald-900 border border-emerald-300 text-xs font-extrabold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 title="पात्र सर्व मुदत ठेवींचे प्रचलित व्याजदराने ऑटो-नूतनीकरण करा"
               >
-                <Play className="w-3.5 h-3.5 fill-white" />
+                <Play className="w-3.5 h-3.5 text-emerald-700 fill-emerald-700" />
                 <span>{runningBatch ? 'बॅच प्रक्रिया सुरु...' : '🚀 EOD बॅच रन करा'}</span>
               </button>
 
@@ -1028,9 +1163,9 @@ export default function TodaysTasksDashboard({
                   fetchRenewalLogs();
                   setShowLogsModal(true);
                 }}
-                className="px-2.5 py-1 rounded bg-indigo-950/80 hover:bg-indigo-900 text-sky-200 hover:text-white border border-indigo-400/30 text-xs font-medium transition-all flex items-center gap-1 cursor-pointer"
+                className="px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 shadow-sm text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
               >
-                <History className="w-3.5 h-3.5" />
+                <History className="w-3.5 h-3.5 text-indigo-700" />
                 <span>इतिहास / रिव्हर्सल</span>
               </button>
             </div>
@@ -1043,25 +1178,26 @@ export default function TodaysTasksDashboard({
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 lg:grid-cols-4 gap-3">
               {filteredSections.map(section => {
                 const IconComponent = section.icon;
+                const shade = getSectionShade(section.id);
                 return (
                   <div
                     key={section.id}
-                    className={`bg-white rounded-md border border-slate-300 shadow-2xs hover:shadow-xs transition-all duration-200 flex flex-col justify-between overflow-hidden group hover:border-primary ${section.accentBg}`}
+                    className={`bg-white rounded-md border ${shade.cardBorder} shadow-sm hover:shadow transition-all duration-200 flex flex-col justify-between overflow-hidden group ${section.accentBg}`}
                   >
-                    {/* Card Header using Primary Theme */}
-                    <div className="bg-primary text-white px-3 py-2 flex justify-between items-center shadow-2xs">
+                    {/* Card Header using Distinct Soft Pastel Shade */}
+                    <div className={`${shade.headerBg} px-3 py-2 flex justify-between items-center`}>
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <div className="p-1 rounded bg-white/15 text-white shrink-0">
-                          <IconComponent className="w-4 h-4" />
+                        <div className={`p-1.5 rounded-md ${shade.iconBox} shrink-0 shadow-sm`}>
+                          <IconComponent className="w-3.5 h-3.5" />
                         </div>
                         <div className="truncate">
                           <h3
-                            className="font-bold text-xs leading-tight text-white truncate"
+                            className="font-extrabold text-xs leading-tight text-slate-800 truncate"
                             title={section.titleMr}
                           >
                             {section.titleMr}
                           </h3>
-                          <span className="text-[9px] text-sky-100 block font-medium truncate">
+                          <span className={`text-[9px] ${shade.subtitle} block font-semibold truncate`}>
                             {section.titleEn}
                           </span>
                         </div>
@@ -1070,8 +1206,8 @@ export default function TodaysTasksDashboard({
                       <span
                         className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ml-1 ${
                           section.count > 0
-                            ? 'bg-white text-primary font-black border-white'
-                            : 'bg-white/20 text-white border-white/30'
+                            ? `${shade.countBadge} font-black shadow-sm`
+                            : 'bg-white/80 text-slate-500 border-slate-200'
                         }`}
                       >
                         {section.count} नोंदी
@@ -1082,9 +1218,9 @@ export default function TodaysTasksDashboard({
                     <div className="p-2.5 flex-1 flex flex-col justify-between bg-white">
                       <div>
                         {fmtCurrency(section.totalAmount) && (
-                          <div className="mb-2 p-1.5 bg-slate-50 rounded border border-slate-200 flex justify-between items-center text-xs">
-                            <span className="text-[10px] text-slate-500 font-medium">एकूण रक्कम:</span>
-                            <span className="text-xs font-bold text-primary">
+                          <div className={`mb-2 p-1.5 rounded border flex justify-between items-center text-xs ${shade.totalBar}`}>
+                            <span className="text-[10px] text-slate-600 font-semibold">एकूण रक्कम:</span>
+                            <span className="text-xs font-extrabold">
                               {fmtCurrency(section.totalAmount)}
                             </span>
                           </div>
@@ -1093,7 +1229,7 @@ export default function TodaysTasksDashboard({
                         {/* Items Preview */}
                         <div className="space-y-1.5 mb-2">
                           {section.items.length === 0 ? (
-                            <div className="p-3 text-center text-[10px] text-slate-400 font-medium bg-slate-50 rounded border border-dashed border-slate-200">
+                            <div className="p-3 text-center text-[10px] text-slate-400 font-medium bg-slate-50/70 rounded border border-dashed border-slate-200">
                               <CheckCircle className="w-4 h-4 text-emerald-500 mx-auto mb-1 opacity-70" />
                               कोणतीही प्रलंबित नोंद नाही
                             </div>
@@ -1102,7 +1238,7 @@ export default function TodaysTasksDashboard({
                               {section.items.slice(0, 3).map(item => (
                                 <div
                                   key={item.id}
-                                  className="p-1.5 rounded bg-slate-50/90 border border-slate-200 hover:border-primary/40 transition-all text-xs flex flex-col justify-between"
+                                  className={`p-1.5 rounded border transition-all text-xs flex flex-col justify-between ${shade.itemCard}`}
                                 >
                                   <div className="flex justify-between items-center font-semibold text-slate-800 mb-1 text-[11px]">
                                     <span
@@ -1112,7 +1248,7 @@ export default function TodaysTasksDashboard({
                                       👤 {item.memberName}
                                     </span>
                                     {item.amount ? (
-                                      <span className="text-primary font-bold text-[10px] bg-sky-50 px-1 py-0.2 rounded border border-sky-200 shrink-0">
+                                      <span className={`font-bold text-[10px] px-1.5 py-0.2 rounded border shrink-0 ${shade.itemBadge}`}>
                                         ₹{Number(item.amount).toLocaleString('en-IN')}
                                       </span>
                                     ) : null}
@@ -1133,7 +1269,7 @@ export default function TodaysTasksDashboard({
                                           e.stopPropagation();
                                           setSelectedItemDetails(item);
                                         }}
-                                        className="px-1.5 py-0.2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-[9px] font-medium transition-all flex items-center gap-0.5 cursor-pointer shadow-2xs"
+                                        className="px-1.5 py-0.2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-[9px] font-medium transition-all flex items-center gap-0.5 cursor-pointer shadow-sm"
                                         title="पूर्ण तपशील पहा"
                                       >
                                         <Eye className="w-3 h-3 text-slate-500" />
@@ -1154,7 +1290,7 @@ export default function TodaysTasksDashboard({
                               ))}
 
                               {section.items.length > 3 && (
-                                <div className="text-center py-0.5 bg-sky-50 border border-sky-100 rounded text-[9px] font-semibold text-primary">
+                                <div className={`text-center py-0.5 border rounded text-[9px] font-bold ${shade.moreBadge}`}>
                                   + {section.items.length - 3} आणखी नोंदी
                                 </div>
                               )}
@@ -1163,11 +1299,11 @@ export default function TodaysTasksDashboard({
                         </div>
                       </div>
 
-                      {/* Action Button */}
+                      {/* Soft Pastel Shaded Action Button */}
                       <button
                         type="button"
                         onClick={() => handleActionClick(section.targetTab)}
-                        className="w-full py-1.5 px-2 bg-primary hover:bg-[#004a75] active:scale-98 text-white text-[11px] font-bold rounded-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer mt-1"
+                        className={`w-full py-1.5 px-2 ${shade.actionBtn} active:scale-98 text-[11px] font-bold rounded flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer mt-1`}
                       >
                         <span>तपासा / कारवाई करा</span>
                         <ArrowUpRight className="w-3.5 h-3.5" />
@@ -1321,7 +1457,7 @@ export default function TodaysTasksDashboard({
                                 onClick={() =>
                                   handleActionClick(item.targetTab || 'vouchers', item.entityId)
                                 }
-                                className="px-2 py-1 bg-primary hover:bg-[#004a75] text-white text-[10px] font-bold rounded shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold rounded shadow-sm transition-all flex items-center gap-1 cursor-pointer"
                                 title="या कामावर थेट कारवाई करण्यासाठी फॉर्म उघडा"
                               >
                                 <span>कारवाई</span>
@@ -1365,22 +1501,22 @@ export default function TodaysTasksDashboard({
           MODAL 1: FULL MEMBER & TASK DETAILS POPUP
          ======================================================== */}
       {selectedItemDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden">
-            <div className="p-3.5 bg-primary text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-xl border border-emerald-200 overflow-hidden">
+            <div className="p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border-b border-emerald-200 flex justify-between items-center">
               <div className="flex items-center gap-2.5">
-                <div className="p-1.5 bg-white/20 rounded-lg text-white">
+                <div className="p-1.5 bg-emerald-100/90 border border-emerald-200 rounded-lg text-emerald-700">
                   <Info className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-xs text-white">सभासद व कामाचा पूर्ण तपशील</h3>
-                  <p className="text-[10px] text-sky-100">Complete Banking Task Details</p>
+                  <h3 className="font-bold text-xs text-slate-800">सभासद व कामाचा पूर्ण तपशील</h3>
+                  <p className="text-[10px] text-slate-500">Complete Banking Task Details</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedItemDetails(null)}
-                className="p-1 rounded-full hover:bg-white/10 text-slate-200 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1405,7 +1541,7 @@ export default function TodaysTasksDashboard({
                 {selectedItemDetails.accountNo && (
                   <div className="flex justify-between items-center pb-1.5 border-b border-slate-100">
                     <span className="text-slate-500 font-medium">खाते / पावती क्र. (Account No):</span>
-                    <span className="font-mono text-primary font-bold bg-sky-50 border border-sky-200 px-2 py-0.5 rounded text-[11px]">
+                    <span className="font-mono text-sky-800 font-bold bg-sky-50 border border-sky-200 px-2 py-0.5 rounded text-[11px]">
                       {selectedItemDetails.accountNo}
                     </span>
                   </div>
@@ -1414,7 +1550,7 @@ export default function TodaysTasksDashboard({
                 {selectedItemDetails.amount ? (
                   <div className="flex justify-between items-center pb-1.5 border-b border-slate-100">
                     <span className="text-slate-500 font-medium">थकीत / एकूण रक्कम (Amount):</span>
-                    <span className="font-extrabold text-primary text-xs">
+                    <span className="font-extrabold text-emerald-700 text-xs">
                       ₹ {Number(selectedItemDetails.amount).toLocaleString('en-IN')}
                     </span>
                   </div>
@@ -1458,7 +1594,7 @@ export default function TodaysTasksDashboard({
                   type="button"
                   disabled={completingTaskId === selectedItemDetails.id}
                   onClick={() => handleCompleteTask(selectedItemDetails.id)}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold rounded-lg text-xs flex items-center gap-1 shadow-sm cursor-pointer disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>पूर्ण झाले</span>
@@ -1471,7 +1607,7 @@ export default function TodaysTasksDashboard({
                     setSelectedItemDetails(null);
                     handleActionClick(targetTab, entityId);
                   }}
-                  className="px-3.5 py-1.5 bg-primary hover:bg-[#004a75] text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  className="px-3.5 py-1.5 bg-sky-100 hover:bg-sky-200/80 text-sky-900 border border-sky-300 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
                   <span>थेट नोंदणी करा</span>
                   <ArrowUpRight className="w-3.5 h-3.5" />
@@ -1486,18 +1622,18 @@ export default function TodaysTasksDashboard({
           MODAL 2: LOGIN NOTIFICATIONS POPUP DIALOG
          ======================================================== */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-2xl w-full shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 bg-primary text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-xl max-w-2xl w-full shadow-xl border border-emerald-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border-b border-emerald-200 flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-white/15 rounded-xl text-white">
-                  <Bell className="w-5 h-5 text-sky-200" />
+                <div className="p-2 bg-emerald-100/90 border border-emerald-200 rounded-xl text-emerald-700">
+                  <Bell className="w-5 h-5 text-emerald-700" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold tracking-tight text-white">
+                  <h2 className="text-sm font-bold tracking-tight text-slate-800">
                     आजची कामे व महत्त्वाच्या सूचना (Today's Live Alerts)
                   </h2>
-                  <p className="text-[11px] text-sky-100">
+                  <p className="text-[11px] text-slate-600">
                     डेटाबेसमधील लाईव्ह प्रलंबित कामे व दैनंदिन कार्यभार.
                   </p>
                 </div>
@@ -1508,7 +1644,7 @@ export default function TodaysTasksDashboard({
                   setIsModalOpen(false);
                   if (onCloseLoginModal) onCloseLoginModal();
                 }}
-                className="p-1 rounded-full hover:bg-white/10 text-slate-200 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1526,6 +1662,7 @@ export default function TodaysTasksDashboard({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                 {taskSections.map(sec => {
                   const SecIcon = sec.icon;
+                  const shade = getSectionShade(sec.id);
                   return (
                     <div
                       key={sec.id}
@@ -1533,14 +1670,14 @@ export default function TodaysTasksDashboard({
                         setIsModalOpen(false);
                         handleActionClick(sec.targetTab);
                       }}
-                      className="p-2.5 rounded-xl bg-white border border-slate-200 hover:border-primary hover:bg-sky-50/40 transition-all cursor-pointer flex justify-between items-center group shadow-2xs"
+                      className={`p-2.5 rounded-xl bg-white border ${shade.cardBorder} hover:bg-slate-50 transition-all cursor-pointer flex justify-between items-center group shadow-sm`}
                     >
                       <div className="flex items-center gap-2.5 overflow-hidden">
-                        <div className="p-2 rounded-lg bg-slate-100 group-hover:bg-primary/10 text-slate-600 group-hover:text-primary transition-colors shrink-0">
+                        <div className={`p-2 rounded-lg ${shade.iconBox} transition-colors shrink-0`}>
                           <SecIcon className="w-4 h-4" />
                         </div>
                         <div className="truncate">
-                          <div className="font-bold text-xs text-slate-800 group-hover:text-primary transition-colors truncate">
+                          <div className="font-bold text-xs text-slate-800 transition-colors truncate">
                             {sec.titleMr}
                           </div>
                           <div className="text-[10px] text-slate-500">
@@ -1548,7 +1685,7 @@ export default function TodaysTasksDashboard({
                           </div>
                         </div>
                       </div>
-                      <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 ml-1" />
+                      <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-700 group-hover:translate-x-0.5 transition-all shrink-0 ml-1" />
                     </div>
                   );
                 })}
@@ -1565,7 +1702,7 @@ export default function TodaysTasksDashboard({
                   setIsModalOpen(false);
                   if (onCloseLoginModal) onCloseLoginModal();
                 }}
-                className="px-4 py-1.5 bg-primary hover:bg-[#004a75] text-white font-semibold text-xs rounded-lg shadow-2xs transition-all cursor-pointer"
+                className="px-4 py-1.5 bg-emerald-100 hover:bg-emerald-200/80 text-emerald-900 border border-emerald-300 font-bold text-xs rounded-lg shadow-sm transition-all cursor-pointer"
               >
                 डॅशबोर्ड पहा (View Dashboard)
               </button>
@@ -1578,23 +1715,23 @@ export default function TodaysTasksDashboard({
           MODAL 3: CANDIDATE LIST MODAL (पात्र मुदत ठेव यादी)
          ======================================================== */}
       {showAutoRenewalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[85vh] shadow-2xl border border-slate-300 flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[85vh] shadow-2xl border border-sky-200 flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="p-3 bg-gradient-to-r from-sky-950 to-indigo-950 text-white flex justify-between items-center shrink-0">
+            <div className="p-3 bg-gradient-to-r from-sky-50 via-indigo-50/80 to-emerald-50/70 border-b border-sky-200 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2">
-                <div className="p-1 rounded bg-white/10 text-sky-200">
+                <div className="p-1.5 rounded-lg bg-sky-100 border border-sky-200 text-sky-700">
                   <RotateCcw className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-xs text-white">स्वयंचलित नूतनीकरणास पात्र मुदत ठेव पावत्या</h3>
-                  <p className="text-[10px] text-sky-200">आज किंवा त्यापूर्वी मुदत संपलेली व ऑटो-रिन्यूअल सक्रिय असणारी खाती</p>
+                  <h3 className="font-bold text-xs text-slate-800">स्वयंचलित नूतनीकरणास पात्र मुदत ठेव पावत्या</h3>
+                  <p className="text-[10px] text-slate-600">आज किंवा त्यापूर्वी मुदत संपलेली व ऑटो-रिन्यूअल सक्रिय असणारी खाती</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAutoRenewalModal(false)}
-                className="p-1 rounded-full hover:bg-white/10 text-slate-200 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1609,7 +1746,7 @@ export default function TodaysTasksDashboard({
                   <p className="text-[10px] text-slate-400 mt-0.5">सर्व मुदत ठेवी नियमित किंवा अद्ययावत आहेत.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-2xs">
+                <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-sm">
                   <table className="w-full border-collapse text-left">
                     <thead>
                       <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold text-[10px]">
@@ -1626,7 +1763,7 @@ export default function TodaysTasksDashboard({
                     <tbody className="divide-y divide-slate-100">
                       {autoRenewalCandidates.map(c => (
                         <tr key={c.fdAccountID} className="hover:bg-sky-50/50 transition-colors">
-                          <td className="p-2 font-mono font-bold text-primary text-xs">
+                          <td className="p-2 font-mono font-bold text-sky-800 text-xs">
                             {c.accountNo}
                           </td>
                           <td className="p-2">
@@ -1669,7 +1806,7 @@ export default function TodaysTasksDashboard({
                               type="button"
                               disabled={runningBatch}
                               onClick={() => handleRunBatch([c.fdAccountID])}
-                              className="px-2 py-1 bg-primary hover:bg-[#004a75] text-white text-[10px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                              className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 text-[10px] font-bold rounded shadow-sm transition-all cursor-pointer disabled:opacity-50"
                             >
                               नूतनीकरण करा
                             </button>
@@ -1700,7 +1837,7 @@ export default function TodaysTasksDashboard({
                 <button
                   type="button"
                   onClick={() => setShowAutoRenewalModal(false)}
-                  className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded transition-colors cursor-pointer"
+                  className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-semibold rounded transition-colors cursor-pointer"
                 >
                   बंद करा
                 </button>
@@ -1712,9 +1849,9 @@ export default function TodaysTasksDashboard({
                       setShowAutoRenewalModal(false);
                       handleRunBatch();
                     }}
-                    className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="px-3.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 text-xs font-bold rounded shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <Play className="w-3.5 h-3.5 fill-white" />
+                    <Play className="w-3.5 h-3.5 text-emerald-700 fill-emerald-700" />
                     <span>सर्व {autoRenewalCandidates.length} पावत्यांची बॅच रन करा</span>
                   </button>
                 )}
@@ -1728,17 +1865,17 @@ export default function TodaysTasksDashboard({
           MODAL 4: BATCH RESULT SUMMARY MODAL
          ======================================================== */}
       {batchResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl border border-slate-300 overflow-hidden">
-            <div className="p-3.5 bg-emerald-700 text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl border border-emerald-200 overflow-hidden">
+            <div className="p-3.5 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-200 flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-200" />
-                <h3 className="font-bold text-xs text-white">स्वयंचलित नूतनीकरण बॅच निकाल (Execution Summary)</h3>
+                <ShieldCheck className="w-5 h-5 text-emerald-700" />
+                <h3 className="font-bold text-xs text-slate-800">स्वयंचलित नूतनीकरण बॅच निकाल (Execution Summary)</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setBatchResult(null)}
-                className="p-1 rounded-full hover:bg-white/10 text-white transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1769,7 +1906,7 @@ export default function TodaysTasksDashboard({
                       <div>
                         <div className="font-bold text-slate-800">
                           {it.oldAccountNo} ➜{' '}
-                          <span className="text-primary font-mono">{it.newAccountNo || '-'}</span>
+                          <span className="text-sky-700 font-mono">{it.newAccountNo || '-'}</span>
                         </div>
                         <div className="text-[10px] text-slate-500">{it.customerName}</div>
                         {it.errorMessage && (
@@ -1804,7 +1941,7 @@ export default function TodaysTasksDashboard({
               <button
                 type="button"
                 onClick={() => setBatchResult(null)}
-                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded transition-colors cursor-pointer"
+                className="px-4 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 font-bold text-xs rounded transition-colors cursor-pointer"
               >
                 समजले (Close)
               </button>
@@ -1817,16 +1954,18 @@ export default function TodaysTasksDashboard({
           MODAL 5: LOGS & 14-DAY REVERSAL MODAL
          ======================================================== */}
       {showLogsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[85vh] shadow-2xl border border-slate-300 flex flex-col overflow-hidden">
-            <div className="p-3 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex justify-between items-center shrink-0">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[85vh] shadow-2xl border border-indigo-200 flex flex-col overflow-hidden">
+            <div className="p-3 bg-gradient-to-r from-indigo-50 via-sky-50 to-teal-50 border-b border-indigo-200 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2">
-                <History className="w-4 h-4 text-sky-300" />
+                <div className="p-1.5 rounded-lg bg-indigo-100 border border-indigo-200 text-indigo-700">
+                  <History className="w-4 h-4" />
+                </div>
                 <div>
-                  <h3 className="font-bold text-xs text-white">
+                  <h3 className="font-bold text-xs text-slate-800">
                     स्वयंचलित नूतनीकरण ऑडिट इतिहास व १४-दिवसीय रिव्हर्सल
                   </h3>
-                  <p className="text-[10px] text-slate-300">
+                  <p className="text-[10px] text-slate-600">
                     आरबीआय मार्गदर्शक तत्त्वांनुसार १४ दिवसांत विनामूल्य रिव्हर्ट करण्याची सुविधा
                   </p>
                 </div>
@@ -1834,7 +1973,7 @@ export default function TodaysTasksDashboard({
               <button
                 type="button"
                 onClick={() => setShowLogsModal(false)}
-                className="p-1 rounded-full hover:bg-white/10 text-white transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1843,7 +1982,7 @@ export default function TodaysTasksDashboard({
             <div className="p-3 overflow-y-auto flex-1 bg-slate-50/50 text-[11px]">
               {logsLoading ? (
                 <div className="text-center py-8 text-slate-500">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-1 text-primary" />
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-1 text-indigo-600" />
                   <span>ऑडिट लॉग्स लोड होत आहेत...</span>
                 </div>
               ) : renewalLogs.length === 0 ? (
@@ -1851,7 +1990,7 @@ export default function TodaysTasksDashboard({
                   कोणतीही नूतनीकरण लॉग नोंद उपलब्ध नाही.
                 </div>
               ) : (
-                <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-2xs">
+                <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-sm">
                   <table className="w-full border-collapse text-left">
                     <thead>
                       <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold text-[10px]">
@@ -1880,7 +2019,7 @@ export default function TodaysTasksDashboard({
                             </td>
                             <td className="p-2 font-mono text-[10px]">
                               <span className="text-slate-600">{l.oldAccountNo}</span> ➜{' '}
-                              <strong className="text-primary">{l.newAccountNo}</strong>
+                              <strong className="text-indigo-700">{l.newAccountNo}</strong>
                             </td>
                             <td className="p-2 font-semibold text-slate-800">{l.customerName}</td>
                             <td className="p-2 text-right font-bold text-slate-900">
@@ -1914,7 +2053,7 @@ export default function TodaysTasksDashboard({
                                 <button
                                   type="button"
                                   onClick={() => setShowRevertDialog(l)}
-                                  className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold transition-all shadow-2xs flex items-center gap-1 mx-auto cursor-pointer"
+                                  className="px-2 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 rounded text-[10px] font-bold transition-all shadow-sm flex items-center gap-1 mx-auto cursor-pointer"
                                   title={`नूतनीकरण होऊन ${daysAgo} दिवस झाले आहेत (१४ दिवसांची सवलत उपलब्ध)`}
                                 >
                                   <RotateCcw className="w-3 h-3" />
@@ -1939,7 +2078,7 @@ export default function TodaysTasksDashboard({
               <button
                 type="button"
                 onClick={() => setShowLogsModal(false)}
-                className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded transition-colors cursor-pointer"
+                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-semibold rounded transition-colors cursor-pointer"
               >
                 बंद करा
               </button>
@@ -1952,19 +2091,19 @@ export default function TodaysTasksDashboard({
           MODAL 6: REVERT CONFIRMATION DIALOG (१४-दिवसीय रिव्हर्सल कारण)
          ======================================================== */}
       {showRevertDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl border border-rose-300 overflow-hidden">
-            <div className="p-3 bg-rose-700 text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl border border-rose-200 overflow-hidden">
+            <div className="p-3 bg-gradient-to-r from-rose-50 to-pink-50 border-b border-rose-200 flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <RotateCcw className="w-4 h-4 text-rose-200" />
-                <h3 className="font-bold text-xs text-white">
+                <RotateCcw className="w-4 h-4 text-rose-700" />
+                <h3 className="font-bold text-xs text-rose-900">
                   १४-दिवसीय सवलतीत नूतनीकरण रद्द (Reversal)
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowRevertDialog(null)}
-                className="p-1 rounded-full hover:bg-white/10 text-white transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-rose-100 text-rose-600 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2000,7 +2139,7 @@ export default function TodaysTasksDashboard({
                   setShowRevertDialog(null);
                   setRevertReason('');
                 }}
-                className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded cursor-pointer"
+                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-semibold rounded cursor-pointer"
               >
                 रद्द करा
               </button>
@@ -2008,7 +2147,7 @@ export default function TodaysTasksDashboard({
                 type="button"
                 disabled={revertingId !== null || !revertReason.trim()}
                 onClick={() => handleRevert(showRevertDialog)}
-                className="px-3.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-300 text-xs font-bold rounded shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
               >
                 <span>{revertingId ? 'रिव्हर्ट होत आहे...' : 'नूतनीकरण रिव्हर्ट करा'}</span>
               </button>

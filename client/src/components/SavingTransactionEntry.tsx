@@ -399,15 +399,24 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             uniqueLedgerMap.set(l.ledgerID, l.ledgerName);
           }
         });
-      }
 
-      accData.forEach((acc: any) => {
-        const lid = acc.ledgerID;
-        const lname = acc.ledgerName || 'बचत ठेव';
-        if (lid && !uniqueLedgerMap.has(lid)) {
-          uniqueLedgerMap.set(lid, lname);
-        }
-      });
+        accData.forEach((acc: any) => {
+          const lid = acc.ledgerID;
+          const lname = acc.ledgerName || 'बचत ठेव';
+          if (lid && !uniqueLedgerMap.has(lid)) {
+            uniqueLedgerMap.set(lid, lname);
+          }
+        });
+      } else {
+        const defaultSchemeLedgerId = Array.from(uniqueLedgerMap.keys())[0];
+        const defaultSchemeLedgerName = uniqueLedgerMap.get(defaultSchemeLedgerId) || 'बचत ठेव';
+        accData.forEach((acc: any) => {
+          if (!acc.ledgerID || !uniqueLedgerMap.has(acc.ledgerID)) {
+            acc.ledgerID = defaultSchemeLedgerId;
+            acc.ledgerName = defaultSchemeLedgerName;
+          }
+        });
+      }
 
       const ledgerList = Array.from(uniqueLedgerMap.entries()).map(([ledgerID, ledgerName]) => ({ ledgerID, ledgerName }));
       setLedgers(ledgerList);
@@ -691,7 +700,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
   // Filter accounts by selected deposit ledger
   const filteredAccounts =
-    selectedLedgerID > 0 ? accounts.filter((acc) => (acc.ledgerID || 7) === selectedLedgerID) : accounts;
+    selectedLedgerID > 0 ? accounts.filter((acc) => acc.ledgerID === selectedLedgerID) : accounts;
 
   const accountOptions = filteredAccounts.map((acc: any) => {
     const accDisplay = acc.formattedAccountNo || format14DigitDisplay(acc.accountNo);
@@ -710,7 +719,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   // Target accounts filtered by selected target deposit ledger (excluding source account)
   const filteredTargetAccounts =
     selectedTargetLedgerID > 0
-      ? accounts.filter((acc) => (acc.ledgerID || 7) === selectedTargetLedgerID && acc.savingAccountID !== formData.savingAccountID)
+      ? accounts.filter((acc) => acc.ledgerID === selectedTargetLedgerID && acc.savingAccountID !== formData.savingAccountID)
       : accounts.filter((acc) => acc.savingAccountID !== formData.savingAccountID);
 
   const targetAccountOptions = filteredTargetAccounts.map((acc: any) => {

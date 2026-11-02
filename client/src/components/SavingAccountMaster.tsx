@@ -116,7 +116,7 @@ const SavingAccountMaster: React.FC = () => {
     calculationMethod: 'DailyProduct',
     postingFrequency: 'Quarterly',
     effectiveDate: getTodayDate(),
-    savingLiabilityLedgerID: 7,
+    savingLiabilityLedgerID: 0,
     interestExpenseLedgerID: 0
   });
   const [savingSchemeLoading, setSavingSchemeLoading] = useState(false);
@@ -127,7 +127,7 @@ const SavingAccountMaster: React.FC = () => {
   const [formData, setFormData] = useState({
     branchID: user?.branchID || 1,
     customerID: 0,
-    ledgerID: 7, // Default to Saving Deposit control ledger
+    ledgerID: 0, // Default to Saving Deposit control ledger
     savingSchemeID: 1,
     displayAccountNo: '',
     accountType: 'Personal',
@@ -395,7 +395,7 @@ const SavingAccountMaster: React.FC = () => {
       calculationMethod: 'DailyProduct',
       postingFrequency: 'Quarterly',
       effectiveDate: new Date().toISOString().split('T')[0],
-      savingLiabilityLedgerID: defLiab ? defLiab.ledgerID : (allGlLedgers[0]?.ledgerID || 7),
+      savingLiabilityLedgerID: defLiab ? defLiab.ledgerID : (allGlLedgers[0]?.ledgerID || 0),
       interestExpenseLedgerID: defExp ? defExp.ledgerID : 0
     });
     setShowQuickSchemeModal(true);
@@ -545,7 +545,7 @@ const SavingAccountMaster: React.FC = () => {
 
   const resetForm = () => {
     const defScheme = interestSettings[0];
-    const defLedgerId = defScheme ? (defScheme.savingLiabilityLedgerID || defScheme.ledgerID || defScheme.interestExpenseLedgerID || 7) : 7;
+    const defLedgerId = defScheme ? (defScheme.savingLiabilityLedgerID || defScheme.ledgerID || defScheme.interestExpenseLedgerID || 0) : 0;
     const defSchemeId = defScheme?.settingID || 1;
     setFormData({
       branchID: user?.branchID || 1,
@@ -590,7 +590,7 @@ const SavingAccountMaster: React.FC = () => {
     setFormData({
       branchID: acc.branchID || 1,
       customerID: acc.customerID || 0,
-      ledgerID: acc.ledgerID || 7,
+      ledgerID: acc.ledgerID || (ledgers[0]?.ledgerID ?? 0),
       savingSchemeID: acc.savingSchemeID || 1,
       accountType: acc.accountType || 'Personal',
       isLegacyAccount: acc.isLegacyAccount || false,

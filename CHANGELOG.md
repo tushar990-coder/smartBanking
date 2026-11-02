@@ -1,5 +1,17 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-02] - आवृत्ती v2.6.17 (Balanced Sidebar UI, Strict Saving Scheme Filter & Soft Pastel Color Shades in Today's Tasks Dashboard)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) साईडबार नेव्हिगेशन सुधारणा (`Sidebar.tsx`):**
+  * साईडबारची रुंदी (`w-[206px]`), वरच्या हेडरची उंची (`h-9`) आणि मुख्य व सब-मेनू फॉन्ट साईझ (`11.5px` / `11px`) संतुलित व मध्यम-सुटसुटीत करून स्क्रीनवर स्वच्छ लूक दिला.
+* **२) बचत ठेव योजना फिल्टर अचूकता (`SavingLedgerHelper.cs`, `SavingAccountsController.cs`, `SavingTransactionEntry.tsx`, `SavingOpeningBalance.tsx` & `SavingAccountMaster.tsx`):**
+  * **'बचत ठेव योजना / प्रकार (Scheme Filter)'** ड्रॉपडाउनमध्ये केवळ अधिकृत बचत योजना (`SavingInterestSettings`) आणि नावामध्ये बचत शब्द असलेलीच खाती समाविष्ट करून **'धर्मादाय निधी'** व इतर निधी/राखीव खाती बचत ड्रॉपडाउनमधून कायमची वगळली.
+* **३) आजची कामे डॅशबोर्ड (`TodaysTasksDashboard.tsx`):**
+  * मुख्य हेडर, मुदत ठेव ऑटो-नूतनीकरण केंद्र, ५ KPI कार्ड्स, सर्व १० विभागवार काम कार्ड्स आणि पॉप-अप मॉडल्समधील गडद (Dark) रंग काढून तिथे प्रत्येक विभागासाठी स्वतंत्र व डोळ्यांना सुखद **सौम्य पेस्टल कलर शेड्स (Soft Pastel Shades)** लागू केले.
+
+---
+
 ## 📅 [2026-11-02] - आवृत्ती v2.6.16 (Loan Collection Mode & Schedule Fixes, Voucher Master Cr/Dr & Contra All-Ledger Support, FD Closure Business Date Validation)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

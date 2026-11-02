@@ -280,7 +280,7 @@ namespace Bhisi.Api.Controllers
             query = query.OrderBy(s => s.AccountNo);
 
             var today = DateTime.Today;
-            var allSchemes = await _context.SavingInterestSettings
+            var allSchemes = await _context.SavingInterestSettings.Include(s => s.SavingLiabilityLedger).Include(s => s.Ledger)
                 .AsNoTracking()
                 .OrderByDescending(s => s.EffectiveDate <= today)
                 .ThenByDescending(s => s.EffectiveDate)
@@ -296,6 +296,59 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(jh => jh.Customer)
                 .ToListAsync();
 
+            var configuredSchemeLedgerIds = allSchemes
+                .SelectMany(x => new[] { x.SavingLiabilityLedgerID ?? 0, x.LedgerID ?? 0 })
+                .Where(id => id > 0)
+                .ToHashSet();
+
+            if (configuredSchemeLedgerIds.Count > 0 && rawAccounts.Any(a => !configuredSchemeLedgerIds.Contains(a.LedgerID)))
+            {
+                var defaultScheme = allSchemes.FirstOrDefault(x => (x.SavingLiabilityLedgerID ?? x.LedgerID ?? 0) > 0);
+                int defaultSchemeLedgerId = defaultScheme?.SavingLiabilityLedgerID ?? defaultScheme?.LedgerID ?? 0;
+                int? defaultSchemeId = defaultScheme?.SettingID;
+
+                if (defaultSchemeLedgerId > 0)
+                {
+                    var invalidAccountIds = rawAccounts
+                        .Where(a => !configuredSchemeLedgerIds.Contains(a.LedgerID))
+                        .Select(a => a.SavingAccountID)
+                        .ToList();
+
+                    var accountsToFix = await _context.SavingAccountMasters
+                        .Where(a => invalidAccountIds.Contains(a.SavingAccountID))
+                        .ToListAsync();
+
+                    foreach (var accToFix in accountsToFix)
+                    {
+                        var schemeForFix = (accToFix.SavingSchemeID.HasValue && accToFix.SavingSchemeID.Value > 0
+                                ? allSchemes.FirstOrDefault(x => x.SettingID == accToFix.SavingSchemeID.Value)
+                                : null)
+                            ?? allSchemes.FirstOrDefault(x => x.InterestRate == accToFix.InterestRate)
+                            ?? defaultScheme;
+
+                        int fixedLedgerId = schemeForFix?.SavingLiabilityLedgerID ?? schemeForFix?.LedgerID ?? defaultSchemeLedgerId;
+                        if (fixedLedgerId > 0)
+                        {
+                            accToFix.LedgerID = fixedLedgerId;
+                            if (!accToFix.SavingSchemeID.HasValue || accToFix.SavingSchemeID.Value <= 0)
+                            {
+                                accToFix.SavingSchemeID = schemeForFix?.SettingID ?? defaultSchemeId;
+                            }
+                        }
+                    }
+
+                    var savingCobToFix = await _context.CustomerOpeningBalances
+                        .Where(c => c.SourceModule == "Saving" && !configuredSchemeLedgerIds.Contains(c.LedgerID))
+                        .ToListAsync();
+                    foreach (var cob in savingCobToFix)
+                    {
+                        cob.LedgerID = defaultSchemeLedgerId;
+                    }
+
+                    await _context.SaveChangesAsync();
+                }
+            }
+
             var accounts = rawAccounts.Select(s => {
                 var matchedScheme = s.SavingScheme
                     ?? (s.SavingSchemeID.HasValue && s.SavingSchemeID.Value > 0
@@ -306,6 +359,17 @@ namespace Bhisi.Api.Controllers
                         : null)
                     ?? allSchemes.FirstOrDefault(x => x.InterestRate == s.InterestRate)
                     ?? (allSchemes.Count == 1 ? allSchemes[0] : null);
+
+                int? matchedSchemeLedgerId = matchedScheme?.SavingLiabilityLedgerID ?? matchedScheme?.LedgerID;
+                string? matchedSchemeLedgerName = matchedScheme?.SavingLiabilityLedger?.LedgerName ?? matchedScheme?.Ledger?.LedgerName;
+                bool isAccountLedgerInSchemes = s.LedgerID > 0 && (configuredSchemeLedgerIds.Count == 0 || configuredSchemeLedgerIds.Contains(s.LedgerID));
+                int effectiveLedgerId = isAccountLedgerInSchemes ? s.LedgerID : (matchedSchemeLedgerId ?? s.LedgerID);
+                s.LedgerID = effectiveLedgerId;
+                string effectiveLedgerName = isAccountLedgerInSchemes
+                    ? (s.Ledger != null ? s.Ledger.LedgerName : "बचत ठेव")
+                    : (!string.IsNullOrWhiteSpace(matchedSchemeLedgerName)
+                        ? matchedSchemeLedgerName
+                        : (matchedScheme != null && !string.IsNullOrWhiteSpace(matchedScheme.SchemeName) ? matchedScheme.SchemeName : (s.Ledger != null ? s.Ledger.LedgerName : "बचत ठेव")));
 
                 decimal effectiveMinBal = Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalance(s, matchedScheme);
                 decimal availableBal = Math.Max(0m, s.CurrentBalance - s.LienAmount - effectiveMinBal);
@@ -339,7 +403,7 @@ namespace Bhisi.Api.Controllers
                     s.OldAccountNo,
                     s.LegacyAccountNumber,
                     s.LedgerID,
-                    LedgerName = s.Ledger != null ? s.Ledger.LedgerName : "बचत ठेव",
+                    LedgerName = effectiveLedgerName,
                     s.OpeningBalance,
                     s.CurrentBalance,
                     s.InterestRate,
@@ -394,6 +458,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var matchedScheme = await Helpers.SavingLedgerHelper.ResolveSavingSchemeAsync(_context, s);
+            await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, s);
             decimal effectiveMinBal = Helpers.SavingLedgerHelper.ResolveEffectiveMinimumBalance(s, matchedScheme);
             decimal availableBal = Math.Max(0m, s.CurrentBalance - s.LienAmount - effectiveMinBal);
 

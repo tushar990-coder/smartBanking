@@ -147,28 +147,27 @@ namespace Bhisi.Api.Helpers
 
             int resolvedId = 0;
 
-            // 1. Explicit LedgerID argument (e.g. chosen in Account Creation / Import UI)
-            if (explicitLedgerId.HasValue && explicitLedgerId.Value > 0 && await IsCandidateValidAsync(explicitLedgerId))
-            {
-                resolvedId = explicitLedgerId.Value;
-            }
+            var today = DateTime.Today;
+            var allSchemes = await context.SavingInterestSettings
+                .AsNoTracking()
+                .OrderByDescending(s => s.EffectiveDate <= today)
+                .ThenByDescending(s => s.EffectiveDate)
+                .ThenByDescending(s => s.SettingID)
+                .ToListAsync();
 
-            // 2. Saving Account's own mapped LedgerID FK
-            if (resolvedId == 0 && savingAccount != null && savingAccount.LedgerID > 0 && await IsCandidateValidAsync(savingAccount.LedgerID))
-            {
-                resolvedId = savingAccount.LedgerID;
-            }
+            var configuredSchemeLedgerIds = allSchemes
+                .SelectMany(s => new[] { s.SavingLiabilityLedgerID ?? 0, s.LedgerID ?? 0 })
+                .Where(id => id > 0)
+                .ToHashSet();
 
-            // 3. Explicit Scheme FK or Saving Account's Linked SavingScheme FK
+            // 1. Explicit Scheme FK or Saving Account's Linked SavingScheme FK
             if (resolvedId == 0)
             {
                 SavingInterestSetting? linkedScheme = null;
 
                 if (explicitSchemeId.HasValue && explicitSchemeId.Value > 0)
                 {
-                    linkedScheme = await context.SavingInterestSettings
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(s => s.SettingID == explicitSchemeId.Value);
+                    linkedScheme = allSchemes.FirstOrDefault(s => s.SettingID == explicitSchemeId.Value);
                 }
                 else if (savingAccount != null)
                 {
@@ -178,9 +177,7 @@ namespace Bhisi.Api.Helpers
                     }
                     else if (savingAccount.SavingSchemeID.HasValue && savingAccount.SavingSchemeID.Value > 0)
                     {
-                        linkedScheme = await context.SavingInterestSettings
-                            .AsNoTracking()
-                            .FirstOrDefaultAsync(s => s.SettingID == savingAccount.SavingSchemeID.Value);
+                        linkedScheme = allSchemes.FirstOrDefault(s => s.SettingID == savingAccount.SavingSchemeID.Value);
                     }
                 }
 
@@ -197,17 +194,29 @@ namespace Bhisi.Api.Helpers
                 }
             }
 
+            // 2. Explicit LedgerID argument (only if mapped to a Saving Scheme or when no schemes exist)
+            if (resolvedId == 0 &&
+                explicitLedgerId.HasValue &&
+                explicitLedgerId.Value > 0 &&
+                (configuredSchemeLedgerIds.Count == 0 || configuredSchemeLedgerIds.Contains(explicitLedgerId.Value)) &&
+                await IsCandidateValidAsync(explicitLedgerId))
+            {
+                resolvedId = explicitLedgerId.Value;
+            }
+
+            // 3. Saving Account's own mapped LedgerID FK (only if mapped to a Saving Scheme or when no schemes exist)
+            if (resolvedId == 0 &&
+                savingAccount != null &&
+                savingAccount.LedgerID > 0 &&
+                (configuredSchemeLedgerIds.Count == 0 || configuredSchemeLedgerIds.Contains(savingAccount.LedgerID)) &&
+                await IsCandidateValidAsync(savingAccount.LedgerID))
+            {
+                resolvedId = savingAccount.LedgerID;
+            }
+
             // 4. Active / Latest Saving Scheme Master (SavingInterestSettings)
             if (resolvedId == 0)
             {
-                var today = DateTime.Today;
-                var allSchemes = await context.SavingInterestSettings
-                    .AsNoTracking()
-                    .OrderByDescending(s => s.EffectiveDate <= today)
-                    .ThenByDescending(s => s.EffectiveDate)
-                    .ThenByDescending(s => s.SettingID)
-                    .ToListAsync();
-
                 foreach (var scheme in allSchemes)
                 {
                     if (await IsCandidateValidAsync(scheme.SavingLiabilityLedgerID))
@@ -270,13 +279,20 @@ namespace Bhisi.Api.Helpers
                 }
             }
 
-            // Self-heal invalid or uninitialized LedgerID on the SavingAccountMaster instance in memory
+            if (resolvedId == 0 && explicitLedgerId.HasValue && explicitLedgerId.Value > 0 && await IsCandidateValidAsync(explicitLedgerId))
+            {
+                resolvedId = explicitLedgerId.Value;
+            }
+
+            if (resolvedId == 0 && savingAccount != null && savingAccount.LedgerID > 0 && await IsCandidateValidAsync(savingAccount.LedgerID))
+            {
+                resolvedId = savingAccount.LedgerID;
+            }
+
+            // Self-heal invalid or unmapped LedgerID on the SavingAccountMaster instance in memory
             if (resolvedId > 0 && savingAccount != null && savingAccount.LedgerID != resolvedId)
             {
-                if (savingAccount.LedgerID <= 0 || !await IsCandidateValidAsync(savingAccount.LedgerID))
-                {
-                    savingAccount.LedgerID = resolvedId;
-                }
+                savingAccount.LedgerID = resolvedId;
             }
 
             return resolvedId;

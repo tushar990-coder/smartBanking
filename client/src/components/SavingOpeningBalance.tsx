@@ -74,7 +74,7 @@ const SavingOpeningBalance: React.FC = () => {
     settingID: 0,
     accountType: 'Personal',
     openingDate: '',
-    ledgerID: 7,
+    ledgerID: 0,
     openingBalance: 0,
     interestRate: 4.0,
     minimumBalance: 500,
@@ -162,7 +162,7 @@ const SavingOpeningBalance: React.FC = () => {
       if (Array.isArray(response.data) && response.data.length > 0) {
         setSchemes(response.data);
         const defaultScheme = response.data[0];
-        const mappedLedgerId = defaultScheme.savingLiabilityLedgerID || defaultScheme.ledgerID || defaultScheme.interestExpenseLedgerID || 7;
+        const mappedLedgerId = defaultScheme.savingLiabilityLedgerID || defaultScheme.ledgerID || defaultScheme.interestExpenseLedgerID || 0;
         setFormData(prev => ({
           ...prev,
           settingID: defaultScheme.settingID,
@@ -176,7 +176,7 @@ const SavingOpeningBalance: React.FC = () => {
           settingID: -1,
           interestRate: 4.0,
           minimumBalance: 0,
-          ledgerID: 7
+          ledgerID: 0
         }));
       }
     } catch (err) {
@@ -256,14 +256,14 @@ const SavingOpeningBalance: React.FC = () => {
         ...prev,
         settingID: -1,
         interestRate: 4.0,
-        ledgerID: 7
+        ledgerID: 0
       }));
       return;
     }
 
     const selectedScheme = schemes.find(s => s.settingID === sId);
     if (selectedScheme) {
-      const mappedLedgerId = selectedScheme.savingLiabilityLedgerID || selectedScheme.ledgerID || selectedScheme.interestExpenseLedgerID || 7;
+      const mappedLedgerId = selectedScheme.savingLiabilityLedgerID || selectedScheme.ledgerID || selectedScheme.interestExpenseLedgerID || 0;
       setFormData(prev => ({
         ...prev,
         settingID: sId,
@@ -290,7 +290,7 @@ const SavingOpeningBalance: React.FC = () => {
       settingID: account.settingID || 0,
       accountType: account.accountType || 'Personal',
       openingDate: account.openingDate ? account.openingDate.split('T')[0] : '',
-      ledgerID: account.ledgerID || 7,
+      ledgerID: account.ledgerID || 0,
       openingBalance: Number(account.openingBalance ?? 0),
       interestRate: Number(account.interestRate ?? 4.0),
       minimumBalance: Number(account.minimumBalance ?? 0),
@@ -350,7 +350,7 @@ const SavingOpeningBalance: React.FC = () => {
       settingID: schemes.length > 0 ? schemes[0].settingID : -1,
       interestRate: schemes.length > 0 ? (schemes[0].interestRate ?? 4.0) : 4.0,
       minimumBalance: schemes.length > 0 ? Number(schemes[0].minimumBalance ?? 0) : 0,
-      ledgerID: schemes.length > 0 ? (schemes[0].savingLiabilityLedgerID || schemes[0].ledgerID || 7) : 7
+      ledgerID: schemes.length > 0 ? (schemes[0].savingLiabilityLedgerID || schemes[0].ledgerID || 0) : 0
     });
     fetchNextAccountNo(targetBranchId);
     setError('');

@@ -299,7 +299,6 @@ namespace Bhisi.Api.Models
         public int LoanRateID { get; set; }
         public string LoanAccountNo { get; set; } = string.Empty;
         public string? LegacyAccountNumber { get; set; }
-        public string? LegacyAccountNumber { get; set; }
         public decimal PrincipalBalance { get; set; }
         public decimal PurePrincipalBalance { get; set; } = 0;
         public decimal CapitalizedInterestAmount { get; set; } = 0;
@@ -386,7 +385,6 @@ namespace Bhisi.Api.Models
         public SansthaDetail? SansthaInfo { get; set; }
         public string LoanType { get; set; } = string.Empty;
         public string LoanAccountNo { get; set; } = string.Empty;
-        public string? LegacyAccountNumber { get; set; }
         public string? LegacyAccountNumber { get; set; }
         public string Status { get; set; } = string.Empty;
         public decimal SanctionedAmount { get; set; }
@@ -729,7 +727,6 @@ namespace Bhisi.Api.Models
         public long? GoldLoanDetailID { get; set; }
         public int LoanAccountID { get; set; }
         public string LoanAccountNo { get; set; } = string.Empty;
-        public string? LegacyAccountNumber { get; set; }
         public int? LoanApplicationID { get; set; }
         public int? CustomerID { get; set; }
         public string CifNo { get; set; } = string.Empty;

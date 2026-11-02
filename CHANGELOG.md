@@ -1,5 +1,17 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-02] - आवृत्ती v2.6.13 (FD MIS Display FD Legacy Receipt / Old Account Number in Column 2 & Register Tab)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **FD खात्याचा जुना पावती / खाते क्रमांक प्रदर्शन (`FdMisPayoutController.cs` & `FdMisInterestPayout.tsx`):**
+  * मुदत ठेव मासिक व्याज ट्रान्सफर व परतावा स्क्रीनवर तक्त्यातील कॉलम २ **'FD खाते क्र. व खातेदार'** मध्ये १४-अंकी CBS खाते क्रमांकासोबतच FD चा स्वतःचा जुना खाते/पावती क्रमांक (`LegacyAccountNumber` / `OldAccountNo`) आकर्षक व ठळक बॅजमध्ये (उदा. **`जुना क्र: 12`**) स्पष्ट प्रदर्शित केला.
+* **नोंदवहीत जुना क्रमांक (Register Tab):**
+  * **'मासिक व्याज वाटप नोंदवही'** मध्येही **'FD खाते क्र.'** खाली जुना खाते क्रमांक स्पष्ट दर्शवला.
+* **जुन्या क्रमांकाने शोध (Instant Search):**
+  * वरच्या **'खाते क्र., जुना क्र., नाव, CIF शोधा...'** शोध रकान्यात FD च्या जुन्या पावती क्रमांकाने शोधताच संबंधित खाती तत्काळ फिल्टर होतात.
+
+---
+
 ## 📅 [2026-11-01] - आवृत्ती v2.6.12 (FD MIS Scheme-Wise Auto Calculation Basis, 1-Click Instant Daily/Monthly Recalculation, Dynamic Cash/Saving/Bank Ledger Selection & Auto Old Account No + CIF Display)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

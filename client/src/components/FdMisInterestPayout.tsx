@@ -47,6 +47,8 @@ interface PreviewItem {
   fdAccountID: number;
   fdSchemeID?: number;
   accountNo: string;
+  oldAccountNo?: string;
+  legacyAccountNumber?: string;
   customerID: number;
   customerName: string;
   cifNo: string;
@@ -105,6 +107,8 @@ interface RegisterRow {
   remarks?: string;
   voucherNo?: string;
   accountNo: string;
+  oldAccountNo?: string;
+  legacyAccountNumber?: string;
   customerName: string;
   targetSavingAccountNo?: string;
   targetSavingOldAccountNo?: string;
@@ -647,6 +651,7 @@ export const FdMisInterestPayout: React.FC = () => {
       // Requirement #2: Always compute exact calendar days & selected calcMethod immediately on every row!
       const items: PreviewItem[] = rawItems.map((i: any) => {
         const origMode: MisDisbursementMode = i.disbursementMode || 'SavingTransfer';
+        const fdOldAcc = String(i.oldAccountNo ?? i.OldAccountNo ?? i.legacyAccountNumber ?? i.LegacyAccountNumber ?? '').trim();
         const sbList: CustomerSavingAccountOption[] = Array.isArray(i.customerSavingAccounts)
           ? i.customerSavingAccounts.map((s: any) => ({
               savingAccountID: Number(s.savingAccountID ?? s.SavingAccountID),
@@ -715,6 +720,8 @@ export const FdMisInterestPayout: React.FC = () => {
         return {
           ...i,
           ...calcResult,
+          oldAccountNo: fdOldAcc || undefined,
+          legacyAccountNumber: fdOldAcc || undefined,
           tdsAmount: Number(i.tdsAmount) || 0,
           customerSavingAccounts: sbList,
           targetSavingAccountID: i.targetSavingAccountID ?? matchedSb?.savingAccountID,
@@ -877,7 +884,15 @@ export const FdMisInterestPayout: React.FC = () => {
           payoutMonth
         }
       });
-      setRegisterRows(res.data || []);
+      const mapped = (res.data || []).map((r: any) => {
+        const fdOldAcc = String(r.oldAccountNo ?? r.OldAccountNo ?? r.legacyAccountNumber ?? r.LegacyAccountNumber ?? '').trim();
+        return {
+          ...r,
+          oldAccountNo: fdOldAcc || undefined,
+          legacyAccountNumber: fdOldAcc || undefined
+        };
+      });
+      setRegisterRows(mapped);
     } catch (err: any) {
       console.error('Register fetch error', err);
     } finally {
@@ -1150,6 +1165,8 @@ export const FdMisInterestPayout: React.FC = () => {
     const q = searchQuery.toLowerCase();
     return (
       item.accountNo.toLowerCase().includes(q) ||
+      (item.oldAccountNo && item.oldAccountNo.toLowerCase().includes(q)) ||
+      (item.legacyAccountNumber && item.legacyAccountNumber.toLowerCase().includes(q)) ||
       item.customerName.toLowerCase().includes(q) ||
       item.cifNo.toLowerCase().includes(q) ||
       item.memberNo.toLowerCase().includes(q) ||
@@ -1164,6 +1181,8 @@ export const FdMisInterestPayout: React.FC = () => {
     const q = registerSearch.toLowerCase();
     return (
       row.accountNo.toLowerCase().includes(q) ||
+      (row.oldAccountNo && row.oldAccountNo.toLowerCase().includes(q)) ||
+      (row.legacyAccountNumber && row.legacyAccountNumber.toLowerCase().includes(q)) ||
       row.customerName.toLowerCase().includes(q) ||
       (row.voucherNo && row.voucherNo.toLowerCase().includes(q)) ||
       (row.targetSavingAccountNo && row.targetSavingAccountNo.toLowerCase().includes(q)) ||
@@ -1596,7 +1615,14 @@ export const FdMisInterestPayout: React.FC = () => {
 
                           {/* 2. FD Account & Customer */}
                           <td className="p-2">
-                            <div className="font-bold text-gray-900">{item.accountNo}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-gray-900">{item.accountNo}</span>
+                              {(item.oldAccountNo || item.legacyAccountNumber) && (
+                                <span className="bg-amber-100 text-amber-950 border border-amber-300 px-1.5 py-0.2 rounded-sm text-[10px] font-extrabold shadow-2xs">
+                                  जुना क्र: {item.oldAccountNo || item.legacyAccountNumber}
+                                </span>
+                              )}
+                            </div>
                             <div className="text-gray-800 font-semibold">{item.customerName}</div>
                             <div className="text-[10px] text-gray-500">
                               CIF: {item.cifNo || '-'} | {item.schemeName}
@@ -1899,7 +1925,14 @@ export const FdMisInterestPayout: React.FC = () => {
                     <tr key={r.payoutID} className="hover:bg-gray-50/50">
                       <td className="p-2 font-mono">{r.payoutDate ? r.payoutDate.split('T')[0] : '-'}</td>
                       <td className="p-2 font-bold text-primary font-mono">{r.voucherNo || '-'}</td>
-                      <td className="p-2 font-bold text-gray-800">{r.accountNo}</td>
+                      <td className="p-2">
+                        <div className="font-bold text-gray-800">{r.accountNo}</div>
+                        {(r.oldAccountNo || r.legacyAccountNumber) && (
+                          <div className="text-[10px] text-amber-900 font-bold bg-amber-50 border border-amber-200 px-1 py-0.2 rounded-xs inline-block mt-0.5">
+                            जुना क्र: {r.oldAccountNo || r.legacyAccountNumber}
+                          </div>
+                        )}
+                      </td>
                       <td className="p-2 text-gray-800 font-semibold">{r.customerName}</td>
                       <td className="p-2 text-right font-bold text-gray-800">₹ {r.depositPrincipal.toLocaleString('en-IN')}</td>
                       <td className="p-2 text-center font-bold text-gray-700">

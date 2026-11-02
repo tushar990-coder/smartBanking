@@ -24,7 +24,9 @@ namespace Bhisi.Api.Controllers
     {
         public int SavingAccountID { get; set; }
         public string AccountNo { get; set; } = string.Empty;
-        public string OldAccountNo { get; set; } = string.Empty;
+        public string? OldAccountNo { get; set; }
+        public string? LegacyAccountNumber { get; set; }
+
         public string CifNo { get; set; } = string.Empty;
         public decimal CurrentBalance { get; set; }
         public int BranchID { get; set; }
@@ -49,6 +51,8 @@ namespace Bhisi.Api.Controllers
         public int FdAccountID { get; set; }
         public int FdSchemeID { get; set; }
         public string AccountNo { get; set; } = string.Empty;
+        public string? OldAccountNo { get; set; }
+        public string? LegacyAccountNumber { get; set; }
         public int CustomerID { get; set; }
         public string CustomerName { get; set; } = string.Empty;
         public string CifNo { get; set; } = string.Empty;
@@ -712,6 +716,8 @@ namespace Bhisi.Api.Controllers
                     FdAccountID = acc.FdAccountID,
                     FdSchemeID = acc.FdSchemeID,
                     AccountNo = acc.AccountNo,
+                    OldAccountNo = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? acc.LegacyAccountNumber.Trim() : "",
+                    LegacyAccountNumber = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? acc.LegacyAccountNumber.Trim() : "",
                     CustomerID = acc.CustomerID,
                     CustomerName = acc.Customer?.FullName ?? "अज्ञात ग्राहक",
                     CifNo = acc.Customer?.CIFNo ?? "",
@@ -1225,6 +1231,8 @@ namespace Bhisi.Api.Controllers
                     p.Remarks,
                     VoucherNo = p.Voucher != null ? p.Voucher.VoucherNo : "",
                     AccountNo = p.FdAccount != null ? p.FdAccount.AccountNo : "",
+                    OldAccountNo = p.FdAccount != null ? (p.FdAccount.LegacyAccountNumber ?? "") : "",
+                    LegacyAccountNumber = p.FdAccount != null ? (p.FdAccount.LegacyAccountNumber ?? "") : "",
                     CustomerName = p.FdAccount != null && p.FdAccount.Customer != null ? p.FdAccount.Customer.FullName : "",
                     TargetSavingAccountNo = p.TargetSavingAccount != null ? p.TargetSavingAccount.AccountNo : "",
                     TargetSavingOldAccountNo = p.TargetSavingAccount != null ? (p.TargetSavingAccount.OldAccountNo ?? p.TargetSavingAccount.LegacyAccountNumber ?? "") : "",

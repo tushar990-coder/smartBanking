@@ -208,14 +208,14 @@ export default function RdAccountOpening({
       const res = await axios.get(`/api/RdAccounts/next-account-no${q}`);
       const rawNo = res.data?.accountNo || (typeof res.data === 'string' ? res.data : '');
       const formatted = res.data?.formattedAccountNo || rawNo || '---';
+      const nextLegacy = res.data?.nextLegacyAccountNo ? String(res.data.nextLegacyAccountNo) : '1';
       setAutoAccountNo(rawNo);
       setNextAccountNo(formatted);
-      if (!isCustomAccountNo && rawNo) {
-        setFormData(prev => ({
-          ...prev,
-          accountNo: rawNo
-        }));
-      }
+      setFormData(prev => ({
+        ...prev,
+        accountNo: !isCustomAccountNo && rawNo ? rawNo : prev.accountNo,
+        legacyAccountNumber: nextLegacy
+      }));
     } catch (err) {
       console.error('Error fetching next account number', err);
       setNextAccountNo('---');
@@ -427,9 +427,15 @@ export default function RdAccountOpening({
 
         const defaultBranch = bList.length > 0 ? bList[0].branchID : 1;
         fetchNextAccountNo(defaultBranch);
-        const sRes = await axios.get(`/api/RdSchemes?branchId=${defaultBranch}`);
+        const [sRes, rdAllRes] = await Promise.all([
+          axios.get(`/api/RdSchemes?branchId=${defaultBranch}`),
+          axios.get('/api/RdAccounts').catch(() => ({ data: [] }))
+        ]);
         const sList = Array.isArray(sRes.data) ? sRes.data : [];
         setSchemes(sList.filter((s: any) => s && s.isActive));
+        if (Array.isArray(rdAllRes.data)) {
+          setRdList(rdAllRes.data);
+        }
 
         if (memberIdStr && mList.length > 0) {
           const mId = parseInt(memberIdStr, 10);
@@ -673,6 +679,12 @@ export default function RdAccountOpening({
       setError('बँक ट्रान्सफरसाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
       return;
     }
+    if (duplicateLegacyAccount) {
+      const dupMsg = `⚠️ जुना आरडी क्र. '${formData.legacyAccountNumber?.trim()}' या आरडी योजनेत आधीच खाते क्र. ${duplicateLegacyAccount.accountNo} साठी नोंदवलेला आहे! कृपया वेगळा क्रमांक टाका.`;
+      setError(dupMsg);
+      alert(dupMsg);
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -721,10 +733,12 @@ export default function RdAccountOpening({
   };
 
   const filteredRdList = rdList.filter((item) => {
-    const accMatch = item.accountNo?.toLowerCase().includes(listSearch.toLowerCase());
-    const nameMatch = item.memberName?.toLowerCase().includes(listSearch.toLowerCase());
-    const codeMatch = item.memberCode?.toLowerCase().includes(listSearch.toLowerCase());
-    return accMatch || nameMatch || codeMatch;
+    const q = listSearch.toLowerCase();
+    const accMatch = item.accountNo?.toLowerCase().includes(q);
+    const legMatch = item.legacyAccountNumber?.toLowerCase().includes(q);
+    const nameMatch = item.memberName?.toLowerCase().includes(q);
+    const codeMatch = item.memberCode?.toLowerCase().includes(q);
+    return accMatch || legMatch || nameMatch || codeMatch;
   });
 
   // Calculate Breakdown
@@ -1067,7 +1081,9 @@ export default function RdAccountOpening({
                           <label className={labelClass}>
                             जुना आरडी क्र. (Legacy No)
                           </label>
-                          <span className="text-[10px] text-slate-400 font-medium">पर्यायी</span>
+                          <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1 rounded font-bold" title="योजनेतील मागील शेवटच्या जुन्या खाते क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
+                            ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                          </span>
                         </div>
                         <input
                           type="text"
@@ -1487,7 +1503,12 @@ export default function RdAccountOpening({
                   filteredRdList.map((item) => (
                     <tr key={item.rdAccountID} className="hover:bg-slate-50 transition">
                       <td className="py-2.5 px-3 font-mono font-bold text-indigo-700 whitespace-nowrap">
-                        {(item as any).formattedAccountNo || (item.accountNo?.length === 14 ? `${item.accountNo.slice(0,3)}-${item.accountNo.slice(3,6)}-${item.accountNo.slice(6,13)}-${item.accountNo.slice(13)}` : item.accountNo)}
+                        <div>{(item as any).formattedAccountNo || (item.accountNo?.length === 14 ? `${item.accountNo.slice(0,3)}-${item.accountNo.slice(3,6)}-${item.accountNo.slice(6,13)}-${item.accountNo.slice(13)}` : item.accountNo)}</div>
+                        {item.legacyAccountNumber && (
+                          <div className="text-[10px] font-sans font-extrabold text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded-sm inline-block mt-0.5">
+                            जुना क्र: {item.legacyAccountNumber}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 font-semibold text-slate-800">
                         <div>{item.memberName || '-'}</div>

@@ -177,9 +177,11 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   const [nextShareConfig, setNextShareConfig] = useState<{
     nextCertificateNo: string;
     nextFromShareNo: number;
+    nextLegacyMemberNo?: string;
   }>({
     nextCertificateNo: '',
-    nextFromShareNo: 1
+    nextFromShareNo: 1,
+    nextLegacyMemberNo: '1'
   });
 
   const [customerSavingAccounts, setCustomerSavingAccounts] = useState<any[]>([]);
@@ -290,10 +292,16 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       if (response.ok && isMountedRef.current) {
         const data = await response.json();
         if (data && isMountedRef.current) {
+          const nextLegacy = data.nextLegacyMemberNo ? String(data.nextLegacyMemberNo) : '1';
           setNextShareConfig({
             nextCertificateNo: data.nextCertificateNo || '',
-            nextFromShareNo: data.nextFromShareNo || 1
+            nextFromShareNo: data.nextFromShareNo || 1,
+            nextLegacyMemberNo: nextLegacy
           });
+          setFormData(prev => ({
+            ...prev,
+            legacyMemberNo: (!editingId && !prev.legacyMemberNo) ? nextLegacy : prev.legacyMemberNo
+          }));
         }
       }
     } catch (e) {
@@ -303,12 +311,26 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
 
   const fetchNextMemberCode = async () => {
     try {
-      const response = await fetch(`${API_URL}/next-code`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/next-code?includeLegacy=true`, { headers: getAuthHeaders() });
       if (response.ok && isMountedRef.current) {
-        const code = await response.text();
-        const cleaned = code.replace(/^"|"$/g, '').trim();
+        const text = await response.text();
+        let cleaned = text.replace(/^"|"$/g, '').trim();
+        let nextLegacy = '';
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object') {
+            cleaned = parsed.memberCode || cleaned;
+            nextLegacy = parsed.nextLegacyMemberNo ? String(parsed.nextLegacyMemberNo) : '';
+          }
+        } catch {
+          // plain text fallback
+        }
         if (cleaned && isMountedRef.current) {
-          setFormData(prev => ({ ...prev, memberCode: cleaned }));
+          setFormData(prev => ({
+            ...prev,
+            memberCode: cleaned,
+            legacyMemberNo: !editingId ? (nextLegacy || prev.legacyMemberNo || '1') : prev.legacyMemberNo
+          }));
         }
       }
     } catch (e) {
@@ -486,7 +508,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         ...prev,
         branchID: matchedMember?.branchID || cust.branchID || prev.branchID,
         memberCode: isRegistered ? memCode : prev.memberCode,
-        legacyMemberNo: matchedMember?.legacyMemberNo || (matchedMember as any)?.oldMemberCode || '',
+        legacyMemberNo: matchedMember?.legacyMemberNo || (matchedMember as any)?.oldMemberCode || (!isRegistered ? (nextShareConfig.nextLegacyMemberNo || prev.legacyMemberNo || '1') : ''),
         cifNo: cust.cifNo || matchedMember?.cifNo || '',
         membershipType: matchedMember?.membershipType || 'Regular',
         status: matchedMember?.status || 'Active',
@@ -540,6 +562,17 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     selectedCustomer.memberCode.trim() !== '' && 
     !selectedCustomer.memberCode.startsWith('TEMP')
   );
+
+  const duplicateLegacyMember = useMemo(() => {
+    const trimmed = (formData.legacyMemberNo || '').trim().toLowerCase();
+    if (!trimmed || isExistingMember) return null;
+    return members.find(m => {
+      if (editingId !== null && m.memberID === editingId) return false;
+      if (!editingId && selectedCustomerId && m.customerID === Number(selectedCustomerId)) return false;
+      const mLegacy = String(m.legacyMemberNo || m.oldMemberCode || '').trim().toLowerCase();
+      return mLegacy === trimmed;
+    }) || null;
+  }, [formData.legacyMemberNo, members, editingId, selectedCustomerId, isExistingMember]);
 
   const shareCapitalAmount = (Number(shareConfig.numberOfShares) || 0) * (shareConfig.faceValue || 100);
   const totalPayable = shareCapitalAmount + (shareConfig.admissionFee || 0) + (shareConfig.buildingFund || 0);
@@ -668,6 +701,13 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
 
     if (!formData.memberCode?.trim()) {
       setError("कृपया सभासद क्रमांक (Member Code) भरा.");
+      return;
+    }
+
+    if (duplicateLegacyMember) {
+      const dupMsg = `⚠️ हा जुना सभासद क्र. आधीच सभासद '${duplicateLegacyMember.firstName} ${duplicateLegacyMember.lastName}' (${duplicateLegacyMember.memberCode}) साठी नोंदवलेला आहे!`;
+      setError(dupMsg);
+      alert(dupMsg);
       return;
     }
 
@@ -1268,14 +1308,26 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
               </div>
 
               <div>
-                <label className={labelClass}>जुना / लेगसी सभासद क्र. (LF No)</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700">जुना / लेगसी सभासद क्र. (LF No)</label>
+                  <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-bold">
+                    ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={formData.legacyMemberNo}
                   onChange={e => setFormData(prev => ({ ...prev, legacyMemberNo: e.target.value }))}
-                  placeholder="उदा. LF-1234"
-                  className={inputClass}
+                  placeholder="उदा. 1 / LF-1234"
+                  className={`${inputClass} font-mono font-bold ${
+                    duplicateLegacyMember ? 'border-rose-500 bg-rose-50 text-rose-900' : ''
+                  }`}
                 />
+                {duplicateLegacyMember && (
+                  <p className="text-[10px] text-rose-600 font-bold mt-0.5">
+                    ⚠️ हा जुना सभासद क्र. आधीच सभासद '{duplicateLegacyMember.firstName} {duplicateLegacyMember.lastName}' ({duplicateLegacyMember.memberCode}) साठी नोंदवलेला आहे!
+                  </p>
+                )}
               </div>
 
               <div>

@@ -274,11 +274,34 @@ namespace Bhisi.Api.Controllers
                 request.MemberId = member.MemberID;
                 int customerId = cust?.CustomerID ?? (member.CustomerID ?? 1);
 
-                // Update Old ID (LegacyMemberNo) if entered by user
+                // Validate duplicate LegacyMemberNo
                 if (!string.IsNullOrWhiteSpace(request.LegacyMemberNo))
                 {
-                    member.LegacyMemberNo = request.LegacyMemberNo.Trim();
+                    var trimmedLegacyMem = request.LegacyMemberNo.Trim();
+                    bool dupLegacyMember = await _context.Members
+                        .AsNoTracking()
+                        .AnyAsync(m => m.MemberID != member.MemberID && !m.IsDeleted && m.LegacyMemberNo != null && m.LegacyMemberNo.Trim() == trimmedLegacyMem);
+                    if (dupLegacyMember)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = $"जुना सभासद क्र. '{trimmedLegacyMem}' आधीच इतर सभासदासाठी नोंदवलेला आहे!" });
+                    }
+                    member.LegacyMemberNo = trimmedLegacyMem;
                     _context.Entry(member).State = EntityState.Modified;
+                }
+
+                // Validate duplicate LegacyAccountNumber
+                if (!string.IsNullOrWhiteSpace(request.LegacyAccountNumber))
+                {
+                    var trimmedLegacyAcc = request.LegacyAccountNumber.Trim();
+                    bool dupLegacyAcc = await _context.ShareAccounts
+                        .AsNoTracking()
+                        .AnyAsync(sa => sa.MemberId != member.MemberID && sa.LegacyAccountNumber != null && sa.LegacyAccountNumber.Trim() == trimmedLegacyAcc);
+                    if (dupLegacyAcc)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = $"जुना शेअर खाते क्र. '{trimmedLegacyAcc}' आधीच इतर सभासदासाठी नोंदवलेला आहे!" });
+                    }
                 }
 
                 // Assign official Member Code (MEM0001 format) upon Share Allotment if missing
@@ -1134,6 +1157,39 @@ namespace Bhisi.Api.Controllers
                 var defaultScheme = await _context.ShareSchemes.FirstOrDefaultAsync(s => s.IsActive);
                 decimal defaultFaceVal = defaultScheme?.ShareFaceValue ?? 100.00m;
 
+                var existingLegacyMemberNos = await _context.Members
+                    .AsNoTracking()
+                    .Where(m => !m.IsDeleted && m.LegacyMemberNo != null && m.LegacyMemberNo != "")
+                    .Select(m => m.LegacyMemberNo!)
+                    .ToListAsync();
+
+                var existingLegacyAccountNos = await _context.ShareAccounts
+                    .AsNoTracking()
+                    .Where(sa => sa.LegacyAccountNumber != null && sa.LegacyAccountNumber != "")
+                    .Select(sa => sa.LegacyAccountNumber!)
+                    .ToListAsync();
+
+                long maxLegacyMemberSeq = 0;
+                foreach (var rawVal in existingLegacyMemberNos.Concat(existingLegacyAccountNos))
+                {
+                    if (string.IsNullOrWhiteSpace(rawVal)) continue;
+                    var trimmed = rawVal.Trim();
+                    if (long.TryParse(trimmed, out long numVal))
+                    {
+                        if (numVal > maxLegacyMemberSeq) maxLegacyMemberSeq = numVal;
+                    }
+                    else
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
+                        if (match.Success && long.TryParse(match.Groups[1].Value, out long extractedVal))
+                        {
+                            if (extractedVal > maxLegacyMemberSeq) maxLegacyMemberSeq = extractedVal;
+                        }
+                    }
+                }
+
+                string nextLegacyNo = maxLegacyMemberSeq > 0 ? (maxLegacyMemberSeq + 1).ToString() : "1";
+
                 return Ok(new
                 {
                     nextCertificateNo = nextCertStr,
@@ -1142,6 +1198,8 @@ namespace Bhisi.Api.Controllers
                     nextShareNo = nextFromShareNo,
                     lastToShareNo = maxToShareNo,
                     nextMemberCode = nextMemberCode,
+                    nextLegacyMemberNo = nextLegacyNo,
+                    nextLegacyAccountNo = nextLegacyNo,
                     faceValue = defaultFaceVal
                 });
             }
@@ -1155,6 +1213,8 @@ namespace Bhisi.Api.Controllers
                     nextShareNo = 1,
                     lastToShareNo = 0,
                     nextMemberCode = "MEM0001",
+                    nextLegacyMemberNo = "1",
+                    nextLegacyAccountNo = "1",
                     faceValue = 100.00m
                 });
             }

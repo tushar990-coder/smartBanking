@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import {
   Briefcase,
@@ -90,10 +90,13 @@ const InvestmentAccountOpening: React.FC = () => {
 
   const API_URL = '/api';
 
+  const [auto14DigitAccountNo, setAuto14DigitAccountNo] = useState<string>('');
+
   const [formData, setFormData] = useState({
     branchID: initialBranchId,
     investmentInstitutionID: 0,
     schemeID: 0,
+    oldInvestmentNo: '1',
     depositReceiptNo: '', // FDR No OR Share Certificate / Folio No
     investmentDate: activeBusinessDate,
     principalAmount: 0,
@@ -130,12 +133,45 @@ const InvestmentAccountOpening: React.FC = () => {
     expectedMaturityAmount: 0,
   });
 
+  const fetchNextAccountNo = async (bId?: number, sId?: number) => {
+    try {
+      const targetBranch = bId ?? formData.branchID ?? 1;
+      const targetScheme = sId ?? formData.schemeID ?? 0;
+      const res = await axios.get(`${API_URL}/InvestmentAccounts/next-account-no?branchId=${targetBranch}&schemeId=${targetScheme || 0}`);
+      if (res.data) {
+        const next14 = res.data.nextAccountNo || '';
+        const nextLegacy = res.data.nextLegacyAccountNo ? String(res.data.nextLegacyAccountNo) : '1';
+        setAuto14DigitAccountNo(next14);
+        setFormData(prev => ({
+          ...prev,
+          oldInvestmentNo: nextLegacy
+        }));
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     fetchInstitutions();
     fetchSchemes();
     fetchBranches();
     fetchAccounts();
+    fetchNextAccountNo(initialBranchId, 0);
   }, []);
+
+  useEffect(() => {
+    fetchNextAccountNo(formData.branchID, formData.schemeID);
+  }, [formData.branchID, formData.schemeID]);
+
+  const duplicateOldInvestment = useMemo(() => {
+    const trimmed = (formData.oldInvestmentNo || '').trim().toLowerCase();
+    if (!trimmed || !formData.schemeID) return null;
+    const schemeIdNum = Number(formData.schemeID);
+    return accounts.find((a: any) => {
+      const aSchemeId = Number(a.schemeID ?? a.schemeId ?? a.SchemeID ?? 0);
+      const aOldNo = String(a.oldInvestmentNo || a.OldInvestmentNo || '').trim().toLowerCase();
+      return aSchemeId === schemeIdNum && aOldNo === trimmed;
+    }) || null;
+  }, [formData.oldInvestmentNo, formData.schemeID, accounts]);
 
   const fetchBranches = async () => {
     try {
@@ -325,6 +361,7 @@ const InvestmentAccountOpening: React.FC = () => {
       branchID: initialBranchId,
       investmentInstitutionID: 0,
       schemeID: 0,
+      oldInvestmentNo: '1',
       depositReceiptNo: '',
       investmentDate: activeBusinessDate,
       principalAmount: 0,
@@ -338,6 +375,7 @@ const InvestmentAccountOpening: React.FC = () => {
       bankLedgerID: 0,
       referenceNo: '',
     });
+    fetchNextAccountNo(initialBranchId, 0);
     setCalcData({
       interestRate: 0,
       durationType: 'Months',
@@ -365,6 +403,12 @@ const InvestmentAccountOpening: React.FC = () => {
       setError('कृपया गुंतवणूक योजना निवडा.');
       return;
     }
+    if (duplicateOldInvestment) {
+      const dupMsg = `⚠️ हा जुना गुंतवणूक खाते क्र. या योजनेत आधीच खाते क्र. ${duplicateOldInvestment.investmentNo} साठी नोंदवलेला आहे!`;
+      setError(dupMsg);
+      alert(dupMsg);
+      return;
+    }
     if (!formData.investmentDate || !isValidIsoDate(formData.investmentDate)) {
       setError('कृपया वैध मूळ गुंतवणूक / पावती तारीख निवडा (वर्ष ४ अंकी असणे आवश्यक आहे, उदा. 31/03/2026).');
       return;
@@ -390,7 +434,7 @@ const InvestmentAccountOpening: React.FC = () => {
         investmentInstitutionID: Number(formData.investmentInstitutionID),
         schemeID: Number(formData.schemeID),
         investmentNo: '',
-        oldInvestmentNo: null,
+        oldInvestmentNo: formData.oldInvestmentNo?.trim() || null,
         depositReceiptNo: formData.depositReceiptNo?.trim() || (isShareMode ? 'SHARE-CERT' : 'FDR'),
         investmentDate: formData.investmentDate,
         principalAmount: parseFloat(formData.principalAmount.toString()) || 0,
@@ -453,7 +497,8 @@ const InvestmentAccountOpening: React.FC = () => {
       const isShare = a.investmentType === 'Share' || a.durationMonths === 0;
       return {
         'अ.क्र.': idx + 1,
-        'खाते क्रमांक': a.investmentNo,
+        'खाते क्रमांक': a.oldInvestmentNo ? `${a.investmentNo} [जुना क्र: ${a.oldInvestmentNo}]` : a.investmentNo,
+        'जुना गुंतवणूक खाते क्र.': a.oldInvestmentNo || '-',
         'पावती / दाखला क्र.': a.depositReceiptNo || '-',
         'संस्था / बँक': a.institutionName || '-',
         'योजना': a.schemeName || '-',
@@ -496,6 +541,7 @@ const InvestmentAccountOpening: React.FC = () => {
     const q = searchTerm.toLowerCase();
     return (
       (a.investmentNo || '').toLowerCase().includes(q) ||
+      (a.oldInvestmentNo || '').toLowerCase().includes(q) ||
       (a.depositReceiptNo || '').toLowerCase().includes(q) ||
       (a.institutionName || '').toLowerCase().includes(q) ||
       (a.schemeName || '').toLowerCase().includes(q)
@@ -771,6 +817,54 @@ const InvestmentAccountOpening: React.FC = () => {
                     <span className="text-rose-500 font-medium">अपूर्ण/अवैध तारीख</span>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* Auto 14-Digit Account No & Old/Legacy Investment Account No */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-2 border-t border-gray-100">
+              <div>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    नवीन गुंतवणूक खाते क्र. (CBS 14-Digit)
+                  </label>
+                  <span className="text-[9px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded font-bold">
+                    ऑटो
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  readOnly
+                  value={auto14DigitAccountNo || 'लोड होत आहे...'}
+                  className={`${inputClass} font-mono font-bold bg-slate-100 text-primary cursor-not-allowed`}
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    जुना गुंतवणूक खाते क्र. (Old Inv. No)
+                  </label>
+                  <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-bold">
+                    ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  name="oldInvestmentNo"
+                  value={formData.oldInvestmentNo}
+                  onChange={handleChange}
+                  placeholder="उदा. 1 / INV-101"
+                  className={`${inputClass} font-mono font-bold ${
+                    duplicateOldInvestment
+                      ? 'border-rose-500 bg-rose-50 text-rose-900'
+                      : 'border-amber-300 bg-amber-50/30 text-slate-900'
+                  }`}
+                />
+                {duplicateOldInvestment && (
+                  <p className="text-[10px] text-rose-600 font-bold mt-0.5">
+                    ⚠️ हा जुना गुंतवणूक खाते क्र. या योजनेत आधीच खाते क्र. {duplicateOldInvestment.investmentNo} साठी नोंदवलेला आहे!
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -1207,7 +1301,14 @@ const InvestmentAccountOpening: React.FC = () => {
                         return (
                           <tr key={a.investmentAccountID || idx} className="hover:bg-primary/5 transition-colors">
                             <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500">{idx + 1}</td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 font-mono font-bold text-primary">{a.investmentNo}</td>
+                            <td className="px-3 py-1.5 border-r border-gray-200 font-mono font-bold text-primary">
+                              <div>{a.investmentNo}</div>
+                              {a.oldInvestmentNo && (
+                                <div className="text-[10px] text-amber-700 font-bold">
+                                  [जुना क्र: {a.oldInvestmentNo}]
+                                </div>
+                              )}
+                            </td>
                             <td className="px-3 py-1.5 border-r border-gray-200 font-mono font-bold text-purple-900">{a.depositReceiptNo || '-'}</td>
                             <td className="px-3 py-1.5 border-r border-gray-200 font-medium text-gray-900">{a.institutionName}</td>
                             <td className="px-3 py-1.5 border-r border-gray-200 text-gray-700">

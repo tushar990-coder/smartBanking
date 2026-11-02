@@ -166,20 +166,55 @@ namespace Bhisi.Api.Controllers
             return (candidate, formatted, nextSeq);
         }
 
+        private async Task<string> CalculateNextFdLegacyAccountNoAsync(int branchId, int? schemeId)
+        {
+            var query = _context.FdAccounts
+                .AsNoTracking()
+                .Where(a => a.BranchID == branchId && a.LegacyAccountNumber != null && a.LegacyAccountNumber != "");
+
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                query = query.Where(a => a.FdSchemeID == schemeId.Value);
+            }
+
+            var legacyList = await query.Select(a => a.LegacyAccountNumber!).ToListAsync();
+            long maxLegacySeq = 0;
+            foreach (var raw in legacyList)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                string trimmed = raw.Trim();
+                if (long.TryParse(trimmed, out long exactNum) && exactNum > 0 && exactNum < 1000000000L)
+                {
+                    if (exactNum > maxLegacySeq) maxLegacySeq = exactNum;
+                }
+                else
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
+                    if (match.Success && long.TryParse(match.Groups[1].Value, out long suffixNum) && suffixNum > 0 && suffixNum < 1000000000L)
+                    {
+                        if (suffixNum > maxLegacySeq) maxLegacySeq = suffixNum;
+                    }
+                }
+            }
+            return maxLegacySeq > 0 ? (maxLegacySeq + 1).ToString() : "1";
+        }
+
         // GET: api/FdAccounts/next-account-no  (global fallback, 14-digit CBS)
         [HttpGet("next-account-no")]
-        public async Task<ActionResult<object>> GetNextAccountNo()
+        public async Task<ActionResult<object>> GetNextAccountNo([FromQuery] int? branchId = null, [FromQuery] int? schemeId = null)
         {
-            var branch = await _context.Branches.FirstOrDefaultAsync();
-            int bId = branch?.BranchID ?? 1;
-            var (accountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(bId, null, incrementSequence: false);
+            int bId = branchId ?? (await _context.Branches.Select(b => (int?)b.BranchID).FirstOrDefaultAsync()) ?? 1;
+            var (accountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(bId, schemeId, incrementSequence: false);
+            string nextLegacyAccountNo = await CalculateNextFdLegacyAccountNoAsync(bId, schemeId);
             return Ok(new {
                 accountNo = accountNo,
                 nextAccountNo = accountNo,
                 formattedAccountNo = formattedNo,
                 displayAccountNo = formattedNo,
                 branchID = bId,
-                nextSeq = nextSeq
+                schemeId = schemeId,
+                nextSeq = nextSeq,
+                nextLegacyAccountNo = nextLegacyAccountNo
             });
         }
 
@@ -191,6 +226,7 @@ namespace Bhisi.Api.Controllers
             if (branch == null) return NotFound("Branch not found.");
 
             var (accountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(branchId, schemeId, incrementSequence: false);
+            string nextLegacyAccountNo = await CalculateNextFdLegacyAccountNoAsync(branchId, schemeId);
             return Ok(new {
                 accountNo = accountNo,
                 nextAccountNo = accountNo,
@@ -198,7 +234,8 @@ namespace Bhisi.Api.Controllers
                 displayAccountNo = formattedNo,
                 branchID = branchId,
                 schemeId = schemeId,
-                nextSeq = nextSeq
+                nextSeq = nextSeq,
+                nextLegacyAccountNo = nextLegacyAccountNo
             });
         }
 

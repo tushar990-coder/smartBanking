@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -270,6 +270,17 @@ export default function PigmyAccountOpening() {
     return accNo;
   };
 
+  const duplicateLegacyAccount = useMemo(() => {
+    const trimmed = (formData.legacyAccountNumber || '').trim().toLowerCase();
+    if (!trimmed || !formData.pigmySchemeID) return null;
+    const schemeIdStr = String(formData.pigmySchemeID);
+    return savedAccounts.find(acc => {
+      const accSchemeId = String(acc.pigmySchemeID ?? acc.pigmySchemeId ?? acc.PigmySchemeID ?? (acc.pigmyScheme ? getSchemeId(acc.pigmyScheme) : ''));
+      const accLegacy = String(acc.legacyAccountNumber || acc.oldAccountNo || acc.LegacyAccountNumber || acc.OldAccountNo || '').trim().toLowerCase();
+      return accSchemeId === schemeIdStr && accLegacy === trimmed;
+    }) || null;
+  }, [formData.legacyAccountNumber, formData.pigmySchemeID, savedAccounts]);
+
   const fetchNextAccountNo = async (branchId: number, schemeId?: number) => {
     setLoadingAccountNo(true);
     try {
@@ -278,11 +289,19 @@ export default function PigmyAccountOpening() {
       });
       if (res.data) {
         const nextNo = res.data.accountNo || res.data.nextAccountNo || (typeof res.data === 'string' ? res.data : '');
+        const nextLegacy = res.data.nextLegacyAccountNo ? String(res.data.nextLegacyAccountNo) : '1';
         if (nextNo) {
           setAutoAccountNo(nextNo);
-          if (!isCustomAccountNo) {
-            setFormData(prev => ({ ...prev, accountNo: nextNo }));
-          }
+          setFormData(prev => ({
+            ...prev,
+            accountNo: !isCustomAccountNo ? nextNo : prev.accountNo,
+            legacyAccountNumber: nextLegacy
+          }));
+        } else {
+          setFormData(prev => ({
+            ...prev,
+            legacyAccountNumber: nextLegacy
+          }));
         }
       }
     } catch (err) {
@@ -341,6 +360,15 @@ export default function PigmyAccountOpening() {
       return;
     }
 
+    if (duplicateLegacyAccount) {
+      const dupAccNo = duplicateLegacyAccount.accountNo || duplicateLegacyAccount.AccountNo || '';
+      const msg = `⚠️ हा जुना पिग्मी खाते क्र. या योजनेत आधीच खाते क्र. ${dupAccNo} साठी नोंदवलेला आहे!`;
+      setErrorMessage(msg);
+      toast.error(msg);
+      alert(msg);
+      return;
+    }
+
     const activeAccountNo = (formData.accountNo || autoAccountNo || '').trim();
     const existingAccount = activeAccountNo && activeAccountNo !== 'लोड होत आहे...'
       ? savedAccounts.find(
@@ -392,13 +420,12 @@ export default function PigmyAccountOpening() {
         toast.success(`नवीन पिग्मी खाते क्रमांक '${createdNo}' यशस्वीरीत्या उघडले गेले!`);
         await fetchSavedAccounts();
         setIsCustomAccountNo(false);
-        await fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1);
         setFormData(prev => ({
           ...prev,
           customerID: '',
-          legacyAccountNumber: '',
           openingBalance: '0'
         }));
+        await fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1);
         setPaymentMode('Cash');
         setBankLedgerId(0);
         setSelectedCustomer(null);
@@ -647,16 +674,27 @@ export default function PigmyAccountOpening() {
                 <label className="font-semibold text-slate-700 text-xs">
                   जुना पिग्मी खाते क्र. (Old A/c No)
                 </label>
-                <span className="text-[10px] text-amber-700 font-medium">पर्यायी</span>
+                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-bold">
+                  ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                </span>
               </div>
               <input 
                 type="text" 
                 name="legacyAccountNumber"
                 value={formData.legacyAccountNumber} 
                 onChange={(e) => setFormData(p => ({ ...p, legacyAccountNumber: e.target.value }))}
-                placeholder="उदा. PG-101 / 45"
-                className="w-full border border-amber-300 bg-amber-50/30 rounded-lg px-2.5 py-1.5 font-semibold text-xs outline-none shadow-2xs transition-colors text-slate-800 focus:border-blue-500"
+                placeholder="उदा. 1 / PG-101"
+                className={`w-full border rounded-lg px-2.5 py-1.5 font-semibold text-xs outline-none shadow-2xs transition-colors ${
+                  duplicateLegacyAccount
+                    ? 'border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600'
+                    : 'border-amber-300 bg-amber-50/30 text-slate-800 focus:border-blue-500'
+                }`}
               />
+              {duplicateLegacyAccount && (
+                <p className="text-[10px] text-rose-600 font-bold mt-1">
+                  ⚠️ हा जुना पिग्मी खाते क्र. या योजनेत आधीच खाते क्र. {duplicateLegacyAccount.accountNo || duplicateLegacyAccount.AccountNo} साठी नोंदवलेला आहे!
+                </p>
+              )}
             </div>
 
             {/* SELECT CUSTOMER SEARCHABLE DROPDOWN */}
@@ -855,20 +893,6 @@ export default function PigmyAccountOpening() {
                   (DD/MM/YYYY)
                 </span>
               </div>
-            </div>
-
-            {/* LEGACY ACCOUNT NUMBER */}
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                जुना खाते / पावती क्र. (Old A/C No)
-              </label>
-              <input 
-                type="text" 
-                placeholder="उदा. 0001 (पर्यायी)"
-                className="w-full border border-slate-300 rounded-xl px-3 py-1.5 bg-slate-50 focus:bg-white focus:border-primary outline-none"
-                value={formData.legacyAccountNumber}
-                onChange={(e) => setFormData({ ...formData, legacyAccountNumber: e.target.value })}
-              />
             </div>
 
             {/* INITIAL OPENING DEPOSIT */}

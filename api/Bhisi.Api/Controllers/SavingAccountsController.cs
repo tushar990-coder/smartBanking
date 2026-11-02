@@ -185,11 +185,57 @@ namespace Bhisi.Api.Controllers
             int? targetSchemeId = schemeId ?? settingId;
             string nextNo = await GenerateNextSavingAccountNo(targetBranchId, targetSchemeId, incrementSequence: false);
             string formattedNo = LuhnHelper.Format14Digit(nextNo);
+
+            // Calculate Next Legacy (Old) Account Number for the selected Saving Scheme & Branch
+            string nextLegacyAccountNo = "1";
+            var legacyQuery = _context.SavingAccountMasters
+                .AsNoTracking()
+                .Where(s => s.BranchID == targetBranchId &&
+                            ((s.LegacyAccountNumber != null && s.LegacyAccountNumber != "") ||
+                             (s.OldAccountNo != null && s.OldAccountNo != "")));
+
+            if (targetSchemeId.HasValue && targetSchemeId.Value > 0)
+            {
+                legacyQuery = legacyQuery.Where(s => s.SavingSchemeID == targetSchemeId.Value || s.SavingSchemeID == null);
+            }
+
+            var legacyList = await legacyQuery
+                .Select(s => new { s.LegacyAccountNumber, s.OldAccountNo })
+                .ToListAsync();
+
+            long maxLegacySeq = 0;
+            foreach (var item in legacyList)
+            {
+                foreach (var raw in new[] { item.LegacyAccountNumber, item.OldAccountNo })
+                {
+                    if (string.IsNullOrWhiteSpace(raw)) continue;
+                    string trimmed = raw.Trim();
+                    if (long.TryParse(trimmed, out long exactNum) && exactNum > 0 && exactNum < 1000000000L)
+                    {
+                        if (exactNum > maxLegacySeq) maxLegacySeq = exactNum;
+                    }
+                    else
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
+                        if (match.Success && long.TryParse(match.Groups[1].Value, out long suffixNum) && suffixNum > 0 && suffixNum < 1000000000L)
+                        {
+                            if (suffixNum > maxLegacySeq) maxLegacySeq = suffixNum;
+                        }
+                    }
+                }
+            }
+
+            if (maxLegacySeq > 0)
+            {
+                nextLegacyAccountNo = (maxLegacySeq + 1).ToString();
+            }
+
             return Ok(new { 
                 nextAccountNo = nextNo, 
                 accountNo = nextNo,
                 formattedAccountNo = formattedNo,
-                displayAccountNo = formattedNo
+                displayAccountNo = formattedNo,
+                nextLegacyAccountNo = nextLegacyAccountNo
             });
         }
 
@@ -603,15 +649,18 @@ namespace Bhisi.Api.Controllers
                 ? dto.LegacyAccountNumber.Trim() 
                 : (!string.IsNullOrWhiteSpace(dto.OldAccountNo) ? dto.OldAccountNo.Trim() : dto.PreviousAccountNo?.Trim());
 
+            int? resolvedSavingSchemeId = matchedScheme?.SettingID ?? targetSchemeId;
+
             if (!string.IsNullOrWhiteSpace(legacyNo))
             {
                 bool legacyExists = await _context.SavingAccountMasters.AnyAsync(s => 
                     s.BranchID == dto.BranchID && 
+                    (!resolvedSavingSchemeId.HasValue || s.SavingSchemeID == resolvedSavingSchemeId.Value) &&
                     ((s.LegacyAccountNumber != null && s.LegacyAccountNumber.Trim() == legacyNo) || 
                      (s.OldAccountNo != null && s.OldAccountNo.Trim() == legacyNo)));
                 if (legacyExists)
                 {
-                    return BadRequest($"जुना बचत खाते क्रमांक '{legacyNo}' या शाखेत आधीच अस्तित्वात आहे.");
+                    return BadRequest($"जुना बचत खाते क्रमांक '{legacyNo}' या बचत योजनेत आधीच अस्तित्वात आहे.");
                 }
             }
 
@@ -619,11 +668,11 @@ namespace Bhisi.Api.Controllers
             {
                 BranchID = dto.BranchID,
                 AccountNo = finalAccountNo,
-                SavingSchemeID = matchedScheme?.SettingID ?? targetSchemeId,
+                SavingSchemeID = resolvedSavingSchemeId,
                 CustomerID = customer.CustomerID,
                 AccountType = dto.AccountType,
                 OpeningDate = dto.OpeningDate,
-                IsLegacyAccount = dto.IsLegacyAccount || !string.IsNullOrWhiteSpace(legacyNo),
+                IsLegacyAccount = dto.IsLegacyAccount,
                 OldAccountNo = legacyNo,
                 LegacyAccountNumber = legacyNo,
                 LedgerID = targetLedgerId,
@@ -1217,8 +1266,24 @@ namespace Bhisi.Api.Controllers
                 existing.NomineeName = dto.NomineeName;
                 existing.NomineeRelation = dto.NomineeRelation;
                 existing.NomineeAddress = dto.NomineeAddress;
-                existing.OldAccountNo = dto.OldAccountNo ?? dto.LegacyAccountNumber ?? existing.OldAccountNo;
-                existing.LegacyAccountNumber = dto.OldAccountNo ?? dto.LegacyAccountNumber ?? existing.LegacyAccountNumber;
+                string? updatedLegacyNo = !string.IsNullOrWhiteSpace(dto.LegacyAccountNumber)
+                    ? dto.LegacyAccountNumber.Trim()
+                    : (!string.IsNullOrWhiteSpace(dto.OldAccountNo) ? dto.OldAccountNo.Trim() : existing.LegacyAccountNumber);
+                if (!string.IsNullOrWhiteSpace(updatedLegacyNo))
+                {
+                    bool dupLegacy = await _context.SavingAccountMasters.AnyAsync(s =>
+                        s.SavingAccountID != existing.SavingAccountID &&
+                        s.BranchID == existing.BranchID &&
+                        (!existing.SavingSchemeID.HasValue || s.SavingSchemeID == existing.SavingSchemeID.Value) &&
+                        ((s.LegacyAccountNumber != null && s.LegacyAccountNumber.Trim() == updatedLegacyNo) ||
+                         (s.OldAccountNo != null && s.OldAccountNo.Trim() == updatedLegacyNo)));
+                    if (dupLegacy)
+                    {
+                        return BadRequest(new { message = $"जुना बचत खाते क्रमांक '{updatedLegacyNo}' या बचत योजनेत आधीच अस्तित्वात आहे." });
+                    }
+                }
+                existing.OldAccountNo = updatedLegacyNo;
+                existing.LegacyAccountNumber = updatedLegacyNo;
                 existing.LastInterestPostingDate = dto.LastInterestPostingDate;
                 existing.LastInterestAmount = dto.LastInterestAmount;
                 existing.UpdatedOn = DateTime.Now;

@@ -127,6 +127,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
   const [customCertNo, setCustomCertNo] = useState('');
   const [isCustomCertNo, setIsCustomCertNo] = useState(false);
   const [legacyAccountNo, setLegacyAccountNo] = useState('');
+  const [nextLegacyAccountNo, setNextLegacyAccountNo] = useState('1');
   const [nextFromShareNo, setNextFromShareNo] = useState<number>(1);
   const [shareAccount, setShareAccount] = useState<ShareAccount | null>(null);
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
@@ -421,6 +422,11 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
         if (data.nextCertificateNo) setNextCertNo(data.nextCertificateNo);
         if (data.nextFromShareNo) setNextFromShareNo(data.nextFromShareNo);
         if (data.faceValue) setFaceValue(data.faceValue);
+        const nextLegAcc = data.nextLegacyAccountNo ? String(data.nextLegacyAccountNo) : '1';
+        setNextLegacyAccountNo(nextLegAcc);
+        if (!selectedMemberId) {
+          setLegacyAccountNo(nextLegAcc);
+        }
       }
     } catch (e) {
       if (isMountedRef.current) console.error(e);
@@ -536,7 +542,11 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
         setShareAccount(accData);
         if (accData?.legacyAccountNumber) {
           setLegacyAccountNo(accData.legacyAccountNumber);
+        } else {
+          setLegacyAccountNo(selected?.legacyMemberNo || nextLegacyAccountNo || '1');
         }
+      } else {
+        setLegacyAccountNo(selected?.legacyMemberNo || nextLegacyAccountNo || '1');
       }
       if (certRes.ok && certRes.headers.get('content-type')?.includes('application/json')) {
         setCertificates(await certRes.json());
@@ -1238,16 +1248,20 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
               </div>
 
               <div>
-                <label className={labelClass}>
-                  <span>जुना शेअर खाते / नोंद क्र. (Legacy No)</span>
-                  <span className="text-[10px] text-gray-400 font-normal ml-1">(ऐच्छिक)</span>
-                </label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    <span>जुना शेअर खाते / नोंद क्र. (Legacy No)</span>
+                  </label>
+                  <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-bold">
+                    ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={legacyAccountNo}
                   onChange={(e) => setLegacyAccountNo(e.target.value)}
-                  placeholder="उदा. OLD-SH-102"
-                  className={`${inputClass} font-mono`}
+                  placeholder="उदा. 1 / OLD-SH-102"
+                  className={`${inputClass} font-mono font-bold`}
                   disabled={isPassing}
                 />
               </div>

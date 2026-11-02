@@ -214,7 +214,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Members/next-code
         [HttpGet("next-code")]
-        public async Task<ActionResult<string>> GetNextMemberCode()
+        public async Task<IActionResult> GetNextMemberCode([FromQuery] bool includeLegacy = false)
         {
             try
             {
@@ -263,10 +263,47 @@ namespace Bhisi.Api.Controllers
                     candidate = $"MEM{nextNum:D4}";
                 }
 
+                var existingLegacyList = await _context.Members
+                    .AsNoTracking()
+                    .Where(m => !m.IsDeleted && m.LegacyMemberNo != null && m.LegacyMemberNo != "")
+                    .Select(m => m.LegacyMemberNo!)
+                    .ToListAsync();
+
+                long maxLegacySeq = 0;
+                foreach (var legacyStr in existingLegacyList)
+                {
+                    if (string.IsNullOrWhiteSpace(legacyStr)) continue;
+                    var trimmed = legacyStr.Trim();
+                    if (long.TryParse(trimmed, out long numVal))
+                    {
+                        if (numVal > maxLegacySeq) maxLegacySeq = numVal;
+                    }
+                    else
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
+                        if (match.Success && long.TryParse(match.Groups[1].Value, out long extractedVal))
+                        {
+                            if (extractedVal > maxLegacySeq) maxLegacySeq = extractedVal;
+                        }
+                    }
+                }
+
+                string nextLegacyMemberNo = maxLegacySeq > 0 ? (maxLegacySeq + 1).ToString() : "1";
+                Response.Headers["X-Next-Legacy-Member-No"] = nextLegacyMemberNo;
+
+                if (includeLegacy)
+                {
+                    return Ok(new { memberCode = candidate, nextLegacyMemberNo = nextLegacyMemberNo });
+                }
+
                 return Content(candidate, "text/plain");
             }
             catch (Exception)
             {
+                if (includeLegacy)
+                {
+                    return Ok(new { memberCode = "MEM0001", nextLegacyMemberNo = "1" });
+                }
                 return Content("MEM0001", "text/plain");
             }
         }

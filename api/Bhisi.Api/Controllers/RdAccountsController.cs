@@ -189,12 +189,45 @@ namespace Bhisi.Api.Controllers
             int targetBranchId = branchId ?? queryBranchId ?? 1;
             string nextNo = await GenerateNextRdAccountNo(targetBranchId, schemeId, incrementSequence: false);
             string formattedNo = LuhnHelper.Format14Digit(nextNo);
+
+            // Calculate Next Legacy (Old) Account Number for the selected RD Scheme & Branch
+            var legacyQuery = _context.RdAccounts
+                .AsNoTracking()
+                .Where(r => r.BranchID == targetBranchId && r.LegacyAccountNumber != null && r.LegacyAccountNumber != "");
+
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                legacyQuery = legacyQuery.Where(r => r.RdSchemeID == schemeId.Value);
+            }
+
+            var legacyList = await legacyQuery.Select(r => r.LegacyAccountNumber!).ToListAsync();
+            long maxLegacySeq = 0;
+            foreach (var raw in legacyList)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                string trimmed = raw.Trim();
+                if (long.TryParse(trimmed, out long exactNum) && exactNum > 0 && exactNum < 1000000000L)
+                {
+                    if (exactNum > maxLegacySeq) maxLegacySeq = exactNum;
+                }
+                else
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
+                    if (match.Success && long.TryParse(match.Groups[1].Value, out long suffixNum) && suffixNum > 0 && suffixNum < 1000000000L)
+                    {
+                        if (suffixNum > maxLegacySeq) maxLegacySeq = suffixNum;
+                    }
+                }
+            }
+            string nextLegacyAccountNo = maxLegacySeq > 0 ? (maxLegacySeq + 1).ToString() : "1";
+
             return Ok(new
             {
                 nextAccountNo = nextNo,
                 accountNo = nextNo,
                 formattedAccountNo = formattedNo,
                 displayAccountNo = formattedNo,
+                nextLegacyAccountNo = nextLegacyAccountNo,
                 debugDb = _context.Database.GetDbConnection().Database,
                 debugServer = _context.Database.GetDbConnection().DataSource
             });
@@ -565,11 +598,12 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    // Validate LegacyAccountNumber duplicate within the same scheme
+                    // Validate LegacyAccountNumber duplicate within the same branch & scheme
                     if (!string.IsNullOrWhiteSpace(account.LegacyAccountNumber))
                     {
                         account.LegacyAccountNumber = account.LegacyAccountNumber.Trim();
                         bool legacyExists = await _context.RdAccounts.AnyAsync(r => 
+                            r.BranchID == account.BranchID &&
                             r.RdSchemeID == account.RdSchemeID && 
                             r.LegacyAccountNumber != null && 
                             r.LegacyAccountNumber.Trim() == account.LegacyAccountNumber);
@@ -896,7 +930,25 @@ namespace Bhisi.Api.Controllers
             // Keep the same AccountNo on edit - do not change account number!
             if (updated.CustomerID > 0) account.CustomerID = updated.CustomerID;
             if (updated.RdSchemeID > 0) account.RdSchemeID = updated.RdSchemeID;
-            account.LegacyAccountNumber = updated.LegacyAccountNumber;
+            if (!string.IsNullOrWhiteSpace(updated.LegacyAccountNumber))
+            {
+                string trimmedLegacy = updated.LegacyAccountNumber.Trim();
+                bool dupLegacy = await _context.RdAccounts.AnyAsync(r =>
+                    r.RdAccountID != account.RdAccountID &&
+                    r.BranchID == account.BranchID &&
+                    r.RdSchemeID == account.RdSchemeID &&
+                    r.LegacyAccountNumber != null &&
+                    r.LegacyAccountNumber.Trim() == trimmedLegacy);
+                if (dupLegacy)
+                {
+                    return BadRequest(new { message = $"जुना आरडी खाते / पावती क्रमांक '{trimmedLegacy}' या योजनेखाली आधीच नोंदवला आहे." });
+                }
+                account.LegacyAccountNumber = trimmedLegacy;
+            }
+            else
+            {
+                account.LegacyAccountNumber = null;
+            }
             account.PassbookNo = updated.PassbookNo;
             account.OpeningDate = updated.OpeningDate;
             account.InstallmentAmount = updated.InstallmentAmount;

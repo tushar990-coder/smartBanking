@@ -92,7 +92,42 @@ namespace Bhisi.Api.Controllers
         {
             int targetBranchId = branchId ?? 1;
             string nextNo = await GenerateNextInvestmentAccountNo(targetBranchId, schemeId, incrementSequence: false);
-            return Ok(new { nextAccountNo = nextNo });
+
+            string nextLegacyAccountNo = "1";
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                var existingLegacyList = await _context.InvestmentAccounts
+                    .AsNoTracking()
+                    .Where(a => a.BranchID == targetBranchId &&
+                                a.SchemeID == schemeId.Value &&
+                                a.OldInvestmentNo != null &&
+                                a.OldInvestmentNo != "")
+                    .Select(a => a.OldInvestmentNo!)
+                    .ToListAsync();
+
+                long maxLegacySeq = 0;
+                foreach (var legacyStr in existingLegacyList)
+                {
+                    if (string.IsNullOrWhiteSpace(legacyStr)) continue;
+                    var trimmed = legacyStr.Trim();
+                    if (long.TryParse(trimmed, out long numVal))
+                    {
+                        if (numVal > maxLegacySeq) maxLegacySeq = numVal;
+                    }
+                    else
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
+                        if (match.Success && long.TryParse(match.Groups[1].Value, out long extractedVal))
+                        {
+                            if (extractedVal > maxLegacySeq) maxLegacySeq = extractedVal;
+                        }
+                    }
+                }
+
+                nextLegacyAccountNo = maxLegacySeq > 0 ? (maxLegacySeq + 1).ToString() : "1";
+            }
+
+            return Ok(new { nextAccountNo = nextNo, nextLegacyAccountNo = nextLegacyAccountNo });
         }
 
         /// <summary>
@@ -586,6 +621,26 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            if (!string.IsNullOrWhiteSpace(account.OldInvestmentNo))
+            {
+                account.OldInvestmentNo = account.OldInvestmentNo.Trim();
+                bool duplicateLegacy = await _context.InvestmentAccounts
+                    .AsNoTracking()
+                    .AnyAsync(a => a.InvestmentAccountID != id &&
+                                   a.BranchID == account.BranchID &&
+                                   a.SchemeID == account.SchemeID &&
+                                   a.OldInvestmentNo != null &&
+                                   a.OldInvestmentNo.Trim() == account.OldInvestmentNo);
+                if (duplicateLegacy)
+                {
+                    return BadRequest($"या गुंतवणूक योजनेत जुना गुंतवणूक खाते क्र. '{account.OldInvestmentNo}' आधीच अस्तित्वात आहे.");
+                }
+            }
+            else
+            {
+                account.OldInvestmentNo = null;
+            }
+
             existing.BranchID = account.BranchID;
             existing.InvestmentInstitutionID = account.InvestmentInstitutionID;
             existing.SchemeID = account.SchemeID;
@@ -646,6 +701,25 @@ namespace Bhisi.Api.Controllers
             if (account.MaturityDate.Year < 1980 || account.MaturityDate.Year > 2150)
             {
                 return BadRequest("मुदतपूर्ती तारीख अवैध आहे. वर्ष 1980 ते 2150 दरम्यान असणे आवश्यक आहे.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(account.OldInvestmentNo))
+            {
+                account.OldInvestmentNo = account.OldInvestmentNo.Trim();
+                bool duplicateLegacy = await _context.InvestmentAccounts
+                    .AsNoTracking()
+                    .AnyAsync(a => a.BranchID == account.BranchID &&
+                                   a.SchemeID == account.SchemeID &&
+                                   a.OldInvestmentNo != null &&
+                                   a.OldInvestmentNo.Trim() == account.OldInvestmentNo);
+                if (duplicateLegacy)
+                {
+                    return BadRequest($"या गुंतवणूक योजनेत जुना गुंतवणूक खाते क्र. '{account.OldInvestmentNo}' आधीच अस्तित्वात आहे.");
+                }
+            }
+            else
+            {
+                account.OldInvestmentNo = null;
             }
 
             if (account.IsLegacyAccount)
@@ -818,6 +892,25 @@ namespace Bhisi.Api.Controllers
             if (account.MaturityDate.Year < 1980 || account.MaturityDate.Year > 2150)
             {
                 return BadRequest("मुदतपूर्ती तारीख अवैध आहे. वर्ष 1980 ते 2150 दरम्यान असणे आवश्यक आहे.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(account.OldInvestmentNo))
+            {
+                account.OldInvestmentNo = account.OldInvestmentNo.Trim();
+                bool duplicateLegacy = await _context.InvestmentAccounts
+                    .AsNoTracking()
+                    .AnyAsync(a => a.BranchID == account.BranchID &&
+                                   a.SchemeID == account.SchemeID &&
+                                   a.OldInvestmentNo != null &&
+                                   a.OldInvestmentNo.Trim() == account.OldInvestmentNo);
+                if (duplicateLegacy)
+                {
+                    return BadRequest($"या गुंतवणूक योजनेत जुना गुंतवणूक खाते क्र. '{account.OldInvestmentNo}' आधीच अस्तित्वात आहे.");
+                }
+            }
+            else
+            {
+                account.OldInvestmentNo = null;
             }
 
             if (string.IsNullOrWhiteSpace(account.OldInvestmentNo))

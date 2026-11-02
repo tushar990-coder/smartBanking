@@ -131,12 +131,46 @@ namespace Bhisi.Api.Controllers
             string nextNo = await GenerateNextPigmyAccountNo(branchId, schemeId, incrementSequence: false);
             string formattedNo = LuhnHelper.Format14Digit(nextNo);
 
+            var existingLegacyRows = await _context.PigmyAccounts
+                .AsNoTracking()
+                .Where(p => p.BranchID == branchId &&
+                            p.PigmySchemeID == schemeId &&
+                            ((p.LegacyAccountNumber != null && p.LegacyAccountNumber != "") ||
+                             (p.OldAccountNo != null && p.OldAccountNo != "")))
+                .Select(p => new { p.LegacyAccountNumber, p.OldAccountNo })
+                .ToListAsync();
+
+            long maxLegacySeq = 0;
+            foreach (var row in existingLegacyRows)
+            {
+                foreach (var rawVal in new[] { row.LegacyAccountNumber, row.OldAccountNo })
+                {
+                    if (string.IsNullOrWhiteSpace(rawVal)) continue;
+                    var trimmed = rawVal.Trim();
+                    if (long.TryParse(trimmed, out long numVal))
+                    {
+                        if (numVal > maxLegacySeq) maxLegacySeq = numVal;
+                    }
+                    else
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
+                        if (match.Success && long.TryParse(match.Groups[1].Value, out long extractedVal))
+                        {
+                            if (extractedVal > maxLegacySeq) maxLegacySeq = extractedVal;
+                        }
+                    }
+                }
+            }
+
+            string nextLegacyAccountNo = maxLegacySeq > 0 ? (maxLegacySeq + 1).ToString() : "1";
+
             return Ok(new
             {
                 accountNo = nextNo,
                 nextAccountNo = nextNo,
                 formattedAccountNo = formattedNo,
                 displayAccountNo = formattedNo,
+                nextLegacyAccountNo = nextLegacyAccountNo,
                 branchID = branchId,
                 schemeId = schemeId
             });
@@ -446,9 +480,10 @@ namespace Bhisi.Api.Controllers
                 if (!string.IsNullOrWhiteSpace(cleanLegacy))
                 {
                     bool legacyExists = await _context.PigmyAccounts.AnyAsync(p => 
+                        p.BranchID == request.BranchID &&
                         p.PigmySchemeID == request.PigmySchemeID && 
-                        p.LegacyAccountNumber != null && 
-                        p.LegacyAccountNumber.Trim() == cleanLegacy);
+                        ((p.LegacyAccountNumber != null && p.LegacyAccountNumber.Trim() == cleanLegacy) ||
+                         (p.OldAccountNo != null && p.OldAccountNo.Trim() == cleanLegacy)));
                     if (legacyExists)
                     {
                         return BadRequest($"जुना पिग्मी खाते क्रमांक '{cleanLegacy}' या योजनेखाली आधीच नोंदवला आहे.");
@@ -460,6 +495,7 @@ namespace Bhisi.Api.Controllers
                 {
                     AccountNo = accountNo,
                     LegacyAccountNumber = cleanLegacy,
+                    OldAccountNo = cleanLegacy,
                     CustomerID = customer.CustomerID,
                     BranchID = request.BranchID,
                     PigmySchemeID = request.PigmySchemeID,
@@ -628,6 +664,7 @@ namespace Bhisi.Api.Controllers
                 {
                     AccountNo = accountNo,
                     LegacyAccountNumber = string.IsNullOrWhiteSpace(request.LegacyAccountNumber) ? null : request.LegacyAccountNumber.Trim(),
+                    OldAccountNo = string.IsNullOrWhiteSpace(request.LegacyAccountNumber) ? null : request.LegacyAccountNumber.Trim(),
                     CustomerID = customer.CustomerID,
                     BranchID = request.BranchID,
                     PigmySchemeID = request.PigmySchemeID,
@@ -730,9 +767,24 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                int targetSchemeId = dto.PigmySchemeID > 0 ? dto.PigmySchemeID : existing.PigmySchemeID;
                 if (dto.LegacyAccountNumber != null)
                 {
                     var trimmed = string.IsNullOrWhiteSpace(dto.LegacyAccountNumber) ? null : dto.LegacyAccountNumber.Trim();
+                    if (!string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        bool legacyExists = await _context.PigmyAccounts.AnyAsync(p =>
+                            p.BranchID == existing.BranchID &&
+                            p.PigmySchemeID == targetSchemeId &&
+                            p.PigmyAccountID != id &&
+                            ((p.LegacyAccountNumber != null && p.LegacyAccountNumber.Trim() == trimmed) ||
+                             (p.OldAccountNo != null && p.OldAccountNo.Trim() == trimmed)));
+                        if (legacyExists)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = $"जुना पिग्मी खाते क्रमांक '{trimmed}' या योजनेखाली आधीच नोंदवला आहे." });
+                        }
+                    }
                     existing.LegacyAccountNumber = trimmed;
                     existing.OldAccountNo = trimmed;
                 }

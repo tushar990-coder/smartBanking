@@ -181,6 +181,33 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     totalBenefitAmount: 0,
   });
 
+  const [duplicateLegacyInfo, setDuplicateLegacyInfo] = useState<{ isDuplicate: boolean; accountNo?: string; customerName?: string; message?: string } | null>(null);
+
+  useEffect(() => {
+    const receiptNo = (formData.legacyAccountNumber || '').trim();
+    const schemeId = Number(formData.fdSchemeID) || 0;
+    const branchId = Number(formData.branchID) || 1;
+    if (!receiptNo || schemeId <= 0 || isPassingMode) {
+      setDuplicateLegacyInfo(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await axios.get(`${API_URL}/FdAccounts/check-legacy-receipt`, {
+          params: { branchId, schemeId, receiptNo }
+        });
+        if (res.data?.isDuplicate) {
+          setDuplicateLegacyInfo(res.data);
+        } else {
+          setDuplicateLegacyInfo(null);
+        }
+      } catch {
+        setDuplicateLegacyInfo(null);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [formData.legacyAccountNumber, formData.fdSchemeID, formData.branchID, isPassingMode]);
+
   useEffect(() => {
     fetchCustomers();
     fetchBranches();
@@ -502,7 +529,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       const accNo = (existing?.accountNo && existing.accountNo !== 'AUTO')
         ? existing.accountNo
         : predictSequentialAccountNo(baseAcc, i);
-      const legacyNo = existing?.legacyAccountNumber || '';
+      const baseLegacyNum = parseInt(String(formData.legacyAccountNumber || '').trim(), 10);
+      const autoRowLegacy = !isNaN(baseLegacyNum) && baseLegacyNum > 0 ? String(baseLegacyNum + i) : (i === 0 ? (formData.legacyAccountNumber || '') : '');
+      const legacyNo = existing?.legacyAccountNumber || autoRowLegacy;
 
       const calcs = calculateRowDetails(
         amt,
@@ -937,10 +966,12 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
           const schemeExists = data.some((s: any) => getSchemeId(s) === prev.fdSchemeID);
           if (prev.fdSchemeID === 0 || !schemeExists) {
             const firstScheme = data[0];
+            const firstId = getSchemeId(firstScheme);
             const isSlab = firstScheme.schemeDurationModel === 'Slab';
+            setTimeout(() => fetchNextAccountNo(activeBranch, firstId), 0);
             return {
               ...prev,
-              fdSchemeID: getSchemeId(firstScheme),
+              fdSchemeID: firstId,
               durationType: isSlab ? (firstScheme.durationType || 'Days') : (firstScheme.durationType || 'Months'),
               durationValue: isSlab ? (firstScheme.slabs?.[0]?.toDays || 90) : (firstScheme.durationMonths || 12),
             };
@@ -970,9 +1001,21 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       const val = typeof response.data === 'string'
         ? response.data
         : (response.data.formattedAccountNo || response.data.displayAccountNo || response.data.accountNo || response.data.nextAccountNo || '');
+      const nextLegacy = response.data?.nextLegacyAccountNo ? String(response.data.nextLegacyAccountNo) : '1';
       setSuggestedAccountNo(val);
       if (!isManualAccountNo) {
         setNextAccountNo(val);
+      }
+      setFormData(prev => ({
+        ...prev,
+        legacyAccountNumber: nextLegacy
+      }));
+      const baseLegInt = parseInt(nextLegacy, 10);
+      if (!isNaN(baseLegInt) && baseLegInt > 0) {
+        setReceiptRows(prevRows => prevRows.map((r, idx) => ({
+          ...r,
+          legacyAccountNumber: String(baseLegInt + idx)
+        })));
       }
     } catch (err) {
       if (!isManualAccountNo) {
@@ -1189,9 +1232,12 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       val = value === '' ? '' : (parseInt(value, 10) || 0);
     }
 
-    // Auto-update duration defaults when changing scheme
+    // Auto-update duration defaults & next account / legacy number when changing scheme
     if (name === 'fdSchemeID') {
       const schemeId = parseInt(value, 10) || 0;
+      if (schemeId > 0) {
+        fetchNextAccountNo(formData.branchID, schemeId);
+      }
       const s = schemes.find((sc: any) => getSchemeId(sc) === schemeId);
       if (s) {
         const isSlab = s.schemeDurationModel === 'Slab';
@@ -1219,6 +1265,12 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     const activeCustId = formData.customerID || formData.memberID;
     if (!activeCustId || activeCustId === 0) { setError('कृपया खातेदार निवडा.'); return; }
     if (formData.fdSchemeID === 0) { setError('कृपया ठेव योजना निवडा.'); return; }
+    if (entryMode === 'single' && duplicateLegacyInfo?.isDuplicate) {
+      const dupMsg = duplicateLegacyInfo.message || `⚠️ जुना पावती क्र. '${formData.legacyAccountNumber}' या योजनेत आधीच खाते क्र. ${duplicateLegacyInfo.accountNo} साठी वापरलेला आहे!`;
+      setError(dupMsg);
+      alert(dupMsg);
+      return;
+    }
     if (paymentMode === 'Bank' && (!bankAccountLedgerID || bankAccountLedgerID <= 0)) {
       setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
@@ -1639,17 +1691,31 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
-                      जुना ठेव / पावती क्र. (Legacy No)
-                    </label>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[11px] font-medium text-gray-600">
+                        जुना ठेव / पावती क्र. (Legacy No)
+                      </label>
+                      <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1 rounded font-bold" title="योजनेतील मागील शेवटच्या जुन्या पावती क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
+                        ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                      </span>
+                    </div>
                     <input
                       type="text"
                       name="legacyAccountNumber"
                       value={formData.legacyAccountNumber}
                       onChange={handleChange}
                       placeholder="उदा. 45 / जुना पावती क्र."
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-mono font-bold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      className={`w-full border rounded-sm px-2 py-1 text-xs font-mono font-bold focus:outline-none focus:ring-1 ${
+                        duplicateLegacyInfo?.isDuplicate
+                          ? 'border-red-500 bg-red-50 text-red-900 focus:ring-red-400'
+                          : 'border-amber-300 bg-amber-50/40 text-slate-900 focus:ring-blue-400'
+                      }`}
                     />
+                    {duplicateLegacyInfo?.isDuplicate && (
+                      <span className="text-[10px] text-red-600 font-bold block mt-0.5 leading-tight">
+                        ⚠️ हा जुना पावती क्र. खाते क्र. {duplicateLegacyInfo.accountNo} ({duplicateLegacyInfo.customerName}) साठी वापरलेला आहे!
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

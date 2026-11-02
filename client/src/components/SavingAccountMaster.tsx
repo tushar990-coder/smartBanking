@@ -221,13 +221,21 @@ const SavingAccountMaster: React.FC = () => {
           ? response.data
           : (response.data.accountNo || response.data.nextAccountNo || '');
         const formattedNo = response.data.formattedAccountNo || response.data.displayAccountNo || format14DigitDisplay(nextNo);
+        const nextLegacy = response.data.nextLegacyAccountNo ? String(response.data.nextLegacyAccountNo) : '1';
         setAutoAccountNo(nextNo);
         if (nextNo && !isCustomAccountNo) {
           setFormData(prev => ({
             ...prev,
             accountNo: nextNo,
             displayAccountNo: formattedNo,
-            savingSchemeID: selectedSchemeId
+            savingSchemeID: selectedSchemeId,
+            legacyAccountNumber: !isEditMode ? nextLegacy : prev.legacyAccountNumber
+          }));
+        } else if (!isEditMode) {
+          setFormData(prev => ({
+            ...prev,
+            savingSchemeID: selectedSchemeId,
+            legacyAccountNumber: nextLegacy
           }));
         }
       }
@@ -719,6 +727,13 @@ const SavingAccountMaster: React.FC = () => {
       return;
     }
     
+    if (duplicateLegacyAccount) {
+      const dupMsg = `⚠️ जुना बचत खाते क्र. '${formData.legacyAccountNumber?.trim()}' या बचत योजनेत आधीच खाते क्र. ${duplicateLegacyAccount.accountNo} साठी नोंदवलेला आहे! कृपया वेगळा क्रमांक टाका.`;
+      setError(dupMsg);
+      alert(dupMsg);
+      return;
+    }
+
     if (!isEditMode) {
       const selectedObj = customers.find(c => (c.customerID === Number(formData.customerID) || c.customerId === Number(formData.customerID)));
       const targetCustId = selectedObj?.customerID || selectedObj?.customerId || Number(formData.customerID);
@@ -788,10 +803,11 @@ const SavingAccountMaster: React.FC = () => {
     return accounts.find(a => 
       (!isEditMode || a.savingAccountID !== editAccountId) &&
       (a.branchID === formData.branchID || !a.branchID) &&
+      (!formData.savingSchemeID || !a.savingSchemeID || Number(a.savingSchemeID) === Number(formData.savingSchemeID)) &&
       ((a.legacyAccountNumber && a.legacyAccountNumber.trim().toLowerCase() === clean) ||
        (a.oldAccountNo && a.oldAccountNo.trim().toLowerCase() === clean))
     );
-  }, [formData.legacyAccountNumber, formData.branchID, accounts, isEditMode, editAccountId]);
+  }, [formData.legacyAccountNumber, formData.branchID, formData.savingSchemeID, accounts, isEditMode, editAccountId]);
 
   return (
     <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
@@ -896,7 +912,9 @@ const SavingAccountMaster: React.FC = () => {
                 <label className="block text-xs font-semibold text-gray-700">
                   जुना खाते क्र. (Old A/c No)
                 </label>
-                <span className="text-[10px] text-amber-700 font-medium">पर्यायी</span>
+                <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1 rounded font-bold" title="मागील सर्वोच्च जुन्या खाते क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
+                  ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                </span>
               </div>
               <input
                 type="text"

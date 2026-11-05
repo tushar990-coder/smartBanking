@@ -6,6 +6,9 @@ import App from './App'
 
 import { AuthProvider } from './context/AuthContext'
 import { getApiBaseUrl } from './utils/api'
+import { setupAxiosCacheAdapter, invalidateApiCache, prewarmMasterDataCache } from './utils/apiCache'
+
+setupAxiosCacheAdapter();
 
 const apiBase = getApiBaseUrl();
 
@@ -87,6 +90,9 @@ axios.interceptors.request.use((config) => {
         if (user?.branchID && !config.headers['X-Branch-ID']) {
           config.headers['X-Branch-ID'] = user.branchID.toString();
         }
+        if (user?.businessDate && !config.headers['X-Business-Date']) {
+          config.headers['X-Business-Date'] = String(user.businessDate).split('T')[0];
+        }
       }
     } catch (e) {
       console.error('Failed to parse saved user for token', e);
@@ -94,6 +100,8 @@ axios.interceptors.request.use((config) => {
   }
   return config;
 }, (error) => Promise.reject(error));
+
+prewarmMasterDataCache();
 
 // Global Axios Response Interceptor (handles 401 Unauthorized / Expired session tokens)
 axios.interceptors.response.use(
@@ -163,11 +171,19 @@ window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
         if (user?.branchID && !headers.has('X-Branch-ID')) {
           headers.set('X-Branch-ID', user.branchID.toString());
         }
+        if (user?.businessDate && !headers.has('X-Business-Date')) {
+          headers.set('X-Business-Date', String(user.businessDate).split('T')[0]);
+        }
         init.headers = headers;
       }
     } catch (e) {
       console.error('Failed to parse saved user for fetch token', e);
     }
+  }
+
+  const fetchMethod = (init?.method || 'GET').toUpperCase();
+  if (fetchMethod !== 'GET' && urlStr) {
+    invalidateApiCache(urlStr);
   }
 
   return originalFetch(input, init);

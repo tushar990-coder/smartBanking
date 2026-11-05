@@ -82,8 +82,10 @@ namespace Bhisi.Api.Controllers
         private decimal CalculateOutstandingInterest(LoanAccount la, DateTime targetDate, List<LoanInstallmentSchedule> schedules, List<LoanCollection>? collections = null)
         {
             var loanRate = la.LoanRate;
-            bool isDailyReducing = loanRate != null && 
-                (loanRate.InterestCalculationMethod?.Contains("Daily Reducing") == true || loanRate.InterestCalculationMethod?.Contains("Reducing") == true);
+            bool isFlatMethod = loanRate != null &&
+                (loanRate.InterestCalculationMethod?.Contains("Flat", StringComparison.OrdinalIgnoreCase) == true ||
+                 loanRate.InterestCalculationMethod?.Contains("फ्लॅट") == true);
+            bool isDailyReducing = !isFlatMethod;
 
             if (isDailyReducing)
             {
@@ -100,7 +102,7 @@ namespace Bhisi.Api.Controllers
                 var accountCollections = collections != null 
                     ? collections.Where(c => c.LoanAccountID == la.LoanAccountID).ToList()
                     : new List<LoanCollection>();
-                return Services.LoanScheduleGenerator.GetUnpaidScheduledInterest(la, schedules, accountCollections, targetDate);
+                return la.InterestBalance + Services.LoanScheduleGenerator.GetUnpaidScheduledInterest(la, schedules, accountCollections, targetDate);
             }
         }
 
@@ -3736,6 +3738,8 @@ namespace Bhisi.Api.Controllers
                     ? (loanAccount.PrincipalBalance + postOpeningCollections - postOpeningDisbursements)
                     : sanctionedDisbursement;
 
+                DateTime effectiveDisbursementDate = loanAccount.LoanDisbursementDate ?? loanAccount.OpeningDate;
+
                 // Opening Balance Row
                 if (loanAccount.IsOpeningBalance && loanAccount.OpeningDate <= toDate)
                 {
@@ -3743,10 +3747,10 @@ namespace Bhisi.Api.Controllers
                     {
                         transactions.Add(new LoanLedgerTransactionDto
                         {
-                            Date = loanAccount.OpeningDate,
+                            Date = effectiveDisbursementDate,
                             ReceiptNo = "-",
-                            Particulars = "Opening Balance",
-                            LoanDisbursement = 0,
+                            Particulars = $"{loanAccount.OpeningDate:dd/MM/yyyy} ची बाकी",
+                            LoanDisbursement = sanctionedDisbursement,
                             Balance = openingPrincipal
                         });
                     }
@@ -3805,7 +3809,7 @@ namespace Bhisi.Api.Controllers
                 // Sort by Date
                 transactions = transactions
                     .OrderBy(t => t.Date)
-                    .ThenBy(t => t.Particulars.Contains("Disbursement") || t.Particulars.Contains("Opening Balance") ? 0 : 1)
+                    .ThenBy(t => t.Particulars.Contains("Disbursement") || t.Particulars.Contains("Opening Balance") || t.Particulars.Contains("ची बाकी") ? 0 : 1)
                     .ToList();
 
                 // Calculate running balance and days
@@ -3840,11 +3844,16 @@ namespace Bhisi.Api.Controllers
                 // Add an initial row for previous balance ONLY if there is a positive balance brought forward
                 if (runningBalance > 0 && fromDate > loanAccount.OpeningDate)
                 {
+                    DateTime bakiAsOfDate = (loanAccount.IsOpeningBalance && priorDisbursements == 0 && priorCollections == 0)
+                        ? loanAccount.OpeningDate
+                        : fromDate.AddDays(-1);
+
                     var initialBalanceRow = new LoanLedgerTransactionDto
                     {
-                        Date = fromDate.AddDays(-1),
-                        Particulars = "मागील शिल्लक (Previous Balance)",
-                        LoanDisbursement = 0,
+                        Date = effectiveDisbursementDate,
+                        ReceiptNo = "-",
+                        Particulars = $"{bakiAsOfDate:dd/MM/yyyy} ची बाकी",
+                        LoanDisbursement = sanctionedDisbursement,
                         Balance = runningBalance
                     };
                     
@@ -3857,23 +3866,32 @@ namespace Bhisi.Api.Controllers
                     .Select(c => (DateTime?)c.CollectionDate)
                     .FirstOrDefaultAsync();
 
-                DateTime? lastDate = priorPaymentDate ?? loanAccount.LastInstallmentPaidDate ?? loanAccount.LoanDisbursementDate ?? loanAccount.OpeningDate;
+                bool hasOpeningBookedInterest = loanAccount.IsOpeningBalance &&
+                    (loanAccount.PrincipalBalance > loanAccount.SanctionedAmount ||
+                     loanAccount.CapitalizedInterestAmount > 0 ||
+                     loanAccount.InterestBalance > 0);
+
+                DateTime defaultInterestAnchor = hasOpeningBookedInterest
+                    ? loanAccount.OpeningDate
+                    : effectiveDisbursementDate;
+
+                DateTime? lastDate = priorPaymentDate ?? loanAccount.LastInterestPostingDate ?? loanAccount.LastInstallmentPaidDate ?? defaultInterestAnchor;
                 decimal currentBalance = runningBalance;
 
                 for (int i = 0; i < transactions.Count; i++)
                 {
                     var t = transactions[i];
 
-                    if (t.Particulars == "मागील शिल्लक (Previous Balance)")
+                    if (t.Particulars == "मागील शिल्लक (Previous Balance)" || t.Particulars.Contains("ची बाकी"))
                     {
                         t.Days = 0;
-                        // Keep lastDate as the actual prior collection/disbursement date
+                        currentBalance = t.Balance;
                     }
                     else if (t.Particulars.Contains("Opening Balance"))
                     {
                         t.Days = 0;
                         currentBalance = t.Balance;
-                        lastDate = t.Date;
+                        lastDate = defaultInterestAnchor;
                     }
                     else if (t.Particulars.Contains("Disbursement"))
                     {
@@ -3901,6 +3919,62 @@ namespace Bhisi.Api.Controllers
                 }
                 
                 report.Transactions = transactions;
+
+                // Populate End-of-Report Loan & Interest Summary up to toDate
+                decimal closingPrincipalForSummary = transactions.Count > 0
+                    ? transactions.Last().Balance
+                    : loanAccount.PrincipalBalance;
+
+                decimal resolvedCapInt = loanAccount.CapitalizedInterestAmount;
+                decimal resolvedPurePrin = loanAccount.PurePrincipalBalance;
+                if (resolvedCapInt <= 0 && sanctionedDisbursement > 0 && closingPrincipalForSummary > sanctionedDisbursement)
+                {
+                    resolvedPurePrin = (resolvedPurePrin > 0 && resolvedPurePrin < closingPrincipalForSummary)
+                        ? resolvedPurePrin
+                        : sanctionedDisbursement;
+                    resolvedCapInt = Math.Max(0m, closingPrincipalForSummary - resolvedPurePrin);
+                }
+                else if (resolvedPurePrin <= 0 && closingPrincipalForSummary > 0)
+                {
+                    resolvedPurePrin = Math.Max(0m, closingPrincipalForSummary - resolvedCapInt);
+                }
+
+                DateTime? latestCollectionUpToToDate = collections
+                    .OrderByDescending(c => c.CollectionDate)
+                    .Select(c => (DateTime?)c.CollectionDate)
+                    .FirstOrDefault() ?? priorPaymentDate;
+
+                var candidateInterestDates = new List<DateTime>();
+                if (latestCollectionUpToToDate.HasValue && latestCollectionUpToToDate.Value.Date <= toDate.Date)
+                    candidateInterestDates.Add(latestCollectionUpToToDate.Value.Date);
+                if (loanAccount.LastInterestPostingDate.HasValue && loanAccount.LastInterestPostingDate.Value.Date <= toDate.Date)
+                    candidateInterestDates.Add(loanAccount.LastInterestPostingDate.Value.Date);
+                if (loanAccount.LastInstallmentPaidDate.HasValue && loanAccount.LastInstallmentPaidDate.Value.Date <= toDate.Date)
+                    candidateInterestDates.Add(loanAccount.LastInstallmentPaidDate.Value.Date);
+
+                DateTime interestFromDate = candidateInterestDates.Count > 0
+                    ? candidateInterestDates.Max()
+                    : defaultInterestAnchor.Date;
+
+                int interestDaysToDate = Math.Max(0, (int)(toDate.Date - interestFromDate.Date).TotalDays);
+
+                decimal effectiveInterestBearingPrin = (!loanAccount.ChargeInterestOnCapitalizedAmount && resolvedPurePrin > 0)
+                    ? Math.Min(resolvedPurePrin, closingPrincipalForSummary)
+                    : closingPrincipalForSummary;
+
+                decimal calculatedInterestToDate = (interestDaysToDate > 0 && effectiveInterestBearingPrin > 0)
+                    ? Math.Round((effectiveInterestBearingPrin * loanAccount.InterestRate * interestDaysToDate) / 36500m, 0, MidpointRounding.AwayFromZero)
+                    : 0m;
+
+                report.OpeningBalanceDate = loanAccount.IsOpeningBalance ? loanAccount.OpeningDate : fromDate.AddDays(-1);
+                report.PurePrincipalBalance = resolvedPurePrin;
+                report.CapitalizedInterestAmount = resolvedCapInt;
+                report.ReceivableInterestBalance = loanAccount.InterestBalance;
+                report.InterestFromDate = interestFromDate;
+                report.InterestToDate = toDate.Date;
+                report.InterestDaysToDate = interestDaysToDate;
+                report.CalculatedInterestToDate = calculatedInterestToDate;
+                report.TotalPayableAsOfToDate = closingPrincipalForSummary + calculatedInterestToDate + loanAccount.InterestBalance + loanAccount.OverdueInterestBalance;
 
                 // Fetch Schedule
                 var schedule = await _context.LoanInstallmentSchedules
@@ -4068,12 +4142,13 @@ namespace Bhisi.Api.Controllers
         // GET: api/Reports/Member360/{memberId} or api/Reports/Customer360/{customerId}
         [HttpGet("Member360/{memberId}")]
         [HttpGet("Customer360/{customerId}")]
-        public async Task<ActionResult<Member360Dto>> GetMember360(int? memberId, int? customerId, [FromQuery] string? cifNo = null, [FromQuery] bool refresh = false)
+        public async Task<ActionResult<Member360Dto>> GetMember360(int? memberId, int? customerId, [FromQuery] string? cifNo = null, [FromQuery] DateTime? asOfDate = null, [FromQuery] bool refresh = false)
         {
             try
             {
+                DateTime targetAsOfDate = (asOfDate ?? DateTime.Today).Date;
                 int lookupId = memberId ?? customerId ?? 0;
-                string cacheKey = $"customer_360_{lookupId}_{cifNo ?? ""}";
+                string cacheKey = $"customer_360_{lookupId}_{cifNo ?? ""}_{targetAsOfDate:yyyyMMdd}";
 
                 if (!refresh && _cache.TryGetValue(cacheKey, out Member360Dto? cachedDto) && cachedDto != null)
                 {
@@ -4091,19 +4166,11 @@ namespace Bhisi.Api.Controllers
                         member = await _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
                     }
                 }
-                else if (customerId.HasValue && customerId.Value > 0)
-                {
-                    customer = await _context.Customers.AsNoTracking().Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
-                    if (customer != null)
-                    {
-                        member = await _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
-                    }
-                }
                 else
                 {
-                    if (lookupId <= 0) return BadRequest("वैध सभासद किंवा ग्राहक आयडी आवश्यक आहे.");
+                    if (lookupId <= 0) return BadRequest("वैध खातेदार आयडी आवश्यक आहे.");
 
-                    // 1. Prioritize CustomerID lookup (CIF-First architecture used across all UI dropdowns)
+                    // 1. Prioritize CustomerID lookup (Customer-ID-First architecture)
                     customer = await _context.Customers.AsNoTracking().Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == lookupId);
                     if (customer != null)
                     {
@@ -4111,7 +4178,7 @@ namespace Bhisi.Api.Controllers
                     }
                     else
                     {
-                        // 2. Fallback to MemberID lookup if no customer matches lookupId
+                        // 2. Fallback to MemberID lookup only if no customer matches lookupId
                         member = await _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == lookupId);
                         if (member?.CustomerID != null)
                         {
@@ -4127,6 +4194,12 @@ namespace Bhisi.Api.Controllers
 
                 int? targetCustId = customer?.CustomerID ?? member?.CustomerID;
                 int? targetMemId = member?.MemberID;
+                string canonicalCacheKey = $"customer_360_cust_{targetCustId ?? 0}_mem_{targetMemId ?? 0}_{targetAsOfDate:yyyyMMdd}";
+
+                if (!refresh && _cache.TryGetValue(canonicalCacheKey, out Member360Dto? canonicalCachedDto) && canonicalCachedDto != null)
+                {
+                    return Ok(canonicalCachedDto);
+                }
 
                 var savingsAccs = await _context.SavingAccountMasters
                     .AsNoTracking()
@@ -4156,14 +4229,20 @@ namespace Bhisi.Api.Controllers
 
                 // Calculate share capital accurately from ShareAccounts and MemberOpeningBalances
                 decimal shareCapital = 0;
-                if (targetMemId.HasValue)
+                if (targetMemId.HasValue || targetCustId.HasValue)
                 {
-                    var shareAccount = await _context.ShareAccounts
+                    shareCapital = await _context.ShareAccounts
                         .AsNoTracking()
-                        .FirstOrDefaultAsync(s => s.MemberId == targetMemId.Value);
-                    shareCapital = shareAccount?.TotalShareAmount ?? 0;
+                        .Where(s => s.Status == "Active" && ((targetMemId.HasValue && s.MemberId == targetMemId.Value) || (targetCustId.HasValue && s.CustomerID == targetCustId.Value)))
+                        .SumAsync(s => (decimal?)s.TotalShareAmount) ?? 0;
 
-                    if (shareCapital == 0)
+                    if (shareCapital == 0 && targetMemId.HasValue)
+                    {
+                        var anyShareAcc = await _context.ShareAccounts.AsNoTracking().FirstOrDefaultAsync(s => s.MemberId == targetMemId.Value);
+                        shareCapital = anyShareAcc?.TotalShareAmount ?? 0;
+                    }
+
+                    if (shareCapital == 0 && targetMemId.HasValue)
                     {
                         shareCapital = await _context.MemberOpeningBalances
                             .AsNoTracking()
@@ -4177,7 +4256,13 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                var totalDeposits = savingsAccs.Sum(s => s.CurrentBalance) + fdAccs.Sum(f => f.DepositAmount) + rdAccs.Sum(r => r.TotalDepositedAmount) + pigmyAccs.Sum(p => p.TotalDepositedAmount);
+                var activeSavingsAccs = savingsAccs.Where(s => s.Status == "Active").ToList();
+                var activeFdAccs = fdAccs.Where(f => f.Status == "Active" || f.Status == "Matured").ToList();
+                var activeRdAccs = rdAccs.Where(r => r.Status == "Active" || r.Status == "Matured").ToList();
+                var activePigmyAccs = pigmyAccs.Where(p => p.Status == "Active" || p.Status == "Matured").ToList();
+                var activeLoanAccs = loanAccs.Where(l => l.Status == "Active").ToList();
+
+                var totalDeposits = activeSavingsAccs.Sum(s => s.CurrentBalance) + activeFdAccs.Sum(f => f.DepositAmount) + activeRdAccs.Sum(r => r.TotalDepositedAmount) + activePigmyAccs.Sum(p => p.TotalDepositedAmount);
 
                 decimal totalLoansOutstanding = 0;
                 var activeLoanIds = loanAccs.Where(l => l.Status == "Active").Select(l => l.LoanAccountID).ToList();
@@ -4209,7 +4294,7 @@ namespace Bhisi.Api.Controllers
                                 Console.WriteLine($"Error generating schedules for loan account {l.LoanAccountID}: {ex.Message}");
                             }
                         }
-                        totalLoansOutstanding += l.PrincipalBalance + CalculateOutstandingInterest(l, DateTime.Today, schedulesForAccount, memberLoanCollections) + l.OverdueInterestBalance;
+                        totalLoansOutstanding += l.PrincipalBalance + CalculateOutstandingInterest(l, targetAsOfDate, schedulesForAccount, memberLoanCollections) + l.OverdueInterestBalance;
                     }
                     else
                     {
@@ -4226,6 +4311,7 @@ namespace Bhisi.Api.Controllers
                         .AsNoTracking()
                         .Where(st => savingAccIds.Contains(st.SavingAccountID))
                         .OrderByDescending(st => st.TransactionDate)
+                        .ThenByDescending(st => st.TransactionID)
                         .FirstOrDefaultAsync();
                     if (lastSavingTx != null)
                     {
@@ -4237,11 +4323,10 @@ namespace Bhisi.Api.Controllers
                 if (loanAccs.Any())
                 {
                     var loanAccIds = loanAccs.Select(l => l.LoanAccountID).ToList();
-                    var lastCollection = await _context.LoanCollections
-                        .AsNoTracking()
-                        .Where(lc => loanAccIds.Contains(lc.LoanAccountID))
+                    var lastCollection = memberLoanCollections
                         .OrderByDescending(lc => lc.CollectionDate)
-                        .FirstOrDefaultAsync();
+                        .ThenByDescending(lc => lc.LoanCollectionID)
+                        .FirstOrDefault();
                     if (lastCollection != null)
                     {
                         lastLoanTxDate = lastCollection.CollectionDate.ToString("yyyy-MM-dd");
@@ -4252,6 +4337,7 @@ namespace Bhisi.Api.Controllers
                             .AsNoTracking()
                             .Where(ld => loanAccIds.Contains(ld.LoanAccountID))
                             .OrderByDescending(ld => ld.DisbursementDate)
+                            .ThenByDescending(ld => ld.LoanDisbursementID)
                             .FirstOrDefaultAsync();
                         if (lastDisb != null)
                         {
@@ -4259,6 +4345,8 @@ namespace Bhisi.Api.Controllers
                         }
                     }
                 }
+
+                string? lastPigmyTxDate = pigmyAccs.OrderByDescending(p => p.OpeningDate).FirstOrDefault()?.OpeningDate.ToString("yyyy-MM-dd");
 
                 // Build recent transactions list (merged)
                 var recentTxs = new List<RecentTransactionDto>();
@@ -4273,6 +4361,7 @@ namespace Bhisi.Api.Controllers
                         .Include(st => st.SavingAccount)
                         .Where(st => savingAccIds.Contains(st.SavingAccountID))
                         .OrderByDescending(st => st.TransactionDate)
+                        .ThenByDescending(st => st.TransactionID)
                         .Take(20)
                         .ToListAsync();
 
@@ -4290,7 +4379,7 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // 2. Pigmy Tx
+                // 2. Pigmy Tx (Collections + Transfers/Withdrawals)
                 if (pigmyAccs.Any())
                 {
                     var pigmyAccIds = pigmyAccs.Select(p => p.PigmyAccountID).ToList();
@@ -4298,8 +4387,28 @@ namespace Bhisi.Api.Controllers
                         .AsNoTracking()
                         .Where(pc => pigmyAccIds.Contains(pc.PigmyAccountId))
                         .OrderByDescending(pc => pc.CollectionDate)
+                        .ThenByDescending(pc => pc.CollectionId)
                         .Take(20)
                         .ToListAsync();
+
+                    var pigmyTxs = await _context.PigmyTransactions
+                        .AsNoTracking()
+                        .Where(pt => pigmyAccIds.Contains(pt.PigmyAccountID))
+                        .OrderByDescending(pt => pt.TransactionDate)
+                        .ThenByDescending(pt => pt.PigmyTransactionID)
+                        .Take(20)
+                        .ToListAsync();
+
+                    DateTime? latestPigmyDate = null;
+                    if (pigmyCols.Any()) latestPigmyDate = pigmyCols.First().CollectionDate;
+                    if (pigmyTxs.Any() && (!latestPigmyDate.HasValue || pigmyTxs.First().TransactionDate > latestPigmyDate.Value))
+                    {
+                        latestPigmyDate = pigmyTxs.First().TransactionDate;
+                    }
+                    if (latestPigmyDate.HasValue)
+                    {
+                        lastPigmyTxDate = latestPigmyDate.Value.ToString("yyyy-MM-dd");
+                    }
 
                     foreach (var col in pigmyCols)
                     {
@@ -4313,19 +4422,31 @@ namespace Bhisi.Api.Controllers
                             VoucherNo = col.ReceiptNo ?? "-"
                         });
                     }
+
+                    foreach (var ptx in pigmyTxs)
+                    {
+                        bool isPigmyCredit = ptx.CrAmount > 0 && ptx.DrAmount <= 0;
+                        recentTxs.Add(new RecentTransactionDto
+                        {
+                            Date = ptx.TransactionDate.ToString("yyyy-MM-dd HH:mm"),
+                            Module = "पिग्मी ठेव (Pigmy)",
+                            TransactionType = isPigmyCredit ? "जमा (Deposit)" : "नावे / वर्ग (Withdrawal)",
+                            Amount = isPigmyCredit ? ptx.CrAmount : ptx.DrAmount,
+                            Branch = branchName,
+                            VoucherNo = ptx.ReferenceId ?? "-"
+                        });
+                    }
                 }
 
                 // 3. Loan Collections Tx
                 if (loanAccs.Any())
                 {
                     var loanAccIds = loanAccs.Select(l => l.LoanAccountID).ToList();
-                    var collections = await _context.LoanCollections
-                        .AsNoTracking()
-                        .Include(lc => lc.LoanAccount)
-                        .Where(lc => loanAccIds.Contains(lc.LoanAccountID))
+                    var collections = memberLoanCollections
                         .OrderByDescending(lc => lc.CollectionDate)
+                        .ThenByDescending(lc => lc.LoanCollectionID)
                         .Take(20)
-                        .ToListAsync();
+                        .ToList();
 
                     foreach (var col in collections)
                     {
@@ -4345,6 +4466,7 @@ namespace Bhisi.Api.Controllers
                         .Include(ld => ld.LoanAccount)
                         .Where(ld => loanAccIds.Contains(ld.LoanAccountID))
                         .OrderByDescending(ld => ld.DisbursementDate)
+                        .ThenByDescending(ld => ld.LoanDisbursementID)
                         .Take(20)
                         .ToListAsync();
 
@@ -4365,6 +4487,14 @@ namespace Bhisi.Api.Controllers
                 // Sort and take top 20
                 recentTxs = recentTxs.OrderByDescending(t => t.Date).Take(20).ToList();
 
+                bool anyLoanOverdue = activeLoanAccs.Any(l =>
+                    l.OverdueInterestBalance > 0 ||
+                    memberSchedules.Any(s =>
+                        s.LoanAccountID == l.LoanAccountID &&
+                        s.Status != "Paid" &&
+                        (!l.IsOpeningBalance || s.DueDate.Date > l.OpeningDate.Date) &&
+                        s.DueDate.Date < targetAsOfDate));
+
                 var dto = new Member360Dto
                 {
                     MemberInfo = new MemberInfoDto
@@ -4372,7 +4502,9 @@ namespace Bhisi.Api.Controllers
                         CustomerID = targetCustId,
                         MemberID = targetMemId ?? (customer?.CustomerID ?? 0),
                         MemberCode = member?.MemberCode ?? "",
-                        OldMemberCode = !string.IsNullOrWhiteSpace(member?.LegacyMemberNo) ? member.LegacyMemberNo : (customer?.LegacyCustomerNo ?? ""),
+                        LegacyCustomerNo = customer?.LegacyCustomerNo ?? "",
+                        CustomerType = customer?.CustomerType ?? "Individual",
+                        OldMemberCode = !string.IsNullOrWhiteSpace(customer?.LegacyCustomerNo) ? customer.LegacyCustomerNo : (member?.LegacyMemberNo ?? ""),
                         CIFNo = customer?.CIFNo ?? member?.Customer?.CIFNo ?? "",
                         FirstName = customer?.FirstName ?? member?.Customer?.FirstName ?? "",
                         MiddleName = customer?.MiddleName ?? member?.Customer?.MiddleName,
@@ -4382,8 +4514,8 @@ namespace Bhisi.Api.Controllers
                         AadhaarNo = MaskAadhaar(customer?.AadhaarNo ?? member?.Customer?.AadhaarNo ?? ""),
                         PANNo = customer?.PANNo ?? member?.Customer?.PANNo,
                         BranchName = branchName,
-                        JoiningDate = member?.JoiningDate ?? customer?.RegistrationDate ?? DateTime.Today,
-                        Status = member?.Status ?? customer?.Status ?? "Active",
+                        JoiningDate = customer?.RegistrationDate ?? member?.JoiningDate ?? DateTime.Today,
+                        Status = customer?.Status ?? member?.Status ?? "Active",
                         MembershipType = member?.MembershipType ?? "Nominal",
                         PhotoPath = customer?.PhotoPath ?? member?.Customer?.PhotoPath
                     },
@@ -4397,37 +4529,37 @@ namespace Bhisi.Api.Controllers
                     {
                         Savings = new ProductSummaryDto
                         {
-                            Accounts = savingsAccs.Count,
-                            Balance = savingsAccs.Sum(s => s.CurrentBalance),
-                            StatusColor = savingsAccs.Sum(s => s.CurrentBalance) > 500 ? "Green" : (savingsAccs.Any() ? "Red" : "Gray"),
+                            Accounts = activeSavingsAccs.Count,
+                            Balance = activeSavingsAccs.Sum(s => s.CurrentBalance),
+                            StatusColor = activeSavingsAccs.Sum(s => s.CurrentBalance) > 500 ? "Green" : (activeSavingsAccs.Any() ? "Red" : "Gray"),
                             LastTxDate = lastSavingTxDate
                         },
                         FixedDeposits = new ProductSummaryDto
                         {
-                            Accounts = fdAccs.Count,
-                            Balance = fdAccs.Sum(f => f.DepositAmount),
-                            StatusColor = fdAccs.Any(f => f.Status == "Active") ? "Green" : (fdAccs.Any() ? "Gray" : "Gray"),
+                            Accounts = activeFdAccs.Count,
+                            Balance = activeFdAccs.Sum(f => f.DepositAmount),
+                            StatusColor = activeFdAccs.Any(f => f.Status == "Active") ? "Green" : (activeFdAccs.Any() ? "Yellow" : "Gray"),
                             LastTxDate = fdAccs.OrderByDescending(f => f.OpeningDate).FirstOrDefault()?.OpeningDate.ToString("yyyy-MM-dd")
                         },
                         RecurringDeposits = new ProductSummaryDto
                         {
-                            Accounts = rdAccs.Count,
-                            Balance = rdAccs.Sum(r => r.TotalDepositedAmount),
-                            StatusColor = rdAccs.Any(r => r.Status == "Active") ? "Green" : (rdAccs.Any() ? "Gray" : "Gray"),
+                            Accounts = activeRdAccs.Count,
+                            Balance = activeRdAccs.Sum(r => r.TotalDepositedAmount),
+                            StatusColor = activeRdAccs.Any(r => r.Status == "Active") ? "Green" : (activeRdAccs.Any() ? "Yellow" : "Gray"),
                             LastTxDate = rdAccs.OrderByDescending(r => r.OpeningDate).FirstOrDefault()?.OpeningDate.ToString("yyyy-MM-dd")
                         },
                         Pigmy = new ProductSummaryDto
                         {
-                            Accounts = pigmyAccs.Count,
-                            Balance = pigmyAccs.Sum(p => p.TotalDepositedAmount),
-                            StatusColor = pigmyAccs.Any(p => p.Status == "Active") ? "Green" : (pigmyAccs.Any() ? "Gray" : "Gray"),
-                            LastTxDate = pigmyAccs.OrderByDescending(p => p.OpeningDate).FirstOrDefault()?.OpeningDate.ToString("yyyy-MM-dd")
+                            Accounts = activePigmyAccs.Count,
+                            Balance = activePigmyAccs.Sum(p => p.TotalDepositedAmount),
+                            StatusColor = activePigmyAccs.Any(p => p.Status == "Active") ? "Green" : (activePigmyAccs.Any() ? "Yellow" : "Gray"),
+                            LastTxDate = lastPigmyTxDate
                         },
                         Loans = new ProductSummaryDto
                         {
-                            Accounts = loanAccs.Count,
+                            Accounts = activeLoanAccs.Count,
                             Balance = totalLoansOutstanding,
-                            StatusColor = loanAccs.Any(l => l.OverdueInterestBalance > 0) ? "Red" : (loanAccs.Any() ? "Green" : "Gray"),
+                            StatusColor = anyLoanOverdue ? "Red" : (activeLoanAccs.Any() ? "Green" : "Gray"),
                             LastTxDate = lastLoanTxDate
                         },
                         Shares = new ProductSummaryDto
@@ -4436,14 +4568,15 @@ namespace Bhisi.Api.Controllers
                             Balance = shareCapital,
                             StatusColor = shareCapital > 0 ? "Green" : "Gray",
                             LastTxDate = null,
-                            FolioNo = shareCapital > 0 ? "FOLIO-" + (member?.MemberCode ?? customer?.CIFNo) : null
+                            FolioNo = shareCapital > 0 ? (customer?.CIFNo ?? member?.Customer?.CIFNo ?? "") : null
                         }
                     },
                     RecentTransactions = recentTxs
                 };
 
-                // Cache Member 360 result for 60 seconds
-                _cache.Set(cacheKey, dto, TimeSpan.FromSeconds(60));
+                // Cache Member 360 result for 15 seconds under both lookup key and canonical customer/member key
+                _cache.Set(cacheKey, dto, TimeSpan.FromSeconds(15));
+                _cache.Set(canonicalCacheKey, dto, TimeSpan.FromSeconds(15));
 
                 return Ok(dto);
             }

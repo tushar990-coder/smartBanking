@@ -140,23 +140,34 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         ? Math.max(120, Math.min(280, spaceAbove - 16))
         : Math.max(120, Math.min(280, spaceBelow - 16));
 
-      if (openUp) {
-        setMenuPos({
-          top: undefined,
-          bottom: Math.max(8, viewportHeight - rect.top + 4),
-          left,
-          width: clampedWidth,
-          maxHeight: availableHeight
-        });
-      } else {
-        setMenuPos({
-          top: rect.bottom + 4,
-          bottom: undefined,
-          left,
-          width: clampedWidth,
-          maxHeight: availableHeight
-        });
-      }
+      const nextPos = openUp
+        ? {
+            top: undefined,
+            bottom: Math.max(8, viewportHeight - rect.top + 4),
+            left,
+            width: clampedWidth,
+            maxHeight: availableHeight
+          }
+        : {
+            top: rect.bottom + 4,
+            bottom: undefined,
+            left,
+            width: clampedWidth,
+            maxHeight: availableHeight
+          };
+
+      setMenuPos((prev) => {
+        if (
+          prev.top === nextPos.top &&
+          prev.bottom === nextPos.bottom &&
+          prev.left === nextPos.left &&
+          prev.width === nextPos.width &&
+          prev.maxHeight === nextPos.maxHeight
+        ) {
+          return prev;
+        }
+        return nextPos;
+      });
     };
 
     updatePosition();
@@ -187,83 +198,98 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const selectedOption = safeOptions.find((o: any) => String(o.value) === String(value));
   const rawSearch = searchTerm.trim();
   const normalizedSearch = convertMarathiDigits(rawSearch).toLowerCase();
+  const rawLower = rawSearch.toLowerCase();
+
+  // Pre-index normalized fields once per options reference change
+  const indexedOptions = useMemo(() => {
+    return safeOptions.map((o: any) => {
+      const normVal = convertMarathiDigits(String(o.value || '')).toLowerCase();
+      return {
+        raw: o,
+        normVal,
+        normLabel: convertMarathiDigits(o.label || '').toLowerCase(),
+        normSub: convertMarathiDigits(o.subLabel || '').toLowerCase(),
+        normBadge: convertMarathiDigits(o.badge || '').toLowerCase(),
+        rawLabelLower: (o.label || '').toLowerCase(),
+        rawSubLower: (o.subLabel || '').toLowerCase(),
+        numVal: parseInt(normVal, 10),
+      };
+    });
+  }, [safeOptions]);
 
   // Smart relevance ranking: Exact ID > ID prefix > Group code > Name prefix > Substring
   const filteredOptions = useMemo(() => {
     if (!normalizedSearch) return safeOptions;
 
-    return safeOptions
-      .filter((o: any) => {
-        const normLabel = convertMarathiDigits(o.label || '').toLowerCase();
-        const normSub = convertMarathiDigits(o.subLabel || '').toLowerCase();
-        const normBadge = convertMarathiDigits(o.badge || '').toLowerCase();
-        const normVal = convertMarathiDigits(String(o.value || '')).toLowerCase();
-
+    return indexedOptions
+      .filter((item) => {
         return (
-          normVal === normalizedSearch ||
-          normVal.startsWith(normalizedSearch) ||
-          normVal.includes(normalizedSearch) ||
-          normLabel.includes(normalizedSearch) ||
-          normSub.includes(normalizedSearch) ||
-          normBadge.includes(normalizedSearch) ||
-          (rawSearch && (
-            (o.label && o.label.toLowerCase().includes(rawSearch.toLowerCase())) ||
-            (o.subLabel && o.subLabel.toLowerCase().includes(rawSearch.toLowerCase()))
+          item.normVal === normalizedSearch ||
+          item.normVal.startsWith(normalizedSearch) ||
+          item.normVal.includes(normalizedSearch) ||
+          item.normLabel.includes(normalizedSearch) ||
+          item.normSub.includes(normalizedSearch) ||
+          item.normBadge.includes(normalizedSearch) ||
+          (rawLower && (
+            item.rawLabelLower.includes(rawLower) ||
+            item.rawSubLower.includes(rawLower)
           ))
         );
       })
-      .sort((a: any, b: any) => {
-        const valA = convertMarathiDigits(String(a.value || '')).toLowerCase();
-        const valB = convertMarathiDigits(String(b.value || '')).toLowerCase();
-        const labelA = convertMarathiDigits(a.label || '').toLowerCase();
-        const labelB = convertMarathiDigits(b.label || '').toLowerCase();
-        const subA = convertMarathiDigits(a.subLabel || '').toLowerCase();
-        const subB = convertMarathiDigits(b.subLabel || '').toLowerCase();
-
+      .sort((a, b) => {
         // 1. Exact खाते क्र. (ID) match gets highest priority
-        const exactA = valA === normalizedSearch;
-        const exactB = valB === normalizedSearch;
+        const exactA = a.normVal === normalizedSearch;
+        const exactB = b.normVal === normalizedSearch;
         if (exactA && !exactB) return -1;
         if (!exactA && exactB) return 1;
 
         // 2. खाते क्र. (ID) starts with search
-        const startValA = valA.startsWith(normalizedSearch);
-        const startValB = valB.startsWith(normalizedSearch);
+        const startValA = a.normVal.startsWith(normalizedSearch);
+        const startValB = b.normVal.startsWith(normalizedSearch);
         if (startValA && !startValB) return -1;
         if (!startValA && startValB) return 1;
 
         // 3. SubLabel contains exact group code (उदा. [28.1] किंवा [28])
-        const grpMatchA = subA.includes(`[${normalizedSearch}]`) || subA.includes(` ${normalizedSearch} `) || subA.startsWith(`गट: [${normalizedSearch}]`);
-        const grpMatchB = subB.includes(`[${normalizedSearch}]`) || subB.includes(` ${normalizedSearch} `) || subB.startsWith(`गट: [${normalizedSearch}]`);
+        const grpMatchA = a.normSub.includes(`[${normalizedSearch}]`) || a.normSub.includes(` ${normalizedSearch} `) || a.normSub.startsWith(`गट: [${normalizedSearch}]`);
+        const grpMatchB = b.normSub.includes(`[${normalizedSearch}]`) || b.normSub.includes(` ${normalizedSearch} `) || b.normSub.startsWith(`गट: [${normalizedSearch}]`);
         if (grpMatchA && !grpMatchB) return -1;
         if (!grpMatchA && grpMatchB) return 1;
 
         // 4. Label starts with search term
-        const startLabelA = labelA.startsWith(normalizedSearch);
-        const startLabelB = labelB.startsWith(normalizedSearch);
+        const startLabelA = a.normLabel.startsWith(normalizedSearch);
+        const startLabelB = b.normLabel.startsWith(normalizedSearch);
         if (startLabelA && !startLabelB) return -1;
         if (!startLabelA && startLabelB) return 1;
 
         // 5. Default sort by numeric ID if both are numbers
-        const numA = parseInt(valA, 10);
-        const numB = parseInt(valB, 10);
-        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        if (!isNaN(a.numVal) && !isNaN(b.numVal)) return a.numVal - b.numVal;
 
-        return labelA.localeCompare(labelB);
-      });
-  }, [safeOptions, normalizedSearch, rawSearch]);
+        return a.normLabel.localeCompare(b.normLabel);
+      })
+      .map((item) => item.raw);
+  }, [indexedOptions, safeOptions, normalizedSearch, rawLower]);
+
+  const MAX_VISIBLE_OPTIONS = 100;
+  const visibleOptions = useMemo(() => {
+    if (filteredOptions.length <= MAX_VISIBLE_OPTIONS) return filteredOptions;
+    const sliced = filteredOptions.slice(0, MAX_VISIBLE_OPTIONS);
+    if (selectedOption && !sliced.some((o: any) => String(o.value) === String(selectedOption.value))) {
+      return [selectedOption, ...sliced.slice(0, MAX_VISIBLE_OPTIONS - 1)];
+    }
+    return sliced;
+  }, [filteredOptions, selectedOption]);
 
   useEffect(() => {
     if (!isOpen) return;
-    const selectedIdx = filteredOptions.findIndex((o: any) => String(o.value) === String(value));
+    const selectedIdx = visibleOptions.findIndex((o: any) => String(o.value) === String(value));
     setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0);
   }, [isOpen]);
 
   useEffect(() => {
-    if (highlightedIndex >= filteredOptions.length) {
+    if (visibleOptions.length > 0 && highlightedIndex >= visibleOptions.length) {
       setHighlightedIndex(0);
     }
-  }, [filteredOptions.length, highlightedIndex]);
+  }, [visibleOptions.length, highlightedIndex]);
 
   useEffect(() => {
     if (!isOpen || !listContainerRef.current) return;
@@ -350,20 +376,20 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown') {
                     e.preventDefault();
-                    if (filteredOptions.length > 0) {
-                      setHighlightedIndex(prev => (prev + 1 < filteredOptions.length ? prev + 1 : 0));
+                    if (visibleOptions.length > 0) {
+                      setHighlightedIndex(prev => (prev + 1 < visibleOptions.length ? prev + 1 : 0));
                     }
                   } else if (e.key === 'ArrowUp') {
                     e.preventDefault();
-                    if (filteredOptions.length > 0) {
-                      setHighlightedIndex(prev => (prev - 1 >= 0 ? prev - 1 : filteredOptions.length - 1));
+                    if (visibleOptions.length > 0) {
+                      setHighlightedIndex(prev => (prev - 1 >= 0 ? prev - 1 : visibleOptions.length - 1));
                     }
                   } else if (e.key === 'Enter') {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (filteredOptions.length > 0) {
-                      const safeIdx = highlightedIndex >= 0 && highlightedIndex < filteredOptions.length ? highlightedIndex : 0;
-                      triggerChange(filteredOptions[safeIdx].value);
+                    if (visibleOptions.length > 0) {
+                      const safeIdx = highlightedIndex >= 0 && highlightedIndex < visibleOptions.length ? highlightedIndex : 0;
+                      triggerChange(visibleOptions[safeIdx].value);
                       setIsOpen(false);
                       setSearchTerm('');
                       setTimeout(() => triggerRef.current?.focus(), 0);
@@ -374,9 +400,9 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                     setIsOpen(false);
                     setTimeout(() => triggerRef.current?.focus(), 0);
                   } else if (e.key === 'Tab') {
-                    if (filteredOptions.length > 0 && (searchTerm.trim() !== '' || highlightedIndex > 0)) {
-                      const safeIdx = highlightedIndex >= 0 && highlightedIndex < filteredOptions.length ? highlightedIndex : 0;
-                      triggerChange(filteredOptions[safeIdx].value);
+                    if (visibleOptions.length > 0 && (searchTerm.trim() !== '' || highlightedIndex > 0)) {
+                      const safeIdx = highlightedIndex >= 0 && highlightedIndex < visibleOptions.length ? highlightedIndex : 0;
+                      triggerChange(visibleOptions[safeIdx].value);
                     }
                     setIsOpen(false);
                     setSearchTerm('');
@@ -447,7 +473,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
           {/* Scrollable Results List */}
           <div ref={listContainerRef} className="overflow-y-auto flex-1 divide-y divide-slate-100">
-            {filteredOptions.map((option: any, idx: number) => {
+            {visibleOptions.map((option: any, idx: number) => {
               const isSelected = String(value) === String(option.value);
               const isHighlighted = idx === highlightedIndex;
               return (

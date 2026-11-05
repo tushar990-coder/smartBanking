@@ -173,7 +173,7 @@ namespace Bhisi.Api.Controllers
             }
             else
             {
-                // Sync sequence tracking to actual accounts in the database (ensures auto-decrement after deletes)
+                if (seq.CurrentValue != maxSeq) { seq.CurrentValue = maxSeq; await _context.SaveChangesAsync(); } } if (false) {
                 seq.CurrentValue = maxSeq;
                 await _context.SaveChangesAsync();
             }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import {
   Landmark,
@@ -139,9 +140,9 @@ const formatDurationDisplay = (acc: FdAccountRecord): string => {
 };
 
 const FdOpeningBalanceMigration: React.FC = () => {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [schemes, setSchemes] = useState<FdScheme[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(() => getCachedMasterData('/api/Customers') || []);
+  const [schemes, setSchemes] = useState<FdScheme[]>(() => getCachedMasterData('/api/FdSchemes') || []);
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData('/api/Branches') || []);
   const [migratedAccounts, setMigratedAccounts] = useState<FdAccountRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

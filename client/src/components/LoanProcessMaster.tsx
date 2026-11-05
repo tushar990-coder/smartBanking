@@ -19,11 +19,18 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
     const [draftApplication, setDraftApplication] = useState<any>(null);
     const [editingDisbursement, setEditingDisbursement] = useState<any>(null);
     const [applicationKey, setApplicationKey] = useState<number>(0);
+    const [hasVisitedDisbursementTab, setHasVisitedDisbursementTab] = useState<boolean>(() => activeTab === 2);
 
     const queryParams = new URLSearchParams(window.location.search);
     const voucherIdParam = queryParams.get('voucherId');
     const isPassingMode = queryParams.get('passingMode') === 'true' && Boolean(voucherIdParam);
     const [passingDisbursement, setPassingDisbursement] = useState<any>(null);
+
+    useEffect(() => {
+        if (activeTab === 2 || draftApplication || editingDisbursement || isPassingMode) {
+            setHasVisitedDisbursementTab(true);
+        }
+    }, [activeTab, draftApplication, editingDisbursement, isPassingMode]);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -112,23 +119,25 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
             <div className="flex-1 overflow-y-auto relative">
                 <div className={`${activeTab === 1 ? 'block' : 'hidden'}`}>
                     <LoanApplicationMaster 
-                        key={`loan-app-${applicationKey}`}
                         onNext={handleNext} 
                         editingApplicationId={passingApplicationId || editingDisbursement?.loanAccount?.loanApplicationID}
                         isReadOnly={isPassingMode}
                         onNavigate={onNavigate}
+                        resetTrigger={applicationKey}
                         initialSuccessMessage={applicationKey > 0 ? "✅ मागील कर्ज वाटप नोंद यशस्वीरीत्या पूर्ण झाली आहे. नवीन कर्ज अर्जासाठी कोरा फॉर्म तयार आहे." : undefined}
                     />
                 </div>
-                <div className={`${activeTab === 2 ? 'block' : 'hidden'}`}>
-                    <LoanDisbursementMaster 
-                        draftApplication={draftApplication} 
-                        editingDisbursement={editingDisbursement}
-                        onRequestEditApplication={handleRequestEditApplication}
-                        onSaveSuccess={handleDisbursementSaved}
-                        onNavigate={onNavigate}
-                    />
-                </div>
+                {hasVisitedDisbursementTab && (
+                    <div className={`${activeTab === 2 ? 'block' : 'hidden'}`}>
+                        <LoanDisbursementMaster 
+                            draftApplication={draftApplication} 
+                            editingDisbursement={editingDisbursement}
+                            onRequestEditApplication={handleRequestEditApplication}
+                            onSaveSuccess={handleDisbursementSaved}
+                            onNavigate={onNavigate}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

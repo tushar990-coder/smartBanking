@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData } from '../utils/apiCache';
 import {
   Landmark,
   CheckCircle2,
@@ -219,25 +220,46 @@ interface LoanApplicationMasterProps {
   isReadOnly?: boolean;
   onNavigate?: (tab: string, params?: any) => void;
   initialSuccessMessage?: string;
+  resetTrigger?: number;
 }
 
-const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, editingApplicationId, isReadOnly, onNavigate, initialSuccessMessage }) => {
+const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, editingApplicationId, isReadOnly, onNavigate, initialSuccessMessage, resetTrigger }) => {
   const { user } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
   const queryParams = new URLSearchParams(window.location.search);
   const voucherIdFromUrl = queryParams.get('voucherId');
   const isPassingMode = Boolean(isReadOnly || queryParams.get('passingMode') === 'true');
 
-  const [applications, setApplications] = useState<LoanApplication[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loanRates, setLoanRates] = useState<LoanRate[]>([]);
-  const [securityTypes, setSecurityTypes] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : 1;
+  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : (user?.branchID || 1);
   const [selectedBranchId, setSelectedBranchId] = useState<number>(initialBranchId);
   const [filterBranchId, setFilterBranchId] = useState<string>(hasGlobalBranch ? (globalBranchStr as string) : 'all');
+
+  const [applications, setApplications] = useState<LoanApplication[]>([]);
+  const [members, setMembers] = useState<Member[]>(() => {
+    const cached = getCachedMasterData<any[]>('/api/Customers');
+    return Array.isArray(cached) ? cached.filter((m: any) => m.status === 'Active') : [];
+  });
+  const [loanRates, setLoanRates] = useState<LoanRate[]>(() => {
+    const cached = getCachedMasterData<LoanRate[]>('/api/LoanRates');
+    return Array.isArray(cached) ? cached : [];
+  });
+  const [securityTypes, setSecurityTypes] = useState<any[]>(() => {
+    const cached = getCachedMasterData<any[]>('/api/SecurityTypes');
+    return Array.isArray(cached) ? cached.filter((s: any) => s.isActive) : [];
+  });
+  const [branches, setBranches] = useState<any[]>(() => {
+    const cached = getCachedMasterData<any[]>('/api/Branches');
+    if (Array.isArray(cached) && cached.length > 0) return cached;
+    return [
+      {
+        branchID: initialBranchId,
+        branchName: user?.branchName || 'मुख्य शाखा (Main Branch)',
+        branchCode: initialBranchId === 1 ? '001' : String(initialBranchId).padStart(3, '0')
+      }
+    ];
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -374,12 +396,18 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   };
 
   useEffect(() => {
-    fetchData();
     fetchDropdowns();
     if (!isPassingMode && !editingApplicationId && !voucherIdFromUrl) {
       fetchNextAppNo(initialBranchId);
     }
+    fetchData();
   }, []);
+
+  useEffect(() => {
+    if (resetTrigger && resetTrigger > 0) {
+      handleResetForm(initialSuccessMessage || '✅ मागील कर्ज वाटप नोंद यशस्वीरीत्या पूर्ण झाली आहे. नवीन कर्ज अर्जासाठी कोरा फॉर्म तयार आहे.');
+    }
+  }, [resetTrigger]);
 
   useEffect(() => {
     if (user?.businessDate && !editingApplicationId) {
@@ -639,20 +667,39 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   };
 
   const fetchDropdowns = async () => {
-    try {
-      const [memRes, ratesRes, secRes, branchRes] = await Promise.all([
-        axios.get('/api/Customers'),
-        axios.get('/api/LoanRates'),
-        axios.get('/api/SecurityTypes'),
-        axios.get('/api/Branches')
-      ]);
-      setMembers(Array.isArray(memRes.data) ? memRes.data.filter((m: any) => m.status === 'Active') : []);
-      setLoanRates(Array.isArray(ratesRes.data) ? ratesRes.data : []);
-      setSecurityTypes(Array.isArray(secRes.data) ? secRes.data.filter((s: any) => s.isActive) : []);
-      setBranches(Array.isArray(branchRes.data) ? branchRes.data : []);
-    } catch (err) {
-      console.error(err);
-    }
+    // Resolve each dropdown dataset independently so fast endpoints (Branches, LoanRates, SecurityTypes)
+    // populate immediately without waiting for the large Customers payload.
+    axios.get('/api/Branches')
+      .then(branchRes => {
+        if (Array.isArray(branchRes.data) && branchRes.data.length > 0) {
+          setBranches(branchRes.data);
+        }
+      })
+      .catch(err => console.error('Failed to load branches', err));
+
+    axios.get('/api/LoanRates')
+      .then(ratesRes => {
+        if (Array.isArray(ratesRes.data)) {
+          setLoanRates(ratesRes.data);
+        }
+      })
+      .catch(err => console.error('Failed to load loan rates', err));
+
+    axios.get('/api/SecurityTypes')
+      .then(secRes => {
+        if (Array.isArray(secRes.data)) {
+          setSecurityTypes(secRes.data.filter((s: any) => s.isActive));
+        }
+      })
+      .catch(err => console.error('Failed to load security types', err));
+
+    axios.get('/api/Customers')
+      .then(memRes => {
+        if (Array.isArray(memRes.data)) {
+          setMembers(memRes.data.filter((m: any) => m.status === 'Active'));
+        }
+      })
+      .catch(err => console.error('Failed to load customers', err));
   };
 
   const openQuickAddSecurityModal = (prefillText = '') => {
@@ -792,11 +839,11 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     }
   };
 
-  const handleResetForm = () => {
+  const handleResetForm = (preserveSuccessMsg?: string | React.MouseEvent) => {
     setIsInstAmountEdited(false);
     setShowSchedule(false);
     setError('');
-    setSuccess('');
+    setSuccess(typeof preserveSuccessMsg === 'string' ? preserveSuccessMsg : '');
     setScheduleData([]);
     setShowCoBorrowers(false);
     setDepositCollaterals([]);
@@ -807,12 +854,13 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     setGoldItems([]);
     setEditingGoldId(null);
     stopCamera();
+    const targetBranch = selectedBranchId || initialBranchId || 1;
     setFormData({
       ...initialFormState,
-      branchID: selectedBranchId,
-      applicationDate: new Date().toISOString().split('T')[0]
+      branchID: targetBranch,
+      applicationDate: activeBusinessDate
     });
-    fetchNextAppNo(selectedBranchId);
+    fetchNextAppNo(targetBranch);
     if (formContainerRef.current) {
       formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -965,14 +1013,25 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
         }
       }
 
+      // Optimistic in-memory update of applications list + non-blocking background refresh
+      if (savedData) {
+        setApplications(prev => {
+          const exists = prev.some(a => a.loanApplicationID === savedAppId);
+          if (exists) {
+            return prev.map(a => a.loanApplicationID === savedAppId ? { ...a, ...savedData } : a);
+          }
+          return [savedData, ...prev];
+        });
+      }
       fetchData();
 
       if (onNext) {
         onNext(savedData);
       } else {
-        setTimeout(() => {
-          handleResetForm();
-        }, 1200);
+        const msg = formData.loanApplicationID
+          ? `कर्ज अर्ज #${formData.applicationNo || formData.loanApplicationID} यशस्वीरित्या अद्यतनित झाला!`
+          : `नवीन कर्ज अर्ज #${savedData?.applicationNo || savedAppId} यशस्वीरीत्या सेव्ह झाला!`;
+        handleResetForm(msg);
       }
     } catch (err: any) {
       console.error(err);
@@ -1710,6 +1769,24 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     formData.coCustomer2ID && (m.customerID === Number(formData.coCustomer2ID) || m.id === Number(formData.coCustomer2ID))
   );
 
+  const nonBorrowerCustomers = useMemo(() => {
+    if (!formData.customerID) return members;
+    const cId = Number(formData.customerID);
+    return members.filter((m: any) => Number(m.customerID || m.id) !== cId);
+  }, [members, formData.customerID]);
+
+  const coCustomer2Candidates = useMemo(() => {
+    if (!formData.coCustomerID) return nonBorrowerCustomers;
+    const co1 = Number(formData.coCustomerID);
+    return nonBorrowerCustomers.filter((m: any) => Number(m.customerID || m.id) !== co1);
+  }, [nonBorrowerCustomers, formData.coCustomerID]);
+
+  const guarantor2Candidates = useMemo(() => {
+    if (!formData.guarantor1CustomerID) return nonBorrowerCustomers;
+    const g1 = Number(formData.guarantor1CustomerID);
+    return nonBorrowerCustomers.filter((m: any) => Number(m.customerID || m.id) !== g1);
+  }, [nonBorrowerCustomers, formData.guarantor1CustomerID]);
+
   const filteredApps = applications.filter(a => {
     if (filterBranchId !== 'all' && Number(filterBranchId) > 0 && a.branchID !== Number(filterBranchId)) {
       return false;
@@ -2086,10 +2163,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                       <div>
                         <label className={labelClass}>सह-कर्जदार १</label>
                         <CustomerSearchSelect
-                          customers={members.filter((m: any) => {
-                            const mCustId = m.customerID || m.id;
-                            return formData.customerID ? mCustId !== formData.customerID : true;
-                          })}
+                          customers={nonBorrowerCustomers}
                           value={formData.coCustomerID ? Number(formData.coCustomerID) : ''}
                           onChange={(val) => setFormData(p => ({ ...p, coCustomerID: val ? Number(val) : 0 }))}
                           placeholder="-- सह-कर्जदार १ निवडा --"
@@ -2099,11 +2173,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                       <div>
                         <label className={labelClass}>सह-कर्जदार २</label>
                         <CustomerSearchSelect
-                          customers={members.filter((m: any) => {
-                            const mCustId = m.customerID || m.id;
-                            return (formData.customerID ? mCustId !== formData.customerID : true) &&
-                                   (formData.coCustomerID ? mCustId !== formData.coCustomerID : true);
-                          })}
+                          customers={coCustomer2Candidates}
                           value={formData.coCustomer2ID ? Number(formData.coCustomer2ID) : ''}
                           onChange={(val) => setFormData(p => ({ ...p, coCustomer2ID: val ? Number(val) : 0 }))}
                           placeholder="-- सह-कर्जदार २ निवडा --"
@@ -2318,10 +2388,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                     जामीनदार १ (Guarantor 1) <span className="text-red-500">*</span>
                   </label>
                   <CustomerSearchSelect
-                    customers={members.filter((m: any) => {
-                      const mCustId = m.customerID || m.id;
-                      return formData.customerID ? mCustId !== formData.customerID : true;
-                    })}
+                    customers={nonBorrowerCustomers}
                     value={formData.guarantor1CustomerID ? Number(formData.guarantor1CustomerID) : ''}
                     onChange={(val) => {
                       setFormData(p => ({
@@ -2352,11 +2419,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                     जामीनदार २ (Guarantor 2)
                   </label>
                   <CustomerSearchSelect
-                    customers={members.filter((m: any) => {
-                      const mCustId = m.customerID || m.id;
-                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
-                             (formData.guarantor1CustomerID ? mCustId !== formData.guarantor1CustomerID : true);
-                    })}
+                    customers={guarantor2Candidates}
                     value={formData.guarantor2CustomerID ? Number(formData.guarantor2CustomerID) : ''}
                     onChange={(val) => {
                       setFormData(p => ({

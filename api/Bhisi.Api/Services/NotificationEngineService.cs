@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -20,6 +21,9 @@ namespace Bhisi.Api.Services
     public class NotificationEngineService : INotificationEngineService
     {
         private readonly AppDbContext _db;
+        private static bool _tableVerified = false;
+        private static readonly ConcurrentDictionary<int, DateTime> _lastGenPerBranchUtc = new();
+        private static readonly TimeSpan GenCooldown = TimeSpan.FromSeconds(120);
 
         public NotificationEngineService(AppDbContext db)
         {
@@ -31,9 +35,16 @@ namespace Bhisi.Api.Services
             int createdCount = 0;
             DateTime today = DateTime.Today;
 
-            // 1. Ensure SystemNotifications table is created if auto-migration hasn't executed
+            if (_lastGenPerBranchUtc.TryGetValue(branchId, out var lastRun) && DateTime.UtcNow - lastRun < GenCooldown)
+            {
+                return 0;
+            }
+            _lastGenPerBranchUtc[branchId] = DateTime.UtcNow;
+
+            if (!_tableVerified)
             try
             {
+                _tableVerified = true;
                 await _db.Database.ExecuteSqlRawAsync(@"
                     IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SystemNotifications')
                     BEGIN
@@ -655,7 +666,7 @@ namespace Bhisi.Api.Services
 
             var result = new Dictionary<string, int>
             {
-                { "ALL", await _db.SystemNotifications.CountAsync(n => n.BranchID == branchId && n.Status == "Active") },
+                { "ALL", counts.Values.Sum() },
                 { "Vouchers", counts.GetValueOrDefault("Vouchers", 0) },
                 { "Loans", counts.GetValueOrDefault("Loans", 0) },
                 { "LoanApplications", counts.GetValueOrDefault("LoanApplications", 0) },
@@ -679,6 +690,7 @@ namespace Bhisi.Api.Services
             int totalPending = await activeQuery.CountAsync();
             int urgentCount = await activeQuery.CountAsync(n => n.Priority == "URGENT");
             int highCount = await activeQuery.CountAsync(n => n.Priority == "HIGH");
+            decimal totalAmount = await activeQuery.SumAsync(n => (decimal?)n.Amount) ?? 0m;
             int completedToday = await _db.SystemNotifications.CountAsync(n => n.BranchID == branchId && n.Status == "Completed" && n.CompletedOn.HasValue && n.CompletedOn.Value.Date == today);
             
             int totalToday = totalPending + completedToday;
@@ -690,9 +702,13 @@ namespace Bhisi.Api.Services
             {
                 { "totalPending", totalPending },
                 { "urgentCount", urgentCount },
+                { "urgentTasks", urgentCount },
                 { "highCount", highCount },
+                { "highPriorityTasks", highCount },
+                { "totalAmount", totalAmount },
                 { "completedToday", completedToday },
                 { "progressPercentage", progressPercentage },
+                { "completionRate", progressPercentage },
                 { "moduleCounts", moduleCounts }
             };
         }
@@ -707,6 +723,7 @@ namespace Bhisi.Api.Services
             notification.CompletedBy = userId;
 
             await _db.SaveChangesAsync();
+            _lastGenPerBranchUtc.TryRemove(notification.BranchID, out _);
             return true;
         }
     }

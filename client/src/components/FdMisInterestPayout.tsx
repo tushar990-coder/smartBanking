@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData } from '../utils/apiCache';
 import {
   CheckCircle2,
   AlertCircle,
@@ -246,8 +247,8 @@ export const FdMisInterestPayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'payout' | 'register'>('payout');
 
   // Branch & Filter states
-  const [branches, setBranches] = useState<any[]>([]);
-  const [schemes, setSchemes] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData('/api/Branches') || []);
+  const [schemes, setSchemes] = useState<any[]>(() => getCachedMasterData('/api/FdSchemes') || []);
   const [selectedSchemeId, setSelectedSchemeId] = useState<number | ''>('');
 
   const isHeadOfficeOrAdmin = Boolean(

@@ -112,12 +112,13 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : todayStr;
   const [selectedDate, setSelectedDate] = useState<string>(activeBusinessDate);
-  // Pending tab defaults to All Dates so zero pending backlog is ever hidden; Approved tab defaults to Today
-  const [isAllDates, setIsAllDates] = useState<boolean>(true);
+  // Strictly lock Voucher Passing to the active Login Date (activeBusinessDate)
+  const [isAllDates, setIsAllDates] = useState<boolean>(false);
 
   useEffect(() => {
     if (user?.businessDate) {
       setSelectedDate(user.businessDate.split('T')[0]);
+      setIsAllDates(false);
     }
   }, [user?.businessDate]);
 
@@ -136,19 +137,27 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const [unpassError, setUnpassError] = useState('');
 
   const getOperatingBranchQuery = () => {
+    const params = new URLSearchParams();
+    params.set('voucherDate', activeBusinessDate);
+    params.set('allDates', 'false');
+
     const globalBranchStr = localStorage.getItem('globalBranchId');
     const isHO = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
     if (globalBranchStr && globalBranchStr !== 'all') {
       const parsed = parseInt(globalBranchStr, 10);
-      if (!isNaN(parsed) && parsed > 0) return `?branchId=${parsed}`;
+      if (!isNaN(parsed) && parsed > 0) {
+        params.set('branchId', String(parsed));
+        return `?${params.toString()}`;
+      }
     }
     if (globalBranchStr === 'all' && isHO) {
-      return '';
+      return `?${params.toString()}`;
     }
     if (isHO && (!user?.branchID || user.branchID <= 0)) {
-      return '';
+      return `?${params.toString()}`;
     }
-    return `?branchId=${user?.branchID || 1}`;
+    params.set('branchId', String(user?.branchID || 1));
+    return `?${params.toString()}`;
   };
 
   useEffect(() => {
@@ -161,7 +170,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     };
     window.addEventListener('globalBranchChange', handleBranchChange);
     return () => window.removeEventListener('globalBranchChange', handleBranchChange);
-  }, [user?.branchID, user?.role]);
+  }, [user?.branchID, user?.role, activeBusinessDate]);
 
   const isOpeningMigrationVoucher = (v: Voucher) => {
     const vNo = v.voucherNo || '';
@@ -192,7 +201,9 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       const res = await fetch(`/api/VoucherPosting/Approved${branchQuery}`);
       if (res.ok) {
         const data = await res.json();
-        const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter((v: Voucher) => !isOpeningMigrationVoucher(v));
+        const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter(
+          (v: Voucher) => !isOpeningMigrationVoucher(v) && (v.voucherDate ? v.voucherDate.split('T')[0] : '') === activeBusinessDate
+        );
         setApprovedVouchers(safeList);
       } else {
         console.error('Failed to fetch approved vouchers:', res.status, res.statusText);
@@ -217,7 +228,9 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       const res = await fetch(`/api/VoucherPosting/Unposted${branchQuery}`);
       if (res.ok) {
         const data = await res.json();
-        const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter((v: Voucher) => !isOpeningMigrationVoucher(v));
+        const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter(
+          (v: Voucher) => !isOpeningMigrationVoucher(v) && (v.voucherDate ? v.voucherDate.split('T')[0] : '') === activeBusinessDate
+        );
         setVouchers(safeList);
         setSelectedVouchers(new Set());
 
@@ -247,12 +260,8 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     setTypeFilter('ALL');
     setMessage('');
     setError('');
-    if (tab === 'PENDING') {
-      setIsAllDates(true);
-    } else {
-      setSelectedDate(activeBusinessDate);
-      setIsAllDates(false);
-    }
+    setSelectedDate(activeBusinessDate);
+    setIsAllDates(false);
   };
 
   const toggleSelection = (id: number) => {
@@ -275,6 +284,15 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
   const handlePostSelected = async () => {
     if (selectedVouchers.size === 0) return;
+
+    const selectedObjs = vouchers.filter((v) => selectedVouchers.has(v.voucherID));
+    const nonLoginDateVoucher = selectedObjs.find((v) => (v.voucherDate ? v.voucherDate.split('T')[0] : '') !== activeBusinessDate);
+    if (nonLoginDateVoucher) {
+      const loginDisplay = activeBusinessDate.split('-').reverse().join('/');
+      setError(`सुरक्षा नियम: फक्त चालू लॉगिन तारखेचेच (${loginDisplay}) व्हाउचर मंजूर व पोस्ट करता येतात. व्हाउचर क्र. ${nonLoginDateVoucher.voucherNo} ची तारीख वेगळी आहे.`);
+      return;
+    }
+
     if (!window.confirm(`तुम्हाला खात्री आहे का की तुम्ही निवडलेले ${selectedVouchers.size} व्हाउचर मंजूर व पोस्ट करू इच्छिता?`)) return;
 
     setActionLoading(true);
@@ -287,6 +305,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         body: JSON.stringify({
           voucherIds: Array.from(selectedVouchers),
           approvedBy: user?.userID || 1,
+          businessDate: activeBusinessDate,
         }),
       });
 
@@ -319,6 +338,13 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       return;
     }
 
+    const vDateStr = voucher.voucherDate ? voucher.voucherDate.split('T')[0] : '';
+    if (vDateStr !== activeBusinessDate) {
+      const loginDisplay = activeBusinessDate.split('-').reverse().join('/');
+      setError(`सुरक्षा नियम: फक्त चालू लॉगिन तारखेचेच (${loginDisplay}) व्हाउचर मंजूर व पोस्ट करता येतात. व्हाउचर क्र. ${voucher.voucherNo} ची तारीख वेगळी आहे.`);
+      return;
+    }
+
     const confirmMsg = `व्हाउचर क्र. ${voucher.voucherNo} (${voucher.voucherType} - ₹${voucher.totalAmount.toLocaleString('en-IN')}) मंजूर व पास करायचे आहे का?`;
     if (!window.confirm(confirmMsg)) return;
 
@@ -332,6 +358,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         body: JSON.stringify({
           voucherIds: [voucher.voucherID],
           approvedBy: user?.userID || 1,
+          businessDate: activeBusinessDate,
         }),
       });
 
@@ -1077,65 +1104,18 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       <div className="bg-white rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col overflow-hidden">
         {/* SINGLE COMPACT FILTER & SUMMARY STRIP */}
         <div className="px-3 py-2 bg-slate-50/80 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
-          {/* Left: Compact Date Controls */}
+          {/* Left: Strictly Locked Login Date Badge */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
-            <button
-              type="button"
-              onClick={handleSetAllDates}
-              className={`px-2 py-1 rounded-sm text-[11px] transition-all cursor-pointer border h-[26px] flex items-center ${
-                isAllDates
-                  ? 'bg-primary text-white border-primary font-bold shadow-2xs'
-                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300 font-medium'
-              }`}
+            <div
+              className="px-2.5 py-1 rounded-sm text-[11px] bg-primary/10 text-primary border border-primary/25 font-bold shadow-2xs h-[26px] flex items-center gap-1.5"
+              title="फक्त चालू लॉगिन तारखेचेच व्हाउचर्स दाखवले व पोस्ट केले जातात"
             >
-              सर्व तारखा
-            </button>
-            <button
-              type="button"
-              onClick={handleSetToday}
-              className={`px-2 py-1 rounded-sm text-[11px] transition-all cursor-pointer border h-[26px] flex items-center ${
-                !isAllDates && selectedDate === activeBusinessDate
-                  ? 'bg-primary text-white border-primary font-bold shadow-2xs'
-                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300 font-medium'
-              }`}
-            >
-              आज
-            </button>
-            <button
-              type="button"
-              onClick={handleSetYesterday}
-              className={`px-2 py-1 rounded-sm text-[11px] transition-all cursor-pointer border h-[26px] flex items-center ${
-                !isAllDates && selectedDate === yesterdayStr
-                  ? 'bg-primary text-white border-primary font-bold shadow-2xs'
-                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300 font-medium'
-              }`}
-            >
-              काल
-            </button>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                if (e.target.value) handleDateChange(e.target.value);
-              }}
-              className={`h-[26px] border rounded-sm px-2 text-[11px] font-semibold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white ${
-                !isAllDates ? 'border-primary text-gray-900' : 'border-gray-300 text-gray-600'
-              }`}
-              title="विशिष्ट तारखेचे व्हाउचर पहा"
-            />
-
-            {!isAllDates && otherDatesCount > 0 && activeTab === 'PENDING' && (
-              <button
-                type="button"
-                onClick={handleSetAllDates}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[10.5px] font-bold cursor-pointer h-[26px]"
-                title="इतर तारखांचे प्रलंबित व्हाउचर्स पहा"
-              >
-                <AlertTriangle className="w-3 h-3 text-amber-600" />
-                <span>इतर तारखा: {otherDatesCount}</span>
-              </button>
-            )}
+              <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span>लॉगिन दिनांक:</span>
+              <span className="font-mono font-black">
+                {activeBusinessDate.split('-').reverse().join('/')}
+              </span>
+            </div>
           </div>
 
           {/* Center: Interactive Type Filter Pills (Replaces 5 bulky KPI cards & dropdown) */}
@@ -1334,31 +1314,22 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                         <CheckCircle2 className="w-8 h-8 text-primary mx-auto opacity-80" />
                         <p className="text-sm font-bold text-gray-800">
                           {activeTab === 'PENDING'
-                            ? 'कोणतेही प्रलंबित व्हाउचर शिल्लक नाही'
-                            : 'कोणतेही मंजूर व्हाउचर सापडले नाही'}
+                            ? `लॉगिन तारखेचे (${activeBusinessDate.split('-').reverse().join('/')}) कोणतेही प्रलंबित व्हाउचर शिल्लक नाही`
+                            : `लॉगिन तारखेचे (${activeBusinessDate.split('-').reverse().join('/')}) कोणतेही मंजूर व्हाउचर सापडले नाही`}
                         </p>
                         <p className="text-xs text-gray-500">
                           {activeTab === 'PENDING'
-                            ? 'सर्व व्हाउचर्स यशस्वीरीत्या मंजूर व पोस्ट झालेले आहेत.'
-                            : 'व्हाउचर्स मंजूर केल्यानंतर ते येथे दिसतील.'}
+                            ? 'चालू लॉगिन तारखेचे सर्व व्हाउचर्स यशस्वीरीत्या मंजूर व पोस्ट झालेले आहेत.'
+                            : 'चालू लॉगिन तारखेचे व्हाउचर्स मंजूर केल्यानंतर ते येथे दिसतील.'}
                         </p>
                       </div>
                     ) : !isAllDates && dateFilteredVouchers.length === 0 ? (
                       <div className="space-y-2 max-w-md mx-auto">
                         <Info className="w-7 h-7 text-primary mx-auto opacity-80" />
                         <p className="text-xs font-bold text-gray-800">
-                          निवडलेल्या तारखेचे ({selectedDate.split('-').reverse().join('/')}) कोणतेही{' '}
+                          लॉगिन तारखेचे ({activeBusinessDate.split('-').reverse().join('/')}) कोणतेही{' '}
                           {activeTab === 'PENDING' ? 'प्रलंबित' : 'मंजूर'} व्हाउचर नाही.
                         </p>
-                        {otherDatesCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleSetAllDates}
-                            className="px-3 py-1 bg-primary text-white rounded-sm text-xs font-bold cursor-pointer shadow-2xs"
-                          >
-                            सर्व तारखांचे {otherDatesCount} व्हाउचर्स पहा
-                          </button>
-                        )}
                       </div>
                     ) : (
                       <span className="font-semibold">शोधलेल्या निकषांशी जुळणारे कोणतेही व्हाउचर सापडले नाही.</span>

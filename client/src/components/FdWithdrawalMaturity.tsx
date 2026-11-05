@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData } from '../utils/apiCache';
 import { 
   BookOpen, 
   Layers, 
@@ -239,9 +240,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [rejectReason, setRejectReason] = useState<string>('');
 
   const [accounts, setAccounts] = useState<FdAccount[]>([]);
-  const [schemes, setSchemes] = useState<FdScheme[]>([]);
-  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
-  const [bankLedgers, setBankLedgers] = useState<Ledger[]>([]);
+  const [schemes, setSchemes] = useState<FdScheme[]>(() => getCachedMasterData('/api/FdSchemes') || []);
+  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>(() => getCachedMasterData('/api/Ledgers') || []);
+  const [bankLedgers, setBankLedgers] = useState<Ledger[]>(() => filterBankAccountLedgers(getCachedMasterData('/api/Ledgers') || []) as Ledger[]);
   const [selectedAccId, setSelectedAccId] = useState<number>(0);
   const [selectedAccount, setSelectedAccount] = useState<FdAccount | null>(null);
 
@@ -769,8 +770,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const applySelectedFd = (acc: FdAccount) => {
         setSelectedAccId(acc.fdAccountID);
         setSelectedAccount(acc);
-        fetchCustomerSavingsAccounts(acc.customerID, acc.memberID);
-        fetchActiveLoans(acc.fdAccountID);
+        if (paymentMode === 'Transfer' || surplusPaymentMode === 'Transfer') {
+          fetchCustomerSavingsAccounts(acc.customerID, acc.memberID);
+        }
       };
 
       const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
@@ -917,14 +919,21 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     setSurplusChequeNo('');
     handleResetManualOverride();
     if (selected) {
-      fetchCustomerSavingsAccounts(selected.customerID, selected.memberID);
-      fetchActiveLoans(selected.fdAccountID);
+      if (paymentMode === 'Transfer' || surplusPaymentMode === 'Transfer') {
+        fetchCustomerSavingsAccounts(selected.customerID, selected.memberID);
+      }
     } else {
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');
-      fetchActiveLoans(0);
+      setActiveLoansData(null);
     }
   };
+
+  useEffect(() => {
+    if (selectedAccount && (paymentMode === 'Transfer' || surplusPaymentMode === 'Transfer')) {
+      fetchCustomerSavingsAccounts(selectedAccount.customerID, selectedAccount.memberID);
+    }
+  }, [paymentMode, surplusPaymentMode, selectedAccount?.fdAccountID]);
 
   const handleReopenAccount = async (targetAcc: FdAccount) => {
     if (!targetAcc) return;

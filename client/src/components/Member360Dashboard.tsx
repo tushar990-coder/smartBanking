@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { getCachedMasterData, invalidateApiCache } from '../utils/apiCache';
+import { useAuth } from '../context/AuthContext';
 import { 
     Search, 
     ShieldAlert, 
@@ -15,7 +17,7 @@ import {
     ArrowUpRight,
     ArrowDownLeft
 } from 'lucide-react';
-import MemberSearchSelect from './common/MemberSearchSelect';
+import CustomerSearchSelect from './common/CustomerSearchSelect';
 
 interface Member360DashboardProps {
     onNavigate: (tab: string, params?: any) => void;
@@ -27,6 +29,8 @@ interface MemberInfoDto {
     memberCode: string;
     membershipType?: string;
     oldMemberCode?: string;
+    legacyCustomerNo?: string;
+    customerType?: string;
     cifNo?: string;
     firstName: string;
     middleName?: string;
@@ -79,7 +83,12 @@ interface Member360Data {
 }
 
 export default function Member360Dashboard({ onNavigate }: Member360DashboardProps) {
-    const [rawMembers, setRawMembers] = useState<any[]>(() => {
+    const { user } = useAuth();
+    const activeBusinessDate = user?.businessDate || new Date().toISOString().split('T')[0];
+
+    const [rawCustomers, setRawCustomers] = useState<any[]>(() => {
+        const custList = getCachedMasterData<any[]>('/api/Customers');
+        if (Array.isArray(custList) && custList.length > 0) return custList;
         try {
             const cached = sessionStorage.getItem('cbs_customers_cache');
             return cached ? JSON.parse(cached) : [];
@@ -87,18 +96,22 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
             return [];
         }
     });
-    const [selectedMemberId, setSelectedMemberId] = useState<string>(() => {
+    const [selectedCustomerId, setSelectedCustomerId] = useState<string>(() => {
         const params = new URLSearchParams(window.location.search);
-        const fromUrl = params.get('memberId');
+        const fromUrl = params.get('customerId') || params.get('memberId');
         if (fromUrl) return fromUrl;
-        const saved = sessionStorage.getItem('last_member360_selected_id');
+        const saved = sessionStorage.getItem('last_khatedar360_customer_id') || sessionStorage.getItem('last_member360_selected_id');
         if (saved) return saved;
+        const custList = getCachedMasterData<any[]>('/api/Customers');
+        if (Array.isArray(custList) && custList.length > 0) {
+            return String(custList[0].customerID || custList[0].id);
+        }
         try {
             const cached = sessionStorage.getItem('cbs_customers_cache');
             if (cached) {
                 const list = JSON.parse(cached);
                 if (list && list.length > 0) {
-                    return String(list[0].customerID || list[0].memberID);
+                    return String(list[0].customerID || list[0].id);
                 }
             }
         } catch {}
@@ -106,18 +119,22 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
     });
     const [loading, setLoading] = useState<boolean>(() => {
         const params = new URLSearchParams(window.location.search);
-        const targetId = params.get('memberId') || sessionStorage.getItem('last_member360_selected_id');
-        if (targetId && sessionStorage.getItem(`cbs_customer360_cache_${targetId}`)) {
+        const targetId = params.get('customerId') || params.get('memberId') || sessionStorage.getItem('last_khatedar360_customer_id') || sessionStorage.getItem('last_member360_selected_id');
+        if (targetId && (getCachedMasterData(`/api/Reports/Customer360/${targetId}?asOfDate=${encodeURIComponent(activeBusinessDate)}`) || sessionStorage.getItem(`cbs_customer360_cache_${targetId}_${activeBusinessDate}`))) {
             return false;
         }
         return false;
     });
     const [data, setData] = useState<Member360Data | null>(() => {
         try {
+            const dirtyUntil = Number(sessionStorage.getItem('cbs_customer360_dirty_until') || 0);
+            if (sessionStorage.getItem('cbs_customer360_dirty') === '1' || Date.now() < dirtyUntil) return null;
             const params = new URLSearchParams(window.location.search);
-            const targetId = params.get('memberId') || sessionStorage.getItem('last_member360_selected_id');
+            const targetId = params.get('customerId') || params.get('memberId') || sessionStorage.getItem('last_khatedar360_customer_id') || sessionStorage.getItem('last_member360_selected_id');
             if (targetId) {
-                const cached = sessionStorage.getItem(`cbs_customer360_cache_${targetId}`);
+                const memHit = getCachedMasterData<Member360Data>(`/api/Reports/Customer360/${targetId}?asOfDate=${encodeURIComponent(activeBusinessDate)}`);
+                if (memHit) return memHit;
+                const cached = sessionStorage.getItem(`cbs_customer360_cache_${targetId}_${activeBusinessDate}`);
                 if (cached) return JSON.parse(cached);
             }
         } catch {}
@@ -130,22 +147,22 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
     const handleReportNavigate = (rawId: string) => {
         if (rawId.includes('&')) {
             const [tab, query] = rawId.split('&');
-            const params: any = { memberId: selectedMemberId };
+            const extraParams: any = {};
             const searchParams = new URLSearchParams(query);
             searchParams.forEach((v, k) => {
-                params[k] = v;
+                extraParams[k] = v;
             });
-            onNavigate(tab, params);
+            onNavigate(tab, getUniversalNavParams(extraParams));
         } else {
-            onNavigate(rawId, { memberId: selectedMemberId });
+            onNavigate(rawId, getUniversalNavParams());
         }
     };
 
     const getUniversalNavParams = (extra?: any) => {
         const info = data?.memberInfo;
-        const custId = Number(info?.customerID ?? (info as any)?.customerId ?? (selectedMemberId ? Number(selectedMemberId) : 0)) || undefined;
+        const custId = Number(info?.customerID ?? (info as any)?.customerId ?? (selectedCustomerId ? Number(selectedCustomerId) : 0)) || undefined;
         const cif = String(info?.cifNo ?? (info as any)?.CIFNo ?? '').trim();
-        const memId = Number(info?.memberID ?? (info as any)?.memberId ?? (selectedMemberId ? Number(selectedMemberId) : 0)) || undefined;
+        const memId = Number(info?.memberID ?? (info as any)?.memberId ?? custId ?? 0) || undefined;
         const name = info ? `${info.firstName || ''} ${info.lastName || ''}`.trim() : '';
         const params: any = {
             customerId: custId,
@@ -303,43 +320,45 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
         }
     };
 
-    // Keep selectedMemberId synced in sessionStorage and URL search params
+    // Keep selectedCustomerId synced in sessionStorage and URL search params
     useEffect(() => {
-        if (selectedMemberId) {
-            sessionStorage.setItem('last_member360_selected_id', selectedMemberId);
+        if (selectedCustomerId) {
+            sessionStorage.setItem('last_khatedar360_customer_id', selectedCustomerId);
+            sessionStorage.setItem('last_member360_selected_id', selectedCustomerId);
             const params = new URLSearchParams(window.location.search);
-            if (params.get('memberId') !== selectedMemberId) {
-                params.set('memberId', selectedMemberId);
+            if (params.get('customerId') !== selectedCustomerId || params.has('memberId')) {
+                params.set('customerId', selectedCustomerId);
+                params.delete('memberId');
                 const newUrl = `${window.location.pathname}?${params.toString()}`;
                 window.history.replaceState(null, '', newUrl);
             }
         }
-    }, [selectedMemberId]);
+    }, [selectedCustomerId]);
 
-    const isFetchingMembers = React.useRef(false);
+    const isFetchingCustomers = React.useRef(false);
 
     // Fetch customers on load
-    const fetchMembers = async () => {
-        if (isFetchingMembers.current) return;
-        isFetchingMembers.current = true;
+    const fetchCustomers = async () => {
+        if (isFetchingCustomers.current) return;
+        isFetchingCustomers.current = true;
         try {
             setError('');
             const res = await api.get('/Customers');
             const list = res.data || [];
-            setRawMembers(list);
+            setRawCustomers(list);
             try {
                 sessionStorage.setItem('cbs_customers_cache', JSON.stringify(list));
             } catch (e) {}
             
             if (list.length > 0) {
-                setSelectedMemberId(prev => {
+                setSelectedCustomerId(prev => {
                     if (prev && list.some((m: any) => String(m.customerID || m.memberID) === prev)) {
                         return prev;
                     }
                     const params = new URLSearchParams(window.location.search);
-                    const urlMemberId = params.get('memberId');
-                    const savedMemberId = sessionStorage.getItem('last_member360_selected_id');
-                    const targetId = urlMemberId || savedMemberId;
+                    const urlCustomerId = params.get('customerId') || params.get('memberId');
+                    const savedCustomerId = sessionStorage.getItem('last_khatedar360_customer_id') || sessionStorage.getItem('last_member360_selected_id');
+                    const targetId = urlCustomerId || savedCustomerId;
 
                     if (targetId && list.some((m: any) => String(m.customerID || m.memberID) === targetId)) {
                         return targetId;
@@ -350,45 +369,62 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
         } catch (err: any) {
             console.error("Failed to load customer list", err);
             const msg = err?.response?.data?.message || err?.message;
-            if (rawMembers.length === 0) {
+            if (rawCustomers.length === 0) {
                 setError(msg ? `खातेदारांची यादी लोड करता आली नाही (${msg})` : "खातेदारांची यादी लोड करता आली नाही. सर्व्हर कनेक्शन तपासा.");
             }
         } finally {
-            isFetchingMembers.current = false;
+            isFetchingCustomers.current = false;
         }
     };
 
     useEffect(() => {
-        fetchMembers();
+        fetchCustomers();
     }, []);
 
-    // Fetch 360 view when member selection changes
+    // Fetch 360 view when customer selection or business date changes
     const fetch360Data = async (forceRefresh = false) => {
-        if (!selectedMemberId) return;
+        if (!selectedCustomerId) return;
 
-        // Try reading from cache first if not force refresh
-        if (!forceRefresh) {
+        let shouldForceRefresh = forceRefresh;
+        try {
+            const dirtyUntil = Number(sessionStorage.getItem('cbs_customer360_dirty_until') || 0);
+            if (sessionStorage.getItem('cbs_customer360_dirty') === '1' || Date.now() < dirtyUntil) {
+                sessionStorage.removeItem('cbs_customer360_dirty');
+                shouldForceRefresh = true;
+            }
+        } catch {}
+
+        const cacheStorageKey = `cbs_customer360_cache_${selectedCustomerId}_${activeBusinessDate}`;
+        const memCacheUrl = `/api/Reports/Customer360/${selectedCustomerId}?asOfDate=${encodeURIComponent(activeBusinessDate)}`;
+
+        if (shouldForceRefresh) {
+            invalidateApiCache('/api/reports/customer360');
+            if (!data) setLoading(true);
+        } else {
             try {
-                const cached = sessionStorage.getItem(`cbs_customer360_cache_${selectedMemberId}`);
-                if (cached) {
-                    setData(JSON.parse(cached));
-                } else if (!data) {
-                    setLoading(true);
+                const memHit = getCachedMasterData<Member360Data>(memCacheUrl);
+                if (memHit) {
+                    setData(memHit);
+                } else {
+                    const cached = sessionStorage.getItem(cacheStorageKey);
+                    if (cached) {
+                        setData(JSON.parse(cached));
+                    } else if (!data) {
+                        setLoading(true);
+                    }
                 }
             } catch {
                 if (!data) setLoading(true);
             }
-        } else {
-            setLoading(true);
         }
 
         setError('');
         try {
-            const url = `/Reports/Customer360/${selectedMemberId}${forceRefresh ? '?refresh=true' : ''}`;
+            const url = `/Reports/Customer360/${selectedCustomerId}?asOfDate=${encodeURIComponent(activeBusinessDate)}${shouldForceRefresh ? '&refresh=true' : ''}`;
             const res = await api.get(url);
             setData(res.data);
             try {
-                sessionStorage.setItem(`cbs_customer360_cache_${selectedMemberId}`, JSON.stringify(res.data));
+                sessionStorage.setItem(cacheStorageKey, JSON.stringify(res.data));
             } catch (e) {}
         } catch (err: any) {
             console.error("Failed to load 360 summary", err);
@@ -401,10 +437,10 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
     };
 
     useEffect(() => {
-        if (selectedMemberId) {
+        if (selectedCustomerId) {
             fetch360Data();
         }
-    }, [selectedMemberId]);
+    }, [selectedCustomerId, activeBusinessDate]);
 
     const formatDate = (dateStr?: string | null) => {
         if (!dateStr) return '-';
@@ -452,8 +488,8 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
             <div className="relative z-10 flex flex-col gap-3">
                 
-                {/* 1. Glassmorphic Top Navigation & Member Search Bar */}
-                <div className="backdrop-blur-xl bg-white/85 border border-white/90 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.04)] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+                {/* 1. Glassmorphic Top Navigation & Customer Search Bar */}
+                <div className="relative z-50 backdrop-blur-xl bg-white/85 border border-white/90 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.04)] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-xs">
                             <Award className="w-4.5 h-4.5 text-emerald-100" />
@@ -467,24 +503,23 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2.5 w-full sm:w-auto">
-                        <div className="w-full sm:w-84 md:w-96 flex items-center gap-2 bg-slate-50/90 border border-slate-200/90 rounded-lg px-2.5 py-1 shadow-2xs">
+                    <div className="flex items-center gap-2.5 w-full sm:w-auto relative z-50">
+                        <div className="w-full sm:w-84 md:w-96 flex items-center gap-2 bg-slate-50/90 border border-slate-200/90 rounded-lg px-2.5 py-1 shadow-2xs relative z-50">
                             <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                            <div className="flex-1 text-slate-800 text-xs">
-                                <MemberSearchSelect
-                                    members={rawMembers}
-                                    value={selectedMemberId ? Number(selectedMemberId) : ''}
-                                    onChange={(val) => setSelectedMemberId(val ? String(val) : '')}
-                                    placeholder="-- खातेदार नाव किंवा CIF नं शोधा --"
-                                    valueType="customerId"
-                                    hideMemberRef={true}
+                            <div className="flex-1 text-slate-800 text-xs relative z-50">
+                                <CustomerSearchSelect
+                                    customers={rawCustomers}
+                                    value={selectedCustomerId ? Number(selectedCustomerId) : ''}
+                                    onChange={(val) => setSelectedCustomerId(val ? String(val) : '')}
+                                    placeholder="-- खातेदार नाव, CIF किंवा जुना खातेदार नं शोधा --"
+                                    menuAlign="right"
                                 />
                             </div>
                         </div>
 
                         <button
                             onClick={() => fetch360Data(true)}
-                            disabled={loading || !selectedMemberId}
+                            disabled={loading || !selectedCustomerId}
                             title="रिफ्रेश करा (Refresh)"
                             className="p-2 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-600 hover:text-emerald-700 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
                         >
@@ -510,8 +545,8 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                         </div>
                         <button
                             onClick={() => {
-                                if (rawMembers.length === 0) {
-                                    fetchMembers();
+                                if (rawCustomers.length === 0) {
+                                    fetchCustomers();
                                 } else {
                                     fetch360Data();
                                 }
@@ -533,9 +568,9 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                 {/* 5. Main 360 Degree View Content */}
                 {!loading && data && (
-                    <div className="flex flex-col gap-3">
+                    <div className="relative z-10 flex flex-col gap-3">
                         
-                        {/* Member Profile Hero Glass Banner */}
+                        {/* Customer Profile Hero Glass Banner */}
                         <div className="backdrop-blur-xl bg-gradient-to-br from-slate-900/95 via-slate-800/95 to-emerald-950/95 text-white rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] p-4 border border-white/15 relative overflow-hidden flex flex-wrap lg:flex-nowrap gap-3.5 items-center">
                             {/* Ambient specular highlight */}
                             <div className="absolute top-0 right-0 w-80 h-32 bg-white/5 rounded-full blur-2xl pointer-events-none" />
@@ -546,12 +581,12 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     <img src={data.memberInfo.photoPath} alt="Photo" className="w-full h-full rounded-full object-cover" />
                                 ) : (
                                     <div className="w-full h-full rounded-full bg-emerald-600/40 flex items-center justify-center text-emerald-200">
-                                        {`${(data.memberInfo?.firstName || 'M')[0]}${(data.memberInfo?.lastName || 'M')[0]}`}
+                                        {`${(data.memberInfo?.firstName || 'K')[0]}${(data.memberInfo?.lastName || 'K')[0]}`}
                                     </div>
                                 )}
                             </div>
 
-                            {/* Member Details */}
+                            {/* Customer Details */}
                             <div className="flex-1 min-w-[280px]">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="text-sm md:text-base font-extrabold tracking-tight text-white">
@@ -567,19 +602,9 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                         </span>
                                     )}
 
-                                    {data.memberInfo.memberCode ? (
-                                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded font-mono font-bold tracking-wider">
-                                            सभासद: {data.memberInfo.memberCode}
-                                        </span>
-                                    ) : (
-                                        <span className="text-[10px] bg-amber-400/20 text-amber-200 border border-amber-400/30 px-2.5 py-0.5 rounded font-semibold">
-                                            नाममात्र खातेदार
-                                        </span>
-                                    )}
-
-                                    {data.memberInfo.oldMemberCode && (
+                                    {(data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode) && (
                                         <span className="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/30 px-2.5 py-0.5 rounded font-mono font-bold">
-                                            जुना नं: {data.memberInfo.oldMemberCode}
+                                            जुना खातेदार नं: {data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode}
                                         </span>
                                     )}
 
@@ -591,11 +616,11 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                 {/* Demographics Grid */}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-1.5 mt-2.5 text-[11px] text-slate-200/90 font-medium">
                                     <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">CIF नं:</span> {data.memberInfo.cifNo || '-'}</div>
-                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">जुना नं:</span> {data.memberInfo.oldMemberCode || '-'}</div>
+                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">जुना खातेदार नं:</span> {data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode || '-'}</div>
                                     <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">मोबाईल:</span> {data.memberInfo.mobileNo || '-'}</div>
                                     <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">आधार क्रमांक:</span> {data.memberInfo.aadhaarNo || '-'}</div>
                                     <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">शाखा:</span> {data.memberInfo.branchName || '-'}</div>
-                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">दाखल तारीख:</span> {formatDate(data.memberInfo.joiningDate)}</div>
+                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">नोंदणी तारीख:</span> {formatDate(data.memberInfo.joiningDate)}</div>
                                 </div>
                             </div>
 
@@ -1017,7 +1042,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                             <span className="truncate group-hover/btn:text-rose-900">कर्ज खाते स्टेटमेंट</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('loan-overdue-recovery', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('loan-overdue-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-rose-900">थकीत वसुली नोंदणी</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
@@ -1060,7 +1085,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                             </div>
                                             <div className="mt-1.5 flex justify-between items-end">
                                                 <div>
-                                                    <div className="text-[10px] text-slate-500 font-semibold leading-none">फोलिओ: <span className="font-bold text-slate-700">{data.portfolio.shares.folioNo || '-'}</span></div>
+                                                    <div className="text-[10px] text-slate-500 font-semibold leading-none">CIF नं: <span className="font-bold text-slate-700">{data.memberInfo.cifNo || '-'}</span></div>
                                                     <div className="text-sm font-black text-slate-900 leading-none mt-1">₹ {data.portfolio.shares.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                                                 </div>
                                                 <div className="text-right">

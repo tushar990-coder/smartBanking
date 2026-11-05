@@ -2,6 +2,7 @@ import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData } from '../utils/apiCache';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
@@ -89,10 +90,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const [rejectReason, setRejectReason] = useState<string>('');
 
   const [view, setView] = useState<'form' | 'list'>('form');
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [schemes, setSchemes] = useState<FdScheme[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
-  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
+  const [customers, setCustomers] = useState<any[]>(() => getCachedMasterData('/api/Customers') || []);
+  const [schemes, setSchemes] = useState<FdScheme[]>(() => getCachedMasterData(`/api/FdSchemes?branchId=${user?.branchID || 1}`) || getCachedMasterData('/api/FdSchemes') || []);
+  const [branches, setBranches] = useState<any[]>(() => { const c = getCachedMasterData<any[]>('/api/Branches'); return Array.isArray(c) && c.length > 0 ? c : (user?.branchID ? [{ branchID: user.branchID, branchName: user.branchName || 'मुख्य शाखा', branchCode: String(user.branchID).padStart(3, '0') }] : []); });
+  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>(() => getCachedMasterData('/api/Ledgers') || []);
   const bankLedgers = React.useMemo(() => filterBankAccountLedgers(allLedgers), [allLedgers]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -214,7 +215,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     fetchBankLedgers();
     fetchSchemes(formData.branchID);
     if (!isPassingMode) {
-      fetchFdList(formData.branchID);
+    if (!isPassingMode && view === 'list') { fetchFdList(formData.branchID); }
     }
   }, [isPassingMode]);
 
@@ -222,13 +223,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     fetchSchemes(formData.branchID);
     if (!isPassingMode) {
       fetchNextAccountNo(formData.branchID);
-      fetchFdList(formData.branchID);
+    if (!isPassingMode && view === 'list') { fetchFdList(formData.branchID); }
     }
   }, [formData.branchID, isPassingMode]);
 
   useEffect(() => {
     if (view === 'list' && !isPassingMode) {
-      fetchFdList(formData.branchID);
+    if (!isPassingMode && view === 'list') { fetchFdList(formData.branchID); }
     }
   }, [view, isPassingMode]);
 
@@ -321,13 +322,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   // Fetch Customer's Savings Accounts when customerID changes
   useEffect(() => {
     const custId = formData.customerID || formData.memberID;
-    if (custId > 0) {
+    if (custId > 0 && paymentMode === 'Transfer') {
       fetchCustomerSavingsAccounts(custId);
     } else {
       setCustomerSavingsAccounts([]);
       setSelectedSavingAccountID(0);
     }
-  }, [formData.customerID, formData.memberID]);
+  }, [formData.customerID, formData.memberID, paymentMode]);
 
   const fetchCustomerSavingsAccounts = async (cId: number) => {
     try {
@@ -1055,7 +1056,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       await axios.delete(`${API_URL}/FdAccounts/${deleteConfirm.id}`);
       setListSuccess(`✅ खाते '${deleteConfirm.accountNo}' यशस्वीरित्या डिलीट (Delete) केले.`);
       setDeleteConfirm(null);
-      fetchFdList(formData.branchID);
+    if (!isPassingMode && view === 'list') { fetchFdList(formData.branchID); }
       fetchNextAccountNo(formData.branchID);
     } catch (err: any) {
       const msg = err.response?.data?.message || err.response?.data || err.message || 'Delete करताना त्रुटी आली.';
@@ -1386,7 +1387,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
           const response = await axios.post(`${API_URL}/FdAccounts/BulkCreate`, bulkPayload);
           setSuccess(`✅ ${response.data.message}`);
           fetchNextAccountNo(formData.branchID);
-          fetchFdList(formData.branchID);
+        if (!isPassingMode && view === 'list') { fetchFdList(formData.branchID); }
         } catch (bulkErr: any) {
           const errMsg = bulkErr.response?.data?.message || bulkErr.response?.data || bulkErr.message || 'बल्क पावत्या सेव्ह करताना त्रुटी आली.';
           setError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
@@ -1396,7 +1397,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       setAllowDateOverride(false);
       setFormData((prev) => ({
         ...prev,
-        openingDate: activeBusinessDate,
+        customerID: 0, memberID: 0, isSeniorCitizen: false, openingDate: activeBusinessDate,
         depositAmount: '' as any,
         legacyAccountNumber: '',
         nomineeName: '',
@@ -1411,8 +1412,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       setChequeDate('');
       setIsManualAccountNo(false);
       fetchNextAccountNo(formData.branchID);
-      fetchFdList(formData.branchID);
-      if (activeCustId > 0) {
+    if (!isPassingMode && view === 'list') { fetchFdList(formData.branchID); }
+      if (activeCustId > 0 && paymentMode === 'Transfer') {
         fetchCustomerSavingsAccounts(activeCustId);
       }
 

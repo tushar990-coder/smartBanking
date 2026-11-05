@@ -21,6 +21,8 @@ namespace Bhisi.Api.Helpers
 
     public static class FdRenewalRollbackHelper
     {
+        private static DateTime _lastFullHealUtc = DateTime.MinValue;
+        public static void InvalidateHealCooldown() { _lastFullHealUtc = DateTime.MinValue; }
         public static bool IsFdRenewalVoucher(Voucher? voucher)
         {
             if (voucher == null) return false;
@@ -524,7 +526,7 @@ namespace Bhisi.Api.Helpers
                 await SyncBranchFdSequenceAsync(context, branchIdToSync);
             }
 
-            return result;
+            InvalidateHealCooldown(); return result;
         }
 
         /// <summary>
@@ -578,7 +580,7 @@ namespace Bhisi.Api.Helpers
             if (!parentRenewalTxs.Any() && !hasRenewalRemarks && !renewalVouchers.Any())
             {
                 result.WasRenewal = false;
-                return result;
+                InvalidateHealCooldown(); return result;
             }
 
             result.WasRenewal = true;
@@ -696,7 +698,7 @@ namespace Bhisi.Api.Helpers
                 await context.SaveChangesAsync();
             }
 
-            return result;
+            InvalidateHealCooldown(); return result;
         }
 
         /// <summary>
@@ -705,10 +707,12 @@ namespace Bhisi.Api.Helpers
         /// Pass 2: Orphaned renewed child FD accounts whose JV-FD-REN-* voucher was already deleted.
         /// Pass 3: Orphaned Renewal FdTransactions or stuck "Closed" parent FD accounts with "| नूतनीकरण दिनांक:" whose child FD & renewal voucher no longer exist.
         /// </summary>
-        public static async Task HealOrphanedRenewalsAsync(AppDbContext context, int? targetFdAccountId = null)
+        public static async Task HealOrphanedRenewalsAsync(AppDbContext context, int? targetFdAccountId = null, bool force = false)
         {
             try
             {
+                if (!force && (DateTime.UtcNow - _lastFullHealUtc).TotalSeconds < 60) return;
+                _lastFullHealUtc = DateTime.UtcNow;
                 var branchesToSync = new HashSet<int>();
                 bool modified = false;
 

@@ -60,50 +60,50 @@ import FdRdDashboard from './components/FdRdDashboard';
 import PigmyDashboard from './components/PigmyDashboard';
 import SharesDashboard from './components/SharesDashboard';
 import VoucherDashboard from './components/VoucherDashboard';
-import ReportDashboard from './components/ReportDashboard';
-import TrialBalance from './components/TrialBalance';
-import TrialBalanceNamunaN from './components/TrialBalanceNamunaN';
-import ProfitAndLoss from './components/ProfitAndLoss';
-import Daybook from './components/Daybook';
-import LegacyDaybook from './components/LegacyDaybook';
-import DaybookSummary from './components/DaybookSummary';
-import BalanceSheet from './components/BalanceSheet';
-import BalanceSheetFormN from './components/BalanceSheetFormN';
-import SwanidhiReport from './components/SwanidhiReport';
-import RegulatoryMisReport from './components/RegulatoryMisReport';
-import CrrReport from './components/CrrReport';
-import IbtReconciliationReport from './components/IbtReconciliationReport';
-import GeneralLedger from './components/GeneralLedger';
-import CashBookReport from './components/CashBookReport';
-import VoucherPrint from './components/VoucherPrint';
-import VoucherBatchPrint from './components/VoucherBatchPrint';
-import MemberBalanceReport from './components/MemberBalanceReport';
-import LoanRateMaster from './components/LoanRateMaster';
-import LoanDisbursementRegister from './components/LoanDisbursementRegister';
-import LoanCollectionRegister from './components/LoanCollectionRegister';
-import LoanLedgerReport from './components/LoanLedgerReport';
-import LoanOutstandingReport from './components/LoanOutstandingReport';
-import LoanOverdueReport from './components/LoanOverdueReport';
-import LoanRecoveryNoticeReport from './components/LoanRecoveryNoticeReport';
-import GuarantorReport from './components/GuarantorReport';
-import CustomerListReport from './components/CustomerListReport';
-import CustomerOpeningBalanceReport from './components/CustomerOpeningBalanceReport';
-import MemberListReport from './components/MemberListReport';
-import AadhaarCardYadiReport from './components/AadhaarCardYadiReport';
-import SabhasadLabhanshReport from './components/SabhasadLabhanshReport';
-import SharesKhatavaniReport from './components/SharesKhatavaniReport';
-import CbsSampleReport from './components/CbsSampleReport';
-import SavingKhatavaniReport from './components/SavingKhatavaniReport';
-import RdKhatavaniReport from './components/RdKhatavaniReport';
-import PigmyKhatavaniReport from './components/PigmyKhatavaniReport';
-import FdCustomerSummaryReport from './components/FdCustomerSummaryReport';
-import INamunaReport from './components/INamunaReport';
-import VoterListReport from './components/VoterListReport';
-import GoldLoanDetails from './components/GoldLoanDetails';
-import GoldJewelryReport from './components/GoldJewelryReport';
-import LoanDocumentsUpload from './components/LoanDocumentsUpload';
-import NpaRegister from './components/NpaRegister';
-import InterestWaiverRegister from './components/InterestWaiverRegister';
+const ReportDashboard = React.lazy(() => import('./components/ReportDashboard'));
+const TrialBalance = React.lazy(() => import('./components/TrialBalance'));
+const TrialBalanceNamunaN = React.lazy(() => import('./components/TrialBalanceNamunaN'));
+const ProfitAndLoss = React.lazy(() => import('./components/ProfitAndLoss'));
+const Daybook = React.lazy(() => import('./components/Daybook'));
+const LegacyDaybook = React.lazy(() => import('./components/LegacyDaybook'));
+const DaybookSummary = React.lazy(() => import('./components/DaybookSummary'));
+const BalanceSheet = React.lazy(() => import('./components/BalanceSheet'));
+const BalanceSheetFormN = React.lazy(() => import('./components/BalanceSheetFormN'));
+const SwanidhiReport = React.lazy(() => import('./components/SwanidhiReport'));
+const RegulatoryMisReport = React.lazy(() => import('./components/RegulatoryMisReport'));
+const CrrReport = React.lazy(() => import('./components/CrrReport'));
+const IbtReconciliationReport = React.lazy(() => import('./components/IbtReconciliationReport'));
+const GeneralLedger = React.lazy(() => import('./components/GeneralLedger'));
+const CashBookReport = React.lazy(() => import('./components/CashBookReport'));
+const VoucherPrint = React.lazy(() => import('./components/VoucherPrint'));
+const VoucherBatchPrint = React.lazy(() => import('./components/VoucherBatchPrint'));
+const MemberBalanceReport = React.lazy(() => import('./components/MemberBalanceReport'));
+const LoanRateMaster = React.lazy(() => import('./components/LoanRateMaster'));
+const LoanDisbursementRegister = React.lazy(() => import('./components/LoanDisbursementRegister'));
+const LoanCollectionRegister = React.lazy(() => import('./components/LoanCollectionRegister'));
+const LoanLedgerReport = React.lazy(() => import('./components/LoanLedgerReport'));
+const LoanOutstandingReport = React.lazy(() => import('./components/LoanOutstandingReport'));
+const LoanOverdueReport = React.lazy(() => import('./components/LoanOverdueReport'));
+const LoanRecoveryNoticeReport = React.lazy(() => import('./components/LoanRecoveryNoticeReport'));
+const GuarantorReport = React.lazy(() => import('./components/GuarantorReport'));
+const CustomerListReport = React.lazy(() => import('./components/CustomerListReport'));
+const CustomerOpeningBalanceReport = React.lazy(() => import('./components/CustomerOpeningBalanceReport'));
+const MemberListReport = React.lazy(() => import('./components/MemberListReport'));
+const AadhaarCardYadiReport = React.lazy(() => import('./components/AadhaarCardYadiReport'));
+const SabhasadLabhanshReport = React.lazy(() => import('./components/SabhasadLabhanshReport'));
+const SharesKhatavaniReport = React.lazy(() => import('./components/SharesKhatavaniReport'));
+const CbsSampleReport = React.lazy(() => import('./components/CbsSampleReport'));
+const SavingKhatavaniReport = React.lazy(() => import('./components/SavingKhatavaniReport'));
+const RdKhatavaniReport = React.lazy(() => import('./components/RdKhatavaniReport'));
+const PigmyKhatavaniReport = React.lazy(() => import('./components/PigmyKhatavaniReport'));
+const FdCustomerSummaryReport = React.lazy(() => import('./components/FdCustomerSummaryReport'));
+const INamunaReport = React.lazy(() => import('./components/INamunaReport'));
+const VoterListReport = React.lazy(() => import('./components/VoterListReport'));
+const GoldLoanDetails = React.lazy(() => import('./components/GoldLoanDetails'));
+const GoldJewelryReport = React.lazy(() => import('./components/GoldJewelryReport'));
+const LoanDocumentsUpload = React.lazy(() => import('./components/LoanDocumentsUpload'));
+const NpaRegister = React.lazy(() => import('./components/NpaRegister'));
+const InterestWaiverRegister = React.lazy(() => import('./components/InterestWaiverRegister'));
 import SavingAccountMaster from './components/SavingAccountMaster';
 import SavingTransactionEntry from './components/SavingTransactionEntry';
 import SavingInterestSettingMaster from './components/SavingInterestSettingMaster';
@@ -111,23 +111,23 @@ import SavingInterestPostingMaster from './components/SavingInterestPostingMaste
 import SavingAccountClosingMaster from './components/SavingAccountClosingMaster';
 import SavingPassbookMaster from './components/SavingPassbookMaster';
 import GlobalContextMenu from './components/GlobalContextMenu';
-import SettingsDashboard from './components/SettingsDashboard';
-import BranchLedgerOpeningMaster from './components/BranchLedgerOpeningMaster';
-import CommitteeMaster from './components/CommitteeMaster';
-import CoOpAuditComplianceMaster from './components/CoOpAuditComplianceMaster';
-import SavingAccountListReport from './components/SavingAccountListReport';
-import Member360Dashboard from './components/Member360Dashboard';
+const SettingsDashboard = React.lazy(() => import('./components/SettingsDashboard'));
+const BranchLedgerOpeningMaster = React.lazy(() => import('./components/BranchLedgerOpeningMaster'));
+const CommitteeMaster = React.lazy(() => import('./components/CommitteeMaster'));
+const CoOpAuditComplianceMaster = React.lazy(() => import('./components/CoOpAuditComplianceMaster'));
+const SavingAccountListReport = React.lazy(() => import('./components/SavingAccountListReport'));
+const Member360Dashboard = React.lazy(() => import('./components/Member360Dashboard'));
 import ShareMaster from './components/ShareMaster';
-import UserMaster from './components/UserMaster';
+const UserMaster = React.lazy(() => import('./components/UserMaster'));
 import NetworkStatusBanner from './components/NetworkStatusBanner';
 import LicenseGuardModal from './components/common/LicenseGuardModal';
 
 import ShareWithdrawal from './components/ShareWithdrawal';
 import ShareTransferMaster from './components/ShareTransferMaster';
-import AuditLogReport from './components/AuditLogReport';
-import NpaConfigMaster from './components/NpaConfigMaster';
-import DayEndDashboard from './components/DayEndDashboard';
-import ShareCertificateReport from './components/ShareCertificateReport';
+const AuditLogReport = React.lazy(() => import('./components/AuditLogReport'));
+const NpaConfigMaster = React.lazy(() => import('./components/NpaConfigMaster'));
+const DayEndDashboard = React.lazy(() => import('./components/DayEndDashboard'));
+const ShareCertificateReport = React.lazy(() => import('./components/ShareCertificateReport'));
 import TodaysTasksDashboard from './components/TodaysTasksDashboard';
 import NotificationCenter from './components/NotificationCenter';
 
@@ -139,7 +139,7 @@ import FdAccountOpening from './components/FdAccountOpening';
 import FdWithdrawalMaturity from './components/FdWithdrawalMaturity';
 import FdAccrualPosting from './components/FdAccrualPosting';
 import FdMisInterestPayout from './components/FdMisInterestPayout';
-import FdReports from './components/FdReports';
+const FdReports = React.lazy(() => import('./components/FdReports'));
 
 // Recurring Deposit Module Imports
 import RdSchemeMaster from './components/RdSchemeMaster';
@@ -148,7 +148,7 @@ import RdAccountOpening from './components/RdAccountOpening';
 import RdInstallmentCollection from './components/RdInstallmentCollection';
 import RdWithdrawalMaturity from './components/RdWithdrawalMaturity';
 import RdAccrualPosting from './components/RdAccrualPosting';
-import RdReports from './components/RdReports';
+const RdReports = React.lazy(() => import('./components/RdReports'));
 import RdDashboard from './components/RdDashboard';
 
 // Pigmy Deposit Module Imports
@@ -160,62 +160,64 @@ import AgentDayBookMaster from './components/AgentDayBookMaster';
 import AgentCommissionMaster from './components/AgentCommissionMaster';
 import PigmyInterestPosting from './components/PigmyInterestPosting';
 import PigmyClosureMaster from './components/PigmyClosureMaster';
-import PigmyReports from './components/PigmyReports';
+const PigmyReports = React.lazy(() => import('./components/PigmyReports'));
 
 // Investment Module Imports
-import InvestmentInstitutionMaster from './components/InvestmentInstitutionMaster';
-import InvestmentSchemeMaster from './components/InvestmentSchemeMaster';
-import InvestmentAccountOpening from './components/InvestmentAccountOpening';
-import InvestmentMaturityClaim from './components/InvestmentMaturityClaim';
-import InvestmentInterestAccrualPosting from './components/InvestmentInterestAccrualPosting';
-import InvestmentReports from './components/InvestmentReports';
+const InvestmentInstitutionMaster = React.lazy(() => import('./components/InvestmentInstitutionMaster'));
+const InvestmentSchemeMaster = React.lazy(() => import('./components/InvestmentSchemeMaster'));
+const InvestmentAccountOpening = React.lazy(() => import('./components/InvestmentAccountOpening'));
+const InvestmentMaturityClaim = React.lazy(() => import('./components/InvestmentMaturityClaim'));
+const InvestmentInterestAccrualPosting = React.lazy(() => import('./components/InvestmentInterestAccrualPosting'));
+const InvestmentReports = React.lazy(() => import('./components/InvestmentReports'));
 
 // Asset Module Imports
-import AssetCategoryMaster from './components/AssetCategoryMaster';
-import AssetMaster from './components/AssetMaster';
-import AssetPurchaseForm from './components/AssetPurchaseForm';
-import AssetReports from './components/AssetReports';
+const AssetCategoryMaster = React.lazy(() => import('./components/AssetCategoryMaster'));
+const AssetMaster = React.lazy(() => import('./components/AssetMaster'));
+const AssetPurchaseForm = React.lazy(() => import('./components/AssetPurchaseForm'));
+const AssetReports = React.lazy(() => import('./components/AssetReports'));
 
 // NPA Module Imports
-import NpaDashboard from './components/NpaDashboard';
-import NpaStatementReport from './components/NpaStatementReport';
-import CollateralComplianceTracker from './components/CollateralComplianceTracker';
-import NpaDefaultersList from './components/NpaDefaultersList';
+const NpaDashboard = React.lazy(() => import('./components/NpaDashboard'));
+const NpaStatementReport = React.lazy(() => import('./components/NpaStatementReport'));
+const CollateralComplianceTracker = React.lazy(() => import('./components/CollateralComplianceTracker'));
+const NpaDefaultersList = React.lazy(() => import('./components/NpaDefaultersList'));
 
 // Locker Module Imports
-import LockerDashboard from './components/LockerDashboard';
-import LockerTypeMaster from './components/LockerTypeMaster';
-import LockerMaster from './components/LockerMaster';
-import LockerAllotmentMaster from './components/LockerAllotmentMaster';
-import LockerVisitRegister from './components/LockerVisitRegister';
-import LockerRentRenewal from './components/LockerRentRenewal';
-import LockerSurrenderMaster from './components/LockerSurrenderMaster';
-import LockerReports from './components/LockerReports';
+const LockerDashboard = React.lazy(() => import('./components/LockerDashboard'));
+const LockerTypeMaster = React.lazy(() => import('./components/LockerTypeMaster'));
+const LockerMaster = React.lazy(() => import('./components/LockerMaster'));
+const LockerAllotmentMaster = React.lazy(() => import('./components/LockerAllotmentMaster'));
+const LockerVisitRegister = React.lazy(() => import('./components/LockerVisitRegister'));
+const LockerRentRenewal = React.lazy(() => import('./components/LockerRentRenewal'));
+const LockerSurrenderMaster = React.lazy(() => import('./components/LockerSurrenderMaster'));
+const LockerReports = React.lazy(() => import('./components/LockerReports'));
 
 // Legal Recovery (Sec 101 / 91) Module Imports
-import LegalRecoveryDashboard from './components/LegalRecoveryDashboard';
-import Sec101NoticeMaster from './components/Sec101NoticeMaster';
-import Sec101CaseFilingMaster from './components/Sec101CaseFilingMaster';
-import Sec101HearingDiary from './components/Sec101HearingDiary';
-import Sec101ExecutionAuctionMaster from './components/Sec101ExecutionAuctionMaster';
-import Sec101LegalReports from './components/Sec101LegalReports';
-import LegalRecoveryMappingMaster from './components/LegalRecoveryMappingMaster';
+const LegalRecoveryDashboard = React.lazy(() => import('./components/LegalRecoveryDashboard'));
+const Sec101NoticeMaster = React.lazy(() => import('./components/Sec101NoticeMaster'));
+const Sec101CaseFilingMaster = React.lazy(() => import('./components/Sec101CaseFilingMaster'));
+const Sec101HearingDiary = React.lazy(() => import('./components/Sec101HearingDiary'));
+const Sec101ExecutionAuctionMaster = React.lazy(() => import('./components/Sec101ExecutionAuctionMaster'));
+const Sec101LegalReports = React.lazy(() => import('./components/Sec101LegalReports'));
+const LegalRecoveryMappingMaster = React.lazy(() => import('./components/LegalRecoveryMappingMaster'));
 
 // Utilities
-import InterestCalculator from './components/InterestCalculator';
+const InterestCalculator = React.lazy(() => import('./components/InterestCalculator'));
 
 // Cash Management & Cashier Window Imports
 import CashierDashboard from './components/CashierDashboard';
 import CashAllocation from './components/CashAllocation';
 import CashDenominationEntry from './components/CashDenominationEntry';
 
+import axios from 'axios';
 import { useAuth } from './context/AuthContext';
+import { getCachedMasterData } from './utils/apiCache';
 import LoginForm from './components/LoginForm';
 import ChangePasswordModal from './components/ChangePasswordModal';
 
 function App() {
   const { user, logout, switchBranch } = useAuth();
-  const [headerBranches, setHeaderBranches] = useState<any[]>([]);
+  const [headerBranches, setHeaderBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
   const [showLoginNotifications, setShowLoginNotifications] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [systemVersion, setSystemVersion] = useState<string>('2.5.32');
@@ -477,7 +479,8 @@ function App() {
 
   const [activeTab, setActiveTab] = useState(getTabFromURL);
   const [lastMemberId, setLastMemberId] = useState<string | null>(() => {
-    return new URLSearchParams(window.location.search).get('memberId');
+    const params = new URLSearchParams(window.location.search);
+    return params.get('customerId') || params.get('memberId');
   });
   const [navKey, setNavKey] = useState<number>(0);
 
@@ -490,10 +493,9 @@ function App() {
   useEffect(() => {
     let isMounted = true;
     if (user) {
-      fetch('/api/Branches')
-        .then(res => res.ok ? res.json() : [])
-        .then(data => {
-          if (isMounted) setHeaderBranches(data);
+      axios.get('/api/Branches')
+        .then(res => {
+          if (isMounted && Array.isArray(res.data)) setHeaderBranches(res.data);
         })
         .catch(err => console.error("Error loading header branches", err));
     }
@@ -508,7 +510,8 @@ function App() {
   useEffect(() => {
     const handlePopState = () => {
       setActiveTab(getTabFromURL());
-      const mId = new URLSearchParams(window.location.search).get('memberId') || new URLSearchParams(window.location.search).get('customerId');
+      const params = new URLSearchParams(window.location.search);
+      const mId = params.get('customerId') || params.get('memberId');
       setLastMemberId(mId || null);
       if (!mId) {
         try {
@@ -538,9 +541,9 @@ function App() {
       });
     }
 
-    const hasCustomerTarget = Boolean(mergedParams && (mergedParams.memberId || mergedParams.customerId));
+    const hasCustomerTarget = Boolean(mergedParams && (mergedParams.customerId || mergedParams.memberId));
     if (hasCustomerTarget) {
-      setLastMemberId(String(mergedParams.memberId || mergedParams.customerId));
+      setLastMemberId(String(mergedParams.customerId || mergedParams.memberId));
     } else {
       setLastMemberId(null);
       try {
@@ -719,7 +722,7 @@ function App() {
 
         <div key={`${activeTab}-${lastMemberId || 'clean'}-${navKey}`} className="flex-1 w-full overflow-y-auto">
           {/* Quick return to Khatedar 360 Sticky Banner */}
-          {activeTab !== 'member-360' && activeTab !== 'customer-360' && activeTab !== 'khatedar-360' && Boolean(new URLSearchParams(window.location.search).get('memberId') || lastMemberId) && (
+          {activeTab !== 'member-360' && activeTab !== 'customer-360' && activeTab !== 'khatedar-360' && Boolean(new URLSearchParams(window.location.search).get('customerId') || new URLSearchParams(window.location.search).get('memberId') || lastMemberId) && (
             <div className="bg-primary text-white px-3.5 py-1.5 flex items-center justify-between shadow-xs border-b border-white/20 font-sans shrink-0 sticky top-0 z-30 animate-in fade-in duration-200">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
@@ -729,8 +732,9 @@ function App() {
               </div>
               <button
                 onClick={() => {
-                  const mId = new URLSearchParams(window.location.search).get('memberId') || lastMemberId;
-                  handleNavigate('member-360', mId ? { memberId: mId } : undefined);
+                  const params = new URLSearchParams(window.location.search);
+                  const cId = params.get('customerId') || params.get('memberId') || sessionStorage.getItem('last_khatedar360_customer_id') || lastMemberId;
+                  handleNavigate('member-360', cId ? { customerId: cId } : undefined);
                 }}
                 className="px-3 py-1 bg-white text-primary hover:bg-slate-100 font-extrabold text-xs rounded shadow-xs transition-all flex items-center gap-1.5 cursor-pointer border border-white/30"
               >
@@ -747,6 +751,7 @@ function App() {
               onCloseLoginModal={() => setShowLoginNotifications(false)}
             />
           )}
+          <React.Suspense fallback={<div className="p-8 text-center text-gray-500 font-bold text-sm">लोड होत आहे... (Loading...)</div>}>
           {activeTab === 'dashboard' && <Dashboard onNavigate={handleNavigate} />}
           {activeTab === 'todays-tasks' && <TodaysTasksDashboard onNavigate={handleNavigate} showLoginModal={false} />}
           {(activeTab === 'member-360' || activeTab === 'customer-360' || activeTab === 'khatedar-360') && <Member360Dashboard onNavigate={handleNavigate} />}
@@ -892,7 +897,7 @@ function App() {
         {activeTab === 'loan-collection-register' && <LoanCollectionRegister />}
         {activeTab === 'loan-ledger-report' && <LoanLedgerReport />}
         {activeTab === 'loan-outstanding-report' && <LoanOutstandingReport />}
-        {activeTab === 'loan-overdue-report' && <LoanOverdueReport />}
+        {(activeTab === 'loan-overdue-report' || activeTab === 'loan-overdue-recovery') && <LoanOverdueReport />}
         {activeTab === 'loan-recovery-notice-report' && <LoanRecoveryNoticeReport />}
         {activeTab === 'interest-waiver-register' && <InterestWaiverRegister />}
         {activeTab === 'guarantor-loan-report' && <GuarantorReport />}
@@ -921,6 +926,7 @@ function App() {
         {(activeTab === 'branch-ledger-opening' || activeTab === 'branch-ledger-ob') && <BranchLedgerOpeningMaster />}
         {activeTab === 'branch-master' && <SettingsDashboard defaultCategory="general" defaultSub="branch" />}
         {activeTab === 'users' && <UserMaster />}
+        </React.Suspense>
 
         </div>
       </main>

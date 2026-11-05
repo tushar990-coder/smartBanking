@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData } from '../utils/apiCache';
 import { Calculator, Search, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface PreviewItem {
@@ -28,7 +29,7 @@ interface PreviewItem {
 
 const FdAccrualPosting: React.FC = () => {
   const { user } = useAuth();
-  const [branches, setBranches] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData('/api/Branches') || []);
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
   const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string) : 1);

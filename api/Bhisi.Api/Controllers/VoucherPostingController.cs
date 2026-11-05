@@ -104,10 +104,10 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(v => v.BranchID == branchId.Value || v.BranchID == 0);
             }
 
-            if (!allDates && voucherDate.HasValue)
+            var targetLoginDate = ResolveActiveLoginDate(voucherDate);
+            if (targetLoginDate.HasValue)
             {
-                var targetDate = voucherDate.Value.Date;
-                query = query.Where(v => v.VoucherDate.Date == targetDate);
+                query = query.Where(v => v.VoucherDate.Date == targetLoginDate.Value);
             }
 
             return await query
@@ -150,10 +150,10 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(v => v.BranchID == branchId.Value || v.BranchID == 0);
             }
 
-            if (!allDates && voucherDate.HasValue)
+            var targetLoginDate = ResolveActiveLoginDate(voucherDate);
+            if (targetLoginDate.HasValue)
             {
-                var targetDate = voucherDate.Value.Date;
-                query = query.Where(v => v.VoucherDate.Date == targetDate);
+                query = query.Where(v => v.VoucherDate.Date == targetLoginDate.Value);
             }
 
             return await query
@@ -184,10 +184,28 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
         }
 
+        private DateTime? ResolveActiveLoginDate(DateTime? explicitDate)
+        {
+            if (explicitDate.HasValue)
+            {
+                return explicitDate.Value.Date;
+            }
+            if (Request?.Headers != null && Request.Headers.TryGetValue("X-Business-Date", out var headerVals))
+            {
+                var raw = headerVals.FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(raw) && DateTime.TryParse(raw, out var parsedHeaderDate))
+                {
+                    return parsedHeaderDate.Date;
+                }
+            }
+            return null;
+        }
+
         public class PostVouchersRequest
         {
             public List<int> VoucherIds { get; set; } = new List<int>();
             public int ApprovedBy { get; set; } = 1; // Default to admin
+            public DateTime? BusinessDate { get; set; }
         }
 
         // POST: api/VoucherPosting/Post
@@ -198,6 +216,8 @@ namespace Bhisi.Api.Controllers
             {
                 return BadRequest("मंजुरीसाठी कोणतेही व्हाउचर निवडलेले नाही. (No vouchers selected for posting.)");
             }
+
+            var targetLoginDate = ResolveActiveLoginDate(request.BusinessDate);
 
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
@@ -212,6 +232,16 @@ namespace Bhisi.Api.Controllers
                     return NotFound("कोणतेही वैध प्रलंबित व्हाउचर्स सापडले नाहीत. (No valid pending vouchers found.)");
                 }
 
+                if (targetLoginDate.HasValue)
+                {
+                    var mismatchedVoucher = vouchers.FirstOrDefault(v => v.VoucherDate.Date != targetLoginDate.Value);
+                    if (mismatchedVoucher != null)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"सुरक्षा नियम: फक्त चालू लॉगिन तारखेचेच ({targetLoginDate.Value:dd/MM/yyyy}) व्हाउचर मंजूर व पोस्ट करता येतात. व्हाउचर क्र. {mismatchedVoucher.VoucherNo} ची तारीख ({mismatchedVoucher.VoucherDate:dd/MM/yyyy}) वेगळी आहे.");
+                    }
+                }
+
                 var postedVoucherDetails = new List<object>();
 
                 // 1. Group vouchers by BranchID and Date to calculate day-wise and branch-wise Scroll Numbers
@@ -223,6 +253,16 @@ namespace Bhisi.Api.Controllers
                 {
                     int bId = group.Key.BranchID;
                     DateTime vDate = group.Key.Date;
+
+                    var dayStatus = await _context.BranchDayEndStatuses
+                        .AsNoTracking()
+                        .Where(b => b.BranchID == bId && b.BusinessDate.Date == vDate)
+                        .FirstOrDefaultAsync();
+                    if (dayStatus != null && dayStatus.IsDayClosed)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"दिनांक {vDate:dd/MM/yyyy} ची दिवसअखेर (Day-End) पूर्ण झाली आहे. बंद झालेल्या तारखेचे व्हाउचर मंजूर व पोस्ट करता येणार नाहीत.");
+                    }
 
                     // Query the maximum existing ScrollNo for this Branch and Date where voucher is already approved and has ScrollNo
                     int maxScroll = await _context.Vouchers

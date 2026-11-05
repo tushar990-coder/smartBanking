@@ -31,9 +31,26 @@ namespace Bhisi.Api.Controllers
             _rollbackService = rollbackService;
         }
 
+        private DateTime? ResolveActiveLoginDate(DateTime? explicitDate = null)
+        {
+            if (explicitDate.HasValue)
+            {
+                return explicitDate.Value.Date;
+            }
+            if (Request?.Headers != null && Request.Headers.TryGetValue("X-Business-Date", out var headerVals))
+            {
+                var raw = headerVals.FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(raw) && DateTime.TryParse(raw, out var parsedHeaderDate))
+                {
+                    return parsedHeaderDate.Date;
+                }
+            }
+            return null;
+        }
+
         // GET: api/Vouchers
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchers([FromQuery] string? status, [FromQuery] int? branchId = null, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+        public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchers([FromQuery] string? status, [FromQuery] int? branchId = null, [FromQuery] int? page = null, [FromQuery] int? pageSize = null, [FromQuery] DateTime? voucherDate = null)
         {
             var query = _context.Vouchers.AsNoTracking().AsQueryable();
 
@@ -47,6 +64,11 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(v => v.Status == status);
                 if (status == "Pending")
                 {
+                    var targetLoginDate = ResolveActiveLoginDate(voucherDate);
+                    if (targetLoginDate.HasValue)
+                    {
+                        query = query.Where(v => v.VoucherDate.Date == targetLoginDate.Value);
+                    }
                     query = query.Where(v => !v.VoucherNo.Contains("-OP-") &&
                                              !v.VoucherNo.StartsWith("JV-FD-OP-") &&
                                              !v.VoucherNo.StartsWith("REC-FD-OP-") &&
@@ -681,6 +703,7 @@ namespace Bhisi.Api.Controllers
         public class ApprovalDto
         {
             public int ApprovedBy { get; set; }
+            public DateTime? BusinessDate { get; set; }
         }
 
         public class RejectionDto
@@ -698,6 +721,21 @@ namespace Bhisi.Api.Controllers
             if (voucher == null) return NotFound();
 
             if (voucher.Status == "Approved") return BadRequest("Voucher is already approved.");
+
+            var targetLoginDate = ResolveActiveLoginDate(dto?.BusinessDate);
+            if (targetLoginDate.HasValue && voucher.VoucherDate.Date != targetLoginDate.Value)
+            {
+                return BadRequest($"सुरक्षा नियम: फक्त चालू लॉगिन तारखेचेच ({targetLoginDate.Value:dd/MM/yyyy}) व्हाउचर मंजूर करता येतात. व्हाउचर क्र. {voucher.VoucherNo} ची तारीख ({voucher.VoucherDate:dd/MM/yyyy}) वेगळी आहे.");
+            }
+
+            var dayStatus = await _context.BranchDayEndStatuses
+                .AsNoTracking()
+                .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)
+                .FirstOrDefaultAsync();
+            if (dayStatus != null && dayStatus.IsDayClosed)
+            {
+                return BadRequest($"दिनांक {voucher.VoucherDate:dd/MM/yyyy} ची दिवसअखेर (Day-End) पूर्ण झाली आहे. बंद झालेल्या तारखेचा व्हाउचर मंजूर करता येणार नाही.");
+            }
 
             int approverId = User.GetUserId();
             if (approverId <= 0 && dto.ApprovedBy > 0)

@@ -1,5 +1,21 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-05] - आवृत्ती v2.6.18 (Khatedar 360 Customer-ID-First Architecture & Dropdown Fix, Login-Date Voucher Passing Restriction, Ultra-Fast App/FD/Loan Performance & Consolidated Loan Ledger)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) खातेदार ३६०° (Khatedar 360°) Customer-ID-First आर्किटेक्चर व सर्च ड्रॉपडाउन दुरुस्ती (`Member360Dashboard.tsx`, `CustomerSearchSelect.tsx`, `MemberSearchSelect.tsx`, `SearchableSelect.tsx`, `ReportsController.cs`, `Member360Dto.cs` & `App.tsx`):**
+  * सर्च बॉक्समध्ये खातेदार निवडताना येणारी `Error: Maximum update depth exceeded` त्रुटी `CappedMenuList` व स्थिर `options` रेफरन्सद्वारे कायमस्वरूपी दूर केली.
+  * ड्रॉपडाउनमधील सूचना (Suggestions) कार्डच्या पाठीमागे न लपण्यासाठी टॉप सर्च बारला `relative z-50` आणि `menuAlign="right"` दिले.
+  * ३६०° स्क्रीनवरून `सभासद: MEMxxxx` आणि `FOLIO-MEMxxxx` संदर्भ पूर्णपणे काढून १००% **Customer-ID-First** (`?customerId=`, `CIF नं`, `जुना खातेदार नं`) आर्किटेक्चर लागू केले, तसेच कर्ज वसुलीनंतर ३६०° वर तात्काळ रिअल-टाइम प्रतिबिंब जोडले.
+* **२) व्हाउचर पासिंग व मंजुरी लॉगिन व्यवसाय तारीख बंधन (`VoucherPosting.tsx`, `VoucherPostingController.cs`, `VouchersController.cs` & `CashierDashboard.tsx`):**
+  * व्हाउचर पासिंग स्क्रीनवर फक्त लॉगिन केलेल्या व्यवसाय तारखेतीलच (`Active Business Date`) प्रलंबित व मंजूर व्हाउचर्स दिसतील आणि सिंगल/बल्क पासिंगमध्ये केवळ लॉगिन तारखेतीलच व्हाउचर्स पोस्ट होतील याची फ्रंटएंड व बॅकएंडवर कडक पडताळणी लागू केली.
+* **३) संपूर्ण ॲप, डॅशबोर्ड, मुदत ठेव (FD) व कर्ज विभाग अल्ट्रा-फास्ट लोडिंग (`apiCache.ts`, `DashboardController.cs`, `NotificationEngineService.cs`, `FdAccountsController.cs`, `LoanAccountsController.cs` & FD/Loan फॉर्म्स):**
+  * क्लायंट-साईड इन-मेमरी API कॅश व इन-फ्लाईट डिडुप्लिकेशन (`apiCache.ts`), बॅकएंडवर `IMemoryCache` आणि FD/Loan खात्यांमधील $O(N)$ इन-लूप डेटाबेस क्वेरीज काढून १-क्वेरी बॅच प्री-फेचिंग लागू केल्यामुळे सर्व स्क्रीन त्वरित उघडतात.
+* **४) कर्ज वसुली हप्ता वाटप व एकत्रित कर्ज खाते उतारा अहवाल (`LoanCollectionMaster.tsx`, `LoanLedgerReport.tsx` & `ReportsController.cs`):**
+  * कर्ज वसुलीमध्ये मुद्दल व व्याज विभाजन, हप्ता वेळापत्रक वाटप दुरुस्ती आणि खातेदाराच्या सर्व कर्जांचा एकत्रित खाते उतारा (`Consolidated Customer Loan Ledger Report`) समाविष्ट केला.
+
+---
+
 ## 📅 [2026-11-02] - आवृत्ती v2.6.17 (Balanced Sidebar UI, Strict Saving Scheme Filter & Soft Pastel Color Shades in Today's Tasks Dashboard)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

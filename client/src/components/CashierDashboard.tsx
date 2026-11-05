@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { getCachedMasterData } from '../utils/apiCache';
 import { 
   Wallet, 
   ArrowUpRight, 
@@ -43,10 +44,10 @@ export default function CashierDashboard({ onNavigate, initialTab = 'dashboard' 
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'allocation' | 'denomination' | 'register'>(initialTab);
   const [loading, setLoading] = useState(true);
-  const [branches, setBranches] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
   const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [ledgers, setLedgers] = useState<any[]>([]);
+  const [ledgers, setLedgers] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Ledgers') || []);
   
   const [summary, setSummary] = useState<any>({
     totalCashiers: 0,
@@ -115,16 +116,17 @@ export default function CashierDashboard({ onNavigate, initialTab = 'dashboard' 
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Load Branches list
-      const branchesRes = await api.get('/Branches');
-      setBranches(branchesRes.data || []);
+      const [branchesRes, sumRes, cashiersRes, ledgersRes, allocRes] = await Promise.all([
+        api.get('/Branches').catch(() => ({ data: [] })),
+        api.get(`/CashManagement/DashboardSummary?branchId=${selectedBranchId}&date=${selectedDate}`).catch(() => ({ data: {} })),
+        api.get(`/CashManagement/Cashiers?branchId=${selectedBranchId}`).catch(() => ({ data: [] })),
+        api.get('/Ledgers').catch(() => ({ data: [] })),
+        api.get(`/CashManagement/Allocations?branchId=${selectedBranchId}&fromDate=${selectedDate}&toDate=${selectedDate}`).catch(() => ({ data: [] })),
+      ]);
 
-      // 2. Load Dashboard Summary for selected branch
-      const sumRes = await api.get(`/CashManagement/DashboardSummary?branchId=${selectedBranchId}&date=${selectedDate}`);
+      setBranches(branchesRes.data || []);
       setSummary(sumRes.data || {});
 
-      // 3. Load Cashiers List for selected branch
-      const cashiersRes = await api.get(`/CashManagement/Cashiers?branchId=${selectedBranchId}`);
       const cashiersList = cashiersRes.data || [];
       setCashiers(cashiersList);
 
@@ -144,12 +146,7 @@ export default function CashierDashboard({ onNavigate, initialTab = 'dashboard' 
         setDenomCashierId(cashiersList[0].id ?? cashiersList[0].Id ?? 0);
       }
 
-      // 4. Load Ledgers
-      const ledgersRes = await api.get('/Ledgers');
       setLedgers(ledgersRes.data || []);
-
-      // 5. Load Recent Allocations for selected branch
-      const allocRes = await api.get(`/CashManagement/Allocations?branchId=${selectedBranchId}&fromDate=${selectedDate}&toDate=${selectedDate}`);
       setRecentAllocations(allocRes.data || []);
     } catch (err) {
       console.error('Error loading cash management data:', err);

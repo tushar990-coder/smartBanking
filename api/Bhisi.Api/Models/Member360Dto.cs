@@ -17,6 +17,8 @@ namespace Bhisi.Api.Models
         public int MemberID { get; set; }
         public string MemberCode { get; set; } = string.Empty;
         public string? OldMemberCode { get; set; }
+        public string? LegacyCustomerNo { get; set; }
+        public string? CustomerType { get; set; }
         public string? CIFNo { get; set; }
         public string FirstName { get; set; } = string.Empty;
         public string? MiddleName { get; set; }

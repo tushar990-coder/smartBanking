@@ -143,20 +143,29 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/LoanAccounts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<LoanAccount>>> GetLoanAccounts([FromQuery] int? branchId = null, [FromQuery] int? customerId = null, [FromQuery] int? memberId = null)
+        public async Task<ActionResult<IEnumerable<LoanAccount>>> GetLoanAccounts(
+            [FromQuery] int? branchId = null,
+            [FromQuery] int? customerId = null,
+            [FromQuery] int? memberId = null,
+            [FromQuery] string? status = null,
+            [FromQuery] bool lightweight = false)
         {
-            var query = _context.LoanAccounts
+            IQueryable<LoanAccount> query = _context.LoanAccounts
                 .AsNoTracking()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
-                .Include(l => l.CoCustomer)
-                .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
-                .Include(l => l.Guarantor1Customer)
-                .Include(l => l.Guarantor2Customer)
                 .Include(l => l.Branch)
-                .Include(l => l.LoanDisbursements)
-                .AsQueryable();
+                .Include(l => l.LoanDisbursements);
+
+            if (!lightweight)
+            {
+                query = query
+                    .Include(l => l.CoCustomer)
+                    .Include(l => l.CoCustomer2)
+                    .Include(l => l.Guarantor1Customer)
+                    .Include(l => l.Guarantor2Customer);
+            }
 
             string? roleClaim = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value;
             string? branchClaim = User.FindFirst("BranchID")?.Value ?? User.FindFirst("branchId")?.Value;
@@ -173,6 +182,10 @@ namespace Bhisi.Api.Controllers
             if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
             {
                 query = query.Where(l => l.BranchID == effectiveBranchId.Value);
+            }
+            if (!string.IsNullOrWhiteSpace(status) && !status.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(l => l.Status == status);
             }
             if (customerId.HasValue && customerId.Value > 0)
             {
@@ -419,6 +432,21 @@ namespace Bhisi.Api.Controllers
                 });
             }
 
+            decimal baseDisbursedOrSanctioned = totalDisbursed > 0 ? totalDisbursed : account.SanctionedAmount;
+            decimal resolvedCapInterest = account.CapitalizedInterestAmount;
+            decimal resolvedPurePrincipal = account.PurePrincipalBalance;
+            if (resolvedCapInterest <= 0 && baseDisbursedOrSanctioned > 0 && account.PrincipalBalance > baseDisbursedOrSanctioned)
+            {
+                resolvedPurePrincipal = resolvedPurePrincipal > 0 && resolvedPurePrincipal < account.PrincipalBalance
+                    ? resolvedPurePrincipal
+                    : baseDisbursedOrSanctioned;
+                resolvedCapInterest = Math.Max(0m, account.PrincipalBalance - resolvedPurePrincipal);
+            }
+            else if (resolvedPurePrincipal <= 0 && account.PrincipalBalance > 0)
+            {
+                resolvedPurePrincipal = Math.Max(0m, account.PrincipalBalance - resolvedCapInterest);
+            }
+
             var dto = new AccountDetailsAndScheduleDto
             {
                 SanctionedAmount = account.SanctionedAmount,
@@ -426,6 +454,8 @@ namespace Bhisi.Api.Controllers
                 March31Balance = march31Balance,
                 IsOpeningBalance = account.IsOpeningBalance,
                 CurrentPrincipalBalance = account.PrincipalBalance,
+                PurePrincipalBalance = resolvedPurePrincipal,
+                CapitalizedInterestAmount = resolvedCapInterest,
                 CurrentInterestBalance = account.InterestBalance,
                 CurrentOverdueInterestBalance = account.OverdueInterestBalance,
                 TotalDisbursedAmount = totalDisbursed > 0 ? totalDisbursed : account.PrincipalBalance,
@@ -2888,7 +2918,12 @@ namespace Bhisi.Api.Controllers
 
                     if (shouldCapitalize)
                     {
+                        if (acc.PurePrincipalBalance <= 0 && acc.PrincipalBalance > 0)
+                        {
+                            acc.PurePrincipalBalance = Math.Max(0m, acc.PrincipalBalance - acc.CapitalizedInterestAmount);
+                        }
                         acc.PrincipalBalance += calculatedInterest;
+                        acc.CapitalizedInterestAmount += calculatedInterest;
                     }
                     else
                     {

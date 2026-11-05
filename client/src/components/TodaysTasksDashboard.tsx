@@ -190,12 +190,12 @@ export default function TodaysTasksDashboard({
       if (!isMountedRef || isMountedRef.current) {
         if (res.data) {
           setStats({
-            totalPending: res.data.totalPending || 0,
-            urgentTasks: res.data.urgentTasks || 0,
-            highPriorityTasks: res.data.highPriorityTasks || 0,
-            totalAmount: res.data.totalAmount || 0,
-            completedToday: res.data.completedToday || 0,
-            completionRate: res.data.completionRate || 0
+            totalPending: res.data.totalPending ?? 0,
+            urgentTasks: res.data.urgentTasks ?? res.data.urgentCount ?? 0,
+            highPriorityTasks: res.data.highPriorityTasks ?? res.data.highCount ?? 0,
+            totalAmount: res.data.totalAmount ?? 0,
+            completedToday: res.data.completedToday ?? 0,
+            completionRate: res.data.completionRate ?? res.data.progressPercentage ?? 0
           });
         }
       }
@@ -237,7 +237,9 @@ export default function TodaysTasksDashboard({
   useEffect(() => {
     const isMountedRef = { current: true };
     fetchLiveNotifications(isMountedRef);
-    fetchAutoRenewalData(isMountedRef);
+    if (!showLoginModal) {
+      fetchAutoRenewalData(isMountedRef);
+    }
 
     return () => {
       isMountedRef.current = false;
@@ -838,7 +840,7 @@ export default function TodaysTasksDashboard({
   };
 
   return (
-    <div className="p-2.5 max-w-full h-full flex flex-col bg-slate-50/80 text-[11px] font-sans relative overflow-y-auto">
+    <div className={showLoginModal ? 'font-sans' : 'p-2.5 max-w-full h-full flex flex-col bg-slate-50/80 text-[11px] font-sans relative overflow-y-auto'}>
       {/* Toast Notification */}
       {successToast && (
         <div className="fixed bottom-5 right-5 z-50 bg-emerald-50 text-emerald-900 border border-emerald-300 px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 text-xs font-semibold animate-bounce">
@@ -848,6 +850,7 @@ export default function TodaysTasksDashboard({
       )}
 
       {/* Main Container */}
+      {!showLoginModal && (
       <div className="bg-white rounded-lg shadow-sm border border-slate-200/90 overflow-hidden flex flex-col mb-4">
         {/* ========================================================
             HERO HEADER BANNER (Core Banking Command Center)
@@ -1496,6 +1499,7 @@ export default function TodaysTasksDashboard({
           )}
         </div>
       </div>
+      )}
 
       {/* ========================================================
           MODAL 1: FULL MEMBER & TASK DETAILS POPUP
@@ -1668,6 +1672,7 @@ export default function TodaysTasksDashboard({
                       key={sec.id}
                       onClick={() => {
                         setIsModalOpen(false);
+                        if (onCloseLoginModal) onCloseLoginModal();
                         handleActionClick(sec.targetTab);
                       }}
                       className={`p-2.5 rounded-xl bg-white border ${shade.cardBorder} hover:bg-slate-50 transition-all cursor-pointer flex justify-between items-center group shadow-sm`}

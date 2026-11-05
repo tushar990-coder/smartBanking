@@ -6,6 +6,7 @@ import BankLedgerSelect from './common/BankLedgerSelect';
 import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData, markCustomer360Dirty } from '../utils/apiCache';
 
 export interface LoanCollectionMasterProps {
     onNavigate?: (tab: string, params?: any) => void;
@@ -33,6 +34,8 @@ interface LoanAccount {
     customerID?: number;
     sanctionedAmount: number;
     principalBalance: number;
+    purePrincipalBalance?: number;
+    capitalizedInterestAmount?: number;
     interestBalance: number;
     overdueInterestBalance: number;
     installmentAmount: number;
@@ -78,6 +81,7 @@ interface LoanInstallmentScheduleDto {
     principalAmount: number;
     interestAmount: number;
     totalAmount: number;
+    totalInstallment?: number;
     status: string;
     paidDate?: string;
     openingBalance?: number;
@@ -105,6 +109,8 @@ interface AccountDetailsAndSchedule {
     march31Balance: number;
     isOpeningBalance: boolean;
     currentPrincipalBalance: number;
+    purePrincipalBalance?: number;
+    capitalizedInterestAmount?: number;
     currentInterestBalance: number;
     currentOverdueInterestBalance: number;
     totalDisbursedAmount?: number;
@@ -244,12 +250,25 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
     const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
 
-    const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);
+    const [branches, setBranches] = useState<any[]>(() => {
+        const cached = getCachedMasterData<any[]>('/api/Branches');
+        if (Array.isArray(cached) && cached.length > 0) return cached;
+        return [
+            {
+                branchID: user?.branchID || 1,
+                branchName: user?.branchName || 'मुख्य शाखा (Main Branch)',
+                branchCode: (user?.branchID || 1) === 1 ? '001' : String(user?.branchID || 1).padStart(3, '0')
+            }
+        ];
+    });
 
     const [collections, setCollections] = useState<LoanCollection[]>([]);
     const [accounts, setAccounts] = useState<LoanAccount[]>([]);
-    const [ledgers, setLedgers] = useState<Ledger[]>([]);
+    const [ledgers, setLedgers] = useState<Ledger[]>(() => {
+        const cached = getCachedMasterData<Ledger[]>('/api/Ledgers');
+        return Array.isArray(cached) ? cached : [];
+    });
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [allowDateOverride, setAllowDateOverride] = useState(false);
@@ -315,13 +334,19 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
     const [selectedBorrowerKey, setSelectedBorrowerKey] = useState<string | null>(null);
     const [selectedSchemeId, setSelectedSchemeId] = useState<number | null>(null);
-    const [loanSchemes, setLoanSchemes] = useState<any[]>([]);
+    const [loanSchemes, setLoanSchemes] = useState<any[]>(() => {
+        const cached = getCachedMasterData<any[]>('/api/LoanRates');
+        return Array.isArray(cached) ? cached : [];
+    });
     const [isSaving, setIsSaving] = useState(false);
     const [accountDetails, setAccountDetails] = useState<AccountDetailsAndSchedule | null>(null);
     const [npaStatus, setNpaStatus] = useState<{ category: string, overdueDays: number, categoryMarathi: string } | null>(null);
     const [todayTotalCash, setTodayTotalCash] = useState(0);
     const [todayTotalBank, setTodayTotalBank] = useState(0);
-    const [sanstha, setSanstha] = useState<any>(null);
+    const [sanstha, setSanstha] = useState<any>(() => {
+        const cached = getCachedMasterData<any[]>('/api/SansthaDetails');
+        return Array.isArray(cached) && cached.length > 0 ? cached[0] : null;
+    });
 
     // Pigmy Transfer State
     const [customerPigmyAccounts, setCustomerPigmyAccounts] = useState<any[]>([]);
@@ -967,8 +992,9 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
 
             if (!fastTrackDone) {
-                const res = await axios.get('/api/LoanAccounts');
-                const activeAccs = res.data.filter((a: any) => a.status === 'Active');
+                const bIdParam = selectedBranchId ? `branchId=${selectedBranchId}&` : '';
+                const res = await axios.get(`/api/LoanAccounts?${bIdParam}status=Active&lightweight=true`);
+                const activeAccs = (res.data || []).filter((a: any) => a.status === 'Active');
                 setAccounts(activeAccs);
 
             if (loanAccNo || legacyLoanNo) {
@@ -1080,8 +1106,12 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         setNpaStatus(null);
 
         if (custId && Number(custId) !== Number(selectedCustomerId)) {
-            fetchCustomerPigmyAccounts(Number(custId));
-            fetchCustomerSavingAccounts(Number(custId));
+            if (formData.paymentMode === 'Pigmy Transfer') {
+                fetchCustomerPigmyAccounts(Number(custId));
+            }
+            if (formData.paymentMode === 'Saving Transfer') {
+                fetchCustomerSavingAccounts(Number(custId));
+            }
         }
 
         fetchNextReceiptNo(selectedBranchId, acc.loanAccountID);
@@ -1090,39 +1120,51 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         }
 
         try {
-            const res = await axios.get(`/api/LoanAccounts/${accId}/AccountDetailsAndSchedule`);
-            if (res.data) {
-                setAccountDetails(res.data);
+            const [scheduleOutcome, npaOutcome] = await Promise.allSettled([
+                axios.get(`/api/LoanAccounts/${accId}/AccountDetailsAndSchedule`),
+                axios.get(`/api/Npa/status/${accId}`)
+            ]);
+
+            if (scheduleOutcome.status === 'fulfilled' && scheduleOutcome.value?.data) {
+                const data = scheduleOutcome.value.data;
+                setAccountDetails(data);
                 setSelectedAccount(prev => {
                     if (!prev || prev.loanAccountID !== accId) return prev;
                     return {
                         ...prev,
-                        principalBalance: res.data.currentPrincipalBalance !== undefined ? res.data.currentPrincipalBalance : prev.principalBalance,
-                        interestBalance: res.data.currentInterestBalance !== undefined ? res.data.currentInterestBalance : prev.interestBalance,
-                        overdueInterestBalance: res.data.currentOverdueInterestBalance !== undefined ? res.data.currentOverdueInterestBalance : prev.overdueInterestBalance,
-                        sanctionedAmount: res.data.sanctionedAmount !== undefined ? res.data.sanctionedAmount : prev.sanctionedAmount,
-                        loanDisbursementDate: res.data.disbursementDate || prev.loanDisbursementDate,
-                        lastInstallmentPaidDate: res.data.lastInstallmentPaidDate !== undefined ? res.data.lastInstallmentPaidDate : prev.lastInstallmentPaidDate,
-                        lastInterestPostingDate: res.data.lastInterestPostingDate !== undefined ? res.data.lastInterestPostingDate : prev.lastInterestPostingDate
+                        principalBalance: data.currentPrincipalBalance !== undefined ? data.currentPrincipalBalance : prev.principalBalance,
+                        interestBalance: data.currentInterestBalance !== undefined ? data.currentInterestBalance : prev.interestBalance,
+                        overdueInterestBalance: data.currentOverdueInterestBalance !== undefined ? data.currentOverdueInterestBalance : prev.overdueInterestBalance,
+                        sanctionedAmount: data.sanctionedAmount !== undefined ? data.sanctionedAmount : prev.sanctionedAmount,
+                        loanDisbursementDate: data.disbursementDate || prev.loanDisbursementDate,
+                        lastInstallmentPaidDate: data.lastInstallmentPaidDate !== undefined ? data.lastInstallmentPaidDate : prev.lastInstallmentPaidDate,
+                        lastInterestPostingDate: data.lastInterestPostingDate !== undefined ? data.lastInterestPostingDate : prev.lastInterestPostingDate
                     };
                 });
+            } else if (scheduleOutcome.status === 'rejected') {
+                console.error("Failed to fetch schedule", scheduleOutcome.reason);
+                setAccountDetails(null);
             }
 
-            try {
-                const npaRes = await axios.get(`/api/Npa/status/${accId}`);
-                if (npaRes.data) {
-                    setNpaStatus(npaRes.data);
-                }
-            } catch (err: any) {
-                if (err.response?.status !== 404) {
-                    console.error("Failed to fetch NPA status", err);
-                }
+            if (npaOutcome.status === 'fulfilled' && npaOutcome.value?.data) {
+                setNpaStatus(npaOutcome.value.data);
+            } else if (npaOutcome.status === 'rejected' && npaOutcome.reason?.response?.status !== 404) {
+                console.error("Failed to fetch NPA status", npaOutcome.reason);
             }
         } catch (err) {
             console.error("Failed to fetch schedule", err);
             setAccountDetails(null);
         }
     };
+
+    useEffect(() => {
+        if (!selectedCustomerId) return;
+        if (formData.paymentMode === 'Pigmy Transfer') {
+            fetchCustomerPigmyAccounts(Number(selectedCustomerId));
+        } else if (formData.paymentMode === 'Saving Transfer') {
+            fetchCustomerSavingAccounts(Number(selectedCustomerId));
+        }
+    }, [formData.paymentMode, selectedCustomerId]);
 
     const handleSchemeChange = (schemeId: number | null) => {
         setSelectedSchemeId(schemeId);
@@ -1180,7 +1222,74 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         }
     };
 
-    const handleCustomerSelect = (customerId: number | '') => {
+    const findMatchingLoanBySearchQuery = (customerLoans: LoanAccount[], rawQuery?: string): LoanAccount | null => {
+        const q = (rawQuery || '').trim().toLowerCase();
+        if (!q || customerLoans.length <= 1) return null;
+
+        // If the query contains Marathi/English name letters (and is not a numeric account code), user searched by customer name -> do NOT auto-select
+        const hasNameLetters = /[a-zA-Z\u0900-\u097F]/.test(q) && !q.startsWith('00');
+        if (hasNameLetters) {
+            return null;
+        }
+
+        const qDigits = q.replace(/\D/g, '');
+        if (!qDigits) return null;
+
+        // 1. Exact match on legacyAccountNumber (e.g. "2057")
+        const exactLegacyMatches = customerLoans.filter(l => {
+            const leg = (l.legacyAccountNumber || '').trim().toLowerCase();
+            const legDigits = leg.replace(/\D/g, '');
+            return leg === q || (legDigits && legDigits === qDigits);
+        });
+        if (exactLegacyMatches.length === 1) {
+            return exactLegacyMatches[0];
+        }
+
+        // 2. Exact match on full loanAccountNo or formatted 14-digit loanAccountNo
+        const exactLoanNoMatches = customerLoans.filter(l => {
+            const rawNo = (l.loanAccountNo || '').trim().toLowerCase();
+            const noDigits = rawNo.replace(/\D/g, '');
+            return rawNo === q || (noDigits && noDigits === qDigits);
+        });
+        if (exactLoanNoMatches.length === 1) {
+            return exactLoanNoMatches[0];
+        }
+
+        // 3. Match on trailing serial part of 14-digit loanAccountNo (e.g. "000069" or "012050000069")
+        if (qDigits.length >= 3) {
+            const suffixLoanMatches = customerLoans.filter(l => {
+                const noDigits = (l.loanAccountNo || '').replace(/\D/g, '');
+                return noDigits.endsWith(qDigits);
+            });
+            if (suffixLoanMatches.length === 1) {
+                return suffixLoanMatches[0];
+            }
+        }
+
+        // 4. Unique substring match on legacyAccountNumber (only if it does NOT match customer's mobile or CIF)
+        const sampleCust = customerLoans[0]?.customer;
+        const custMobile = (sampleCust?.mobileNo || '').replace(/\D/g, '');
+        const custCifDigits = (sampleCust?.cifNo || '').replace(/\D/g, '');
+        const custLegacyCifDigits = ((sampleCust as any)?.legacyCustomerNo || '').replace(/\D/g, '');
+        const isCustomerIdentifierQuery =
+            (custMobile && custMobile.includes(qDigits)) ||
+            (custCifDigits && custCifDigits === qDigits) ||
+            (custLegacyCifDigits && custLegacyCifDigits === qDigits);
+
+        if (!isCustomerIdentifierQuery) {
+            const partialLegacyMatches = customerLoans.filter(l => {
+                const leg = (l.legacyAccountNumber || '').trim().toLowerCase();
+                return leg.includes(q);
+            });
+            if (partialLegacyMatches.length === 1) {
+                return partialLegacyMatches[0];
+            }
+        }
+
+        return null;
+    };
+
+    const handleCustomerSelect = (customerId: number | '', searchQuery?: string) => {
         const cId = customerId ? Number(customerId) : null;
         setSelectedCustomerId(cId);
         (window as any).selectedLoanCustomerId = cId || undefined;
@@ -1204,8 +1313,12 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         }
 
         setSelectedBorrowerKey(`C_${cId}`);
-        fetchCustomerPigmyAccounts(cId);
-        fetchCustomerSavingAccounts(cId);
+        if (formData.paymentMode === 'Pigmy Transfer') {
+            fetchCustomerPigmyAccounts(cId);
+        }
+        if (formData.paymentMode === 'Saving Transfer') {
+            fetchCustomerSavingAccounts(cId);
+        }
 
         // Loans of this customer matching the chosen scheme
         const loans = accounts.filter((a: any) => {
@@ -1221,12 +1334,18 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         if (loans.length === 1) {
             selectLoanAccountById(loans[0].loanAccountID);
         } else {
-            // Multiple loans: keep single account unset so the inline grid is shown
-            setSelectedAccount(null);
-            setAccountDetails(null);
-            setNpaStatus(null);
-            (window as any).selectedLoanAccountId = undefined;
-            setFormData(p => ({ ...p, loanAccountID: undefined }));
+            // Check if the user searched by a specific loan account number (e.g. old loan no "2057" or 14-digit loan no)
+            const matchedLoan = findMatchingLoanBySearchQuery(loans, searchQuery);
+            if (matchedLoan) {
+                selectLoanAccountById(matchedLoan.loanAccountID);
+            } else {
+                // User searched by customer name / CIF / mobile: do not auto-select, show inline multi-loan grid
+                setSelectedAccount(null);
+                setAccountDetails(null);
+                setNpaStatus(null);
+                (window as any).selectedLoanAccountId = undefined;
+                setFormData(p => ({ ...p, loanAccountID: undefined }));
+            }
         }
     };
 
@@ -1334,28 +1453,90 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         return isIncludeBothDays ? rawDiffDays + 1 : rawDiffDays;
     };
 
-    // Helper to compute Overdue Principal (थकीत मुद्दल) and Collectible Principal (वसूलपात्र मुद्दल) consistently
+    // Helper to split Current Principal Balance (चालू मुद्दल बाकी) into Pure Principal (मुद्दल) + Posted/Capitalized Interest (व्याज)
+    const getPrincipalAndPostedInterestSplit = (acc: any, details?: AccountDetailsAndSchedule | null) => {
+        if (!acc) return { totalBalance: 0, purePrincipal: 0, postedInterest: 0 };
+        const totalBalance = details?.currentPrincipalBalance !== undefined ? details.currentPrincipalBalance : (acc.principalBalance || 0);
+        const baseDisbursed = details?.totalDisbursedAmount || details?.sanctionedAmount || acc.sanctionedAmount || 0;
+        const explicitCapInt = details?.capitalizedInterestAmount !== undefined
+            ? details.capitalizedInterestAmount
+            : (acc.capitalizedInterestAmount || 0);
+        const explicitPurePrin = details?.purePrincipalBalance !== undefined
+            ? details.purePrincipalBalance
+            : (acc.purePrincipalBalance || 0);
+
+        let postedInterest = 0;
+        let purePrincipal = totalBalance;
+
+        if (explicitCapInt > 0) {
+            postedInterest = Math.min(totalBalance, explicitCapInt);
+            purePrincipal = Math.max(0, totalBalance - postedInterest);
+        } else if (baseDisbursed > 0 && totalBalance > baseDisbursed) {
+            purePrincipal = (explicitPurePrin > 0 && explicitPurePrin < totalBalance) ? explicitPurePrin : baseDisbursed;
+            postedInterest = Math.max(0, totalBalance - purePrincipal);
+        } else if (explicitPurePrin > 0 && explicitPurePrin < totalBalance) {
+            purePrincipal = explicitPurePrin;
+            postedInterest = Math.max(0, totalBalance - purePrincipal);
+        }
+
+        return {
+            totalBalance: Math.round(totalBalance * 100) / 100,
+            purePrincipal: Math.round(purePrincipal * 100) / 100,
+            postedInterest: Math.round(postedInterest * 100) / 100
+        };
+    };
+
+    // Helper to compute Overdue Principal (थकीत मुद्दल), 1-Installment Principal (१ हप्ता मुद्दल), and Collectible Principal (वसूलपात्र मुद्दल)
     const getPrincipalDuesBreakdown = (acc: any, dateVal: string | Date | null | undefined) => {
-        if (!acc) return { paikiThakbaki: 0, vasulpatra: 0 };
+        if (!acc) return { paikiThakbaki: 0, vasulpatra: 0, oneInstallmentPrincipal: 0, regularInstallmentAmount: 0, isMultiInstallmentLoan: false };
         const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (acc.principalBalance || 0);
+        const { purePrincipal, postedInterest } = getPrincipalAndPostedInterestSplit(acc, accountDetails);
         const collectionDateObj = parseDateSafe(dateVal || new Date());
         collectionDateObj.setHours(0, 0, 0, 0);
 
+        const scheduleList = accountDetails?.schedule || [];
+        const firstSchedulePrin = scheduleList.length > 0
+            ? (scheduleList[0].principalAmount || scheduleList[0].totalInstallment || 0)
+            : 0;
+        const regularInstallmentAmount = (acc.installmentAmount && acc.installmentAmount > 0)
+            ? acc.installmentAmount
+            : firstSchedulePrin;
+
+        // Multi-installment loan if schedule has > 1 installment, or if configured installment is smaller than pure principal
+        const isMultiInstallmentLoan =
+            scheduleList.length > 1 ||
+            (regularInstallmentAmount > 0 && purePrincipal > 0 && regularInstallmentAmount < purePrincipal - 0.5);
+
         let paikiThakbaki = 0;
+        let oneInstallmentPrincipal = 0;
         let vasulpatra = 0;
 
-        if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
-            const overdueInstallments = accountDetails.schedule.filter(s => {
+        if (scheduleList.length > 0) {
+            const validUnpaidSchedule = scheduleList.filter(s => {
                 if (s.status === 'Paid') return false;
-                const dueDateObj = parseDateSafe(s.dueDate);
-                dueDateObj.setHours(0, 0, 0, 0);
                 if (acc.isOpeningBalance && acc.openingDate) {
+                    const dueDateObj = parseDateSafe(s.dueDate);
+                    dueDateObj.setHours(0, 0, 0, 0);
                     const openingDateObj = parseDateSafe(acc.openingDate);
                     openingDateObj.setHours(0, 0, 0, 0);
                     if (dueDateObj <= openingDateObj) return false;
                 }
+                return true;
+            });
+
+            const overdueInstallments = validUnpaidSchedule.filter(s => {
+                const dueDateObj = parseDateSafe(s.dueDate);
+                dueDateObj.setHours(0, 0, 0, 0);
                 return dueDateObj <= collectionDateObj;
             });
+
+            const firstUnpaid = validUnpaidSchedule[0] || scheduleList.find(s => s.status !== 'Paid');
+            if (firstUnpaid) {
+                const nextP = firstUnpaid.remainingPrincipal !== undefined ? firstUnpaid.remainingPrincipal : (firstUnpaid.principalAmount || 0);
+                oneInstallmentPrincipal = nextP > 0 ? nextP : (regularInstallmentAmount || yeneBaki);
+            } else {
+                oneInstallmentPrincipal = regularInstallmentAmount || yeneBaki;
+            }
 
             if (overdueInstallments.length > 0) {
                 paikiThakbaki = overdueInstallments.reduce(
@@ -1364,114 +1545,86 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 );
                 vasulpatra = paikiThakbaki;
             } else {
-                const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
-                if (nextInstallment) {
-                    const nextP = nextInstallment.remainingPrincipal !== undefined ? nextInstallment.remainingPrincipal : (nextInstallment.principalAmount || 0);
-                    vasulpatra = nextP > 0 ? nextP : (acc.installmentAmount || yeneBaki);
-                } else {
-                    vasulpatra = acc.installmentAmount || yeneBaki;
-                }
+                vasulpatra = oneInstallmentPrincipal;
             }
         } else {
-            vasulpatra = acc.installmentAmount || yeneBaki;
+            oneInstallmentPrincipal = regularInstallmentAmount || yeneBaki;
+            vasulpatra = oneInstallmentPrincipal;
+        }
+
+        // Only include posted/capitalized interest in collectible/1-installment balance for single-bullet loans (e.g. सोनेतारण कर्ज 1 installment)
+        if (!isMultiInstallmentLoan && postedInterest > 0) {
+            oneInstallmentPrincipal = Math.min(yeneBaki, oneInstallmentPrincipal + postedInterest);
+            vasulpatra = Math.min(yeneBaki, vasulpatra + postedInterest);
         }
 
         paikiThakbaki = Math.min(yeneBaki, Math.max(0, paikiThakbaki));
+        oneInstallmentPrincipal = Math.min(yeneBaki, Math.max(0, oneInstallmentPrincipal));
         vasulpatra = Math.min(yeneBaki, Math.max(0, vasulpatra));
-        return { paikiThakbaki, vasulpatra };
+        return { paikiThakbaki, vasulpatra, oneInstallmentPrincipal, regularInstallmentAmount, isMultiInstallmentLoan };
     };
 
     const calculateInterest = (acc: any, dateStr: string) => {
         if (!acc) return;
         const loanRate = acc.loanRate;
-        const isInterestOnly = loanRate && 
-            (loanRate.loanInstallmentType?.includes("व्याजवरती") || 
-             loanRate.loanInstallmentType?.includes("Interest Only") ||
-             loanRate.loanInstallmentType?.includes("Bullet") ||
-             loanRate.shortName?.toLowerCase().includes("gold") ||
-             loanRate.loanType?.includes("सोने"));
+        const isFlatMethod = Boolean(
+            loanRate &&
+            (loanRate.interestCalculationMethod?.toLowerCase().includes("flat") || loanRate.interestCalculationMethod?.includes("फ्लॅट"))
+        );
+        const isDailyReducing = !isFlatMethod;
 
         const rate = acc.loanRate?.interestRate || acc.interestRate || 0;
         const principal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (acc.principalBalance || 0);
-        const fromDateStr = getInterestStartDate(acc);
-        let daysInterest = 0;
-        if (fromDateStr) {
-            const diffDays = calculateElapsedDays(fromDateStr, dateStr || new Date());
-            if (diffDays > 0) {
-                daysInterest = Math.round((principal * rate * diffDays) / 36500);
+        const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (acc.interestBalance || 0);
+        const penal = accountDetails?.currentOverdueInterestBalance !== undefined ? accountDetails.currentOverdueInterestBalance : (acc.overdueInterestBalance || 0);
+
+        const { oneInstallmentPrincipal } = getPrincipalDuesBreakdown(acc, dateStr);
+        const installment = oneInstallmentPrincipal > 0 ? oneInstallmentPrincipal : Math.min(principal, acc.installmentAmount || principal);
+
+        let currentInterestDue = 0;
+        if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
+            const collectionDateObj = parseDateSafe(dateStr || new Date());
+            collectionDateObj.setHours(0, 0, 0, 0);
+
+            const overdueInstallments = accountDetails.schedule.filter(s => {
+                const dueDateObj = parseDateSafe(s.dueDate);
+                dueDateObj.setHours(0, 0, 0, 0);
+                if (acc.isOpeningBalance && acc.openingDate) {
+                    const openingDateObj = parseDateSafe(acc.openingDate);
+                    openingDateObj.setHours(0, 0, 0, 0);
+                    if (dueDateObj <= openingDateObj) return false;
+                }
+                return dueDateObj <= collectionDateObj && s.status !== 'Paid';
+            });
+
+            if (overdueInstallments.length > 0) {
+                currentInterestDue = overdueInstallments.reduce((sum, s) => sum + (s.interestAmount || 0), 0);
+            } else {
+                const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
+                if (nextInstallment) {
+                    currentInterestDue = nextInstallment.interestAmount || 0;
+                }
+            }
+        } else {
+            const fromDateStr = getInterestStartDate(acc);
+            if (fromDateStr) {
+                const diffDays = calculateElapsedDays(fromDateStr, dateStr || new Date());
+                if (diffDays > 0) {
+                    currentInterestDue = Math.round((principal * rate * diffDays) / 36500);
+                }
             }
         }
-        const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (acc.interestBalance || 0);
-        const penal = acc.overdueInterestBalance || 0;
 
-        if (isInterestOnly) {
-            const totalDue = penal + yeneVyaj + daysInterest;
-            autoApportion(totalDue, formData.fees || [], acc, dateStr);
-        } else {
-            const { vasulpatra } = getPrincipalDuesBreakdown(acc, dateStr);
-            const installment = vasulpatra > 0 ? vasulpatra : Math.min(principal, acc.installmentAmount || principal);
-            // Collectible principal + old receivable interest + current days interest + penalty
-            const totalDue = installment + yeneVyaj + daysInterest + penal;
-            autoApportion(totalDue, formData.fees || [], acc, dateStr);
-        }
+        // Auto-select 1 Installment (१ हप्ता): 1 Installment principal + old receivable interest + current days/schedule interest + penalty
+        const totalDue = installment + yeneVyaj + currentInterestDue + penal;
+        autoApportion(totalDue, formData.fees || [], acc, dateStr);
     };
 
-    // Watch for collectionDate and accountDetails changes to recalculate interest and due amount
+    // Watch for collectionDate and accountDetails changes to recalculate interest and due amount (default: १ हप्ता)
     useEffect(() => {
         if (isPassingMode) return;
         if (selectedAccount) {
-            const loanRate = selectedAccount.loanRate;
-            const isFlatMethod = Boolean(
-                loanRate &&
-                (loanRate.interestCalculationMethod?.toLowerCase().includes("flat") || loanRate.interestCalculationMethod?.includes("फ्लॅट"))
-            );
-            const isDailyReducing = !isFlatMethod;
-
-            const isInterestOnly = loanRate && 
-                (loanRate.loanInstallmentType?.includes("व्याजवरती") || 
-                 loanRate.loanInstallmentType?.includes("Interest Only") ||
-                 loanRate.loanInstallmentType?.includes("Bullet") ||
-                 loanRate.shortName?.toLowerCase().includes("gold") ||
-                 loanRate.loanType?.includes("सोने"));
-
-            if (isInterestOnly) {
-                calculateInterest(selectedAccount, formData.collectionDate || new Date().toISOString().split('T')[0]);
-            } else if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
-                const collectionDateObj = parseDateSafe(formData.collectionDate || new Date());
-                collectionDateObj.setHours(0, 0, 0, 0);
-
-                const overdueInstallments = accountDetails.schedule.filter(s => {
-                    const dueDateObj = parseDateSafe(s.dueDate);
-                    dueDateObj.setHours(0, 0, 0, 0);
-
-                    // For opening balance loans, ignore schedule items on/before opening date
-                    if (selectedAccount.isOpeningBalance && selectedAccount.openingDate) {
-                        const openingDateObj = parseDateSafe(selectedAccount.openingDate);
-                        openingDateObj.setHours(0, 0, 0, 0);
-                        if (dueDateObj <= openingDateObj) return false;
-                    }
-
-                    return dueDateObj <= collectionDateObj && s.status !== 'Paid';
-                });
-
-                const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (selectedAccount.principalBalance || 0);
-                let totalInstDue = 0;
-                if (overdueInstallments.length > 0) {
-                    const overduePrincipal = Math.min(yeneBaki, overdueInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0));
-                    const overdueInterest = overdueInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
-                    totalInstDue = overduePrincipal + overdueInterest;
-                } else {
-                    const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
-                    if (nextInstallment) {
-                        const nextP = Math.min(yeneBaki, nextInstallment.remainingPrincipal !== undefined ? nextInstallment.remainingPrincipal : nextInstallment.principalAmount);
-                        totalInstDue = nextP + (nextInstallment.interestAmount || 0);
-                    }
-                }
-                const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0);
-                autoApportion((totalInstDue > 0 ? totalInstDue : Math.min(yeneBaki, selectedAccount.installmentAmount || yeneBaki)) + yeneVyaj, formData.fees || [], selectedAccount);
-            } else {
-                calculateInterest(selectedAccount, formData.collectionDate || new Date().toISOString().split('T')[0]);
-            }
+            calculateInterest(selectedAccount, formData.collectionDate || new Date().toISOString().split('T')[0]);
         }
     }, [formData.collectionDate, accountDetails, selectedAccount]);
 
@@ -1490,8 +1643,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const isDailyReducing = !isFlatMethod;
 
         let currentInterestDue = 0;
-        const { paikiThakbaki, vasulpatra } = getPrincipalDuesBreakdown(account, dateStr);
-        let principalDue = vasulpatra;
+        const { paikiThakbaki, vasulpatra, oneInstallmentPrincipal } = getPrincipalDuesBreakdown(account, dateStr);
 
         if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
             const collectionDateObj = parseDateSafe(dateStr);
@@ -1535,10 +1687,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             const total = penal + yeneVyaj + currentInterestDue;
             autoApportion(total, formData.fees || []);
         } else if (type === 'OVERDUE_ONLY') {
-            const total = paikiThakbaki + penal + yeneVyaj + currentInterestDue;
+            const overduePrin = paikiThakbaki > 0 ? paikiThakbaki : vasulpatra;
+            const total = overduePrin + penal + yeneVyaj + currentInterestDue;
             autoApportion(total, formData.fees || []);
         } else if (type === '1_INST') {
-            const total = principalDue + penal + yeneVyaj + currentInterestDue;
+            const total = oneInstallmentPrincipal + penal + yeneVyaj + currentInterestDue;
             autoApportion(total, formData.fees || []);
         } else if (type === 'FULL_DUE') {
             const maxPrincipal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (account.principalBalance || 0);
@@ -1781,6 +1934,14 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             };
             const res = await axios.post('/api/LoanCollections', payload);
             const savedCollectionId = res.data?.loanCollectionID || res.data?.LoanCollectionID;
+
+            const savedCustId =
+                selectedCustomerId ||
+                selectedAccount?.customerID ||
+                selectedAccount?.customer?.customerID ||
+                selectedAccount?.memberID ||
+                selectedAccount?.member?.memberID;
+            markCustomer360Dirty(savedCustId);
 
             // Save the ID for printing
             if (savedCollectionId) {
@@ -2029,9 +2190,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         const sanctionedAmount = accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount || 0;
         const interestRate = selectedAccount.loanRate?.interestRate || selectedAccount.interestRate || 0;
         const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (selectedAccount.principalBalance || 0);
+        const { purePrincipal, postedInterest: postedInterestInPrincipal } = getPrincipalAndPostedInterestSplit(selectedAccount, accountDetails);
 
         let thakitDinank = "-";
-        const { paikiThakbaki, vasulpatra } = getPrincipalDuesBreakdown(selectedAccount, formData.collectionDate);
+        const { paikiThakbaki, vasulpatra, regularInstallmentAmount, isMultiInstallmentLoan } = getPrincipalDuesBreakdown(selectedAccount, formData.collectionDate);
         let vyaj = 0;
         const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0);
         const dandVyaj = accountDetails?.currentOverdueInterestBalance !== undefined ? accountDetails.currentOverdueInterestBalance : (selectedAccount.overdueInterestBalance || 0);
@@ -2113,6 +2275,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             sanctionedAmount,
             interestRate,
             yeneBaki,
+            purePrincipal,
+            postedInterestInPrincipal,
             thakitDinank,
             vasulpatra,
             paikiThakbaki,
@@ -2124,6 +2288,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             days,
             shillakKarjRakkam,
             ekunVasulpatra,
+            regularInstallmentAmount,
+            isMultiInstallmentLoan,
             isDailyReducing
         };
     })();
@@ -2410,33 +2576,41 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             </span>
                                         </span>
                                     </div>
-                                    <div className="flex flex-wrap gap-1.5">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                                         {borrowerLoans.map((acc: LoanAccount) => {
                                             const isSelected = selectedAccount?.loanAccountID === acc.loanAccountID;
+                                            const cardSplit = getPrincipalAndPostedInterestSplit(acc, isSelected ? accountDetails : null);
                                             return (
                                                 <button
                                                     key={acc.loanAccountID}
                                                     type="button"
                                                     onClick={() => selectLoanAccountById(acc.loanAccountID)}
-                                                    className={`px-2.5 py-1.5 rounded-sm border text-left transition-all cursor-pointer flex items-center gap-2 text-[11px] ${
+                                                    className={`w-full px-2.5 py-1.5 rounded-sm border text-left transition-all cursor-pointer flex items-start gap-2 text-[11px] ${
                                                         isSelected
                                                             ? 'bg-primary text-white border-primary shadow-2xs font-bold'
                                                             : 'bg-white hover:bg-primary/5 text-gray-800 border-gray-300'
                                                     }`}
                                                 >
-                                                    <CheckCircle className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-gray-300'}`} />
-                                                    <div>
-                                                        <div className="font-mono font-bold leading-tight">
-                                                            {format14DigitDisplay(acc.loanAccountNo)}
+                                                    <CheckCircle className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isSelected ? 'text-white' : 'text-gray-300'}`} />
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="font-mono font-bold leading-tight flex items-center justify-between gap-1">
+                                                            <span className="truncate">{format14DigitDisplay(acc.loanAccountNo)}</span>
                                                             {acc.legacyAccountNumber && (
-                                                                <span className={`ml-1.5 px-1.5 py-0.2 rounded-sm text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}>
+                                                                <span className={`px-1.5 py-0.2 rounded-sm text-[10px] shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}>
                                                                     जुना: {acc.legacyAccountNumber}
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <div className={`text-[10px] mt-0.5 ${isSelected ? 'text-white/90' : 'text-gray-500'}`}>
-                                                            मुद्दल बाकी: <b>₹{(acc.principalBalance || 0).toLocaleString('en-IN')}</b>
-                                                            {acc.installmentAmount > 0 && ` | हप्ता: ₹${(acc.installmentAmount || 0).toLocaleString('en-IN')}`}
+                                                        <div className={`text-[10px] mt-0.5 leading-snug ${isSelected ? 'text-white/95' : 'text-gray-600'}`}>
+                                                            <div>
+                                                                मुद्दल बाकी: <b>₹{(acc.principalBalance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</b>
+                                                                {acc.installmentAmount > 0 && ` | हप्ता: ₹${(acc.installmentAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+                                                            </div>
+                                                            {cardSplit.postedInterest > 0 && (
+                                                                <div className={`text-[9.5px] font-mono mt-0.5 ${isSelected ? 'text-amber-100' : 'text-sky-800 font-semibold'}`}>
+                                                                    मुद्दल: ₹{cardSplit.purePrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} + व्याज: ₹{cardSplit.postedInterest.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </button>
@@ -3576,17 +3750,32 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                                 {/* 2. Four Key KPI Tiles (2x2 Grid) in Soft Pastel Shades */}
                                 <div className="grid grid-cols-2 gap-2">
-                                    <div className="p-2 rounded-sm bg-sky-50/80 border border-sky-200">
-                                        <div className="text-[10px] font-bold text-sky-900">चालू मुद्दल बाकी</div>
-                                        <div className="text-sm font-black font-mono text-sky-950 mt-0.5">
-                                            ₹{duesSummary.yeneBaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    <div className="p-2 rounded-sm bg-sky-50/80 border border-sky-200 flex flex-col justify-between">
+                                        <div>
+                                            <div className="text-[10px] font-bold text-sky-900">चालू मुद्दल बाकी</div>
+                                            <div className="text-sm font-black font-mono text-sky-950 mt-0.5">
+                                                ₹{duesSummary.yeneBaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </div>
+                                        </div>
+                                        <div className="text-[9.5px] font-bold text-sky-900 mt-1 leading-snug bg-white/85 px-1.5 py-0.5 rounded-xs border border-sky-200/80 font-mono flex flex-wrap items-center gap-x-1">
+                                            <span className="whitespace-nowrap">मुद्दल: ₹{duesSummary.purePrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                            <span className="whitespace-nowrap">+ व्याज: ₹{duesSummary.postedInterestInPrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                                         </div>
                                     </div>
 
-                                    <div className="p-2 rounded-sm bg-amber-50/80 border border-amber-200">
-                                        <div className="text-[10px] font-bold text-amber-900">आज एकूण देय रक्कम</div>
-                                        <div className="text-sm font-black font-mono text-amber-950 mt-0.5">
-                                            ₹{duesSummary.ekunVasulpatra.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    <div className="p-2 rounded-sm bg-amber-50/80 border border-amber-200 flex flex-col justify-between">
+                                        <div>
+                                            <div className="text-[10px] font-bold text-amber-900">आज एकूण देय रक्कम</div>
+                                            <div className="text-sm font-black font-mono text-amber-950 mt-0.5">
+                                                ₹{duesSummary.ekunVasulpatra.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </div>
+                                        </div>
+                                        <div className="text-[9.5px] font-bold text-amber-900 mt-1 leading-snug bg-white/85 px-1.5 py-0.5 rounded-xs border border-amber-200/80 font-mono flex flex-wrap items-center gap-x-1">
+                                            <span className="whitespace-nowrap">₹{duesSummary.vasulpatra.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                            <span className="whitespace-nowrap">+ मेंबर व्याज: ₹{duesSummary.vyaj.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                            {(duesSummary.yeneVyaj + duesSummary.dandVyaj) > 0 && (
+                                                <span className="whitespace-nowrap">+ इतर: ₹{(duesSummary.yeneVyaj + duesSummary.dandVyaj).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                            )}
                                         </div>
                                     </div>
 
@@ -3614,7 +3803,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             {selectedAccount.loanRate?.loanInstallmentType?.includes('व्याजवरती') ? 'हप्ता प्रकार: व्याजवरती' : 'नियमित हप्ता (EMI)'}
                                         </div>
                                         <div className="text-xs font-bold font-mono text-emerald-800 mt-0.5">
-                                            ₹{(selectedAccount.installmentAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            ₹{(duesSummary.regularInstallmentAmount || selectedAccount.installmentAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </div>
                                         <div className="text-[9.5px] text-emerald-900/80 mt-0.5">
                                             उचल: {duesSummary.disbursementDate ? formatDateSafe(duesSummary.disbursementDate) : '-'}
@@ -3656,7 +3845,14 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </div>
 
                                     <div className="px-2.5 py-1.5 flex items-center justify-between bg-blue-50/60">
-                                        <span className="text-blue-950 font-semibold">वसूलपात्र मुद्दल</span>
+                                        <span className="text-blue-950 font-semibold">
+                                            वसूलपात्र मुद्दल
+                                            {!duesSummary.isMultiInstallmentLoan && duesSummary.postedInterestInPrincipal > 0 && (
+                                                <span className="text-[10px] text-blue-800/80 font-normal ml-1">
+                                                    (मुद्दल ₹{duesSummary.purePrincipal.toLocaleString('en-IN')} + व्याज ₹{duesSummary.postedInterestInPrincipal.toLocaleString('en-IN')})
+                                                </span>
+                                            )}
+                                        </span>
                                         <span className="font-mono font-bold text-blue-950">
                                             ₹{duesSummary.vasulpatra.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>

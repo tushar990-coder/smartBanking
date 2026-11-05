@@ -150,6 +150,7 @@ namespace Bhisi.Api.Controllers
 
                 // Share Module (Consolidated into 1 single SQL query)
                 var shareAccountsQuery = _context.ShareAccounts.AsNoTracking();
+                if (branchId.HasValue && branchId.Value > 0) shareAccountsQuery = shareAccountsQuery.Where(s => s.Member != null && s.Member.BranchID == branchId.Value);
 
                 var shareStats = await shareAccountsQuery
                     .GroupBy(s => 1)

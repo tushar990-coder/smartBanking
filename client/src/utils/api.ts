@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { setupAxiosCacheAdapter } from './apiCache';
 
 export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_API_BASE_URL) {
@@ -40,6 +41,8 @@ const api = axios.create({
   },
 });
 
+setupAxiosCacheAdapter(api);
+
 api.interceptors.request.use((config) => {
   try {
     // 1. Normalize URL to always target /api/... cleanly
@@ -75,6 +78,9 @@ api.interceptors.request.use((config) => {
       }
       if (user?.branchID) {
         config.headers['X-Branch-ID'] = user.branchID.toString();
+      }
+      if (user?.businessDate) {
+        config.headers['X-Business-Date'] = String(user.businessDate).split('T')[0];
       }
     }
   } catch (err) {

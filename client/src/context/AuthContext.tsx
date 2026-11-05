@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { prewarmMasterDataCache, invalidateApiCache } from '../utils/apiCache';
 
 interface AuthUser {
   token: string;
@@ -61,6 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sessionStorage.setItem('globalBranchId', userData.branchID.toString());
       localStorage.setItem('globalBranchId', userData.branchID.toString());
     }
+    prewarmMasterDataCache();
     try {
       const channel = new BroadcastChannel('smart_banking_session_sync');
       channel.postMessage({ type: 'LOGIN', user: userData });
@@ -114,6 +116,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sessionStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
       sessionStorage.setItem('globalBranchId', branchID.toString());
       localStorage.setItem('globalBranchId', branchID.toString());
+      invalidateApiCache('/api/dashboard');
+      prewarmMasterDataCache();
 
       try {
         const channel = new BroadcastChannel('smart_banking_session_sync');

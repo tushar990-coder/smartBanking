@@ -1,5 +1,18 @@
 import React from 'react';
-import Select from 'react-select';
+import Select, { components } from 'react-select';
+
+const MAX_RENDERED_OPTIONS = 100;
+
+const CappedMenuList = (props: any) => {
+  const { children } = props;
+  const cappedChildren =
+    Array.isArray(children) && children.length > MAX_RENDERED_OPTIONS
+      ? children.slice(0, MAX_RENDERED_OPTIONS)
+      : children;
+  return <components.MenuList {...props}>{cappedChildren}</components.MenuList>;
+};
+
+const SELECT_COMPONENTS = { MenuList: CappedMenuList };
 
 export interface MemberOption {
   memberID: number;
@@ -57,7 +70,12 @@ export default function MemberSearchSelect({
   // Transform members into react-select options format
   const options = React.useMemo(() => {
     if (!Array.isArray(members)) return [];
-    return members.map((m: any) => {
+    const seenValues = new Set<number>();
+    const result: any[] = [];
+
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i];
+      if (!m) continue;
       const rawMemProfile = m.memberProfile || m.MemberProfile;
       const memId = Number(rawMemProfile?.memberID || rawMemProfile?.MemberID || m.memberID || m.memberId || m.MemberID || 0);
       const custId = Number(m.customerID || m.customerId || m.CustomerID || m.id || 0);
@@ -67,6 +85,9 @@ export default function MemberSearchSelect({
       const primaryValueId = isCustomerMode
         ? (custId > 0 ? custId : memId)
         : (memId > 0 ? memId : custId);
+
+      if (!primaryValueId || isNaN(primaryValueId) || seenValues.has(primaryValueId)) continue;
+      seenValues.add(primaryValueId);
 
       const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.MemberCode || '').trim();
       const isNullOrEmpty = !rawCode || rawCode.toLowerCase() === 'null' || rawCode.toLowerCase() === 'undefined';
@@ -98,7 +119,7 @@ export default function MemberSearchSelect({
       const prefix = isCustomerMode ? `[${cleanCif}]${legacyCustTag}` : (cleanMemCode ? `[${cleanCif} | ${cleanMemCode}]` : `[${cleanCif}]`);
       const label = `${prefix} ${fullName}${nick ? ` (${nick})` : ''}${mobile ? ` - 📱 ${mobile}` : ''}`;
 
-      return {
+      result.push({
         value: primaryValueId,
         label: label,
         member: {
@@ -118,8 +139,10 @@ export default function MemberSearchSelect({
           nickName: nick,
           fullName: fullName
         }
-      };
-    });
+      });
+    }
+
+    return result;
   }, [members, isCustomerMode]);
 
   const numericValue = value !== '' && value !== undefined && value !== null ? Number(value) : '';
@@ -148,12 +171,12 @@ export default function MemberSearchSelect({
     }
   }, [numericValue, options, isCustomerMode]);
 
-  // Pure Customer / CIF filter logic (Searches by CIF Number, Member Code (if not customer mode), Name, Mobile, Legacy IDs)
-  const filterOption = (option: any, rawInput: string) => {
+      // Pure Customer / CIF filter logic (Searches by CIF Number, Member Code (if not customer mode), Name, Mobile, Legacy IDs)
+  const matchesSearch = React.useCallback((opt: any, rawInput: string) => {
     const input = rawInput.toLowerCase().trim();
     if (!input) return true;
     
-    const { label, member } = option.data;
+    const { label, member } = opt;
     
     const searchString = `
       ${label}
@@ -193,7 +216,15 @@ export default function MemberSearchSelect({
     if (!isCustomerMode && member.memberCode && member.memberCode.toLowerCase().includes(input)) return true;
 
     return searchString.includes(input);
-  };
+  }, [isCustomerMode]);
+
+  const filterOptionHandler = React.useCallback(
+    (option: any, rawInput: string) => {
+      if (!rawInput) return true;
+      return matchesSearch(option.data, rawInput);
+    },
+    [matchesSearch]
+  );
 
   const formatOptionLabel = (data: any, { context }: any) => {
     const m = data.member;
@@ -287,16 +318,17 @@ export default function MemberSearchSelect({
   const effectivePlaceholder = placeholder || (isCustomerMode ? "-- खातेदार शोधा (नाव, CIF किंवा जुना खातेदार नं) --" : "-- सभासद निवडा --");
 
   return (
-    <div className={className}>
+    <div className={`relative z-50 ${className}`}>
       <Select
         options={options}
+        components={SELECT_COMPONENTS}
         value={selectedOption}
         isDisabled={isDisabled}
         onChange={(selected: any) => {
           onChange(selected ? selected.value : '', selected ? selected.member : undefined);
         }}
         isClearable={isClearable}
-        filterOption={filterOption}
+        filterOption={filterOptionHandler}
         formatOptionLabel={formatOptionLabel}
         placeholder={effectivePlaceholder}
         styles={{
@@ -350,10 +382,6 @@ export default function MemberSearchSelect({
             maxWidth: '650px',
             width: 'max-content'
           }),
-          menuPortal: (base) => ({
-            ...base,
-            zIndex: 999999
-          }),
           option: (base, state) => ({
             ...base,
             padding: '6px 10px',
@@ -371,7 +399,6 @@ export default function MemberSearchSelect({
             padding: compact ? '0 2px' : '2px 4px'
           })
         }}
-        menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
       />
     </div>
   );

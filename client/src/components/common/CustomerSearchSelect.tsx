@@ -1,5 +1,5 @@
 import React from 'react';
-import Select from 'react-select';
+import Select, { components } from 'react-select';
 
 export interface CustomerOption {
   customerID: number;
@@ -22,29 +22,61 @@ export interface CustomerOption {
 interface Props {
   customers: (CustomerOption | any)[];
   value: number | string | '' | undefined;
-  onChange: (customerId: number | '') => void;
+  onChange: (customerId: number | '', searchQuery?: string) => void;
   placeholder?: string;
   className?: string;
   isDisabled?: boolean;
   isClearable?: boolean;
+  menuAlign?: 'left' | 'right';
 }
+
+const MAX_RENDERED_OPTIONS = 100;
+
+const CappedMenuList = (props: any) => {
+  const { children } = props;
+  const cappedChildren =
+    Array.isArray(children) && children.length > MAX_RENDERED_OPTIONS
+      ? children.slice(0, MAX_RENDERED_OPTIONS)
+      : children;
+  return <components.MenuList {...props}>{cappedChildren}</components.MenuList>;
+};
+
+const SELECT_COMPONENTS = { MenuList: CappedMenuList };
+
+const filterCustomerOption = (option: any, inputValue: string) => {
+  if (!inputValue) return true;
+  const q = inputValue.toLowerCase().trim();
+  if (!q) return true;
+  const searchText = option.data?.searchText || '';
+  return searchText.includes(q);
+};
 
 export default function CustomerSearchSelect({
   customers = [],
   value,
   onChange,
-  placeholder = "-- खातेदार निवडा (CIF / नाव / मोबाईलने शोधा) --",
+  placeholder = "-- खातेदार निवडा (CIF / जुना खातेदार नं / नाव / मोबाईलने शोधा) --",
   className = "",
   isDisabled = false,
-  isClearable = true
+  isClearable = true,
+  menuAlign = 'left'
 }: Props) {
-  
+  const lastTypedSearchRef = React.useRef<string>('');
+
   const options = React.useMemo(() => {
     if (!Array.isArray(customers)) return [];
-    return customers.map((c: any) => {
-      const cId = Number(c.customerID || c.customerId || c.CustomerID || 0);
+    const seenIds = new Set<number>();
+    const result: any[] = [];
+
+    for (let i = 0; i < customers.length; i++) {
+      const c = customers[i];
+      if (!c) continue;
+      const cId = Number(c.customerID || c.customerId || c.CustomerID || c.id || 0);
+      if (!cId || isNaN(cId) || seenIds.has(cId)) continue;
+      seenIds.add(cId);
+
       const cif = (c.cifNo || c.cif || c.CIFNo || '').trim();
-      const legacyCust = (c.legacyCustomerNo || c.LegacyCustomerNo || '').trim();
+      const legacyCust = (c.legacyCustomerNo || c.LegacyCustomerNo || c.oldCustomerCode || '').trim();
       const legacyLoan = (c.legacyLoanAccountNo || c.LegacyLoanAccountNo || c.legacyLoanNo || '').trim();
       const loanNo = (c.loanAccountNo || c.LoanAccountNo || '').trim();
       const mobile = (c.mobileNo || c.mobile || c.MobileNo || '').trim();
@@ -53,20 +85,23 @@ export default function CustomerSearchSelect({
       const fName = c.firstName || c.FirstName || '';
       const mName = c.middleName || c.MiddleName || '';
       const lName = c.lastName || c.LastName || '';
-      const fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
+      const fullName = (c.fullName || c.FullName || c.customerName || [fName, mName, lName].filter(Boolean).join(' ')).trim();
 
-      let codeParts: string[] = [];
+      const codeParts: string[] = [];
       if (legacyLoan) codeParts.push(`जुने कर्ज क्र: ${legacyLoan}`);
       if (cif) codeParts.push(`CIF: ${cif}`);
-      if (legacyCust) codeParts.push(`जुना CIF: ${legacyCust}`);
+      if (legacyCust) codeParts.push(`जुना खातेदार नं: ${legacyCust}`);
       if (mobile) codeParts.push(`मो.: ${mobile}`);
 
       const codeStr = codeParts.join(' | ');
       const label = codeStr ? `[${codeStr}] ${fullName}` : fullName;
 
-      return {
+      const searchText = `${label} ${fName} ${mName} ${lName} ${fullName} ${cif} ${legacyCust} ${legacyLoan} ${loanNo} ${mobile} ${aadhaar} ${cId}`.toLowerCase();
+
+      result.push({
         value: cId,
-        label: label,
+        label,
+        searchText,
         customer: {
           ...c,
           customerID: cId,
@@ -79,10 +114,12 @@ export default function CustomerSearchSelect({
           firstName: fName,
           middleName: mName,
           lastName: lName,
-          fullName: fullName
+          fullName
         }
-      };
-    });
+      });
+    }
+
+    return result;
   }, [customers]);
 
   const numericValue = value !== '' && value !== undefined && value !== null ? Number(value) : '';
@@ -92,47 +129,36 @@ export default function CustomerSearchSelect({
     return options.find(o => o.value === numericValue) || null;
   }, [numericValue, options]);
 
-  const filterOption = (option: any, rawInput: string) => {
-    const input = rawInput.toLowerCase().trim();
-    if (!input) return true;
-    
-    const { label, customer } = option.data;
-    const searchString = `
-      ${label} 
-      ${customer.firstName} 
-      ${customer.middleName || ''} 
-      ${customer.lastName} 
-      ${customer.fullName} 
-      ${customer.cifNo || ''} 
-      ${customer.legacyCustomerNo || ''} 
-      ${customer.legacyLoanAccountNo || ''} 
-      ${customer.loanAccountNo || ''} 
-      ${customer.mobileNo || ''} 
-      ${customer.aadhaarNo || ''}
-    `.toLowerCase();
-
-    return searchString.includes(input);
-  };
-
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative z-50 ${className}`}>
       <Select
         value={selectedOption}
+        onInputChange={(newValue: string, actionMeta: any) => {
+          if (actionMeta?.action === 'input-change') {
+            lastTypedSearchRef.current = newValue || '';
+          }
+        }}
+        onBlur={() => {
+          lastTypedSearchRef.current = '';
+        }}
         onChange={(selected: any) => {
-          onChange(selected ? selected.value : '');
+          const typedQuery = (lastTypedSearchRef.current || '').trim();
+          lastTypedSearchRef.current = '';
+          onChange(selected ? selected.value : '', typedQuery);
         }}
         options={options}
+        components={SELECT_COMPONENTS}
         placeholder={placeholder}
         isDisabled={isDisabled}
         isClearable={isClearable}
-        filterOption={filterOption}
+        filterOption={filterCustomerOption}
         classNamePrefix="react-select"
         formatOptionLabel={(data: any, { context }: any) => {
           const cust = data.customer;
           if (context === 'value') {
-            const cifDisplay = cust.cifNo || (cust.legacyCustomerNo ? `जुना:${cust.legacyCustomerNo}` : `ID:${cust.customerID}`);
+            const cifDisplay = cust.cifNo || `ID:${cust.customerID}`;
             return (
-              <div className="flex items-center gap-1.5 overflow-hidden text-[11px] py-0 w-full" title={`${cust.fullName} (${cifDisplay})${cust.legacyLoanAccountNo ? ` [जुने कर्ज: ${cust.legacyLoanAccountNo}]` : ''}`}>
+              <div className="flex items-center gap-1.5 overflow-hidden text-[11px] py-0 w-full" title={`${cust.fullName} (${cifDisplay})${cust.legacyCustomerNo ? ` [जुना खातेदार नं: ${cust.legacyCustomerNo}]` : ''}${cust.legacyLoanAccountNo ? ` [जुने कर्ज: ${cust.legacyLoanAccountNo}]` : ''}`}>
                 {cust.legacyLoanAccountNo && (
                   <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-300 leading-none shadow-2xs">
                     जुने कर्ज: {cust.legacyLoanAccountNo}
@@ -141,14 +167,14 @@ export default function CustomerSearchSelect({
                 <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 border border-blue-300 leading-none">
                   {cifDisplay}
                 </span>
+                {cust.legacyCustomerNo && (
+                  <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 leading-none">
+                    [जुना खातेदार नं: {cust.legacyCustomerNo}]
+                  </span>
+                )}
                 <span className="font-bold text-slate-900 truncate text-[11px]">
                   {cust.fullName}
                 </span>
-                {cust.legacyCustomerNo && cust.cifNo && !cust.legacyLoanAccountNo && (
-                  <span className="text-[10px] text-slate-500 font-medium shrink-0 hidden xl:inline">
-                    (जुना: {cust.legacyCustomerNo})
-                  </span>
-                )}
                 {cust.mobileNo && (
                   <span className="text-[10px] text-emerald-700 font-mono shrink-0 ml-auto hidden 2xl:inline">
                     📱 {cust.mobileNo}
@@ -161,24 +187,24 @@ export default function CustomerSearchSelect({
           return (
             <div className="flex items-center justify-between py-1 px-1 w-full gap-3">
               <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className="font-bold text-slate-900 text-xs truncate max-w-[220px] sm:max-w-[280px]">
-                  {cust.fullName}
-                </span>
+                {cust.cifNo && (
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 shrink-0 whitespace-nowrap">
+                    {cust.cifNo}
+                  </span>
+                )}
+                {cust.legacyCustomerNo && (
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 shrink-0 whitespace-nowrap">
+                    [जुना खातेदार नं: {cust.legacyCustomerNo}]
+                  </span>
+                )}
                 {cust.legacyLoanAccountNo && (
                   <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-300 shrink-0 whitespace-nowrap shadow-2xs">
                     🏷️ जुने कर्ज क्र: {cust.legacyLoanAccountNo}
                   </span>
                 )}
-                {cust.cifNo && (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 shrink-0 whitespace-nowrap">
-                    CIF: {cust.cifNo}
-                  </span>
-                )}
-                {cust.legacyCustomerNo && (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap">
-                    जुना CIF: {cust.legacyCustomerNo}
-                  </span>
-                )}
+                <span className="font-bold text-slate-900 text-xs truncate max-w-[220px] sm:max-w-[280px]">
+                  {cust.fullName}
+                </span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {cust.mobileNo && (
@@ -238,7 +264,9 @@ export default function CustomerSearchSelect({
           menu: (base: any) => ({
             ...base,
             fontSize: '11px',
-            zIndex: 9999,
+            zIndex: 99999,
+            left: menuAlign === 'right' ? 'auto' : 0,
+            right: menuAlign === 'right' ? 0 : 'auto',
             minWidth: '480px',
             width: 'max-content',
             maxWidth: '90vw',

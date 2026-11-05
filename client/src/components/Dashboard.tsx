@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData, invalidateApiCache } from '../utils/apiCache';
 import { 
   Building2, 
   Landmark, 
@@ -67,6 +69,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       const initialBranch = (user && user.role !== 'Admin' && user.branchID) 
         ? user.branchID.toString() 
         : (localStorage.getItem('globalBranchId') || (user?.branchID ? user.branchID.toString() : 'all'));
+      const summaryUrl = initialBranch !== 'all' ? `/api/Dashboard?branchId=${initialBranch}` : '/api/Dashboard';
+      const memHit = getCachedMasterData<any>(summaryUrl);
+      if (memHit) return memHit;
       const cached = localStorage.getItem(`cbs_dashboard_cache_${initialBranch}`);
       return cached ? JSON.parse(cached) : null;
     } catch {
@@ -75,9 +80,17 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   });
 
   const [sansthaName, setSansthaName] = useState(() => {
+    const cachedSanstha = getCachedMasterData<any[]>('/api/SansthaDetails');
+    if (Array.isArray(cachedSanstha) && cachedSanstha[0]?.sansthaName) {
+      return cachedSanstha[0].sansthaName;
+    }
     return localStorage.getItem('cbs_sanstha_name') || "तुमची संस्था";
   });
   const [sansthaInfo, setSansthaInfo] = useState<any>(() => {
+    const cachedSanstha = getCachedMasterData<any[]>('/api/SansthaDetails');
+    if (Array.isArray(cachedSanstha) && cachedSanstha[0]) {
+      return cachedSanstha[0];
+    }
     try {
       const cached = localStorage.getItem('cbs_sanstha_info');
       return cached ? JSON.parse(cached) : null;
@@ -93,6 +106,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [branches, setBranches] = useState<any[]>(() => {
+    const memBranches = getCachedMasterData<any[]>('/api/Branches');
+    if (Array.isArray(memBranches) && memBranches.length > 0) return memBranches;
     try {
       const cached = localStorage.getItem('cbs_branches_cache');
       return cached ? JSON.parse(cached) : [];
@@ -129,14 +144,18 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       const queryParams = [branchParam, refreshParam].filter(Boolean).join('&');
       const summaryUrl = `/api/Dashboard${queryParams ? `?${queryParams}` : ''}`;
 
+      if (forceRefresh) {
+        invalidateApiCache('/api/dashboard');
+      }
+
       const [sansthaRes, branchesRes, summaryRes] = await Promise.all([
-        fetch('/api/SansthaDetails'),
-        fetch('/api/Branches'),
-        fetch(summaryUrl)
+        axios.get('/api/SansthaDetails').catch(() => null),
+        axios.get('/api/Branches').catch(() => null),
+        axios.get(summaryUrl).catch(() => null)
       ]);
 
-      if (sansthaRes.ok) {
-        const s = await sansthaRes.json();
+      if (sansthaRes && sansthaRes.data) {
+        const s = sansthaRes.data;
         if (s && s.length > 0) {
           setSansthaName(s[0].sansthaName || "तुमची संस्था");
           setSansthaInfo(s[0]);
@@ -144,14 +163,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           localStorage.setItem('cbs_sanstha_info', JSON.stringify(s[0]));
         }
       }
-      if (branchesRes.ok) {
-        const b = await branchesRes.json();
+      if (branchesRes && branchesRes.data) {
+        const b = branchesRes.data;
         setBranches(b || []);
         localStorage.setItem('cbs_branches_cache', JSON.stringify(b || []));
       }
 
-      if (summaryRes.ok) {
-        const summaryData = await summaryRes.json();
+      if (summaryRes && summaryRes.data) {
+        const summaryData = summaryRes.data;
         setData(summaryData);
         localStorage.setItem(`cbs_dashboard_cache_${selectedBranchId}`, JSON.stringify(summaryData));
       }

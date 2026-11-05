@@ -326,106 +326,106 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const [selectedSourceId, setSelectedSourceId] = useState<number | ''>('');
 
     useEffect(() => {
+        if (draftApplication && !editingId && !editingDisbursement) {
+            setSourceType('Draft');
+            setSelectedSourceId('');
+            
+            setAlreadyDisbursedAmount(0);
+            setPendingSanctionedLimit(draftApplication.requestedAmount || 0);
+            setCurrentTrancheNo(1);
+
+            const currentDisbDate = activeBusinessDate || new Date().toISOString().split('T')[0];
+
+            setFormData(prev => ({
+                ...prev,
+                disbursementDate: prev.disbursementDate || currentDisbDate,
+                sanctionedAmount: draftApplication.requestedAmount,
+                disbursementAmount: draftApplication.requestedAmount,
+                netAmountPaid: draftApplication.requestedAmount
+            }));
+            
+            fetchCustomerShareBalance(draftApplication.customerID || draftApplication.customer?.customerID);
+
+            setNewAccountData({
+                customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
+                memberID: draftApplication.memberID,
+                coCustomerID: draftApplication.coCustomerID || null,
+                coCustomer2ID: draftApplication.coCustomer2ID || (draftApplication as any).coCustomer2ID || null,
+                guarantor1CustomerID: draftApplication.guarantor1CustomerID || null,
+                guarantor2CustomerID: draftApplication.guarantor2CustomerID || null,
+                securityDetails: draftApplication.securityDetails,
+                securityValue: draftApplication.securityValue,
+                loanRateID: draftApplication.loanRateID,
+                sanctionedAmount: draftApplication.requestedAmount,
+                interestRate: draftApplication.interestRate,
+                durationMonths: draftApplication.durationMonths,
+                noOfInstallments: draftApplication.noOfInstallments || 0,
+                installmentAmount: draftApplication.installmentAmount || 0,
+                installmentFrequency: draftApplication.installmentFrequency || 'मासिक',
+                openingDate: currentDisbDate,
+                firstInstallmentDate: draftApplication.firstInstallmentDate,
+                maturityDate: draftApplication.maturityDate,
+                status: "Active",
+                loanAccountNo: 'AUTO'
+            });
+            fetchNextLoanAccountNo(draftApplication.branchID || initialBranchId, draftApplication.loanRateID);
+        } else if (editingDisbursement && draftApplication && (!editingId || editingId === editingDisbursement.loanDisbursementID)) {
+            setEditingId(editingDisbursement.loanDisbursementID);
+            setSourceType('Draft');
+            setSelectedSourceId('');
+
+            setFormData(prev => ({
+                ...prev,
+                loanDisbursementID: editingDisbursement.loanDisbursementID,
+                loanAccountID: editingDisbursement.loanAccountID,
+                disbursementDate: new Date(editingDisbursement.disbursementDate).toISOString().split('T')[0],
+                paymentMode: editingDisbursement.paymentMode || 'Cash',
+                sanctionedAmount: draftApplication.requestedAmount,
+                disbursementAmount: editingDisbursement.disbursementAmount || draftApplication.requestedAmount,
+                netAmountPaid: editingDisbursement.netAmountPaid || draftApplication.requestedAmount,
+                bankAccountLedgerID: editingDisbursement.bankAccountLedgerID,
+                chequeNo: editingDisbursement.chequeNo,
+                transferToSavingAccountNo: editingDisbursement.transferToSavingAccountNo,
+                remarks: editingDisbursement.remarks
+            }));
+
+            const deds = editingDisbursement.deductions?.map((d: any) => ({
+                ledgerID: d.ledgerID,
+                amount: d.amount
+            })) || [];
+            setDeductions(deds);
+
+            fetchCustomerShareBalance(draftApplication.customerID || draftApplication.customer?.customerID);
+
+            setNewAccountData({
+                loanAccountID: editingDisbursement.loanAccountID,
+                customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
+                memberID: draftApplication.memberID,
+                coCustomerID: draftApplication.coCustomerID || null,
+                coCustomer2ID: draftApplication.coCustomer2ID || (draftApplication as any).coCustomer2ID || null,
+                guarantor1CustomerID: draftApplication.guarantor1CustomerID || null,
+                guarantor2CustomerID: draftApplication.guarantor2CustomerID || null,
+                loanRateID: draftApplication.loanRateID,
+                sanctionedAmount: draftApplication.requestedAmount,
+                interestRate: draftApplication.interestRate,
+                durationMonths: draftApplication.durationMonths,
+                noOfInstallments: draftApplication.noOfInstallments || 0,
+                installmentAmount: draftApplication.installmentAmount || 0,
+                installmentFrequency: draftApplication.installmentFrequency || 'मासिक',
+                openingDate: formData.disbursementDate || new Date().toISOString().split('T')[0],
+                firstInstallmentDate: draftApplication.firstInstallmentDate,
+                maturityDate: draftApplication.maturityDate,
+                status: "Active",
+                loanAccountNo: editingDisbursement.loanAccount?.loanAccountNo || 'AUTO'
+            });
+            if (editingDisbursement.loanAccount?.loanAccountNo) {
+                setAutoLoanAccountNo(editingDisbursement.loanAccount.loanAccountNo);
+            }
+        }
+
         fetchNextShareConfig();
         fetchData(initialBranchId);
-        fetchDropdowns(initialBranchId).then(() => {
-            if (draftApplication && !editingId && !editingDisbursement) {
-                setSourceType('Draft');
-                setSelectedSourceId('');
-                
-                setAlreadyDisbursedAmount(0);
-                setPendingSanctionedLimit(draftApplication.requestedAmount || 0);
-                setCurrentTrancheNo(1);
-
-                const currentDisbDate = activeBusinessDate || new Date().toISOString().split('T')[0];
-
-                setFormData(prev => ({
-                    ...prev,
-                    disbursementDate: prev.disbursementDate || currentDisbDate,
-                    sanctionedAmount: draftApplication.requestedAmount,
-                    disbursementAmount: draftApplication.requestedAmount,
-                    netAmountPaid: draftApplication.requestedAmount
-                }));
-                
-                fetchCustomerShareBalance(draftApplication.customerID || draftApplication.customer?.customerID);
-
-                setNewAccountData({
-                    customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
-                    memberID: draftApplication.memberID,
-                    coCustomerID: draftApplication.coCustomerID || null,
-                    coCustomer2ID: draftApplication.coCustomer2ID || (draftApplication as any).coCustomer2ID || null,
-                    guarantor1CustomerID: draftApplication.guarantor1CustomerID || null,
-                    guarantor2CustomerID: draftApplication.guarantor2CustomerID || null,
-                    securityDetails: draftApplication.securityDetails,
-                    securityValue: draftApplication.securityValue,
-                    loanRateID: draftApplication.loanRateID,
-                    sanctionedAmount: draftApplication.requestedAmount,
-                    interestRate: draftApplication.interestRate,
-                    durationMonths: draftApplication.durationMonths,
-                    noOfInstallments: draftApplication.noOfInstallments || 0,
-                    installmentAmount: draftApplication.installmentAmount || 0,
-                    installmentFrequency: draftApplication.installmentFrequency || 'मासिक',
-                    openingDate: currentDisbDate,
-                    firstInstallmentDate: draftApplication.firstInstallmentDate,
-                    maturityDate: draftApplication.maturityDate,
-                    status: "Active",
-                    loanAccountNo: 'AUTO'
-                });
-                fetchNextLoanAccountNo(draftApplication.branchID || initialBranchId, draftApplication.loanRateID);
-            } else if (editingDisbursement && draftApplication && (!editingId || editingId === editingDisbursement.loanDisbursementID)) {
-                setEditingId(editingDisbursement.loanDisbursementID);
-                setSourceType('Draft');
-                setSelectedSourceId('');
-
-                setFormData(prev => ({
-                    ...prev,
-                    loanDisbursementID: editingDisbursement.loanDisbursementID,
-                    loanAccountID: editingDisbursement.loanAccountID,
-                    disbursementDate: new Date(editingDisbursement.disbursementDate).toISOString().split('T')[0],
-                    paymentMode: editingDisbursement.paymentMode || 'Cash',
-                    sanctionedAmount: draftApplication.requestedAmount,
-                    disbursementAmount: editingDisbursement.disbursementAmount || draftApplication.requestedAmount,
-                    netAmountPaid: editingDisbursement.netAmountPaid || draftApplication.requestedAmount,
-                    bankAccountLedgerID: editingDisbursement.bankAccountLedgerID,
-                    chequeNo: editingDisbursement.chequeNo,
-                    transferToSavingAccountNo: editingDisbursement.transferToSavingAccountNo,
-                    remarks: editingDisbursement.remarks
-                }));
-
-                const deds = editingDisbursement.deductions?.map((d: any) => ({
-                    ledgerID: d.ledgerID,
-                    amount: d.amount
-                })) || [];
-                setDeductions(deds);
-
-                fetchCustomerShareBalance(draftApplication.customerID || draftApplication.customer?.customerID);
-
-                setNewAccountData({
-                    loanAccountID: editingDisbursement.loanAccountID,
-                    customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
-                    memberID: draftApplication.memberID,
-                    coCustomerID: draftApplication.coCustomerID || null,
-                    coCustomer2ID: draftApplication.coCustomer2ID || (draftApplication as any).coCustomer2ID || null,
-                    guarantor1CustomerID: draftApplication.guarantor1CustomerID || null,
-                    guarantor2CustomerID: draftApplication.guarantor2CustomerID || null,
-                    loanRateID: draftApplication.loanRateID,
-                    sanctionedAmount: draftApplication.requestedAmount,
-                    interestRate: draftApplication.interestRate,
-                    durationMonths: draftApplication.durationMonths,
-                    noOfInstallments: draftApplication.noOfInstallments || 0,
-                    installmentAmount: draftApplication.installmentAmount || 0,
-                    installmentFrequency: draftApplication.installmentFrequency || 'मासिक',
-                    openingDate: formData.disbursementDate || new Date().toISOString().split('T')[0],
-                    firstInstallmentDate: draftApplication.firstInstallmentDate,
-                    maturityDate: draftApplication.maturityDate,
-                    status: "Active",
-                    loanAccountNo: editingDisbursement.loanAccount?.loanAccountNo || 'AUTO'
-                });
-                if (editingDisbursement.loanAccount?.loanAccountNo) {
-                    setAutoLoanAccountNo(editingDisbursement.loanAccount.loanAccountNo);
-                }
-            }
-        });
+        fetchDropdowns(initialBranchId);
     }, [draftApplication, editingDisbursement]);
 
     // Load Loan Disbursement in Passing Mode
@@ -599,12 +599,21 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const fetchDropdowns = async (targetBranchId?: number) => {
         try {
             const bId = targetBranchId ?? selectedBranchId;
-            const [appRes, accRes, ledgersRes, branchesRes, savingAccsRes] = await Promise.all([
+            axios.get('/api/Branches')
+                .then(res => setBranches(res.data || []))
+                .catch(err => console.error(err));
+
+            axios.get('/api/Ledgers')
+                .then(res => {
+                    const data = res.data || [];
+                    setBankLedgers(filterBankAccountLedgers(data));
+                    setAllLedgers(data);
+                })
+                .catch(err => console.error(err));
+
+            const [appRes, accRes] = await Promise.all([
                 axios.get(bId ? `/api/LoanApplications/pending-disbursements?branchId=${bId}` : '/api/LoanApplications/pending-disbursements'),
-                axios.get(bId ? `/api/LoanAccounts?branchId=${bId}` : '/api/LoanAccounts'),
-                axios.get('/api/Ledgers'),
-                axios.get('/api/Branches'),
-                axios.get('/api/SavingAccounts')
+                axios.get(bId ? `/api/LoanAccounts?branchId=${bId}&lightweight=true` : '/api/LoanAccounts?lightweight=true')
             ]);
 
             // Pending applications are pre-filtered and enriched directly by the server
@@ -639,16 +648,20 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             setApplications(availableApps);
             const filteredAccs = (accRes.data || []).filter((a: any) => !a.isOpeningBalance && (!bId || a.branchID === bId));
             setAccounts(filteredAccs);
-            const filteredBankLedgers = filterBankAccountLedgers(ledgersRes.data || []);
-            setBankLedgers(filteredBankLedgers);
-            setAllLedgers(ledgersRes.data || []);
-            setBranches(branchesRes.data || []);
-            setSavingAccounts(savingAccsRes.data || []);
             return availableApps;
         } catch (err) {
             console.error(err);
         }
     };
+
+    // Lazy load SavingAccounts only when paymentMode is Saving Transfer
+    useEffect(() => {
+        if (formData.paymentMode === 'Saving Transfer' && savingAccounts.length === 0) {
+            axios.get('/api/SavingAccounts')
+                .then(res => setSavingAccounts(res.data || []))
+                .catch(err => console.error(err));
+        }
+    }, [formData.paymentMode, savingAccounts.length]);
 
     const fetchCustomerShareBalance = async (customerId?: number) => {
         if (!customerId) return;

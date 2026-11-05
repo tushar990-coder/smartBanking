@@ -259,6 +259,8 @@ namespace Bhisi.Api.Models
         public decimal March31Balance { get; set; }
         public bool IsOpeningBalance { get; set; }
         public decimal CurrentPrincipalBalance { get; set; }
+        public decimal PurePrincipalBalance { get; set; }
+        public decimal CapitalizedInterestAmount { get; set; }
         public decimal CurrentInterestBalance { get; set; }
         public decimal CurrentOverdueInterestBalance { get; set; }
         public decimal TotalDisbursedAmount { get; set; }
@@ -402,6 +404,15 @@ namespace Bhisi.Api.Models
         
         public string BranchName { get; set; } = string.Empty;
         public decimal PrincipalBalance { get; set; }
+        public decimal PurePrincipalBalance { get; set; }
+        public decimal CapitalizedInterestAmount { get; set; }
+        public decimal ReceivableInterestBalance { get; set; }
+        public DateTime? OpeningBalanceDate { get; set; }
+        public DateTime? InterestFromDate { get; set; }
+        public DateTime? InterestToDate { get; set; }
+        public int InterestDaysToDate { get; set; }
+        public decimal CalculatedInterestToDate { get; set; }
+        public decimal TotalPayableAsOfToDate { get; set; }
         public string MobileNo { get; set; } = string.Empty;
         public string? LegacyCustomerNo { get; set; }
         public string InstallmentFrequency { get; set; } = string.Empty;

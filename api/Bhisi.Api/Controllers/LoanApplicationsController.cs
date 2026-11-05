@@ -109,7 +109,7 @@ namespace Bhisi.Api.Controllers
                                    userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
                                    userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
 
-                var query = _context.LoanApplications
+                var query = _context.LoanApplications.AsNoTracking()
                     .Include(a => a.Branch)
                     .Include(a => a.Customer)
                     .Include(a => a.CoCustomer)
@@ -167,7 +167,7 @@ namespace Bhisi.Api.Controllers
                           _context.LoanDisbursements.Where(d => d.LoanAccountID == l.LoanAccountID).Sum(d => (decimal?)d.DisbursementAmount ?? 0) >= l.SanctionedAmount)))
                     .Select(l => l.LoanAccountNo!);
 
-                var query = _context.LoanApplications
+                var query = _context.LoanApplications.AsNoTracking()
                     .AsNoTracking()
                     .Include(a => a.Branch)
                     .Include(a => a.Customer)

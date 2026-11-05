@@ -51,6 +51,11 @@ interface RdAccount {
   cifNo?: string;
   customerName?: string;
   totalDepositedAmount?: number;
+  rdSchemeID?: number;
+  schemeCode?: string;
+  schemePenaltyAmount?: number;
+  penaltyAmount?: number;
+  gracePeriodDays?: number;
 }
 
 export interface RdScheduleRow {
@@ -142,6 +147,8 @@ export default function RdInstallmentCollection({
 
   // Multi-Payment Mode States
   const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
+  const [rdSchemes, setRdSchemes] = useState<any[]>([]);
+  const [isCustomPenalty, setIsCustomPenalty] = useState<boolean>(false);
   const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<number>(0);
   const [chequeNo, setChequeNo] = useState('');
 
@@ -171,7 +178,7 @@ export default function RdInstallmentCollection({
     }>;
   } | null>(null);
 
-  // Fetch GL Ledgers on mount for BankLedgerSelect
+  // Fetch GL Ledgers and RD Schemes on mount
   useEffect(() => {
     let isMounted = true;
     axios.get('/api/Ledgers')
@@ -181,6 +188,14 @@ export default function RdInstallmentCollection({
       })
       .catch((e) => {
         console.error('Failed to fetch ledgers', e);
+      });
+    axios.get('/api/RdSchemes?includeAll=true')
+      .then((res) => {
+        if (!isMounted) return;
+        setRdSchemes(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch((e) => {
+        console.error('Failed to fetch RD schemes', e);
       });
     return () => {
       isMounted = false;
@@ -272,6 +287,70 @@ export default function RdInstallmentCollection({
     }
   };
 
+  const getAccountSchemePenaltyInfo = (acc: RdAccount | null | undefined): { ratePer100: number; graceDays: number } => {
+    if (!acc) return { ratePer100: 0, graceDays: 5 };
+    const matchedScheme = rdSchemes.find(
+      (s: any) =>
+        (acc.rdSchemeID && Number(s.rdSchemeID) === Number(acc.rdSchemeID)) ||
+        (acc.schemeName && String(s.schemeName).trim() === String(acc.schemeName).trim())
+    );
+    const rawRate =
+      matchedScheme && matchedScheme.penaltyAmount !== undefined && matchedScheme.penaltyAmount !== null
+        ? Number(matchedScheme.penaltyAmount)
+        : acc.schemePenaltyAmount !== undefined && acc.schemePenaltyAmount !== null
+        ? Number(acc.schemePenaltyAmount)
+        : acc.penaltyAmount !== undefined && acc.penaltyAmount !== null
+        ? Number(acc.penaltyAmount)
+        : 0;
+    const rawGrace =
+      matchedScheme && Number(matchedScheme.gracePeriodDays) > 0
+        ? Number(matchedScheme.gracePeriodDays)
+        : Number(acc.gracePeriodDays) > 0
+        ? Number(acc.gracePeriodDays)
+        : 5;
+    return {
+      ratePer100: Number.isFinite(rawRate) && rawRate > 0 ? rawRate : 0,
+      graceDays: rawGrace,
+    };
+  };
+
+  const calculateOverduePenalty = (acc: RdAccount | null | undefined, effDateStr?: string): number => {
+    if (!acc) return 0;
+    const { ratePer100, graceDays } = getAccountSchemePenaltyInfo(acc);
+    // १. जर योजनेचा थकीत दंड दर ० किंवा त्यापेक्षा कमी असेल, तर दंड पूर्णपणे ०!
+    if (ratePer100 <= 0) {
+      return 0;
+    }
+
+    // २. संगणकाच्या System Date ऐवजी हप्ता भरणा तारीख (collectionDate / activeBusinessDate) वापरा
+    const dateStr = effDateStr || collectionDate || activeBusinessDate;
+    const refDate = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date(`${activeBusinessDate}T00:00:00`);
+    if (isNaN(refDate.getTime()) || !acc.openingDate) return 0;
+
+    const openDate = new Date(acc.openingDate);
+    if (isNaN(openDate.getTime())) return 0;
+
+    const paidCount = Math.max(0, Number(acc.totalPaidInstallments) || 0);
+    const duration = Math.max(1, Number(acc.durationMonths) || 12);
+
+    let overdueMonths = 0;
+    const nextInstIdx = paidCount;
+    if (nextInstIdx < duration) {
+      const dueDate = new Date(openDate.getFullYear(), openDate.getMonth() + nextInstIdx, openDate.getDate());
+      const graceCutoff = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate() + graceDays);
+      if (refDate > graceCutoff) {
+        overdueMonths = Math.max(
+          1,
+          (refDate.getFullYear() - dueDate.getFullYear()) * 12 + (refDate.getMonth() - dueDate.getMonth())
+        );
+      }
+    }
+
+    if (overdueMonths <= 0) return 0;
+
+    return Math.round((acc.installmentAmount / 100) * ratePer100 * overdueMonths);
+  };
+
   const selectRdAccount = (acc: RdAccount) => {
     setSelectedAccId(acc.rdAccountID.toString());
     setSelectedAcc(acc);
@@ -279,27 +358,25 @@ export default function RdInstallmentCollection({
     setDepositAmount(acc.installmentAmount || '');
     setDepositInputRaw(null);
     setIsCustomAmount(false);
+    setIsCustomPenalty(false);
     fetchSchedule(acc.rdAccountID);
 
     const cId = acc.customerID || acc.customerId;
     loadCustomerLinkedAccounts(cId);
 
     if (acc) {
-      const start = new Date(acc.openingDate);
-      start.setMonth(start.getMonth() + acc.totalPaidInstallments);
-      const today = new Date();
-
-      const diffMonths = (today.getFullYear() - start.getFullYear()) * 12 + today.getMonth() - start.getMonth();
-      if (diffMonths > 0) {
-        const p = Math.round(acc.installmentAmount * 0.02 * diffMonths);
-        setPenaltyAmount(p);
-      } else {
-        setPenaltyAmount(0);
-      }
+      setPenaltyAmount(calculateOverduePenalty(acc, collectionDate || activeBusinessDate));
     } else {
       setSchedule([]);
     }
   };
+
+  // Re-evaluate auto penalty when scheme master list or collectionDate updates (unless passing mode or manually overridden)
+  useEffect(() => {
+    if (!isPassingMode && selectedAcc && !isCustomPenalty) {
+      setPenaltyAmount(calculateOverduePenalty(selectedAcc, collectionDate || activeBusinessDate));
+    }
+  }, [selectedAcc, rdSchemes, collectionDate, activeBusinessDate, isPassingMode, isCustomPenalty]);
 
   const handlePrintSchedule = () => {
     if (!selectedAcc || schedule.length === 0) return;
@@ -726,11 +803,7 @@ export default function RdInstallmentCollection({
     if (isBulk && accounts.length > 0) {
       const initial: typeof bulkRows = {};
       accounts.forEach((acc) => {
-        const start = new Date(acc.openingDate);
-        start.setMonth(start.getMonth() + acc.totalPaidInstallments);
-        const today = new Date();
-        const diffMonths = (today.getFullYear() - start.getFullYear()) * 12 + today.getMonth() - start.getMonth();
-        const penalty = diffMonths > 0 ? Math.round(acc.installmentAmount * 0.02 * diffMonths) : 0;
+        const penalty = calculateOverduePenalty(acc, collectionDate || activeBusinessDate);
 
         initial[acc.rdAccountID] = {
           count: 1,
@@ -740,7 +813,7 @@ export default function RdInstallmentCollection({
       });
       setBulkRows(initial);
     }
-  }, [isBulk, accounts]);
+  }, [isBulk, accounts, rdSchemes, collectionDate, activeBusinessDate]);
 
   const handleBulkRowChange = (id: number, field: string, val: any) => {
     setBulkRows((prev) => ({
@@ -1685,11 +1758,18 @@ export default function RdInstallmentCollection({
                   value={penaltyAmount}
                   onChange={(e) => {
                     const cleanVal = normalizeNumericInput(e.target.value);
+                    setIsCustomPenalty(true);
                     setPenaltyAmount(Math.max(0, parseFloat(cleanVal) || 0));
                   }}
                   className={inputClass}
                   min="0"
                 />
+                {selectedAcc && (
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    योजना दंड दर: <strong>₹{getAccountSchemePenaltyInfo(selectedAcc).ratePer100} / दर १०० रु.</strong>
+                    {getAccountSchemePenaltyInfo(selectedAcc).ratePer100 <= 0 ? ' (दंड माफ / ० दर)' : ''}
+                  </span>
+                )}
               </div>
             </div>
 

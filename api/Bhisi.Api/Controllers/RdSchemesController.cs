@@ -99,6 +99,8 @@ namespace Bhisi.Api.Controllers
             if (string.IsNullOrWhiteSpace(rdScheme.InterestMethod)) rdScheme.InterestMethod = "Quarterly";
             if (string.IsNullOrWhiteSpace(rdScheme.CompoundingFrequency)) rdScheme.CompoundingFrequency = "Quarterly";
             if (rdScheme.GracePeriodDays <= 0) rdScheme.GracePeriodDays = 5;
+            rdScheme.PenaltyAmount = Math.Max(0m, rdScheme.PenaltyAmount);
+            rdScheme.PrematurePenaltyRate = Math.Max(0m, rdScheme.PrematurePenaltyRate);
 
             int numericCode = rdScheme.SchemeCodeNumeric;
             if (numericCode <= 0 && !string.IsNullOrWhiteSpace(rdScheme.SchemeCode))
@@ -157,8 +159,8 @@ namespace Bhisi.Api.Controllers
             existing.MaximumInstallment = rdScheme.MaximumInstallment;
             existing.InterestRate = rdScheme.InterestRate;
             existing.InterestMethod = string.IsNullOrWhiteSpace(rdScheme.InterestMethod) ? existing.InterestMethod : rdScheme.InterestMethod;
-            existing.PenaltyAmount = rdScheme.PenaltyAmount;
-            existing.PrematurePenaltyRate = rdScheme.PrematurePenaltyRate;
+            existing.PenaltyAmount = Math.Max(0m, rdScheme.PenaltyAmount);
+            existing.PrematurePenaltyRate = Math.Max(0m, rdScheme.PrematurePenaltyRate);
             existing.EffectiveDate = rdScheme.EffectiveDate;
             existing.IsActive = rdScheme.IsActive;
             if (!string.IsNullOrWhiteSpace(rdScheme.CompoundingFrequency)) existing.CompoundingFrequency = rdScheme.CompoundingFrequency;

@@ -469,9 +469,9 @@ namespace Bhisi.Api.Controllers
             if (cashLedgerIds.Count > 0)
             {
                 var priorDrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
+                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
+                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
 
                 if (branchId.HasValue)
                 {
@@ -497,7 +497,9 @@ namespace Bhisi.Api.Controllers
                 .Where(v => v.VoucherDate >= startDate 
                          && v.VoucherDate <= endDate
                          && v.VoucherType != "Opening Balance"
-                         && v.VoucherType != "Opening" && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
+                         && v.VoucherType != "Opening"
+                         && !(v.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && v.VoucherNo != null && v.VoucherNo.StartsWith("PV-") && !v.VoucherNo.Contains("-AGT-") && !v.VoucherNo.Contains("-OP-") && !v.VoucherNo.Contains("-PIGMY-") && (v.VoucherNo.Contains("-IMP-") || v.VoucherNo.Contains("-BLK-")))
+                         && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
 
             if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             {
@@ -900,9 +902,9 @@ namespace Bhisi.Api.Controllers
             if (cashLedgerIds.Count > 0)
             {
                 var priorDrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
+                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
+                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
 
                 if (branchId.HasValue)
                 {
@@ -924,7 +926,9 @@ namespace Bhisi.Api.Controllers
                 .Where(v => v.VoucherDate >= rangeStart 
                          && v.VoucherDate <= rangeEnd
                          && v.VoucherType != "Opening Balance"
-                         && v.VoucherType != "Opening" && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
+                         && v.VoucherType != "Opening"
+                         && !(v.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && v.VoucherNo != null && v.VoucherNo.StartsWith("PV-") && !v.VoucherNo.Contains("-AGT-") && !v.VoucherNo.Contains("-OP-") && !v.VoucherNo.Contains("-PIGMY-") && (v.VoucherNo.Contains("-IMP-") || v.VoucherNo.Contains("-BLK-")))
+                         && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
 
             if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             {
@@ -1398,9 +1402,9 @@ namespace Bhisi.Api.Controllers
             if (cashLedgerIds.Count > 0)
             {
                 var priorDrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
+                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
+                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
 
                 if (branchId.HasValue)
                 {
@@ -1422,7 +1426,9 @@ namespace Bhisi.Api.Controllers
                 .Where(v => v.VoucherDate >= startDate 
                          && v.VoucherDate <= endDate
                          && v.VoucherType != "Opening Balance"
-                         && v.VoucherType != "Opening" && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
+                         && v.VoucherType != "Opening"
+                         && !(v.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && v.VoucherNo != null && v.VoucherNo.StartsWith("PV-") && !v.VoucherNo.Contains("-AGT-") && !v.VoucherNo.Contains("-OP-") && !v.VoucherNo.Contains("-PIGMY-") && (v.VoucherNo.Contains("-IMP-") || v.VoucherNo.Contains("-BLK-")))
+                         && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
 
             if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             {
@@ -1733,9 +1739,9 @@ namespace Bhisi.Api.Controllers
             if (cashLedgerIds.Count > 0)
             {
                 var priorDrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
+                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
-                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
+                    .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
 
                 if (branchId.HasValue)
                 {
@@ -1758,7 +1764,9 @@ namespace Bhisi.Api.Controllers
                 .Where(v => v.VoucherDate >= rangeStart 
                          && v.VoucherDate <= rangeEnd
                          && v.VoucherType != "Opening Balance"
-                         && v.VoucherType != "Opening" && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
+                         && v.VoucherType != "Opening"
+                         && !(v.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && v.VoucherNo != null && v.VoucherNo.StartsWith("PV-") && !v.VoucherNo.Contains("-AGT-") && !v.VoucherNo.Contains("-OP-") && !v.VoucherNo.Contains("-PIGMY-") && (v.VoucherNo.Contains("-IMP-") || v.VoucherNo.Contains("-BLK-")))
+                         && !(v.VoucherDate <= new DateTime(2026, 3, 31, 23, 59, 59) && ((v.VoucherNo != null && v.VoucherNo.Contains("-OP-")) || (v.Narration != null && v.Narration.Contains("जुनी प्रणाली स्थलांतर")))) && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक"))));
 
             if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             {

@@ -3285,6 +3285,137 @@ try
         {
             Log.Warning(ex, "Failed to auto-sync Pigmy Schemes GL Opening Balances on startup");
         }
+
+        try
+        {
+            // Core Banking Pigmy Duplicate Per-Customer Import/Bulk Voucher Cleanup (Post 31/03/2026)
+            // Ensures individual customer collections stay strictly in PigmyCollections/PigmyTransactions (Collection List)
+            // while Daybook & GL only retain consolidated Agent Remittance vouchers (PV-...-AGT-...).
+            var cutoffDate = new DateTime(2026, 3, 31, 23, 59, 59);
+            var depositVoucherIds = db.PigmyAgentCashDeposits
+                .Where(d => d.VoucherId.HasValue)
+                .Select(d => d.VoucherId!.Value)
+                .ToHashSet();
+
+            var badPigmyVouchers = db.Vouchers
+                .Where(v => v.VoucherDate > cutoffDate &&
+                            v.VoucherNo != null &&
+                            v.VoucherNo.StartsWith("PV-") &&
+                            !v.VoucherNo.Contains("-AGT-") &&
+                            !v.VoucherNo.Contains("-OP-") &&
+                            !v.VoucherNo.Contains("-PIGMY-") &&
+                            (v.VoucherNo.Contains("-IMP-") ||
+                             v.VoucherNo.Contains("-BLK-") ||
+                             (v.Narration != null && (
+                                 v.Narration.StartsWith("Pigmy Chart ") ||
+                                 v.Narration.StartsWith("Pigmy Bulk Manual Collection") ||
+                                 v.Narration.StartsWith("Pigmy Manual Collection") ||
+                                 v.Narration.StartsWith("Pigmy App Collection") ||
+                                 v.Narration.StartsWith("पिग्मी मासिक एक्सेल संकलन")))))
+                .Select(v => v.VoucherID)
+                .ToList()
+                .Where(id => !depositVoucherIds.Contains(id))
+                .ToList();
+
+            if (badPigmyVouchers.Count > 0)
+            {
+                var badSet = badPigmyVouchers.ToHashSet();
+
+                // 1. Re-link collections covered by PigmyAgentCashDeposits to their consolidated AGT voucher
+                var allDeposits = db.PigmyAgentCashDeposits
+                    .Where(d => d.VoucherId.HasValue)
+                    .OrderBy(d => d.DepositDate)
+                    .ThenBy(d => d.DepositId)
+                    .ToList();
+
+                foreach (var dep in allDeposits)
+                {
+                    DateTime? cFrom = dep.CollectionDateFrom?.Date;
+                    DateTime? cTo = dep.CollectionDateTo?.Date ?? cFrom;
+                    if (!cFrom.HasValue && !string.IsNullOrEmpty(dep.Narration) && dep.Narration.Contains("[संकलन:"))
+                    {
+                        try
+                        {
+                            int sIdx = dep.Narration.IndexOf("[संकलन:") + 7;
+                            int eIdx = dep.Narration.IndexOf("]", sIdx);
+                            if (eIdx > sIdx)
+                            {
+                                string tag = dep.Narration.Substring(sIdx, eIdx - sIdx).Trim();
+                                if (tag.Contains("ते"))
+                                {
+                                    var parts = tag.Split(new[] { "ते" }, StringSplitOptions.None);
+                                    if (parts.Length == 2 &&
+                                        DateTime.TryParseExact(parts[0].Trim(), "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var pf) &&
+                                        DateTime.TryParseExact(parts[1].Trim(), "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var pt))
+                                    {
+                                        cFrom = pf.Date;
+                                        cTo = pt.Date;
+                                    }
+                                }
+                                else if (DateTime.TryParseExact(tag, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var ps))
+                                {
+                                    cFrom = ps.Date;
+                                    cTo = ps.Date;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (cFrom.HasValue && cTo.HasValue)
+                    {
+                        var fDate = cFrom.Value.Date;
+                        var tDate = cTo.Value.Date.AddDays(1);
+                        var matchedCols = db.PigmyCollections
+                            .Where(c => c.AgentId == dep.AgentId &&
+                                        c.CollectionDate >= fDate &&
+                                        c.CollectionDate < tDate &&
+                                        c.CollectionDate > cutoffDate)
+                            .ToList();
+                        foreach (var col in matchedCols)
+                        {
+                            col.VoucherId = dep.VoucherId;
+                            col.IsVoucherGenerated = true;
+                        }
+                    }
+                }
+                db.SaveChanges();
+
+                // 2. Unlink any remaining PigmyCollections still pointing to bad per-customer vouchers
+                var remainingCols = db.PigmyCollections
+                    .Where(c => c.VoucherId.HasValue && badSet.Contains(c.VoucherId.Value))
+                    .ToList();
+                foreach (var col in remainingCols)
+                {
+                    col.VoucherId = null;
+                    col.IsVoucherGenerated = false;
+                }
+                db.SaveChanges();
+
+                // 3. Delete VoucherDetails and Vouchers in safe batches
+                foreach (var chunk in badPigmyVouchers.Chunk(500))
+                {
+                    var chunkList = chunk.ToList();
+                    var detailsToRemove = db.VoucherDetails.Where(vd => chunkList.Contains(vd.VoucherID)).ToList();
+                    if (detailsToRemove.Any())
+                    {
+                        db.VoucherDetails.RemoveRange(detailsToRemove);
+                    }
+                    var vouchersToRemove = db.Vouchers.Where(v => chunkList.Contains(v.VoucherID)).ToList();
+                    if (vouchersToRemove.Any())
+                    {
+                        db.Vouchers.RemoveRange(vouchersToRemove);
+                    }
+                    db.SaveChanges();
+                }
+
+                Log.Information("Cleaned up {Count} duplicate per-customer Pigmy import/bulk vouchers (post 31/03/2026) and aligned collections to consolidated Agent Remittance vouchers.", badPigmyVouchers.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to clean up duplicate Pigmy per-customer import vouchers on startup");
+        }
     }
 
     // Enable Swagger UI for easy testing

@@ -1,5 +1,19 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-05] - आवृत्ती v2.6.19 (RD Scheme Zero Penalty & Collection Fix, Pigmy Daybook Duplicate Removal & Collection Register Separation, and CBS v2.4 Voucher Batch Print)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) आवर्ती ठेव (RD) योजना मास्टर व हप्ता संकलन दंड व्याज सुधारणा (`RdSchemeMaster.tsx`, `RdInstallmentCollection.tsx`, `RdAccountsController.cs`, `RdSchemesController.cs` & `apiCache.ts`):**
+  * RD योजना मास्टरमध्ये **'थकीत हप्ता दंड (₹/दर १०० रु.)'** मध्ये `0` रु. अपडेट केल्यावर `|| 20` फॉलबॅकमुळे पुन्हा `20` होणारा दोष दूर करून `scheme.penaltyAmount ?? 0` लागू केले व सेव्ह केलेल्या योजनांच्या यादीत `थकीत दंड: ₹0/१०० रु.` स्पष्ट दर्शवले.
+  * मासिक आरडी हप्ता संकलनामध्ये (`RdInstallmentCollection.tsx`) योजनेचा दंड दर `0` असल्यास थकीत दंड नेहमी `₹0` राहतो आणि चालू हप्ता भरणा तारखेनुसार (`collectionDate / businessDate`) अचूक परिगणना होते.
+* **२) पिग्मी ठेव रोजकीर्द (Daybook) दुहेरी नोंद निवारण व दैनंदिन संकलन यादी विलगीकरण (`Program.cs`, `PigmyCollectionsController.cs`, `AgentDayBookController.cs`, `LegacyDaybookHelper.cs`, `ReportsController.cs` & `PigmyReports.tsx`):**
+  * दि. `31/03/2026` नंतरच्या पिग्मी संकलनासाठी रोजकीर्दमध्ये प्रति-ग्राहक सुट्ट्या पावत्या (`PV-...-IMP-...` / `PV-...-BLK-...`) व एजंट संकलन भरणा पावती (`PV-...-AGT-...`) अशा दोनदा दिसणाऱ्या नोंदींमधून सुट्ट्या पावत्या डेटाबेस व रोजकीर्दमधून स्वयंचलित काढल्या असून, रोजकीर्दला फक्त **`पिग्मी एजंट संकलन भरणा (PV-...-AGT-...)`** हीच एकमेव एकत्रित नोंद दिसते.
+  * खातेदारनिहाय संकलन तपशील जुना खाते क्र. (`LegacyAccountNumber`) व जुना CIF क्र. (`LegacyCustomerNo`) सह **`पिग्मी दैनंदिन जमा नोंदवही (Collection List)`** मध्ये स्वतंत्रपणे प्रदर्शित केला.
+* **३) व्हाउचर प्रिंटिंग (Voucher Batch Print) सॅम्पल रिपोर्टनुसार सुधारणा (`VoucherBatchPrint.tsx`, `VoucherPrint.tsx` & `VouchersController.cs`):**
+  * **CBS Sample Report v2.4 (`CbsReportLayout`)** नुसार अधिकृत संस्था हेडर (`रजि. नं.`, `शाखा`, `रजि. दि.`), रिपोर्ट रिबन, ४-कॉलम समरी बॅनर, CBS टेबल + स्वतंत्र **`पावती`** प्रिंट बटण आणि **`व्हाउचर स्लिप (2/Page Slips)`** मोड, ३/४-स्तरीय स्वाक्षरी व एक्सेल एक्सपोर्ट समाविष्ट केले.
+
+---
+
 ## 📅 [2026-11-05] - आवृत्ती v2.6.18 (Khatedar 360 Customer-ID-First Architecture & Dropdown Fix, Login-Date Voucher Passing Restriction, Ultra-Fast App/FD/Loan Performance & Consolidated Loan Ledger)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

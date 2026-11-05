@@ -673,9 +673,20 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Vouchers/batch
         [HttpGet("batch")]
-        public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchersBatch([FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string type)
+        public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchersBatch(
+            [FromQuery] DateTime startDate,
+            [FromQuery] DateTime endDate,
+            [FromQuery] string? type = "All",
+            [FromQuery] int? branchId = null,
+            [FromQuery] string? status = null)
         {
+            var sDate = startDate.Date;
+            var eDate = endDate.Date;
+            var pigmyCutoff = new DateTime(2026, 3, 31);
+
             var query = _context.Vouchers
+                                .AsNoTracking()
+                                .Include(v => v.Branch)
                                 .Include(v => v.VoucherDetails)
                                 .ThenInclude(d => d.Ledger)
                                 .Include(v => v.VoucherDetails)
@@ -683,11 +694,34 @@ namespace Bhisi.Api.Controllers
                                     .ThenInclude(m => m!.Customer)
                                 .Include(v => v.VoucherDetails)
                                 .ThenInclude(d => d.Customer)
-                                .Where(v => v.VoucherDate >= startDate && v.VoucherDate <= endDate);
+                                .Where(v => v.VoucherDate.Date >= sDate && v.VoucherDate.Date <= eDate)
+                                .Where(v => v.Status != "Rejected" && v.Status != "Cancelled")
+                                .Where(v => !v.VoucherNo.Contains("-OP-") &&
+                                            !v.VoucherNo.StartsWith("JV-FD-OP-") &&
+                                            !v.VoucherNo.StartsWith("REC-FD-OP-") &&
+                                            !v.VoucherNo.StartsWith("JV-RD-OP-") &&
+                                            !v.VoucherNo.StartsWith("REC-RD-OP-") &&
+                                            !v.VoucherNo.StartsWith("JV-SH-OP-") &&
+                                            !v.VoucherNo.StartsWith("JV-INV-OP-") &&
+                                            v.VoucherType != "Opening" &&
+                                            !(v.VoucherDate.Date > pigmyCutoff &&
+                                              v.VoucherNo.StartsWith("PV-") &&
+                                              (v.VoucherNo.Contains("-IMP-") || v.VoucherNo.Contains("-BLK-"))));
+
+            int? effectiveBranch = User.ResolveOptionalBranchId(branchId);
+            if (effectiveBranch.HasValue && effectiveBranch.Value > 0)
+            {
+                query = query.Where(v => v.BranchID == effectiveBranch.Value);
+            }
 
             if (!string.IsNullOrEmpty(type) && type != "All")
             {
                 query = query.Where(v => v.VoucherType == type);
+            }
+
+            if (!string.IsNullOrEmpty(status) && status != "All")
+            {
+                query = query.Where(v => v.Status == status);
             }
 
             return await query.OrderBy(v => v.VoucherDate)

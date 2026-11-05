@@ -163,16 +163,21 @@ namespace Bhisi.Api.Controllers
                     c.CollectionDate,
                     c.CollectionAmount,
                     c.CollectionSource,
+                    c.PaymentMode,
+                    c.IsVoucherGenerated,
+                    c.VoucherId,
                     c.OpeningBalance,
                     c.ClosingBalance,
                     c.PigmyAccountId,
                     PigmyAccountNo = c.PigmyAccount != null ? c.PigmyAccount.AccountNo : "",
+                    LegacyAccountNumber = c.PigmyAccount != null ? (c.PigmyAccount.LegacyAccountNumber ?? c.PigmyAccount.OldAccountNo ?? c.PigmyAccount.PreviousAccountNo ?? "") : "",
                     CustomerName = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? 
-                        (c.PigmyAccount.Customer.FirstName + " " + (c.PigmyAccount.Customer.LastName ?? "")).Trim() : "",
+                        $"{c.PigmyAccount.Customer.FirstName} {c.PigmyAccount.Customer.MiddleName} {c.PigmyAccount.Customer.LastName}".Replace("  ", " ").Trim() : "",
                     MemberName = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? 
-                        (c.PigmyAccount.Customer.FirstName + " " + (c.PigmyAccount.Customer.LastName ?? "")).Trim() : "",
+                        $"{c.PigmyAccount.Customer.FirstName} {c.PigmyAccount.Customer.MiddleName} {c.PigmyAccount.Customer.LastName}".Replace("  ", " ").Trim() : "",
                     CIFNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? c.PigmyAccount.Customer.CIFNo : "",
-                    CustomerNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? (c.PigmyAccount.Customer.CIFNo ?? c.PigmyAccount.Customer.LegacyCustomerNo ?? "") : "",
+                    LegacyCustomerNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? (c.PigmyAccount.Customer.LegacyCustomerNo ?? "") : "",
+                    CustomerNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? (c.PigmyAccount.Customer.LegacyCustomerNo ?? c.PigmyAccount.Customer.CIFNo ?? "") : "",
                     AgentId = c.AgentId,
                     AgentName = c.Agent != null ? c.Agent.AgentName : ""
                 })
@@ -350,49 +355,16 @@ namespace Bhisi.Api.Controllers
                 account.TotalDepositedAmount = updatedAccountBalance;
                 _context.PigmyAccounts.Update(account);
 
-                var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "MANUAL" && m.IsActive);
-                int drLedgerId = isBankMode ? validatedBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY"));
-                int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
-
+                // Individual customer collections are recorded in PigmyCollections & PigmyTransactions (Collection List / Khatavani);
+                // GL / Daybook voucher will be generated as a single consolidated Agent Remittance voucher in Agent Day Book.
                 collection.PaymentMode = NormalizePigmyPaymentMode(dto.PaymentMode, isBankMode);
-                string uniqueVoucherNo = $"PV-{branchId}-{targetDate:yyyyMMdd}-{DateTime.Now:HHmmss}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
-                var voucher = new Voucher
-                {
-                    BranchID = branchId,
-                    VoucherNo = uniqueVoucherNo,
-                    VoucherDate = targetDate,
-                    VoucherType = "Receipt",
-                    Status = "Pending",
-                    Narration = $"Pigmy Manual Collection for A/C {account.AccountNo}",
-                    TotalAmount = dto.CollectionAmount
-                };
-
-                voucher.VoucherDetails.Add(new VoucherDetail
-                {
-                    LedgerID = drLedgerId,
-                    CustomerID = account.CustomerID,
-                    DrCr = "Dr",
-                    Amount = dto.CollectionAmount
-                });
-
-                voucher.VoucherDetails.Add(new VoucherDetail
-                {
-                    LedgerID = crLedgerId,
-                    CustomerID = account.CustomerID,
-                    DrCr = "Cr",
-                    Amount = dto.CollectionAmount
-                });
-
-                _context.Vouchers.Add(voucher);
-                await _context.SaveChangesAsync();
-
-                collection.VoucherId = voucher.VoucherID;
-                collection.IsVoucherGenerated = true;
+                collection.VoucherId = null;
+                collection.IsVoucherGenerated = false;
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                return Ok(new { message = "कलेक्शन यशस्वीरीत्या जमा झाले!", receiptNo = receiptNo });
+                return Ok(new { message = "कलेक्शन यशस्वीरीत्या जमा झाले! एजंट डे-बुकमधून रक्कम बँकेत जमा केल्यावर एकत्रित व्हाउचर तयार होईल.", receiptNo = receiptNo });
             }
             catch (Exception ex)
             {
@@ -620,55 +592,21 @@ namespace Bhisi.Api.Controllers
                     account.TotalDepositedAmount = updatedAccountBalance;
                     _context.PigmyAccounts.Update(account);
 
-                    var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "MANUAL" && m.IsActive);
-                    int drLedgerId = isBankMode ? validatedBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY"));
-                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
-
+                    // Individual customer collections are recorded in PigmyCollections & PigmyTransactions (Collection List / Khatavani);
+                    // GL / Daybook voucher will be generated as a single consolidated Agent Remittance voucher in Agent Day Book.
                     collection.PaymentMode = NormalizePigmyPaymentMode(request.PaymentMode, isBankMode);
-                    string uniqueVoucherNo = $"PV-{branchId}-{targetDate:yyyyMMdd}-BLK-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
-                    var voucher = new Voucher
-                    {
-                        BranchID = branchId,
-                        VoucherNo = uniqueVoucherNo,
-                        VoucherDate = targetDate,
-                        VoucherType = "Receipt",
-                        Status = "Pending",
-                        Narration = $"Pigmy Bulk Manual Collection for A/C {account.AccountNo}",
-                        TotalAmount = item.CollectionAmount
-                    };
-
-                    voucher.VoucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = drLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Dr",
-                        Amount = item.CollectionAmount
-                    });
-
-                    voucher.VoucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = crLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Cr",
-                        Amount = item.CollectionAmount
-                    });
-
-                    _context.Vouchers.Add(voucher);
-                    await _context.SaveChangesAsync();
-
-                    collection.VoucherId = voucher.VoucherID;
-                    collection.IsVoucherGenerated = true;
-
-                    await _context.SaveChangesAsync();
+                    collection.VoucherId = null;
+                    collection.IsVoucherGenerated = false;
 
                     processedCount++;
                     totalAmount += item.CollectionAmount;
                     processedReceipts.Add(receiptNo);
                 }
 
+                await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
                 return Ok(new { 
-                    message = $"एजंट '{agent.AgentName}' अंतर्गत एकूण {processedCount} खात्यांचे ₹{totalAmount:N2} चे कलेक्शन यशस्वीरीत्या जमा झाले!", 
+                    message = $"एजंट '{agent.AgentName}' अंतर्गत एकूण {processedCount} खात्यांचे ₹{totalAmount:N2} चे कलेक्शन यशस्वीरीत्या जमा झाले! एजंट डे-बुकमधून भरणा केल्यावर १ एकत्रित व्हाउचर तयार होईल.", 
                     processedCount, 
                     totalAmount,
                     receipts = processedReceipts 
@@ -1081,7 +1019,7 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = drLedgerId,
-                        CustomerID = group.First().PigmyAccount?.CustomerID,
+                        CustomerID = null,
                         DrCr = "Dr",
                         Amount = groupTotal
                     });
@@ -1089,7 +1027,7 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = crLedgerId,
-                        CustomerID = group.First().PigmyAccount?.CustomerID,
+                        CustomerID = null,
                         DrCr = "Cr",
                         Amount = groupTotal
                     });

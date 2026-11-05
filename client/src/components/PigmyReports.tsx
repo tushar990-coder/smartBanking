@@ -86,8 +86,11 @@ interface CollectionRow {
   openingBalance: number;
   closingBalance: number;
   pigmyAccountNo?: string;
+  legacyAccountNumber?: string;
   customerName?: string;
   cifNo?: string;
+  legacyCustomerNo?: string;
+  customerNo?: string;
   memberName?: string;
   memberCode?: string;
   agentName?: string;
@@ -264,6 +267,9 @@ export default function PigmyReports() {
     return (
       (c.receiptNo && c.receiptNo.toLowerCase().includes(term)) ||
       (c.pigmyAccountNo && c.pigmyAccountNo.toLowerCase().includes(term)) ||
+      (c.legacyAccountNumber && c.legacyAccountNumber.toLowerCase().includes(term)) ||
+      (c.cifNo && c.cifNo.toLowerCase().includes(term)) ||
+      (c.legacyCustomerNo && c.legacyCustomerNo.toLowerCase().includes(term)) ||
       ((c.customerName || c.memberName) && (c.customerName || c.memberName)!.toLowerCase().includes(term)) ||
       (c.agentName && c.agentName.toLowerCase().includes(term))
     );
@@ -303,8 +309,8 @@ export default function PigmyReports() {
         'अ.क्र.': i + 1,
         'पावती क्र.': c.receiptNo,
         'तारीख': formatDisplayDate(c.collectionDate),
-        'खाते क्र.': c.pigmyAccountNo || '-',
-        'खातेदाराचे नाव': c.customerName || c.memberName || '-',
+        'खाते क्र.': c.legacyAccountNumber ? `${c.pigmyAccountNo || '-'} (जुना: ${c.legacyAccountNumber})` : (c.pigmyAccountNo || '-'),
+        'खातेदाराचे नाव': `${c.legacyCustomerNo ? `[जुना CIF: ${c.legacyCustomerNo}] ` : (c.cifNo ? `[${c.cifNo}] ` : '')}${c.customerName || c.memberName || '-'}`,
         'पिग्मी एजंट': c.agentName || '-',
         'आरंभी शिल्लक (₹)': c.openingBalance || 0,
         'जमा रक्कम (₹)': c.collectionAmount || 0,
@@ -680,8 +686,20 @@ export default function PigmyReports() {
                         <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
                         <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">{c.receiptNo}</td>
                         <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(c.collectionDate)}</td>
-                        <td className="border border-gray-900 py-1 px-2 text-center font-mono text-primary font-bold">{c.pigmyAccountNo || '-'}</td>
-                        <td className="border border-gray-900 py-1 px-3 font-medium">{c.customerName || c.memberName || '-'}</td>
+                        <td className="border border-gray-900 py-1 px-2 text-center font-mono text-primary font-bold">
+                          <div>{c.pigmyAccountNo || '-'}</div>
+                          {c.legacyAccountNumber && (
+                            <div className="text-[10px] text-purple-800 font-semibold">(जुना खाते: {c.legacyAccountNumber})</div>
+                          )}
+                        </td>
+                        <td className="border border-gray-900 py-1 px-3 font-medium">
+                          {c.legacyCustomerNo ? (
+                            <span className="text-[10px] font-mono font-bold text-indigo-800 mr-1">[जुना CIF: {c.legacyCustomerNo}]</span>
+                          ) : c.cifNo ? (
+                            <span className="text-[10px] font-mono text-slate-600 mr-1">[{c.cifNo}]</span>
+                          ) : null}
+                          <span>{c.customerName || c.memberName || '-'}</span>
+                        </td>
                         <td className="border border-gray-900 py-1 px-2 text-gray-700">{c.agentName || '-'}</td>
                         <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">{fmtCurrency(c.collectionAmount)}</td>
                       </tr>

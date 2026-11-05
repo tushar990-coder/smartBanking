@@ -859,36 +859,7 @@ namespace Bhisi.Api.Helpers
                     });
                 }
 
-                // 5. Pigmy Module (PigmyCollections, PigmyInterestLogs)
-                var pgCols = await context.PigmyCollections.AsNoTracking()
-                    .Where(p => p.VoucherId.HasValue && idChunk.Contains(p.VoucherId.Value) && p.PigmyAccount != null)
-                    .Select(p => new
-                    {
-                        VoucherID = p.VoucherId!.Value,
-                        p.PigmyAccount!.CustomerID,
-                        p.PigmyAccount.AccountNo,
-                        p.PigmyAccount.LegacyAccountNumber,
-                        p.PigmyAccount.OldAccountNo,
-                        p.PigmyAccount.PreviousAccountNo,
-                        L1 = p.PigmyAccount.PigmyScheme != null ? p.PigmyAccount.PigmyScheme.PigmyLiabilityLedgerID : null,
-                        L2 = p.PigmyAccount.PigmyScheme != null ? p.PigmyAccount.PigmyScheme.InterestExpenseLedgerID : null,
-                        L3 = p.PigmyAccount.PigmyScheme != null ? p.PigmyAccount.PigmyScheme.InterestPayableLedgerID : null
-                    })
-                    .ToListAsync();
-
-                foreach (var row in pgCols)
-                {
-                    ctx.AddVoucherRef(row.VoucherID, new ResolvedAccountRef
-                    {
-                        Module = "Pigmy",
-                        LegacyAccountNo = FirstNonEmpty(row.LegacyAccountNumber, row.OldAccountNo, row.PreviousAccountNo),
-                        NewAccountNo = FirstNonEmpty(row.AccountNo),
-                        CustomerId = row.CustomerID,
-                        DrCrHint = "Cr",
-                        MatchedLedgerIds = BuildFdLedgers(row.L1, row.L2, row.L3)
-                    });
-                }
-
+                // 5. Pigmy Module (PigmyInterestLogs only; PigmyCollections use consolidated Agent Remittance vouchers in Daybook)
                 var pgInts = await context.PigmyInterestLogs.AsNoTracking()
                     .Where(p => p.VoucherId.HasValue && idChunk.Contains(p.VoucherId.Value) && p.PigmyAccount != null)
                     .Select(p => new
@@ -1610,6 +1581,20 @@ namespace Bhisi.Api.Helpers
             string fallbackNarration,
             VoucherAccountContext accountCtx)
         {
+            string vNo = voucher.VoucherNo ?? string.Empty;
+            string vNarr = voucher.Narration ?? string.Empty;
+            if (vNo.Contains("-AGT-", StringComparison.OrdinalIgnoreCase) ||
+                vNo.Contains("-IMP-CONS", StringComparison.OrdinalIgnoreCase) ||
+                vNo.Contains("-OP-IMP-", StringComparison.OrdinalIgnoreCase) ||
+                vNarr.Contains("पिग्मी एजंट संकलन भरणा", StringComparison.OrdinalIgnoreCase) ||
+                vNarr.Contains("पिग्मी मोबाईल ॲप संकलन भरणा", StringComparison.OrdinalIgnoreCase))
+            {
+                return new FormattedLegacyLine
+                {
+                    Narration = fallbackNarration ?? string.Empty
+                };
+            }
+
             var resolvedAcc = accountCtx.ResolveForDetail(voucher, vd);
             string accSuffix = BuildAccountSuffix(resolvedAcc, out string? displayAccNo, out bool isLegacyAcc);
 

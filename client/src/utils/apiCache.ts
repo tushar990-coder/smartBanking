@@ -160,9 +160,19 @@ export function invalidateApiCache(urlOrGroup?: string): void {
     return;
   }
   const target = urlOrGroup.toLowerCase();
+  // Strip query string and trailing numeric IDs (e.g., '/api/rdschemes/5' -> '/api/rdschemes')
+  const baseResource = target.split('?')[0].replace(/\/\d+(\/.*)?$/, '');
   for (const key of Array.from(memoryCache.keys())) {
-    if (key.includes(target)) {
+    if (key.includes(target) || (baseResource && baseResource.startsWith('/api/') && key.includes(baseResource))) {
       memoryCache.delete(key);
+    }
+  }
+  // If any scheme or rate master changes, also invalidate dependent account lists so scheme rates stay fresh
+  if (target.includes('rdschemes')) {
+    for (const key of Array.from(memoryCache.keys())) {
+      if (key.includes('/api/rdaccounts') || key.includes('/api/rdschemes')) {
+        memoryCache.delete(key);
+      }
     }
   }
   // Cross-group invalidations

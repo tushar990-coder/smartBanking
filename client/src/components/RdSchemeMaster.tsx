@@ -91,7 +91,7 @@ export default function RdSchemeMaster() {
     interestRate: 8.0,
     interestMethod: '',
     compoundingFrequency: '',
-    penaltyAmount: 20,
+    penaltyAmount: 0,
     prematurePenaltyRate: 1.0,
     effectiveDate: new Date().toISOString().split('T')[0],
     isActive: true,
@@ -170,7 +170,10 @@ export default function RdSchemeMaster() {
     }
 
     if (type === 'number' || name.includes('Rate') || name.includes('Amount') || name.includes('Installment') || name === 'durationMonths') {
-      val = value === '' ? '' : value;
+      const normalized = typeof value === 'string'
+        ? value.replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x0966))
+        : value;
+      val = normalized === '' ? '' : normalized;
     } else if (name.endsWith('ID') || name.endsWith('Id')) {
       val = value === '' ? '' : (typeof value === 'number' ? value : parseInt(String(value), 10) || 0);
     }
@@ -191,13 +194,13 @@ export default function RdSchemeMaster() {
       schemeName: scheme.schemeName || '',
       durationMonths: scheme.durationMonths || 12,
       allowOverdueInterest: scheme.allowOverdueInterest || false,
-      overdueInterestRate: scheme.overdueInterestRate || 0,
-      minimumInstallment: scheme.minimumInstallment || 500,
-      maximumInstallment: scheme.maximumInstallment || 50000,
-      interestRate: scheme.interestRate || 8.0,
+      overdueInterestRate: scheme.overdueInterestRate ?? 0,
+      minimumInstallment: scheme.minimumInstallment ?? 500,
+      maximumInstallment: scheme.maximumInstallment ?? 50000,
+      interestRate: scheme.interestRate ?? 8.0,
       interestMethod: scheme.interestMethod || '',
       compoundingFrequency: scheme.compoundingFrequency || '',
-      penaltyAmount: scheme.penaltyAmount || 20,
+      penaltyAmount: scheme.penaltyAmount ?? 0,
       prematurePenaltyRate: scheme.prematurePenaltyRate ?? 1.0,
       effectiveDate: scheme.effectiveDate ? scheme.effectiveDate.split('T')[0] : new Date().toISOString().split('T')[0],
       isActive: scheme.isActive ?? true,
@@ -267,7 +270,7 @@ export default function RdSchemeMaster() {
       interestRate: 8.0,
       interestMethod: '',
       compoundingFrequency: '',
-      penaltyAmount: 20,
+      penaltyAmount: 0,
       prematurePenaltyRate: 1.0,
       effectiveDate: new Date().toISOString().split('T')[0],
       isActive: true,
@@ -307,18 +310,25 @@ export default function RdSchemeMaster() {
       return;
     }
 
+    const parseSafeNumber = (val: any, fallback = 0): number => {
+      if (val === '' || val === null || val === undefined) return fallback;
+      const cleanStr = String(val).replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x0966)).trim();
+      const parsed = parseFloat(cleanStr);
+      return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+    };
+
     const payload = {
       ...formData,
       branchID: formData.isGlobal ? null : (Number(formData.branchID) || null),
       schemeCodeNumeric: parseInt(String(formData.schemeCodeNumeric), 10) || 501,
       durationMonths: parseInt(String(formData.durationMonths), 10) || 12,
       allowOverdueInterest: Boolean(formData.allowOverdueInterest),
-      overdueInterestRate: parseFloat(String(formData.overdueInterestRate)) || 0,
-      minimumInstallment: parseFloat(String(formData.minimumInstallment)) || 0,
-      maximumInstallment: parseFloat(String(formData.maximumInstallment)) || 0,
-      interestRate: parseFloat(String(formData.interestRate)) || 0,
-      penaltyAmount: parseFloat(String(formData.penaltyAmount)) || 0,
-      prematurePenaltyRate: parseFloat(String(formData.prematurePenaltyRate)) || 0,
+      overdueInterestRate: parseSafeNumber(formData.overdueInterestRate, 0),
+      minimumInstallment: parseSafeNumber(formData.minimumInstallment, 0),
+      maximumInstallment: parseSafeNumber(formData.maximumInstallment, 0),
+      interestRate: parseSafeNumber(formData.interestRate, 0),
+      penaltyAmount: parseSafeNumber(formData.penaltyAmount, 0),
+      prematurePenaltyRate: parseSafeNumber(formData.prematurePenaltyRate, 0),
       rdLiabilityLedgerID: formData.rdLiabilityLedgerID ? Number(formData.rdLiabilityLedgerID) : null,
       interestExpenseLedgerID: formData.interestExpenseLedgerID ? Number(formData.interestExpenseLedgerID) : null,
       interestPayableLedgerID: formData.interestPayableLedgerID ? Number(formData.interestPayableLedgerID) : null,
@@ -362,6 +372,7 @@ export default function RdSchemeMaster() {
       'व्याजदर (%)': s.interestRate,
       'व्याज आकारणी पद्धत': s.interestMethod || 'Compound',
       'पोस्टिंग वारंवारता': s.compoundingFrequency || 'Quarterly',
+      'थकीत हप्ता दंड (₹/दर १०० रु.)': s.penaltyAmount ?? 0,
       'मुदतपूर्व कपात दर (%)': s.prematurePenaltyRate,
       'आरडी ठेव देयता खाते': s.rdLiabilityLedger?.ledgerName || 'डिफॉल्ट',
       'स्थिती': s.isActive ? 'सक्रिय' : 'बंद'
@@ -1105,6 +1116,7 @@ export default function RdSchemeMaster() {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                           <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
                           <div className="text-purple-700 text-[9px] font-bold">{s.interestMethod || 'चक्रवाढ'} | {s.compoundingFrequency || 'त्रैमासिक'}</div>
+                          <div className="text-amber-800 text-[9px] font-mono font-bold">थकीत दंड: ₹{s.penaltyAmount ?? 0}/१०० रु.</div>
                           <div className="text-rose-700 text-[9px] font-mono">कपात: {s.prematurePenaltyRate}%</div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">

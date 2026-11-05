@@ -535,24 +535,58 @@ namespace Bhisi.Api.Controllers
                 _context.PigmyAgentCashDeposits.Add(deposit);
                 await _context.SaveChangesAsync();
 
-                // Link unvouchered collections for this agent within this deposit date range to this consolidated voucher
+                // Link collections for this agent within this deposit date range to this consolidated voucher,
+                // and remove any superseded individual per-customer import/bulk vouchers so Daybook never double-counts.
                 DateTime fromDate = (request.CollectionDateFrom ?? request.DepositDate).Date;
                 DateTime toDate = (request.CollectionDateTo ?? request.DepositDate).Date;
-                var unvoucheredCollections = await _context.PigmyCollections
+                var rangeCollections = await _context.PigmyCollections
                     .Where(c => c.AgentId == request.AgentId &&
                                 c.CollectionDate.Date >= fromDate &&
                                 c.CollectionDate.Date <= toDate &&
-                                (!c.IsVoucherGenerated || c.VoucherId == null))
+                                c.CollectionDate.Date > new DateTime(2026, 3, 31))
                     .ToListAsync();
 
-                foreach (var col in unvoucheredCollections)
+                var otherDepositVoucherIds = (await _context.PigmyAgentCashDeposits
+                    .Where(d => d.DepositId != deposit.DepositId && d.VoucherId.HasValue)
+                    .Select(d => d.VoucherId!.Value)
+                    .ToListAsync()).ToHashSet();
+
+                var supersededVoucherIds = new HashSet<int>();
+                foreach (var col in rangeCollections)
                 {
+                    if (col.VoucherId.HasValue && col.VoucherId.Value != voucher.VoucherID && !otherDepositVoucherIds.Contains(col.VoucherId.Value))
+                    {
+                        supersededVoucherIds.Add(col.VoucherId.Value);
+                    }
                     col.VoucherId = voucher.VoucherID;
                     col.IsVoucherGenerated = true;
                 }
-                if (unvoucheredCollections.Any())
+                if (rangeCollections.Any())
                 {
                     await _context.SaveChangesAsync();
+                }
+
+                if (supersededVoucherIds.Count > 0)
+                {
+                    var oldVouchers = await _context.Vouchers
+                        .Include(v => v.VoucherDetails)
+                        .Where(v => supersededVoucherIds.Contains(v.VoucherID) &&
+                                    v.VoucherNo != null &&
+                                    !v.VoucherNo.Contains("-AGT-") &&
+                                    !v.VoucherNo.Contains("-OP-"))
+                        .ToListAsync();
+                    if (oldVouchers.Any())
+                    {
+                        foreach (var ov in oldVouchers)
+                        {
+                            if (ov.VoucherDetails != null && ov.VoucherDetails.Any())
+                            {
+                                _context.VoucherDetails.RemoveRange(ov.VoucherDetails);
+                            }
+                        }
+                        _context.Vouchers.RemoveRange(oldVouchers);
+                        await _context.SaveChangesAsync();
+                    }
                 }
 
                 // Record Denomination Breakdown if provided

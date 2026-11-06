@@ -100,6 +100,10 @@ namespace Bhisi.Api.Controllers
 
                 if (_cache.TryGetValue(cacheKey, out List<Customer>? cached) && cached != null)
                 {
+                    if (_cache.TryGetValue(cacheKey + "_total", out int cachedTotal))
+                    {
+                        Response.Headers["X-Total-Count"] = cachedTotal.ToString();
+                    }
                     return cached;
                 }
 
@@ -135,40 +139,33 @@ namespace Bhisi.Api.Controllers
                 if (!string.IsNullOrWhiteSpace(search))
                 {
                     string s = search.Trim().ToLower();
-                    query = query.Where(c => c.FirstName.ToLower().Contains(s) || 
-                                             c.LastName.ToLower().Contains(s) || 
+                    query = query.Where(c => (c.FirstName != null && c.FirstName.ToLower().Contains(s)) || 
+                                             (c.MiddleName != null && c.MiddleName.ToLower().Contains(s)) ||
+                                             (c.LastName != null && c.LastName.ToLower().Contains(s)) || 
+                                             ((c.FirstName + " " + (c.MiddleName ?? "") + " " + c.LastName).ToLower().Contains(s)) ||
+                                             ((c.FirstName + " " + c.LastName).ToLower().Contains(s)) ||
+                                             (c.FirstNameEng != null && c.FirstNameEng.ToLower().Contains(s)) ||
+                                             (c.MiddleNameEng != null && c.MiddleNameEng.ToLower().Contains(s)) ||
+                                             (c.LastNameEng != null && c.LastNameEng.ToLower().Contains(s)) ||
                                              (c.CIFNo != null && c.CIFNo.ToLower().Contains(s)) ||
                                              (c.LegacyCustomerNo != null && c.LegacyCustomerNo.ToLower().Contains(s)) ||
                                              (c.MobileNo != null && c.MobileNo.Contains(s)) ||
-                                             (c.AadhaarNo != null && c.AadhaarNo.Contains(s)));
+                                             (c.AadhaarNo != null && c.AadhaarNo.Contains(s)) ||
+                                             (c.PANNo != null && c.PANNo.ToLower().Contains(s)) ||
+                                             (c.Village != null && c.Village.ToLower().Contains(s)));
                 }
 
+                int? totalMatchingCount = null;
                 if (page.HasValue || pageSize.HasValue)
                 {
+                    totalMatchingCount = await query.CountAsync();
+                    Response.Headers["X-Total-Count"] = totalMatchingCount.Value.ToString();
                     int p = page ?? 1;
                     int ps = pageSize ?? 50;
                     if (p < 1) p = 1;
                     if (ps < 1 || ps > 500) ps = 50;
                     query = query.Skip((p - 1) * ps).Take(ps);
                 }
-
-                // Pre-fetch active share accounts into two fast hashsets to eliminate correlated SQL subqueries per customer
-                var activeShareCustomerIds = await _context.ShareAccounts
-                    .AsNoTracking()
-                    .Where(sa => sa.TotalShareCount > 0 && sa.CustomerID > 0)
-                    .Select(sa => sa.CustomerID)
-                    .Distinct()
-                    .ToListAsync();
-
-                var activeShareMemberIds = await _context.ShareAccounts
-                    .AsNoTracking()
-                    .Where(sa => sa.TotalShareCount > 0 && sa.MemberId > 0)
-                    .Select(sa => sa.MemberId)
-                    .Distinct()
-                    .ToListAsync();
-
-                var activeShareCustSet = new HashSet<int>(activeShareCustomerIds);
-                var activeShareMemSet = new HashSet<int>(activeShareMemberIds);
 
                 var rawCustomers = await query
                     .Select(c => new
@@ -224,6 +221,7 @@ namespace Bhisi.Api.Controllers
                         GuardianAadhaarNo = c.GuardianAadhaarNo ?? string.Empty,
                         GuardianMobileNo = c.GuardianMobileNo ?? string.Empty,
                         GuardianAddress = c.GuardianAddress ?? string.Empty,
+                        PhotoPath = c.PhotoPath ?? string.Empty,
                         LegacyCustomerNo = c.LegacyCustomerNo ?? string.Empty,
                         c.EmployerId,
                         c.IsDeleted,
@@ -240,6 +238,50 @@ namespace Bhisi.Api.Controllers
                         } : null
                     })
                     .ToListAsync();
+
+                // Pre-fetch active share accounts into two fast hashsets (scoped to page IDs when paginated)
+                HashSet<int> activeShareCustSet;
+                HashSet<int> activeShareMemSet;
+                if (rawCustomers.Count <= 200)
+                {
+                    var pageCustIds = rawCustomers.Select(c => c.CustomerID).ToList();
+                    var pageMemIds = rawCustomers.Where(c => c.MemberProfile != null).Select(c => c.MemberProfile!.MemberID).ToList();
+                    var activeShareCustomerIds = pageCustIds.Count > 0
+                        ? await _context.ShareAccounts
+                            .AsNoTracking()
+                            .Where(sa => sa.TotalShareCount > 0 && pageCustIds.Contains(sa.CustomerID))
+                            .Select(sa => sa.CustomerID)
+                            .Distinct()
+                            .ToListAsync()
+                        : new List<int>();
+                    var activeShareMemberIds = pageMemIds.Count > 0
+                        ? await _context.ShareAccounts
+                            .AsNoTracking()
+                            .Where(sa => sa.TotalShareCount > 0 && pageMemIds.Contains(sa.MemberId))
+                            .Select(sa => sa.MemberId)
+                            .Distinct()
+                            .ToListAsync()
+                        : new List<int>();
+                    activeShareCustSet = new HashSet<int>(activeShareCustomerIds);
+                    activeShareMemSet = new HashSet<int>(activeShareMemberIds);
+                }
+                else
+                {
+                    var activeShareCustomerIds = await _context.ShareAccounts
+                        .AsNoTracking()
+                        .Where(sa => sa.TotalShareCount > 0 && sa.CustomerID > 0)
+                        .Select(sa => sa.CustomerID)
+                        .Distinct()
+                        .ToListAsync();
+                    var activeShareMemberIds = await _context.ShareAccounts
+                        .AsNoTracking()
+                        .Where(sa => sa.TotalShareCount > 0 && sa.MemberId > 0)
+                        .Select(sa => sa.MemberId)
+                        .Distinct()
+                        .ToListAsync();
+                    activeShareCustSet = new HashSet<int>(activeShareCustomerIds);
+                    activeShareMemSet = new HashSet<int>(activeShareMemberIds);
+                }
 
                 var customers = rawCustomers.Select(c => new Customer
                 {
@@ -284,6 +326,7 @@ namespace Bhisi.Api.Controllers
                     GuardianAadhaarNo = c.GuardianAadhaarNo,
                     GuardianMobileNo = c.GuardianMobileNo,
                     GuardianAddress = c.GuardianAddress,
+                    PhotoPath = c.PhotoPath,
                     LegacyCustomerNo = c.LegacyCustomerNo,
                     EmployerId = c.EmployerId,
                     IsDeleted = c.IsDeleted,
@@ -307,6 +350,10 @@ namespace Bhisi.Api.Controllers
 
                 // Cache for 2 minutes
                 _cache.Set(cacheKey, customers, TimeSpan.FromMinutes(2));
+                if (totalMatchingCount.HasValue)
+                {
+                    _cache.Set(cacheKey + "_total", totalMatchingCount.Value, TimeSpan.FromMinutes(2));
+                }
 
                 return customers;
             }
@@ -358,14 +405,65 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Customers/next-cif
         [HttpGet("next-cif")]
-        public async Task<IActionResult> GetNextCifNo()
+        public async Task<IActionResult> GetNextCifNo([FromQuery] int? branchId = null)
         {
-            var totalActive = await _context.Customers.CountAsync();
+            var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
+            var statsQuery = _context.Customers.AsNoTracking().AsQueryable();
+            if (!isHeadOfficeAdmin)
+            {
+                statsQuery = statsQuery.Where(c => c.BranchID == userBranchId);
+            }
+            else if (branchId.HasValue && branchId.Value > 0)
+            {
+                statsQuery = statsQuery.Where(c => c.BranchID == branchId.Value);
+            }
+
+            var totalCustomers = await statsQuery.CountAsync();
+            var activeCustomers = await statsQuery.CountAsync(c => c.Status == "Active");
+            var kycCompleteCustomers = await statsQuery.CountAsync(c =>
+                c.AadhaarNo != null && c.AadhaarNo != "" &&
+                c.PANNo != null && c.PANNo != "");
+
             string candidateCif = await GenerateUniqueCifAsync();
             return Ok(new { 
                 nextCifNo = candidateCif, 
                 cifNo = candidateCif,
-                totalActiveCustomers = totalActive
+                totalActiveCustomers = activeCustomers,
+                totalCustomers = totalCustomers,
+                activeCustomers = activeCustomers,
+                kycCompleteCustomers = kycCompleteCustomers
+            });
+        }
+
+        // GET: api/Customers/check-legacy
+        [HttpGet("check-legacy")]
+        public async Task<IActionResult> CheckLegacyCustomerNo(
+            [FromQuery] string? legacyNo = null,
+            [FromQuery] int? excludeId = null)
+        {
+            if (string.IsNullOrWhiteSpace(legacyNo))
+            {
+                return Ok(new { exists = false });
+            }
+
+            string trimmed = legacyNo.Trim();
+            var existing = await _context.Customers
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted && c.LegacyCustomerNo != null && c.LegacyCustomerNo == trimmed && (!excludeId.HasValue || c.CustomerID != excludeId.Value))
+                .Select(c => new
+                {
+                    customerID = c.CustomerID,
+                    cifNo = c.CIFNo,
+                    firstName = c.FirstName,
+                    lastName = c.LastName,
+                    legacyCustomerNo = c.LegacyCustomerNo
+                })
+                .FirstOrDefaultAsync();
+
+            return Ok(new
+            {
+                exists = existing != null,
+                customer = existing
             });
         }
 

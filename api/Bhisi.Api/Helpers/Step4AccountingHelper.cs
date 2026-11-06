@@ -992,7 +992,9 @@ namespace Bhisi.Api.Helpers
             string? paymentMode,
             int? bankLedgerId,
             string? referenceNo,
-            decimal interestPayoutAmount)
+            decimal interestPayoutAmount,
+            decimal tdsAmount = 0m,
+            int? tdsLedgerId = null)
         {
             if (oldMapping == null || oldMapping.InvestmentLedgerID <= 0)
             {
@@ -1006,11 +1008,31 @@ namespace Bhisi.Api.Helpers
             decimal oldPrincipal = Math.Round(oldAccount.PrincipalAmount, 2, MidpointRounding.AwayFromZero);
             decimal newPrincipal = Math.Round(newAccount.PrincipalAmount, 2, MidpointRounding.AwayFromZero);
             decimal payoutInterest = Math.Max(0m, Math.Round(interestPayoutAmount, 2, MidpointRounding.AwayFromZero));
+            decimal tds = Math.Max(0m, Math.Round(tdsAmount, 2, MidpointRounding.AwayFromZero));
 
-            decimal principalIncrease = Math.Max(0m, newPrincipal - oldPrincipal); // Capitalized interest
+            int resolvedTdsLedgerId = 0;
+            if (tds > 0m)
+            {
+                resolvedTdsLedgerId = (tdsLedgerId.HasValue && tdsLedgerId.Value > 0)
+                    ? tdsLedgerId.Value
+                    : (oldMapping.TdsLedgerID ?? newMapping.TdsLedgerID ?? 0);
+
+                if (resolvedTdsLedgerId <= 0 || !await context.Ledgers.AnyAsync(l => l.LedgerID == resolvedTdsLedgerId))
+                {
+                    throw new InvalidOperationException("TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.");
+                }
+
+                if (renewal.RenewalType == "PrincipalOnly" && payoutInterest < tds)
+                {
+                    throw new InvalidOperationException("फक्त मुद्दल नूतनीकरणामध्ये TDS कपात रक्कम ही प्राप्त एकूण व्याज परतावा रकमेपेक्षा जास्त असू शकत नाही.");
+                }
+            }
+
+            decimal principalIncrease = Math.Max(0m, newPrincipal - oldPrincipal); // Capitalized net interest
             decimal principalRefund = Math.Max(0m, oldPrincipal - newPrincipal);   // Partial principal withdrawn
-            decimal totalCashOrBankReceived = principalRefund + payoutInterest;
-            decimal totalInterestRecognized = principalIncrease + payoutInterest;
+            decimal netPayoutInterest = renewal.RenewalType == "PrincipalOnly" ? Math.Max(0m, payoutInterest - tds) : payoutInterest;
+            decimal totalCashOrBankReceived = principalRefund + netPayoutInterest;
+            decimal totalInterestRecognized = principalIncrease + netPayoutInterest + tds;
 
             int paymentDebitLedgerId = 0;
             if (totalCashOrBankReceived > 0m)
@@ -1062,8 +1084,9 @@ namespace Bhisi.Api.Helpers
             string voucherType = hasCashOrBankLeg ? "Receipt" : "Journal";
             string prefix = hasCashOrBankLeg ? "REC-INV-REN-" : "JV-INV-REN-";
             string refSuffix = !string.IsNullOrWhiteSpace(referenceNo) ? $" [संदर्भ/UTR: {referenceNo.Trim()}]" : "";
+            string tdsSuffix = tds > 0m ? $" [TDS कपात: ₹{tds:N2}]" : "";
 
-            decimal totalVoucherDr = newPrincipal + totalCashOrBankReceived;
+            decimal totalVoucherDr = newPrincipal + totalCashOrBankReceived + tds;
 
             var voucher = new Voucher
             {
@@ -1073,7 +1096,7 @@ namespace Bhisi.Api.Helpers
                 VoucherType = voucherType,
                 Status = "Pending",
                 TotalAmount = totalVoucherDr,
-                Narration = $"गुंतवणूक नूतनीकरण ({renewal.RenewalType}): जुने खाते {oldAccount.InvestmentNo} -> नवीन खाते {newAccount.InvestmentNo}{refSuffix}",
+                Narration = $"गुंतवणूक नूतनीकरण ({renewal.RenewalType}): जुने खाते {oldAccount.InvestmentNo} -> नवीन खाते {newAccount.InvestmentNo}{tdsSuffix}{refSuffix}",
                 CreatedBy = 1,
                 CreatedOn = DateTime.Now,
                 VoucherDetails = new List<VoucherDetail>()
@@ -1098,6 +1121,17 @@ namespace Bhisi.Api.Helpers
                     LedgerID = paymentDebitLedgerId,
                     DrCr = "Dr",
                     Amount = totalCashOrBankReceived
+                });
+            }
+
+            // Dr Dynamically Selected TDS GL if TDS deducted
+            if (tds > 0m && resolvedTdsLedgerId > 0)
+            {
+                voucher.VoucherDetails.Add(new VoucherDetail
+                {
+                    LedgerID = resolvedTdsLedgerId,
+                    DrCr = "Dr",
+                    Amount = tds
                 });
             }
 

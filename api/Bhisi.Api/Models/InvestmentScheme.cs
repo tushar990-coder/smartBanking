@@ -69,6 +69,10 @@ namespace Bhisi.Api.Models
         [ForeignKey("InterestReceivableLedgerID")]
         public virtual Ledger? InterestReceivableLedger { get; set; }
 
+        public int? TdsLedgerID { get; set; }
+        [ForeignKey("TdsLedgerID")]
+        public virtual Ledger? TdsLedger { get; set; }
+
         public bool IsActive { get; set; } = true;
 
         public int CreatedBy { get; set; } = 1;

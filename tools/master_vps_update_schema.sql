@@ -6680,6 +6680,68 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- v2.6.20: INVESTMENT MATURITY / PREMATURE / RENEWAL DYNAMIC TDS LEDGER & AMOUNT
+-- ========================================================================
+IF OBJECT_ID('dbo.InvestmentSchemes', 'U') IS NOT NULL AND COL_LENGTH('InvestmentSchemes', 'TdsLedgerID') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[InvestmentSchemes] ADD [TdsLedgerID] INT NULL;
+    PRINT 'Added TdsLedgerID to InvestmentSchemes';
+END
+GO
+
+IF OBJECT_ID('dbo.InvestmentVoucherMappings', 'U') IS NOT NULL AND COL_LENGTH('InvestmentVoucherMappings', 'TdsLedgerID') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[InvestmentVoucherMappings] ADD [TdsLedgerID] INT NULL;
+    PRINT 'Added TdsLedgerID to InvestmentVoucherMappings';
+END
+GO
+
+IF OBJECT_ID('dbo.InvestmentMaturities', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('InvestmentMaturities', 'TdsAmount') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentMaturities] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_InvestmentMaturities_TdsAmount] DEFAULT 0.00;
+        PRINT 'Added TdsAmount to InvestmentMaturities';
+    END
+    IF COL_LENGTH('InvestmentMaturities', 'TdsLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentMaturities] ADD [TdsLedgerID] INT NULL;
+        PRINT 'Added TdsLedgerID to InvestmentMaturities';
+    END
+END
+GO
+
+IF OBJECT_ID('dbo.InvestmentPrematureWithdrawals', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('InvestmentPrematureWithdrawals', 'TdsAmount') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_InvestmentPrematureWithdrawals_TdsAmount] DEFAULT 0.00;
+        PRINT 'Added TdsAmount to InvestmentPrematureWithdrawals';
+    END
+    IF COL_LENGTH('InvestmentPrematureWithdrawals', 'TdsLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [TdsLedgerID] INT NULL;
+        PRINT 'Added TdsLedgerID to InvestmentPrematureWithdrawals';
+    END
+END
+GO
+
+IF OBJECT_ID('dbo.InvestmentRenewals', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('InvestmentRenewals', 'TdsAmount') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentRenewals] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_InvestmentRenewals_TdsAmount] DEFAULT 0.00;
+        PRINT 'Added TdsAmount to InvestmentRenewals';
+    END
+    IF COL_LENGTH('InvestmentRenewals', 'TdsLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentRenewals] ADD [TdsLedgerID] INT NULL;
+        PRINT 'Added TdsLedgerID to InvestmentRenewals';
+    END
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

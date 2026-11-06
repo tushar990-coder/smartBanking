@@ -83,6 +83,7 @@ const LoanDisbursementRegister = React.lazy(() => import('./components/LoanDisbu
 const LoanCollectionRegister = React.lazy(() => import('./components/LoanCollectionRegister'));
 const LoanLedgerReport = React.lazy(() => import('./components/LoanLedgerReport'));
 const LoanOutstandingReport = React.lazy(() => import('./components/LoanOutstandingReport'));
+const ClosedLoanAccountsReport = React.lazy(() => import('./components/ClosedLoanAccountsReport'));
 const LoanOverdueReport = React.lazy(() => import('./components/LoanOverdueReport'));
 const LoanRecoveryNoticeReport = React.lazy(() => import('./components/LoanRecoveryNoticeReport'));
 const GuarantorReport = React.lazy(() => import('./components/GuarantorReport'));
@@ -435,6 +436,7 @@ function App() {
     'audit-logs': '/reports/audit-logs',
     'ibt-reconciliation-report': '/reports/ibt-reconciliation',
     'loan-outstanding-report': '/reports/loan-outstanding',
+    'closed-loan-report': '/reports/closed-loans',
     'share-certificate-report': '/reports/share-certificate',
     'j-namuna-report': '/reports/member-list',
 
@@ -897,6 +899,7 @@ function App() {
         {activeTab === 'loan-collection-register' && <LoanCollectionRegister />}
         {activeTab === 'loan-ledger-report' && <LoanLedgerReport />}
         {activeTab === 'loan-outstanding-report' && <LoanOutstandingReport />}
+        {activeTab === 'closed-loan-report' && <ClosedLoanAccountsReport />}
         {(activeTab === 'loan-overdue-report' || activeTab === 'loan-overdue-recovery') && <LoanOverdueReport />}
         {activeTab === 'loan-recovery-notice-report' && <LoanRecoveryNoticeReport />}
         {activeTab === 'interest-waiver-register' && <InterestWaiverRegister />}

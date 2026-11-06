@@ -43,6 +43,7 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'loan-collection-register', name: 'कर्ज वसुली रजिस्टर (कर्ज प्रकारानुसार)' },
         { id: 'loan-ledger-report', name: 'कर्ज खतावणी (Loan Ledger)' },
         { id: 'loan-outstanding-report', name: 'कर्ज येणे बाकी व वसुली / जनरल अहवाल (Loan Outstanding Report)' },
+        { id: 'closed-loan-report', name: 'बंद (क्लोज) झालेले कर्ज खाते अहवाल (Closed Loan Report)' },
         { id: 'loan-overdue-report', name: 'थकीत कर्ज यादी (Overdue Loan List)' },
         { id: 'loan-recovery-notice-report', name: 'लवादपूर्व कर्ज फेडीची नोटीस (Notice Report)' },
         { id: 'guarantor-loan-report', name: 'सभासद जामीनदार अहवाल (Guarantor Loan Report)' },

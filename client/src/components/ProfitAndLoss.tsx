@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
 import { 
   Printer, 
   FileSpreadsheet, 
@@ -95,6 +96,7 @@ const TreeNode: React.FC<{ node: ReportNode, level: number }> = ({ node, level }
 };
 
 export default function ProfitAndLoss() {
+  const { user } = useAuth();
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [reportData, setReportData] = useState<any>(null);
@@ -143,8 +145,9 @@ export default function ProfitAndLoss() {
         }
       }
 
-      if (resBranches.data) {
-        setBranches(resBranches.data);
+      const branchesData = typeof resBranches.data === 'string' ? JSON.parse(resBranches.data) : resBranches.data;
+      if (Array.isArray(branchesData)) {
+        setBranches(branchesData);
       }
     } catch (error) {
       console.error('Failed to fetch active financial year', error);

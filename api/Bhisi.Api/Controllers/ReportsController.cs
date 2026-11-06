@@ -106,6 +106,29 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        private string ResolveGroupRootNature(int groupId, List<AccountGroup> allGroups)
+        {
+            var currentGroup = allGroups.FirstOrDefault(g => g.GroupID == groupId);
+            int guard = 0;
+            while (currentGroup != null && guard++ < 25)
+            {
+                string n = NormalizeNature(currentGroup.NatureOfGroup);
+                if (!string.IsNullOrEmpty(n))
+                {
+                    return n;
+                }
+                if (currentGroup.ParentGroupID.HasValue)
+                {
+                    currentGroup = allGroups.FirstOrDefault(g => g.GroupID == currentGroup.ParentGroupID.Value);
+                }
+                else
+                {
+                    break;
+                }
+            }
+            return "";
+        }
+
         private ReportNodeDto BuildGroupTree(AccountGroup group, List<AccountGroup> allGroups, Dictionary<int, List<ReportNodeDto>> ledgersByGroupId)
         {
             var node = new ReportNodeDto
@@ -114,6 +137,8 @@ namespace Bhisi.Api.Controllers
                 Name = group.GroupName,
                 Code = group.GroupCode,
                 DisplayOrder = group.DisplayOrder,
+                GroupDisplayOrder = group.DisplayOrder,
+                Nature = ResolveGroupRootNature(group.GroupID, allGroups),
                 IsGroup = true
             };
 
@@ -366,11 +391,17 @@ namespace Bhisi.Api.Controllers
                     closingType = "Cr";
                 }
 
+                var directGroup = groups.FirstOrDefault(g => g.GroupID == ledger.GroupID);
+                string rootNature = ResolveGroupRootNature(ledger.GroupID, groups);
+
                 var node = new ReportNodeDto
                 {
                     Id = ledger.LedgerID,
                     Name = ledger.LedgerName,
                     Code = !string.IsNullOrWhiteSpace(ledger.LedgerCode) ? ledger.LedgerCode.Trim() : ledger.LedgerID.ToString(),
+                    DisplayOrder = directGroup?.DisplayOrder ?? 0,
+                    GroupDisplayOrder = directGroup?.DisplayOrder ?? 0,
+                    Nature = rootNature,
                     IsGroup = false,
                     OpeningBalance = openingBal,
                     OpeningType = openingType,
@@ -390,8 +421,21 @@ namespace Bhisi.Api.Controllers
             }
 
             var result = new List<ReportNodeDto>();
+            int GetNatureOrder(AccountGroup g)
+            {
+                string nat = ResolveGroupRootNature(g.GroupID, groups);
+                return nat switch
+                {
+                    "Liabilities" => 1,
+                    "Income" => 2,
+                    "Assets" => 3,
+                    "Expenses" => 4,
+                    _ => 5
+                };
+            }
             var rootGroups = groups.Where(g => g.ParentGroupID == null || !groups.Any(p => p.GroupID == g.ParentGroupID))
-                .OrderBy(g => g.DisplayOrder)
+                .OrderBy(GetNatureOrder)
+                .ThenBy(g => g.DisplayOrder)
                 .ThenBy(g => g.GroupCode, new AlphanumericComparer())
                 .ThenBy(g => g.GroupID)
                 .ToList();
@@ -8781,6 +8825,236 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        // GET: api/Reports/ClosedLoanReport
+        [HttpGet("ClosedLoanReport")]
+        public async Task<ActionResult<ClosedLoanReportResponseDto>> GetClosedLoanReport(
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate,
+            [FromQuery] bool allDates = true,
+            [FromQuery] int? loanRateId = null,
+            [FromQuery] int? branchId = null,
+            [FromQuery] string? closureType = "All")
+        {
+            try
+            {
+                var sanstha = await _context.SansthaDetails.AsNoTracking().FirstOrDefaultAsync();
+
+                var query = _context.LoanAccounts
+                    .AsNoTracking()
+                    .Include(la => la.LoanRate)
+                    .Include(la => la.Customer)
+                    .Include(la => la.Member).ThenInclude(m => m!.Customer)
+                    .Where(la =>
+                        la.Status == "Closed" ||
+                        la.Status == "Closed_OTS" ||
+                        (la.Status != "Active" && la.PrincipalBalance <= 0 && la.InterestBalance <= 0 && la.OverdueInterestBalance <= 0))
+                    .AsQueryable();
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(la => la.BranchID == branchId.Value);
+                }
+
+                if (loanRateId.HasValue && loanRateId.Value > 0)
+                {
+                    query = query.Where(la => la.LoanRateID == loanRateId.Value);
+                }
+
+                var closedAccounts = await query.ToListAsync();
+                var accountIds = closedAccounts.Select(la => la.LoanAccountID).ToList();
+
+                var collections = accountIds.Count > 0
+                    ? await _context.LoanCollections
+                        .AsNoTracking()
+                        .Where(c => accountIds.Contains(c.LoanAccountID))
+                        .ToListAsync()
+                    : new List<LoanCollection>();
+
+                var collectionsByAccount = collections
+                    .GroupBy(c => c.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.CollectionDate).ThenByDescending(x => x.LoanCollectionID).ToList());
+
+                var disbursements = accountIds.Count > 0
+                    ? await _context.LoanDisbursements
+                        .AsNoTracking()
+                        .Where(d => accountIds.Contains(d.LoanAccountID))
+                        .ToListAsync()
+                    : new List<LoanDisbursement>();
+
+                var disbursementsByAccount = disbursements
+                    .GroupBy(d => d.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.Sum(x => x.DisbursementAmount));
+
+                var normalizedClosureFilter = (closureType ?? "All").Trim();
+                var rows = new List<ClosedLoanReportRowDto>();
+
+                foreach (var la in closedAccounts)
+                {
+                    collectionsByAccount.TryGetValue(la.LoanAccountID, out var accCollections);
+                    var latestCollection = accCollections?.FirstOrDefault();
+
+                    decimal collPrincipal = accCollections?.Sum(x => x.PrincipalCollected) ?? 0m;
+                    decimal collInterest = accCollections?.Sum(x => x.InterestCollected + x.ReceivableInterestCollected) ?? 0m;
+                    decimal collPenalty = accCollections?.Sum(x => x.PenaltyInterestCollected + x.SurchargeCollected) ?? 0m;
+                    decimal collWaived = accCollections?.Sum(x => x.InterestWaived + x.PenaltyWaived) ?? 0m;
+                    decimal collTotal = accCollections?.Sum(x => x.TotalAmountReceived) ?? 0m;
+
+                    var closedDate = latestCollection?.CollectionDate
+                        ?? la.LastInstallmentPaidDate
+                        ?? la.MaturityDate
+                        ?? la.OpeningDate;
+
+                    if (!allDates)
+                    {
+                        if (fromDate.HasValue && closedDate.Date < fromDate.Value.Date)
+                            continue;
+                        if (toDate.HasValue && closedDate.Date > toDate.Value.Date)
+                            continue;
+                    }
+
+                    bool isOts = string.Equals(la.Status, "Closed_OTS", StringComparison.OrdinalIgnoreCase)
+                        || (latestCollection?.IsOTS == true)
+                        || collWaived > 0m;
+
+                    if (string.Equals(normalizedClosureFilter, "Normal", StringComparison.OrdinalIgnoreCase) && isOts)
+                        continue;
+                    if (string.Equals(normalizedClosureFilter, "OTS", StringComparison.OrdinalIgnoreCase) && !isOts)
+                        continue;
+
+                    var cust = la.Customer ?? la.Member?.Customer;
+                    var mem = la.Member;
+                    string bName = cust != null
+                        ? string.Join(" ", new[] { cust.FirstName, cust.MiddleName, cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim()
+                        : "";
+                    if (string.IsNullOrWhiteSpace(bName) && mem != null)
+                    {
+                        bName = mem.MemberCode ?? "";
+                    }
+
+                    decimal vatapRakkam = la.SanctionedAmount;
+                    if (vatapRakkam <= 0 && disbursementsByAccount.TryGetValue(la.LoanAccountID, out var disbSum))
+                    {
+                        vatapRakkam = disbSum;
+                    }
+                    if (vatapRakkam <= 0 && collPrincipal > 0)
+                    {
+                        vatapRakkam = collPrincipal;
+                    }
+
+                    decimal principalPaid = collPrincipal > 0 ? collPrincipal : vatapRakkam;
+                    decimal totalCollected = collTotal > 0 ? collTotal : (principalPaid + collInterest + collPenalty);
+
+                    var loanTypeStr = !string.IsNullOrWhiteSpace(la.LoanRate?.ShortName)
+                        ? la.LoanRate.ShortName.Trim()
+                        : (!string.IsNullOrWhiteSpace(la.LoanRate?.LoanType) ? la.LoanRate.LoanType.Trim() : "इतर कर्ज");
+
+                    var disbDate = la.LoanDisbursementDate ?? la.OpeningDate;
+
+                    rows.Add(new ClosedLoanReportRowDto
+                    {
+                        LoanAccountID = la.LoanAccountID,
+                        LoanRateID = la.LoanRateID,
+                        LoanType = loanTypeStr,
+                        LoanAccountNo = la.LoanAccountNo ?? "",
+                        LegacyAccountNumber = la.LegacyAccountNumber,
+                        CIFNo = cust?.CIFNo ?? "",
+                        MemberCode = mem?.MemberCode ?? "",
+                        BorrowerName = bName,
+                        MobileNo = cust?.MobileNo ?? "",
+                        DisbursementDate = disbDate,
+                        DisbursementDateDisplay = disbDate.ToString("dd/MM/yyyy"),
+                        ClosedDate = closedDate,
+                        ClosedDateDisplay = closedDate.ToString("dd/MM/yyyy"),
+                        TenureMonths = la.DurationMonths,
+                        InterestRate = la.InterestRate,
+                        SanctionedAmount = vatapRakkam,
+                        PrincipalPaid = principalPaid,
+                        InterestPaid = collInterest,
+                        PenaltyInterestPaid = collPenalty,
+                        WaivedAmount = collWaived,
+                        TotalCollected = totalCollected,
+                        LastReceiptNo = latestCollection?.ReceiptNo ?? "-",
+                        LastPaymentMode = latestCollection?.PaymentMode ?? "-",
+                        ClosureType = isOts ? "एकवेळ तडजोड (OTS)" : "नियमित पूर्ण फेड",
+                        IsOTS = isOts,
+                        Status = la.Status
+                    });
+                }
+
+                rows = rows
+                    .OrderBy(r => r.LoanType)
+                    .ThenByDescending(r => r.ClosedDate)
+                    .ThenBy(r => int.TryParse(r.LoanAccountNo, out int num) ? num : int.MaxValue)
+                    .ThenBy(r => r.LoanAccountNo)
+                    .ToList();
+
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    rows[i].SrNo = i + 1;
+                }
+
+                var schemeGroups = rows
+                    .GroupBy(r => new { r.LoanRateID, r.LoanType })
+                    .Select(g => new ClosedLoanSchemeGroupDto
+                    {
+                        LoanRateID = g.Key.LoanRateID,
+                        LoanType = g.Key.LoanType,
+                        AccountCount = g.Count(),
+                        TotalSanctionedAmount = g.Sum(x => x.SanctionedAmount),
+                        TotalPrincipalPaid = g.Sum(x => x.PrincipalPaid),
+                        TotalInterestPaid = g.Sum(x => x.InterestPaid),
+                        TotalPenaltyInterestPaid = g.Sum(x => x.PenaltyInterestPaid),
+                        TotalWaivedAmount = g.Sum(x => x.WaivedAmount),
+                        TotalCollected = g.Sum(x => x.TotalCollected),
+                        Accounts = g.ToList()
+                    })
+                    .OrderBy(g => g.LoanType)
+                    .ToList();
+
+                string selectedSchemeName = "सर्व कर्ज प्रकार (एकत्रित)";
+                if (loanRateId.HasValue && loanRateId.Value > 0)
+                {
+                    var selRate = await _context.LoanRates.FindAsync(loanRateId.Value);
+                    if (selRate != null)
+                    {
+                        selectedSchemeName = !string.IsNullOrWhiteSpace(selRate.ShortName)
+                            ? selRate.ShortName.Trim()
+                            : (!string.IsNullOrWhiteSpace(selRate.LoanType) ? selRate.LoanType.Trim() : "कर्ज");
+                    }
+                }
+
+                var response = new ClosedLoanReportResponseDto
+                {
+                    SansthaInfo = sanstha,
+                    AllDates = allDates,
+                    FromDate = fromDate,
+                    FromDateDisplay = fromDate.HasValue ? fromDate.Value.ToString("dd/MM/yyyy") : "सुरुवातीपासून",
+                    ToDate = toDate,
+                    ToDateDisplay = toDate.HasValue ? toDate.Value.ToString("dd/MM/yyyy") : DateTime.Today.ToString("dd/MM/yyyy"),
+                    SelectedLoanRateId = loanRateId,
+                    SelectedLoanTypeName = selectedSchemeName,
+                    ClosureTypeFilter = normalizedClosureFilter,
+                    TotalClosedAccounts = rows.Count,
+                    NormalClosedCount = rows.Count(r => !r.IsOTS),
+                    OtsClosedCount = rows.Count(r => r.IsOTS),
+                    GrandTotalSanctionedAmount = rows.Sum(r => r.SanctionedAmount),
+                    GrandTotalPrincipalPaid = rows.Sum(r => r.PrincipalPaid),
+                    GrandTotalInterestPaid = rows.Sum(r => r.InterestPaid),
+                    GrandTotalPenaltyInterestPaid = rows.Sum(r => r.PenaltyInterestPaid),
+                    GrandTotalWaivedAmount = rows.Sum(r => r.WaivedAmount),
+                    GrandTotalCollected = rows.Sum(r => r.TotalCollected),
+                    Rows = rows,
+                    SchemeGroups = schemeGroups
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error generating Closed Loan Report", error = ex.Message });
+            }
+        }
+
         // =================================================================================================
         // CBS COMPONENT 9: INTER-BRANCH TRANSFER (IBT) CLEARING & RECONCILIATION MATRIX ENGINE
         // =================================================================================================
@@ -9645,5 +9919,74 @@ namespace Bhisi.Api.Controllers
         public decimal GrandTotalPenaltyInterestPaid { get; set; }
         public List<LoanOutstandingReportRowDto> Rows { get; set; } = new();
         public List<LoanOutstandingSchemeGroupDto> SchemeGroups { get; set; } = new();
+    }
+
+    public class ClosedLoanReportRowDto
+    {
+        public int SrNo { get; set; }
+        public int LoanAccountID { get; set; }
+        public int LoanRateID { get; set; }
+        public string LoanType { get; set; } = string.Empty;
+        public string LoanAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
+        public string CIFNo { get; set; } = string.Empty;
+        public string MemberCode { get; set; } = string.Empty;
+        public string BorrowerName { get; set; } = string.Empty;
+        public string MobileNo { get; set; } = string.Empty;
+        public DateTime? DisbursementDate { get; set; }
+        public string DisbursementDateDisplay { get; set; } = string.Empty;
+        public DateTime? ClosedDate { get; set; }
+        public string ClosedDateDisplay { get; set; } = string.Empty;
+        public int TenureMonths { get; set; }
+        public decimal InterestRate { get; set; }
+        public decimal SanctionedAmount { get; set; }
+        public decimal PrincipalPaid { get; set; }
+        public decimal InterestPaid { get; set; }
+        public decimal PenaltyInterestPaid { get; set; }
+        public decimal WaivedAmount { get; set; }
+        public decimal TotalCollected { get; set; }
+        public string LastReceiptNo { get; set; } = "-";
+        public string LastPaymentMode { get; set; } = "-";
+        public string ClosureType { get; set; } = "नियमित पूर्ण फेड";
+        public bool IsOTS { get; set; }
+        public string Status { get; set; } = "Closed";
+    }
+
+    public class ClosedLoanSchemeGroupDto
+    {
+        public int LoanRateID { get; set; }
+        public string LoanType { get; set; } = string.Empty;
+        public int AccountCount { get; set; }
+        public decimal TotalSanctionedAmount { get; set; }
+        public decimal TotalPrincipalPaid { get; set; }
+        public decimal TotalInterestPaid { get; set; }
+        public decimal TotalPenaltyInterestPaid { get; set; }
+        public decimal TotalWaivedAmount { get; set; }
+        public decimal TotalCollected { get; set; }
+        public List<ClosedLoanReportRowDto> Accounts { get; set; } = new();
+    }
+
+    public class ClosedLoanReportResponseDto
+    {
+        public SansthaDetail? SansthaInfo { get; set; }
+        public bool AllDates { get; set; } = true;
+        public DateTime? FromDate { get; set; }
+        public string FromDateDisplay { get; set; } = string.Empty;
+        public DateTime? ToDate { get; set; }
+        public string ToDateDisplay { get; set; } = string.Empty;
+        public int? SelectedLoanRateId { get; set; }
+        public string SelectedLoanTypeName { get; set; } = "सर्व कर्ज प्रकार (एकत्रित)";
+        public string ClosureTypeFilter { get; set; } = "All";
+        public int TotalClosedAccounts { get; set; }
+        public int NormalClosedCount { get; set; }
+        public int OtsClosedCount { get; set; }
+        public decimal GrandTotalSanctionedAmount { get; set; }
+        public decimal GrandTotalPrincipalPaid { get; set; }
+        public decimal GrandTotalInterestPaid { get; set; }
+        public decimal GrandTotalPenaltyInterestPaid { get; set; }
+        public decimal GrandTotalWaivedAmount { get; set; }
+        public decimal GrandTotalCollected { get; set; }
+        public List<ClosedLoanReportRowDto> Rows { get; set; } = new();
+        public List<ClosedLoanSchemeGroupDto> SchemeGroups { get; set; } = new();
     }
 

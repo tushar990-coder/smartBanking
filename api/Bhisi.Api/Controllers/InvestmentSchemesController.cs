@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -30,6 +31,7 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.InvestmentAssetLedger)
                 .Include(s => s.InterestIncomeLedger)
                 .Include(s => s.InterestReceivableLedger)
+                .Include(s => s.TdsLedger)
                 .AsQueryable();
 
             if (institutionId.HasValue && institutionId.Value > 0)
@@ -57,9 +59,11 @@ namespace Bhisi.Api.Controllers
                     s.InvestmentAssetLedgerID,
                     s.InterestIncomeLedgerID,
                     s.InterestReceivableLedgerID,
+                    s.TdsLedgerID,
                     InvestmentAssetLedger = s.InvestmentAssetLedger != null ? new { s.InvestmentAssetLedger.LedgerID, s.InvestmentAssetLedger.LedgerName } : null,
                     InterestIncomeLedger = s.InterestIncomeLedger != null ? new { s.InterestIncomeLedger.LedgerID, s.InterestIncomeLedger.LedgerName } : null,
-                    InterestReceivableLedger = s.InterestReceivableLedger != null ? new { s.InterestReceivableLedger.LedgerID, s.InterestReceivableLedger.LedgerName } : null
+                    InterestReceivableLedger = s.InterestReceivableLedger != null ? new { s.InterestReceivableLedger.LedgerID, s.InterestReceivableLedger.LedgerName } : null,
+                    TdsLedger = s.TdsLedger != null ? new { s.TdsLedger.LedgerID, s.TdsLedger.LedgerName } : null
                 })
                 .ToListAsync();
 
@@ -76,6 +80,7 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.InvestmentAssetLedger)
                 .Include(s => s.InterestIncomeLedger)
                 .Include(s => s.InterestReceivableLedger)
+                .Include(s => s.TdsLedger)
                 .FirstOrDefaultAsync(s => s.SchemeID == id);
 
             if (scheme == null)
@@ -199,6 +204,7 @@ namespace Bhisi.Api.Controllers
             existingScheme.InvestmentAssetLedgerID = scheme.InvestmentAssetLedgerID;
             existingScheme.InterestIncomeLedgerID = scheme.InterestIncomeLedgerID;
             existingScheme.InterestReceivableLedgerID = scheme.InterestReceivableLedgerID;
+            existingScheme.TdsLedgerID = scheme.TdsLedgerID;
             existingScheme.ModifiedDate = DateTime.Now;
 
             await _context.SaveChangesAsync();

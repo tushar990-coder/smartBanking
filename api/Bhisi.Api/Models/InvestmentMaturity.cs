@@ -41,6 +41,11 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal InterestReceived { get; set; }
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal TdsAmount { get; set; } = 0;
+
+        public int? TdsLedgerID { get; set; }
+
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal TotalReceived { get; set; }

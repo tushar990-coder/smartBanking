@@ -3078,6 +3078,46 @@ try
 
         try
         {
+            db.Database.ExecuteSqlRaw(@"
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentSchemes') AND COL_LENGTH('InvestmentSchemes', 'TdsLedgerID') IS NULL
+                ALTER TABLE [dbo].[InvestmentSchemes] ADD [TdsLedgerID] INT NULL;
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentVoucherMappings') AND COL_LENGTH('InvestmentVoucherMappings', 'TdsLedgerID') IS NULL
+                ALTER TABLE [dbo].[InvestmentVoucherMappings] ADD [TdsLedgerID] INT NULL;
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentMaturities')
+            BEGIN
+                IF COL_LENGTH('InvestmentMaturities', 'TdsAmount') IS NULL
+                    ALTER TABLE [dbo].[InvestmentMaturities] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentMaturities_TdsAmount DEFAULT 0.00;
+                IF COL_LENGTH('InvestmentMaturities', 'TdsLedgerID') IS NULL
+                    ALTER TABLE [dbo].[InvestmentMaturities] ADD [TdsLedgerID] INT NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentPrematureWithdrawals')
+            BEGIN
+                IF COL_LENGTH('InvestmentPrematureWithdrawals', 'TdsAmount') IS NULL
+                    ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentPrematureWithdrawals_TdsAmount DEFAULT 0.00;
+                IF COL_LENGTH('InvestmentPrematureWithdrawals', 'TdsLedgerID') IS NULL
+                    ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [TdsLedgerID] INT NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentRenewals')
+            BEGIN
+                IF COL_LENGTH('InvestmentRenewals', 'TdsAmount') IS NULL
+                    ALTER TABLE [dbo].[InvestmentRenewals] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentRenewals_TdsAmount DEFAULT 0.00;
+                IF COL_LENGTH('InvestmentRenewals', 'TdsLedgerID') IS NULL
+                    ALTER TABLE [dbo].[InvestmentRenewals] ADD [TdsLedgerID] INT NULL;
+            END
+        ");
+            Log.Information("Investment Dynamic TDS Ledger & Amount schema auto-migration verified.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to apply Investment Dynamic TDS auto-migrations");
+        }
+
+        try
+        {
             // Auto-heal database identity gaps and synchronize triggers across all tables
             db.Database.ExecuteSqlRaw("IF OBJECT_ID('[dbo].[sp_SyncDatabaseIdentities]', 'P') IS NOT NULL EXEC [dbo].[sp_SyncDatabaseIdentities];");
             Log.Information("Database identity synchronization and self-healing triggers verified.");

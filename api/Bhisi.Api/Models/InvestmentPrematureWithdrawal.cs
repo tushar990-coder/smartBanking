@@ -48,6 +48,11 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal PenaltyAmount { get; set; } = 0;
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal TdsAmount { get; set; } = 0;
+
+        public int? TdsLedgerID { get; set; }
+
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal NetPayout { get; set; }

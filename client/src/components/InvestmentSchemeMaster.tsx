@@ -52,9 +52,11 @@ interface InvestmentScheme {
   investmentAssetLedgerID?: number | null;
   interestIncomeLedgerID?: number | null;
   interestReceivableLedgerID?: number | null;
+  tdsLedgerID?: number | null;
   investmentAssetLedger?: Ledger | null;
   interestIncomeLedger?: Ledger | null;
   interestReceivableLedger?: Ledger | null;
+  tdsLedger?: Ledger | null;
 }
 
 interface Institution {
@@ -102,7 +104,8 @@ const InvestmentSchemeMaster: React.FC = () => {
     isActive: true,
     investmentAssetLedgerID: 0,
     interestIncomeLedgerID: 0,
-    interestReceivableLedgerID: 0
+    interestReceivableLedgerID: 0,
+    tdsLedgerID: 0
   });
 
   useEffect(() => {
@@ -195,6 +198,7 @@ const InvestmentSchemeMaster: React.FC = () => {
           investmentAssetLedgerID: item.investmentAssetLedgerID || item.InvestmentAssetLedgerID || 0,
           interestIncomeLedgerID: item.interestIncomeLedgerID || item.InterestIncomeLedgerID || 0,
           interestReceivableLedgerID: item.interestReceivableLedgerID || item.InterestReceivableLedgerID || 0,
+          tdsLedgerID: item.tdsLedgerID || item.TdsLedgerID || 0,
           institutionName: item.investmentInstitution?.institutionName || item.institutionName || ''
         };
       });
@@ -247,7 +251,8 @@ const InvestmentSchemeMaster: React.FC = () => {
       isActive: true,
       investmentAssetLedgerID: 0,
       interestIncomeLedgerID: 0,
-      interestReceivableLedgerID: 0
+      interestReceivableLedgerID: 0,
+      tdsLedgerID: 0
     });
     fetchNextSchemeCode();
     setError('');
@@ -279,7 +284,8 @@ const InvestmentSchemeMaster: React.FC = () => {
       isActive: scheme.isActive ?? true,
       investmentAssetLedgerID: scheme.investmentAssetLedgerID || 0,
       interestIncomeLedgerID: scheme.interestIncomeLedgerID || 0,
-      interestReceivableLedgerID: isShare ? 0 : (scheme.interestReceivableLedgerID || 0)
+      interestReceivableLedgerID: isShare ? 0 : (scheme.interestReceivableLedgerID || 0),
+      tdsLedgerID: scheme.tdsLedgerID || 0
     });
     setError('');
     setSuccess('');
@@ -342,7 +348,8 @@ const InvestmentSchemeMaster: React.FC = () => {
       isActive: formData.isActive,
       investmentAssetLedgerID: Number(formData.investmentAssetLedgerID) || null,
       interestIncomeLedgerID: Number(formData.interestIncomeLedgerID) || null,
-      interestReceivableLedgerID: isShare ? null : (Number(formData.interestReceivableLedgerID) || null)
+      interestReceivableLedgerID: isShare ? null : (Number(formData.interestReceivableLedgerID) || null),
+      tdsLedgerID: Number(formData.tdsLedgerID) || null
     };
 
     setSaving(true);
@@ -965,7 +972,7 @@ const InvestmentSchemeMaster: React.FC = () => {
                 <span className="text-[10px] text-gray-500 font-mono">Asset & Interest Receivables</span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <div>
                   <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
                     १. ठेव गुंतवणूक मालमत्ता खाते (Term Deposit Asset Ledger)
@@ -1011,6 +1018,22 @@ const InvestmentSchemeMaster: React.FC = () => {
                   />
                   <span className="text-[10px] text-gray-500 block mt-0.5">
                     ३१ मार्च अखेर साचलेले येणे व्याज (Current Asset Dr) खाते.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
+                    ४. TDS / कर कपात खाते (TDS Receivable / Deduction Ledger)
+                  </label>
+                  <SearchableSelect
+                    name="tdsLedgerID"
+                    value={formData.tdsLedgerID}
+                    onChange={handleChange}
+                    options={ledgerOptions}
+                    placeholder="-- TDS / कर कपात खाते निवडा --"
+                  />
+                  <span className="text-[10px] text-gray-500 block mt-0.5">
+                    मुदतपूर्ती/मोडणी/नूतनीकरण वेळी कपात होणाऱ्या TDS साठी डायनॅमिक जी.एल. लेजर (Dr).
                   </span>
                 </div>
               </div>

@@ -32,6 +32,8 @@ namespace Bhisi.Api.Models
         public string Name { get; set; } = string.Empty;
         public string? Code { get; set; }
         public int DisplayOrder { get; set; }
+        public int GroupDisplayOrder { get; set; }
+        public string Nature { get; set; } = string.Empty;
         public bool IsGroup { get; set; }
 
         // For P&L and Balance Sheet

@@ -82,6 +82,23 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
   const [branches, setBranches] = useState<Branch[]>([]);
   const [employers, setEmployers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [directoryPage, setDirectoryPage] = useState<number>(1);
+  const [directoryPageSize, setDirectoryPageSize] = useState<number>(50);
+  const [directoryTotalCount, setDirectoryTotalCount] = useState<number>(0);
+  const [directoryLoading, setDirectoryLoading] = useState<boolean>(false);
+  const [customerStats, setCustomerStats] = useState({
+    totalCustomers: 0,
+    activeCustomers: 0,
+    kycCompleteCustomers: 0
+  });
+  const [legacyDuplicate, setLegacyDuplicate] = useState<{
+    customerID: number;
+    cifNo: string;
+    firstName: string;
+    lastName: string;
+    legacyCustomerNo?: string;
+  } | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isListModalOpen, setIsListModalOpen] = useState(false);
   const [isBulkEntryOpen, setIsBulkEntryOpen] = useState(false);
@@ -221,7 +238,6 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
   useEffect(() => {
     isMountedRef.current = true;
     fetchNextCif();
-    fetchCustomers();
     fetchBranches();
     fetchEmployers();
     fetchSansthaDetails();
@@ -237,7 +253,52 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     };
   }, []);
 
-  const fetchNextCif = async () => {
+  // Debounce directory search query by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+      setDirectoryPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch paginated directory only when the modal is open
+  useEffect(() => {
+    if (isListModalOpen) {
+      fetchCustomers(directoryPage, directoryPageSize, debouncedSearchQuery);
+    }
+  }, [isListModalOpen, directoryPage, directoryPageSize, debouncedSearchQuery]);
+
+  // Debounced server-side duplicate check for legacyCustomerNo
+  useEffect(() => {
+    const trimmed = formData.legacyCustomerNo?.trim();
+    if (!trimmed) {
+      setLegacyDuplicate(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ legacyNo: trimmed });
+        if (editingId !== null) {
+          params.set('excludeId', String(editingId));
+        }
+        const res = await fetch(`${API_URL}/check-legacy?${params.toString()}`, {
+          headers: getAuthHeaders()
+        });
+        if (res.ok && isMountedRef.current) {
+          const data = await res.json();
+          setLegacyDuplicate(data.exists && data.customer ? data.customer : null);
+        }
+      } catch (err) {
+        console.error('Error checking legacy duplicate:', err);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [formData.legacyCustomerNo, editingId]);
+
+  const fetchNextCif = async (updateFormCif: boolean = true) => {
     try {
       const response = await fetch(`${API_URL}/next-cif`, { headers: getAuthHeaders() });
       if (response.ok && isMountedRef.current) {
@@ -245,12 +306,19 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
         let generatedCif = '';
         try {
           const parsed = JSON.parse(text);
-          generatedCif = parsed.nextCifNo || parsed.cifNo || parsed;
+          generatedCif = parsed.nextCifNo || parsed.cifNo || (typeof parsed === 'string' ? parsed : '');
+          if (typeof parsed === 'object' && parsed !== null) {
+            setCustomerStats({
+              totalCustomers: Number(parsed.totalCustomers ?? parsed.totalActiveCustomers ?? 0),
+              activeCustomers: Number(parsed.activeCustomers ?? parsed.totalActiveCustomers ?? 0),
+              kycCompleteCustomers: Number(parsed.kycCompleteCustomers ?? 0)
+            });
+          }
         } catch {
           generatedCif = text.replace(/^"|"$/g, '').trim();
         }
 
-        if (generatedCif && typeof generatedCif === 'string' && isMountedRef.current) {
+        if (updateFormCif && generatedCif && typeof generatedCif === 'string' && isMountedRef.current) {
           setFormData(prev => ({
             ...prev,
             cifNo: generatedCif
@@ -262,15 +330,38 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     }
   };
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (
+    page: number = directoryPage,
+    pageSize: number = directoryPageSize,
+    search: string = debouncedSearchQuery
+  ) => {
     try {
-      const response = await fetch(API_URL, { headers: getAuthHeaders() });
+      setDirectoryLoading(true);
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize)
+      });
+      if (search) {
+        params.set('search', search);
+      }
+      const response = await fetch(`${API_URL}?${params.toString()}`, { headers: getAuthHeaders() });
       if (response.ok && isMountedRef.current) {
+        const totalHeader = response.headers.get('X-Total-Count');
         const data = await response.json();
-        setCustomers(Array.isArray(data) ? data : []);
+        const rows = Array.isArray(data) ? data : [];
+        setCustomers(rows);
+        if (totalHeader !== null) {
+          setDirectoryTotalCount(Number(totalHeader) || 0);
+        } else {
+          setDirectoryTotalCount(rows.length);
+        }
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
+    } finally {
+      if (isMountedRef.current) {
+        setDirectoryLoading(false);
+      }
     }
   };
 
@@ -602,12 +693,26 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     }
 
     if (formData.legacyCustomerNo && formData.legacyCustomerNo.trim()) {
-      const trimmedLegacy = formData.legacyCustomerNo.trim().toLowerCase();
-      const duplicate = customers.find(c => c.customerID !== editingId && (c.legacyCustomerNo?.trim().toLowerCase() === trimmedLegacy || (c as any).LegacyCustomerNo?.trim().toLowerCase() === trimmedLegacy));
-      if (duplicate) {
-        alert(`हा जुना खातेदार आयडी (${formData.legacyCustomerNo}) आधीच खातेदार '${duplicate.firstName} ${duplicate.lastName}' (CIF: ${duplicate.cifNo}) साठी नोंदवला आहे.`);
+      const trimmedLegacy = formData.legacyCustomerNo.trim();
+      if (legacyDuplicate && legacyDuplicate.customerID !== editingId) {
+        alert(`हा जुना खातेदार आयडी (${formData.legacyCustomerNo}) आधीच खातेदार '${legacyDuplicate.firstName} ${legacyDuplicate.lastName}' (CIF: ${legacyDuplicate.cifNo}) साठी नोंदवला आहे.`);
         legacyCustomerNoInputRef.current?.focus();
         return;
+      }
+      try {
+        const params = new URLSearchParams({ legacyNo: trimmedLegacy });
+        if (editingId !== null) params.set('excludeId', String(editingId));
+        const checkRes = await fetch(`${API_URL}/check-legacy?${params.toString()}`, { headers: getAuthHeaders() });
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          if (checkData.exists && checkData.customer) {
+            alert(`हा जुना खातेदार आयडी (${formData.legacyCustomerNo}) आधीच खातेदार '${checkData.customer.firstName} ${checkData.customer.lastName}' (CIF: ${checkData.customer.cifNo}) साठी नोंदवला आहे.`);
+            legacyCustomerNoInputRef.current?.focus();
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Error verifying legacy ID before submit:', err);
       }
     }
 
@@ -672,7 +777,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
           const resData = await res.json();
           alert(`नवीन खातेदार आणि पिग्मी खाते यशस्वीरित्या तयार झाले.\nCIF: ${resData.cifNo}\nPigmy A/c: ${resData.pigmyAccountNo || 'N/A'}`);
           resetForm();
-          fetchCustomers();
+          if (isListModalOpen) fetchCustomers(directoryPage, directoryPageSize, debouncedSearchQuery);
           fetchPendingAgentRequests();
           setTimeout(() => legacyCustomerNoInputRef.current?.focus(), 100);
         } else {
@@ -743,7 +848,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
 
         alert(editingId !== null ? "खातेदार माहिती यशस्वीरित्या अपडेट झाली!" : "नवीन खातेदार (CIF) यशस्वीरित्या सेव्ह झाला!");
         resetForm();
-        fetchCustomers();
+        if (isListModalOpen) fetchCustomers(directoryPage, directoryPageSize, debouncedSearchQuery);
         fetchPendingAgentRequests();
         setTimeout(() => {
           legacyCustomerNoInputRef.current?.focus();
@@ -769,8 +874,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     }
   };
 
-  const handleEdit = (customer: Customer) => {
-    setEditingId(customer.customerID);
+  const applyCustomerToForm = (customer: Customer) => {
     setFormData({
       branchID: customer.branchID || 1,
       cifNo: customer.cifNo || '',
@@ -822,10 +926,27 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       riskCategory: customer.riskCategory || 'Low',
       ckycNo: customer.ckycNo || ''
     });
+  };
+
+  const handleEdit = async (customer: Customer) => {
+    setEditingId(customer.customerID);
+    applyCustomerToForm(customer);
 
     setIsListModalOpen(false);
     if (formContainerRef.current) {
       formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/${customer.customerID}`, { headers: getAuthHeaders() });
+      if (res.ok && isMountedRef.current) {
+        const fullCustomer = await res.json();
+        if (fullCustomer && fullCustomer.customerID === customer.customerID) {
+          applyCustomerToForm(fullCustomer);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching full customer details for edit:', err);
     }
   };
 
@@ -845,8 +966,9 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
           msg = data.message || msg;
         } catch {}
         alert(msg);
-        await fetchCustomers();
-        await fetchNextCif();
+        if (isListModalOpen) {
+          await fetchCustomers(directoryPage, directoryPageSize, debouncedSearchQuery);
+        }
         resetForm();
       } else {
         let errorMsg = 'डिलीट करता आले नाही.';
@@ -1018,8 +1140,10 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       if (res.ok) {
         const data = await res.json();
         alert(data.message || "CIF कोड यशस्वीरित्या सुसंगत केले.");
-        fetchCustomers();
-        fetchNextCif();
+        if (isListModalOpen) {
+          fetchCustomers(directoryPage, directoryPageSize, debouncedSearchQuery);
+        }
+        fetchNextCif(editingId === null);
       } else {
         alert("CIF सुसंगत करताना त्रुटी आली.");
       }
@@ -1029,43 +1153,13 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     }
   };
 
-  const filteredCustomers = (customers || []).filter(c => {
-    if (!c) return false;
-    const q = (searchQuery || '').toLowerCase().trim();
-    if (!q) return true;
-    const name = `${c.firstName || ''} ${c.middleName || ''} ${c.lastName || ''}`.toLowerCase();
-    const engName = `${c.firstNameEng || ''} ${c.middleNameEng || ''} ${c.lastNameEng || ''}`.toLowerCase();
-    const cif = (c.cifNo || '').toLowerCase();
-    const mobile = (c.mobileNo || '').toLowerCase();
-    const aadhaar = (c.aadhaarNo || '').toLowerCase();
-    const pan = (c.panNo || '').toLowerCase();
-    const village = (c.village || '').toLowerCase();
-    const legacy = (c.legacyCustomerNo || (c as any).LegacyCustomerNo || '').toLowerCase();
+  const filteredCustomers = customers || [];
 
-    return (
-      name.includes(q) ||
-      engName.includes(q) ||
-      cif.includes(q) ||
-      mobile.includes(q) ||
-      aadhaar.includes(q) ||
-      pan.includes(q) ||
-      village.includes(q) ||
-      legacy.includes(q)
-    );
-  });
-
-  // KPI Calculations
-  const totalCustomersCount = customers.length;
-  const activeCustomersCount = customers.filter(c => c.status === 'Active').length;
-  const kycCompleteCount = customers.filter(c => c.aadhaarNo && c.panNo).length;
+  // KPI Calculations (from fast server-side stats)
+  const totalCustomersCount = customerStats.totalCustomers;
+  const activeCustomersCount = customerStats.activeCustomers;
+  const kycCompleteCount = customerStats.kycCompleteCustomers;
   const pendingRequestsCount = pendingRequests.length;
-
-  // Real-time duplicate check for legacyCustomerNo
-  const legacyDuplicate = React.useMemo(() => {
-    if (!formData.legacyCustomerNo || !formData.legacyCustomerNo.trim()) return null;
-    const trimmed = formData.legacyCustomerNo.trim().toLowerCase();
-    return customers.find(c => c.customerID !== editingId && (c.legacyCustomerNo?.trim().toLowerCase() === trimmed || (c as any).LegacyCustomerNo?.trim().toLowerCase() === trimmed)) || null;
-  }, [formData.legacyCustomerNo, customers, editingId]);
 
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
   const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
@@ -1076,7 +1170,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
         onBack={() => setIsBulkEntryOpen(false)}
         onNavigateToCustomers={() => {
           setIsBulkEntryOpen(false);
-          fetchCustomers();
+          fetchNextCif(editingId === null);
         }}
       />
     );
@@ -1174,14 +1268,13 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
           <button
             type="button"
             onClick={() => {
-              fetchCustomers();
               setIsListModalOpen(true);
             }}
             className="px-3.5 py-1.5 bg-primary hover:opacity-90 text-white rounded-sm text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
             title="सर्व नोंदणीकृत खातेदार यादी पॉप-अप मध्ये पहा"
           >
             <Layers className="w-4 h-4" />
-            <span>📋 नोंदणीकृत खातेदार यादी ({customers.length})</span>
+            <span>📋 नोंदणीकृत खातेदार यादी ({totalCustomersCount})</span>
           </button>
         </div>
       </div>
@@ -2428,7 +2521,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
               <div className="flex items-center gap-2">
                 <Users className="w-5 h-5 text-amber-300" />
                 <span className="font-bold text-sm sm:text-base">
-                  नोंदणीकृत खातेदार यादी व शोध (एकूण खातेदार: {customers.length} | शोध निकाल: {filteredCustomers.length})
+                  नोंदणीकृत खातेदार यादी व शोध (एकूण खातेदार: {totalCustomersCount} | शोध निकाल: {directoryTotalCount})
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -2454,9 +2547,41 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="नाव, CIF, जुना लेगसी क्र., मोबाईल, आधार, पॅन, जात, प्रवर्ग किंवा पत्ता..."
-                  className="w-full pl-8 pr-3 py-1 border border-slate-300 rounded text-[11px] focus:ring-1 focus:ring-primary focus:border-primary outline-none bg-white h-[28px]"
+                  placeholder="नाव, CIF, जुना लेगसी क्र., मोबाईल, आधार, पॅन किंवा गाव शोधा..."
+                  className="w-full pl-8 pr-8 py-1 border border-slate-300 rounded text-[11px] focus:ring-1 focus:ring-primary focus:border-primary outline-none bg-white h-[28px]"
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    title="शोध साफ करा"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 text-[11px]">
+                {directoryLoading && (
+                  <span className="text-primary font-bold flex items-center gap-1">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>लोड होत आहे...</span>
+                  </span>
+                )}
+                <label className="font-bold text-slate-600">प्रति पान:</label>
+                <select
+                  value={directoryPageSize}
+                  onChange={e => {
+                    setDirectoryPageSize(Number(e.target.value));
+                    setDirectoryPage(1);
+                  }}
+                  className="border border-slate-300 rounded px-2 py-1 bg-white font-bold text-slate-800 h-[28px] outline-none"
+                >
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                </select>
               </div>
             </div>
 
@@ -2488,7 +2613,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   {filteredCustomers.map((c, index) => (
                     <tr key={c.customerID} className="border-b border-slate-100 hover:bg-blue-50/50 transition">
                       <td className="p-2 text-center font-bold text-slate-500 bg-slate-50/60">
-                        {index + 1}
+                        {(directoryPage - 1) * directoryPageSize + index + 1}
                       </td>
                       <td className="p-1.5 text-center">
                         <div className="w-7 h-7 mx-auto rounded-full bg-slate-200 overflow-hidden flex items-center justify-center border border-slate-300 shadow-2xs">
@@ -2576,14 +2701,60 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   ))}
                   {filteredCustomers.length === 0 && (
                     <tr>
-                      <td colSpan={16} className="p-10 text-center text-slate-400">
-                        <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                        <p className="font-semibold">कोणताही खातेदार सापडला नाही.</p>
+                      <td colSpan={18} className="p-10 text-center text-slate-400">
+                        {directoryLoading ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <RefreshCw className="w-7 h-7 animate-spin text-primary" />
+                            <p className="font-semibold text-slate-600">खातेदार यादी लोड होत आहे...</p>
+                          </div>
+                        ) : (
+                          <>
+                            <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                            <p className="font-semibold">कोणताही खातेदार सापडला नाही.</p>
+                          </>
+                        )}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Pagination Footer */}
+            <div className="px-4 py-2 bg-slate-100 border-t border-slate-300 flex flex-wrap justify-between items-center gap-2 shrink-0 text-[11px]">
+              <div className="font-bold text-slate-700">
+                {directoryTotalCount > 0 ? (
+                  <span>
+                    दाखवत आहे: <span className="text-primary">{(directoryPage - 1) * directoryPageSize + 1}</span> ते{' '}
+                    <span className="text-primary">{Math.min(directoryPage * directoryPageSize, directoryTotalCount)}</span> (एकूण निकाल:{' '}
+                    <span className="text-slate-900">{directoryTotalCount}</span>)
+                  </span>
+                ) : (
+                  <span>एकूण निकाल: 0</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={directoryPage <= 1 || directoryLoading}
+                  onClick={() => setDirectoryPage(prev => Math.max(1, prev - 1))}
+                  className="px-3 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
+                >
+                  ⬅️ मागील पान (Prev)
+                </button>
+                <span className="font-black text-slate-800 px-2">
+                  पान क्र. {directoryPage} / {Math.max(1, Math.ceil(directoryTotalCount / directoryPageSize))}
+                </span>
+                <button
+                  type="button"
+                  disabled={directoryPage >= Math.max(1, Math.ceil(directoryTotalCount / directoryPageSize)) || directoryLoading}
+                  onClick={() => setDirectoryPage(prev => prev + 1)}
+                  className="px-3 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
+                >
+                  पुढील पान (Next) ➡️
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2655,7 +2826,10 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
           onClose={() => setIsDeceasedModalOpen(false)}
           onSettled={() => {
             setIsDeceasedModalOpen(false);
-            fetchCustomers();
+            fetchNextCif(editingId === null);
+            if (isListModalOpen) {
+              fetchCustomers(directoryPage, directoryPageSize, debouncedSearchQuery);
+            }
           }}
         />
       )}

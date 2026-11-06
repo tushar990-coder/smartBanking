@@ -39,6 +39,7 @@ const InvestmentMaturityClaim: React.FC = () => {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [schemes, setSchemes] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
+  const [ledgers, setLedgers] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -54,6 +55,8 @@ const InvestmentMaturityClaim: React.FC = () => {
     maturityDate: activeBusinessDate,
     principalReceived: 0,
     interestReceived: 0,
+    tdsAmount: 0,
+    tdsLedgerID: 0,
     paymentMode: 'Bank',
     bankLedgerID: 0,
     referenceNo: '',
@@ -65,6 +68,8 @@ const InvestmentMaturityClaim: React.FC = () => {
     revisedInterestRate: 0,
     interestPaid: 0,
     penaltyAmount: 0,
+    tdsAmount: 0,
+    tdsLedgerID: 0,
     paymentMode: 'Bank',
     bankLedgerID: 0,
     referenceNo: '',
@@ -77,6 +82,8 @@ const InvestmentMaturityClaim: React.FC = () => {
     newSchemeID: 0,
     newInterestRate: 0,
     interestPayoutAmount: 0,
+    tdsAmount: 0,
+    tdsLedgerID: 0,
     paymentMode: 'Bank',
     bankLedgerID: 0,
     referenceNo: '',
@@ -96,7 +103,15 @@ const InvestmentMaturityClaim: React.FC = () => {
     fetchAccounts();
     fetchSchemes();
     fetchBranches();
+    fetchLedgers();
   }, []);
+
+  const fetchLedgers = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/Ledgers`);
+      setLedgers(res.data || []);
+    } catch {}
+  };
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -129,6 +144,20 @@ const InvestmentMaturityClaim: React.FC = () => {
 
   const selectedAccount = accounts.find(a => a.investmentAccountID === Number(selectedAccountId));
 
+  const ledgerOptions = [
+    { value: 0, label: '-- डायनॅमिक TDS / कपात जी.एल. लेजर निवडा --' },
+    ...ledgers.map((l: any) => {
+      const id = Number(l.ledgerID || l.LedgerID || 0);
+      const code = l.ledgerCode || l.LedgerCode || id;
+      const name = l.ledgerName || l.LedgerName || '';
+      const grp = l.accountGroup?.groupName || (typeof l.accountGroup === 'string' ? l.accountGroup : '');
+      return {
+        value: id,
+        label: `${code} - ${name}${grp ? ` (${grp})` : ''}`
+      };
+    })
+  ];
+
   const handleSelectAccount = (accountId: number) => {
     setSelectedAccountId(accountId);
     const acc = accounts.find(a => a.investmentAccountID === accountId);
@@ -136,11 +165,15 @@ const InvestmentMaturityClaim: React.FC = () => {
       const principal = acc.principalAmount || 0;
       const expectedTotal = acc.expectedMaturityAmount || principal;
       const interest = Math.max(0, expectedTotal - principal);
+      const matchedScheme = schemes.find(s => Number(s.schemeID) === Number(acc.schemeID));
+      const defaultTdsLedgerId = Number(acc.tdsLedgerID || matchedScheme?.tdsLedgerID || 0);
 
       setMaturityForm(prev => ({
         maturityDate: activeBusinessDate,
         principalReceived: principal,
         interestReceived: Math.round(interest * 100) / 100,
+        tdsAmount: 0,
+        tdsLedgerID: defaultTdsLedgerId,
         paymentMode: prev.paymentMode || 'Bank',
         bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
         referenceNo: '',
@@ -152,6 +185,8 @@ const InvestmentMaturityClaim: React.FC = () => {
         revisedInterestRate: Math.max(0, (acc.interestRate || 0) - 1.0), // default 1% penalty reduction
         interestPaid: 0,
         penaltyAmount: 0,
+        tdsAmount: 0,
+        tdsLedgerID: defaultTdsLedgerId,
         paymentMode: prev.paymentMode || 'Bank',
         bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
         referenceNo: '',
@@ -164,6 +199,8 @@ const InvestmentMaturityClaim: React.FC = () => {
         newSchemeID: acc.schemeID || (schemes[0]?.schemeID || 0),
         newInterestRate: acc.interestRate || 0,
         interestPayoutAmount: 0,
+        tdsAmount: 0,
+        tdsLedgerID: defaultTdsLedgerId,
         paymentMode: prev.paymentMode || 'Bank',
         bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
         referenceNo: '',
@@ -179,6 +216,10 @@ const InvestmentMaturityClaim: React.FC = () => {
       setError('कृपया मुदत ठेव खाते निवडा.');
       return;
     }
+    if ((maturityForm.tdsAmount || 0) > 0 && (!maturityForm.tdsLedgerID || Number(maturityForm.tdsLedgerID) <= 0)) {
+      setError('TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.');
+      return;
+    }
     if (maturityForm.paymentMode === 'Bank' && (!maturityForm.bankLedgerID || Number(maturityForm.bankLedgerID) <= 0)) {
       setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
@@ -191,6 +232,9 @@ const InvestmentMaturityClaim: React.FC = () => {
         maturityDate: maturityForm.maturityDate,
         principalReceived: maturityForm.principalReceived,
         interestReceived: maturityForm.interestReceived,
+        tdsAmount: maturityForm.tdsAmount || 0,
+        tdsLedgerID: (maturityForm.tdsAmount || 0) > 0 ? Number(maturityForm.tdsLedgerID) : null,
+        totalReceived: Math.max(0, (maturityForm.principalReceived || 0) + (maturityForm.interestReceived || 0) - (maturityForm.tdsAmount || 0)),
         paymentMode: maturityForm.paymentMode || 'Bank',
         bankLedgerID: maturityForm.paymentMode === 'Bank' ? Number(maturityForm.bankLedgerID) : null,
         referenceNo: maturityForm.referenceNo?.trim() || null,
@@ -217,6 +261,10 @@ const InvestmentMaturityClaim: React.FC = () => {
       setError('कृपया मुदत ठेव खाते निवडा.');
       return;
     }
+    if ((prematureForm.tdsAmount || 0) > 0 && (!prematureForm.tdsLedgerID || Number(prematureForm.tdsLedgerID) <= 0)) {
+      setError('TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.');
+      return;
+    }
     if (prematureForm.paymentMode === 'Bank' && (!prematureForm.bankLedgerID || Number(prematureForm.bankLedgerID) <= 0)) {
       setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
@@ -231,7 +279,9 @@ const InvestmentMaturityClaim: React.FC = () => {
         revisedInterestRate: prematureForm.revisedInterestRate,
         interestPaid: prematureForm.interestPaid,
         penaltyAmount: prematureForm.penaltyAmount,
-        netPayout: (prematureForm.principalPaid || 0) + (prematureForm.interestPaid || 0) - (prematureForm.penaltyAmount || 0),
+        tdsAmount: prematureForm.tdsAmount || 0,
+        tdsLedgerID: (prematureForm.tdsAmount || 0) > 0 ? Number(prematureForm.tdsLedgerID) : null,
+        netPayout: (prematureForm.principalPaid || 0) + (prematureForm.interestPaid || 0) - (prematureForm.penaltyAmount || 0) - (prematureForm.tdsAmount || 0),
         paymentMode: prematureForm.paymentMode || 'Bank',
         bankLedgerID: prematureForm.paymentMode === 'Bank' ? Number(prematureForm.bankLedgerID) : null,
         referenceNo: prematureForm.referenceNo?.trim() || null,
@@ -258,9 +308,16 @@ const InvestmentMaturityClaim: React.FC = () => {
       setError('कृपया मुदत ठेव खाते निवडा.');
       return;
     }
+    if ((renewalForm.tdsAmount || 0) > 0 && (!renewalForm.tdsLedgerID || Number(renewalForm.tdsLedgerID) <= 0)) {
+      setError('TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.');
+      return;
+    }
 
     const principalRefund = Math.max(0, (selectedAccount.principalAmount || 0) - (renewalForm.renewalAmount || 0));
-    const totalInflow = principalRefund + Math.max(0, renewalForm.interestPayoutAmount || 0);
+    const netInterestInflow = renewalForm.renewalType === 'PrincipalOnly'
+      ? Math.max(0, (renewalForm.interestPayoutAmount || 0) - (renewalForm.tdsAmount || 0))
+      : 0;
+    const totalInflow = principalRefund + netInterestInflow;
     if (totalInflow > 0 && renewalForm.paymentMode === 'Bank' && (!renewalForm.bankLedgerID || Number(renewalForm.bankLedgerID) <= 0)) {
       setError('नूतनीकरणावेळी व्याज किंवा आंशिक मुद्दल बँकेत जमा घेताना बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
@@ -271,6 +328,8 @@ const InvestmentMaturityClaim: React.FC = () => {
       const response = await axios.post(`${API_URL}/InvestmentAccounts/Renew`, {
         oldInvestmentAccountID: selectedAccount.investmentAccountID,
         ...renewalForm,
+        tdsAmount: renewalForm.tdsAmount || 0,
+        tdsLedgerID: (renewalForm.tdsAmount || 0) > 0 ? Number(renewalForm.tdsLedgerID) : null,
         bankLedgerID: renewalForm.paymentMode === 'Bank' ? renewalForm.bankLedgerID : null,
       });
       setSuccess(`${response.data.message || 'मुदत ठेवीचे नूतनीकरण यशस्वीरीत्या झाले!'} ${response.data.newAccountNo ? `(नवीन खाते: ${response.data.newAccountNo})` : ''}`);
@@ -291,12 +350,13 @@ const InvestmentMaturityClaim: React.FC = () => {
     if (!selectedAccount) return;
     const principal = selectedAccount.principalAmount || 0;
     const interest = Math.max(0, (selectedAccount.expectedMaturityAmount || 0) - principal);
-    const newAmt = type === 'PrincipalAndInterest' ? (principal + interest) : principal;
+    const tds = renewalForm.tdsAmount || 0;
+    const newAmt = type === 'PrincipalAndInterest' ? Math.max(0, principal + interest - tds) : principal;
 
     setRenewalForm(prev => ({
       ...prev,
       renewalType: type,
-      renewalAmount: newAmt,
+      renewalAmount: Math.round(newAmt * 100) / 100,
       ...(type === 'PrincipalAndInterest' ? { interestPayoutAmount: 0 } : {})
     }));
   };
@@ -548,7 +608,7 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
                   <div>
                     <div className="flex items-center justify-between !mb-0.5">
                       <label className={labelClass}>मुदतपूर्ती तारीख *</label>
@@ -604,7 +664,7 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className={labelClass}>मिळालेले एकूण व्याज ₹ *</label>
+                    <label className={labelClass}>मिळालेले एकूण व्याज ₹ (Gross) *</label>
                     <input
                       type="number"
                       step="0.01"
@@ -616,10 +676,48 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className={labelClass}>एकूण प्राप्त रक्कम ₹ (Net Payout)</label>
+                    <label className={labelClass}>वजा: TDS कपात ₹ (TDS Deducted)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={maturityForm.tdsAmount || ''}
+                      onChange={(e) => setMaturityForm(prev => ({ ...prev, tdsAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                      placeholder="0.00"
+                      className={`${inputClass} font-mono font-bold text-rose-700 border-rose-300`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>एकूण निव्वळ प्राप्त रक्कम ₹ (Net Payout)</label>
                     <div className="px-2 py-1 bg-white border border-emerald-300 rounded-sm h-[28px] flex items-center font-mono font-bold text-emerald-950 text-xs">
-                      ₹{formatCurrency((maturityForm.principalReceived || 0) + (maturityForm.interestReceived || 0))}
+                      ₹{formatCurrency(Math.max(0, (maturityForm.principalReceived || 0) + (maturityForm.interestReceived || 0) - (maturityForm.tdsAmount || 0)))}
                     </div>
+                  </div>
+                </div>
+
+                {/* Dynamic TDS GL Ledger Selector */}
+                <div className={`grid grid-cols-1 md:grid-cols-2 gap-2.5 items-center p-2.5 rounded-sm border ${(maturityForm.tdsAmount || 0) > 0 ? 'bg-rose-50/70 border-rose-300' : 'bg-white/80 border-emerald-200'}`}>
+                  <div>
+                    <label className={labelClass}>
+                      TDS / कर कपात डायनॅमिक जी.एल. लेजर निवडा (Dynamic TDS GL Ledger) {(maturityForm.tdsAmount || 0) > 0 && <span className="text-red-600">*</span>}
+                    </label>
+                    <SearchableSelect
+                      name="tdsLedgerID"
+                      value={maturityForm.tdsLedgerID}
+                      onChange={(e) => setMaturityForm(prev => ({ ...prev, tdsLedgerID: Number(e.target.value) }))}
+                      options={ledgerOptions}
+                      placeholder="-- डायनॅमिक TDS / कपात जी.एल. लेजर शोधा व निवडा --"
+                    />
+                  </div>
+                  <div className="text-[10.5px] text-gray-600 font-medium pt-3">
+                    {(maturityForm.tdsAmount || 0) > 0 ? (
+                      <span className="text-rose-800 font-bold">
+                        📌 TDS रक्कम ₹{formatCurrency(maturityForm.tdsAmount)} निवडलेल्या जी.एल. खात्याला नावे (Dr) टाकली जाईल व निव्वळ ₹{formatCurrency(Math.max(0, (maturityForm.principalReceived || 0) + (maturityForm.interestReceived || 0) - (maturityForm.tdsAmount || 0)))} बँक/रोख खात्याला नावे (Dr) होईल.
+                      </span>
+                    ) : (
+                      <span>जर बँकेने मुदतपूर्ती व्याजावर TDS कपात केली असल्यास TDS रक्कम टाका आणि इथून योग्य जी.एल. लेजर डायनॅमिकली निवडा.</span>
+                    )}
                   </div>
                 </div>
 
@@ -698,7 +796,7 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5">
                   <div>
                     <div className="flex items-center justify-between !mb-0.5">
                       <label className={labelClass}>मोडणी / काढणे तारीख *</label>
@@ -743,7 +841,7 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className={labelClass}>प्राप्त झालेले व्याज ₹</label>
+                    <label className={labelClass}>प्राप्त एकूण व्याज ₹ (Gross)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -754,7 +852,7 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className={labelClass}>दंड / कपात रक्कम ₹</label>
+                    <label className={labelClass}>दंड रक्कम ₹ (Penalty)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -762,6 +860,44 @@ const InvestmentMaturityClaim: React.FC = () => {
                       onChange={(e) => setPrematureForm(prev => ({ ...prev, penaltyAmount: parseFloat(e.target.value) || 0 }))}
                       className={`${inputClass} font-mono font-bold text-rose-700`}
                     />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>वजा: TDS कपात ₹</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={prematureForm.tdsAmount || ''}
+                      onChange={(e) => setPrematureForm(prev => ({ ...prev, tdsAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                      placeholder="0.00"
+                      className={`${inputClass} font-mono font-bold text-rose-700 border-rose-300`}
+                    />
+                  </div>
+                </div>
+
+                {/* Dynamic TDS GL Ledger Selector for Premature */}
+                <div className={`grid grid-cols-1 md:grid-cols-2 gap-2.5 items-center p-2.5 rounded-sm border ${(prematureForm.tdsAmount || 0) > 0 ? 'bg-rose-50/70 border-rose-300' : 'bg-white/80 border-amber-200'}`}>
+                  <div>
+                    <label className={labelClass}>
+                      TDS / कर कपात डायनॅमिक जी.एल. लेजर निवडा (Dynamic TDS GL Ledger) {(prematureForm.tdsAmount || 0) > 0 && <span className="text-red-600">*</span>}
+                    </label>
+                    <SearchableSelect
+                      name="tdsLedgerID"
+                      value={prematureForm.tdsLedgerID}
+                      onChange={(e) => setPrematureForm(prev => ({ ...prev, tdsLedgerID: Number(e.target.value) }))}
+                      options={ledgerOptions}
+                      placeholder="-- डायनॅमिक TDS / कपात जी.एल. लेजर शोधा व निवडा --"
+                    />
+                  </div>
+                  <div className="text-[10.5px] text-gray-600 font-medium pt-3">
+                    {(prematureForm.tdsAmount || 0) > 0 ? (
+                      <span className="text-rose-800 font-bold">
+                        📌 TDS रक्कम ₹{formatCurrency(prematureForm.tdsAmount)} निवडलेल्या जी.एल. खात्याला नावे (Dr) टाकली जाईल.
+                      </span>
+                    ) : (
+                      <span>मुदतपूर्व मोडणीवेळी व्याजातून TDS कपात झाली असल्यास रक्कम टाका व इथून योग्य जी.एल. लेजर डायनॅमिकली निवडा.</span>
+                    )}
                   </div>
                 </div>
 
@@ -818,7 +954,7 @@ const InvestmentMaturityClaim: React.FC = () => {
                   <div className="text-xs">
                     <span className="text-gray-600 font-medium">निव्वळ हाती मिळणारी रक्कम (Net Payout):</span>
                     <span className="font-bold text-amber-900 font-mono text-sm ml-2">
-                      ₹{formatCurrency((prematureForm.principalPaid || 0) + (prematureForm.interestPaid || 0) - (prematureForm.penaltyAmount || 0))}
+                      ₹{formatCurrency((prematureForm.principalPaid || 0) + (prematureForm.interestPaid || 0) - (prematureForm.penaltyAmount || 0) - (prematureForm.tdsAmount || 0))}
                     </span>
                   </div>
 
@@ -847,7 +983,7 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5">
                   <div>
                     <div className="flex items-center justify-between !mb-0.5">
                       <label className={labelClass}>नूतनीकरण तारीख *</label>
@@ -878,6 +1014,34 @@ const InvestmentMaturityClaim: React.FC = () => {
                       <option value="PrincipalOnly">फक्त मुद्दल रक्कम</option>
                       <option value="PrincipalAndInterest">मुद्दल + मिळणारे व्याज</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>वजा: TDS कपात ₹ (TDS Deducted)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={renewalForm.tdsAmount || ''}
+                      onChange={(e) => {
+                        const tdsVal = Math.max(0, parseFloat(e.target.value) || 0);
+                        setRenewalForm(prev => {
+                          let nextRenewalAmt = prev.renewalAmount;
+                          if (prev.renewalType === 'PrincipalAndInterest' && selectedAccount) {
+                            const principal = selectedAccount.principalAmount || 0;
+                            const interest = Math.max(0, (selectedAccount.expectedMaturityAmount || 0) - principal);
+                            nextRenewalAmt = Math.round(Math.max(0, principal + interest - tdsVal) * 100) / 100;
+                          }
+                          return {
+                            ...prev,
+                            tdsAmount: tdsVal,
+                            renewalAmount: nextRenewalAmt
+                          };
+                        });
+                      }}
+                      placeholder="0.00"
+                      className={`${inputClass} font-mono font-bold text-rose-700 border-rose-300`}
+                    />
                   </div>
 
                   <div>
@@ -928,8 +1092,8 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </div>
 
                   {renewalForm.renewalType === 'PrincipalOnly' && (
-                    <div>
-                      <label className={labelClass}>प्राप्त व्याज परतावा ₹ (ऐच्छिक)</label>
+                    <div className="sm:col-span-2">
+                      <label className={labelClass}>प्राप्त एकूण व्याज परतावा ₹ (Gross Interest Payout - ऐच्छिक)</label>
                       <input
                         type="number"
                         step="0.01"
@@ -943,7 +1107,32 @@ const InvestmentMaturityClaim: React.FC = () => {
                   )}
                 </div>
 
-                {((selectedAccount && Math.max(0, (selectedAccount.principalAmount || 0) - (renewalForm.renewalAmount || 0)) > 0) || (renewalForm.interestPayoutAmount || 0) > 0) && (
+                {/* Dynamic TDS GL Ledger Selector for Renewal */}
+                <div className={`grid grid-cols-1 md:grid-cols-2 gap-2.5 items-center p-2.5 rounded-sm border ${(renewalForm.tdsAmount || 0) > 0 ? 'bg-rose-50/70 border-rose-300' : 'bg-white/80 border-primary/20'}`}>
+                  <div>
+                    <label className={labelClass}>
+                      TDS / कर कपात डायनॅमिक जी.एल. लेजर निवडा (Dynamic TDS GL Ledger) {(renewalForm.tdsAmount || 0) > 0 && <span className="text-red-600">*</span>}
+                    </label>
+                    <SearchableSelect
+                      name="tdsLedgerID"
+                      value={renewalForm.tdsLedgerID}
+                      onChange={(e) => setRenewalForm(prev => ({ ...prev, tdsLedgerID: Number(e.target.value) }))}
+                      options={ledgerOptions}
+                      placeholder="-- डायनॅमिक TDS / कपात जी.एल. लेजर शोधा व निवडा --"
+                    />
+                  </div>
+                  <div className="text-[10.5px] text-gray-600 font-medium pt-3">
+                    {(renewalForm.tdsAmount || 0) > 0 ? (
+                      <span className="text-rose-800 font-bold">
+                        📌 TDS रक्कम ₹{formatCurrency(renewalForm.tdsAmount)} निवडलेल्या जी.एल. खात्याला नावे (Dr) टाकली जाईल.
+                      </span>
+                    ) : (
+                      <span>नूतनीकरणावेळी व्याजातून TDS कपात झाली असल्यास रक्कम टाका व इथून योग्य जी.एल. लेजर डायनॅमिकली निवडा.</span>
+                    )}
+                  </div>
+                </div>
+
+                {((selectedAccount && Math.max(0, (selectedAccount.principalAmount || 0) - (renewalForm.renewalAmount || 0)) > 0) || Math.max(0, (renewalForm.interestPayoutAmount || 0) - (renewalForm.tdsAmount || 0)) > 0) && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start bg-white/80 p-2.5 rounded-sm border border-blue-200">
                     <div>
                       <label className={labelClass}>परतावा जमा पद्धत (Receipt Mode) *</label>

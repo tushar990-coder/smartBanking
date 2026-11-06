@@ -1,5 +1,24 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-06] - आवृत्ती v2.6.20 (Investment Maturity/Premature/Renewal with Dynamic TDS, Fast Paginated Customer Master, Closed Loan Accounts Report, P&L Fix & Two-Section Terij Patrak / Group Tree)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) संस्था गुंतवणूक (Investment) मुदतपूर्ती क्लेम, मुदतपूर्व बंद (Premature), नूतनीकरण (Renewal) व डायनॅमिक TDS लेजर (`InvestmentMaturityClaim.tsx`, `InvestmentSchemeMaster.tsx`, `InvestmentAccountsController.cs`, `InvestmentSchemesController.cs`, `Step4AccountingHelper.cs` & `Program.cs`):**
+  * गुंतवणूक योजना मास्टरमध्ये (`InvestmentSchemeMaster.tsx`) प्रत्येक योजनेसाठी **'TDS / कर कपात लेजर (TDS Receivable / Tax Deducted at Source)'** मॅपिंग समाविष्ट केले.
+  * गुंतवणूक परिपक्वता व क्लेम स्क्रीनमध्ये (`InvestmentMaturityClaim.tsx`) तिन्ही पर्यायांसाठी — **१. मुदतपूर्ती बंद / क्लेम**, **२. मुदतपूर्व बंद (Premature)** आणि **३. गुंतवणूक नूतनीकरण (Renewal)** — प्रत्यक्ष ठेव दिवस व दंड वजा करून ऑटो-गणना, मॅन्युअल व्याज व TDS एडिटिंग, डायनॅमिक TDS लेजर निवड आणि अचूक मल्टी-लाईन दुहेरी लेखा नोंद (`Double-Entry Voucher`) तयार होते.
+* **२) खातेदार नोंदणी मास्टर (Customer / CIF Master) अल्ट्रा-फास्ट लोडिंग व पेजिनाइज्ड डिरेक्टरी (`CustomerMaster.tsx` & `CustomersController.cs`):**
+  * फॉर्म उघडताना सर्व १७३५+ खाती एकाच वेळी लोड करण्याऐवजी हलकाफुलका `GET /api/Customers/Stats` (`एकूण खातेदार`, `सक्रिय खातेदार`, `केवायसी पूर्ण`, `प्रलंबित एजंट अर्ज`) वापरून फॉर्म क्षणात उघडतो.
+  * **'नोंदणीकृत खातेदार यादी व शोध'** पॉपअप उघडल्यावरच सर्व्हर-साईड पेजिनेशन (`GET /api/Customers/Directory`, प्रति पान ५० रेकॉर्ड्स) व ३००ms डिबाउन्स्ड शोध (नाव, CIF क्र., जुना क्र., मोबाईल, आधार, गाव) लागू केला.
+* **३) बंद / निरंक झालेले कर्ज खाते अहवाल (Closed Loan Accounts Report) (`ClosedLoanAccountsReport.tsx`, `ReportsController.cs`, `ReportDashboard.tsx` & `App.tsx`):**
+  * रिपोर्ट्स डॅशबोर्ड -> कर्ज विभाग (Loan) अंतर्गत नवीन **'बंद / निरंक झालेले कर्ज खाते अहवाल'** समाविष्ट केला.
+  * तारीख रेंज (`सुरुवातीपासून सर्व तारखा` टॉगलसह), कर्ज प्रकार फिल्टर, क्लोजर प्रकार फिल्टर (`सर्व`, `नियमित बंद`, `तडजोड / OTS बंद`), स्कीमनिहाय ग्रुपिंग टॉगल, १०-कॉलम CBS तक्ता (जुना कर्ज क्र., मंजूर मुद्दल, वसूल मुद्दल, वसूल व्याज, दंड व्याज, सूट/माफी रक्कम, एकूण वसुली, बंद दिनांक व स्थिती बॅज), एक्सेल एक्सपोर्ट व A4 प्रिंट.
+* **४) नफा-तोटा पत्रक (`ProfitAndLoss.tsx`) क्रॅश दुरुस्ती:**
+  * रिपोर्ट्स डॅशबोर्डमधून नफा-तोटा पत्रक उघडताना येणारी `ReferenceError: user is not defined` त्रुटी `useAuth()` हुक जोडून कायमस्वरूपी दूर केली.
+* **५) तेरीज पत्रक नं - १ व ग्रुप ट्री २-विभाग स्वतंत्र पृष्ठ रचना (`TrialBalance.tsx`, `TrialBalanceNamunaN.tsx`, `ReportsController.cs` & `ReportDtos.cs`):**
+  * **'तेरीज पत्रक नं-१ (२ विभाग)'**, **'सरळ यादी'** आणि **'ग्रुप ट्री'** या तिन्ही व्ह्यूमध्ये **पान १ वर केवळ `भांडवल / देयता-`** (भांडवल, निधी, ठेवी, देणी व उत्पन्न खाती/गट) आणि **पान २ वर नवीन पानावर (`page-break-before: always`) संस्थेच्या हेडरसह `संपत्ती / मालमत्ता`** (रोख शिल्लक, बँक शिल्लक, गुंतवणुका, कर्जे, मालमत्ता व खर्च खाती/गट) आणि खाली **`Account Tallied...`** ताळमेळ सारांश ब्लॉक समाविष्ट केला.
+
+---
+
 ## 📅 [2026-11-05] - आवृत्ती v2.6.19 (RD Scheme Zero Penalty & Collection Fix, Pigmy Daybook Duplicate Removal & Collection Register Separation, and CBS v2.4 Voucher Batch Print)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

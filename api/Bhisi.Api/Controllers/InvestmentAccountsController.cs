@@ -433,7 +433,8 @@ namespace Bhisi.Api.Controllers
                             InvestmentType = scheme.InvestmentType,
                             InvestmentLedgerID = scheme.InvestmentAssetLedgerID ?? 1,
                             InterestIncomeLedgerID = scheme.InterestIncomeLedgerID ?? 1,
-                            InterestReceivableLedgerID = scheme.InterestReceivableLedgerID ?? 1
+                            InterestReceivableLedgerID = scheme.InterestReceivableLedgerID ?? 1,
+                            TdsLedgerID = scheme.TdsLedgerID
                         };
                     }
                     else if (mapping != null)
@@ -449,6 +450,10 @@ namespace Bhisi.Api.Controllers
                         if (scheme.InterestReceivableLedgerID.HasValue && scheme.InterestReceivableLedgerID.Value > 0)
                         {
                             mapping.InterestReceivableLedgerID = scheme.InterestReceivableLedgerID.Value;
+                        }
+                        if (scheme.TdsLedgerID.HasValue && scheme.TdsLedgerID.Value > 0)
+                        {
+                            mapping.TdsLedgerID = scheme.TdsLedgerID.Value;
                         }
                     }
                 }
@@ -504,6 +509,7 @@ namespace Bhisi.Api.Controllers
                     a.SchemeID,
                     SchemeName = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeName : "",
                     SchemeCode = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeCode : "",
+                    TdsLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.TdsLedgerID : null,
                     a.InvestmentNo,
                     a.OldInvestmentNo,
                     a.DepositReceiptNo,
@@ -548,6 +554,7 @@ namespace Bhisi.Api.Controllers
                 InstitutionName = a.InvestmentInstitution != null ? a.InvestmentInstitution.InstitutionName : "",
                 a.SchemeID,
                 SchemeName = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeName : "",
+                TdsLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.TdsLedgerID : null,
                 a.InvestmentNo,
                 a.OldInvestmentNo,
                 a.DepositReceiptNo,
@@ -1086,11 +1093,34 @@ namespace Bhisi.Api.Controllers
                 if (account == null) return NotFound("गुंतवणूक खाते सापडले नाही.");
                 if (account.Status != "Active") return BadRequest("हे खाते Active नाही.");
 
+                decimal tdsAmount = Math.Max(0m, Math.Round(request.TdsAmount, 2, MidpointRounding.AwayFromZero));
+                decimal netReceived = request.PrincipalReceived + request.InterestReceived - tdsAmount;
+                if (netReceived < 0m)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest("TDS कपात रक्कम ही मुद्दल व व्याजाच्या एकूण रकमेपेक्षा जास्त असू शकत नाही.");
+                }
+
                 var paymentCheck = await ResolveInvestmentPaymentLedgerAsync(account.BranchID, request.PaymentMode, request.BankLedgerID);
                 if (!paymentCheck.IsValid)
                 {
                     await transaction.RollbackAsync();
                     return BadRequest(paymentCheck.ErrorMessage);
+                }
+
+                var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
+                int tdsLedgerId = 0;
+                if (tdsAmount > 0m)
+                {
+                    tdsLedgerId = (request.TdsLedgerID.HasValue && request.TdsLedgerID.Value > 0)
+                        ? request.TdsLedgerID.Value
+                        : (mapping?.TdsLedgerID ?? 0);
+
+                    if (tdsLedgerId <= 0 || !await _context.Ledgers.AnyAsync(l => l.LedgerID == tdsLedgerId))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.");
+                    }
                 }
 
                 var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
@@ -1104,17 +1134,20 @@ namespace Bhisi.Api.Controllers
                     MaturityDate = request.MaturityDate,
                     PrincipalReceived = request.PrincipalReceived,
                     InterestReceived = request.InterestReceived,
-                    TotalReceived = request.PrincipalReceived + request.InterestReceived,
+                    TdsAmount = tdsAmount,
+                    TdsLedgerID = tdsAmount > 0m ? tdsLedgerId : null,
+                    TotalReceived = netReceived,
                     CreatedBy = request.CreatedBy > 0 ? request.CreatedBy : 1
                 };
 
                 // Create voucher
-                var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
-
                 if (mapping != null)
                 {
                     string refSuffix = !string.IsNullOrWhiteSpace(request.ReferenceNo)
                         ? $" [संदर्भ/UTR: {request.ReferenceNo.Trim()}]"
+                        : string.Empty;
+                    string tdsSuffix = tdsAmount > 0m
+                        ? $" [TDS कपात: ₹{tdsAmount:N2}]"
                         : string.Empty;
 
                     var voucher = new Voucher
@@ -1123,8 +1156,8 @@ namespace Bhisi.Api.Controllers
                         VoucherNo = $"REC-INV-MAT-{account.InvestmentNo}",
                         VoucherDate = maturity.MaturityDate,
                         VoucherType = "Receipt",
-                        Narration = $"गुंतवणूक मुदतपूर्ती - {account.InvestmentNo}{refSuffix}",
-                        TotalAmount = maturity.TotalReceived,
+                        Narration = $"गुंतवणूक मुदतपूर्ती - {account.InvestmentNo}{tdsSuffix}{refSuffix}",
+                        TotalAmount = maturity.PrincipalReceived + maturity.InterestReceived,
                         CreatedBy = maturity.CreatedBy,
                         CreatedOn = DateTime.Now
                     };
@@ -1132,13 +1165,29 @@ namespace Bhisi.Api.Controllers
                     _context.Vouchers.Add(voucher);
                     await _context.SaveChangesAsync();
 
-                    var d1 = new VoucherDetail
+                    if (maturity.TotalReceived > 0m)
                     {
-                        VoucherID = voucher.VoucherID,
-                        LedgerID = paymentCheck.LedgerId,
-                        DrCr = "Dr",
-                        Amount = maturity.TotalReceived
-                    };
+                        var d1 = new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = paymentCheck.LedgerId,
+                            DrCr = "Dr",
+                            Amount = maturity.TotalReceived
+                        };
+                        _context.VoucherDetails.Add(d1);
+                    }
+
+                    if (tdsAmount > 0m && tdsLedgerId > 0)
+                    {
+                        var dTds = new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = tdsLedgerId,
+                            DrCr = "Dr",
+                            Amount = tdsAmount
+                        };
+                        _context.VoucherDetails.Add(dTds);
+                    }
 
                     var d2 = new VoucherDetail
                     {
@@ -1147,8 +1196,6 @@ namespace Bhisi.Api.Controllers
                         DrCr = "Cr",
                         Amount = maturity.PrincipalReceived
                     };
-
-                    _context.VoucherDetails.Add(d1);
                     _context.VoucherDetails.Add(d2);
 
                     if (maturity.InterestReceived > 0)
@@ -1194,11 +1241,34 @@ namespace Bhisi.Api.Controllers
                 if (account == null) return NotFound("गुंतवणूक खाते सापडले नाही.");
                 if (account.Status != "Active") return BadRequest("हे खाते Active नाही.");
 
+                decimal tdsAmount = Math.Max(0m, Math.Round(request.TdsAmount, 2, MidpointRounding.AwayFromZero));
+                decimal netPayout = request.PrincipalPaid + request.InterestPaid - request.PenaltyAmount - tdsAmount;
+                if (netPayout < 0m)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest("मुदतपूर्व दंड व TDS कपात रक्कम ही एकूण मुद्दल व व्याजापेक्षा जास्त असू शकत नाही.");
+                }
+
                 var paymentCheck = await ResolveInvestmentPaymentLedgerAsync(account.BranchID, request.PaymentMode, request.BankLedgerID);
                 if (!paymentCheck.IsValid)
                 {
                     await transaction.RollbackAsync();
                     return BadRequest(paymentCheck.ErrorMessage);
+                }
+
+                var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
+                int tdsLedgerId = 0;
+                if (tdsAmount > 0m)
+                {
+                    tdsLedgerId = (request.TdsLedgerID.HasValue && request.TdsLedgerID.Value > 0)
+                        ? request.TdsLedgerID.Value
+                        : (mapping?.TdsLedgerID ?? 0);
+
+                    if (tdsLedgerId <= 0 || !await _context.Ledgers.AnyAsync(l => l.LedgerID == tdsLedgerId))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.");
+                    }
                 }
 
                 var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
@@ -1214,16 +1284,19 @@ namespace Bhisi.Api.Controllers
                     RevisedInterestRate = request.RevisedInterestRate,
                     InterestPaid = request.InterestPaid,
                     PenaltyAmount = request.PenaltyAmount,
-                    NetPayout = request.PrincipalPaid + request.InterestPaid - request.PenaltyAmount,
+                    TdsAmount = tdsAmount,
+                    TdsLedgerID = tdsAmount > 0m ? tdsLedgerId : null,
+                    NetPayout = netPayout,
                     CreatedBy = request.CreatedBy > 0 ? request.CreatedBy : 1
                 };
-
-                var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
 
                 if (mapping != null)
                 {
                     string refSuffix = !string.IsNullOrWhiteSpace(request.ReferenceNo)
                         ? $" [संदर्भ/UTR: {request.ReferenceNo.Trim()}]"
+                        : string.Empty;
+                    string tdsSuffix = tdsAmount > 0m
+                        ? $" [TDS कपात: ₹{tdsAmount:N2}]"
                         : string.Empty;
 
                     var voucher = new Voucher
@@ -1232,7 +1305,7 @@ namespace Bhisi.Api.Controllers
                         VoucherNo = $"REC-INV-PRE-{account.InvestmentNo}",
                         VoucherDate = withdrawal.WithdrawalDate,
                         VoucherType = "Receipt",
-                        Narration = $"गुंतवणूक मुदतपूर्व बंद - {account.InvestmentNo}{refSuffix}",
+                        Narration = $"गुंतवणूक मुदतपूर्व बंद - {account.InvestmentNo}{tdsSuffix}{refSuffix}",
                         TotalAmount = withdrawal.PrincipalPaid + withdrawal.InterestPaid,
                         CreatedBy = withdrawal.CreatedBy,
                         CreatedOn = DateTime.Now
@@ -1241,13 +1314,29 @@ namespace Bhisi.Api.Controllers
                     _context.Vouchers.Add(voucher);
                     await _context.SaveChangesAsync();
 
-                    var d1 = new VoucherDetail
+                    if (withdrawal.NetPayout > 0m)
                     {
-                        VoucherID = voucher.VoucherID,
-                        LedgerID = paymentCheck.LedgerId,
-                        DrCr = "Dr",
-                        Amount = withdrawal.NetPayout
-                    };
+                        var d1 = new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = paymentCheck.LedgerId,
+                            DrCr = "Dr",
+                            Amount = withdrawal.NetPayout
+                        };
+                        _context.VoucherDetails.Add(d1);
+                    }
+
+                    if (tdsAmount > 0m && tdsLedgerId > 0)
+                    {
+                        var dTds = new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = tdsLedgerId,
+                            DrCr = "Dr",
+                            Amount = tdsAmount
+                        };
+                        _context.VoucherDetails.Add(dTds);
+                    }
 
                     var d2 = new VoucherDetail
                     {
@@ -1256,8 +1345,6 @@ namespace Bhisi.Api.Controllers
                         DrCr = "Cr",
                         Amount = withdrawal.PrincipalPaid
                     };
-
-                    _context.VoucherDetails.Add(d1);
                     _context.VoucherDetails.Add(d2);
 
                     if (withdrawal.InterestPaid > 0)
@@ -1273,7 +1360,6 @@ namespace Bhisi.Api.Controllers
                     }
 
                     await _context.SaveChangesAsync();
-                    if (withdrawal.NetPayout < 0) { await transaction.RollbackAsync(); return BadRequest("मुदतपूर्व दंड रक्कम एकूण मुद्दल व व्याजापेक्षा जास्त असू शकत नाही."); }
                     if (withdrawal.PenaltyAmount > 0)
                     {
                         int penaltyLedgerId = await Helpers.Step4AccountingHelper.ResolveInvestmentPenaltyLedgerIdAsync(_context, mapping);
@@ -1312,12 +1398,36 @@ namespace Bhisi.Api.Controllers
                 if (oldAccount == null) return NotFound("जुने गुंतवणूक खाते सापडले नाही.");
                 if (oldAccount.Status != "Active" && oldAccount.Status != "Matured") return BadRequest("हे खाते नूतनीकरणयोग्य नाही.");
 
+                decimal tdsAmount = Math.Max(0m, Math.Round(request.TdsAmount, 2, MidpointRounding.AwayFromZero));
+                var oldMapping = await GetVoucherMappingForBranch(oldAccount.BranchID, "", oldAccount.SchemeID);
+                int targetSchemeId = request.NewSchemeID > 0 ? request.NewSchemeID : oldAccount.SchemeID;
+                var newMapping = await GetVoucherMappingForBranch(oldAccount.BranchID, "", targetSchemeId);
+                if (oldMapping == null || newMapping == null)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest("गुंतवणूक नूतनीकरणासाठी जुन्या किंवा नवीन योजनेचे जी.एल. लेजर मॅपिंग (Investment Voucher Mapping) सापडले नाही.");
+                }
+
+                int tdsLedgerId = 0;
+                if (tdsAmount > 0m)
+                {
+                    tdsLedgerId = (request.TdsLedgerID.HasValue && request.TdsLedgerID.Value > 0)
+                        ? request.TdsLedgerID.Value
+                        : (oldMapping.TdsLedgerID ?? newMapping.TdsLedgerID ?? 0);
+
+                    if (tdsLedgerId <= 0 || !await _context.Ledgers.AnyAsync(l => l.LedgerID == tdsLedgerId))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.");
+                    }
+                }
+
                 // Create new account
                 var newAccount = new InvestmentAccount
                 {
                     BranchID = oldAccount.BranchID,
                     InvestmentInstitutionID = oldAccount.InvestmentInstitutionID,
-                    SchemeID = request.NewSchemeID > 0 ? request.NewSchemeID : oldAccount.SchemeID,
+                    SchemeID = targetSchemeId,
                     InvestmentDate = request.RenewalDate,
                     PrincipalAmount = request.RenewalAmount,
                     InterestRate = request.NewInterestRate > 0 ? request.NewInterestRate : oldAccount.InterestRate,
@@ -1375,17 +1485,12 @@ namespace Bhisi.Api.Controllers
                     NewInvestmentAccountID = newAccount.InvestmentAccountID,
                     RenewalType = request.RenewalType,
                     RenewalAmount = request.RenewalAmount,
+                    TdsAmount = tdsAmount,
+                    TdsLedgerID = tdsAmount > 0m ? tdsLedgerId : null,
                     RenewalDate = request.RenewalDate
                 };
 
                 _context.InvestmentRenewals.Add(renewal);
-                var oldMapping = await GetVoucherMappingForBranch(oldAccount.BranchID, "", oldAccount.SchemeID);
-                var newMapping = await GetVoucherMappingForBranch(newAccount.BranchID, "", newAccount.SchemeID);
-                if (oldMapping == null || newMapping == null)
-                {
-                    await transaction.RollbackAsync();
-                    return BadRequest("गुंतवणूक नूतनीकरणासाठी जुन्या किंवा नवीन योजनेचे जी.एल. लेजर मॅपिंग (Investment Voucher Mapping) सापडले नाही.");
-                }
                 var renewalVoucher = await Helpers.Step4AccountingHelper.CreateInvestmentRenewalVoucherAsync(
                     _context,
                     oldAccount,
@@ -1396,7 +1501,9 @@ namespace Bhisi.Api.Controllers
                     request.PaymentMode,
                     request.BankLedgerID,
                     request.ReferenceNo,
-                    request.InterestPayoutAmount);
+                    request.InterestPayoutAmount,
+                    tdsAmount,
+                    tdsAmount > 0m ? tdsLedgerId : null);
                 await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, renewalVoucher.VoucherID, renewalVoucher.VoucherNo);
                 oldAccount.Status = "Renewed";
                 await _context.SaveChangesAsync();
@@ -1759,6 +1866,7 @@ namespace Bhisi.Api.Controllers
                 existing.InvestmentLedgerID = mapping.InvestmentLedgerID;
                 existing.InterestIncomeLedgerID = mapping.InterestIncomeLedgerID;
                 existing.InterestReceivableLedgerID = mapping.InterestReceivableLedgerID;
+                existing.TdsLedgerID = mapping.TdsLedgerID;
             }
             else
             {
@@ -1781,6 +1889,8 @@ namespace Bhisi.Api.Controllers
         public DateTime MaturityDate { get; set; }
         public decimal PrincipalReceived { get; set; }
         public decimal InterestReceived { get; set; }
+        public decimal TdsAmount { get; set; } = 0;
+        public int? TdsLedgerID { get; set; }
         public decimal TotalReceived { get; set; }
         public int CreatedBy { get; set; } = 1;
         public string? PaymentMode { get; set; } = "Bank";
@@ -1800,6 +1910,8 @@ namespace Bhisi.Api.Controllers
         public decimal RevisedInterestRate { get; set; }
         public decimal InterestPaid { get; set; }
         public decimal PenaltyAmount { get; set; } = 0;
+        public decimal TdsAmount { get; set; } = 0;
+        public int? TdsLedgerID { get; set; }
         public decimal NetPayout { get; set; }
         public int CreatedBy { get; set; } = 1;
         public string? PaymentMode { get; set; } = "Bank";
@@ -1831,6 +1943,8 @@ namespace Bhisi.Api.Controllers
         public DateTime RenewalDate { get; set; }
         public decimal NewInterestRate { get; set; }
         public decimal InterestPayoutAmount { get; set; } = 0;
+        public decimal TdsAmount { get; set; } = 0;
+        public int? TdsLedgerID { get; set; }
         public string? PaymentMode { get; set; } = "Bank";
         public int? BankLedgerID { get; set; }
         public string? ReferenceNo { get; set; }

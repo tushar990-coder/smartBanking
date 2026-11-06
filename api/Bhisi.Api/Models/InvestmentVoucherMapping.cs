@@ -29,5 +29,7 @@ namespace Bhisi.Api.Models
 
         [Required]
         public int InterestReceivableLedgerID { get; set; }
+
+        public int? TdsLedgerID { get; set; }
     }
 }

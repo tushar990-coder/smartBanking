@@ -126,7 +126,7 @@ export default function PigmyKhatavaniReport() {
     if (!accId) return;
     setIsLoading(true);
     try {
-      let url = `/api/Reports/PigmyKhatavani/${accId}?`;
+      let url = `/api/Reports/PigmyKhatavani/${accId}?_t=${Date.now()}&`;
       if (fromDate) url += `fromDate=${fromDate}&`;
       if (toDate) url += `toDate=${toDate}&`;
       
@@ -378,7 +378,14 @@ export default function PigmyKhatavaniReport() {
         <Select
           options={accountOptions}
           value={selectedAccount}
-          onChange={setSelectedAccount}
+          onChange={(opt) => {
+            setSelectedAccount(opt);
+            if (opt?.value) {
+              loadReport(opt.value);
+            } else {
+              setReportData(null);
+            }
+          }}
           placeholder="खाते क्र. किंवा नाव शोधा..."
           isClearable
           className="text-[11px]"

@@ -108,6 +108,7 @@ namespace Bhisi.Api.Controllers
                 .Include(c => c.PigmyAccount)
                     .ThenInclude(a => a!.Customer)
                 .Include(c => c.Agent)
+                .Include(c => c.Voucher)
                 .AsQueryable();
 
             if (fromDate.HasValue)
@@ -179,7 +180,10 @@ namespace Bhisi.Api.Controllers
                     LegacyCustomerNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? (c.PigmyAccount.Customer.LegacyCustomerNo ?? "") : "",
                     CustomerNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? (c.PigmyAccount.Customer.LegacyCustomerNo ?? c.PigmyAccount.Customer.CIFNo ?? "") : "",
                     AgentId = c.AgentId,
-                    AgentName = c.Agent != null ? c.Agent.AgentName : ""
+                    AgentName = c.Agent != null ? c.Agent.AgentName : "",
+                    DepositDate = c.Voucher != null ? (DateTime?)c.Voucher.VoucherDate : null,
+                    VoucherDate = c.Voucher != null ? (DateTime?)c.Voucher.VoucherDate : null,
+                    VoucherNo = c.Voucher != null ? c.Voucher.VoucherNo : null
                 })
                 .ToListAsync();
 

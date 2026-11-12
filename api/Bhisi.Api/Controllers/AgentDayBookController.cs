@@ -563,6 +563,36 @@ namespace Bhisi.Api.Controllers
                 }
                 if (rangeCollections.Any())
                 {
+                    // Update PigmyTransactions: Stamp TransactionDate = DepositDate (शाखेत भरणा दिनांक) and ReferenceId = VoucherNo
+                    var rcpts = rangeCollections.Where(c => !string.IsNullOrEmpty(c.ReceiptNo)).Select(c => c.ReceiptNo).Distinct().ToList();
+                    var accIds = rangeCollections.Select(c => c.PigmyAccountId).Distinct().ToList();
+
+                    if (accIds.Any())
+                    {
+                        var matchingTxs = await _context.PigmyTransactions
+                            .Where(pt => accIds.Contains(pt.PigmyAccountID) && pt.TransactionType == "DEPOSIT" && pt.ReferenceId == null)
+                            .ToListAsync();
+
+                        var rcptSet = new HashSet<string>(rcpts, StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var pt in matchingTxs)
+                        {
+                            bool isMatch = rcptSet.Any(r => !string.IsNullOrEmpty(r) && pt.Narration.Contains(r));
+                            if (!isMatch)
+                            {
+                                // Fallback match by account, value date, and amount
+                                isMatch = rangeCollections.Any(c => c.PigmyAccountId == pt.PigmyAccountID && c.CollectionDate.Date == pt.ValueDate.Date && c.CollectionAmount == pt.CrAmount);
+                            }
+
+                            if (isMatch)
+                            {
+                                pt.TransactionDate = request.DepositDate; // शाखेत भरणा दिनांक (Deposit Date)
+                                pt.ReferenceId = voucher.VoucherNo;      // व्हाउचर क्र.
+                                _context.Entry(pt).State = EntityState.Modified;
+                            }
+                        }
+                    }
+
                     await _context.SaveChangesAsync();
                 }
 
@@ -802,6 +832,47 @@ namespace Bhisi.Api.Controllers
                 // Check if linked to a voucher
                 if (deposit.VoucherId.HasValue)
                 {
+                    var linkedCols = await _context.PigmyCollections
+                        .Where(c => c.VoucherId == deposit.VoucherId.Value)
+                        .ToListAsync();
+
+                    if (linkedCols.Any())
+                    {
+                        var rcpts = linkedCols.Where(c => !string.IsNullOrEmpty(c.ReceiptNo)).Select(c => c.ReceiptNo).Distinct().ToList();
+                        var accIds = linkedCols.Select(c => c.PigmyAccountId).Distinct().ToList();
+
+                        foreach (var col in linkedCols)
+                        {
+                            col.VoucherId = null;
+                            col.IsVoucherGenerated = false;
+                        }
+
+                        if (accIds.Any())
+                        {
+                            var matchingTxs = await _context.PigmyTransactions
+                                .Where(pt => accIds.Contains(pt.PigmyAccountID) && pt.TransactionType == "DEPOSIT")
+                                .ToListAsync();
+
+                            var rcptSet = new HashSet<string>(rcpts, StringComparer.OrdinalIgnoreCase);
+
+                            foreach (var pt in matchingTxs)
+                            {
+                                bool isMatch = rcptSet.Any(r => !string.IsNullOrEmpty(r) && pt.Narration.Contains(r));
+                                if (!isMatch && !string.IsNullOrEmpty(pt.ReferenceId))
+                                {
+                                    isMatch = pt.ReferenceId == deposit.ReceiptNo || (deposit.VoucherId.HasValue && pt.ReferenceId.Contains(deposit.DepositDate.ToString("yyyyMMdd")));
+                                }
+
+                                if (isMatch)
+                                {
+                                    pt.TransactionDate = pt.ValueDate; // revert to collection date
+                                    pt.ReferenceId = null;
+                                    _context.Entry(pt).State = EntityState.Modified;
+                                }
+                            }
+                        }
+                    }
+
                     var voucher = await _context.Vouchers
                         .Include(v => v.VoucherDetails)
                         .FirstOrDefaultAsync(v => v.VoucherID == deposit.VoucherId.Value);

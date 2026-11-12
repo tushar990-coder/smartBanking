@@ -28,6 +28,7 @@ import {
   Settings, 
   UserCog,
   KeyRound,
+  Headset,
   FileCheck,
   Gavel,
   LogOut
@@ -53,6 +54,7 @@ import VoucherPosting from './components/VoucherPosting';
 import SansthaMaster from './components/SansthaMaster';
 import VoucherMappingMaster from './components/VoucherMappingMaster';
 import Dashboard from './components/Dashboard';
+import SupportTicketModal from './components/SupportTicketModal';
 import Sidebar from './components/Sidebar';
 import LoanDashboard from './components/LoanDashboard';
 import SavingDashboard from './components/SavingDashboard';
@@ -221,6 +223,7 @@ function App() {
   const [headerBranches, setHeaderBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
   const [showLoginNotifications, setShowLoginNotifications] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
   const [systemVersion, setSystemVersion] = useState<string>('2.5.32');
 
   useEffect(() => {
@@ -600,6 +603,11 @@ function App() {
         isMandatory={false} 
         onClose={() => setShowChangePasswordModal(false)} 
       />
+      <SupportTicketModal
+        isOpen={showSupportModal}
+        onClose={() => setShowSupportModal(false)}
+        user={user}
+      />
       {/* Glassmorphic Sidebar */}
       <Sidebar
         isSidebarOpen={isSidebarOpen}
@@ -688,6 +696,14 @@ function App() {
           
           <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0">
             <NotificationCenter onNavigate={handleNavigate} branchId={user?.branchID || 1} />
+            <button
+              onClick={() => setShowSupportModal(true)}
+              className="px-2 sm:px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded text-[11px] font-bold hover:bg-amber-100 transition-colors border border-amber-300 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs cursor-pointer"
+              title="सपोर्ट / तक्रार नोंदणी (Helpdesk and Support Center)"
+            >
+              <Headset size={12} className="text-amber-600 shrink-0" />
+              <span className="hidden sm:inline">सपोर्ट / तक्रार</span>
+            </button>
             <div className="hidden md:flex items-center space-x-1">
               <label className="text-[10px] font-bold text-gray-500">Theme:</label>
               <select 

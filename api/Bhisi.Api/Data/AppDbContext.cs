@@ -19,6 +19,8 @@ namespace Bhisi.Api.Data
         public DbSet<UserLoginAudit> UserLoginAudits { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
         public DbSet<SystemNotification> SystemNotifications { get; set; }
+        public DbSet<SupportTicket> SupportTickets { get; set; }
+        public DbSet<SupportTicketAttachment> SupportTicketAttachments { get; set; }
         public DbSet<BranchDayEndStatus> BranchDayEndStatuses { get; set; }
         public DbSet<EodBatchProcessLog> EodBatchProcessLogs { get; set; }
         public DbSet<SystemVersionHistory> SystemVersionHistories { get; set; }

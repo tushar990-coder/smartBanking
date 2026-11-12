@@ -81,6 +81,10 @@ interface CollectionRow {
   collectionId: number;
   receiptNo: string;
   collectionDate: string;
+  depositDate?: string | null;
+  voucherDate?: string | null;
+  voucherNo?: string | null;
+  isVoucherGenerated?: boolean;
   collectionAmount: number;
   collectionSource: string;
   openingBalance: number;
@@ -308,7 +312,9 @@ export default function PigmyReports() {
       const excelRows = filteredCollections.map((c, i) => ({
         'अ.क्र.': i + 1,
         'पावती क्र.': c.receiptNo,
-        'तारीख': formatDisplayDate(c.collectionDate),
+        'वसुली दिनांक': formatDisplayDate(c.collectionDate),
+        'शाखेत भरणा दिनांक': c.depositDate ? formatDisplayDate(c.depositDate) : 'प्रलंबित (Pending)',
+        'व्हाउचर क्र.': c.voucherNo || '-',
         'खाते क्र.': c.legacyAccountNumber ? `${c.pigmyAccountNo || '-'} (जुना: ${c.legacyAccountNumber})` : (c.pigmyAccountNo || '-'),
         'खातेदाराचे नाव': `${c.legacyCustomerNo ? `[जुना CIF: ${c.legacyCustomerNo}] ` : (c.cifNo ? `[${c.cifNo}] ` : '')}${c.customerName || c.memberName || '-'}`,
         'पिग्मी एजंट': c.agentName || '-',
@@ -658,25 +664,27 @@ export default function PigmyReports() {
               <table className="w-full border-collapse border border-gray-900 text-xs">
                 <thead>
                   <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
-                    <th className="border border-gray-900 py-1.5 px-1 w-[5%] text-center">#</th>
-                    <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-center">पावती क्र.</th>
-                    <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-center">तारीख</th>
-                    <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-center">खाते क्र.</th>
-                    <th className="border border-gray-900 py-1.5 px-3 w-[25%] text-left">सभासदाचे नाव</th>
-                    <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-left">एजंट</th>
-                    <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-right font-extrabold">जमा रक्कम (₹)</th>
+                    <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center">#</th>
+                    <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-center">पावती क्र.</th>
+                    <th className="border border-gray-900 py-1.5 px-2 w-[10%] text-center">वसुली दिनांक</th>
+                    <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-center">शाखेत भरणा दिनांक</th>
+                    <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-center">खाते क्र.</th>
+                    <th className="border border-gray-900 py-1.5 px-3 w-[22%] text-left">सभासदाचे नाव</th>
+                    <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-left">एजंट</th>
+                    <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-right font-extrabold">जमा रक्कम (₹)</th>
+                    <th className="border border-gray-900 py-1.5 px-1 w-[6%] text-center">स्थिती</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                      <td colSpan={9} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
                         माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
                       </td>
                     </tr>
                   ) : filteredCollections.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                      <td colSpan={9} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
                         निवडलेल्या कालावधीत कोणतीही पिग्मी जमा नोंद आढळली नाही.
                       </td>
                     </tr>
@@ -686,6 +694,15 @@ export default function PigmyReports() {
                         <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
                         <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">{c.receiptNo}</td>
                         <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(c.collectionDate)}</td>
+                        <td className="border border-gray-900 py-1 px-2 text-center font-mono">
+                          {c.depositDate ? (
+                            <span title={c.voucherNo ? `व्हाउचर क्र: ${c.voucherNo}` : undefined}>
+                              {formatDisplayDate(c.depositDate)}
+                            </span>
+                          ) : (
+                            <span className="text-amber-700 italic text-[10px]">प्रलंबित</span>
+                          )}
+                        </td>
                         <td className="border border-gray-900 py-1 px-2 text-center font-mono text-primary font-bold">
                           <div>{c.pigmyAccountNo || '-'}</div>
                           {c.legacyAccountNumber && (
@@ -702,6 +719,13 @@ export default function PigmyReports() {
                         </td>
                         <td className="border border-gray-900 py-1 px-2 text-gray-700">{c.agentName || '-'}</td>
                         <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">{fmtCurrency(c.collectionAmount)}</td>
+                        <td className="border border-gray-900 py-1 px-1 text-center">
+                          {c.isVoucherGenerated ? (
+                            <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">जमा</span>
+                          ) : (
+                            <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">एजंटकडे</span>
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -709,7 +733,7 @@ export default function PigmyReports() {
                 {filteredCollections.length > 0 && (
                   <tfoot>
                     <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
-                      <td colSpan={6} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                      <td colSpan={7} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
                         एकूण पिग्मी जमा बेरीज:
                       </td>
                       <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">

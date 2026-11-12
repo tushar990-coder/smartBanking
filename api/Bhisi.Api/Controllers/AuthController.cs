@@ -112,7 +112,7 @@ namespace Bhisi.Api.Controllers
                                 new Claim("BranchID", agentBranch.BranchID.ToString()),
                                 new Claim("FinancialYearID", (agentFy?.FinancialYearID ?? 1).ToString())
                             }),
-                            Expires = DateTime.Now.AddDays(7),
+                            Expires = DateTime.UtcNow.AddDays(7),
                             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(keyAgent), SecurityAlgorithms.HmacSha256Signature)
                         };
                         var tokenObj = tokenHandlerAgent.CreateToken(tokenDescriptorAgent);
@@ -316,7 +316,7 @@ namespace Bhisi.Api.Controllers
                     new Claim("FinancialYearID", request.FinancialYearID.ToString()),
                     new Claim("BusinessDate", businessDate.ToString("yyyy-MM-dd"))
                 }),
-                Expires = DateTime.Now.AddHours(8),
+                Expires = DateTime.UtcNow.AddDays(7),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
             };
             var token = tokenHandler.CreateToken(tokenDescriptor);
@@ -575,7 +575,7 @@ namespace Bhisi.Api.Controllers
                         new Claim("BranchID", targetBranch.BranchID.ToString()),
                         new Claim("FinancialYearID", (activeFy?.FinancialYearID ?? 1).ToString())
                     }),
-                    Expires = DateTime.Now.AddHours(8),
+                    Expires = DateTime.UtcNow.AddDays(7),
                     SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
                 };
                 var token = tokenHandler.CreateToken(tokenDescriptor);

@@ -6368,6 +6368,18 @@ namespace Bhisi.Api.Controllers
                 .ThenBy(t => t.PigmyTransactionID)
                 .ToListAsync();
 
+            // Load all collections for this account with linked Agent Day Book vouchers
+            var accountCollections = await _context.PigmyCollections
+                .AsNoTracking()
+                .Include(c => c.Voucher)
+                .Where(c => c.PigmyAccountId == accountId)
+                .ToListAsync();
+
+            var colReceiptMap = accountCollections
+                .Where(c => !string.IsNullOrEmpty(c.ReceiptNo))
+                .GroupBy(c => c.ReceiptNo)
+                .ToDictionary(g => g.Key, g => g.First());
+
             decimal totalPostedInterest = allTransactions
                 .Where(t => t.TransactionType == "INTEREST" || (!string.IsNullOrEmpty(t.Narration) && t.Narration.Contains("व्याज जमा")))
                 .Sum(t => t.CrAmount);
@@ -6421,20 +6433,30 @@ namespace Bhisi.Api.Controllers
                 periodTxnsQuery = periodTxnsQuery.Where(t => (t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date) <= toDate.Value.Date);
 
             var periodTxns = periodTxnsQuery.ToList();
-            var pigmyVoucherRefs = periodTxns
+
+            // Collect all voucher references from transactions AND linked collections
+            var allVoucherRefs = periodTxns
                 .Where(t => !string.IsNullOrWhiteSpace(t.ReferenceId))
                 .Select(t => t.ReferenceId!)
+                .Concat(accountCollections.Where(c => c.Voucher != null && !string.IsNullOrWhiteSpace(c.Voucher.VoucherNo)).Select(c => c.Voucher!.VoucherNo!))
                 .Distinct()
                 .ToList();
 
-            var pigmyVoucherStatusMap = pigmyVoucherRefs.Count > 0
-                ? (await _context.Vouchers.AsNoTracking()
-                    .Where(v => v.VoucherNo != null && pigmyVoucherRefs.Contains(v.VoucherNo))
-                    .Select(v => new { v.VoucherNo, v.Status })
-                    .ToListAsync())
-                    .GroupBy(v => v.VoucherNo!)
-                    .ToDictionary(g => g.Key, g => string.IsNullOrWhiteSpace(g.First().Status) ? "Approved" : g.First().Status)
-                : new Dictionary<string, string>();
+            var pigmyVoucherInfoMap = new Dictionary<string, (DateTime VoucherDate, string Status)>();
+            if (allVoucherRefs.Count > 0)
+            {
+                var vList = await _context.Vouchers.AsNoTracking()
+                    .Where(v => v.VoucherNo != null && allVoucherRefs.Contains(v.VoucherNo))
+                    .Select(v => new { v.VoucherNo, v.VoucherDate, Status = v.Status ?? "Approved" })
+                    .ToListAsync();
+                foreach (var v in vList)
+                {
+                    if (!string.IsNullOrEmpty(v.VoucherNo) && !pigmyVoucherInfoMap.ContainsKey(v.VoucherNo))
+                    {
+                        pigmyVoucherInfoMap[v.VoucherNo] = (v.VoucherDate, v.Status);
+                    }
+                }
+            }
 
             decimal periodTotalDr = 0;
             decimal periodTotalCr = 0;
@@ -6453,10 +6475,53 @@ namespace Bhisi.Api.Controllers
                     periodPostedInterest += interestAmt;
                 }
 
-                DateTime valDate = t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date;
+                // Match linked collection by receiptNo in narration or referenceId
+                PigmyCollection? matchedCol = null;
+                if (!string.IsNullOrEmpty(t.Narration))
+                {
+                    matchedCol = colReceiptMap.Values.FirstOrDefault(c => t.Narration.Contains(c.ReceiptNo));
+                }
+                if (matchedCol == null && !string.IsNullOrEmpty(t.ReferenceId))
+                {
+                    colReceiptMap.TryGetValue(t.ReferenceId, out matchedCol);
+                }
+
+                // 1. वसुली दिनांक (Collection Date / Value Date): ग्राहकाकडून प्रत्यक्ष संकलन झालेली तारीख
+                DateTime valDate = t.ValueDate != default 
+                    ? t.ValueDate.Date 
+                    : (matchedCol != null ? matchedCol.CollectionDate.Date : t.TransactionDate.Date);
+
+                // 2. व्यवहार दिनांक (Transaction Date / शाखेत भरणा दिनांक / Deposit Date):
+                // एजंट डे बुक (Agent Day Book - Cash Remittance) मध्ये भरणा केल्याची अधिकृत तारीख
+                DateTime txDate;
+                string refId = t.ReferenceId ?? "";
+                string? passingStatus = null;
+
+                if (matchedCol?.Voucher != null)
+                {
+                    txDate = matchedCol.Voucher.VoucherDate.Date; // शाखेत भरणा दिनांक (Deposit Date)
+                    refId = matchedCol.Voucher.VoucherNo ?? refId;
+                    passingStatus = string.IsNullOrWhiteSpace(matchedCol.Voucher.Status) ? "Approved" : matchedCol.Voucher.Status;
+                }
+                else if (!string.IsNullOrWhiteSpace(t.ReferenceId) && pigmyVoucherInfoMap.TryGetValue(t.ReferenceId, out var vInfo))
+                {
+                    txDate = vInfo.VoucherDate.Date;
+                    refId = t.ReferenceId;
+                    passingStatus = string.IsNullOrWhiteSpace(vInfo.Status) ? "Approved" : vInfo.Status;
+                }
+                else
+                {
+                    // भरणा अजून झालेला नसल्यास किंवा डायरेक्ट ट्रान्झॅक्शन असल्यास
+                    txDate = t.TransactionDate != default ? t.TransactionDate.Date : valDate;
+                    if (string.IsNullOrEmpty(refId) && matchedCol != null)
+                    {
+                        refId = matchedCol.ReceiptNo;
+                    }
+                }
+
                 DateTime postDate = t.PostedOn != default ? t.PostedOn : t.TransactionDate;
-                int delayDays = (postDate.Date > valDate.Date && t.TransactionType != "OPENING_BALANCE")
-                    ? (int)(postDate.Date - valDate.Date).TotalDays
+                int delayDays = (txDate > valDate && t.TransactionType != "OPENING_BALANCE")
+                    ? (int)(txDate - valDate).TotalDays
                     : 0;
                 bool isDelayed = delayDays >= 1;
 
@@ -6481,12 +6546,12 @@ namespace Bhisi.Api.Controllers
                 {
                     SrNo = srCounter++,
                     Date = valDate,
-                    TransactionDate = postDate.Date,
-                    ValueDate = valDate,
+                    TransactionDate = txDate, // ✅ व्यवहार दिनांक = शाखेत भरणा दिनांक (Deposit Date)!
+                    ValueDate = valDate,      // ✅ वसुली दिनांक = संकलन दिनांक (Collection Date)!
                     SystemPostedOn = postDate,
                     DelayDays = delayDays,
                     IsDelayedPosting = isDelayed,
-                    ReferenceId = t.ReferenceId ?? "",
+                    ReferenceId = refId,
                     TransactionType = t.TransactionType,
                     Particulars = particulars,
                     Debit = t.DrAmount,
@@ -6494,7 +6559,7 @@ namespace Bhisi.Api.Controllers
                     InterestAmount = interestAmt,
                     IsInterest = isInterestTxn,
                     Balance = runningBalance,
-                    PassingStatus = (!string.IsNullOrWhiteSpace(t.ReferenceId) && pigmyVoucherStatusMap.TryGetValue(t.ReferenceId, out var pgVSt)) ? pgVSt : null
+                    PassingStatus = passingStatus
                 });
             }
 

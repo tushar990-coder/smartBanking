@@ -614,6 +614,8 @@ namespace Bhisi.Api.Controllers
                 {
                     transactionId = tx.PigmyTransactionID,
                     date = tx.TransactionDate.ToString("yyyy-MM-dd"),
+                    transactionDate = tx.TransactionDate.ToString("yyyy-MM-dd"),
+                    valueDate = tx.ValueDate.ToString("yyyy-MM-dd"),
                     type = tx.TransactionType,
                     crAmount = tx.CrAmount,
                     drAmount = tx.DrAmount,

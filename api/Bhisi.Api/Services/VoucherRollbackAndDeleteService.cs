@@ -1449,13 +1449,45 @@ namespace Bhisi.Api.Services
                     .Where(c => c.VoucherId.HasValue && voucherIds.Contains(c.VoucherId.Value))
                     .ToListAsync();
 
-                foreach (var col in remittedCols)
+                if (remittedCols.Any())
                 {
-                    col.VoucherId = null;
-                    col.IsVoucherGenerated = false;
-                    _context.Entry(col).State = EntityState.Modified;
+                    var rcpts = remittedCols.Where(c => !string.IsNullOrEmpty(c.ReceiptNo)).Select(c => c.ReceiptNo).Distinct().ToList();
+                    var accIds = remittedCols.Select(c => c.PigmyAccountId).Distinct().ToList();
+
+                    foreach (var col in remittedCols)
+                    {
+                        col.VoucherId = null;
+                        col.IsVoucherGenerated = false;
+                        _context.Entry(col).State = EntityState.Modified;
+                    }
+
+                    if (accIds.Any())
+                    {
+                        var matchingTxs = await _context.PigmyTransactions
+                            .Where(pt => accIds.Contains(pt.PigmyAccountID) && pt.TransactionType == "DEPOSIT")
+                            .ToListAsync();
+
+                        var rcptSet = new HashSet<string>(rcpts, StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var pt in matchingTxs)
+                        {
+                            bool isMatch = rcptSet.Any(r => !string.IsNullOrEmpty(r) && pt.Narration.Contains(r));
+                            if (!isMatch && !string.IsNullOrEmpty(pt.ReferenceId))
+                            {
+                                isMatch = voucherNos.Contains(pt.ReferenceId);
+                            }
+
+                            if (isMatch)
+                            {
+                                pt.TransactionDate = pt.ValueDate; // Revert to collection date (वसुली दिनांक)
+                                pt.ReferenceId = null;
+                                _context.Entry(pt).State = EntityState.Modified;
+                            }
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
                 }
-                await _context.SaveChangesAsync();
 
                 foreach (var dep in agentDeposits)
                 {

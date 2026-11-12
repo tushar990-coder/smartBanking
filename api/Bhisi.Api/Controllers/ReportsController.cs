@@ -201,20 +201,16 @@ namespace Bhisi.Api.Controllers
             return node;
         }
 
-        private async Task<Dictionary<int, (decimal Dr, decimal Cr)>> GetBranchLedgerOpeningBalanceMapAsync(int? branchId, int? financialYearId = null)
+        private async Task<Dictionary<int, (decimal Dr, decimal Cr)>> GetBranchLedgerOpeningBalanceMapAsync(
+            int? branchId,
+            int? financialYearId = null,
+            DateTime? referenceDate = null,
+            Helpers.FinancialYearBaselineResult? preResolvedBaseline = null)
         {
-            int activeFyId = financialYearId ?? (await _context.FinancialYears
-                .Where(fy => fy.IsActive)
-                .Select(fy => fy.FinancialYearID)
-                .FirstOrDefaultAsync());
+            var baseline = preResolvedBaseline
+                ?? await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, referenceDate, financialYearId);
 
-            if (activeFyId == 0)
-            {
-                activeFyId = await _context.FinancialYears
-                    .OrderByDescending(fy => fy.FinancialYearID)
-                    .Select(fy => fy.FinancialYearID)
-                    .FirstOrDefaultAsync();
-            }
+            int activeFyId = baseline.BaselineFinancialYearId;
 
             var query = _context.BranchLedgerOpeningBalances
                 .AsNoTracking()
@@ -244,9 +240,9 @@ namespace Bhisi.Api.Controllers
             // Backward Compatibility:
             // For Head Office specifically, or when viewing Consolidated (All branches),
             // if a ledger has legacy OpeningBalance in Ledgers table but no row in BranchLedgerOpeningBalances,
-            // fall back to that legacy balance.
-            // For any other specific sub-branch, do NOT fall back to legacy balance (zero data leakage guarantee).
-            if (!isSpecificBranch || isHoBranch)
+            // fall back to that legacy balance ONLY when this is the initial financial year (not a carried-forward year).
+            // For any carried-forward year or any specific sub-branch, do NOT fall back to legacy balance.
+            if ((!isSpecificBranch || isHoBranch) && !baseline.IsCarriedForwardYear)
             {
                 var ledgersWithLegacyOB = await _context.Ledgers
                     .AsNoTracking()
@@ -265,6 +261,66 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            // Case A Support: When a new Financial Year (e.g., 2027-2028) is active before "शिल्लक पुढे ओढा" (CarryForwardYearEnd)
+            // has been executed (BaselineStartDate < TargetFyStartDate), dynamically roll the unappropriated prior-year
+            // Income/Expense net P&L ([BaselineStartDate .. TargetFyStartDate)) into the P&L Appropriation Ledger so that
+            // Income/Expense ledgers start cleanly at ₹0 on TargetFyStartDate while Trial Balance & Balance Sheet stay 100% tallied.
+            if (baseline.BaselineStartDate.HasValue &&
+                baseline.TargetFyStartDate.HasValue &&
+                baseline.BaselineStartDate.Value < baseline.TargetFyStartDate.Value)
+            {
+                var allGroupsForPnl = await _context.AccountGroups.AsNoTracking().ToListAsync();
+                var allLedgersForPnl = await _context.Ledgers.AsNoTracking().ToListAsync();
+
+                var plLedger = allLedgersForPnl.FirstOrDefault(l =>
+                    l.LedgerCode == "PL-RESERVE" ||
+                    l.LedgerName.Contains("संचित नफा") ||
+                    l.LedgerName.Contains("चालू नफा") ||
+                    l.LedgerName.Contains("नफा-तोटा") ||
+                    l.LedgerName.Contains("नफा तोटा") ||
+                    l.LedgerName.Contains("Profit & Loss", StringComparison.OrdinalIgnoreCase) ||
+                    l.LedgerName.Contains("Profit and Loss", StringComparison.OrdinalIgnoreCase));
+
+                if (plLedger != null)
+                {
+                    var incomeExpenseLedgerIds = allLedgersForPnl
+                        .Where(l =>
+                        {
+                            string nat = ResolveGroupRootNature(l.GroupID, allGroupsForPnl);
+                            return nat == "Income" || nat == "Expenses";
+                        })
+                        .Select(l => l.LedgerID)
+                        .ToHashSet();
+
+                    if (incomeExpenseLedgerIds.Count > 0)
+                    {
+                        var priorPnlQuery = _context.VoucherDetails
+                            .AsNoTracking()
+                            .Where(vd => incomeExpenseLedgerIds.Contains(vd.LedgerID) &&
+                                         vd.Voucher != null &&
+                                         (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") &&
+                                         vd.Voucher.Status != "Rejected" &&
+                                         vd.Voucher.Status != "Cancelled" &&
+                                         vd.Voucher.VoucherDate >= baseline.BaselineStartDate.Value &&
+                                         vd.Voucher.VoucherDate < baseline.TargetFyStartDate.Value);
+
+                        if (isSpecificBranch)
+                        {
+                            priorPnlQuery = priorPnlQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId!.Value);
+                        }
+
+                        decimal priorPnlDr = await priorPnlQuery.Where(vd => vd.DrCr == "Dr").SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+                        decimal priorPnlCr = await priorPnlQuery.Where(vd => vd.DrCr == "Cr").SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+
+                        if (Math.Abs(priorPnlDr - priorPnlCr) >= 0.01m)
+                        {
+                            var existingPl = map.TryGetValue(plLedger.LedgerID, out var curPl) ? curPl : (Dr: 0m, Cr: 0m);
+                            map[plLedger.LedgerID] = (Dr: existingPl.Dr + priorPnlDr, Cr: existingPl.Cr + priorPnlCr);
+                        }
+                    }
+                }
+            }
+
             return map;
         }
 
@@ -277,21 +333,38 @@ namespace Bhisi.Api.Controllers
             var groups = await _context.AccountGroups.ToListAsync();
             var ledgers = await _context.Ledgers.ToListAsync();
             
-            // Check active Financial Year to determine starting baseline
-            DateTime? fyStartDate = null;
-            var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive);
-            if (activeFy != null)
-            {
-                fyStartDate = activeFy.StartDate.Date;
-            }
+            // Resolve Financial Year baseline according to the report's date range (not blindly IsActive)
+            DateTime? refDate = fromDate ?? toDate;
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, refDate);
+            DateTime? fyStartDate = fyBaseline.BaselineStartDate;
+            DateTime? targetFyStartDate = fyBaseline.TargetFyStartDate ?? fyStartDate;
+
+            var incomeExpenseLedgerIds = ledgers
+                .Where(l =>
+                {
+                    string nat = ResolveGroupRootNature(l.GroupID, groups);
+                    return nat == "Income" || nat == "Expenses";
+                })
+                .Select(l => l.LedgerID)
+                .ToHashSet();
 
             // 1. Current period vouchers query
             var query = _context.VoucherDetails.Include(vd => vd.Voucher)
                 .Where(vd => vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled")
                 .AsQueryable();
 
-            if (fromDate.HasValue)
-                query = query.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date);
+            DateTime? effectiveFromDate = fromDate?.Date;
+            if (!effectiveFromDate.HasValue && targetFyStartDate.HasValue)
+            {
+                effectiveFromDate = targetFyStartDate.Value;
+            }
+            else if (effectiveFromDate.HasValue && fyStartDate.HasValue && effectiveFromDate.Value < fyStartDate.Value && fyBaseline.BaselineFinancialYearId == fyBaseline.TargetFinancialYearId)
+            {
+                effectiveFromDate = fyStartDate.Value;
+            }
+
+            if (effectiveFromDate.HasValue)
+                query = query.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= effectiveFromDate.Value);
             if (toDate.HasValue)
             {
                 var toDateEnd = toDate.Value.Date.AddDays(1).AddTicks(-1);
@@ -304,18 +377,25 @@ namespace Bhisi.Api.Controllers
 
             var voucherDetails = await query.ToListAsync();
 
-            // 2. Prior period vouchers (between Financial Year start and fromDate) to compute exact opening balance as of fromDate
+            // 2. Prior period vouchers (between Financial Year baseline start and effectiveFromDate) to compute exact opening balance as of fromDate
             Dictionary<int, (decimal Dr, decimal Cr)> priorDict = new();
-            if (fromDate.HasValue)
+            if (effectiveFromDate.HasValue && (!fyStartDate.HasValue || effectiveFromDate.Value > fyStartDate.Value))
             {
                 var priorVouchersQuery = _context.VoucherDetails
                     .Include(vd => vd.Voucher)
                     .Where(vd => vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled")
-                    .Where(vd => vd.Voucher!.VoucherDate < fromDate.Value.Date);
+                    .Where(vd => vd.Voucher!.VoucherDate < effectiveFromDate.Value);
 
                 if (fyStartDate.HasValue)
                 {
                     priorVouchersQuery = priorVouchersQuery.Where(vd => vd.Voucher!.VoucherDate >= fyStartDate.Value);
+                }
+
+                if (targetFyStartDate.HasValue && fyStartDate.HasValue && fyStartDate.Value < targetFyStartDate.Value && effectiveFromDate.Value >= targetFyStartDate.Value)
+                {
+                    priorVouchersQuery = priorVouchersQuery.Where(vd =>
+                        !incomeExpenseLedgerIds.Contains(vd.LedgerID) ||
+                        vd.Voucher!.VoucherDate >= targetFyStartDate.Value);
                 }
 
                 if (branchId.HasValue && branchId.Value > 0)
@@ -337,7 +417,7 @@ namespace Bhisi.Api.Controllers
             }
 
             // 2.1 Branch Ledger Opening Balances Map
-            var branchOBMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, activeFy?.FinancialYearID);
+            var branchOBMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
 
             var ledgersByGroupId = new Dictionary<int, List<ReportNodeDto>>();
 
@@ -497,7 +577,8 @@ namespace Bhisi.Api.Controllers
 
             // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
-            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, startDate);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
 
             // Calculate Opening Balance for Cash across matched cash ledgers
             decimal openingBalance = 0;
@@ -516,6 +597,12 @@ namespace Bhisi.Api.Controllers
                     .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
                     .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
+
+                if (fyBaseline.BaselineStartDate.HasValue)
+                {
+                    priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                    priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                }
 
                 if (branchId.HasValue)
                 {
@@ -930,7 +1017,8 @@ namespace Bhisi.Api.Controllers
 
             // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
-            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, rangeStart);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
 
             // Opening balance as of rangeStart
             decimal baseOpeningBalance = 0;
@@ -949,6 +1037,12 @@ namespace Bhisi.Api.Controllers
                     .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
                     .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
+
+                if (fyBaseline.BaselineStartDate.HasValue)
+                {
+                    priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                    priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                }
 
                 if (branchId.HasValue)
                 {
@@ -1430,7 +1524,8 @@ namespace Bhisi.Api.Controllers
             
             // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
-            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, startDate);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
 
             // Calculate Opening Balance for Cash across matched cash ledgers
             decimal openingBalance = 0;
@@ -1449,6 +1544,12 @@ namespace Bhisi.Api.Controllers
                     .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
                     .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
+
+                if (fyBaseline.BaselineStartDate.HasValue)
+                {
+                    priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                    priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                }
 
                 if (branchId.HasValue)
                 {
@@ -1767,7 +1868,8 @@ namespace Bhisi.Api.Controllers
 
             // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
-            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, rangeStart);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
 
             // Calculate Opening Balance for Cash as of rangeStart
             decimal baseOpeningBalance = 0;
@@ -1786,6 +1888,12 @@ namespace Bhisi.Api.Controllers
                     .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
                     .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart && !(vd.Voucher.VoucherDate > new DateTime(2026, 3, 31, 23, 59, 59) && vd.Voucher.VoucherNo != null && vd.Voucher.VoucherNo.StartsWith("PV-") && !vd.Voucher.VoucherNo.Contains("-AGT-") && !vd.Voucher.VoucherNo.Contains("-OP-") && !vd.Voucher.VoucherNo.Contains("-PIGMY-") && (vd.Voucher.VoucherNo.Contains("-IMP-") || vd.Voucher.VoucherNo.Contains("-BLK-"))));
+
+                if (fyBaseline.BaselineStartDate.HasValue)
+                {
+                    priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                    priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                }
 
                 if (branchId.HasValue)
                 {
@@ -2150,10 +2258,24 @@ namespace Bhisi.Api.Controllers
             var groups = await _context.AccountGroups.ToListAsync();
             var ledgers = await _context.Ledgers.ToListAsync();
             string targetNature = NormalizeNature(nature);
+
+            DateTime? refDate = fromDate ?? toDate;
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, refDate);
+            bool isIncomeOrExpense = targetNature == "Expenses" || targetNature == "Income";
+            DateTime? baselineStart = isIncomeOrExpense
+                ? (fyBaseline.TargetFyStartDate ?? fyBaseline.BaselineStartDate)
+                : fyBaseline.BaselineStartDate;
             
             var query = _context.VoucherDetails.Include(vd => vd.Voucher)
                 .Where(vd => vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled")
                 .AsQueryable();
+            if (baselineStart.HasValue)
+            {
+                DateTime minVoucherDate = fromDate.HasValue && fromDate.Value.Date < baselineStart.Value
+                    ? fromDate.Value.Date
+                    : baselineStart.Value;
+                query = query.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= minVoucherDate);
+            }
             if (toDate.HasValue)
             {
                 var toDateEnd = toDate.Value.Date.AddDays(1).AddTicks(-1);
@@ -2165,7 +2287,9 @@ namespace Bhisi.Api.Controllers
             }
             var vds = await query.ToListAsync();
 
-            var branchOBMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+            var branchOBMap = isIncomeOrExpense
+                ? new Dictionary<int, (decimal Dr, decimal Cr)>()
+                : await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
 
             var ledgersByGroupId = new Dictionary<int, List<ReportNodeDto>>();
 
@@ -2191,51 +2315,51 @@ namespace Bhisi.Api.Controllers
 
                 if (rootNature?.Trim().ToLower() != targetNature.ToLower()) continue;
 
-                var ledgerVds = vds.Where(vd => vd.LedgerID == ledger.LedgerID).ToList();
-                decimal totalDr = ledgerVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
-                decimal totalCr = ledgerVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+                var ledgerVds = vds
+                    .Where(vd => vd.LedgerID == ledger.LedgerID &&
+                                 (!baselineStart.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= baselineStart.Value)))
+                    .ToList();
 
-                decimal drBal = 0;
-                decimal crBal = 0;
-                if (branchOBMap.TryGetValue(ledger.LedgerID, out var obEntry))
+                var pastVds = fromDate.HasValue
+                    ? ledgerVds.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).ToList()
+                    : new List<VoucherDetail>();
+
+                var periodVds = fromDate.HasValue
+                    ? ledgerVds.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date).ToList()
+                    : ledgerVds;
+
+                decimal pastDr = pastVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+                decimal pastCr = pastVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+                decimal periodDr = periodVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+                decimal periodCr = periodVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+
+                decimal totalDr = periodDr;
+                decimal totalCr = periodCr;
+
+                decimal obDr = 0;
+                decimal obCr = 0;
+                if (!isIncomeOrExpense && branchOBMap.TryGetValue(ledger.LedgerID, out var obEntry))
                 {
-                    drBal = obEntry.Dr;
-                    crBal = obEntry.Cr;
+                    obDr = obEntry.Dr;
+                    obCr = obEntry.Cr;
                 }
 
-                decimal drBalOpening = drBal;
-                decimal crBalOpening = crBal;
+                decimal drBalOpening = obDr + pastDr;
+                decimal crBalOpening = obCr + pastCr;
 
-                if (fromDate.HasValue)
-                {
-                    var pastVds = ledgerVds.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).ToList();
-                    drBalOpening += pastVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
-                    crBalOpening += pastVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
-                }
-
-                drBal += totalDr;
-                crBal += totalCr;
+                decimal drBal = drBalOpening + periodDr;
+                decimal crBal = crBalOpening + periodCr;
 
                 decimal netBal = 0;
                 decimal prevNetBal = 0;
                 if (targetNature == "Expenses")
                 {
-                    decimal periodDr = ledgerVds.Where(vd => vd.DrCr == "Dr" && (!fromDate.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date))).Sum(vd => vd.Amount);
-                    decimal periodCr = ledgerVds.Where(vd => vd.DrCr == "Cr" && (!fromDate.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date))).Sum(vd => vd.Amount);
                     netBal = periodDr - periodCr;
-
-                    decimal pastDr = fromDate.HasValue ? ledgerVds.Where(vd => vd.DrCr == "Dr" && vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).Sum(vd => vd.Amount) : 0;
-                    decimal pastCr = fromDate.HasValue ? ledgerVds.Where(vd => vd.DrCr == "Cr" && vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).Sum(vd => vd.Amount) : 0;
                     prevNetBal = pastDr - pastCr;
                 }
                 else if (targetNature == "Income")
                 {
-                    decimal periodDr = ledgerVds.Where(vd => vd.DrCr == "Dr" && (!fromDate.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date))).Sum(vd => vd.Amount);
-                    decimal periodCr = ledgerVds.Where(vd => vd.DrCr == "Cr" && (!fromDate.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date))).Sum(vd => vd.Amount);
                     netBal = periodCr - periodDr;
-
-                    decimal pastDr = fromDate.HasValue ? ledgerVds.Where(vd => vd.DrCr == "Dr" && vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).Sum(vd => vd.Amount) : 0;
-                    decimal pastCr = fromDate.HasValue ? ledgerVds.Where(vd => vd.DrCr == "Cr" && vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).Sum(vd => vd.Amount) : 0;
                     prevNetBal = pastCr - pastDr;
                 }
                 else if (targetNature == "Assets")
@@ -2425,33 +2549,42 @@ namespace Bhisi.Api.Controllers
             dto.TotalPreviousYearLiabilities = dto.Liabilities.Sum(l => l.PreviousYearAmount);
             dto.TotalPreviousYearAssets = dto.Assets.Sum(a => a.PreviousYearAmount);
 
-            // Add Net Profit/Loss
+            // Add Net Profit/Loss (cumulative from baseline FY start through toDate so Balance Sheet always tallies)
             var pnlDto = await GetProfitAndLoss(fromDate, toDate, branchId);
             var pnl = pnlDto.Value;
             if (pnl != null)
             {
-                if (pnl.NetProfit > 0 || pnl.PreviousYearNetProfit > 0)
+                decimal cumulativeIncomeToDate = pnl.TotalPreviousYearIncome + pnl.TotalIncome;
+                decimal cumulativeExpenseToDate = pnl.TotalPreviousYearExpense + pnl.TotalExpense;
+                decimal bsCurrentNetProfit = cumulativeIncomeToDate > cumulativeExpenseToDate
+                    ? cumulativeIncomeToDate - cumulativeExpenseToDate
+                    : 0m;
+                decimal bsCurrentNetLoss = cumulativeExpenseToDate > cumulativeIncomeToDate
+                    ? cumulativeExpenseToDate - cumulativeIncomeToDate
+                    : 0m;
+
+                if (bsCurrentNetProfit > 0 || pnl.PreviousYearNetProfit > 0)
                 {
                     dto.Liabilities.Add(new ReportNodeDto 
                     { 
                         Name = "निव्वळ नफा (Net Profit)", 
-                        Amount = pnl.NetProfit, 
+                        Amount = bsCurrentNetProfit, 
                         PreviousYearAmount = pnl.PreviousYearNetProfit, 
                         IsGroup = true 
                     });
-                    dto.TotalLiabilities += pnl.NetProfit;
+                    dto.TotalLiabilities += bsCurrentNetProfit;
                     dto.TotalPreviousYearLiabilities += pnl.PreviousYearNetProfit;
                 }
-                if (pnl.NetLoss > 0 || pnl.PreviousYearNetLoss > 0)
+                if (bsCurrentNetLoss > 0 || pnl.PreviousYearNetLoss > 0)
                 {
                     dto.Assets.Add(new ReportNodeDto 
                     { 
                         Name = "निव्वळ तोटा (Net Loss)", 
-                        Amount = pnl.NetLoss, 
+                        Amount = bsCurrentNetLoss, 
                         PreviousYearAmount = pnl.PreviousYearNetLoss, 
                         IsGroup = true 
                     });
-                    dto.TotalAssets += pnl.NetLoss;
+                    dto.TotalAssets += bsCurrentNetLoss;
                     dto.TotalPreviousYearAssets += pnl.PreviousYearNetLoss;
                 }
             }
@@ -2477,18 +2610,37 @@ namespace Bhisi.Api.Controllers
                 LedgerName = ledger.LedgerName
             };
 
+            DateTime? refDate = fromDate ?? toDate;
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, refDate);
+            var groups = await _context.AccountGroups.AsNoTracking().ToListAsync();
+            string rootNature = ResolveGroupRootNature(ledger.GroupID, groups);
+            bool isIncomeOrExpense = rootNature == "Income" || rootNature == "Expenses";
+            DateTime? effectiveStart = isIncomeOrExpense
+                ? (fyBaseline.TargetFyStartDate ?? fyBaseline.BaselineStartDate)
+                : fyBaseline.BaselineStartDate;
+
             // Calculate opening balance up to fromDate
-            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
             decimal openingDr = 0;
             decimal openingCr = 0;
-            if (obMap.TryGetValue(ledgerId, out var obEntry))
+            if (!isIncomeOrExpense)
             {
-                openingDr = obEntry.Dr;
-                openingCr = obEntry.Cr;
+                var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
+                if (obMap.TryGetValue(ledgerId, out var obEntry))
+                {
+                    openingDr = obEntry.Dr;
+                    openingCr = obEntry.Cr;
+                }
             }
 
             var allVdsQuery = _context.VoucherDetails.Include(vd => vd.Voucher)
                                        .Where(vd => vd.LedgerID == ledgerId && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled");
+            if (effectiveStart.HasValue)
+            {
+                DateTime minQueryDate = fromDate.HasValue && fromDate.Value.Date < effectiveStart.Value
+                    ? fromDate.Value.Date
+                    : effectiveStart.Value;
+                allVdsQuery = allVdsQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= minQueryDate);
+            }
             if (branchId.HasValue)
             {
                 allVdsQuery = allVdsQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -2500,7 +2652,11 @@ namespace Bhisi.Api.Controllers
 
             if (fromDate.HasValue)
             {
-                var pastVds = allVds.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value).ToList();
+                var pastVds = allVds
+                    .Where(vd => vd.Voucher != null &&
+                                 vd.Voucher.VoucherDate < fromDate.Value.Date &&
+                                 (!effectiveStart.HasValue || vd.Voucher.VoucherDate >= effectiveStart.Value))
+                    .ToList();
                 openingDr += pastVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
                 openingCr += pastVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
             }
@@ -2523,7 +2679,14 @@ namespace Bhisi.Api.Controllers
 
             // Current transactions
             var currentVds = allVds.AsEnumerable();
-            if (fromDate.HasValue) currentVds = currentVds.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value);
+            if (fromDate.HasValue)
+            {
+                currentVds = currentVds.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date);
+            }
+            else if (effectiveStart.HasValue)
+            {
+                currentVds = currentVds.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= effectiveStart.Value);
+            }
             if (toDate.HasValue) 
             {
                 var toDateEnd = toDate.Value.Date.AddDays(1).AddTicks(-1);
@@ -2722,7 +2885,8 @@ namespace Bhisi.Api.Controllers
 
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
             var targetLedgerIds = await ResolveBookTargetLedgerIdsAsync(ledgers, branchId, bookMode, bankLedgerId);
-            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, rangeStart);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
 
             decimal baseOpeningDr = 0;
             decimal baseOpeningCr = 0;
@@ -2742,6 +2906,12 @@ namespace Bhisi.Api.Controllers
                     .Where(vd => targetLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
                     .Where(vd => targetLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < rangeStart);
+
+                if (fyBaseline.BaselineStartDate.HasValue)
+                {
+                    priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                    priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                }
 
                 if (branchId.HasValue)
                 {
@@ -2864,7 +3034,8 @@ namespace Bhisi.Api.Controllers
 
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
             var targetLedgerIds = await ResolveBookTargetLedgerIdsAsync(ledgers, branchId, bookMode, bankLedgerId);
-            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, startDate);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, preResolvedBaseline: fyBaseline);
 
             decimal openingDr = 0;
             decimal openingCr = 0;
@@ -2884,6 +3055,13 @@ namespace Bhisi.Api.Controllers
                     .Where(vd => targetLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
                 var priorCrQuery = _context.VoucherDetails.AsNoTracking()
                     .Where(vd => targetLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr" && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled" && vd.Voucher.VoucherDate < startDate);
+
+                if (fyBaseline.BaselineStartDate.HasValue)
+                {
+                    priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                    priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                }
+
                 if (branchId.HasValue)
                 {
                     priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -9069,10 +9247,14 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
-                var activeFy = financialYearId.HasValue && financialYearId.Value > 0
-                    ? await _context.FinancialYears.FindAsync(financialYearId.Value)
-                    : await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive) 
+                var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, fromDate ?? toDate, financialYearId);
+                var activeFy = fyBaseline.TargetFinancialYearId > 0
+                    ? await _context.FinancialYears.FindAsync(fyBaseline.TargetFinancialYearId)
+                    : await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive)
                       ?? await _context.FinancialYears.OrderByDescending(fy => fy.FinancialYearID).FirstOrDefaultAsync();
+                int baselineFyId = fyBaseline.BaselineFinancialYearId > 0
+                    ? fyBaseline.BaselineFinancialYearId
+                    : (activeFy?.FinancialYearID ?? 0);
 
                 DateTime startDate = fromDate ?? activeFy?.StartDate ?? new DateTime(DateTime.Today.Year, 4, 1);
                 DateTime endDate = toDate ?? activeFy?.EndDate ?? DateTime.Today;
@@ -9121,7 +9303,7 @@ namespace Bhisi.Api.Controllers
                 // Preload Branch Opening Balances for IBT Ledgers
                 var ibtOpeningBalances = await _context.BranchLedgerOpeningBalances
                     .Where(ob => ibtLedgerIds.Contains(ob.LedgerID) && 
-                                (activeFy == null || ob.FinancialYearID == activeFy.FinancialYearID))
+                                (baselineFyId == 0 || ob.FinancialYearID == baselineFyId))
                     .ToListAsync();
 
                 // Fetch all approved IBT vouchers within the requested date range
@@ -9287,8 +9469,14 @@ namespace Bhisi.Api.Controllers
                     return BadRequest("Invalid branch IDs specified.");
                 }
 
-                var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive)
-                               ?? await _context.FinancialYears.OrderByDescending(fy => fy.FinancialYearID).FirstOrDefaultAsync();
+                var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, fromDate ?? toDate);
+                var activeFy = fyBaseline.TargetFinancialYearId > 0
+                    ? await _context.FinancialYears.FindAsync(fyBaseline.TargetFinancialYearId)
+                    : await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive)
+                      ?? await _context.FinancialYears.OrderByDescending(fy => fy.FinancialYearID).FirstOrDefaultAsync();
+                int baselineFyId = fyBaseline.BaselineFinancialYearId > 0
+                    ? fyBaseline.BaselineFinancialYearId
+                    : (activeFy?.FinancialYearID ?? 0);
 
                 DateTime startDate = fromDate ?? activeFy?.StartDate ?? new DateTime(DateTime.Today.Year, 4, 1);
                 DateTime endDate = toDate ?? activeFy?.EndDate ?? DateTime.Today;
@@ -9300,12 +9488,12 @@ namespace Bhisi.Api.Controllers
                 // Opening balances
                 decimal obInA = 0;
                 var obA = await _context.BranchLedgerOpeningBalances
-                    .FirstOrDefaultAsync(ob => ob.BranchID == branchAId && ob.LedgerID == ibtLedgerInA && (activeFy == null || ob.FinancialYearID == activeFy.FinancialYearID));
+                    .FirstOrDefaultAsync(ob => ob.BranchID == branchAId && ob.LedgerID == ibtLedgerInA && (baselineFyId == 0 || ob.FinancialYearID == baselineFyId));
                 if (obA != null) obInA = obA.OpeningBalanceType == "Dr" ? obA.OpeningBalance : -obA.OpeningBalance;
 
                 decimal obInB = 0;
                 var obB = await _context.BranchLedgerOpeningBalances
-                    .FirstOrDefaultAsync(ob => ob.BranchID == branchBId && ob.LedgerID == ibtLedgerInB && (activeFy == null || ob.FinancialYearID == activeFy.FinancialYearID));
+                    .FirstOrDefaultAsync(ob => ob.BranchID == branchBId && ob.LedgerID == ibtLedgerInB && (baselineFyId == 0 || ob.FinancialYearID == baselineFyId));
                 if (obB != null) obInB = obB.OpeningBalanceType == "Dr" ? obB.OpeningBalance : -obB.OpeningBalance;
 
                 // Fetch paired vouchers

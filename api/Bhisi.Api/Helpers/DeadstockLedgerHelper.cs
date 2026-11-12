@@ -69,21 +69,26 @@ namespace Bhisi.Api.Helpers
 
         public static async Task SyncDeadstockOpeningBalancesAsync(AppDbContext context, int? targetBranchId = null)
         {
-            // 1. Identify active financial year
+            // 1. Identify the initial (Go-Live / earliest) financial year for opening balance assets
             int activeFyId = await context.FinancialYears
-                .Where(fy => fy.IsActive)
+                .OrderBy(fy => fy.StartDate)
+                .ThenBy(fy => fy.FinancialYearID)
                 .Select(fy => fy.FinancialYearID)
                 .FirstOrDefaultAsync();
 
-            if (activeFyId == 0)
-            {
-                activeFyId = await context.FinancialYears
-                    .OrderByDescending(fy => fy.FinancialYearID)
-                    .Select(fy => fy.FinancialYearID)
-                    .FirstOrDefaultAsync();
-            }
-
             if (activeFyId == 0) return;
+
+            // Remove any stray auto-synced Deadstock rows that were accidentally written to subsequent financial years
+            var straySubsequentRows = await context.BranchLedgerOpeningBalances
+                .Where(b => b.FinancialYearID != activeFyId &&
+                            b.Remarks != null &&
+                            b.Remarks.Contains("डेडस्टॉक सुरुवातीची शिल्लक"))
+                .ToListAsync();
+            if (straySubsequentRows.Count > 0)
+            {
+                context.BranchLedgerOpeningBalances.RemoveRange(straySubsequentRows);
+                await context.SaveChangesAsync();
+            }
 
             // 2. Resolve default Deadstock ledger
             int defaultDeadstockLedgerId = await ResolveLedgerIdForCategoryAsync(context, null);

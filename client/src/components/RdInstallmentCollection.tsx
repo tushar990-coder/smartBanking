@@ -30,6 +30,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 
 interface RdAccount {
   rdAccountID: number;
@@ -105,7 +106,11 @@ export default function RdInstallmentCollection({
   const [rejectModalOpen, setRejectModalOpen] = useState<boolean>(false);
   const [rejectReason, setRejectReason] = useState<string>('');
 
-  const [accounts, setAccounts] = useState<RdAccount[]>([]);
+  const [accounts, setAccounts] = useState<RdAccount[]>(() =>
+    (getCachedMasterData<RdAccount[]>('/api/RdAccounts') || []).filter(
+      (a: any) => a.status === 'Active' || a.status === 'Matured'
+    )
+  );
   const [selectedAccId, setSelectedAccId] = useState('');
   const [selectedAcc, setSelectedAcc] = useState<RdAccount | null>(null);
 
@@ -146,8 +151,12 @@ export default function RdInstallmentCollection({
   const [success, setSuccess] = useState('');
 
   // Multi-Payment Mode States
-  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
-  const [rdSchemes, setRdSchemes] = useState<any[]>([]);
+  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>(
+    () => getCachedMasterData<RawLedgerItem[]>('/api/Ledgers') || []
+  );
+  const [rdSchemes, setRdSchemes] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/RdSchemes') || []
+  );
   const [isCustomPenalty, setIsCustomPenalty] = useState<boolean>(false);
   const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<number>(0);
   const [chequeNo, setChequeNo] = useState('');

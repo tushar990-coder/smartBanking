@@ -61,6 +61,7 @@ namespace Bhisi.Api.Controllers
 
                 var query = _context.LoanCollections
                     .AsNoTracking()
+                    .AsSplitQuery()
                     .Include(c => c.Branch)
                     .Include(c => c.Voucher)
                     .Include(c => c.HomeBranchVoucher)
@@ -104,6 +105,7 @@ namespace Bhisi.Api.Controllers
                     var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
                     var fallbackQuery = _context.LoanCollections
                         .AsNoTracking()
+                        .AsSplitQuery()
                         .Include(c => c.Branch)
                     .Include(c => c.Voucher)
                     .Include(c => c.HomeBranchVoucher)
@@ -1232,6 +1234,7 @@ namespace Bhisi.Api.Controllers
 
             var collection = await _context.LoanCollections
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(c => c.Branch)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)
@@ -1263,6 +1266,7 @@ namespace Bhisi.Api.Controllers
 
             var collection = await _context.LoanCollections
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(c => c.Branch)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)

@@ -66,6 +66,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var account = await _context.ShareAccounts
+                .AsSplitQuery()
                 .Include(s => s.Certificates)
                 .Include(s => s.Transactions)
                 .Where(s => s.MemberId == memberId || (resolvedCustId > 0 && s.CustomerID == resolvedCustId) || (s.MemberId == 0 && s.CustomerID == memberId))
@@ -143,6 +144,7 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.ShareAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(s => s.Member)
                     .ThenInclude(m => m!.Customer)
                 .Include(s => s.Customer)
@@ -903,6 +905,8 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var accounts = await _context.ShareAccounts
+                    .AsNoTracking()
+                    .AsSplitQuery()
                     .Include(s => s.Member)
                         .ThenInclude(m => m!.Customer)
                     .Include(s => s.Customer)
@@ -3001,6 +3005,8 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetTransferHistory()
         {
             var transfers = await _context.ShareTransactions
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(t => t.ShareAccount)
                     .ThenInclude(s => s!.Member)
                         .ThenInclude(m => m!.Customer)
@@ -3273,6 +3279,8 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetAllTransactions([FromQuery] int? branchId, [FromQuery] string? type, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
         {
             var query = _context.ShareTransactions
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(t => t.ShareAccount)
                     .ThenInclude(s => s!.Member)
                         .ThenInclude(m => m!.Customer)
@@ -3586,6 +3594,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetByVoucher(int voucherId)
         {
             var voucher = await _context.Vouchers
+                .AsNoTracking()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
@@ -3596,6 +3605,8 @@ namespace Bhisi.Api.Controllers
             }
 
             var txns = await _context.ShareTransactions
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(t => t.ShareAccount)
                     .ThenInclude(s => s!.Member)
                         .ThenInclude(m => m!.Customer)

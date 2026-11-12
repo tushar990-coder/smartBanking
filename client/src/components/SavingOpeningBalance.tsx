@@ -3,6 +3,7 @@ import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData } from '../utils/apiCache';
 import {
   Wallet,
   CheckCircle2,
@@ -38,17 +39,29 @@ interface CustomerItem extends CustomerOption {
 
 const SavingOpeningBalance: React.FC = () => {
   const { user } = useAuth();
-  const [customers, setCustomers] = useState<CustomerItem[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
-  const [ledgers, setLedgers] = useState<any[]>([]);
-  const [schemes, setSchemes] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<CustomerItem[]>(
+    () => getCachedMasterData<CustomerItem[]>('/api/Customers') || []
+  );
+  const [branches, setBranches] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/Branches') || []
+  );
+  const [ledgers, setLedgers] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/Ledgers') || []
+  );
+  const [schemes, setSchemes] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/SavingSettings/Interest') || []
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [migratedAccounts, setMigratedAccounts] = useState<any[]>([]);
-  const [allSavingAccounts, setAllSavingAccounts] = useState<any[]>([]);
+  const [migratedAccounts, setMigratedAccounts] = useState<any[]>(() =>
+    (getCachedMasterData<any[]>('/api/SavingAccounts') || []).filter((a: any) => a.isLegacyAccount)
+  );
+  const [allSavingAccounts, setAllSavingAccounts] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/SavingAccounts') || []
+  );
   const [showDuplicateConfirmModal, setShowDuplicateConfirmModal] = useState(false);
   const [confirmedCustomerID, setConfirmedCustomerID] = useState<number | null>(null);
   const [modalAccountTypeFilter, setModalAccountTypeFilter] = useState('ALL');
@@ -67,17 +80,20 @@ const SavingOpeningBalance: React.FC = () => {
   const labelClass = "block text-[11px] font-bold text-gray-700 mb-0.5";
   const inputClass = "w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]";
 
+  const defaultCachedScheme = schemes.length > 0 ? schemes[0] : null;
   const initialFormState = {
     branchID: user?.branchID || 1,
     customerID: 0,
     oldAccountNo: '',
-    settingID: 0,
+    settingID: defaultCachedScheme ? defaultCachedScheme.settingID : 0,
     accountType: 'Personal',
     openingDate: '',
-    ledgerID: 0,
+    ledgerID: defaultCachedScheme
+      ? defaultCachedScheme.savingLiabilityLedgerID || defaultCachedScheme.ledgerID || defaultCachedScheme.interestExpenseLedgerID || 0
+      : 0,
     openingBalance: 0,
-    interestRate: 4.0,
-    minimumBalance: 500,
+    interestRate: defaultCachedScheme ? (defaultCachedScheme.interestRate ?? 4.0) : 4.0,
+    minimumBalance: defaultCachedScheme ? Number(defaultCachedScheme.minimumBalance ?? 0) : 500,
     status: 'Active',
     nomineeName: '',
     nomineeRelation: '',
@@ -127,12 +143,16 @@ const SavingOpeningBalance: React.FC = () => {
     isMountedRef.current = true;
     fetchBranches();
     fetchSchemes();
-    fetchCustomers();
     fetchLedgers();
-    fetchMigratedAccounts();
     fetchNextAccountNo(formData.branchID || 1);
+    const timer = setTimeout(() => {
+      if (!isMountedRef.current) return;
+      fetchCustomers();
+      fetchMigratedAccounts();
+    }, 40);
     return () => {
       isMountedRef.current = false;
+      clearTimeout(timer);
     };
   }, []);
 

@@ -110,6 +110,7 @@ namespace Bhisi.Api.Controllers
                                    userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
 
                 var query = _context.LoanApplications.AsNoTracking()
+                    .AsSplitQuery()
                     .Include(a => a.Branch)
                     .Include(a => a.Customer)
                     .Include(a => a.CoCustomer)
@@ -168,7 +169,7 @@ namespace Bhisi.Api.Controllers
                     .Select(l => l.LoanAccountNo!);
 
                 var query = _context.LoanApplications.AsNoTracking()
-                    .AsNoTracking()
+                    .AsSplitQuery()
                     .Include(a => a.Branch)
                     .Include(a => a.Customer)
                     .Include(a => a.CoCustomer)
@@ -207,6 +208,8 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<LoanApplication>> GetLoanApplication(int id)
         {
             var loanApplication = await _context.LoanApplications
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(a => a.Branch)
                 .Include(a => a.Customer)
                 .Include(a => a.CoCustomer)

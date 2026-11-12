@@ -119,16 +119,24 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPost("unlock-day/{branchId}")]
-        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice")]
-        public async Task<IActionResult> UnlockDay(int branchId, [FromBody] UnlockDayRequest request)
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,BranchManager")]
+        public async Task<IActionResult> UnlockDay(int branchId, [FromBody] UnlockDayRequest? request = null)
         {
+            int userBranch = User.GetOperatingBranchId();
+            if (!User.IsHeadOfficeAdmin() && userBranch != branchId)
+            {
+                return StatusCode(403, new { Message = "आपल्याला दुसऱ्या शाखेचा दिवस पुन्हा उघडण्याचा (Revoke) अधिकार नाही." });
+            }
+
             int adminUserId = User.GetUserId();
             if (adminUserId <= 0)
             {
                 return Unauthorized(new { Message = "अवैध युझर ओळख (Invalid User Identity)." });
             }
 
-            var reason = request?.Reason ?? "Admin emergency day unlock";
+            var reason = !string.IsNullOrWhiteSpace(request?.Reason)
+                ? request!.Reason.Trim()
+                : "Day End Revoked by User";
             var result = await _eodBodService.UnlockDayAsync(branchId, adminUserId, reason);
             if (result.IsSuccess)
             {

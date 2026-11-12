@@ -189,6 +189,7 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.PigmyAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)
@@ -346,6 +347,7 @@ namespace Bhisi.Api.Controllers
         {
             var accounts = await _context.PigmyAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)
@@ -387,6 +389,7 @@ namespace Bhisi.Api.Controllers
         {
             var pigmyAccount = await _context.PigmyAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)

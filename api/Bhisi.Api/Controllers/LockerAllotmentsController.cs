@@ -25,6 +25,8 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<object>>> GetLockerAllotments([FromQuery] int? branchId, [FromQuery] string? status, [FromQuery] string? searchTerm, [FromQuery] int? customerId = null, [FromQuery] int? memberId = null)
         {
             var query = _context.LockerAllotments
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
                 .Include(a => a.Customer)
                 .Include(a => a.Member)
@@ -115,6 +117,8 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<object>> GetLockerAllotment(int id)
         {
             var a = await _context.LockerAllotments
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(x => x.Locker).ThenInclude(l => l!.LockerType)
                 .Include(x => x.Customer)
                 .Include(x => x.Member).ThenInclude(m => m!.Customer)
@@ -129,11 +133,13 @@ namespace Bhisi.Api.Controllers
             }
 
             var visits = await _context.LockerVisitRegisters
+                .AsNoTracking()
                 .Where(v => v.AllotmentID == id)
                 .OrderByDescending(v => v.VisitDate)
                 .ToListAsync();
 
             var rentPostings = await _context.LockerRentPostings
+                .AsNoTracking()
                 .Where(rp => rp.AllotmentID == id)
                 .OrderByDescending(rp => rp.PaymentDate)
                 .ToListAsync();
@@ -480,6 +486,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetByVoucher(int voucherId)
         {
             var voucher = await _context.Vouchers
+                .AsNoTracking()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
@@ -490,6 +497,8 @@ namespace Bhisi.Api.Controllers
             }
 
             var allotment = await _context.LockerAllotments
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
                 .Include(a => a.Customer)
                 .Include(a => a.Member).ThenInclude(m => m!.Customer)
@@ -501,10 +510,13 @@ namespace Bhisi.Api.Controllers
             if (allotment == null)
             {
                 var rentPosting = await _context.LockerRentPostings
+                    .AsNoTracking()
                     .FirstOrDefaultAsync(rp => rp.VoucherID == voucherId);
                 if (rentPosting != null)
                 {
                     allotment = await _context.LockerAllotments
+                        .AsNoTracking()
+                        .AsSplitQuery()
                         .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
                         .Include(a => a.Customer)
                         .Include(a => a.Member).ThenInclude(m => m!.Customer)
@@ -522,6 +534,8 @@ namespace Bhisi.Api.Controllers
                 {
                     var accNo = match.Groups[1].Value;
                     allotment = await _context.LockerAllotments
+                        .AsNoTracking()
+                        .AsSplitQuery()
                         .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
                         .Include(a => a.Customer)
                         .Include(a => a.Member).ThenInclude(m => m!.Customer)

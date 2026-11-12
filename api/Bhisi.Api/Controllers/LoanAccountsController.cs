@@ -152,6 +152,7 @@ namespace Bhisi.Api.Controllers
         {
             IQueryable<LoanAccount> query = _context.LoanAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.LoanRate)
@@ -207,6 +208,7 @@ namespace Bhisi.Api.Controllers
         {
             return await _context.LoanAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.LoanRate)
@@ -222,6 +224,7 @@ namespace Bhisi.Api.Controllers
         {
             return await _context.LoanAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.LoanRate)
@@ -237,6 +240,7 @@ namespace Bhisi.Api.Controllers
         {
             var loanAccount = await _context.LoanAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.CoCustomer)

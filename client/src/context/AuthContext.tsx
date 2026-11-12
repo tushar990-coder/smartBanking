@@ -23,6 +23,8 @@ interface AuthContextType {
   logout: () => void;
   switchBranch: (branchID: number, branchName: string) => Promise<boolean>;
   markPasswordChanged: () => void;
+  updateBusinessDate: (newDate: string) => void;
+  updateFinancialYear: (financialYearID: number, financialYearCode: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -144,6 +146,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const updateBusinessDate = (newDate: string) => {
+    if (!newDate) return;
+    const cleanDate = newDate.split('T')[0];
+    setUser((prevUser) => {
+      if (!prevUser) return null;
+      const updatedUser = {
+        ...prevUser,
+        businessDate: cleanDate
+      };
+      sessionStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
+      localStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
+      try {
+        const channel = new BroadcastChannel('smart_banking_session_sync');
+        channel.postMessage({ type: 'BRANCH_SWITCH', user: updatedUser });
+        channel.close();
+      } catch (_) {}
+      return updatedUser;
+    });
+  };
+
+  const updateFinancialYear = (financialYearID: number, financialYearCode: string) => {
+    if (!financialYearCode) return;
+    setUser((prevUser) => {
+      if (!prevUser) return null;
+      const updatedUser = {
+        ...prevUser,
+        financialYearID: financialYearID || prevUser.financialYearID,
+        financialYearCode
+      };
+      sessionStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
+      localStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
+      try {
+        const channel = new BroadcastChannel('smart_banking_session_sync');
+        channel.postMessage({ type: 'BRANCH_SWITCH', user: updatedUser });
+        channel.close();
+      } catch (_) {}
+      return updatedUser;
+    });
+  };
+
   useEffect(() => {
     let channel: BroadcastChannel | null = null;
     try {
@@ -199,7 +241,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     : (sessionStorage.getItem('globalBranchId') || localStorage.getItem('globalBranchId') || null);
 
   return (
-    <AuthContext.Provider value={{ user, globalBranchId, login, logout, switchBranch, markPasswordChanged }}>
+    <AuthContext.Provider value={{ user, globalBranchId, login, logout, switchBranch, markPasswordChanged, updateBusinessDate, updateFinancialYear }}>
       {children}
     </AuthContext.Provider>
   );

@@ -326,6 +326,7 @@ namespace Bhisi.Api.Controllers
 
             var query = _context.FdAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(f => f.Customer)
                 .Include(f => f.FdScheme)
                 .Include(f => f.Branch)
@@ -483,6 +484,7 @@ namespace Bhisi.Api.Controllers
 
             var f = await _context.FdAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(x => x.Customer)
                 .Include(x => x.FdScheme)
                 .Include(x => x.Branch)
@@ -3349,6 +3351,8 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetPrematurePreview(int id, [FromQuery] DateTime? closureDate = null)
         {
             var account = await _context.FdAccounts
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(a => a.Customer)
                 .Include(a => a.FdScheme)
                     .ThenInclude(s => s!.Slabs)
@@ -3440,6 +3444,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> PrematureClose(int id, [FromQuery] DateTime? closureDate = null, [FromBody] FdClosureRequest? req = null)
         {
             var account = await _context.FdAccounts
+                .AsSplitQuery()
                 .Include(a => a.Customer)
                 .Include(a => a.FdScheme)
                     .ThenInclude(s => s!.Slabs)
@@ -6144,6 +6149,8 @@ namespace Bhisi.Api.Controllers
             DateTime targetDate = asOfDate?.Date ?? DateTime.Today;
 
             var query = _context.FdAccounts
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(a => a.Customer)
                 .Include(a => a.Branch)
                 .Include(a => a.FdScheme)
@@ -6855,6 +6862,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetFdAccountByVoucher(int voucherId)
         {
             var voucher = await _context.Vouchers
+                .AsNoTracking()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
@@ -6866,6 +6874,8 @@ namespace Bhisi.Api.Controllers
 
             // 1. Try to find FdTransaction linked to this Voucher
             var fdTx = await _context.FdTransactions
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(t => t.FdAccount)
                     .ThenInclude(a => a!.Customer)
                 .Include(t => t.FdAccount)
@@ -6889,6 +6899,8 @@ namespace Bhisi.Api.Controllers
                 if (!string.IsNullOrEmpty(accNoCandidate))
                 {
                     account = await _context.FdAccounts
+                        .AsNoTracking()
+                        .AsSplitQuery()
                         .Include(a => a.Customer)
                         .Include(a => a.FdScheme)
                         .Include(a => a.Branch)
@@ -6903,6 +6915,8 @@ namespace Bhisi.Api.Controllers
                 if (custId.HasValue)
                 {
                     account = await _context.FdAccounts
+                        .AsNoTracking()
+                        .AsSplitQuery()
                         .Include(a => a.Customer)
                         .Include(a => a.FdScheme)
                         .Include(a => a.Branch)
@@ -6994,6 +7008,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetFdClosureByVoucher(int voucherId)
         {
             var voucher = await _context.Vouchers
+                .AsNoTracking()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
@@ -7005,6 +7020,8 @@ namespace Bhisi.Api.Controllers
 
             // 1. Try to find FdTransaction linked to this closure or renewal voucher (parent account)
             var fdTx = await _context.FdTransactions
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(t => t.FdAccount)
                     .ThenInclude(a => a!.Customer)
                 .Include(t => t.FdAccount)

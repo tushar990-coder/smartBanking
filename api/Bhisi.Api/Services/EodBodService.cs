@@ -28,38 +28,118 @@ namespace Bhisi.Api.Services
             _npaEngineService = npaEngineService;
         }
 
+        private async Task<(DateTime BusinessDate, DateTime? LastClosedDate, bool IsDayClosed, BranchDayEndStatus? ActiveRecord)> ResolveSequentialBusinessDateAsync(int branchId)
+        {
+            var activeFy = await _context.FinancialYears.AsNoTracking().FirstOrDefaultAsync(f => f.IsActive);
+            DateTime defaultStart = activeFy?.StartDate.Date ?? new DateTime(2026, 4, 1);
+
+            // 1. Latest closed date for this branch
+            var lastClosedRecord = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && b.IsDayClosed && b.BusinessDate.Year >= 2000)
+                .OrderByDescending(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            DateTime? lastClosedDate = lastClosedRecord?.BusinessDate.Date;
+
+            // 2. Oldest unclosed record after lastClosedDate (e.g., 01/06/2026)
+            var oldestUnclosedRecord = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && !b.IsDayClosed && b.BusinessDate.Year >= 2000
+                         && (lastClosedDate == null || b.BusinessDate > lastClosedDate.Value))
+                .OrderBy(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            // 3. Also check if there is an earlier operational voucher after lastClosedDate (in case a past login overwrote BranchDayEndStatuses)
+            var earliestUnclosedVoucherDate = await _context.Vouchers
+                .AsNoTracking()
+                .Where(v => v.BranchID == branchId &&
+                            v.VoucherDate >= defaultStart &&
+                            (lastClosedDate == null || v.VoucherDate > lastClosedDate.Value) &&
+                            v.VoucherType != "Opening" &&
+                            !v.VoucherNo.Contains("-OP-") &&
+                            !v.VoucherNo.Contains("-IMP-") &&
+                            !v.VoucherNo.StartsWith("JV-FD-OP-") &&
+                            !v.VoucherNo.StartsWith("REC-FD-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-RD-OP-") &&
+                            !v.VoucherNo.StartsWith("REC-RD-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-SH-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-INV-OP-") &&
+                            !(v.Narration != null && (
+                                v.Narration.Contains("आरंभिक शिल्लक") ||
+                                v.Narration.Contains("Opening Balance Migration") ||
+                                v.Narration.Contains("Pigmy Chart Import") ||
+                                v.Narration.Contains("Import"))))
+                .OrderBy(v => v.VoucherDate)
+                .Select(v => (DateTime?)v.VoucherDate.Date)
+                .FirstOrDefaultAsync();
+
+            DateTime businessDate;
+            if (lastClosedDate.HasValue)
+            {
+                // Strict sequential enforcement: after lastClosedDate (e.g. 31/05/2026), the next day to close is ALWAYS 01/06/2026
+                businessDate = lastClosedDate.Value.AddDays(1);
+            }
+            else
+            {
+                if (oldestUnclosedRecord != null)
+                {
+                    businessDate = oldestUnclosedRecord.BusinessDate.Date;
+                    if (earliestUnclosedVoucherDate.HasValue && earliestUnclosedVoucherDate.Value < businessDate)
+                    {
+                        businessDate = earliestUnclosedVoucherDate.Value;
+                    }
+                }
+                else if (earliestUnclosedVoucherDate.HasValue)
+                {
+                    businessDate = earliestUnclosedVoucherDate.Value;
+                }
+                else
+                {
+                    businessDate = defaultStart;
+                }
+            }
+
+            // Ensure oldestUnclosedRecord reflects the resolved sequential businessDate
+            if (oldestUnclosedRecord == null)
+            {
+                oldestUnclosedRecord = new BranchDayEndStatus
+                {
+                    BranchID = branchId,
+                    BusinessDate = businessDate,
+                    IsDayClosed = false
+                };
+                _context.BranchDayEndStatuses.Add(oldestUnclosedRecord);
+                await _context.SaveChangesAsync();
+            }
+            else if (oldestUnclosedRecord.BusinessDate.Date != businessDate.Date)
+            {
+                oldestUnclosedRecord.BusinessDate = businessDate.Date;
+                await _context.SaveChangesAsync();
+            }
+
+            return (businessDate.Date, lastClosedDate, oldestUnclosedRecord.IsDayClosed, oldestUnclosedRecord);
+        }
+
         public async Task<object> GetEodStatusAsync(int branchId)
         {
-            var branch = await _context.Branches.FindAsync(branchId);
+            var branch = await _context.Branches.AsNoTracking().FirstOrDefaultAsync(b => b.BranchID == branchId);
             string branchName = branch?.BranchName ?? $"Branch {branchId}";
 
-            // Check when the last day end actually occurred
-            var lastClosedRecord = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == branchId && b.IsDayClosed)
-                .OrderByDescending(b => b.BusinessDate)
-                .FirstOrDefaultAsync();
+            var resolved = await ResolveSequentialBusinessDateAsync(branchId);
+            DateTime businessDate = resolved.BusinessDate;
+            DateTime? lastClosedDate = resolved.LastClosedDate;
+            bool isFirstTimeEod = lastClosedDate == null;
 
-            bool isFirstTimeEod = lastClosedRecord == null;
-            DateTime? lastClosedDate = lastClosedRecord?.BusinessDate;
+            DateTime dayStart = businessDate.Date;
+            DateTime dayEnd = dayStart.AddDays(1);
 
-            // Check current active business date record (can be closed or open)
-            var activeDateRecord = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == branchId)
-                .OrderByDescending(b => b.BusinessDate)
-                .FirstOrDefaultAsync();
-
-            var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
-            DateTime defaultStart = activeFy?.StartDate ?? new DateTime(2026, 4, 1);
-
-            DateTime businessDate = activeDateRecord?.BusinessDate 
-                ?? (lastClosedDate.HasValue ? lastClosedDate.Value.AddDays(1) : defaultStart);
-
-            // 1. Check Unposted Vouchers (Excluding Opening Balance Migration & Historical Chart Import Vouchers)
+            // 1. Check Unposted Vouchers strictly for the active businessDate [dayStart, dayEnd) (1:1 sync with VoucherPostingController)
             var unpostedCount = await _context.Vouchers
-                .CountAsync(v => v.BranchID == branchId && 
-                                 v.Status == "Pending" && 
-                                 v.VoucherDate <= businessDate &&
-                                 !v.VoucherNo.Contains("-OP-") && 
+                .AsNoTracking()
+                .CountAsync(v => (v.BranchID == branchId || v.BranchID == 0) &&
+                                 v.Status == "Pending" &&
+                                 v.VoucherDate >= dayStart &&
+                                 v.VoucherDate < dayEnd &&
+                                 !v.VoucherNo.Contains("-OP-") &&
                                  !v.VoucherNo.Contains("-IMP-") &&
                                  !v.VoucherNo.StartsWith("JV-FD-OP-") &&
                                  !v.VoucherNo.StartsWith("REC-FD-OP-") &&
@@ -69,7 +149,7 @@ namespace Bhisi.Api.Services
                                  !v.VoucherNo.StartsWith("JV-INV-OP-") &&
                                  v.VoucherType != "Opening" &&
                                  !(v.Narration != null && (
-                                     v.Narration.Contains("आरंभिक शिल्लक") || 
+                                     v.Narration.Contains("आरंभिक शिल्लक") ||
                                      v.Narration.Contains("Opening Balance Migration") ||
                                      v.Narration.Contains("Pigmy Chart Import") ||
                                      v.Narration.Contains("Import"))));
@@ -88,128 +168,127 @@ namespace Bhisi.Api.Services
                 .ToListAsync();
 
             int primaryCashLedgerId = branch?.DefaultCashLedgerID ?? cashLedgers.FirstOrDefault()?.LedgerID ?? 1;
-            var primaryCashLedger = cashLedgers.FirstOrDefault(l => l.LedgerID == primaryCashLedgerId) 
+            var primaryCashLedger = cashLedgers.FirstOrDefault(l => l.LedgerID == primaryCashLedgerId)
                 ?? cashLedgers.FirstOrDefault();
 
-            // 3. Check Transfer Batch Tally (Exclude all branch cash ledger entries)
-            var transferTallyOk = true;
-            decimal transferDr = 0;
-            decimal transferCr = 0;
-
-            var transferVouchers = await _context.Vouchers
-                .Include(v => v.VoucherDetails)
-                .Where(v => v.BranchID == branchId && v.Status == "Approved" && v.VoucherDate == businessDate)
+            // 3. Check Transfer Batch Tally (All non-cash lines in today's approved vouchers [dayStart, dayEnd))
+            var todayVoucherLines = await _context.VoucherDetails
+                .AsNoTracking()
+                .Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId && vd.Voucher.Status == "Approved" && vd.Voucher.VoucherDate >= dayStart && vd.Voucher.VoucherDate < dayEnd)
+                .Select(vd => new { vd.VoucherID, vd.LedgerID, vd.DrCr, vd.Amount })
                 .ToListAsync();
 
-            foreach (var v in transferVouchers)
-            {
-                bool hasCash = v.VoucherDetails.Any(vd => cashLedgerIds.Contains(vd.LedgerID));
-                if (!hasCash)
-                {
-                    transferDr += v.VoucherDetails.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
-                    transferCr += v.VoucherDetails.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
-                }
-            }
+            var cashVoucherIds = todayVoucherLines
+                .Where(vd => cashLedgerIds.Contains(vd.LedgerID))
+                .Select(vd => vd.VoucherID)
+                .ToHashSet();
 
-            if (transferDr != transferCr)
-            {
-                transferTallyOk = false;
-            }
+            decimal transferDr = todayVoucherLines
+                .Where(vd => !cashVoucherIds.Contains(vd.VoucherID) && vd.DrCr == "Dr")
+                .Sum(vd => vd.Amount);
 
-            // 4. Branch-Specific Multi-Ledger Cash Tally
+            decimal transferCr = todayVoucherLines
+                .Where(vd => !cashVoucherIds.Contains(vd.VoucherID) && vd.DrCr == "Cr")
+                .Sum(vd => vd.Amount);
+
+            decimal allTodayDr = todayVoucherLines.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
+            decimal allTodayCr = todayVoucherLines.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+
+            bool transferTallyOk = Math.Abs(transferDr - transferCr) < 0.01m && Math.Abs(allTodayDr - allTodayCr) < 0.01m;
+
+            // 4. Branch-Specific Cash Tally (Fast Aggregated Query scoped to the active date's Financial Year Baseline)
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, dayStart);
+            int baselineFyId = fyBaseline.BaselineFinancialYearId;
+
             var branchObs = await _context.BranchLedgerOpeningBalances
                 .AsNoTracking()
-                .Where(b => b.BranchID == branchId && cashLedgerIds.Contains(b.LedgerID))
+                .Where(b => b.BranchID == branchId &&
+                            cashLedgerIds.Contains(b.LedgerID) &&
+                            (baselineFyId == 0 || b.FinancialYearID == baselineFyId))
                 .ToListAsync();
 
-            decimal openingCash = 0;
-            var perLedgerBreakdown = new List<object>();
-
+            decimal baseLedgerOb = 0m;
             foreach (var cl in cashLedgers)
             {
-                decimal ledgerOb = 0;
                 var obRecord = branchObs.FirstOrDefault(b => b.LedgerID == cl.LedgerID);
                 if (obRecord != null)
                 {
-                    ledgerOb = obRecord.OpeningBalanceType == "Dr" ? obRecord.OpeningBalance : -obRecord.OpeningBalance;
+                    baseLedgerOb += obRecord.OpeningBalanceType == "Dr" ? obRecord.OpeningBalance : -obRecord.OpeningBalance;
                 }
-                else if (branchId == 1 || (branch != null && string.Equals(branch.BranchType, "HeadOffice", StringComparison.OrdinalIgnoreCase)))
+                else if (!fyBaseline.IsCarriedForwardYear && (branchId == 1 || (branch != null && string.Equals(branch.BranchType, "HeadOffice", StringComparison.OrdinalIgnoreCase))))
                 {
-                    ledgerOb = cl.OpeningBalanceType == "Dr" ? cl.OpeningBalance : -cl.OpeningBalance;
+                    baseLedgerOb += cl.OpeningBalanceType == "Dr" ? cl.OpeningBalance : -cl.OpeningBalance;
                 }
-
-                // Prior approved vouchers for this specific cash ledger and branch
-                decimal priorDr = await _context.VoucherDetails
-                    .Where(vd => vd.LedgerID == cl.LedgerID && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate < businessDate && vd.DrCr == "Dr")
-                    .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
-
-                decimal priorCr = await _context.VoucherDetails
-                    .Where(vd => vd.LedgerID == cl.LedgerID && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate < businessDate && vd.DrCr == "Cr")
-                    .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
-
-                decimal ledgerStartDay = ledgerOb + priorDr - priorCr;
-                openingCash += ledgerStartDay;
-
-                // Today's approved vouchers for this specific cash ledger and branch
-                decimal todayDr = await _context.VoucherDetails
-                    .Where(vd => vd.LedgerID == cl.LedgerID && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate && vd.DrCr == "Dr")
-                    .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
-
-                decimal todayCr = await _context.VoucherDetails
-                    .Where(vd => vd.LedgerID == cl.LedgerID && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate && vd.DrCr == "Cr")
-                    .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
-
-                decimal ledgerClosing = ledgerStartDay + todayDr - todayCr;
-
-                perLedgerBreakdown.Add(new
-                {
-                    cl.LedgerID,
-                    cl.LedgerName,
-                    cl.LedgerCode,
-                    Opening = ledgerStartDay,
-                    Receipts = todayDr,
-                    Payments = todayCr,
-                    Closing = ledgerClosing
-                });
             }
 
-            decimal totalTodayReceipts = await _context.VoucherDetails
-                .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate && vd.DrCr == "Dr")
+            var priorCashQuery = _context.VoucherDetails
+                .AsNoTracking()
+                .Where(vd => cashLedgerIds.Contains(vd.LedgerID) &&
+                             vd.Voucher != null &&
+                             vd.Voucher.Status == "Approved" &&
+                             vd.Voucher.BranchID == branchId &&
+                             vd.Voucher.VoucherDate < dayStart);
+
+            if (fyBaseline.BaselineStartDate.HasValue)
+            {
+                priorCashQuery = priorCashQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+            }
+
+            decimal priorDr = await priorCashQuery
+                .Where(vd => vd.DrCr == "Dr")
                 .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
 
-            decimal totalTodayPayments = await _context.VoucherDetails
-                .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate && vd.DrCr == "Cr")
+            decimal priorCr = await priorCashQuery
+                .Where(vd => vd.DrCr == "Cr")
                 .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+
+            decimal openingCash = baseLedgerOb + priorDr - priorCr;
+
+            decimal totalTodayReceipts = todayVoucherLines
+                .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Dr")
+                .Sum(vd => vd.Amount);
+
+            decimal totalTodayPayments = todayVoucherLines
+                .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.DrCr == "Cr")
+                .Sum(vd => vd.Amount);
 
             decimal closingCash = openingCash + totalTodayReceipts - totalTodayPayments;
+            bool isCashPositiveAndTallied = closingCash >= 0m && Math.Abs((openingCash + totalTodayReceipts - totalTodayPayments) - closingCash) < 0.01m;
 
-            // 5. Physical Denomination Count Check
-            var latestDenomination = await _context.CashDenominations
-                .Where(cd => cd.BranchId == branchId && cd.DenominationDate.Date == businessDate.Date)
-                .OrderByDescending(cd => cd.Id)
-                .FirstOrDefaultAsync();
-
-            decimal physicalCash = latestDenomination?.TotalAmount ?? 0m;
-            decimal denominationDiff = physicalCash - closingCash;
-            bool isPhysicalSubmitted = latestDenomination != null;
-            bool isPhysicalMatched = isPhysicalSubmitted && Math.Abs(denominationDiff) == 0;
-
-            // 6. Cashier Drawers Settlement Check (Counters must return cash to Vault or settle at EOD)
-            var openCashierDrawers = await _context.CashierBalances
-                .CountAsync(cb => cb.BranchId == branchId && cb.BalanceDate.Date == businessDate.Date && cb.Status == "OPEN" && cb.ClosingBalance > 0);
-
-            // 7. Pigmy Agent Unverified Collections Check
-            var unverifiedPigmyCount = await _context.PigmyCollections
-                .CountAsync(p => p.PigmyAccount != null && p.PigmyAccount.BranchID == branchId && p.CollectionDate == businessDate && !p.IsVoucherGenerated);
+            bool isLastClosedDateInClosedFy = false;
+            string? lastClosedDateFyCode = null;
+            if (lastClosedDate.HasValue)
+            {
+                DateTime targetClosedDate = lastClosedDate.Value.Date;
+                var closedFyForLastDate = await _context.FinancialYears
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                               targetClosedDate >= fy.StartDate.Date &&
+                                               targetClosedDate <= fy.EndDate.Date);
+                if (closedFyForLastDate != null)
+                {
+                    isLastClosedDateInClosedFy = true;
+                    lastClosedDateFyCode = closedFyForLastDate.YearCode;
+                }
+            }
 
             return new
             {
                 BusinessDate = businessDate,
-                IsDayClosed = activeDateRecord?.IsDayClosed ?? false,
+                NextSequentialDate = businessDate.AddDays(1),
+                IsDayClosed = resolved.IsDayClosed,
                 LastClosedDate = lastClosedDate,
+                IsLastClosedDateInClosedFy = isLastClosedDateInClosedFy,
+                LastClosedDateFyCode = lastClosedDateFyCode,
                 IsFirstTimeEod = isFirstTimeEod,
                 UnpostedVouchers = unpostedCount,
-                TransferTally = new { Debit = transferDr, Credit = transferCr, IsMatched = transferTallyOk },
+                TransferTally = new
+                {
+                    Debit = transferDr,
+                    Credit = transferCr,
+                    Difference = Math.Abs(transferDr - transferCr),
+                    IsMatched = transferTallyOk
+                },
                 CashTally = new
                 {
                     BranchID = branchId,
@@ -219,30 +298,15 @@ namespace Bhisi.Api.Services
                     TodayReceipts = totalTodayReceipts,
                     TodayPayments = totalTodayPayments,
                     Closing = closingCash,
-                    IsPositive = closingCash >= 0,
-                    Ledgers = perLedgerBreakdown,
-                    PhysicalDenomination = new
-                    {
-                        IsSubmitted = isPhysicalSubmitted,
-                        TotalAmount = physicalCash,
-                        Difference = denominationDiff,
-                        IsMatched = isPhysicalMatched,
-                        EntryType = latestDenomination?.EntryType ?? "PENDING",
-                        VerifiedBy = latestDenomination?.VerifiedBy ?? ""
-                    },
-                    CashierDrawers = new
-                    {
-                        OpenDrawersCount = openCashierDrawers,
-                        IsAllSettled = openCashierDrawers == 0
-                    }
-                },
-                PigmyReconciliation = new { PendingCollections = unverifiedPigmyCount, IsReconciled = unverifiedPigmyCount == 0 }
+                    IsPositive = isCashPositiveAndTallied,
+                    IsTallied = isCashPositiveAndTallied
+                }
             };
         }
 
         public async Task<IEnumerable<EodBatchProcessLog>> GetEodLogsAsync(int branchId, DateTime? businessDate = null)
         {
-            var query = _context.EodBatchProcessLogs.Where(l => l.BranchID == branchId);
+            var query = _context.EodBatchProcessLogs.AsNoTracking().Where(l => l.BranchID == branchId);
             if (businessDate.HasValue)
             {
                 query = query.Where(l => l.BusinessDate.Date == businessDate.Value.Date);
@@ -252,62 +316,43 @@ namespace Bhisi.Api.Services
 
         public async Task<(bool IsSuccess, string Message)> RunEndOfDayAsync(int branchId, int userId, DateTime? requestedNextDate = null)
         {
-            var activeDateRecord = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == branchId)
-                .OrderByDescending(b => b.BusinessDate)
-                .FirstOrDefaultAsync();
+            // 1. Always resolve the earliest unclosed date (e.g. 01/06/2026 must be closed before moving to next date)
+            var resolved = await ResolveSequentialBusinessDateAsync(branchId);
+            DateTime businessDate = resolved.BusinessDate;
+            var activeDateRecord = resolved.ActiveRecord;
 
             if (activeDateRecord != null && activeDateRecord.IsDayClosed)
             {
-                return (false, "दिवस आधीच बंद केलेला आहे. (The day is already closed.)");
+                return (false, $"दिनांक {businessDate:dd/MM/yyyy} चा दिवस आधीच बंद केलेला आहे.");
             }
 
-            DateTime businessDate = activeDateRecord?.BusinessDate ?? DateTime.Today;
-
-            // Validate and calculate next business date
-            DateTime nextBusinessDate;
+            // Next sequential date (defaults strictly to next calendar day businessDate + 1 day)
+            DateTime nextBusinessDate = businessDate.AddDays(1);
             if (requestedNextDate.HasValue && requestedNextDate.Value.Date > businessDate.Date)
             {
-                if ((requestedNextDate.Value.Date - businessDate.Date).TotalDays > 10)
-                {
-                    return (false, "पुढील बिझनेस डेट चालू तारखेपेक्षा कमाल १० दिवसांपेक्षा जास्त असू शकत नाही.");
-                }
                 nextBusinessDate = requestedNextDate.Value.Date;
             }
-            else
-            {
-                nextBusinessDate = businessDate.AddDays(1);
-            }
 
+            // 2. Strict Validation: Pending Vouchers, Cash Balance Tally, Transfer Balance Tally
             var statusObj = await GetEodStatusAsync(branchId);
             dynamic status = statusObj;
 
-            // टप्पा १: प्रलंबित व्हाउचर व आर्थिक ताळमेळ पडताळणी (Step 1: Validate Unposted Vouchers & Tally)
-            await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "IN_PROGRESS", 0);
             if (status.UnpostedVouchers > 0)
             {
-                await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "FAILED", status.UnpostedVouchers, $"{status.UnpostedVouchers} प्रलंबित वॉउचर्स (Unposted vouchers) आहेत.");
-                return (false, $"EOD करता येत नाही. {status.UnpostedVouchers} मंजूर न झालेले वॉउचर्स आहेत.");
+                return (false, $"दिवस अखेर करता येत नाही! दिनांक {businessDate:dd/MM/yyyy} चे {status.UnpostedVouchers} व्हाउचर्स प्रलंबित (Pending) आहेत. कृपया आधी व्हाउचर्स पास करा.");
             }
 
             if (!status.TransferTally.IsMatched)
             {
-                await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "FAILED", 0, $"नावे (Debit) {status.TransferTally.Debit} व जमा (Credit) {status.TransferTally.Credit} जुळत नाही.");
-                return (false, $"EOD करता येत नाही. ट्रान्सफर डेबिट ({status.TransferTally.Debit}) आणि क्रेडिट ({status.TransferTally.Credit}) जुळत नाही.");
+                return (false, $"दिवस अखेर करता येत नाही! ट्रान्सफर बॅलन्स टॅली नाही (नावे: ₹{status.TransferTally.Debit:N2} व जमा: ₹{status.TransferTally.Credit:N2}).");
             }
 
             if (!status.CashTally.IsPositive)
             {
-                await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "FAILED", 0, $"अखेरची रोख शिल्लक वजा (Negative) आहे: ₹ {status.CashTally.Closing}");
-                return (false, $"EOD करता येत नाही. अखेरची रोख शिल्लक वजा ({status.CashTally.Closing}) आहे.");
+                return (false, $"दिवस अखेर करता येत नाही! अखेरची रोख शिल्लक टॅली नाही किंवा वजा (₹{status.CashTally.Closing:N2}) आहे.");
             }
-            await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "SUCCESS", 1, "सर्व व्हाउचर्स मंजूर व रोजकीर्द संतुलित.");
 
-            // टप्पा २: दिवसअखेर रोख शिल्लक व रोजकीर्द गोठवणे (Step 2: Closing Cash & Freeze Daybook)
-            string ledgerInfo = status.CashTally.PrimaryCashLedger != null 
-                ? $"{status.CashTally.PrimaryCashLedger.LedgerName} (GL: {status.CashTally.PrimaryCashLedger.LedgerID})" 
-                : "सर्व रोख खाती";
-            
+            // 3. Close the current day (e.g. 01/06/2026)
             if (activeDateRecord == null)
             {
                 activeDateRecord = new BranchDayEndStatus
@@ -320,31 +365,37 @@ namespace Bhisi.Api.Services
             }
             else
             {
+                activeDateRecord.BusinessDate = businessDate;
                 activeDateRecord.IsDayClosed = true;
             }
-            await AddLogAsync(branchId, businessDate, 2, "दिवसअखेर रोख शिल्लक व रोजकीर्द गोठवणे", "SUCCESS", 1, 
-                $"अखेर रोख: ₹ {status.CashTally.Closing} | तारीख {businessDate:dd/MM/yyyy} बंद केली.");
 
-            // टप्पा ३: पुढील बिझनेस डेट उघडणे व NPA बॅच (Step 3: Advance to Next Business Date & BOD)
-            var nextDayRecord = new BranchDayEndStatus
+            // Remove any other stray unclosed records for this branch so that nextBusinessDate is strictly the active open date
+            var otherUnclosed = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && !b.IsDayClosed && b.BusinessDate.Date != businessDate.Date)
+                .ToListAsync();
+            if (otherUnclosed.Any())
             {
-                BranchID = branchId,
-                BusinessDate = nextBusinessDate,
-                IsDayClosed = false
-            };
-            _context.BranchDayEndStatuses.Add(nextDayRecord);
-
-            // Execute automated NPA classification batch
-            try
-            {
-                await _npaEngineService.RunClassificationAsync(businessDate, $"EOD_BATCH_USER_{userId}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"NPA EOD Batch Warning: {ex.Message}");
+                _context.BranchDayEndStatuses.RemoveRange(otherUnclosed);
             }
 
-            // Write Audit Trail Entry
+            // 4. Open the next sequential business date (e.g. 02/06/2026)
+            var existingNext = await _context.BranchDayEndStatuses
+                .FirstOrDefaultAsync(b => b.BranchID == branchId && b.BusinessDate.Date == nextBusinessDate.Date);
+
+            if (existingNext != null)
+            {
+                existingNext.IsDayClosed = false;
+            }
+            else
+            {
+                _context.BranchDayEndStatuses.Add(new BranchDayEndStatus
+                {
+                    BranchID = branchId,
+                    BusinessDate = nextBusinessDate,
+                    IsDayClosed = false
+                });
+            }
+
             var userObj = await _context.Users.FindAsync(userId);
             _context.AuditLogs.Add(new AuditLog
             {
@@ -354,31 +405,42 @@ namespace Bhisi.Api.Services
                 EntityName = "BranchBusinessDate",
                 EntityID = branchId.ToString(),
                 Timestamp = DateTime.Now,
-                Details = $"EOD complete. Business Date advanced from {businessDate:dd/MM/yyyy} to {nextBusinessDate:dd/MM/yyyy}. Closing Cash: ₹{status.CashTally.Closing} ({ledgerInfo})"
+                Details = $"EOD complete. Business Date advanced from {businessDate:dd/MM/yyyy} to {nextBusinessDate:dd/MM/yyyy}. Closing Cash: ₹{status.CashTally.Closing}"
             });
-
-            await AddLogAsync(branchId, businessDate, 3, "पुढील बिझनेस डेट उघडणे व NPA बॅच", "SUCCESS", 1, $"नवीन बिझनेस डेट उघडली: {nextBusinessDate:dd/MM/yyyy}");
 
             await _context.SaveChangesAsync();
 
-            return (true, $"दिवस अखेर (EOD) प्रक्रिया यशस्वीरित्या पूर्ण झाली! नवीन बिझनेस डेट: {nextBusinessDate:dd/MM/yyyy}.");
+            return (true, $"दिनांक {businessDate:dd/MM/yyyy} चा दिवस अखेर (Day End) पूर्ण झाला! पुढील कामकाजाची तारीख: {nextBusinessDate:dd/MM/yyyy}");
         }
 
         public async Task<(bool IsSuccess, string Message)> InitializeGoLiveDateAsync(int branchId, DateTime goLiveDate, int adminUserId, string reason)
         {
             if (goLiveDate == default)
             {
-                return (false, "अवैध गो-लाईव्ह तारीख. (Invalid Go-Live Date.)");
+                return (false, "अवैध गो-लाईव्ह तारीख.");
             }
 
-            var activeDateRecord = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == branchId)
+            var closedFyForGoLive = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                           goLiveDate.Date >= fy.StartDate.Date &&
+                                           goLiveDate.Date <= fy.EndDate.Date);
+
+            if (closedFyForGoLive != null)
+            {
+                return (false, $"दिनांक {goLiveDate:dd/MM/yyyy} ही तारीख बंद झालेल्या आर्थिक वर्षात ({closedFyForGoLive.YearCode}) येते. बंद आर्थिक वर्षातील तारीख सेट करता येणार नाही.");
+            }
+
+            var lastClosedRecord = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && b.IsDayClosed && b.BusinessDate.Year >= 2000)
                 .OrderByDescending(b => b.BusinessDate)
                 .FirstOrDefaultAsync();
 
-            DateTime oldDate = activeDateRecord?.BusinessDate ?? DateTime.Today;
+            if (lastClosedRecord != null && goLiveDate.Date <= lastClosedRecord.BusinessDate.Date)
+            {
+                return (false, $"दिनांक {lastClosedRecord.BusinessDate:dd/MM/yyyy} पर्यंत दिवस अखेर पूर्ण झालेला आहे. मागील तारीख उघडण्यासाठी 'दिवस अखेर रद्द करा (Revoke Day End)' वापरा.");
+            }
 
-            // Remove any unclosed records to prevent competing dates
             var unclosedRecords = await _context.BranchDayEndStatuses
                 .Where(b => b.BranchID == branchId && !b.IsDayClosed)
                 .ToListAsync();
@@ -388,15 +450,13 @@ namespace Bhisi.Api.Services
                 _context.BranchDayEndStatuses.RemoveRange(unclosedRecords);
             }
 
-            var newRecord = new BranchDayEndStatus
+            _context.BranchDayEndStatuses.Add(new BranchDayEndStatus
             {
                 BranchID = branchId,
                 BusinessDate = goLiveDate.Date,
                 IsDayClosed = false
-            };
-            _context.BranchDayEndStatuses.Add(newRecord);
+            });
 
-            // Write Audit Log for Go-Live Date Initialization
             var userObj = await _context.Users.FindAsync(adminUserId);
             _context.AuditLogs.Add(new AuditLog
             {
@@ -406,88 +466,72 @@ namespace Bhisi.Api.Services
                 EntityName = "BranchBusinessDate",
                 EntityID = branchId.ToString(),
                 Timestamp = DateTime.Now,
-                Details = $"Go-Live Date Initialized for Branch {branchId} from {oldDate:dd/MM/yyyy} to {goLiveDate:dd/MM/yyyy}. Reason: {reason}"
+                Details = $"Business Date set for Branch {branchId} to {goLiveDate:dd/MM/yyyy}. Reason: {reason}"
             });
 
             await _context.SaveChangesAsync();
-            return (true, $"संस्थेची गो-लाईव्ह बिझनेस डेट यशस्वीरीत्या {goLiveDate:dd/MM/yyyy} निश्चित करण्यात आली आहे!");
+            return (true, $"कामाची तारीख यशस्वीरीत्या {goLiveDate:dd/MM/yyyy} निश्चित करण्यात आली आहे!");
         }
 
         public async Task<(bool IsSuccess, string Message)> UnlockDayAsync(int branchId, int adminUserId, string reason)
         {
-            if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 10)
+            if (string.IsNullOrWhiteSpace(reason))
             {
-                return (false, "दिवस पुन्हा उघडण्यासाठी किमान १० अक्षरांचे सबळ कारण टाकणे आवश्यक आहे.");
+                reason = "Day End Revoked by User";
             }
 
-            var activeDateRecord = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == branchId)
+            // Find the latest closed day record to revoke
+            var lastClosedRecord = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && b.IsDayClosed && b.BusinessDate.Year >= 2000)
                 .OrderByDescending(b => b.BusinessDate)
                 .FirstOrDefaultAsync();
 
-            if (activeDateRecord == null)
+            if (lastClosedRecord == null)
             {
-                return (false, "अनलॉक करण्यासाठी कोणताही EOD रेकॉर्ड सापडला नाही.");
+                return (false, "रद्द (Revoke) करण्यासाठी कोणताही बंद केलेला दिवस (Closed Day) आढळला नाही.");
             }
 
-            DateTime unlockedDate;
-            if (!activeDateRecord.IsDayClosed)
-            {
-                _context.BranchDayEndStatuses.Remove(activeDateRecord);
+            DateTime unlockedDate = lastClosedRecord.BusinessDate.Date;
 
-                var previousRecord = await _context.BranchDayEndStatuses
-                    .Where(b => b.BranchID == branchId && b.BusinessDate < activeDateRecord.BusinessDate)
-                    .OrderByDescending(b => b.BusinessDate)
-                    .FirstOrDefaultAsync();
+            // Closed Financial Year Lock Guard (FY Lock Check)
+            var closedFy = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                           unlockedDate >= fy.StartDate.Date &&
+                                           unlockedDate <= fy.EndDate.Date);
 
-                if (previousRecord != null)
-                {
-                    previousRecord.IsDayClosed = false;
-                    unlockedDate = previousRecord.BusinessDate;
-                }
-                else
-                {
-                    unlockedDate = activeDateRecord.BusinessDate.AddDays(-1);
-                }
-            }
-            else
+            if (closedFy != null)
             {
-                activeDateRecord.IsDayClosed = false;
-                unlockedDate = activeDateRecord.BusinessDate;
+                return (false, $"दिनांक {unlockedDate:dd/MM/yyyy} ही तारीख बंद झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) येते. आर्थिक वर्ष बंद (Closed) असल्यामुळे या दिवसाचा Day End रद्द (Revoke) करता येणार नाही.");
             }
 
-            // Write Audit Log for Reopen Day
+            // Remove any unclosed records after lastClosedRecord (e.g. 02/06/2026)
+            var subsequentUnclosed = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && !b.IsDayClosed && b.BusinessDate > lastClosedRecord.BusinessDate)
+                .ToListAsync();
+
+            if (subsequentUnclosed.Any())
+            {
+                _context.BranchDayEndStatuses.RemoveRange(subsequentUnclosed);
+            }
+
+            // Reopen the closed day (e.g. 01/06/2026 -> IsDayClosed = false)
+            lastClosedRecord.IsDayClosed = false;
+
             var userObj = await _context.Users.FindAsync(adminUserId);
             _context.AuditLogs.Add(new AuditLog
             {
                 UserID = adminUserId,
                 Username = userObj?.Username ?? $"Admin_{adminUserId}",
-                Action = "DAY_END_UNLOCK",
+                Action = "DAY_END_REVOKE",
                 EntityName = "BranchBusinessDate",
                 EntityID = branchId.ToString(),
                 Timestamp = DateTime.Now,
-                Details = $"ADMIN REOPEN DAY: Branch {branchId} unlocked for date {unlockedDate:dd/MM/yyyy}. Reason: {reason}"
+                Details = $"DAY END REVOKED: Branch {branchId} reopened for date {unlockedDate:dd/MM/yyyy}. Reason: {reason}"
             });
 
             await _context.SaveChangesAsync();
-            return (true, $"दिवस यशस्वीरित्या अनलॉक झाला! शाखा आता {unlockedDate:dd/MM/yyyy} साठी व्यवहार करू शकते.");
-        }
-
-        private async Task AddLogAsync(int branchId, DateTime date, int stepNo, string stepName, string status, int count, string? msg = null)
-        {
-            _context.EodBatchProcessLogs.Add(new EodBatchProcessLog
-            {
-                BranchID = branchId,
-                BusinessDate = date,
-                StepNumber = stepNo,
-                StepName = stepName,
-                Status = status,
-                RecordsProcessed = count,
-                ErrorMessage = msg,
-                StartTime = DateTime.Now,
-                EndTime = DateTime.Now
-            });
-            await _context.SaveChangesAsync();
+            return (true, $"दिनांक {unlockedDate:dd/MM/yyyy} चा दिवस अखेर रद्द (Revoke) करून तो दिवस पुन्हा उघडण्यात आला आहे!");
         }
     }
 }

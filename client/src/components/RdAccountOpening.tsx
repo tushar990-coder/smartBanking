@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 
 interface Member {
   customerID?: number;
@@ -128,10 +129,12 @@ export default function RdAccountOpening({
   const [rejectReason, setRejectReason] = useState<string>('');
 
   const [view, setView] = useState<'form' | 'list'>('form');
-  const [members, setMembers] = useState<Member[]>([]);
-  const [schemes, setSchemes] = useState<RdScheme[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [agents, setAgents] = useState<PigmyAgent[]>([]);
+  const [members, setMembers] = useState<Member[]>(() => getCachedMasterData<Member[]>('/api/Customers') || []);
+  const [schemes, setSchemes] = useState<RdScheme[]>(() =>
+    (getCachedMasterData<RdScheme[]>('/api/RdSchemes') || []).filter((s: any) => s && s.isActive)
+  );
+  const [branches, setBranches] = useState<Branch[]>(() => getCachedMasterData<Branch[]>('/api/Branches') || []);
+  const [agents, setAgents] = useState<PigmyAgent[]>(() => getCachedMasterData<PigmyAgent[]>('/api/PigmyAgents') || []);
   const [savingAccounts, setSavingAccounts] = useState<SavingAccountItem[]>([]);
 
   const [loading, setLoading] = useState(false);
@@ -143,7 +146,7 @@ export default function RdAccountOpening({
   const [loadingAccountNo, setLoadingAccountNo] = useState(false);
 
   // List view state
-  const [rdList, setRdList] = useState<RdAccountItem[]>([]);
+  const [rdList, setRdList] = useState<RdAccountItem[]>(() => getCachedMasterData<RdAccountItem[]>('/api/RdAccounts') || []);
   const [listLoading, setListLoading] = useState(false);
   const [listSearch, setListSearch] = useState('');
   const [listError, setListError] = useState('');
@@ -375,6 +378,7 @@ export default function RdAccountOpening({
 
   useEffect(() => {
     let isMounted = true;
+    let bgTimer: ReturnType<typeof setTimeout> | null = null;
 
     const fetchData = async () => {
       try {
@@ -411,43 +415,52 @@ export default function RdAccountOpening({
           }).catch(e => console.warn('Fast-track customer lookup error', e));
         }
 
-        const [mRes, bRes, agRes] = await axios.all([
-          axios.get('/api/Customers'),
+        const [bRes, agRes] = await Promise.all([
           axios.get('/api/Branches'),
           axios.get('/api/PigmyAgents'),
         ]);
         if (!isMounted) return;
-        const mList = Array.isArray(mRes.data) ? mRes.data : [];
         const bList = Array.isArray(bRes.data) ? bRes.data : [];
         const agList = Array.isArray(agRes.data) ? agRes.data : [];
 
-        setMembers(mList);
         setBranches(bList);
         setAgents(agList);
 
         const defaultBranch = bList.length > 0 ? bList[0].branchID : 1;
         fetchNextAccountNo(defaultBranch);
-        const [sRes, rdAllRes] = await Promise.all([
-          axios.get(`/api/RdSchemes?branchId=${defaultBranch}`),
-          axios.get('/api/RdAccounts').catch(() => ({ data: [] }))
-        ]);
+        const sRes = await axios.get(`/api/RdSchemes?branchId=${defaultBranch}`);
+        if (!isMounted) return;
         const sList = Array.isArray(sRes.data) ? sRes.data : [];
         setSchemes(sList.filter((s: any) => s && s.isActive));
-        if (Array.isArray(rdAllRes.data)) {
-          setRdList(rdAllRes.data);
-        }
 
-        if (memberIdStr && mList.length > 0) {
-          const mId = parseInt(memberIdStr, 10);
-          const matchedMember = mList.find((m: any) => m && ((m.customerID || m.memberID) === mId));
-          if (matchedMember && isMounted) {
-            setFormData((prev) => ({
-              ...prev,
-              memberID: mId.toString()
-            }));
-            fetchCustomerSavingAccounts(mId.toString());
+        bgTimer = setTimeout(async () => {
+          try {
+            const [mRes, rdAllRes] = await Promise.all([
+              axios.get('/api/Customers'),
+              axios.get('/api/RdAccounts').catch(() => ({ data: [] }))
+            ]);
+            if (!isMounted) return;
+            const mList = Array.isArray(mRes.data) ? mRes.data : [];
+            setMembers(mList);
+            if (Array.isArray(rdAllRes.data)) {
+              setRdList(rdAllRes.data);
+            }
+
+            if (memberIdStr && mList.length > 0) {
+              const mId = parseInt(memberIdStr, 10);
+              const matchedMember = mList.find((m: any) => m && ((m.customerID || m.memberID) === mId));
+              if (matchedMember && isMounted) {
+                setFormData((prev) => ({
+                  ...prev,
+                  memberID: mId.toString()
+                }));
+                fetchCustomerSavingAccounts(mId.toString());
+              }
+            }
+          } catch (bgErr) {
+            console.error('Error loading background customer/account data', bgErr);
           }
-        }
+        }, 40);
       } catch (err) {
         console.error('Error loading initial data', err);
       }
@@ -457,6 +470,7 @@ export default function RdAccountOpening({
 
     return () => {
       isMounted = false;
+      if (bgTimer) clearTimeout(bgTimer);
     };
   }, []);
 

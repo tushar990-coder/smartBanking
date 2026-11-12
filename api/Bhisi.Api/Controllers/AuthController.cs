@@ -273,26 +273,31 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Synchronize active open business date record in BranchDayEndStatuses
-            var currentActiveDateRecord = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == request.BranchID && b.BusinessDate.Year >= 2000)
+            // Ensure sequential active open business date record in BranchDayEndStatuses (NEVER overwrite an unclosed earlier date on login!)
+            var lastClosedForBranch = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == request.BranchID && b.IsDayClosed && b.BusinessDate.Year >= 2000)
                 .OrderByDescending(b => b.BusinessDate)
                 .FirstOrDefaultAsync();
 
-            if (currentActiveDateRecord == null)
+            var oldestUnclosedRecord = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == request.BranchID && !b.IsDayClosed && b.BusinessDate.Year >= 2000
+                         && (lastClosedForBranch == null || b.BusinessDate > lastClosedForBranch.BusinessDate))
+                .OrderBy(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            if (oldestUnclosedRecord == null)
             {
-                currentActiveDateRecord = new BranchDayEndStatus
+                DateTime initialOpenDate = lastClosedForBranch != null
+                    ? lastClosedForBranch.BusinessDate.Date.AddDays(1)
+                    : businessDate.Date;
+
+                oldestUnclosedRecord = new BranchDayEndStatus
                 {
                     BranchID = request.BranchID,
-                    BusinessDate = businessDate.Date,
+                    BusinessDate = initialOpenDate,
                     IsDayClosed = false
                 };
-                _context.BranchDayEndStatuses.Add(currentActiveDateRecord);
-                await _context.SaveChangesAsync();
-            }
-            else if (!currentActiveDateRecord.IsDayClosed && request.BusinessDate.HasValue)
-            {
-                currentActiveDateRecord.BusinessDate = businessDate.Date;
+                _context.BranchDayEndStatuses.Add(oldestUnclosedRecord);
                 await _context.SaveChangesAsync();
             }
 
@@ -356,33 +361,34 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                var activeRecord = await _context.BranchDayEndStatuses
-                    .Where(b => b.BranchID == branchId && b.BusinessDate.Year >= 2000)
-                    .OrderByDescending(b => b.BusinessDate)
-                    .FirstOrDefaultAsync();
-
                 var lastClosedRecord = await _context.BranchDayEndStatuses
                     .Where(b => b.BranchID == branchId && b.IsDayClosed && b.BusinessDate.Year >= 2000)
                     .OrderByDescending(b => b.BusinessDate)
                     .FirstOrDefaultAsync();
 
+                var oldestUnclosedRecord = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == branchId && !b.IsDayClosed && b.BusinessDate.Year >= 2000
+                             && (lastClosedRecord == null || b.BusinessDate > lastClosedRecord.BusinessDate))
+                    .OrderBy(b => b.BusinessDate)
+                    .FirstOrDefaultAsync();
+
                 DateTime businessDate;
                 bool isClosed = false;
 
-                if (activeRecord == null)
+                if (oldestUnclosedRecord != null)
+                {
+                    businessDate = oldestUnclosedRecord.BusinessDate;
+                }
+                else if (lastClosedRecord != null)
+                {
+                    isClosed = true;
+                    businessDate = lastClosedRecord.BusinessDate.AddDays(1);
+                }
+                else
                 {
                     var activeFy = await _context.FinancialYears
                         .FirstOrDefaultAsync(f => f.IsActive);
                     businessDate = activeFy?.StartDate ?? new DateTime(2026, 4, 1);
-                }
-                else if (activeRecord.IsDayClosed)
-                {
-                    isClosed = true;
-                    businessDate = activeRecord.BusinessDate.AddDays(1);
-                }
-                else
-                {
-                    businessDate = activeRecord.BusinessDate;
                 }
 
                 return Ok(new

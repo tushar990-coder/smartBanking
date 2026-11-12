@@ -25,6 +25,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { Lock, Unlock, AlertCircle } from 'lucide-react';
 import BankLedgerSelect from './common/BankLedgerSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 
 interface Customer {
   customerID: number;
@@ -90,8 +91,12 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
   const [activeTab, setActiveTab] = useState<'bulk' | 'monthly' | 'manual' | 'app' | 'history'>('bulk');
   
   // Data States
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [accounts, setAccounts] = useState<PigmyAccount[]>([]);
+  const [agents, setAgents] = useState<Agent[]>(
+    () => getCachedMasterData<Agent[]>('/api/PigmyAgents') || []
+  );
+  const [accounts, setAccounts] = useState<PigmyAccount[]>(
+    () => getCachedMasterData<PigmyAccount[]>('/api/PigmyAccounts') || []
+  );
   const [history, setHistory] = useState<CollectionHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchingAccounts, setFetchingAccounts] = useState(false);

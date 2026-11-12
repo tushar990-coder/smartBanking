@@ -5,6 +5,7 @@ import VoucherPrint from './VoucherPrint';
 import SearchableSelect from './SearchableSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
+import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
 import { 
   PlusCircle, 
@@ -120,7 +121,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
   const [rejectReason, setRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   // Master Data
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<Member[]>(() => getCachedMasterData<Member[]>('/api/Members') || []);
   const [selectedMemberId, setSelectedMemberId] = useState<number | ''>('');
   const [legacyMemberNo, setLegacyMemberNo] = useState('');
   const [nextCertNo, setNextCertNo] = useState('CERT-2026-00001');
@@ -148,7 +149,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
   const [memberSavingAccounts, setMemberSavingAccounts] = useState<any[]>([]);
   const [selectedSavingAccountId, setSelectedSavingAccountId] = useState<number | ''>('');
   const [chequeNo, setChequeNo] = useState('');
-  const [allLedgers, setAllLedgers] = useState<any[]>([]);
+  const [allLedgers, setAllLedgers] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Ledgers') || []);
   const [selectedSourceLedgerId, setSelectedSourceLedgerId] = useState<number | ''>('');
   const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<number | ''>('');
   const [selectedCashLedgerId, setSelectedCashLedgerId] = useState<number | ''>(47);
@@ -375,14 +376,15 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
     }
   };
 
-  const fetchInitialData = async () => {
-    await Promise.all([
-      fetchMembers(),
-      fetchPendingMembers(),
-      fetchNextShareConfig(),
-      fetchLedgers(),
-      fetchAllTransactions()
-    ]);
+  const fetchInitialData = () => {
+    fetchNextShareConfig();
+    fetchLedgers();
+    fetchPendingMembers();
+    setTimeout(() => {
+      if (!isMountedRef.current) return;
+      fetchMembers();
+      fetchAllTransactions();
+    }, 40);
   };
 
   const fetchLedgers = async () => {

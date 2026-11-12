@@ -30,6 +30,7 @@ import {
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
 
 interface Institution {
@@ -72,11 +73,11 @@ const InvestmentAccountOpening: React.FC = () => {
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
 
-  const [institutions, setInstitutions] = useState<Institution[]>([]);
-  const [schemes, setSchemes] = useState<Scheme[]>([]);
-  const [filteredSchemes, setFilteredSchemes] = useState<Scheme[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<any[]>([]);
+  const [institutions, setInstitutions] = useState<Institution[]>(() => getCachedMasterData<any[]>('/api/InvestmentInstitutions') || []);
+  const [schemes, setSchemes] = useState<Scheme[]>(() => getCachedMasterData<any[]>('/api/InvestmentSchemes') || []);
+  const [filteredSchemes, setFilteredSchemes] = useState<Scheme[]>(() => getCachedMasterData<any[]>('/api/InvestmentSchemes') || []);
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
+  const [accounts, setAccounts] = useState<any[]>(() => getCachedMasterData<any[]>('/api/InvestmentAccounts') || []);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -154,8 +155,11 @@ const InvestmentAccountOpening: React.FC = () => {
     fetchInstitutions();
     fetchSchemes();
     fetchBranches();
-    fetchAccounts();
     fetchNextAccountNo(initialBranchId, 0);
+    const timer = setTimeout(() => {
+      fetchAccounts();
+    }, 40);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {

@@ -26,6 +26,7 @@ import {
 import SearchableSelect from './SearchableSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
 
 interface Member extends MemberOption {
@@ -117,9 +118,9 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
 
   const [activeTab, setActiveTab] = useState<'new' | 'list'>('new');
   const [allotments, setAllotments] = useState<AllotmentRecord[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<Member[]>(() => getCachedMasterData<Member[]>('/api/Members') || []);
   const [availableLockers, setAvailableLockers] = useState<LockerOption[]>([]);
-  const [savingAccounts, setSavingAccounts] = useState<SavingAccount[]>([]);
+  const [savingAccounts, setSavingAccounts] = useState<SavingAccount[]>(() => getCachedMasterData<SavingAccount[]>('/api/SavingAccounts') || []);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -130,7 +131,10 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
   // Print & Details Modal
   const [printAllotment, setPrintAllotment] = useState<AllotmentRecord | null>(null);
   const [viewAllotment, setViewAllotment] = useState<AllotmentRecord | null>(null);
-  const [sansthaDetail, setSansthaDetail] = useState<any>(null);
+  const [sansthaDetail, setSansthaDetail] = useState<any>(() => {
+    const cached = getCachedMasterData<any>('/api/SansthaDetails');
+    return Array.isArray(cached) ? (cached[0] || null) : (cached || null);
+  });
 
   // Form State
   const [formData, setFormData] = useState({
@@ -358,10 +362,13 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
 
   useEffect(() => {
     fetchSanstha();
-    fetchAllotments();
-    fetchMembers();
     fetchLockers();
-    fetchSavingAccounts();
+    const timer = setTimeout(() => {
+      fetchMembers();
+      fetchSavingAccounts();
+      fetchAllotments();
+    }, 40);
+    return () => clearTimeout(timer);
   }, []);
 
   // When initialLockerId changes or locker is selected, auto-fill Rent and Deposit

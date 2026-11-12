@@ -8,6 +8,7 @@ import {
   CheckCircle, Percent, ArrowRight, ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData } from '../utils/apiCache';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import DeceasedClaimSettlementModal from './DeceasedClaimSettlementModal';
@@ -105,9 +106,9 @@ interface MemberMasterProps {
 
 export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   const { user } = useAuth();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(() => getCachedMasterData<Customer[]>('/api/Customers') || []);
+  const [members, setMembers] = useState<Member[]>(() => getCachedMasterData<Member[]>('/api/Members') || []);
+  const [branches, setBranches] = useState<Branch[]>(() => getCachedMasterData<Branch[]>('/api/Branches') || []);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isListModalOpen, setIsListModalOpen] = useState(false);
@@ -261,12 +262,16 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     isMountedRef.current = true;
     fetchNextMemberCode();
     fetchNextShareConfig();
-    fetchCustomers();
-    fetchMembers();
     fetchBranches();
+    const timer = setTimeout(() => {
+      if (!isMountedRef.current) return;
+      fetchCustomers();
+      fetchMembers();
+    }, 40);
 
     return () => {
       isMountedRef.current = false;
+      clearTimeout(timer);
     };
   }, []);
 

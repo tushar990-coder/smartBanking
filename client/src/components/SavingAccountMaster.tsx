@@ -4,6 +4,7 @@ import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { useAuth } from '../context/AuthContext';
+import { getCachedMasterData, invalidateApiCache } from '../utils/apiCache';
 
 interface Customer extends Partial<CustomerOption> {
   customerID?: number;
@@ -77,13 +78,40 @@ interface SavingAccount {
   jointHolders?: JointHolder[];
 }
 
+const buildSavingSchemeLedgers = (iSettings: any[], allLedgersList: Ledger[] = []): Ledger[] => {
+  const uniqueLedgerMap = new Map<number, Ledger>();
+  (Array.isArray(iSettings) ? iSettings : []).forEach((s: any) => {
+    const targetId = s.savingLiabilityLedgerID || s.ledgerID || s.interestExpenseLedgerID;
+    if (targetId && targetId > 0) {
+      const ledgerObj =
+        s.savingLiabilityLedger ||
+        s.ledger ||
+        s.interestExpenseLedger ||
+        allLedgersList.find((l: Ledger) => l.ledgerID === targetId) ||
+        { ledgerID: targetId, ledgerName: s.schemeName || 'बचत ठेव (Saving)', groupID: 0 };
+      const minInfo = s.minimumBalance !== undefined && s.minimumBalance !== null ? ` | किमान ₹${Number(s.minimumBalance)}` : '';
+      const displayName = s.schemeName
+        ? `${s.schemeName}${s.interestRate !== undefined ? ` (${s.interestRate}%${minInfo})` : ''}`
+        : `${ledgerObj.ledgerName}${s.interestRate !== undefined ? ` (${s.interestRate}%${minInfo})` : ''}`;
+      uniqueLedgerMap.set(targetId, { ...ledgerObj, ledgerID: targetId, ledgerName: displayName });
+    }
+  });
+  return Array.from(uniqueLedgerMap.values());
+};
+
 const SavingAccountMaster: React.FC = () => {
   const { user } = useAuth();
-  const [accounts, setAccounts] = useState<SavingAccount[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [ledgers, setLedgers] = useState<Ledger[]>([]);
-  const [interestSettings, setInterestSettings] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<SavingAccount[]>(() => getCachedMasterData<SavingAccount[]>('/api/SavingAccounts') || []);
+  const [customers, setCustomers] = useState<Customer[]>(() => getCachedMasterData<Customer[]>('/api/Customers') || []);
+  const [allGlLedgers, setAllGlLedgers] = useState<Ledger[]>(() => getCachedMasterData<Ledger[]>('/api/Ledgers') || []);
+  const [interestSettings, setInterestSettings] = useState<any[]>(() => getCachedMasterData<any[]>('/api/SavingSettings/Interest') || []);
+  const [ledgers, setLedgers] = useState<Ledger[]>(() =>
+    buildSavingSchemeLedgers(
+      getCachedMasterData<any[]>('/api/SavingSettings/Interest') || [],
+      getCachedMasterData<Ledger[]>('/api/Ledgers') || []
+    )
+  );
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -105,47 +133,38 @@ const SavingAccountMaster: React.FC = () => {
     return `${year}-${month}-${day}`;
   };
 
-  // Quick Scheme Creation Modal State
-  const [showQuickSchemeModal, setShowQuickSchemeModal] = useState(false);
-  const [allGlLedgers, setAllGlLedgers] = useState<Ledger[]>([]);
-  const [quickSchemeForm, setQuickSchemeForm] = useState({
-    schemeCode: '',
-    schemeName: '',
-    interestRate: 4.0,
-    minimumBalance: 500,
-    calculationMethod: 'DailyProduct',
-    postingFrequency: 'Quarterly',
-    effectiveDate: getTodayDate(),
-    savingLiabilityLedgerID: 0,
-    interestExpenseLedgerID: 0
-  });
-  const [savingSchemeLoading, setSavingSchemeLoading] = useState(false);
-  const [schemeModalError, setSchemeModalError] = useState('');
-
   const API_URL = '/api';
 
-  const [formData, setFormData] = useState({
-    branchID: user?.branchID || 1,
-    customerID: 0,
-    ledgerID: 0, // Default to Saving Deposit control ledger
-    savingSchemeID: 1,
-    displayAccountNo: '',
-    accountType: 'Personal',
-    isLegacyAccount: false,
-    accountNo: '',
-    legacyAccountNumber: '',
-    openingDate: getTodayDate(),
-    openingBalance: 0,
-    initialPaymentMode: 'Cash',
-    bankLedgerID: 0,
-    interestRate: 4.0,
-    minimumBalance: 500,
-    lienAmount: 0,
-    lienReason: '',
-    status: 'Active',
-    nomineeName: '',
-    nomineeRelation: '',
-    nomineeAddress: '',
+  const [formData, setFormData] = useState(() => {
+    const cachedSettings = getCachedMasterData<any[]>('/api/SavingSettings/Interest') || [];
+    const defScheme = cachedSettings[0];
+    const defLedgerId = defScheme
+      ? (defScheme.savingLiabilityLedgerID || defScheme.ledgerID || defScheme.interestExpenseLedgerID || 0)
+      : 0;
+    const defSchemeId = defScheme?.settingID || 1;
+    return {
+      branchID: user?.branchID || 1,
+      customerID: 0,
+      ledgerID: defLedgerId, // Default to Saving Deposit control ledger
+      savingSchemeID: defSchemeId,
+      displayAccountNo: '',
+      accountType: 'Personal',
+      isLegacyAccount: false,
+      accountNo: '',
+      legacyAccountNumber: '',
+      openingDate: getTodayDate(),
+      openingBalance: 0,
+      initialPaymentMode: 'Cash',
+      bankLedgerID: 0,
+      interestRate: defScheme?.interestRate !== undefined ? Number(defScheme.interestRate) : 4.0,
+      minimumBalance: defScheme?.minimumBalance !== undefined && defScheme?.minimumBalance !== null ? Number(defScheme.minimumBalance) : 0,
+      lienAmount: 0,
+      lienReason: '',
+      status: 'Active',
+      nomineeName: '',
+      nomineeRelation: '',
+      nomineeAddress: '',
+    };
   });
 
   // Joint holders state
@@ -161,13 +180,21 @@ const SavingAccountMaster: React.FC = () => {
   useEffect(() => {
     isMountedRef.current = true;
     const controller = new AbortController();
-    fetchAccounts(controller.signal);
-    fetchCustomers(controller.signal);
-    fetchLedgers(undefined, undefined, undefined, undefined, controller.signal);
+    // 1. Prioritize immediate lightweight form dropdowns & auto account number
     fetchBranches(controller.signal);
+    fetchLedgers(undefined, undefined, undefined, undefined, controller.signal);
     fetchNextAccountNo(undefined, undefined, controller.signal);
+
+    // 2. Defer heavier background datasets slightly so form controls never wait
+    const bgTimer = setTimeout(() => {
+      if (!isMountedRef.current || controller.signal.aborted) return;
+      fetchCustomers(controller.signal);
+      fetchAccounts(controller.signal);
+    }, 40);
+
     return () => {
       isMountedRef.current = false;
+      clearTimeout(bgTimer);
       controller.abort();
     };
   }, []);
@@ -297,41 +324,35 @@ const SavingAccountMaster: React.FC = () => {
     signal?: AbortSignal
   ) => {
     try {
-      const [ledgersRes, interestRes] = await Promise.all([
-        axios.get(`${API_URL}/Ledgers`, { signal }),
-        axios.get(`${API_URL}/SavingSettings/Interest`, { signal }).catch((err) => {
-          if (isAbortError(err)) throw err;
-          return { data: [] };
+      // Load SavingSettings/Interest immediately without waiting for all GL ledgers
+      const interestPromise = axios.get(`${API_URL}/SavingSettings/Interest`, { signal }).catch((err) => {
+        if (isAbortError(err)) throw err;
+        return { data: [] };
+      });
+
+      // Fetch GL ledgers in background for BankLedgerSelect
+      axios
+        .get(`${API_URL}/Ledgers`, { signal })
+        .then((ledgersRes) => {
+          if (!isMountedRef.current || signal?.aborted) return;
+          const allLedgersList: Ledger[] = Array.isArray(ledgersRes.data) ? ledgersRes.data : [];
+          setAllGlLedgers(allLedgersList);
         })
-      ]);
+        .catch((err) => {
+          if (!isAbortError(err)) console.error('Error fetching GL ledgers', err);
+        });
 
+      const interestRes = await interestPromise;
       if (!isMountedRef.current || signal?.aborted) return;
-
-      const allLedgersList: Ledger[] = Array.isArray(ledgersRes.data) ? ledgersRes.data : [];
-      setAllGlLedgers(allLedgersList);
 
       const iSettings: any[] = Array.isArray(interestRes.data) ? interestRes.data : [];
       setInterestSettings(iSettings);
 
-      const uniqueLedgerMap = new Map<number, Ledger>();
-
-      // Extract ledgers configured in Saving Interest Settings (Saving Schemes) ONLY
-      iSettings.forEach((s: any) => {
-        const targetId = s.savingLiabilityLedgerID || s.ledgerID || s.interestExpenseLedgerID;
-        if (targetId && targetId > 0) {
-          const ledgerObj = s.savingLiabilityLedger || s.ledger || s.interestExpenseLedger || allLedgersList.find((l: Ledger) => l.ledgerID === targetId);
-          if (ledgerObj) {
-            const minInfo = s.minimumBalance !== undefined && s.minimumBalance !== null ? ` | किमान ₹${Number(s.minimumBalance)}` : '';
-            const displayName = s.schemeName
-              ? `${s.schemeName}${s.interestRate !== undefined ? ` (${s.interestRate}%${minInfo})` : ''}`
-              : `${ledgerObj.ledgerName}${s.interestRate !== undefined ? ` (${s.interestRate}%${minInfo})` : ''}`;
-            uniqueLedgerMap.set(targetId, { ...ledgerObj, ledgerName: displayName });
-          }
-        }
-      });
-
-      const finalLedgers = Array.from(uniqueLedgerMap.values());
+      const cachedLedgers = getCachedMasterData<Ledger[]>('/api/Ledgers') || allGlLedgers;
+      const finalLedgers = buildSavingSchemeLedgers(iSettings, cachedLedgers);
       setLedgers(finalLedgers);
+
+      const uniqueLedgerIds = new Set(finalLedgers.map((l) => l.ledgerID));
 
       if (autoSelectLedgerId) {
         setFormData(prev => ({
@@ -344,7 +365,7 @@ const SavingAccountMaster: React.FC = () => {
       } else if (finalLedgers.length > 0) {
         const firstLedgerId = finalLedgers[0].ledgerID;
         setFormData(prev => {
-          const effectiveLedgerId = prev.ledgerID && uniqueLedgerMap.has(prev.ledgerID) ? prev.ledgerID : firstLedgerId;
+          const effectiveLedgerId = prev.ledgerID && uniqueLedgerIds.has(prev.ledgerID) ? prev.ledgerID : firstLedgerId;
           const matchedScheme = iSettings.find((s: any) =>
             s.savingLiabilityLedgerID === effectiveLedgerId ||
             s.interestExpenseLedgerID === effectiveLedgerId ||
@@ -373,88 +394,6 @@ const SavingAccountMaster: React.FC = () => {
     }
   };
 
-  const handleOpenQuickSchemeModal = () => {
-    setSchemeModalError('');
-    const defLiab = allGlLedgers.find(l => l.ledgerName.includes('बचत ठेव') || (l.accountType && l.accountType.toLowerCase().includes('saving')));
-    const defExp = allGlLedgers.find(l => l.ledgerName.includes('बचत व्याज') || l.ledgerName.toLowerCase().includes('interest on saving'));
-
-    let nextCode = 'SAV-001';
-    try {
-      const codes = interestSettings.map((s: any) => s.schemeCode).filter(Boolean);
-      const count = codes.length + 1;
-      nextCode = `SAV-${count.toString().padStart(3, '0')}`;
-    } catch {
-      // fallback
-    }
-
-    setQuickSchemeForm({
-      schemeCode: nextCode,
-      schemeName: 'सर्वसाधारण बचत ठेव 4%',
-      interestRate: 4.0,
-      minimumBalance: 500,
-      calculationMethod: 'DailyProduct',
-      postingFrequency: 'Quarterly',
-      effectiveDate: new Date().toISOString().split('T')[0],
-      savingLiabilityLedgerID: defLiab ? defLiab.ledgerID : (allGlLedgers[0]?.ledgerID || 0),
-      interestExpenseLedgerID: defExp ? defExp.ledgerID : 0
-    });
-    setShowQuickSchemeModal(true);
-  };
-
-  const handleSaveQuickScheme = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickSchemeForm.schemeName.trim()) {
-      setSchemeModalError('कृपया योजनेचे नाव प्रविष्ट करा.');
-      return;
-    }
-    if (!quickSchemeForm.savingLiabilityLedgerID) {
-      setSchemeModalError('कृपया बचत ठेव नियंत्रण लेजर निवडा.');
-      return;
-    }
-    const quickMinBal = Number(quickSchemeForm.minimumBalance ?? 0);
-    if (Number.isNaN(quickMinBal) || quickMinBal < 0) {
-      setSchemeModalError('किमान शिल्लक मर्यादा ० किंवा त्यापेक्षा जास्त असावी.');
-      return;
-    }
-
-    setSavingSchemeLoading(true);
-    setSchemeModalError('');
-    try {
-      const payload = {
-        schemeCode: quickSchemeForm.schemeCode,
-        schemeName: quickSchemeForm.schemeName.trim(),
-        interestRate: parseFloat(String(quickSchemeForm.interestRate)) || 0,
-        minimumBalance: quickMinBal,
-        calculationMethod: quickSchemeForm.calculationMethod,
-        postingFrequency: quickSchemeForm.postingFrequency,
-        effectiveDate: quickSchemeForm.effectiveDate,
-        savingLiabilityLedgerID: quickSchemeForm.savingLiabilityLedgerID,
-        ledgerID: quickSchemeForm.savingLiabilityLedgerID,
-        interestExpenseLedgerID: quickSchemeForm.interestExpenseLedgerID > 0 ? quickSchemeForm.interestExpenseLedgerID : null
-      };
-
-      const res = await axios.post(`${API_URL}/SavingSettings/Interest`, payload);
-      const createdScheme = res.data;
-
-      // Refresh ledgers and interestSettings and auto-select
-      const chosenLedgerId = createdScheme.savingLiabilityLedgerID || createdScheme.ledgerID || quickSchemeForm.savingLiabilityLedgerID;
-      await fetchLedgers(
-        chosenLedgerId,
-        createdScheme.interestRate,
-        createdScheme.minimumBalance !== undefined ? Number(createdScheme.minimumBalance) : quickMinBal,
-        createdScheme.settingID
-      );
-
-      setShowQuickSchemeModal(false);
-      setSuccess(`नवीन बचत ठेव योजना '${createdScheme.schemeName}' यशस्वीरीत्या तयार केली व निवडली!`);
-    } catch (err: any) {
-      console.error('Error saving quick saving scheme', err);
-      setSchemeModalError(err.response?.data?.message || err.response?.data || 'बचत योजना सेव्ह करताना त्रुटी आली.');
-    } finally {
-      setSavingSchemeLoading(false);
-    }
-  };
-
   const handleInputChange = (e: any) => {
     const { name, value, type, checked } = e.target;
     if (name === 'branchID') {
@@ -464,10 +403,6 @@ const SavingAccountMaster: React.FC = () => {
     
     // Auto-update interest rate & minimum balance from scheme when changing deposit ledger
     if (name === 'ledgerID') {
-      if (value === '__CREATE_NEW_SCHEME__') {
-        handleOpenQuickSchemeModal();
-        return;
-      }
       const selectedLedgerId = parseInt(value, 10) || 0;
       const matchedScheme = interestSettings.find((s: any) =>
         s.savingLiabilityLedgerID === selectedLedgerId ||
@@ -981,14 +916,6 @@ const SavingAccountMaster: React.FC = () => {
                 <label className="block text-xs font-semibold text-gray-700">
                   बचत ठेव प्रकार (Saving Deposit Ledger) *
                 </label>
-                <button
-                  type="button"
-                  onClick={handleOpenQuickSchemeModal}
-                  className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                  title="नवीन बचत योजना तयार करा"
-                >
-                  <span>+</span> नवीन योजना
-                </button>
               </div>
               <select
                 name="ledgerID"
@@ -1003,12 +930,7 @@ const SavingAccountMaster: React.FC = () => {
                 required
               >
                 {ledgers.length === 0 ? (
-                  <>
-                    <option value="">-- कोणतीही बचत योजना उपलब्ध नाही --</option>
-                    <option value="__CREATE_NEW_SCHEME__" className="font-bold text-emerald-700 bg-emerald-50">
-                      ➕ नवीन बचत ठेव योजना तयार करा (Create Scheme)
-                    </option>
-                  </>
+                  <option value="">-- कोणतीही बचत योजना उपलब्ध नाही --</option>
                 ) : (
                   <>
                     <option value="">-- प्रकार निवडा --</option>
@@ -1030,9 +952,6 @@ const SavingAccountMaster: React.FC = () => {
                         </option>
                       );
                     })}
-                    <option value="__CREATE_NEW_SCHEME__" className="font-bold text-emerald-700 bg-emerald-50">
-                      ➕ नवीन बचत ठेव योजना तयार करा (Create Scheme)
-                    </option>
                   </>
                 )}
               </select>
@@ -1041,15 +960,7 @@ const SavingAccountMaster: React.FC = () => {
                 <div className="mt-1 flex items-start gap-1.5 p-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800">
                   <span className="text-amber-600 font-bold shrink-0">⚠️</span>
                   <div>
-                    <span>कोणतीही बचत ठेव योजना तयार केलेली नाही. खाते उघडण्यासाठी कृपया </span>
-                    <button
-                      type="button"
-                      onClick={handleOpenQuickSchemeModal}
-                      className="underline font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer ml-0.5"
-                    >
-                      येथे क्लिक करून योजना तयार करा
-                    </button>
-                    <span>.</span>
+                    <span>कोणतीही बचत ठेव योजना उपलब्ध नाही. कृपया 'बचत व्याजदर सेटिंग' मधून योजना तयार करा.</span>
                   </div>
                 </div>
               )}
@@ -1626,193 +1537,6 @@ const SavingAccountMaster: React.FC = () => {
                 <span>होय, नवीन खाते तयार करा</span>
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Quick Saving Scheme Creation Modal */}
-      {showQuickSchemeModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 print:hidden">
-          <div className="bg-white rounded-lg shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-emerald-700 to-teal-800 text-white px-4 py-3 font-bold text-sm flex items-center justify-between shadow-xs">
-              <div className="flex items-center gap-2">
-                <span className="p-1 bg-white/20 rounded">✨</span>
-                <span>नवीन बचत ठेव योजना तयार करा (New Saving Scheme)</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowQuickSchemeModal(false)}
-                className="text-white/80 hover:text-white hover:bg-white/10 p-1 rounded transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Modal Body / Form */}
-            <form onSubmit={handleSaveQuickScheme}>
-              <div className="p-4 space-y-3 text-xs text-slate-700 max-h-[75vh] overflow-y-auto">
-                {schemeModalError && (
-                  <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-xs flex items-center gap-1.5 font-semibold">
-                    <span>⚠️</span>
-                    <span>{schemeModalError}</span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Scheme Code */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">योजना कोड (Scheme Code) *</label>
-                    <input
-                      type="text"
-                      value={quickSchemeForm.schemeCode}
-                      onChange={(e) => setQuickSchemeForm(prev => ({ ...prev, schemeCode: e.target.value }))}
-                      required
-                      placeholder="उदा. SAV-001"
-                      className="w-full border border-gray-300 px-2.5 py-1.5 rounded text-xs font-mono font-bold focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  {/* Interest Rate */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">वार्षिक व्याजदर (Interest Rate %) *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      value={quickSchemeForm.interestRate}
-                      onChange={(e) => setQuickSchemeForm(prev => ({ ...prev, interestRate: parseFloat(e.target.value) || 0 }))}
-                      onWheel={(e) => e.currentTarget.blur()}
-                      required
-                      placeholder="उदा. 4.00"
-                      className="w-full border border-gray-300 px-2.5 py-1.5 rounded text-xs font-bold text-emerald-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  {/* Scheme Name */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">योजनेचे नाव (Scheme Name) *</label>
-                    <input
-                      type="text"
-                      value={quickSchemeForm.schemeName}
-                      onChange={(e) => setQuickSchemeForm(prev => ({ ...prev, schemeName: e.target.value }))}
-                      required
-                      placeholder="उदा. सर्वसाधारण बचत ठेव 4%"
-                      className="w-full border border-gray-300 px-2.5 py-1.5 rounded text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  {/* Minimum Balance */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">किमान शिल्लक मर्यादा (Min. Balance ₹) *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={quickSchemeForm.minimumBalance}
-                      onChange={(e) => setQuickSchemeForm(prev => ({ ...prev, minimumBalance: e.target.value === '' ? 0 : Number(e.target.value) }))}
-                      onWheel={(e) => e.currentTarget.blur()}
-                      required
-                      placeholder="उदा. 0, 100, 500"
-                      className="w-full border border-gray-300 px-2.5 py-1.5 rounded text-xs font-bold text-indigo-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  {/* Calculation Method */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">व्याज गणना पद्धत (Calculation Method) *</label>
-                    <select
-                      value={quickSchemeForm.calculationMethod}
-                      onChange={(e) => setQuickSchemeForm(prev => ({ ...prev, calculationMethod: e.target.value }))}
-                      className="w-full border border-gray-300 px-2.5 py-1.5 rounded text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white"
-                    >
-                      <option value="DailyProduct">दैनिक प्रॉडक्ट (Daily Product)</option>
-                      <option value="MonthlyMinimum">10 ते महिनाअखेर किमान शिल्लक (Monthly Minimum)</option>
-                    </select>
-                  </div>
-
-                  {/* Posting Frequency */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">पोस्टिंग वारंवारता (Frequency) *</label>
-                    <select
-                      value={quickSchemeForm.postingFrequency}
-                      onChange={(e) => setQuickSchemeForm(prev => ({ ...prev, postingFrequency: e.target.value }))}
-                      className="w-full border border-gray-300 px-2.5 py-1.5 rounded text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white"
-                    >
-                      <option value="Quarterly">तिमाही (Quarterly)</option>
-                      <option value="HalfYearly">सहामाही (Half-Yearly)</option>
-                      <option value="Yearly">वार्षिक (Yearly)</option>
-                      <option value="Monthly">मासिक (Monthly)</option>
-                    </select>
-                  </div>
-
-                  {/* Saving Liability GL Ledger */}
-                  <div className="md:col-span-2">
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">बचत ठेव नियंत्रण लेजर (Saving Liability Ledger) *</label>
-                    <select
-                      value={quickSchemeForm.savingLiabilityLedgerID}
-                      onChange={(e) => setQuickSchemeForm(prev => ({ ...prev, savingLiabilityLedgerID: parseInt(e.target.value, 10) || 0 }))}
-                      required
-                      className="w-full border border-gray-300 px-2.5 py-1.5 rounded text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white"
-                    >
-                      <option value="">-- लेजर निवडा --</option>
-                      {allGlLedgers.map((l) => (
-                        <option key={l.ledgerID} value={l.ledgerID}>
-                          {l.ledgerName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Interest Expense GL Ledger */}
-                  <div className="md:col-span-2">
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">बचत व्याज खर्च लेजर (Interest Expense Ledger)</label>
-                    <select
-                      value={quickSchemeForm.interestExpenseLedgerID}
-                      onChange={(e) => setQuickSchemeForm(prev => ({ ...prev, interestExpenseLedgerID: parseInt(e.target.value, 10) || 0 }))}
-                      className="w-full border border-gray-300 px-2.5 py-1.5 rounded text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white"
-                    >
-                      <option value={0}>-- स्वयंचलित निवडा (Default Expense) --</option>
-                      {allGlLedgers.map((l) => (
-                        <option key={l.ledgerID} value={l.ledgerID}>
-                          {l.ledgerName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowQuickSchemeModal(false)}
-                  disabled={savingSchemeLoading}
-                  className="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 text-slate-800 rounded text-xs font-bold transition-all cursor-pointer"
-                >
-                  रद्द करा (Cancel)
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingSchemeLoading}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                >
-                  {savingSchemeLoading ? (
-                    <>
-                      <span className="inline-block animate-spin">⏳</span>
-                      <span>सेव्ह करत आहे...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>✓</span>
-                      <span>योजना सेव्ह करा व निवडा</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

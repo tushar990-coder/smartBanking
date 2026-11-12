@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 import * as XLSX from 'xlsx';
 
 interface Customer extends CustomerOption {}
@@ -53,16 +54,24 @@ const getMaxOpeningDate = () => {
 };
 
 export default function RdOpeningBalanceMigration() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [schemes, setSchemes] = useState<RdScheme[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(
+    () => getCachedMasterData<Customer[]>('/api/Customers') || []
+  );
+  const [schemes, setSchemes] = useState<RdScheme[]>(() =>
+    (getCachedMasterData<RdScheme[]>('/api/RdSchemes') || []).filter((s: any) => s && s.isActive !== false)
+  );
+  const [branches, setBranches] = useState<Branch[]>(
+    () => getCachedMasterData<Branch[]>('/api/Branches') || []
+  );
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
 
   const [nextAccountNo, setNextAccountNo] = useState('');
   const [loadingAccountNo, setLoadingAccountNo] = useState(false);
-  const [migratedAccounts, setMigratedAccounts] = useState<any[]>([]);
+  const [migratedAccounts, setMigratedAccounts] = useState<any[]>(() =>
+    (getCachedMasterData<any[]>('/api/RdAccounts') || []).filter((a: any) => a.isLegacyAccount)
+  );
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
@@ -167,35 +176,43 @@ export default function RdOpeningBalanceMigration() {
 
   useEffect(() => {
     let isMounted = true;
+    let bgTimer: ReturnType<typeof setTimeout> | null = null;
 
     const fetchData = async () => {
       try {
-        const [mRes, bRes] = await axios.all([
-          axios.get('/api/Customers'),
-          axios.get('/api/Branches'),
-        ]);
+        const bRes = await axios.get('/api/Branches');
         if (!isMounted) return;
-        setCustomers(mRes.data || []);
         setBranches(bRes.data || []);
 
         const defaultBranch = bRes.data?.length > 0 ? bRes.data[0].branchID : 1;
         fetchNextAccountNo(defaultBranch);
         const sRes = await axios.get(`/api/RdSchemes?branchId=${defaultBranch}`);
+        if (!isMounted) return;
         setSchemes((sRes.data || []).filter((s: any) => s.isActive !== false));
-        fetchMigratedAccounts();
 
-        const params = new URLSearchParams(window.location.search);
-        const customerIdStr = params.get('customerId') || params.get('memberId');
-        if (customerIdStr && mRes.data?.length > 0) {
-          const cId = parseInt(customerIdStr, 10);
-          const matchedCustomer = mRes.data.find((c: any) => c && (c.customerID === cId || c.memberID === cId));
-          if (matchedCustomer && isMounted) {
-            setFormData((prev) => ({
-              ...prev,
-              customerID: cId.toString()
-            }));
+        bgTimer = setTimeout(async () => {
+          try {
+            const mRes = await axios.get('/api/Customers');
+            if (!isMounted) return;
+            setCustomers(mRes.data || []);
+            fetchMigratedAccounts();
+
+            const params = new URLSearchParams(window.location.search);
+            const customerIdStr = params.get('customerId') || params.get('memberId');
+            if (customerIdStr && mRes.data?.length > 0) {
+              const cId = parseInt(customerIdStr, 10);
+              const matchedCustomer = mRes.data.find((c: any) => c && (c.customerID === cId || c.memberID === cId));
+              if (matchedCustomer && isMounted) {
+                setFormData((prev) => ({
+                  ...prev,
+                  customerID: cId.toString()
+                }));
+              }
+            }
+          } catch (bgErr) {
+            console.error(bgErr);
           }
-        }
+        }, 40);
       } catch (err) {
         console.error(err);
       }
@@ -205,6 +222,7 @@ export default function RdOpeningBalanceMigration() {
 
     return () => {
       isMounted = false;
+      if (bgTimer) clearTimeout(bgTimer);
     };
   }, []);
 

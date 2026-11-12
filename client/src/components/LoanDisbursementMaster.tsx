@@ -14,6 +14,7 @@ import LoanDistributionListModal from './LoanDistributionListModal';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
+import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
 
 interface Member {
@@ -205,10 +206,10 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const [disbursements, setDisbursements] = useState<LoanDisbursement[]>([]);
     const [applications, setApplications] = useState<LoanApplication[]>([]);
     const [accounts, setAccounts] = useState<LoanAccount[]>([]);
-    const [bankLedgers, setBankLedgers] = useState<any[]>([]);
-    const [allLedgers, setAllLedgers] = useState<any[]>([]);
-    const [branches, setBranches] = useState<any[]>([]);
-    const [savingAccounts, setSavingAccounts] = useState<any[]>([]);
+    const [bankLedgers, setBankLedgers] = useState<any[]>(() => filterBankAccountLedgers(getCachedMasterData<any[]>('/api/Ledgers') || []));
+    const [allLedgers, setAllLedgers] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Ledgers') || []);
+    const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
+    const [savingAccounts, setSavingAccounts] = useState<any[]>(() => getCachedMasterData<any[]>('/api/SavingAccounts') || []);
     
     const globalBranchStr = localStorage.getItem('globalBranchId');
     const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
@@ -424,8 +425,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         }
 
         fetchNextShareConfig();
-        fetchData(initialBranchId);
         fetchDropdowns(initialBranchId);
+        const timer = setTimeout(() => {
+            fetchData(initialBranchId);
+        }, 40);
+        return () => clearTimeout(timer);
     }, [draftApplication, editingDisbursement]);
 
     // Load Loan Disbursement in Passing Mode

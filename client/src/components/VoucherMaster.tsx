@@ -10,6 +10,7 @@ import VoucherPrint from './VoucherPrint';
 import MemberSearchSelect from './common/MemberSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { filterBankLedgers, isBankAccountLedger, isCashLedgerOption } from '../utils/bankLedgerUtils';
+import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
 
 interface Ledger {
@@ -82,10 +83,10 @@ interface VoucherMasterProps {
 }
 
 export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
-  const [ledgers, setLedgers] = useState<Ledger[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [ledgers, setLedgers] = useState<Ledger[]>(() => getCachedMasterData<Ledger[]>('/api/Ledgers') || []);
+  const [customers, setCustomers] = useState<Customer[]>(() => getCachedMasterData<Customer[]>('/api/Customers') || []);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
   const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : 1;
@@ -191,13 +192,15 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const BRANCH_API = '/api/Branches';
 
   useEffect(() => {
-    fetchLedgers().then(() => {
-      fetchNextVoucherNo('Receipt', selectedBranchId);
-    });
-    fetchCustomers(selectedBranchId);
-    fetchVouchers();
+    fetchNextVoucherNo('Receipt', selectedBranchId);
     fetchBranches();
     fetchBranchBusinessDate(selectedBranchId);
+    fetchLedgers();
+    const timer = setTimeout(() => {
+      fetchCustomers(selectedBranchId);
+      fetchVouchers();
+    }, 40);
+    return () => clearTimeout(timer);
   }, []);
 
   // Check URL params for Passing Mode (उदा. व्हाउचर पासिंग स्क्रीनवरून आलेली तपासणी विनंती)

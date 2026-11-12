@@ -6,7 +6,7 @@ import App from './App'
 
 import { AuthProvider } from './context/AuthContext'
 import { getApiBaseUrl } from './utils/api'
-import { setupAxiosCacheAdapter, invalidateApiCache, prewarmMasterDataCache } from './utils/apiCache'
+import { setupAxiosCacheAdapter, invalidateApiCache, prewarmMasterDataCache, executeCachedFetch } from './utils/apiCache'
 
 setupAxiosCacheAdapter();
 
@@ -181,9 +181,8 @@ window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
     }
   }
 
-  const fetchMethod = (init?.method || 'GET').toUpperCase();
-  if (fetchMethod !== 'GET' && urlStr) {
-    invalidateApiCache(urlStr);
+  if (urlStr && (urlStr.startsWith('/api') || urlStr.startsWith('api/') || urlStr.includes('/api/'))) {
+    return executeCachedFetch(originalFetch.bind(window), urlStr, input, init);
   }
 
   return originalFetch(input, init);

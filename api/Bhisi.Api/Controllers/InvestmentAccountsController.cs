@@ -139,23 +139,27 @@ namespace Bhisi.Api.Controllers
         /// </summary>
         public async Task SyncInvestmentOpeningBalancesAsync(int? targetBranchId = null)
         {
-            // 1. Identify active financial year
+            // 1. Identify initial (Go-Live / earliest) financial year for legacy investment opening balances
             int activeFyId = await _context.FinancialYears
-                .Where(fy => fy.IsActive)
+                .OrderBy(fy => fy.StartDate)
+                .ThenBy(fy => fy.FinancialYearID)
                 .Select(fy => fy.FinancialYearID)
                 .FirstOrDefaultAsync();
 
             if (activeFyId == 0)
             {
-                activeFyId = await _context.FinancialYears
-                    .OrderByDescending(fy => fy.FinancialYearID)
-                    .Select(fy => fy.FinancialYearID)
-                    .FirstOrDefaultAsync();
+                return;
             }
 
-            if (activeFyId == 0)
+            var straySubsequentRows = await _context.BranchLedgerOpeningBalances
+                .Where(b => b.FinancialYearID != activeFyId &&
+                            b.Remarks != null &&
+                            b.Remarks.Contains("गुंतवणूक सुरुवातीची शिल्लक"))
+                .ToListAsync();
+            if (straySubsequentRows.Count > 0)
             {
-                return;
+                _context.BranchLedgerOpeningBalances.RemoveRange(straySubsequentRows);
+                await _context.SaveChangesAsync();
             }
 
             // 2. Fetch all Investment Schemes that have linked GL Ledgers

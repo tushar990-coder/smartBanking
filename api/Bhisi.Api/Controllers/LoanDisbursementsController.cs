@@ -59,6 +59,8 @@ namespace Bhisi.Api.Controllers
             }
 
             var query = _context.LoanDisbursements
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(d => d.Branch)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Branch)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Customer)
@@ -996,6 +998,8 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<LoanDisbursement>> GetLoanDisbursement(int id)
         {
             var disbursement = await _context.LoanDisbursements
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(d => d.Branch)
                 .Include(d => d.LoanAccount)
                 .Include(d => d.Deductions).ThenInclude(d => d.Ledger)
@@ -1020,6 +1024,8 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<LoanDisbursement>> GetLoanDisbursementByVoucher(int voucherId)
         {
             var disbursement = await _context.LoanDisbursements
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(d => d.Branch)
                 .Include(d => d.LoanAccount)
                     .ThenInclude(l => l!.Customer)

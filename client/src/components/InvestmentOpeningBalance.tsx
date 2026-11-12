@@ -24,6 +24,7 @@ import {
   Clock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
 
 interface Institution {
@@ -69,11 +70,13 @@ const InvestmentOpeningBalance: React.FC = () => {
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
 
-  const [institutions, setInstitutions] = useState<Institution[]>([]);
-  const [schemes, setSchemes] = useState<Scheme[]>([]);
-  const [filteredSchemes, setFilteredSchemes] = useState<Scheme[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
-  const [migratedAccounts, setMigratedAccounts] = useState<any[]>([]);
+  const [institutions, setInstitutions] = useState<Institution[]>(() => getCachedMasterData<any[]>('/api/InvestmentInstitutions') || []);
+  const [schemes, setSchemes] = useState<Scheme[]>(() => getCachedMasterData<any[]>('/api/InvestmentSchemes') || []);
+  const [filteredSchemes, setFilteredSchemes] = useState<Scheme[]>(() => getCachedMasterData<any[]>('/api/InvestmentSchemes') || []);
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
+  const [migratedAccounts, setMigratedAccounts] = useState<any[]>(() =>
+    (getCachedMasterData<any[]>('/api/InvestmentAccounts') || []).filter((a: any) => a.isLegacyAccount)
+  );
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'All' | 'Deposit' | 'Share'>('All');
@@ -122,8 +125,11 @@ const InvestmentOpeningBalance: React.FC = () => {
     fetchInstitutions();
     fetchSchemes();
     fetchBranches();
-    fetchMigratedAccounts();
     fetchNextAccountNo(formData.branchID, formData.schemeID);
+    const timer = setTimeout(() => {
+      fetchMigratedAccounts();
+    }, 40);
+    return () => clearTimeout(timer);
   }, []);
 
   const fetchNextAccountNo = async (bId?: number, sId?: number) => {

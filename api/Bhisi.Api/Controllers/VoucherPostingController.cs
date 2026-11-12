@@ -107,10 +107,13 @@ namespace Bhisi.Api.Controllers
             var targetLoginDate = ResolveActiveLoginDate(voucherDate);
             if (targetLoginDate.HasValue)
             {
-                query = query.Where(v => v.VoucherDate.Date == targetLoginDate.Value);
+                DateTime dayStart = targetLoginDate.Value.Date;
+                DateTime dayEnd = dayStart.AddDays(1);
+                query = query.Where(v => v.VoucherDate >= dayStart && v.VoucherDate < dayEnd);
             }
 
             return await query
+                .AsSplitQuery()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
@@ -120,18 +123,19 @@ namespace Bhisi.Api.Controllers
                         .ThenInclude(m => m!.Customer)
                 .Where(v => v.Status == "Pending" &&
                             v.VoucherType != "Opening" &&
+                            !v.VoucherNo.Contains("-OP-") &&
+                            !v.VoucherNo.Contains("-IMP-") &&
+                            !v.VoucherNo.StartsWith("JV-FD-OP-") &&
+                            !v.VoucherNo.StartsWith("REC-FD-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-RD-OP-") &&
+                            !v.VoucherNo.StartsWith("REC-RD-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-SH-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-INV-OP-") &&
                             !(v.Narration != null && (
                                 v.Narration.Contains("आरंभिक शिल्लक") ||
-                                v.Narration.Contains("Opening Balance Migration"))) &&
-                            !(v.VoucherDate <= new DateTime(2026, 3, 31) && (
-                                v.VoucherNo.Contains("-OP-") ||
-                                v.VoucherNo.StartsWith("JV-FD-OP-") ||
-                                v.VoucherNo.StartsWith("REC-FD-OP-") ||
-                                v.VoucherNo.StartsWith("JV-RD-OP-") ||
-                                v.VoucherNo.StartsWith("REC-RD-OP-") ||
-                                v.VoucherNo.StartsWith("JV-SH-OP-") ||
-                                v.VoucherNo.StartsWith("JV-INV-OP-")
-                            )))
+                                v.Narration.Contains("Opening Balance Migration") ||
+                                v.Narration.Contains("Pigmy Chart Import") ||
+                                v.Narration.Contains("Import"))))
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.VoucherID)
                 .ToListAsync();
@@ -153,10 +157,13 @@ namespace Bhisi.Api.Controllers
             var targetLoginDate = ResolveActiveLoginDate(voucherDate);
             if (targetLoginDate.HasValue)
             {
-                query = query.Where(v => v.VoucherDate.Date == targetLoginDate.Value);
+                DateTime dayStart = targetLoginDate.Value.Date;
+                DateTime dayEnd = dayStart.AddDays(1);
+                query = query.Where(v => v.VoucherDate >= dayStart && v.VoucherDate < dayEnd);
             }
 
             return await query
+                .AsSplitQuery()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
@@ -234,7 +241,9 @@ namespace Bhisi.Api.Controllers
 
                 if (targetLoginDate.HasValue)
                 {
-                    var mismatchedVoucher = vouchers.FirstOrDefault(v => v.VoucherDate.Date != targetLoginDate.Value);
+                    DateTime dayStart = targetLoginDate.Value.Date;
+                    DateTime dayEnd = dayStart.AddDays(1);
+                    var mismatchedVoucher = vouchers.FirstOrDefault(v => v.VoucherDate < dayStart || v.VoucherDate >= dayEnd);
                     if (mismatchedVoucher != null)
                     {
                         await dbTransaction.RollbackAsync();
@@ -253,6 +262,17 @@ namespace Bhisi.Api.Controllers
                 {
                     int bId = group.Key.BranchID;
                     DateTime vDate = group.Key.Date;
+
+                    var closedFyOnPost = await _context.FinancialYears
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                                   vDate >= fy.StartDate.Date &&
+                                                   vDate <= fy.EndDate.Date);
+                    if (closedFyOnPost != null)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"दिनांक {vDate:dd/MM/yyyy} ही तारीख बंद केलेल्या आर्थिक वर्षात ({closedFyOnPost.YearCode}) येते. बंद आर्थिक वर्षातील व्हाउचर मंजूर व पोस्ट करता येणार नाहीत.");
+                    }
 
                     var dayStatus = await _context.BranchDayEndStatuses
                         .AsNoTracking()
@@ -462,7 +482,18 @@ namespace Bhisi.Api.Controllers
                         return BadRequest($"सुरक्षा ऑडिट: आरंभिक शिल्लक स्थलांतर व्हाउचर क्र. {voucher.VoucherNo} अन-पास करण्यास सक्त मनाई आहे (Opening balance migration cannot be unpassed).");
                     }
 
-                    // 1. Closed Business Date Lock Check (EOD)
+                    // 1. Closed Financial Year & Business Date Lock Check (EOD)
+                    var closedFyOnUnpass = await _context.FinancialYears
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                                   voucher.VoucherDate.Date >= fy.StartDate.Date &&
+                                                   voucher.VoucherDate.Date <= fy.EndDate.Date);
+                    if (closedFyOnUnpass != null)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"व्हाउचर क्र. {voucher.VoucherNo} ची तारीख ({voucher.VoucherDate:dd/MM/yyyy}) बंद केलेल्या आर्थिक वर्षात ({closedFyOnUnpass.YearCode}) येते. बंद आर्थिक वर्षातील व्हाउचर अन-पास करता येणार नाही.");
+                    }
+
                     var dayStatus = await _context.BranchDayEndStatuses
                         .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)
                         .FirstOrDefaultAsync();

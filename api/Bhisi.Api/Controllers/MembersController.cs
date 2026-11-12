@@ -81,7 +81,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-                var query = _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).OrderBy(m => m.MemberID).AsQueryable();
+                var query = _context.Members.AsNoTracking().AsSplitQuery().Include(m => m.Customer).Include(m => m.Branch).OrderBy(m => m.MemberID).AsQueryable();
 
                 // Multi-Branch Isolation Barrier: Non-admin users are strictly forced to their assigned branch
                 if (!isHeadOfficeAdmin)
@@ -197,7 +197,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<MemberResponseDto>> GetMember(int id)
         {
             var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-            var member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == id);
+            var member = await _context.Members.AsNoTracking().AsSplitQuery().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == id);
 
             if (member == null)
             {
@@ -364,6 +364,7 @@ namespace Bhisi.Api.Controllers
             {
                 var query = _context.Members
                     .AsNoTracking()
+                    .AsSplitQuery()
                     .Include(m => m.Customer)
                     .Include(m => m.Branch)
                     .Where(m => !m.IsDeleted &&
@@ -1340,7 +1341,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}/ClosureInfo")]
         public async Task<IActionResult> GetClosureInfo(int id)
         {
-            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
+            var member = await _context.Members.AsNoTracking().Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
             if (member == null) return NotFound("Member not found.");
 
             var loanBalance = await _context.LoanAccounts
@@ -1372,6 +1373,7 @@ namespace Bhisi.Api.Controllers
             // Check if member is a Guarantor on any active loans
             int? mCustId = member.CustomerID;
             var guarantorLoansRaw = await _context.LoanAccounts
+                .AsNoTracking()
                 .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Where(l => mCustId != null && (l.Guarantor1CustomerID == mCustId || l.Guarantor2CustomerID == mCustId) && l.Status != "Closed")
                 .ToListAsync();
@@ -1553,7 +1555,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetDeceasedClaimInfo(int id)
         {
             var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
+            var member = await _context.Members.AsNoTracking().Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
             if (member == null) return NotFound("Member not found.");
 
             if (!isHeadOfficeAdmin && member.BranchID != userBranchId)
@@ -1864,6 +1866,8 @@ namespace Bhisi.Api.Controllers
             var savingsBalance = await _context.SavingAccountMasters.Where(s => s.CustomerID == targetCustId && s.Status == "Active").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0;
 
             var ownActiveLoans = await _context.LoanAccounts
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(l => l.Customer)
                 .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
@@ -1871,6 +1875,8 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var activeGuaranteedLoans = await _context.LoanAccounts
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(l => l.Customer)
                 .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
@@ -2004,6 +2010,8 @@ namespace Bhisi.Api.Controllers
             int? targetMemberId = director?.MemberID;
 
             var activeRecommendedLoans = await _context.LoanAccounts
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(l => l.Customer)
                 .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)

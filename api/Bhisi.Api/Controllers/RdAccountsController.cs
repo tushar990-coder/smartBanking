@@ -239,6 +239,7 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.RdAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(r => r.Customer)
                     .ThenInclude(c => c!.MemberProfile)
                 .Include(r => r.RdScheme)
@@ -355,6 +356,7 @@ namespace Bhisi.Api.Controllers
         {
             var r = await _context.RdAccounts
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(x => x.Customer)
                     .ThenInclude(c => c!.MemberProfile)
                 .Include(x => x.RdScheme)
@@ -2974,6 +2976,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetRdAccountByVoucher(int voucherId)
         {
             var voucher = await _context.Vouchers
+                .AsNoTracking()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
@@ -2991,6 +2994,8 @@ namespace Bhisi.Api.Controllers
             {
                 string accNoCandidate = vNo.Substring(matchedRdOpenPfx.Length).Trim();
                 account = await _context.RdAccounts
+                    .AsNoTracking()
+                    .AsSplitQuery()
                     .Include(a => a.Customer)
                     .Include(a => a.RdScheme)
                     .Include(a => a.Branch)
@@ -3004,6 +3009,8 @@ namespace Bhisi.Api.Controllers
                 if (custId.HasValue)
                 {
                     account = await _context.RdAccounts
+                        .AsNoTracking()
+                        .AsSplitQuery()
                         .Include(a => a.Customer)
                         .Include(a => a.RdScheme)
                         .Include(a => a.Branch)
@@ -3092,6 +3099,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetRdInstallmentByVoucher(int voucherId)
         {
             var voucher = await _context.Vouchers
+                .AsNoTracking()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
@@ -3103,6 +3111,8 @@ namespace Bhisi.Api.Controllers
 
             // 1. Try finding RdTransaction with this VoucherID (or cross-branch sibling RelatedVoucherID)
             var tx = await _context.RdTransactions
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(t => t.RdAccount)
                     .ThenInclude(a => a!.Customer)
                 .Include(t => t.RdAccount)
@@ -3129,6 +3139,8 @@ namespace Bhisi.Api.Controllers
                     {
                         string accNo = afterMarker.Substring(0, lastDash).Trim();
                         account = await _context.RdAccounts
+                            .AsNoTracking()
+                            .AsSplitQuery()
                             .Include(a => a.Customer)
                             .Include(a => a.RdScheme)
                             .Include(a => a.Branch)
@@ -3144,6 +3156,8 @@ namespace Bhisi.Api.Controllers
                 if (custId.HasValue)
                 {
                     account = await _context.RdAccounts
+                        .AsNoTracking()
+                        .AsSplitQuery()
                         .Include(a => a.Customer)
                         .Include(a => a.RdScheme)
                         .Include(a => a.Branch)

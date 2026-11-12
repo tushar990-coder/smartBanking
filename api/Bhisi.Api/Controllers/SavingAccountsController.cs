@@ -103,9 +103,12 @@ namespace Bhisi.Api.Controllers
 
             // 3. Sequence: Scan all existing saving accounts to find the maximum existing sequence number
             var existingAccNos = await _context.SavingAccountMasters
+                .AsNoTracking()
                 .Where(s => s.BranchID == branchId && !string.IsNullOrWhiteSpace(s.AccountNo))
                 .Select(s => s.AccountNo)
                 .ToListAsync();
+
+            var existingAccNoSet = new HashSet<string>(existingAccNos, StringComparer.OrdinalIgnoreCase);
 
             int maxExistingSeq = 0;
             foreach (var accNo in existingAccNos)
@@ -154,7 +157,7 @@ namespace Bhisi.Api.Controllers
             int checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
             string candidate = $"{thirteenDigits}{checkDigit}";
 
-            while (existingAccNos.Contains(candidate) || await _context.SavingAccountMasters.AnyAsync(s => s.BranchID == branchId && s.AccountNo == candidate))
+            while (existingAccNoSet.Contains(candidate))
             {
                 nextSeqNumber++;
                 thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
@@ -288,6 +291,7 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var rawAccounts = await query
+                .AsSplitQuery()
                 .Include(s => s.Customer)
                 .Include(s => s.Branch)
                 .Include(s => s.Ledger)

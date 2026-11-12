@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import { filterBankAccountLedgers, buildBankLedgerOptions } from '../utils/bankLedgerUtils';
+import { getCachedMasterData } from '../utils/apiCache';
 
 interface SavingAccount {
   savingAccountID: number;
@@ -104,6 +105,56 @@ const format14DigitDisplay = (num?: string) => {
   return num;
 };
 
+const buildSavingSchemeLedgers = (
+  interestData: any[],
+  allLedgersList: any[],
+  accData: SavingAccount[]
+): { ledgerList: Ledger[]; uniqueLedgerMap: Map<number, string> } => {
+  const uniqueLedgerMap = new Map<number, string>();
+
+  if (Array.isArray(interestData) && interestData.length > 0) {
+    interestData.forEach((s: any) => {
+      const targetLid = s.savingLiabilityLedgerID || s.ledgerID || s.interestExpenseLedgerID;
+      if (targetLid && targetLid > 0) {
+        const rawName = s.schemeName || s.savingLiabilityLedger?.ledgerName || s.ledger?.ledgerName || 'बचत योजना';
+        const rateInfo = s.interestRate !== undefined && s.interestRate !== null ? ` (${s.interestRate}%)` : '';
+        uniqueLedgerMap.set(targetLid, `${rawName}${rateInfo}`);
+      }
+    });
+  }
+
+  if (uniqueLedgerMap.size === 0) {
+    allLedgersList.forEach((l: any) => {
+      if (!l || !l.ledgerID) return;
+      const typeMatch = Boolean(l.accountType && l.accountType.toLowerCase().includes('saving'));
+      const nameMatch = Boolean(l.ledgerName && (l.ledgerName.includes('बचत') || l.ledgerName.toLowerCase().includes('saving')));
+      if (typeMatch || nameMatch) {
+        uniqueLedgerMap.set(l.ledgerID, l.ledgerName);
+      }
+    });
+
+    accData.forEach((acc: any) => {
+      const lid = acc.ledgerID;
+      const lname = acc.ledgerName || 'बचत ठेव';
+      if (lid && !uniqueLedgerMap.has(lid)) {
+        uniqueLedgerMap.set(lid, lname);
+      }
+    });
+  } else {
+    const defaultSchemeLedgerId = Array.from(uniqueLedgerMap.keys())[0];
+    const defaultSchemeLedgerName = uniqueLedgerMap.get(defaultSchemeLedgerId) || 'बचत ठेव';
+    accData.forEach((acc: any) => {
+      if (!acc.ledgerID || !uniqueLedgerMap.has(acc.ledgerID)) {
+        acc.ledgerID = defaultSchemeLedgerId;
+        acc.ledgerName = defaultSchemeLedgerName;
+      }
+    });
+  }
+
+  const ledgerList = Array.from(uniqueLedgerMap.entries()).map(([ledgerID, ledgerName]) => ({ ledgerID, ledgerName }));
+  return { ledgerList, uniqueLedgerMap };
+};
+
 interface SavingTransactionEntryProps {
   voucherId?: number;
   isReadOnly?: boolean;
@@ -121,10 +172,21 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const [rejectionReason, setRejectionReason] = useState('');
   const { user } = useAuth();
 
-  const [accounts, setAccounts] = useState<SavingAccount[]>([]);
-  const [ledgers, setLedgers] = useState<Ledger[]>([]);
-  const [bankLedgers, setBankLedgers] = useState<Ledger[]>([]);
-  const [allRawLedgers, setAllRawLedgers] = useState<Ledger[]>([]);
+  const [accounts, setAccounts] = useState<SavingAccount[]>(
+    () => getCachedMasterData<SavingAccount[]>('/api/SavingAccounts') || []
+  );
+  const [ledgers, setLedgers] = useState<Ledger[]>(() => {
+    const cachedInterest = getCachedMasterData<any[]>('/api/SavingSettings/Interest') || [];
+    const cachedLedgers = getCachedMasterData<Ledger[]>('/api/Ledgers') || [];
+    const cachedAccs = getCachedMasterData<SavingAccount[]>('/api/SavingAccounts') || [];
+    return buildSavingSchemeLedgers(cachedInterest, cachedLedgers, cachedAccs).ledgerList;
+  });
+  const [bankLedgers, setBankLedgers] = useState<Ledger[]>(() =>
+    filterBankAccountLedgers(getCachedMasterData<Ledger[]>('/api/Ledgers') || [])
+  );
+  const [allRawLedgers, setAllRawLedgers] = useState<Ledger[]>(
+    () => getCachedMasterData<Ledger[]>('/api/Ledgers') || []
+  );
   const [transactions, setTransactions] = useState<SavingTransaction[]>([]);
 
   const [selectedLedgerID, setSelectedLedgerID] = useState<number>(0);
@@ -339,8 +401,8 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         }
       }
 
-      const [accRes, interestRes, ledgersRes] = await Promise.all([
-        axios.get(`${API_URL}/SavingAccounts`, { signal }),
+      const accPromise = axios.get(`${API_URL}/SavingAccounts`, { signal });
+      const [interestRes, ledgersRes] = await Promise.all([
         axios.get(`${API_URL}/SavingSettings/Interest`, { signal }).catch((err) => {
           if (isAbortError(err)) throw err;
           return { data: [] };
@@ -353,11 +415,21 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
       if (!isMountedRef.current || signal?.aborted) return;
 
-      const accData: SavingAccount[] = accRes.data || [];
-      setAccounts(accData);
-
       const allLedgersList: any[] = Array.isArray(ledgersRes.data) ? ledgersRes.data : [];
       parseBankLedgers(allLedgersList);
+
+      const initialScheme = buildSavingSchemeLedgers(interestRes.data || [], allLedgersList, accounts);
+      if (initialScheme.ledgerList.length > 0) {
+        setLedgers(initialScheme.ledgerList);
+      }
+
+      const accRes = await accPromise;
+      if (!isMountedRef.current || signal?.aborted) return;
+
+      const accData: SavingAccount[] = accRes.data || [];
+      const { ledgerList } = buildSavingSchemeLedgers(interestRes.data || [], allLedgersList, accData);
+      setLedgers(ledgerList);
+      setAccounts(accData);
 
       const targetAccId = preserveAccountId || selectedAccount?.savingAccountID || formData.savingAccountID;
       if (targetAccId && targetAccId > 0) {
@@ -376,50 +448,6 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
           setSelectedTargetAccount(freshTarget);
         }
       }
-
-      const uniqueLedgerMap = new Map<number, string>();
-
-      if (Array.isArray(interestRes.data) && interestRes.data.length > 0) {
-        interestRes.data.forEach((s: any) => {
-          const targetLid = s.savingLiabilityLedgerID || s.ledgerID || s.interestExpenseLedgerID;
-          if (targetLid && targetLid > 0) {
-            const rawName = s.schemeName || s.savingLiabilityLedger?.ledgerName || s.ledger?.ledgerName || 'बचत योजना';
-            const rateInfo = s.interestRate !== undefined && s.interestRate !== null ? ` (${s.interestRate}%)` : '';
-            uniqueLedgerMap.set(targetLid, `${rawName}${rateInfo}`);
-          }
-        });
-      }
-
-      if (uniqueLedgerMap.size === 0) {
-        allLedgersList.forEach((l: any) => {
-          if (!l || !l.ledgerID) return;
-          const typeMatch = Boolean(l.accountType && l.accountType.toLowerCase().includes('saving'));
-          const nameMatch = Boolean(l.ledgerName && (l.ledgerName.includes('बचत') || l.ledgerName.toLowerCase().includes('saving')));
-          if (typeMatch || nameMatch) {
-            uniqueLedgerMap.set(l.ledgerID, l.ledgerName);
-          }
-        });
-
-        accData.forEach((acc: any) => {
-          const lid = acc.ledgerID;
-          const lname = acc.ledgerName || 'बचत ठेव';
-          if (lid && !uniqueLedgerMap.has(lid)) {
-            uniqueLedgerMap.set(lid, lname);
-          }
-        });
-      } else {
-        const defaultSchemeLedgerId = Array.from(uniqueLedgerMap.keys())[0];
-        const defaultSchemeLedgerName = uniqueLedgerMap.get(defaultSchemeLedgerId) || 'बचत ठेव';
-        accData.forEach((acc: any) => {
-          if (!acc.ledgerID || !uniqueLedgerMap.has(acc.ledgerID)) {
-            acc.ledgerID = defaultSchemeLedgerId;
-            acc.ledgerName = defaultSchemeLedgerName;
-          }
-        });
-      }
-
-      const ledgerList = Array.from(uniqueLedgerMap.entries()).map(([ledgerID, ledgerName]) => ({ ledgerID, ledgerName }));
-      setLedgers(ledgerList);
 
       if (!preserveAccountId && !isPassingMode && !selectedAccount) {
         if (accountIdStr) {

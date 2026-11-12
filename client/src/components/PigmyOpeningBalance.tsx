@@ -28,14 +28,25 @@ import {
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 import * as XLSX from 'xlsx';
 
 export default function PigmyOpeningBalance() {
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [schemes, setSchemes] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [financialYears, setFinancialYears] = useState<any[]>([]);
-  const [migratedAccounts, setMigratedAccounts] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/Customers') || []
+  );
+  const [schemes, setSchemes] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/PigmySchemes') || []
+  );
+  const [agents, setAgents] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/PigmyAgents') || []
+  );
+  const [financialYears, setFinancialYears] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/FinancialYears') || []
+  );
+  const [migratedAccounts, setMigratedAccounts] = useState<any[]>(
+    () => getCachedMasterData<any[]>('/api/PigmyAccounts') || []
+  );
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
@@ -62,8 +73,11 @@ export default function PigmyOpeningBalance() {
 
   useEffect(() => {
     fetchMasters();
-    fetchMigratedAccounts();
-    fetchGlReconciliation();
+    const timer = setTimeout(() => {
+      fetchMigratedAccounts();
+      fetchGlReconciliation();
+    }, 40);
+    return () => clearTimeout(timer);
   }, []);
 
   const fetchGlReconciliation = async () => {
@@ -108,14 +122,12 @@ export default function PigmyOpeningBalance() {
 
   const fetchMasters = async () => {
     try {
-      const [customersRes, schemesRes, agentsRes, yearsRes] = await Promise.all([
-        axios.get('/api/Customers'),
+      const [schemesRes, agentsRes, yearsRes] = await Promise.all([
         axios.get('/api/PigmySchemes'),
         axios.get('/api/PigmyAgents'),
         axios.get('/api/FinancialYears')
       ]);
 
-      if (customersRes.data) setCustomers(customersRes.data);
       if (schemesRes.data) setSchemes(schemesRes.data);
       if (agentsRes.data) setAgents(agentsRes.data);
       if (yearsRes.data && Array.isArray(yearsRes.data) && yearsRes.data.length > 0) {
@@ -133,6 +145,15 @@ export default function PigmyOpeningBalance() {
           openingDate: computedAsOfDate || prev.openingDate
         }));
       }
+
+      setTimeout(async () => {
+        try {
+          const customersRes = await axios.get('/api/Customers');
+          if (customersRes.data) setCustomers(customersRes.data);
+        } catch (bgErr) {
+          console.error('Failed to fetch customers in background', bgErr);
+        }
+      }, 40);
     } catch (error) {
       console.error('Failed to fetch masters', error);
       toast.error('मास्टर डेटा लोड करताना त्रुटी आली.');

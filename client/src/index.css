@@ -18,6 +18,41 @@
   --color-primary: #880E4F; /* Royal Wine Red / Burgundy */
 }
 
+/* Support Tailwind opacity modifiers with --color-primary hex CSS variable */
+.bg-primary\/5 {
+  background-color: color-mix(in srgb, var(--color-primary) 6%, #ffffff);
+}
+.bg-primary\/10 {
+  background-color: color-mix(in srgb, var(--color-primary) 11%, #ffffff);
+}
+.bg-primary\/15 {
+  background-color: color-mix(in srgb, var(--color-primary) 16%, #ffffff);
+}
+.bg-primary\/20 {
+  background-color: color-mix(in srgb, var(--color-primary) 20%, #ffffff);
+}
+.hover\:bg-primary\/10:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 11%, #ffffff);
+}
+.hover\:bg-primary\/15:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 16%, #ffffff);
+}
+.hover\:bg-primary\/20:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 20%, #ffffff);
+}
+.border-primary\/20 {
+  border-color: color-mix(in srgb, var(--color-primary) 24%, #ffffff);
+}
+.border-primary\/30 {
+  border-color: color-mix(in srgb, var(--color-primary) 34%, #ffffff);
+}
+.border-primary\/40 {
+  border-color: color-mix(in srgb, var(--color-primary) 44%, #ffffff);
+}
+.ring-primary\/20 {
+  --tw-ring-color: color-mix(in srgb, var(--color-primary) 24%, transparent);
+}
+
 
 
 /* Application Background Modes */

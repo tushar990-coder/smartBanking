@@ -1,5 +1,19 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-12] - आवृत्ती v2.6.21 (Year-End Carry Forward Double-Counting Fix, Dynamic FY Baseline Resolution, Parallel Financial Year & EOD Alignment)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) ३१ मार्च वार्षिक अखेर 'शिल्लक पुढे ओढा' (Carry Forward) नंतर दुहेरी मोजणी (Double Counting) दोष निवारण (`FinancialYearBaselineHelper.cs`, `ReportsController.cs`, `EodBodService.cs`, `VouchersController.cs` & `FinancialYearsController.cs`):**
+  * ३१ मार्चची शिल्लक १ एप्रिलला पुढे ओढल्यानंतर ताळेबंद (`Balance Sheet`), नफा-तोटा पत्रक (`Profit & Loss`), तेरीज पत्रक (`Trial Balance`), जनरल लेजर (`General Ledger`), डे-बुक (`Daybook`), कॅश बुक (`Cash Book`), आंतर-शाखा ताळमेळ (`IBT Matrix / Statement`), डे-एंड कॅश टॅली (`GetEodStatusAsync`) आणि व्हाउचर नकारात्मक रोख शिल्लक तपासणी (`PostVoucher` / `PutVoucher`) या सर्वांमध्ये `VoucherDate >= BaselineStartDate` कट-ऑफ फिल्टर लागू केला.
+  * शिल्लक पुढे ओढल्यानंतर जुन्या वर्षाचे व्हाउचर्स दोनदा मोजले जाण्याचा आणि शून्य (`0.00`) झालेल्या खात्यांवर जुनी लेगसी शिल्लक पडण्याचा दोष कायमचा दूर केला.
+* **२) १ एप्रिलला शिल्लक पुढे न ओढता समांतर कामकाज व मागील वर्षाचे अहवाल अचूक पाहणे (`ReportsController.cs`, `DeadstockLedgerHelper.cs` & `InvestmentAccountsController.cs`):**
+  * **केस अ (१ एप्रिलला नवीन वर्ष Active केले पण ऑडिटमुळे २-३ महिने शिल्लक पुढे ओढलेली नाही):** मागील आर्थिक वर्षाचा बेसलाईन आपोआप शोधून १ एप्रिलपासून पुढे अचूक कॅश व खाते शिल्लक आणि मागील वर्षाचा नफा-तोटा `संचित नफा-तोटा खाते` मध्ये डायनॅमिक रोलओव्हर होतो.
+  * **केस ब (जूनमध्ये बसून मागील वर्षाचा `01/04/2026` ते `31/03/2027` अहवाल पाहणे):** `fy.IsActive` ऐवजी रिपोर्टच्या तारखेवरून (`fromDate ?? toDate`) संबंधित मागील आर्थिक वर्षाचीच आरंभीची शिल्लक अचूक निवडली जाते.
+* **३) आर्थिक वर्ष व दिवस समाप्ती (EOD) नियंत्रण आणि सर्व मॉड्यूल्स फास्ट लोडिंग (`FinancialYearMaster.tsx`, `YearEndClosure.tsx`, `DayEndDashboard.tsx`, `EodOperationsController.cs` & सर्व कंट्रोलर्स):**
+  * आर्थिक वर्ष मास्टर व EOD फॉर्म थीम सुसंगती, ऑडिट लॉक सुरक्षा आणि सर्व खाते/व्यवहार स्क्रीनवर `AsSplitQuery()` व फास्ट लोडिंग लागू केले.
+
+---
+
 ## 📅 [2026-11-06] - आवृत्ती v2.6.20 (Investment Maturity/Premature/Renewal with Dynamic TDS, Fast Paginated Customer Master, Closed Loan Accounts Report, P&L Fix & Two-Section Terij Patrak / Group Tree)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

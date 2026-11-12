@@ -82,6 +82,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var orderedQuery = query
+                                  .AsSplitQuery()
                                   .Include(v => v.Branch)
                                   .Include(v => v.VoucherDetails)
                                   .ThenInclude(d => d.Ledger)
@@ -108,6 +109,7 @@ namespace Bhisi.Api.Controllers
         {
             var voucher = await _context.Vouchers
                                         .AsNoTracking()
+                                        .AsSplitQuery()
                                         .Include(v => v.Branch)
                                         .Include(v => v.VoucherDetails)
                                         .ThenInclude(d => d.Ledger)
@@ -320,6 +322,17 @@ namespace Bhisi.Api.Controllers
         {
             voucher.BranchID = User.ResolveRequiredBranchId(voucher.BranchID);
 
+            // 0. Closed Financial Year Check
+            var closedFyOnPost = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                           voucher.VoucherDate.Date >= fy.StartDate.Date &&
+                                           voucher.VoucherDate.Date <= fy.EndDate.Date);
+            if (closedFyOnPost != null)
+            {
+                return BadRequest($"दिनांक {voucher.VoucherDate:dd/MM/yyyy} ही तारीख बंद केलेल्या आर्थिक वर्षात ({closedFyOnPost.YearCode}) येते. बंद आर्थिक वर्षात नवीन व्हाउचर तयार करता येणार नाही.");
+            }
+
             // 1. Day-End Closed Check
             var dayStatus = await _context.BranchDayEndStatuses
                 .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)
@@ -425,10 +438,8 @@ namespace Bhisi.Api.Controllers
                 if (cashOutflow > 0)
                 {
                     decimal currentCash = 0;
-                    int activeFyId = await _context.FinancialYears
-                        .Where(fy => fy.IsActive)
-                        .Select(fy => fy.FinancialYearID)
-                        .FirstOrDefaultAsync();
+                    var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, voucher.VoucherDate);
+                    int activeFyId = fyBaseline.BaselineFinancialYearId;
 
                     var branchOb = await _context.BranchLedgerOpeningBalances
                         .FirstOrDefaultAsync(b => b.BranchID == voucher.BranchID && b.LedgerID == branchCashLedgerId && (activeFyId == 0 || b.FinancialYearID == activeFyId));
@@ -436,14 +447,18 @@ namespace Bhisi.Api.Controllers
                     {
                         currentCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
                     }
-                    else if (voucher.BranchID == 1)
+                    else if (!fyBaseline.IsCarriedForwardYear && voucher.BranchID == 1)
                     {
                         currentCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
                     }
-                    var approvedCashVds = await _context.VoucherDetails
+                    var approvedCashQuery = _context.VoucherDetails
                         .Include(vd => vd.Voucher)
-                        .Where(vd => vd.LedgerID == branchCashLedgerId && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == voucher.BranchID)
-                        .ToListAsync();
+                        .Where(vd => vd.LedgerID == branchCashLedgerId && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == voucher.BranchID);
+                    if (fyBaseline.BaselineStartDate.HasValue)
+                    {
+                        approvedCashQuery = approvedCashQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                    }
+                    var approvedCashVds = await approvedCashQuery.ToListAsync();
 
                     currentCash += approvedCashVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
                     currentCash -= approvedCashVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
@@ -503,6 +518,17 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("पोस्ट झालेले (Approved) व्हाउचर थेट बदलता येत नाही. आवश्यक असल्यास रिव्हर्सल किंवा कॅन्सलेशन करावे.");
             }
 
+            // Closed Financial Year check
+            var closedFyOnPut = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                           ((existingVoucher.VoucherDate.Date >= fy.StartDate.Date && existingVoucher.VoucherDate.Date <= fy.EndDate.Date) ||
+                                            (voucher.VoucherDate.Date >= fy.StartDate.Date && voucher.VoucherDate.Date <= fy.EndDate.Date)));
+            if (closedFyOnPut != null)
+            {
+                return BadRequest($"दिनांक {existingVoucher.VoucherDate:dd/MM/yyyy} ही तारीख बंद केलेल्या आर्थिक वर्षात ({closedFyOnPut.YearCode}) येते. बंद आर्थिक वर्षातील व्हाउचर बदलता येणार नाही.");
+            }
+
             // Day-End check
             var dayStatus = await _context.BranchDayEndStatuses
                 .Where(b => b.BranchID == existingVoucher.BranchID && b.BusinessDate.Date == existingVoucher.VoucherDate.Date)
@@ -557,10 +583,8 @@ namespace Bhisi.Api.Controllers
                 if (cashOutflow > 0)
                 {
                     decimal currentCash = 0;
-                    int activeFyId = await _context.FinancialYears
-                        .Where(fy => fy.IsActive)
-                        .Select(fy => fy.FinancialYearID)
-                        .FirstOrDefaultAsync();
+                    var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, voucher.VoucherDate);
+                    int activeFyId = fyBaseline.BaselineFinancialYearId;
 
                     var branchOb = await _context.BranchLedgerOpeningBalances
                         .FirstOrDefaultAsync(b => b.BranchID == existingVoucher.BranchID && b.LedgerID == branchCashLedgerId && (activeFyId == 0 || b.FinancialYearID == activeFyId));
@@ -568,14 +592,18 @@ namespace Bhisi.Api.Controllers
                     {
                         currentCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
                     }
-                    else if (existingVoucher.BranchID == 1)
+                    else if (!fyBaseline.IsCarriedForwardYear && existingVoucher.BranchID == 1)
                     {
                         currentCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
                     }
-                    var approvedCashVds = await _context.VoucherDetails
+                    var approvedCashQuery = _context.VoucherDetails
                         .Include(vd => vd.Voucher)
-                        .Where(vd => vd.LedgerID == branchCashLedgerId && vd.VoucherID != id && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == existingVoucher.BranchID)
-                        .ToListAsync();
+                        .Where(vd => vd.LedgerID == branchCashLedgerId && vd.VoucherID != id && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == existingVoucher.BranchID);
+                    if (fyBaseline.BaselineStartDate.HasValue)
+                    {
+                        approvedCashQuery = approvedCashQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
+                    }
+                    var approvedCashVds = await approvedCashQuery.ToListAsync();
 
                     currentCash += approvedCashVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
                     currentCash -= approvedCashVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
@@ -686,6 +714,7 @@ namespace Bhisi.Api.Controllers
 
             var query = _context.Vouchers
                                 .AsNoTracking()
+                                .AsSplitQuery()
                                 .Include(v => v.Branch)
                                 .Include(v => v.VoucherDetails)
                                 .ThenInclude(d => d.Ledger)
@@ -760,6 +789,16 @@ namespace Bhisi.Api.Controllers
             if (targetLoginDate.HasValue && voucher.VoucherDate.Date != targetLoginDate.Value)
             {
                 return BadRequest($"सुरक्षा नियम: फक्त चालू लॉगिन तारखेचेच ({targetLoginDate.Value:dd/MM/yyyy}) व्हाउचर मंजूर करता येतात. व्हाउचर क्र. {voucher.VoucherNo} ची तारीख ({voucher.VoucherDate:dd/MM/yyyy}) वेगळी आहे.");
+            }
+
+            var closedFyOnApprove = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                           voucher.VoucherDate.Date >= fy.StartDate.Date &&
+                                           voucher.VoucherDate.Date <= fy.EndDate.Date);
+            if (closedFyOnApprove != null)
+            {
+                return BadRequest($"दिनांक {voucher.VoucherDate:dd/MM/yyyy} ही तारीख बंद केलेल्या आर्थिक वर्षात ({closedFyOnApprove.YearCode}) येते. बंद आर्थिक वर्षातील व्हाउचर मंजूर करता येणार नाही.");
             }
 
             var dayStatus = await _context.BranchDayEndStatuses

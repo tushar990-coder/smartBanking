@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
+import { getCachedMasterData } from '../utils/apiCache';
 import { 
   CreditCard, 
   User, 
@@ -41,13 +42,13 @@ interface Branch {
 }
 
 export default function PigmyAccountOpening() {
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [schemes, setSchemes] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Customers') || []);
+  const [branches, setBranches] = useState<Branch[]>(() => getCachedMasterData<Branch[]>('/api/Branches') || []);
+  const [schemes, setSchemes] = useState<any[]>(() => getCachedMasterData<any[]>('/api/PigmySchemes') || []);
+  const [agents, setAgents] = useState<any[]>(() => getCachedMasterData<any[]>('/api/PigmyAgents') || []);
   
   // Saved Pigmy Accounts State
-  const [savedAccounts, setSavedAccounts] = useState<any[]>([]);
+  const [savedAccounts, setSavedAccounts] = useState<any[]>(() => getCachedMasterData<any[]>('/api/PigmyAccounts') || []);
   const [loadingAccounts, setLoadingAccounts] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -167,7 +168,10 @@ export default function PigmyAccountOpening() {
 
   useEffect(() => {
     fetchMasters();
-    fetchSavedAccounts();
+    const timer = setTimeout(() => {
+      fetchSavedAccounts();
+    }, 40);
+    return () => clearTimeout(timer);
   }, []);
 
   // Sync Selected Customer on form change
@@ -221,26 +225,34 @@ export default function PigmyAccountOpening() {
         }).catch(err => console.warn('Fast-track customer lookup failed', err));
       }
 
-      const [customersRes, branchesRes, schemesRes, agentsRes] = await Promise.all([
-        axios.get('/api/Customers'),
+      const [branchesRes, schemesRes, agentsRes] = await Promise.all([
         axios.get('/api/Branches'),
         axios.get('/api/PigmySchemes'),
         axios.get('/api/PigmyAgents')
       ]);
 
-      if (customersRes.data) setCustomers(customersRes.data);
       if (branchesRes.data) setBranches(branchesRes.data);
       if (schemesRes.data) setSchemes(schemesRes.data);
       if (agentsRes.data) setAgents(agentsRes.data);
 
-      if (customerIdStr && customersRes.data) {
-        const cId = parseInt(customerIdStr, 10);
-        const matched = customersRes.data.find((c: any) => getCustomerId(c) === cId.toString());
-        if (matched) {
-          setFormData(prev => ({ ...prev, customerID: cId.toString() }));
-          setSelectedCustomer(matched);
+      setTimeout(async () => {
+        try {
+          const customersRes = await axios.get('/api/Customers');
+          if (customersRes.data) {
+            setCustomers(customersRes.data);
+            if (customerIdStr) {
+              const cId = parseInt(customerIdStr, 10);
+              const matched = customersRes.data.find((c: any) => getCustomerId(c) === cId.toString());
+              if (matched) {
+                setFormData(prev => ({ ...prev, customerID: cId.toString() }));
+                setSelectedCustomer(matched);
+              }
+            }
+          }
+        } catch (bgErr) {
+          console.error('Failed to fetch customers in background', bgErr);
         }
-      }
+      }, 40);
     } catch (error) {
       console.error('Failed to fetch masters', error);
       toast.error('मास्टर डेटा लोड करताना त्रुटी आली.');

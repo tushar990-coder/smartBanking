@@ -60,6 +60,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(userData);
     sessionStorage.setItem('bhisi_user', JSON.stringify(userData));
     localStorage.setItem('bhisi_user', JSON.stringify(userData));
+    sessionStorage.setItem('just_logged_in', 'true');
     if (userData?.branchID) {
       sessionStorage.setItem('globalBranchId', userData.branchID.toString());
       localStorage.setItem('globalBranchId', userData.branchID.toString());
@@ -76,8 +77,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     sessionStorage.removeItem('bhisi_user');
     sessionStorage.removeItem('globalBranchId');
+    sessionStorage.removeItem('just_logged_in');
     localStorage.removeItem('bhisi_user');
     localStorage.removeItem('globalBranchId');
+    try {
+      window.history.replaceState(null, '', '/');
+    } catch (_) {}
     try {
       const channel = new BroadcastChannel('smart_banking_session_sync');
       channel.postMessage({ type: 'LOGOUT' });

@@ -2,6 +2,7 @@ import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import {
   FileText,
@@ -129,12 +130,22 @@ export default function RdAccountOpening({
   const [rejectReason, setRejectReason] = useState<string>('');
 
   const [view, setView] = useState<'form' | 'list'>('form');
-  const [members, setMembers] = useState<Member[]>(() => getCachedMasterData<Member[]>('/api/Customers') || []);
-  const [schemes, setSchemes] = useState<RdScheme[]>(() =>
-    (getCachedMasterData<RdScheme[]>('/api/RdSchemes') || []).filter((s: any) => s && s.isActive)
-  );
-  const [branches, setBranches] = useState<Branch[]>(() => getCachedMasterData<Branch[]>('/api/Branches') || []);
-  const [agents, setAgents] = useState<PigmyAgent[]>(() => getCachedMasterData<PigmyAgent[]>('/api/PigmyAgents') || []);
+  const [members, setMembers] = useState<Member[]>(() => {
+    const c = getCachedMasterData<Member[]>('/api/Customers');
+    return Array.isArray(c) ? c : [];
+  });
+  const [schemes, setSchemes] = useState<RdScheme[]>(() => {
+    const s = getCachedMasterData<RdScheme[]>('/api/RdSchemes');
+    return Array.isArray(s) ? s.filter((x: any) => x && x.isActive) : [];
+  });
+  const [branches, setBranches] = useState<Branch[]>(() => {
+    const b = getCachedMasterData<Branch[]>('/api/Branches');
+    return Array.isArray(b) ? b : [];
+  });
+  const [agents, setAgents] = useState<PigmyAgent[]>(() => {
+    const a = getCachedMasterData<PigmyAgent[]>('/api/PigmyAgents');
+    return Array.isArray(a) ? a : [];
+  });
   const [savingAccounts, setSavingAccounts] = useState<SavingAccountItem[]>([]);
 
   const [loading, setLoading] = useState(false);
@@ -530,7 +541,7 @@ export default function RdAccountOpening({
         // Recalculate maturity amount
         const inst = parseFloat(String(updated.installmentAmount)) || 0;
         const r = parseFloat(String(updated.interestRate)) || 0;
-        const method = schemes.find((s) => s.rdSchemeID === parseInt(String(updated.rdSchemeID), 10))?.interestMethod || 'Compound';
+        const method = (Array.isArray(schemes) ? schemes : []).find((s) => s.rdSchemeID === parseInt(String(updated.rdSchemeID), 10))?.interestMethod || 'Compound';
 
         let totalMat = 0;
         if (method === 'Simple' || method === 'Flat') {
@@ -563,7 +574,7 @@ export default function RdAccountOpening({
   const handleSchemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const schemeId = parseInt(e.target.value, 10);
     fetchNextAccountNo(formData.branchID || 1, schemeId || undefined);
-    const selected = schemes.find((s) => s.rdSchemeID === schemeId);
+    const selected = (Array.isArray(schemes) ? schemes : []).find((s) => s.rdSchemeID === schemeId);
     if (selected) {
       setFormData((prev) => {
         const inst = parseFloat(String(prev.installmentAmount)) || 0;
@@ -764,7 +775,7 @@ export default function RdAccountOpening({
     
     const rows = [];
     let runningBalance = 0;
-    const method = schemes.find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound';
+    const method = (Array.isArray(schemes) ? schemes : []).find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound';
     const rate = formData.interestRate || 0;
     const opening = new Date(formData.openingDate);
     
@@ -1353,7 +1364,7 @@ export default function RdAccountOpening({
                       <div className="flex items-center justify-between p-2 text-[10px] text-slate-500 bg-slate-50/50">
                         <span>व्याजदर / पद्धत:</span>
                         <span className="font-semibold text-emerald-700">
-                          {formData.interestRate}% ({schemes.find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound'})
+                          {formData.interestRate}% ({(Array.isArray(schemes) ? schemes : []).find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound'})
                         </span>
                       </div>
                       <div className="flex items-center justify-between p-2">
@@ -1707,7 +1718,7 @@ export default function RdAccountOpening({
                     <span>📅 आरडी हप्ता व व्याज शेड्युल (RD Installment Schedule)</span>
                   </h3>
                   <p className="text-[10px] text-emerald-100 mt-0.5">
-                    हप्ता: ₹{formData.installmentAmount?.toLocaleString('en-IN')} | कालावधी: {formData.durationMonths} महिने | व्याजदर: {formData.interestRate}% ({schemes.find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound'})
+                    हप्ता: ₹{formData.installmentAmount?.toLocaleString('en-IN')} | कालावधी: {formData.durationMonths} महिने | व्याजदर: {formData.interestRate}% ({(Array.isArray(schemes) ? schemes : []).find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound'})
                   </p>
                 </div>
                 <button

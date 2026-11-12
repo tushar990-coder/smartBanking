@@ -116,6 +116,12 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Username already exists.");
             }
 
+            // Protect master administrator from deactivation
+            if ((user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase)) && !dto.IsActive)
+            {
+                return BadRequest("Master Administrator account cannot be deactivated.");
+            }
+
             user.Username = dto.Username;
             user.RoleID = dto.RoleID;
             user.DefaultBranchID = dto.DefaultBranchID;
@@ -152,6 +158,12 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
+            // Protect master administrator account from accidental reset
+            if (user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest("Master Administrator account password cannot be reset from this interface.");
+            }
+
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword("Welcome@123");
             user.RequirePasswordChange = true;
             user.IsLocked = false; // Also unlock the account on reset
@@ -172,6 +184,12 @@ namespace Bhisi.Api.Controllers
             if (user == null)
             {
                 return NotFound();
+            }
+
+            // Protect master administrator account from accidental lock
+            if (user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest("Master Administrator account cannot be locked.");
             }
 
             user.IsLocked = !user.IsLocked;

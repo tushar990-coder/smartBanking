@@ -131,7 +131,11 @@ export function getCachedMasterData<T = any>(url: string, params?: any): T | nul
   const key = buildCacheKey(norm);
   const hit = memoryCache.get(key);
   if (hit && Date.now() - hit.timestamp < hit.ttl) {
-    const parsed = ensureParsedCacheData(hit.data);
+    let parsed = ensureParsedCacheData(hit.data);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (Array.isArray((parsed as any).value)) parsed = (parsed as any).value;
+      else if (Array.isArray((parsed as any).data)) parsed = (parsed as any).data;
+    }
     hit.data = parsed;
     return parsed as T;
   }
@@ -356,7 +360,7 @@ export function setupAxiosCacheAdapter(targetInstance: any = axios): void {
     }
 
     const requestPromise = runDefault()
-      .then((response) => {
+      .then((response: any) => {
         if (response && response.status >= 200 && response.status < 300) {
           const parsedData = ensureParsedCacheData(response.data);
           memoryCache.set(cacheKey, {

@@ -223,6 +223,12 @@ export default function UserMaster() {
   };
 
   const handleResetPassword = async (id: number) => {
+    const targetUser = users.find(u => u.userID === id);
+    if (targetUser?.username?.toLowerCase() === 'admin' || id === 1) {
+      alert("मास्टर ॲडमिन (admin) खात्याचा पासवर्ड सुरक्षित असून तो येथून रिसेट करता येत नाही.");
+      return;
+    }
+
     if (!window.confirm("तुम्हाला खात्री आहे का की या युजरचा पासवर्ड रिसेट करायचा आहे? पासवर्ड 'Welcome@123' असा सेट केला जाईल.")) {
       return;
     }
@@ -238,7 +244,8 @@ export default function UserMaster() {
       } else if (res.status === 401 || res.status === 403) {
         alert("तुम्हाला पासवर्ड रिसेट करण्याचा अधिकार नाही (Permission Denied).");
       } else {
-        alert("पासवर्ड रिसेट करताना त्रुटी आली.");
+        const errText = await res.text();
+        alert(errText || "पासवर्ड रिसेट करताना त्रुटी आली.");
       }
     } catch (err) {
       alert("सर्व्हरशी संपर्क साधताना त्रुटी आली.");
@@ -246,6 +253,12 @@ export default function UserMaster() {
   };
 
   const handleToggleLock = async (id: number, currentStatus: boolean) => {
+    const targetUser = users.find(u => u.userID === id);
+    if (targetUser?.username?.toLowerCase() === 'admin' || id === 1) {
+      alert("मास्टर ॲडमिन (admin) खाते सुरक्षित असून ते लॉक करता येत नाही.");
+      return;
+    }
+
     const action = currentStatus ? 'अनलॉक (Unlock)' : 'लॉक (Lock)';
     if (!window.confirm(`तुम्हाला खात्री आहे का की हे अकाउंट ${action} करायचे आहे?`)) {
       return;
@@ -262,7 +275,8 @@ export default function UserMaster() {
       } else if (res.status === 401 || res.status === 403) {
         alert("तुम्हाला हे ऑपरेशन करण्याचा अधिकार नाही (Permission Denied).");
       } else {
-        alert(`अकाउंट ${action} करताना त्रुटी आली.`);
+        const errText = await res.text();
+        alert(errText || `अकाउंट ${action} करताना त्रुटी आली.`);
       }
     } catch (err) {
       alert("सर्व्हरशी संपर्क साधताना त्रुटी आली.");
@@ -440,11 +454,12 @@ export default function UserMaster() {
                     value={formData.username}
                     onChange={e => setFormData({...formData, username: e.target.value})}
                     placeholder="उदा. rohit_p"
+                    autoComplete="off"
                     className={`${inputClass} font-bold text-gray-900 ${
                       isEditing ? 'bg-amber-50/60 font-semibold' : ''
                     }`}
                     required
-                    disabled={isEditing && formData.username === 'admin'}
+                    disabled={isEditing && (formData.username === 'admin' || formData.userID === 1)}
                   />
                 </div>
                 
@@ -455,6 +470,7 @@ export default function UserMaster() {
                     onChange={e => setFormData({...formData, roleID: e.target.value})}
                     className={`${inputClass} font-bold`}
                     required
+                    disabled={isEditing && (formData.username === 'admin' || formData.userID === 1)}
                   >
                     <option value="">-- रोल निवडा --</option>
                     {roles.map(r => (
@@ -483,7 +499,8 @@ export default function UserMaster() {
                     id="isActive"
                     checked={formData.isActive}
                     onChange={e => setFormData({...formData, isActive: e.target.checked})}
-                    className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary cursor-pointer"
+                    disabled={isEditing && (formData.username === 'admin' || formData.userID === 1)}
+                    className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary cursor-pointer disabled:opacity-50"
                   />
                   <label htmlFor="isActive" className="text-[11px] font-bold text-gray-800 cursor-pointer select-none">
                     सक्रिय युजर (Active User)
@@ -623,27 +640,39 @@ export default function UserMaster() {
                           <span>एडिट</span>
                         </button>
                         
-                        <button 
-                          onClick={() => handleResetPassword(user.userID)}
-                          className="px-2 py-0.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5"
-                          title="पासवर्ड Welcome@123 वर रिसेट करा"
-                        >
-                          <KeyRound size={11} />
-                          <span>पासवर्ड रिसेट</span>
-                        </button>
+                        {user.username?.toLowerCase() === 'admin' || user.userID === 1 ? (
+                          <span 
+                            className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-300 rounded-sm font-bold text-[10px] flex items-center gap-1 cursor-not-allowed select-none"
+                            title="मास्टर ॲडमिन खाते सुरक्षित आहे (पासवर्ड रिसेट किंवा लॉक करता येणार नाही)"
+                          >
+                            <Shield size={11} className="text-emerald-600" />
+                            <span>सुरक्षित (Admin)</span>
+                          </span>
+                        ) : (
+                          <>
+                            <button 
+                              onClick={() => handleResetPassword(user.userID)}
+                              className="px-2 py-0.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5"
+                              title="पासवर्ड Welcome@123 वर रिसेट करा"
+                            >
+                              <KeyRound size={11} />
+                              <span>पासवर्ड रिसेट</span>
+                            </button>
 
-                        <button 
-                          onClick={() => handleToggleLock(user.userID, user.isLocked)}
-                          className={`px-2 py-0.5 border rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5 ${
-                            user.isLocked 
-                              ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-300' 
-                              : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-300'
-                          }`}
-                          title={user.isLocked ? 'अकाउंट अनलॉक करा' : 'अकाउंट लॉक करा'}
-                        >
-                          {user.isLocked ? <Unlock size={11} /> : <Lock size={11} />}
-                          <span>{user.isLocked ? 'अनलॉक' : 'लॉक'}</span>
-                        </button>
+                            <button 
+                              onClick={() => handleToggleLock(user.userID, user.isLocked)}
+                              className={`px-2 py-0.5 border rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5 ${
+                                user.isLocked 
+                                  ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-300' 
+                                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-300'
+                              }`}
+                              title={user.isLocked ? 'अकाउंट अनलॉक करा' : 'अकाउंट लॉक करा'}
+                            >
+                              {user.isLocked ? <Unlock size={11} /> : <Lock size={11} />}
+                              <span>{user.isLocked ? 'अनलॉक' : 'लॉक'}</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

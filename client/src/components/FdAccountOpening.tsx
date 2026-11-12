@@ -1,6 +1,7 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getCachedMasterData } from '../utils/apiCache';
 import SearchableSelect from './SearchableSelect';
@@ -90,10 +91,22 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const [rejectReason, setRejectReason] = useState<string>('');
 
   const [view, setView] = useState<'form' | 'list'>('form');
-  const [customers, setCustomers] = useState<any[]>(() => getCachedMasterData('/api/Customers') || []);
-  const [schemes, setSchemes] = useState<FdScheme[]>(() => getCachedMasterData(`/api/FdSchemes?branchId=${user?.branchID || 1}`) || getCachedMasterData('/api/FdSchemes') || []);
-  const [branches, setBranches] = useState<any[]>(() => { const c = getCachedMasterData<any[]>('/api/Branches'); return Array.isArray(c) && c.length > 0 ? c : (user?.branchID ? [{ branchID: user.branchID, branchName: user.branchName || 'मुख्य शाखा', branchCode: String(user.branchID).padStart(3, '0') }] : []); });
-  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>(() => getCachedMasterData('/api/Ledgers') || []);
+  const [customers, setCustomers] = useState<any[]>(() => {
+    const c = getCachedMasterData('/api/Customers');
+    return Array.isArray(c) ? c : [];
+  });
+  const [schemes, setSchemes] = useState<FdScheme[]>(() => {
+    const s = getCachedMasterData(`/api/FdSchemes?branchId=${user?.branchID || 1}`) || getCachedMasterData('/api/FdSchemes');
+    return Array.isArray(s) ? s : [];
+  });
+  const [branches, setBranches] = useState<any[]>(() => {
+    const c = getCachedMasterData<any[]>('/api/Branches');
+    return Array.isArray(c) && c.length > 0 ? c : (user?.branchID ? [{ branchID: user.branchID, branchName: user.branchName || 'मुख्य शाखा', branchCode: String(user.branchID).padStart(3, '0') }] : []);
+  });
+  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>(() => {
+    const l = getCachedMasterData('/api/Ledgers');
+    return Array.isArray(l) ? l : [];
+  });
   const bankLedgers = React.useMemo(() => filterBankAccountLedgers(allLedgers), [allLedgers]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -194,7 +207,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     }
     const timer = setTimeout(async () => {
       try {
-        const res = await axios.get(`${API_URL}/FdAccounts/check-legacy-receipt`, {
+        const res = await api.get('/FdAccounts/check-legacy-receipt', {
           params: { branchId, schemeId, receiptNo }
         });
         if (res.data?.isDuplicate) {
@@ -242,7 +255,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const loadPassingVoucher = async (vId: number) => {
     setPassingLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/FdAccounts/by-voucher/${vId}`);
+      const res = await api.get(`/FdAccounts/by-voucher/${vId}`);
       const { fdAccount, voucher } = res.data;
       setPassingVoucherData(voucher);
 
@@ -282,7 +295,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     if (!window.confirm('आपण खात्रीपूर्वक हे मुदत ठेव व्हाउचर मंजूर व पास करू इच्छिता?')) return;
     setPassingActionLoading(true);
     try {
-      await axios.post(`${API_URL}/VoucherPosting/Post`, [voucherId]);
+      await api.post('/VoucherPosting/Post', [voucherId]);
       alert('व्हाउचर यशस्वीरीत्या मंजूर व पास करण्यात आले!');
       if (onNavigate) {
         onNavigate('voucher-posting');
@@ -304,7 +317,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     }
     setPassingActionLoading(true);
     try {
-      await axios.delete(`${API_URL}/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
+      await api.delete(`/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
       alert('व्हाउचर यशस्वीरित्या नामंजूर / रद्द करण्यात आले!');
       setRejectModalOpen(false);
       if (onNavigate) {
@@ -332,12 +345,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const fetchCustomerSavingsAccounts = async (cId: number) => {
     try {
-      const selected = customers.find((c: any) => (c.customerID || c.memberID || c.id) === cId);
+      const selected = (Array.isArray(customers) ? customers : []).find((c: any) => (c.customerID || c.memberID || c.id) === cId);
       const custId = selected?.customerID || selected?.id || cId;
       const memId = selected?.memberProfile?.memberID || selected?.memberID || custId;
 
-      const response = await axios.get(`${API_URL}/SavingAccounts?customerId=${custId}&memberId=${memId}`);
-      const accs = response.data || [];
+      const response = await api.get(`/SavingAccounts?customerId=${custId}&memberId=${memId}`);
+      const raw = response.data;
+      const accs = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
       setCustomerSavingsAccounts(accs);
       if (accs.length > 0) {
         setSelectedSavingAccountID(accs[0].savingAccountID || accs[0].savingAccountId || 0);
@@ -351,8 +365,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const fetchBankLedgers = async () => {
     try {
-      const response = await axios.get(`${API_URL}/Ledgers`);
-      const fetchedLedgers = Array.isArray(response.data) ? response.data : [];
+      const response = await api.get('/Ledgers');
+      const raw = response.data;
+      const fetchedLedgers = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
       setAllLedgers(fetchedLedgers);
     } catch (err) {
       console.error('Error fetching bank ledgers', err);
@@ -360,7 +375,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   };
 
   const getSchemeId = (s: any) => s?.fdSchemeID ?? s?.fdSchemeId ?? s?.FdSchemeID ?? 0;
-  const selectedScheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
+  const selectedScheme = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
 
   // Check Digit and Sequential Account Number Prediction Helper (Luhn Mod 10)
   const calculateCheckDigit = (digits: string): number => {
@@ -897,8 +912,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const fetchBranches = async () => {
     try {
-      const response = await axios.get(`${API_URL}/Branches`);
-      setBranches(response.data);
+      const response = await api.get('/Branches');
+      const raw = response.data;
+      const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
+      setBranches(list);
     } catch (err) {
       console.error('Error fetching branches', err);
     }
@@ -928,7 +945,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       if (custIdStr) {
         const cId = parseInt(custIdStr, 10);
         try {
-          const singleRes = await axios.get(`${API_URL}/Customers/${cId}`);
+          const singleRes = await api.get(`/Customers/${cId}`);
           if (singleRes.data && (singleRes.data.customerID || singleRes.data.id)) {
             const cust = singleRes.data;
             setCustomers([cust]);
@@ -940,8 +957,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       }
 
       // Full customers list loads in background asynchronously
-      axios.get(`${API_URL}/Customers`).then(response => {
-        const allCusts = response.data || [];
+      api.get('/Customers').then(response => {
+        const raw = response.data;
+        const allCusts = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
         setCustomers(allCusts);
         if (custIdStr && allCusts.length > 0) {
           const cId = parseInt(custIdStr, 10);
@@ -959,8 +977,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const fetchSchemes = async (bId?: number) => {
     try {
       const activeBranch = bId !== undefined ? bId : (formData.branchID || 1);
-      const response = await axios.get(`${API_URL}/FdSchemes?branchId=${activeBranch}`);
-      const data = response.data || [];
+      const response = await api.get(`/FdSchemes?branchId=${activeBranch}`);
+      const raw = response.data;
+      const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
       setSchemes(data);
       if (data.length > 0) {
         setFormData(prev => {
@@ -996,9 +1015,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     try {
       const activeSchemeId = schemeId !== undefined ? schemeId : formData.fdSchemeID;
       const url = activeSchemeId && activeSchemeId > 0
-        ? `${API_URL}/FdAccounts/next-account-no/${branchId}?schemeId=${activeSchemeId}`
-        : `${API_URL}/FdAccounts/next-account-no/${branchId}`;
-      const response = await axios.get(url);
+        ? `/FdAccounts/next-account-no/${branchId}?schemeId=${activeSchemeId}`
+        : `/FdAccounts/next-account-no/${branchId}`;
+      const response = await api.get(url);
       const val = typeof response.data === 'string'
         ? response.data
         : (response.data.formattedAccountNo || response.data.displayAccountNo || response.data.accountNo || response.data.nextAccountNo || '');
@@ -1037,8 +1056,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       if (bId && bId > 0) {
         params.set('branchId', String(bId));
       }
-      const response = await axios.get(`${API_URL}/FdAccounts?${params.toString()}`);
-      const rawList = Array.isArray(response.data) ? response.data : [];
+      const response = await api.get(`/FdAccounts?${params.toString()}`);
+      const raw = response.data;
+      const rawList = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
       setFdList(rawList.filter((fd: any) => !fd.isLegacyAccount));
     } catch (err) {
       console.error('Error fetching FD list', err);
@@ -1053,7 +1073,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     setListError('');
     setListSuccess('');
     try {
-      await axios.delete(`${API_URL}/FdAccounts/${deleteConfirm.id}`);
+      await api.delete(`/FdAccounts/${deleteConfirm.id}`);
       setListSuccess(`✅ खाते '${deleteConfirm.accountNo}' यशस्वीरित्या डिलीट (Delete) केले.`);
       setDeleteConfirm(null);
     if (!isPassingMode && view === 'list') { fetchFdList(formData.branchID); }
@@ -1069,7 +1089,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   // Dynamic Maturity & Slabs calculations with ROUND UP (nearest whole rupee)
   useEffect(() => {
-    const selected = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
+    const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
     if (!selected) {
       setCalcData({
         interestRate: 0,
@@ -1188,7 +1208,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   // Active customer details for schedule modal
   const activeCustId = formData.customerID || formData.memberID;
-  const currentCust = customers.find((c: any) => (c.customerID || c.memberID || c.id) === Number(activeCustId));
+  const currentCust = (Array.isArray(customers) ? customers : []).find((c: any) => (c.customerID || c.memberID || c.id) === Number(activeCustId));
   const activeCustomerName = currentCust 
     ? `${currentCust.firstName || ''} ${currentCust.middleName || ''} ${currentCust.lastName || ''}`.replace(/\s+/g, ' ').trim() || currentCust.name || currentCust.label || 'ठेवीदार'
     : 'ठेवीदार';
@@ -1239,7 +1259,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       if (schemeId > 0) {
         fetchNextAccountNo(formData.branchID, schemeId);
       }
-      const s = schemes.find((sc: any) => getSchemeId(sc) === schemeId);
+      const s = (Array.isArray(schemes) ? schemes : []).find((sc: any) => getSchemeId(sc) === schemeId);
       if (s) {
         const isSlab = s.schemeDurationModel === 'Slab';
         setFormData(prev => ({
@@ -1297,7 +1317,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
     setLoading(true);
     try {
-      const selectedCust = customers.find((c: any) => (c.customerID || c.memberID || c.id) === Number(activeCustId));
+      const selectedCust = (Array.isArray(customers) ? customers : []).find((c: any) => (c.customerID || c.memberID || c.id) === Number(activeCustId));
       const resolvedCustId = Number(selectedCust?.customerID || selectedCust?.id || activeCustId);
 
       if (entryMode === 'single') {
@@ -1327,7 +1347,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
           maxAutoRenewalCycles: formData.maxAutoRenewalCycles,
         };
 
-        const response = await axios.post(`${API_URL}/FdAccounts`, payload);
+        const response = await api.post('/FdAccounts', payload);
         const createdNo = response.data.accountNo;
         setSuccess(`✅ मुदत ठेव खाते यशस्वीरित्या उघडले! (पावती क्र: ${createdNo})`);
 
@@ -1384,7 +1404,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
         };
 
         try {
-          const response = await axios.post(`${API_URL}/FdAccounts/BulkCreate`, bulkPayload);
+          const response = await api.post('/FdAccounts/BulkCreate', bulkPayload);
           setSuccess(`✅ ${response.data.message}`);
           fetchNextAccountNo(formData.branchID);
         if (!isPassingMode && view === 'list') { fetchFdList(formData.branchID); }
@@ -1652,7 +1672,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     ) : (
                       <div className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-gray-100 font-bold text-gray-800 flex items-center gap-1">
                         <span>🔒</span>
-                        <span>{branches.find(b => b.branchID === formData.branchID)?.branchName || user?.branchName || 'Bambavade Branch'}</span>
+                        <span>{(Array.isArray(branches) ? branches : []).find(b => b.branchID === formData.branchID)?.branchName || user?.branchName || 'मुख्य शाखा'}</span>
                       </div>
                     )}
                   </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import api from '../utils/api';
 import SearchableSelect from './SearchableSelect';
 import { getCachedMasterData } from '../utils/apiCache';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
@@ -140,9 +141,18 @@ const formatDurationDisplay = (acc: FdAccountRecord): string => {
 };
 
 const FdOpeningBalanceMigration: React.FC = () => {
-  const [customers, setCustomers] = useState<Customer[]>(() => getCachedMasterData('/api/Customers') || []);
-  const [schemes, setSchemes] = useState<FdScheme[]>(() => getCachedMasterData('/api/FdSchemes') || []);
-  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData('/api/Branches') || []);
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    const c = getCachedMasterData('/api/Customers');
+    return Array.isArray(c) ? c : [];
+  });
+  const [schemes, setSchemes] = useState<FdScheme[]>(() => {
+    const s = getCachedMasterData('/api/FdSchemes');
+    return Array.isArray(s) ? s : [];
+  });
+  const [branches, setBranches] = useState<any[]>(() => {
+    const b = getCachedMasterData('/api/Branches');
+    return Array.isArray(b) ? b : [];
+  });
   const [migratedAccounts, setMigratedAccounts] = useState<FdAccountRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -169,7 +179,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       setSyncingFinancials(true);
       setError('');
       setSuccess('');
-      const res = await axios.post(`${API_URL}/FdAccounts/SyncOpeningBalances`);
+      const res = await api.post('/FdAccounts/SyncOpeningBalances');
       if (res.data?.success) {
         setSyncResult(res.data);
         const depStr = Number(res.data.totalDepositsSynced || 0).toLocaleString('en-IN');
@@ -236,9 +246,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
     try {
       const schemeParam = sId || formData.fdSchemeID;
       const url = schemeParam && schemeParam > 0
-        ? `${API_URL}/FdAccounts/next-account-no/${bId}?schemeId=${schemeParam}`
-        : `${API_URL}/FdAccounts/next-account-no/${bId}`;
-      const response = await axios.get(url);
+        ? `/FdAccounts/next-account-no/${bId}?schemeId=${schemeParam}`
+        : `/FdAccounts/next-account-no/${bId}`;
+      const response = await api.get(url);
       if (!isMountedRef.current) return;
       if (response.data) {
         const nextNo = typeof response.data === 'string'
@@ -260,11 +270,13 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const fetchBranches = async () => {
     try {
-      const response = await axios.get(`${API_URL}/Branches`);
+      const response = await api.get('/Branches');
       if (!isMountedRef.current) return;
-      setBranches(response.data);
-      if (response.data.length > 0) {
-        const firstBranchId = response.data[0].branchID;
+      const raw = response.data;
+      const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
+      setBranches(list);
+      if (list.length > 0) {
+        const firstBranchId = list[0].branchID;
         setFormData(prev => ({ ...prev, branchID: firstBranchId }));
         fetchNextAccountNo(firstBranchId);
         fetchSchemes(firstBranchId);
@@ -278,9 +290,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const fetchCustomers = async () => {
     try {
-      const response = await axios.get(`${API_URL}/Customers`);
+      const response = await api.get('/Customers');
       if (isMountedRef.current) {
-        setCustomers(response.data);
+        const raw = response.data;
+        const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
+        setCustomers(list);
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -292,10 +306,12 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const fetchSchemes = async (bId?: number) => {
     try {
       const activeBranch = bId !== undefined ? bId : (formData.branchID || 1);
-      const url = activeBranch ? `${API_URL}/FdSchemes?branchId=${activeBranch}` : `${API_URL}/FdSchemes`;
-      const response = await axios.get(url);
+      const url = activeBranch ? `/FdSchemes?branchId=${activeBranch}` : `/FdSchemes`;
+      const response = await api.get(url);
       if (isMountedRef.current) {
-        setSchemes(response.data);
+        const raw = response.data;
+        const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
+        setSchemes(list);
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -306,9 +322,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const fetchMigratedAccounts = async () => {
     try {
-      const response = await axios.get(`${API_URL}/FdAccounts`);
+      const response = await api.get('/FdAccounts');
       if (!isMountedRef.current) return;
-      const list = response.data
+      const raw = response.data;
+      const rawList = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
+      const list = rawList
         .filter((a: any) => a.isLegacyAccount)
         .sort((a: any, b: any) => (a.accountNo || '').localeCompare(b.accountNo || '') || (a.fdAccountID - b.fdAccountID));
       setMigratedAccounts(list);
@@ -385,8 +403,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
   ): { rate: number; matchedSlab: FdSchemeInterestSlab | null; isOutOfRange: boolean } => {
     if (!scheme) return { rate: 0, matchedSlab: null, isOutOfRange: false };
 
-    if (scheme.schemeDurationModel === 'Slab' && scheme.slabs && scheme.slabs.length > 0) {
-      const activeSlabs = scheme.slabs.filter((s: any) => s.isActive !== false);
+    if (scheme.schemeDurationModel === 'Slab' && Array.isArray(scheme.slabs) && scheme.slabs.length > 0) {
+      const activeSlabs = scheme.slabs.filter((s: any) => s && s.isActive !== false);
       const matched = activeSlabs.find(
         (s: any) => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays)
       );
@@ -471,7 +489,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const handleSchemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const sId = parseInt(e.target.value, 10) || 0;
-    const selected = schemes.find((s: any) => getSchemeId(s) === sId);
+    const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === sId);
     const isSlab = selected?.schemeDurationModel === 'Slab';
 
     let durType = isSlab ? (selected?.durationType || 'Days') : (selected?.durationType || 'Months');
@@ -538,7 +556,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     }
     const trimmed = formData.legacyAccountNumber.trim();
     return (
-      migratedAccounts.find(
+      (Array.isArray(migratedAccounts) ? migratedAccounts : []).find(
         (acc) =>
           Number(acc.fdSchemeID) === Number(formData.fdSchemeID) &&
           (Number(formData.branchID) <= 0 || !acc.branchID || Number(acc.branchID) === Number(formData.branchID)) &&
@@ -564,7 +582,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
           ...prev,
           isSeniorCitizen: checked
         };
-        const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
+        const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === updated.fdSchemeID);
         let newRate = updated.interestRate;
         if (selected && !isManualRateEdited) {
           const slabRes = resolveApplicableRateAndSlab(selected, updated.durationInDays, checked);
@@ -594,7 +612,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
           ...prev,
           depositAmount: parsedDeposit,
         };
-        const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
+        const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === updated.fdSchemeID);
         updated.maturityAmount = parsedDeposit > 0
           ? calculateMaturityAmount(
               parsedDeposit,
@@ -640,7 +658,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       const parsedRate = parseFloat(value) || 0;
       setIsManualRateEdited(true);
       setFormData((prev) => {
-        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === prev.fdSchemeID);
         const newMatAmt = !isManualMaturityEdited
           ? calculateMaturityAmount(Number(prev.depositAmount) || 0, parsedRate, prev.openingDate, prev.maturityDate, selected)
           : prev.maturityAmount;
@@ -673,7 +691,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
           totalDays = durType === 'Days' ? val : (durType === 'Years' ? val * 365 : Math.round(val * 30.4167));
         }
 
-        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === prev.fdSchemeID);
         let newRate = prev.interestRate;
         if (selected && !isManualRateEdited) {
           const slabRes = resolveApplicableRateAndSlab(selected, totalDays, prev.isSeniorCitizen);
@@ -717,7 +735,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
           totalDays = durType === 'Days' ? val : (durType === 'Years' ? val * 365 : Math.round(val * 30.4167));
         }
 
-        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === prev.fdSchemeID);
         let newRate = prev.interestRate;
         if (selected && !isManualRateEdited) {
           const slabRes = resolveApplicableRateAndSlab(selected, totalDays, prev.isSeniorCitizen);
@@ -753,7 +771,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
           }
         }
 
-        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === prev.fdSchemeID);
         let newRate = prev.interestRate;
         if (selected && !isManualRateEdited && totalDays > 0) {
           const slabRes = resolveApplicableRateAndSlab(selected, totalDays, prev.isSeniorCitizen);
@@ -780,7 +798,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     if (name === 'openingDate') {
       const opDate = value;
       setFormData((prev) => {
-        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === prev.fdSchemeID);
         const durType = prev.durationType || (selected?.schemeDurationModel === 'Slab' ? 'Days' : (selected?.durationType || 'Months'));
         const durVal = Number(prev.durationValue) > 0 
           ? Number(prev.durationValue) 
@@ -849,7 +867,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
   };
 
   const handleRecalculateMaturity = () => {
-    const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+    const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === formData.fdSchemeID);
     const slabRes = resolveApplicableRateAndSlab(selected, formData.durationInDays, formData.isSeniorCitizen);
     const appliedRate = isManualRateEdited ? Number(formData.interestRate) || 0 : slabRes.rate;
     if (!isManualRateEdited) {
@@ -872,7 +890,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   // [RULE-FD-010] Recalculate maturity date based on scheme duration and unit (Days/Months/Years)
   const handleRecalculateMaturityDate = () => {
-    const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+    const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === formData.fdSchemeID);
     const isSlab = selected?.schemeDurationModel === 'Slab';
     const durType = formData.durationType || (isSlab ? 'Days' : (selected?.durationType || 'Months'));
     const durVal = formData.durationValue > 0 
@@ -924,8 +942,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
-    const currentCustomer = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === Number(formData.customerID));
-    const scheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
+    const currentCustomer = (Array.isArray(customers) ? customers : []).find((c: any) => Number(c.customerID || c.id || c.customerId) === Number(formData.customerID));
+    const scheme = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
 
     const summary = generateFdInterestSchedule({
       depositAmount: depAmt,
@@ -954,7 +972,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
-    const matchedScheme = schemes.find((s: any) => getSchemeId(s) === Number(acc.fdSchemeID));
+    const matchedScheme = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === Number(acc.fdSchemeID));
     const opDate = acc.openingDate.split('T')[0];
     const matDate = acc.maturityDate.split('T')[0];
 
@@ -1018,9 +1036,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setIsManualMaturityDateEdited(true); // Preserve recorded maturity date from database
     setIsManualRateEdited(true); // Preserve recorded rate from database
     const custId = acc.customerID || 0;
-    const cust = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === custId);
+    const cust = (Array.isArray(customers) ? customers : []).find((c: any) => Number(c.customerID || c.id || c.customerId) === custId);
     const isSenior = (acc as any).isSeniorCitizen ?? isCustomerSeniorCitizen(cust);
-    const selected = schemes.find((s: any) => getSchemeId(s) === acc.fdSchemeID);
+    const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === acc.fdSchemeID);
     const slabRes = resolveApplicableRateAndSlab(selected, acc.durationInDays || 0, isSenior);
     setMatchedSlab(slabRes.matchedSlab);
 
@@ -1068,7 +1086,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       setLoading(true);
       setError('');
       setSuccess('');
-      const res = await axios.delete(`${API_URL}/FdAccounts/${id}${force ? '?force=true' : ''}`);
+      const res = await api.delete(`/FdAccounts/${id}${force ? '?force=true' : ''}`);
       const successMsg = res.data?.message || `मुदत ठेव खाते '${accNo}' यशस्वीरित्या डिलीट केले.`;
       setSuccess(successMsg);
       await fetchMigratedAccounts();
@@ -1122,7 +1140,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
-    const selectedScheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
+    const selectedScheme = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
     let matAmt = Number(formData.maturityAmount) || 0;
 
     // Fallback to auto-calculated if 0 or empty
@@ -1145,7 +1163,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
     // [RULE-FD-001] Strict Customer-First Architecture: resolve CustomerID
     const targetCustId = Number(formData.customerID);
-    const selectedCust = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === targetCustId);
+    const selectedCust = (Array.isArray(customers) ? customers : []).find((c: any) => Number(c.customerID || c.id || c.customerId) === targetCustId);
     const resolvedCustId = Number(selectedCust?.customerID || selectedCust?.id || targetCustId);
 
     if (!resolvedCustId || resolvedCustId <= 0) {
@@ -1156,7 +1174,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     // [RULE-FD-LEGACY-DUP] Validation: Prevent duplicate Old Receipt No under same scheme & branch
     if (formData.legacyAccountNumber && formData.legacyAccountNumber.trim()) {
       const trimmedOldNo = formData.legacyAccountNumber.trim();
-      const duplicateAcc = migratedAccounts.find(
+      const duplicateAcc = (Array.isArray(migratedAccounts) ? migratedAccounts : []).find(
         (acc) =>
           Number(acc.fdSchemeID) === Number(formData.fdSchemeID) &&
           (Number(formData.branchID) <= 0 || !acc.branchID || Number(acc.branchID) === Number(formData.branchID)) &&
@@ -1185,13 +1203,13 @@ const FdOpeningBalanceMigration: React.FC = () => {
       };
 
       if (editingAccountId) {
-        await axios.put(`${API_URL}/FdAccounts/${editingAccountId}`, {
+        await api.put(`/FdAccounts/${editingAccountId}`, {
           fdAccountID: editingAccountId,
           ...payload
         });
         setSuccess('मुदत ठेव खात्याची माहिती यशस्वीरित्या अपडेट झाली!');
       } else {
-        const res = await axios.post(`${API_URL}/FdAccounts/Migrate`, payload);
+        const res = await api.post('/FdAccounts/Migrate', payload);
         const assignedNo = res.data?.accountNo || '';
         setSuccess(`जुन्या मुदत ठेव खात्याचे स्थलांतर यशस्वीरित्या झाले! ${assignedNo ? `(नवीन पावती क्र.: ${assignedNo})` : ''}`);
       }
@@ -1231,7 +1249,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'FD_Migrated_List');
-    const activeScheme = modalSchemeId !== 'ALL' ? schemes.find(s => getSchemeId(s) === modalSchemeId) : null;
+    const activeScheme = modalSchemeId !== 'ALL' ? (Array.isArray(schemes) ? schemes : []).find(s => getSchemeId(s) === modalSchemeId) : null;
     const cleanSchemeName = activeScheme ? `_${activeScheme.schemeName.replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, '_')}` : '';
     XLSX.writeFile(wb, `FD_Migrated_Accounts${cleanSchemeName}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
@@ -1251,7 +1269,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     return details ? `${fullName} (${details})` : fullName;
   };
 
-  const filteredAccounts = migratedAccounts
+  const filteredAccounts = (Array.isArray(migratedAccounts) ? migratedAccounts : [])
     .filter((acc) => {
       if (modalSchemeId !== 'ALL' && getSchemeId(acc) !== modalSchemeId) {
         return false;
@@ -1271,17 +1289,17 @@ const FdOpeningBalanceMigration: React.FC = () => {
     .sort((a, b) => (a.accountNo || '').localeCompare(b.accountNo || '') || (a.fdAccountID - b.fdAccountID));
 
   // KPI Calculations
-  const totalDepositAmount = migratedAccounts.reduce((sum, a) => sum + (a.depositAmount || 0), 0);
-  const totalAccruedInt = migratedAccounts.reduce((sum, a) => sum + (a.legacyAccruedInt || 0), 0);
-  const avgRate = migratedAccounts.length > 0
+  const totalDepositAmount = (Array.isArray(migratedAccounts) ? migratedAccounts : []).reduce((sum, a) => sum + (a.depositAmount || 0), 0);
+  const totalAccruedInt = (Array.isArray(migratedAccounts) ? migratedAccounts : []).reduce((sum, a) => sum + (a.legacyAccruedInt || 0), 0);
+  const avgRate = Array.isArray(migratedAccounts) && migratedAccounts.length > 0
     ? (migratedAccounts.reduce((sum, a) => sum + (a.interestRate || 0), 0) / migratedAccounts.length).toFixed(2)
     : '0.00';
 
-  const selectedCustomer = customers.find((c: any) => 
+  const selectedCustomer = (Array.isArray(customers) ? customers : []).find((c: any) => 
     Number(c.customerID || c.id || c.customerId) === Number(formData.customerID)
   );
 
-  const selectedScheme = schemes.find((s: any) => 
+  const selectedScheme = (Array.isArray(schemes) ? schemes : []).find((s: any) => 
     getSchemeId(s) === Number(formData.fdSchemeID)
   );
 
@@ -1447,7 +1465,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   <label className="text-[11px] font-bold text-gray-700">शाखा (Branch)</label>
                 </div>
                 <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass}>
-                  {branches.map((b) => (
+                  {(Array.isArray(branches) ? branches : []).map((b) => (
                     <option key={b.branchID} value={b.branchID}>
                       {b.branchName}
                     </option>
@@ -1471,9 +1489,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   value={formData.customerID || ''}
                   onChange={(val) => {
                     const custId = val ? Number(val) : 0;
-                    const cust = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === custId);
+                    const cust = (Array.isArray(customers) ? customers : []).find((c: any) => Number(c.customerID || c.id || c.customerId) === custId);
                     const isSenior = isCustomerSeniorCitizen(cust);
-                    const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+                    const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === formData.fdSchemeID);
 
                     let newRate = formData.interestRate;
                     let slabMatch = matchedSlab;
@@ -1550,7 +1568,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 </div>
                 <select name="fdSchemeID" value={formData.fdSchemeID} onChange={handleSchemeChange} className={inputClass} required>
                   <option value="0">-- योजना निवडा --</option>
-                  {schemes.map((s: any) => {
+                  {(Array.isArray(schemes) ? schemes : []).map((s: any) => {
                     const isSlab = s.schemeDurationModel === 'Slab';
                     const slabCount = s.slabs?.length || 0;
                     const durationInfo = isSlab ? `[स्लॅब पद्धत: ${slabCount} स्लॅब्स]` : `${s.durationMonths} महिने (${s.interestRate}%)`;
@@ -1772,7 +1790,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 flex-wrap">
-                        {selectedScheme.slabs?.filter((sl: any) => sl.isActive !== false).map((sl: any, idx: number) => {
+                        {(Array.isArray(selectedScheme.slabs) ? selectedScheme.slabs : []).filter((sl: any) => sl && sl.isActive !== false).map((sl: any, idx: number) => {
                           const isThisMatched = sl === matchedSlab || (matchedSlab && sl.slabID === matchedSlab.slabID);
                           const slRate = formData.isSeniorCitizen ? (sl.seniorCitizenRate || sl.interestRate) : sl.interestRate;
                           return (
@@ -1804,7 +1822,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 flex-wrap">
-                        {selectedScheme.slabs?.filter((sl: any) => sl.isActive !== false).map((sl: any, idx: number) => (
+                        {(Array.isArray(selectedScheme.slabs) ? selectedScheme.slabs : []).filter((sl: any) => sl && sl.isActive !== false).map((sl: any, idx: number) => (
                           <span
                             key={idx}
                             className="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold border bg-white text-amber-900 border-amber-200"
@@ -1839,7 +1857,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                         type="button"
                         onClick={() => {
                           setIsManualRateEdited(false);
-                          const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+                          const selected = (Array.isArray(schemes) ? schemes : []).find((s: any) => getSchemeId(s) === formData.fdSchemeID);
                           const slabRes = resolveApplicableRateAndSlab(selected, formData.durationInDays, formData.isSeniorCitizen);
                           setMatchedSlab(slabRes.matchedSlab);
                           const newMat = !isManualMaturityEdited
@@ -2119,10 +2137,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
                     className="text-xs h-[26px] bg-transparent font-medium text-slate-800 focus:outline-none cursor-pointer max-w-[200px] sm:max-w-[260px]"
                     title="योजना निवडून खाती फिल्टर करा"
                   >
-                    <option value="ALL">सर्व योजना (All Schemes - {migratedAccounts.length})</option>
-                    {schemes.map((s: any) => {
+                    <option value="ALL">सर्व योजना (All Schemes - {(Array.isArray(migratedAccounts) ? migratedAccounts : []).length})</option>
+                    {(Array.isArray(schemes) ? schemes : []).map((s: any) => {
                       const sid = getSchemeId(s);
-                      const countInScheme = migratedAccounts.filter((a: any) => getSchemeId(a) === sid).length;
+                      const countInScheme = (Array.isArray(migratedAccounts) ? migratedAccounts : []).filter((a: any) => getSchemeId(a) === sid).length;
                       return (
                         <option key={sid} value={sid}>
                           {s.schemeName || `योजना #${sid}`} {countInScheme > 0 ? `(${countInScheme} खाती)` : ''}

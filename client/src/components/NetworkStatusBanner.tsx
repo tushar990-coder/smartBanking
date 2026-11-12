@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { WifiOff, Wifi, RefreshCw, AlertTriangle } from 'lucide-react';
+import api from '../utils/api';
 
 export default function NetworkStatusBanner() {
   const [isServerDisconnected, setIsServerDisconnected] = useState(false);
   const [showRestoredMessage, setShowRestoredMessage] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const consecutiveFailuresRef = useRef<number>(0);
 
   useEffect(() => {
     let timerId: NodeJS.Timeout | null = null;
@@ -12,10 +14,19 @@ export default function NetworkStatusBanner() {
     let isMounted = true;
 
     const pingServer = async () => {
+      // 1. If browser is explicitly offline (airplane mode, cable unplugged)
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        consecutiveFailuresRef.current = 3;
+        if (isMounted) setIsServerDisconnected(true);
+        return;
+      }
+
+      // 2. Perform heartbeat check via configured API client
       try {
-        const response = await fetch('/api/license/status', { method: 'GET', cache: 'no-store' });
-        if (response.ok || response.status < 500) {
-          if (isServerDisconnected && isMounted) {
+        const res = await api.get('/license/status', { timeout: 7000 });
+        if (res.status < 500) {
+          consecutiveFailuresRef.current = 0;
+          if (isMounted && isServerDisconnected) {
             setIsServerDisconnected(false);
             setShowRestoredMessage(true);
             if (timerId) clearTimeout(timerId);
@@ -23,42 +34,85 @@ export default function NetworkStatusBanner() {
               if (isMounted) setShowRestoredMessage(false);
             }, 4000);
           }
-        } else {
-          if (isMounted) setIsServerDisconnected(true);
+          return;
         }
       } catch {
-        if (isMounted) setIsServerDisconnected(true);
+        // Fallback relative ping check in case of base URL routing variations
+        try {
+          const fallback = await fetch('/api/license/status', { cache: 'no-store' });
+          if (fallback.ok || fallback.status < 500) {
+            consecutiveFailuresRef.current = 0;
+            if (isMounted && isServerDisconnected) {
+              setIsServerDisconnected(false);
+              setShowRestoredMessage(true);
+              if (timerId) clearTimeout(timerId);
+              timerId = setTimeout(() => {
+                if (isMounted) setShowRestoredMessage(false);
+              }, 4000);
+            }
+            return;
+          }
+        } catch {}
+      }
+
+      // 3. Only trigger disconnect alert after 3 consecutive failed checks (prevents momentary false alarms)
+      consecutiveFailuresRef.current += 1;
+      if (consecutiveFailuresRef.current >= 3 && isMounted) {
+        setIsServerDisconnected(true);
       }
     };
 
-    // Periodic heartbeat every 15s to check server connection
-    intervalId = setInterval(pingServer, 15000);
+    // Periodic heartbeat every 45s (battery friendly and prevents cloud server overload)
+    intervalId = setInterval(pingServer, 45000);
+
+    const handleOffline = () => {
+      consecutiveFailuresRef.current = 3;
+      if (isMounted) setIsServerDisconnected(true);
+    };
+
+    const handleOnline = () => {
+      pingServer();
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
 
     return () => {
       isMounted = false;
       if (timerId) clearTimeout(timerId);
       if (intervalId) clearInterval(intervalId);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
     };
   }, [isServerDisconnected]);
 
   const checkConnection = async () => {
     setIsChecking(true);
     try {
-      const response = await fetch('/api/license/status', { method: 'GET', cache: 'no-store' });
-      if (response.ok || response.status < 500) {
+      const res = await api.get('/license/status', { timeout: 7000 });
+      if (res.status < 500) {
+        consecutiveFailuresRef.current = 0;
         setIsServerDisconnected(false);
         setShowRestoredMessage(true);
-        setTimeout(() => {
-          setShowRestoredMessage(false);
-        }, 4000);
-      } else {
-        setIsServerDisconnected(true);
+        setTimeout(() => setShowRestoredMessage(false), 4000);
+        return;
       }
     } catch {
-      setIsServerDisconnected(true);
+      try {
+        const fallback = await fetch('/api/license/status', { cache: 'no-store' });
+        if (fallback.ok || fallback.status < 500) {
+          consecutiveFailuresRef.current = 0;
+          setIsServerDisconnected(false);
+          setShowRestoredMessage(true);
+          setTimeout(() => setShowRestoredMessage(false), 4000);
+          return;
+        }
+      } catch {}
     } finally {
       setIsChecking(false);
     }
+    // If explicit retry failed
+    setIsServerDisconnected(true);
   };
 
   if (!isServerDisconnected && !showRestoredMessage) {
@@ -78,11 +132,11 @@ export default function NetworkStatusBanner() {
               <div className="flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-amber-200 shrink-0" />
                 <h4 className="font-extrabold text-xs tracking-wide text-white">
-                  स्थानिक बँकिंग सर्व्हरशी संपर्क तुटला आहे! (Local Server Disconnected)
+                  बँकिंग सर्व्हरशी संपर्क तुटला आहे (Banking Server Disconnected)
                 </h4>
               </div>
               <p className="text-[11px] text-rose-100 mt-0.5 leading-tight font-medium">
-                स्मार्ट बँकिंग सर्व्हर (Bhisi.Api.exe) बंद असू शकतो किंवा नेटवर्क कनेक्शन तुटले आहे. कृपया सर्व्हर सुरू आहे का ते तपासा.
+                सर्व्हरकडून प्रतिसाद मिळत नाही किंवा इंटरनेट कनेक्शन मंद/तुटले आहे. कृपया तुमचे नेटवर्क कनेक्शन तपासा.
               </p>
             </div>
           </div>
@@ -109,7 +163,7 @@ export default function NetworkStatusBanner() {
               <Wifi className="w-4 h-4 text-white" />
             </div>
             <span className="font-bold text-xs">
-              ✅ इंटरनेट कनेक्शन पूर्ववत झाले आहे! (Internet Connection Restored)
+              ✅ सर्व्हर व इंटरनेट कनेक्शन पूर्ववत झाले आहे! (Connection Restored)
             </span>
           </div>
           <button

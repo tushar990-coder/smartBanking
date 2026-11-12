@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -253,12 +253,6 @@ function App() {
     fetchVersion();
   }, []);
 
-  useEffect(() => {
-    if (user && sessionStorage.getItem('just_logged_in') === 'true') {
-      setShowLoginNotifications(true);
-      sessionStorage.removeItem('just_logged_in');
-    }
-  }, [user]);
   
   const tabToPathMap: Record<string, string> = {
     // Core & Dashboards
@@ -579,6 +573,33 @@ function App() {
     setActiveTab(cleanTab);
   };
 
+  // Track user login/logout transitions:
+  // 1. Any user logging in always starts cleanly on the Dashboard (/dashboard)
+  // 2. Logging out immediately resets active tab and clears previous screen URL
+  const prevUserRef = useRef<string | null>(user?.username || null);
+
+  useEffect(() => {
+    const prevUsername = prevUserRef.current;
+    const currentUsername = user?.username || null;
+
+    if (currentUsername && currentUsername !== prevUsername) {
+      // User just logged in or switched account! Always land on Dashboard
+      handleNavigate('dashboard');
+      setShowLoginNotifications(true);
+      try {
+        sessionStorage.removeItem('just_logged_in');
+      } catch (_) {}
+    } else if (!currentUsername && prevUsername) {
+      // User logged out! Reset state and browser URL cleanly
+      setActiveTab('dashboard');
+      try {
+        window.history.replaceState(null, '', '/');
+      } catch (_) {}
+    }
+
+    prevUserRef.current = currentUsername;
+  }, [user]);
+
   if (!user) {
     return (
       <>
@@ -596,7 +617,7 @@ function App() {
       <ChangePasswordModal 
         isOpen={Boolean(user?.requirePasswordChange)} 
         isMandatory={true} 
-        onClose={() => {}} 
+        onClose={() => handleNavigate('dashboard')} 
       />
       <ChangePasswordModal 
         isOpen={showChangePasswordModal && !user?.requirePasswordChange} 

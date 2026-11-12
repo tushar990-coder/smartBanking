@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import api from '../utils/api';
 import {
   Repeat,
   Layers,
@@ -54,24 +55,28 @@ const getMaxOpeningDate = () => {
 };
 
 export default function RdOpeningBalanceMigration() {
-  const [customers, setCustomers] = useState<Customer[]>(
-    () => getCachedMasterData<Customer[]>('/api/Customers') || []
-  );
-  const [schemes, setSchemes] = useState<RdScheme[]>(() =>
-    (getCachedMasterData<RdScheme[]>('/api/RdSchemes') || []).filter((s: any) => s && s.isActive !== false)
-  );
-  const [branches, setBranches] = useState<Branch[]>(
-    () => getCachedMasterData<Branch[]>('/api/Branches') || []
-  );
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    const c = getCachedMasterData<Customer[]>('/api/Customers');
+    return Array.isArray(c) ? c : [];
+  });
+  const [schemes, setSchemes] = useState<RdScheme[]>(() => {
+    const s = getCachedMasterData<RdScheme[]>('/api/RdSchemes');
+    return Array.isArray(s) ? s.filter((x: any) => x && x.isActive !== false) : [];
+  });
+  const [branches, setBranches] = useState<Branch[]>(() => {
+    const b = getCachedMasterData<Branch[]>('/api/Branches');
+    return Array.isArray(b) ? b : [];
+  });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
 
   const [nextAccountNo, setNextAccountNo] = useState('');
   const [loadingAccountNo, setLoadingAccountNo] = useState(false);
-  const [migratedAccounts, setMigratedAccounts] = useState<any[]>(() =>
-    (getCachedMasterData<any[]>('/api/RdAccounts') || []).filter((a: any) => a.isLegacyAccount)
-  );
+  const [migratedAccounts, setMigratedAccounts] = useState<any[]>(() => {
+    const a = getCachedMasterData<any[]>('/api/RdAccounts');
+    return Array.isArray(a) ? a.filter((x: any) => x && x.isLegacyAccount) : [];
+  });
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
@@ -101,13 +106,13 @@ export default function RdOpeningBalanceMigration() {
     remarks: 'जुन्या आरडी खात्याचे मायग्रेशन (Legacy Migration)',
   });
 
-  const selectedCustomer = customers.find((c) => c && c.customerID != null && c.customerID.toString() === formData.customerID);
+  const selectedCustomer = (Array.isArray(customers) ? customers : []).find((c) => c && c.customerID != null && c.customerID.toString() === formData.customerID);
 
   const fetchNextAccountNo = async (branchId: number, schemeId?: string | number) => {
     setLoadingAccountNo(true);
     try {
       const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}&t=${Date.now()}` : `?branchId=${branchId}&t=${Date.now()}`;
-      const res = await axios.get(`/api/RdAccounts/next-account-no${q}`);
+      const res = await api.get(`/RdAccounts/next-account-no${q}`);
       const acc = res.data?.formattedAccountNo || res.data?.accountNo || (typeof res.data === 'string' ? res.data : '---');
       setNextAccountNo(acc);
     } catch (err) {
@@ -120,10 +125,10 @@ export default function RdOpeningBalanceMigration() {
 
   const fetchMigratedAccounts = async () => {
     try {
-      const res = await axios.get('/api/RdAccounts');
-      if (Array.isArray(res.data)) {
-        setMigratedAccounts(res.data.filter((a: any) => a.isLegacyAccount));
-      }
+      const res = await api.get('/RdAccounts');
+      const raw = res.data;
+      const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
+      setMigratedAccounts(list.filter((a: any) => a.isLegacyAccount));
     } catch (err) {
       console.error('Error fetching migrated RD accounts', err);
     }
@@ -139,7 +144,7 @@ export default function RdOpeningBalanceMigration() {
 
     try {
       setLoading(true);
-      await axios.delete(`/api/RdAccounts/${id}`);
+      await api.delete(`/RdAccounts/${id}`);
       const delMsg = `आरडी खाते '${accNo}' यशस्वीरीत्या डिलीट केले.`;
       setMessage(delMsg);
       setIsSuccess(true);
@@ -166,9 +171,10 @@ export default function RdOpeningBalanceMigration() {
   const fetchSchemes = async (bId?: number) => {
     try {
       const activeBranch = bId !== undefined ? bId : (formData.branchID || 1);
-      const res = await axios.get(`/api/RdSchemes?branchId=${activeBranch}`);
-      const list = (res.data || []).filter((s: any) => s.isActive !== false);
-      setSchemes(list);
+      const res = await api.get(`/RdSchemes?branchId=${activeBranch}`);
+      const raw = res.data;
+      const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
+      setSchemes(list.filter((s: any) => s.isActive !== false));
     } catch (err) {
       console.error('Error fetching schemes', err);
     }
@@ -180,28 +186,34 @@ export default function RdOpeningBalanceMigration() {
 
     const fetchData = async () => {
       try {
-        const bRes = await axios.get('/api/Branches');
+        const bRes = await api.get('/Branches');
         if (!isMounted) return;
-        setBranches(bRes.data || []);
+        const bRaw = bRes.data;
+        const bList = Array.isArray(bRaw) ? bRaw : (Array.isArray(bRaw?.value) ? bRaw.value : (Array.isArray(bRaw?.data) ? bRaw.data : []));
+        setBranches(bList);
 
-        const defaultBranch = bRes.data?.length > 0 ? bRes.data[0].branchID : 1;
+        const defaultBranch = bList.length > 0 ? bList[0].branchID : 1;
         fetchNextAccountNo(defaultBranch);
-        const sRes = await axios.get(`/api/RdSchemes?branchId=${defaultBranch}`);
+        const sRes = await api.get(`/RdSchemes?branchId=${defaultBranch}`);
         if (!isMounted) return;
-        setSchemes((sRes.data || []).filter((s: any) => s.isActive !== false));
+        const sRaw = sRes.data;
+        const sList = Array.isArray(sRaw) ? sRaw : (Array.isArray(sRaw?.value) ? sRaw.value : (Array.isArray(sRaw?.data) ? sRaw.data : []));
+        setSchemes(sList.filter((s: any) => s.isActive !== false));
 
         bgTimer = setTimeout(async () => {
           try {
-            const mRes = await axios.get('/api/Customers');
+            const mRes = await api.get('/Customers');
             if (!isMounted) return;
-            setCustomers(mRes.data || []);
+            const mRaw = mRes.data;
+            const mList = Array.isArray(mRaw) ? mRaw : (Array.isArray(mRaw?.value) ? mRaw.value : (Array.isArray(mRaw?.data) ? mRaw.data : []));
+            setCustomers(mList);
             fetchMigratedAccounts();
 
             const params = new URLSearchParams(window.location.search);
             const customerIdStr = params.get('customerId') || params.get('memberId');
-            if (customerIdStr && mRes.data?.length > 0) {
+            if (customerIdStr && mList.length > 0) {
               const cId = parseInt(customerIdStr, 10);
-              const matchedCustomer = mRes.data.find((c: any) => c && (c.customerID === cId || c.memberID === cId));
+              const matchedCustomer = mList.find((c: any) => c && (c.customerID === cId || c.memberID === cId));
               if (matchedCustomer && isMounted) {
                 setFormData((prev) => ({
                   ...prev,
@@ -285,7 +297,7 @@ export default function RdOpeningBalanceMigration() {
 
     if (dur <= 0 || inst <= 0) return rows;
 
-    const selectedScheme = schemes.find(s => s.rdSchemeID.toString() === formData.rdSchemeID);
+    const selectedScheme = (Array.isArray(schemes) ? schemes : []).find(s => s.rdSchemeID.toString() === formData.rdSchemeID);
     const method = selectedScheme?.interestMethod || 'Compound';
     const opening = new Date(formData.openingDate);
 
@@ -358,7 +370,7 @@ export default function RdOpeningBalanceMigration() {
         const dur = name === 'durationMonths' ? parseInt(value, 10) || 0 : prev.durationMonths;
         const rate = name === 'interestRate' ? parseFloat(value) || 0 : prev.interestRate;
         
-        const selectedScheme = schemes.find((s) => s.rdSchemeID.toString() === prev.rdSchemeID);
+        const selectedScheme = (Array.isArray(schemes) ? schemes : []).find((s) => s.rdSchemeID.toString() === prev.rdSchemeID);
         const method = selectedScheme?.interestMethod || 'Compound';
         updated.maturityAmount = calculateRDMaturity(inst, rate, dur, method);
       }
@@ -369,7 +381,7 @@ export default function RdOpeningBalanceMigration() {
 
   const handleSchemeChange = (schemeId: string) => {
     fetchNextAccountNo(formData.branchID || 1, schemeId);
-    const selected = schemes.find((s) => s.rdSchemeID.toString() === schemeId);
+    const selected = (Array.isArray(schemes) ? schemes : []).find((s) => s.rdSchemeID.toString() === schemeId);
     if (selected) {
       setFormData((prev) => {
         const inst = parseFloat(String(prev.installmentAmount)) || 0;
@@ -446,7 +458,7 @@ export default function RdOpeningBalanceMigration() {
     const rate = acc.interestRate || 8.0;
     let matAmt = acc.maturityAmount || 0;
     if ((!matAmt || matAmt === 0) && inst > 0 && dur > 0) {
-      const selectedScheme = schemes.find((s) => s.rdSchemeID.toString() === String(acc.rdSchemeID));
+      const selectedScheme = (Array.isArray(schemes) ? schemes : []).find((s) => s.rdSchemeID.toString() === String(acc.rdSchemeID));
       matAmt = calculateRDMaturity(inst, rate, dur, selectedScheme?.interestMethod || 'Compound');
     }
 
@@ -526,13 +538,13 @@ export default function RdOpeningBalanceMigration() {
 
       let successMsg = '';
       if (editingAccountId) {
-        await axios.put(`/api/RdAccounts/${editingAccountId}`, {
+        await api.put(`/RdAccounts/${editingAccountId}`, {
           rdAccountID: editingAccountId,
           ...payload,
         });
         successMsg = `✅ आरडी खाते '${payload.accountNo}' ची माहिती यशस्वीरित्या अद्ययावत (Update) केली!`;
       } else {
-        const response = await axios.post('/api/RdAccounts/Migrate', payload);
+        const response = await api.post('/RdAccounts/Migrate', payload);
         const createdNo = response.data?.accountNo || nextAccountNo;
         successMsg = `✅ जुन्या आरडी खात्याचे मायग्रेशन यशस्वी झाले! नवीन खाते क्र.: ${createdNo}`;
       }
@@ -957,7 +969,7 @@ export default function RdOpeningBalanceMigration() {
                     + ₹ {Math.max(0, (parseFloat(formData.maturityAmount?.toString() || '0') || 0) - ((parseFloat(formData.installmentAmount?.toString() || '0') || 0) * (parseInt(formData.durationMonths?.toString() || '12', 10) || 12))).toLocaleString('en-IN')}
                   </strong>
                   <span className="text-[10px] text-emerald-600 block mt-0.5">
-                    व्याजदर {formData.interestRate}% ({schemes.find(s => s.rdSchemeID.toString() === formData.rdSchemeID)?.interestMethod || 'Compound'})
+                    व्याजदर {formData.interestRate}% ({(Array.isArray(schemes) ? schemes : []).find(s => s.rdSchemeID.toString() === formData.rdSchemeID)?.interestMethod || 'Compound'})
                   </span>
                 </div>
 

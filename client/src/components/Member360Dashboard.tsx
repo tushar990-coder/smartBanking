@@ -15,7 +15,8 @@ import {
     RefreshCw,
     History,
     ArrowUpRight,
-    ArrowDownLeft
+    ArrowDownLeft,
+    Landmark
 } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 
@@ -651,22 +652,33 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                         </div>
 
                         {/* Section Header: Product Accounts */}
-                        <div className="flex items-center justify-between mt-1 px-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mt-1 px-1">
                             <h4 className="text-xs font-bold text-slate-700 tracking-wider uppercase flex items-center gap-1.5">
                                 <CreditCard size={14} className="text-slate-500" />
                                 <span>पोर्टफोलिओ प्रॉडक्ट्स (Product Accounts)</span>
                             </h4>
 
-                            {data.recentTransactions && data.recentTransactions.length > 0 && (
+                            <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => setShowTransactions(!showTransactions)}
-                                    className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                    onClick={() => onNavigate('employee-bank', getUniversalNavParams({ source: '360dashboard' }))}
+                                    className="text-[11px] font-bold text-blue-800 hover:text-blue-950 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                    title="या खातेदाराचा कर्मचारी व वैयक्तिक बँक तपशील पहा / बदला"
                                 >
-                                    <History size={13} />
-                                    <span>अलिकडील व्यवहार ({data.recentTransactions.length})</span>
-                                    {showTransactions ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                    <Landmark size={13} />
+                                    <span>बँक व कर्मचारी तपशील</span>
                                 </button>
-                            )}
+
+                                {data.recentTransactions && data.recentTransactions.length > 0 && (
+                                    <button
+                                        onClick={() => setShowTransactions(!showTransactions)}
+                                        className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                    >
+                                        <History size={13} />
+                                        <span>अलिकडील व्यवहार ({data.recentTransactions.length})</span>
+                                        {showTransactions ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {/* 6 Portfolio Product Cards */}

@@ -896,7 +896,7 @@ function App() {
         {(activeTab === 'assets' || activeTab === 'asset-category') && <AssetCategoryMaster />}
         {activeTab === 'asset-master' && <AssetMaster />}
         {activeTab === 'asset-purchase' && <AssetPurchaseForm onNavigate={handleNavigate} />}
-        {activeTab === 'asset-reports' && <AssetReports />}
+        {(activeTab === 'asset-reports' || activeTab.startsWith('asset-reports&')) && <AssetReports />}
         {(activeTab === 'deadstock-ob' || activeTab === 'deadstock-opening') && <SettingsDashboard defaultCategory="opening-balance" defaultSub="deadstock-ob" />}
         
         {/* Locker Management Module Views */}
@@ -907,10 +907,11 @@ function App() {
         {activeTab === 'locker-visit-register' && <LockerVisitRegister />}
         {activeTab === 'locker-rent-renewal' && <LockerRentRenewal onNavigate={handleNavigate} />}
         {activeTab === 'locker-surrender' && <LockerSurrenderMaster onNavigate={handleNavigate} />}
-        {activeTab === 'locker-reports' && <LockerReports />}
+        {(activeTab === 'locker-reports' || activeTab.startsWith('locker-reports&')) && <LockerReports />}
 
         {/* Legal Recovery (Sec 101 / 91) Module */}
-        {(activeTab === 'legal-recovery' || activeTab.startsWith('sec101-')) && <LegalRecoveryDashboard />}
+        {activeTab === 'sec101-reports' && <Sec101LegalReports />}
+        {(activeTab === 'legal-recovery' || (activeTab.startsWith('sec101-') && activeTab !== 'sec101-reports')) && <LegalRecoveryDashboard />}
 
         {/* Reports */}
         {activeTab === 'reports' && <ReportDashboard setActiveTab={handleNavigate} />}

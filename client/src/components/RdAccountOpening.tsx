@@ -154,6 +154,7 @@ export default function RdAccountOpening({
 
   // Next account number preview
   const [nextAccountNo, setNextAccountNo] = useState('');
+  const [rdLegacyHint, setRdLegacyHint] = useState<{ last: string; next: string }>({ last: '0', next: '1' });
   const [loadingAccountNo, setLoadingAccountNo] = useState(false);
 
   // List view state
@@ -223,6 +224,10 @@ export default function RdAccountOpening({
       const rawNo = res.data?.accountNo || (typeof res.data === 'string' ? res.data : '');
       const formatted = res.data?.formattedAccountNo || rawNo || '---';
       const nextLegacy = res.data?.nextLegacyAccountNo ? String(res.data.nextLegacyAccountNo) : '1';
+      const lastLegacy = res.data?.lastLegacyAccountNo
+        ? String(res.data.lastLegacyAccountNo)
+        : (parseInt(nextLegacy, 10) > 1 ? String(parseInt(nextLegacy, 10) - 1) : '0');
+      setRdLegacyHint({ last: lastLegacy, next: nextLegacy });
       setAutoAccountNo(rawNo);
       setNextAccountNo(formatted);
       setFormData(prev => ({
@@ -1102,12 +1107,12 @@ export default function RdAccountOpening({
                       </div>
 
                       <div className="sm:col-span-5">
-                        <div className="flex items-center justify-between mb-0.5">
+                        <div className="flex items-center justify-between mb-0.5 gap-1 flex-wrap">
                           <label className={labelClass}>
                             जुना आरडी क्र. (Legacy No)
                           </label>
-                          <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1 rounded font-bold" title="योजनेतील मागील शेवटच्या जुन्या खाते क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
-                            ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                          <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1 rounded font-bold font-mono" title="योजनेतील मागील शेवटच्या जुन्या खाते क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
+                            शेवटचा: {rdLegacyHint.last} | पुढील: {rdLegacyHint.next}
                           </span>
                         </div>
                         <input

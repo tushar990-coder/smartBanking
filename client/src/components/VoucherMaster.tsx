@@ -98,6 +98,8 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const [isListModalOpen, setIsListModalOpen] = useState(false);
   const [listSearchQuery, setListSearchQuery] = useState('');
   const [listTypeFilter, setListTypeFilter] = useState('All');
+  const [listPage, setListPage] = useState<number>(1);
+  const [listPageSize, setListPageSize] = useState<number>(100);
 
   // 🔒 Core Banking Passing Mode States (तपासणी व मंजुरी मोड)
   const [isPassingMode, setIsPassingMode] = useState(false);
@@ -438,7 +440,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
   const fetchVouchers = async () => {
     try {
-      const response = await fetch(`${API_URL}?pageSize=50`);
+      const response = await fetch(`${API_URL}?pageSize=0`);
       if (response.ok) {
         const data = await response.json();
         setVouchers(Array.isArray(data) ? data : []);
@@ -1020,6 +1022,12 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     return matchesType && (matchNo || matchType || matchNarration || matchAmount || matchDate || matchBranch || matchLedger);
   });
 
+  const totalVoucherPages = listPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredVouchers.length / listPageSize));
+  const safeVoucherPage = Math.min(listPage, totalVoucherPages);
+  const paginatedVouchers = listPageSize === 0
+    ? filteredVouchers
+    : filteredVouchers.slice((safeVoucherPage - 1) * listPageSize, safeVoucherPage * listPageSize);
+
   if (printingVoucherId) {
     return <VoucherPrint voucherId={printingVoucherId} onBack={() => setPrintingVoucherId(null)} />;
   }
@@ -1570,11 +1578,14 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <label className="text-[11px] font-bold text-gray-700 whitespace-nowrap">प्रकारनुसार (Type):</label>
                 <select
                   value={listTypeFilter}
-                  onChange={(e) => setListTypeFilter(e.target.value)}
+                  onChange={(e) => {
+                    setListTypeFilter(e.target.value);
+                    setListPage(1);
+                  }}
                   className="border border-gray-300 px-2 py-1 rounded-sm text-[11px] focus:outline-none focus:border-primary bg-white h-[28px] font-bold"
                 >
                   <option value="All">सर्व व्हाउचर प्रकार (All)</option>
@@ -1582,6 +1593,22 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                   <option value="Payment">📤 पेमेंट (Payment)</option>
                   <option value="Journal">🔄 जर्नल (Journal)</option>
                   <option value="Contra">🏦 कॉन्ट्रा (Contra)</option>
+                </select>
+
+                <label className="text-[11px] font-bold text-gray-700 whitespace-nowrap ml-1">प्रति पान:</label>
+                <select
+                  value={listPageSize}
+                  onChange={(e) => {
+                    setListPageSize(Number(e.target.value));
+                    setListPage(1);
+                  }}
+                  className="border border-gray-300 px-2 py-1 rounded-sm text-[11px] focus:outline-none focus:border-primary bg-white h-[28px] font-bold text-primary"
+                >
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                  <option value={500}>500</option>
+                  <option value={0}>सर्व ({filteredVouchers.length})</option>
                 </select>
               </div>
             </div>
@@ -1602,14 +1629,14 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
-                    {filteredVouchers.length === 0 ? (
+                    {paginatedVouchers.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="p-8 text-center text-gray-400 italic">
                           कोणतेही व्हाउचर सापडले नाही.
                         </td>
                       </tr>
                     ) : (
-                      filteredVouchers.map(v => (
+                      paginatedVouchers.map(v => (
                         <React.Fragment key={v.voucherID}>
                           <tr className="hover:bg-blue-50/60 cursor-pointer transition-colors" onClick={() => toggleVoucher(v.voucherID)}>
                             <td className="p-2 border-r border-gray-200 text-left text-gray-700 font-bold">
@@ -1739,15 +1766,68 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
             </div>
 
             {/* Modal Footer */}
-            <div className="bg-slate-100 p-2.5 px-4 border-t border-gray-200 flex justify-between items-center text-[11px] text-gray-600">
-              <span>💡 <strong>टीप:</strong> कोणत्याही व्हाउचरच्या ओळीवर क्लिक करून त्यातील खाती व Dr/Cr खतावणी पाहू शकता.</span>
-              <button
-                type="button"
-                onClick={() => setIsListModalOpen(false)}
-                className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-1 rounded-sm font-bold transition-colors cursor-pointer shadow-2xs"
-              >
-                बंद करा (Close)
-              </button>
+            <div className="bg-slate-100 p-2.5 px-4 border-t border-gray-200 flex flex-wrap justify-between items-center gap-2 text-[11px] text-gray-600">
+              <span>
+                दाखवत आहे:{' '}
+                <strong className="text-slate-900">
+                  {filteredVouchers.length === 0
+                    ? 0
+                    : listPageSize === 0
+                      ? `1 ते ${filteredVouchers.length}`
+                      : `${(safeVoucherPage - 1) * listPageSize + 1} ते ${Math.min(safeVoucherPage * listPageSize, filteredVouchers.length)}`}
+                </strong>{' '}
+                (एकूण व्हाउचर्स: <strong className="text-primary">{filteredVouchers.length}</strong>)
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                {listPageSize > 0 && totalVoucherPages > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={safeVoucherPage <= 1}
+                      onClick={() => setListPage(1)}
+                      className="px-2 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                    >
+                      ⏮️ पहिले
+                    </button>
+                    <button
+                      type="button"
+                      disabled={safeVoucherPage <= 1}
+                      onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                      className="px-2.5 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                    >
+                      ⬅️ मागील पान
+                    </button>
+                    <span className="px-2.5 py-1 bg-primary text-white rounded-sm font-bold font-mono">
+                      पान {safeVoucherPage} / {totalVoucherPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safeVoucherPage >= totalVoucherPages}
+                      onClick={() => setListPage((p) => Math.min(totalVoucherPages, p + 1))}
+                      className="px-2.5 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                    >
+                      पुढील पान ➡️
+                    </button>
+                    <button
+                      type="button"
+                      disabled={safeVoucherPage >= totalVoucherPages}
+                      onClick={() => setListPage(totalVoucherPages)}
+                      className="px-2 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                    >
+                      शेवटचे ⏭️
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsListModalOpen(false)}
+                  className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-1 rounded-sm font-bold transition-colors cursor-pointer shadow-2xs ml-2"
+                >
+                  बंद करा (Close)
+                </button>
+              </div>
             </div>
           </div>
         </div>

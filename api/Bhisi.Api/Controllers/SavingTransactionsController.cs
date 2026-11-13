@@ -46,6 +46,9 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(t => t.BranchID == branchId.Value || (t.SavingAccount != null && t.SavingAccount.BranchID == branchId.Value));
             }
 
+            int totalCount = await query.CountAsync();
+            Response.Headers["X-Total-Count"] = totalCount.ToString();
+
             var projected = query
                 .OrderByDescending(t => t.TransactionDate)
                 .ThenByDescending(t => t.TransactionID)
@@ -67,11 +70,14 @@ namespace Bhisi.Api.Controllers
                         : ""
                 });
 
-            int p = page ?? 1;
-            int ps = pageSize ?? 50;
-            if (p < 1) p = 1;
-            if (ps < 1 || ps > 500) ps = 50;
-            projected = projected.Skip((p - 1) * ps).Take(ps);
+            if (!pageSize.HasValue || (pageSize.Value > 0 && pageSize.Value < 10000))
+            {
+                int p = page ?? 1;
+                int ps = pageSize ?? 50;
+                if (p < 1) p = 1;
+                if (ps < 1 || ps > 5000) ps = 50;
+                projected = projected.Skip((p - 1) * ps).Take(ps);
+            }
 
             var txns = await projected.ToListAsync();
             return Ok(txns);

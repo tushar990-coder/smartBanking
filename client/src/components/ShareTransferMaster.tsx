@@ -238,10 +238,8 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
 
   const loadFromMemberDetails = async (memberId: string) => {
     try {
-      const fromMem = members.find((m: any) => 
-        m.memberID?.toString() === memberId.toString() ||
-        m.customerID?.toString() === memberId.toString()
-      );
+      const fromMem = members.find((m: any) => m.memberID?.toString() === memberId.toString())
+                   || members.find((m: any) => m.customerID?.toString() === memberId.toString());
       const cId = fromMem?.customerID;
       const resolvedMemberId = fromMem?.memberID ? fromMem.memberID.toString() : memberId;
       const authHeaders = getAuthHeaders();
@@ -290,10 +288,8 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
 
   const loadToMemberDetails = async (memberId: string) => {
     try {
-      const toMem = members.find((m: any) => 
-        m.memberID?.toString() === memberId.toString() ||
-        m.customerID?.toString() === memberId.toString()
-      );
+      const toMem = members.find((m: any) => m.memberID?.toString() === memberId.toString())
+                 || members.find((m: any) => m.customerID?.toString() === memberId.toString());
       const cId = toMem?.customerID;
       const resolvedMemberId = toMem?.memberID ? toMem.memberID.toString() : memberId;
       const authHeaders = getAuthHeaders();
@@ -366,8 +362,10 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
       return;
     }
 
-    const fromMemberObj = members.find(m => m.memberID.toString() === fromMemberId);
-    const toMemberObj = members.find(m => m.memberID.toString() === toMemberId);
+    const fromMemberObj = members.find(m => m.memberID.toString() === fromMemberId)
+                       || members.find(m => m.customerID?.toString() === fromMemberId);
+    const toMemberObj = members.find(m => m.memberID.toString() === toMemberId)
+                     || members.find(m => m.customerID?.toString() === toMemberId);
 
     const confirmMsg = `तुम्ही नक्की ${fromMemberObj?.firstName} ${fromMemberObj?.lastName} यांचे ${sharesCount} शेअर्स (₹${transferAmount}) ${toMemberObj?.firstName} ${toMemberObj?.lastName} यांच्या नावे हस्तांतरित करू इच्छिता?`;
     if (!window.confirm(confirmMsg)) return;
@@ -375,10 +373,10 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
     setSaving(true);
     try {
       const payload = {
-        fromCustomerId: parseInt(fromMemberId),
-        toCustomerId: parseInt(toMemberId),
-        fromMemberId: parseInt(fromMemberId),
-        toMemberId: parseInt(toMemberId),
+        fromCustomerId: fromMemberObj?.customerID || undefined,
+        toCustomerId: toMemberObj?.customerID || undefined,
+        fromMemberId: fromMemberObj?.memberID || parseInt(fromMemberId),
+        toMemberId: toMemberObj?.memberID || parseInt(toMemberId),
         numberOfShares: sharesCount,
         branchId: 1,
         transferDate: transferDate ? new Date(transferDate) : null,

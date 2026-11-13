@@ -64,6 +64,9 @@ namespace Bhisi.Api.Models
 
         public bool IsOTS { get; set; } = false;
 
+        [NotMapped]
+        public bool IsManualInterestOverride { get; set; } = false;
+
         [StringLength(100)]
         public string? ResolutionNo { get; set; }
 

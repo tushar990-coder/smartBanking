@@ -418,7 +418,7 @@ export async function executeCachedFetch(
     return new Response(ensureJsonStringBody(cached.data), {
       status: cached.status || 200,
       statusText: cached.statusText || 'OK',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...(cached.headers || {}), 'Content-Type': 'application/json' },
     });
   }
 
@@ -429,7 +429,7 @@ export async function executeCachedFetch(
       return new Response(ensureJsonStringBody(sharedRes.data), {
         status: sharedRes.status || 200,
         statusText: sharedRes.statusText || 'OK',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(sharedRes.headers || {}), 'Content-Type': 'application/json' },
       });
     } catch {
       return originalFetch(input, init);
@@ -443,21 +443,27 @@ export async function executeCachedFetch(
         try {
           const rawJson = await cloned.json();
           const data = ensureParsedCacheData(rawJson);
+          const capturedHeaders: Record<string, string> = {};
+          try {
+            response.headers.forEach((val, key) => {
+              capturedHeaders[key] = val;
+            });
+          } catch {}
           const entry: CacheEntry = {
             data,
             status: response.status,
             statusText: response.statusText,
-            headers: {},
+            headers: capturedHeaders,
             timestamp: Date.now(),
             ttl: rule.ttl,
           };
           memoryCache.set(cacheKey, entry);
           return { ...entry, rawResponse: response };
         } catch {
-          return { data: null, status: response.status, statusText: response.statusText, rawResponse: response };
+          return { data: null, status: response.status, statusText: response.statusText, headers: {}, rawResponse: response };
         }
       }
-      return { data: null, status: response.status, statusText: response.statusText, rawResponse: response };
+      return { data: null, status: response.status, statusText: response.statusText, headers: {}, rawResponse: response };
     })
     .finally(() => {
       inFlightRequests.delete(cacheKey);
@@ -469,7 +475,7 @@ export async function executeCachedFetch(
     return new Response(ensureJsonStringBody(result.data), {
       status: result.status || 200,
       statusText: result.statusText || 'OK',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...(result.headers || {}), 'Content-Type': 'application/json' },
     });
   }
   return result.rawResponse;

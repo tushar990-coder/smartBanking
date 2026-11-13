@@ -238,6 +238,7 @@ namespace Bhisi.Api.Controllers
             int bId = branchId ?? (await _context.Branches.Select(b => (int?)b.BranchID).FirstOrDefaultAsync()) ?? 1;
             var (accountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(bId, schemeId, incrementSequence: false);
             string nextLegacyAccountNo = await CalculateNextFdLegacyAccountNoAsync(bId, schemeId);
+            string lastLegacyAccountNo = (long.TryParse(nextLegacyAccountNo, out long nextL) && nextL > 1) ? (nextL - 1).ToString() : "0";
             return Ok(new {
                 accountNo = accountNo,
                 nextAccountNo = accountNo,
@@ -246,6 +247,7 @@ namespace Bhisi.Api.Controllers
                 branchID = bId,
                 schemeId = schemeId,
                 nextSeq = nextSeq,
+                lastLegacyAccountNo = lastLegacyAccountNo,
                 nextLegacyAccountNo = nextLegacyAccountNo
             });
         }
@@ -259,6 +261,7 @@ namespace Bhisi.Api.Controllers
 
             var (accountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(branchId, schemeId, incrementSequence: false);
             string nextLegacyAccountNo = await CalculateNextFdLegacyAccountNoAsync(branchId, schemeId);
+            string lastLegacyAccountNo = (long.TryParse(nextLegacyAccountNo, out long nextL) && nextL > 1) ? (nextL - 1).ToString() : "0";
             return Ok(new {
                 accountNo = accountNo,
                 nextAccountNo = accountNo,
@@ -267,6 +270,7 @@ namespace Bhisi.Api.Controllers
                 branchID = branchId,
                 schemeId = schemeId,
                 nextSeq = nextSeq,
+                lastLegacyAccountNo = lastLegacyAccountNo,
                 nextLegacyAccountNo = nextLegacyAccountNo
             });
         }

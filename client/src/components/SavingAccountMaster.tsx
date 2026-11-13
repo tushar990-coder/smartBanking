@@ -171,6 +171,7 @@ const SavingAccountMaster: React.FC = () => {
   const [jointHolderCustomerIDs, setJointHolderCustomerIDs] = useState<number[]>([]);
   const [selectedJointCustomerID, setSelectedJointCustomerID] = useState<number>(0);
   const [autoAccountNo, setAutoAccountNo] = useState<string>('');
+  const [legacyHint, setLegacyHint] = useState<{ last: string; next: string }>({ last: '0', next: '1' });
   const [isCustomAccountNo, setIsCustomAccountNo] = useState<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
 
@@ -249,7 +250,11 @@ const SavingAccountMaster: React.FC = () => {
           : (response.data.accountNo || response.data.nextAccountNo || '');
         const formattedNo = response.data.formattedAccountNo || response.data.displayAccountNo || format14DigitDisplay(nextNo);
         const nextLegacy = response.data.nextLegacyAccountNo ? String(response.data.nextLegacyAccountNo) : '1';
+        const lastLegacy = response.data.lastLegacyAccountNo
+          ? String(response.data.lastLegacyAccountNo)
+          : (parseInt(nextLegacy, 10) > 1 ? String(parseInt(nextLegacy, 10) - 1) : '0');
         setAutoAccountNo(nextNo);
+        setLegacyHint({ last: lastLegacy, next: nextLegacy });
         if (nextNo && !isCustomAccountNo) {
           setFormData(prev => ({
             ...prev,
@@ -843,12 +848,12 @@ const SavingAccountMaster: React.FC = () => {
 
             {/* Old / Legacy Account No - 2 cols */}
             <div className="lg:col-span-2">
-              <div className="flex items-center justify-between mb-0.5">
+              <div className="flex items-center justify-between mb-0.5 gap-1 flex-wrap">
                 <label className="block text-xs font-semibold text-gray-700">
                   जुना खाते क्र. (Old A/c No)
                 </label>
-                <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1 rounded font-bold" title="मागील सर्वोच्च जुन्या खाते क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
-                  ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1 rounded font-bold font-mono" title="मागील सर्वोच्च जुन्या खाते क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
+                  शेवटचा: {legacyHint.last} | पुढील: {legacyHint.next}
                 </span>
               </div>
               <input

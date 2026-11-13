@@ -108,13 +108,19 @@ namespace Bhisi.Api.Controllers
                     query = query.Where(m => !string.IsNullOrEmpty(m.MemberCode) && !m.MemberCode.StartsWith("TEMP"));
                 }
 
+                int totalCount = await query.CountAsync();
+                Response.Headers["X-Total-Count"] = totalCount.ToString();
+
                 if (page.HasValue || pageSize.HasValue)
                 {
-                    int p = page ?? 1;
-                    int ps = pageSize ?? 50;
-                    if (p < 1) p = 1;
-                    if (ps < 1 || ps > 500) ps = 50;
-                    query = query.Skip((p - 1) * ps).Take(ps);
+                    if (!pageSize.HasValue || (pageSize.Value > 0 && pageSize.Value < 10000))
+                    {
+                        int p = page ?? 1;
+                        int ps = pageSize ?? 50;
+                        if (p < 1) p = 1;
+                        if (ps < 1 || ps > 5000) ps = 50;
+                        query = query.Skip((p - 1) * ps).Take(ps);
+                    }
                 }
 
                 var members = await query.ToListAsync();
@@ -288,12 +294,13 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
+                string lastLegacyMemberNo = maxLegacySeq > 0 ? maxLegacySeq.ToString() : "0";
                 string nextLegacyMemberNo = maxLegacySeq > 0 ? (maxLegacySeq + 1).ToString() : "1";
                 Response.Headers["X-Next-Legacy-Member-No"] = nextLegacyMemberNo;
 
                 if (includeLegacy)
                 {
-                    return Ok(new { memberCode = candidate, nextLegacyMemberNo = nextLegacyMemberNo });
+                    return Ok(new { memberCode = candidate, lastLegacyMemberNo = lastLegacyMemberNo, nextLegacyMemberNo = nextLegacyMemberNo });
                 }
 
                 return Content(candidate, "text/plain");
@@ -302,7 +309,7 @@ namespace Bhisi.Api.Controllers
             {
                 if (includeLegacy)
                 {
-                    return Ok(new { memberCode = "MEM0001", nextLegacyMemberNo = "1" });
+                    return Ok(new { memberCode = "MEM0001", lastLegacyMemberNo = "0", nextLegacyMemberNo = "1" });
                 }
                 return Content("MEM0001", "text/plain");
             }

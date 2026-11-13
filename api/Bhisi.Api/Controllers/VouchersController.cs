@@ -50,7 +50,14 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Vouchers
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchers([FromQuery] string? status, [FromQuery] int? branchId = null, [FromQuery] int? page = null, [FromQuery] int? pageSize = null, [FromQuery] DateTime? voucherDate = null)
+        public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchers(
+            [FromQuery] string? status,
+            [FromQuery] int? branchId = null,
+            [FromQuery] int? page = null,
+            [FromQuery] int? pageSize = null,
+            [FromQuery] DateTime? voucherDate = null,
+            [FromQuery] string? voucherType = null,
+            [FromQuery] string? search = null)
         {
             var query = _context.Vouchers.AsNoTracking().AsQueryable();
 
@@ -81,6 +88,24 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            if (!string.IsNullOrWhiteSpace(voucherType) && !voucherType.Equals("All", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(v => v.VoucherType == voucherType);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                string s = search.Trim();
+                query = query.Where(v =>
+                    v.VoucherNo.Contains(s) ||
+                    v.VoucherType.Contains(s) ||
+                    (v.Narration != null && v.Narration.Contains(s)) ||
+                    v.TotalAmount.ToString().Contains(s));
+            }
+
+            int totalCount = await query.CountAsync();
+            Response.Headers["X-Total-Count"] = totalCount.ToString();
+
             var orderedQuery = query
                                   .AsSplitQuery()
                                   .Include(v => v.Branch)
@@ -94,12 +119,16 @@ namespace Bhisi.Api.Controllers
                                   .OrderByDescending(v => v.VoucherDate)
                                   .ThenByDescending(v => v.VoucherID);
 
+            if (pageSize.HasValue && (pageSize.Value <= 0 || pageSize.Value >= 10000))
+            {
+                return await orderedQuery.ToListAsync();
+            }
+
             int p = page ?? 1;
             int ps = pageSize ?? 50;
             if (p < 1) p = 1;
-            if (ps < 1 || ps > 500) ps = 50;
+            if (ps < 1 || ps > 5000) ps = 50;
 
-            // Safe bounded pagination (Pillar 2)
             return await orderedQuery.Skip((p - 1) * ps).Take(ps).ToListAsync();
         }
 

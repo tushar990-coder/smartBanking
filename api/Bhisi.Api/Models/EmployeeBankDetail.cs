@@ -18,14 +18,12 @@ namespace Bhisi.Api.Models
         [MaxLength(50)]
         public string EmployeeID { get; set; } = string.Empty;
 
-        [Required]
-        public int DepartmentID { get; set; }
+        public int? DepartmentID { get; set; }
 
         [ForeignKey("DepartmentID")]
         public DepartmentMaster? Department { get; set; }
 
-        [Required]
-        public DateTime JoiningDate { get; set; }
+        public DateTime? JoiningDate { get; set; }
 
         [Required]
         [MaxLength(20)]
@@ -50,8 +48,7 @@ namespace Bhisi.Api.Models
         [MaxLength(20)]
         public string AccountType { get; set; } = "Savings";
 
-        [Required]
-        public int BranchID { get; set; }
+        public int? BranchID { get; set; }
 
         [ForeignKey("BranchID")]
         public BranchMaster? Branch { get; set; }

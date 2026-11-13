@@ -178,12 +178,18 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   const [nextShareConfig, setNextShareConfig] = useState<{
     nextCertificateNo: string;
     nextFromShareNo: number;
+    lastLegacyMemberNo?: string;
     nextLegacyMemberNo?: string;
   }>({
     nextCertificateNo: '',
     nextFromShareNo: 1,
+    lastLegacyMemberNo: '0',
     nextLegacyMemberNo: '1'
   });
+
+  const [memberSortDir, setMemberSortDir] = useState<'asc' | 'desc'>('asc');
+  const [memberPage, setMemberPage] = useState<number>(1);
+  const [memberPageSize, setMemberPageSize] = useState<number>(200);
 
   const [customerSavingAccounts, setCustomerSavingAccounts] = useState<any[]>([]);
   const [loadingSavingAccounts, setLoadingSavingAccounts] = useState(false);
@@ -297,15 +303,16 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       if (response.ok && isMountedRef.current) {
         const data = await response.json();
         if (data && isMountedRef.current) {
-          const nextLegacy = data.nextLegacyMemberNo ? String(data.nextLegacyMemberNo) : '1';
-          setNextShareConfig({
-            nextCertificateNo: data.nextCertificateNo || '',
-            nextFromShareNo: data.nextFromShareNo || 1,
-            nextLegacyMemberNo: nextLegacy
-          });
+          const nextLegacy = data.nextLegacyMemberNo ? String(data.nextLegacyMemberNo) : '';
+          setNextShareConfig(prev => ({
+            ...prev,
+            nextCertificateNo: data.nextCertificateNo || prev.nextCertificateNo || '',
+            nextFromShareNo: data.nextFromShareNo || prev.nextFromShareNo || 1,
+            nextLegacyMemberNo: nextLegacy || prev.nextLegacyMemberNo || '1'
+          }));
           setFormData(prev => ({
             ...prev,
-            legacyMemberNo: (!editingId && !prev.legacyMemberNo) ? nextLegacy : prev.legacyMemberNo
+            legacyMemberNo: (!editingId && !prev.legacyMemberNo) ? (nextLegacy || prev.legacyMemberNo || '1') : prev.legacyMemberNo
           }));
         }
       }
@@ -321,14 +328,25 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         const text = await response.text();
         let cleaned = text.replace(/^"|"$/g, '').trim();
         let nextLegacy = '';
+        let lastLegacy = '';
         try {
           const parsed = JSON.parse(text);
           if (parsed && typeof parsed === 'object') {
             cleaned = parsed.memberCode || cleaned;
             nextLegacy = parsed.nextLegacyMemberNo ? String(parsed.nextLegacyMemberNo) : '';
+            lastLegacy = parsed.lastLegacyMemberNo ? String(parsed.lastLegacyMemberNo) : '';
           }
         } catch {
           // plain text fallback
+        }
+        if (nextLegacy) {
+          const parsedNext = parseInt(nextLegacy, 10);
+          const computedLast = lastLegacy || (!isNaN(parsedNext) && parsedNext > 1 ? String(parsedNext - 1) : '0');
+          setNextShareConfig(prev => ({
+            ...prev,
+            lastLegacyMemberNo: computedLast,
+            nextLegacyMemberNo: nextLegacy
+          }));
         }
         if (cleaned && isMountedRef.current) {
           setFormData(prev => ({
@@ -352,7 +370,8 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         const memList = existingMembers || members;
         
         const enriched = rawCusts.map((c: any) => {
-          const matched = memList.find(m => (m.customerID && m.customerID === c.customerID) || (m.cifNo && m.cifNo === c.cifNo));
+          const matched = memList.find(m => m.customerID && m.customerID === c.customerID)
+                       || (c.cifNo && c.cifNo.trim() ? memList.find(m => m.cifNo && m.cifNo.trim().toLowerCase() === c.cifNo.trim().toLowerCase()) : undefined);
           return {
             ...c,
             memberCode: matched?.memberCode || c.memberProfile?.memberCode || c.memberCode || ''
@@ -495,12 +514,9 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     if (cust) {
       setSelectedCustomer(cust);
 
-      // Find if this customer is already a registered member
-      const matchedMember = members.find(m => 
-        (m.customerID && m.customerID === customerId) || 
-        (m.cifNo && cust.cifNo && m.cifNo.trim().toLowerCase() === cust.cifNo.trim().toLowerCase()) ||
-        (cust.memberCode && m.memberCode === cust.memberCode)
-      );
+      // Find if this customer is already a registered member (strictly match CustomerID first, then non-empty CIF)
+      const matchedMember = members.find(m => m.customerID && m.customerID === customerId)
+        || (cust.cifNo && cust.cifNo.trim() ? members.find(m => m.cifNo && m.cifNo.trim().toLowerCase() === cust.cifNo.trim().toLowerCase()) : undefined);
 
       const isRegistered = Boolean(
         (cust.memberCode && !cust.memberCode.startsWith('TEMP')) ||
@@ -512,8 +528,8 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       setFormData(prev => ({
         ...prev,
         branchID: matchedMember?.branchID || cust.branchID || prev.branchID,
-        memberCode: isRegistered ? memCode : prev.memberCode,
-        legacyMemberNo: matchedMember?.legacyMemberNo || (matchedMember as any)?.oldMemberCode || (!isRegistered ? (nextShareConfig.nextLegacyMemberNo || prev.legacyMemberNo || '1') : ''),
+        memberCode: isRegistered ? memCode : (prev.memberCode && !members.some(m => m.memberCode === prev.memberCode) ? prev.memberCode : ''),
+        legacyMemberNo: matchedMember?.legacyMemberNo || (matchedMember as any)?.oldMemberCode || (!isRegistered ? (nextShareConfig.nextLegacyMemberNo || '1') : ''),
         cifNo: cust.cifNo || matchedMember?.cifNo || '',
         membershipType: matchedMember?.membershipType || 'Regular',
         status: matchedMember?.status || 'Active',
@@ -723,10 +739,12 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
 
     setSaving(true);
     try {
+      const editingMember = editingId !== null ? members.find(m => m.memberID === editingId) : undefined;
+      const resolvedCustomerID = selectedCustomerId ? Number(selectedCustomerId) : (editingMember?.customerID || null);
       const payload: any = {
         ...formData,
         memberID: editingId !== null ? Number(editingId) : 0,
-        customerID: selectedCustomerId ? Number(selectedCustomerId) : (editingId !== null ? formData.cifNo : null),
+        customerID: resolvedCustomerID,
         branchID: Number(formData.branchID),
         joiningDate: resolutionData.joiningDate ? new Date(resolutionData.joiningDate).toISOString() : new Date().toISOString(),
         birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : null,
@@ -1004,8 +1022,15 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       }
       return id || 0;
     };
-    return getNum(a.memberCode, a.memberID) - getNum(b.memberCode, b.memberID);
+    const diff = getNum(a.memberCode, a.memberID) - getNum(b.memberCode, b.memberID);
+    return memberSortDir === 'desc' ? -diff : diff;
   });
+
+  const totalMemberPages = memberPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredMembers.length / memberPageSize));
+  const safeMemberPage = Math.min(memberPage, totalMemberPages);
+  const paginatedMembers = memberPageSize === 0
+    ? filteredMembers
+    : filteredMembers.slice((safeMemberPage - 1) * memberPageSize, safeMemberPage * memberPageSize);
 
   // KPI Calculations
   const totalMembersCount = members.length;
@@ -1313,10 +1338,10 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-0.5">
+                <div className="flex items-center justify-between mb-0.5 gap-1 flex-wrap">
                   <label className="text-[11px] font-bold text-gray-700">जुना / लेगसी सभासद क्र. (LF No)</label>
-                  <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-bold">
-                    ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                  <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded font-bold font-mono">
+                    शेवटचा: {nextShareConfig.lastLegacyMemberNo || '0'} | पुढील: {nextShareConfig.nextLegacyMemberNo || '1'}
                   </span>
                 </div>
                 <input
@@ -1783,11 +1808,26 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 </button>
               </div>
 
-              {/* Status Select & Search */}
-              <div className="flex items-center gap-2">
+              {/* Status Select, Sort, PageSize & Search */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMemberSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'));
+                    setMemberPage(1);
+                  }}
+                  className="border border-slate-300 rounded px-2.5 py-1 text-[11px] bg-white hover:bg-slate-100 font-bold text-primary cursor-pointer h-[28px] flex items-center gap-1"
+                  title="यादीची क्रमवारी बदला (१ पासून किंवा शेवटून)"
+                >
+                  {memberSortDir === 'asc' ? '⬆️ १ पासून (1, 2, 3...)' : '⬇️ शेवटून (शेवटचे आधी)'}
+                </button>
+
                 <select
                   value={selectedStatusFilter}
-                  onChange={e => setSelectedStatusFilter(e.target.value)}
+                  onChange={e => {
+                    setSelectedStatusFilter(e.target.value);
+                    setMemberPage(1);
+                  }}
                   className="border border-slate-300 rounded px-2.5 py-1 text-[11px] bg-white font-bold outline-none h-[28px]"
                 >
                   <option value="All">सर्व स्थिती (All Status)</option>
@@ -1796,14 +1836,35 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                   <option value="Mayat">🔴 मयत (Deceased)</option>
                 </select>
 
+                <div className="flex items-center gap-1 text-[11px]">
+                  <span className="font-bold text-slate-600">प्रति पान:</span>
+                  <select
+                    value={memberPageSize}
+                    onChange={e => {
+                      setMemberPageSize(Number(e.target.value));
+                      setMemberPage(1);
+                    }}
+                    className="border border-slate-300 rounded px-2 py-1 text-[11px] bg-white font-bold text-primary outline-none h-[28px]"
+                  >
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                    <option value={500}>500</option>
+                    <option value={0}>सर्व ({filteredMembers.length})</option>
+                  </select>
+                </div>
+
                 {/* Instant Search Box */}
-                <div className="relative min-w-[240px]">
+                <div className="relative min-w-[220px]">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="सभासद कोड, CIF, नाव, मोबाईल..."
+                    onChange={e => {
+                      setSearchQuery(e.target.value);
+                      setMemberPage(1);
+                    }}
+                    placeholder="सभासद कोड, CIF, जुना क्र., नाव, मोबाईल..."
                     className="w-full pl-8 pr-3 py-1 border border-slate-300 rounded text-[11px] focus:ring-1 focus:ring-primary focus:border-primary outline-none h-[28px]"
                   />
                 </div>
@@ -1817,6 +1878,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 sticky top-0 font-bold z-10">
                     <th className="p-2">सभासद क्र.</th>
+                    <th className="p-2">जुना क्र. (LF)</th>
                     <th className="p-2">CIF कोड</th>
                     <th className="p-2">सभासदाचे पूर्ण नाव</th>
                     <th className="p-2">प्रकार</th>
@@ -1824,16 +1886,16 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                     <th className="p-2 text-right">भाग भांडवल (₹)</th>
                     <th className="p-2">मोबाईल व गाव</th>
                     <th className="p-2 text-center">स्थिती</th>
-                    <th className="p-2 text-center">कृती</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredMembers.map(m => (
+                  {paginatedMembers.map(m => (
                     <tr key={m.memberID} className="border-b border-slate-100 hover:bg-slate-50 transition">
                       <td className="p-2 font-black text-primary flex items-center gap-1">
                         <Award className="w-3.5 h-3.5 text-amber-500" />
                         <span>{m.memberCode}</span>
                       </td>
+                      <td className="p-2 font-mono font-bold text-amber-800">{m.legacyMemberNo || '-'}</td>
                       <td className="p-2 font-bold text-slate-600">{m.cifNo || '-'}</td>
                       <td className="p-2 font-bold text-slate-800">
                         <div>
@@ -1869,41 +1931,9 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                           {m.status}
                         </span>
                       </td>
-                      <td className="p-2 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => handleEdit(m)}
-                            className="p-1.5 text-primary hover:bg-primary/10 rounded transition cursor-pointer"
-                            title="एडिट करा"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setPreviewCertModal({ 
-                              isOpen: true, 
-                              memberId: m.memberID, 
-                              memberName: `${m.firstName} ${m.lastName}`,
-                              certNo: m.latestCertificateNo || `CERT-${m.memberCode}`,
-                              shares: m.totalShareCount || 10,
-                              amount: m.totalShareAmount || 1000
-                            })}
-                            className="p-1.5 text-amber-700 hover:bg-amber-50 rounded transition cursor-pointer"
-                            title="भाग दाखला (Share Certificate)"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(m.memberID)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
-                            title="डिलीट करा"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
                     </tr>
                   ))}
-                  {filteredMembers.length === 0 && (
+                  {paginatedMembers.length === 0 && (
                     <tr>
                       <td colSpan={9} className="p-10 text-center text-slate-400">
                         <Award className="w-8 h-8 mx-auto mb-2 opacity-30 text-amber-600" />
@@ -1915,14 +1945,64 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
               </table>
             </div>
 
-            {/* Modal Bottom Summary Bar */}
-            <div className="p-2.5 bg-slate-100 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600 shrink-0">
-              <span className="font-bold">
-                एकूण दर्शवलेले सभासद: {filteredMembers.length}
-              </span>
-              <span className="font-semibold text-primary">
-                एकूण भाग भांडवल: ₹{filteredMembers.reduce((acc, curr) => acc + (curr.totalShareAmount || 0), 0).toLocaleString('en-IN')}
-              </span>
+            {/* Modal Bottom Summary & Pagination Bar */}
+            <div className="p-2.5 bg-slate-100 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-600 shrink-0">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="font-bold">
+                  दाखवत आहे:{' '}
+                  <strong className="text-slate-900">
+                    {filteredMembers.length === 0
+                      ? 0
+                      : memberPageSize === 0
+                        ? `1 ते ${filteredMembers.length}`
+                        : `${(safeMemberPage - 1) * memberPageSize + 1} ते ${Math.min(safeMemberPage * memberPageSize, filteredMembers.length)}`}
+                  </strong>{' '}
+                  (एकूण सभासद: <strong className="text-primary">{filteredMembers.length}</strong>)
+                </span>
+                <span className="font-semibold text-primary">
+                  एकूण भाग भांडवल: ₹{filteredMembers.reduce((acc, curr) => acc + (curr.totalShareAmount || 0), 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+
+              {memberPageSize > 0 && totalMemberPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={safeMemberPage <= 1}
+                    onClick={() => setMemberPage(1)}
+                    className="px-2 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    ⏮️ पहिले
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safeMemberPage <= 1}
+                    onClick={() => setMemberPage(p => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    ⬅️ मागील पान
+                  </button>
+                  <span className="px-2.5 py-1 bg-primary text-white rounded font-bold font-mono">
+                    पान {safeMemberPage} / {totalMemberPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={safeMemberPage >= totalMemberPages}
+                    onClick={() => setMemberPage(p => Math.min(totalMemberPages, p + 1))}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    पुढील पान ➡️
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safeMemberPage >= totalMemberPages}
+                    onClick={() => setMemberPage(totalMemberPages)}
+                    className="px-2 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    शेवटचे ⏭️
+                  </button>
+                </div>
+              )}
             </div>
 
           </div>

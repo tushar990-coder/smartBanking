@@ -31,6 +31,8 @@ export interface FdScheduleSummary {
   isPeriodicPayout: boolean;
   monthlyInterestAmount?: number;
   schemeType: string;
+  compoundingFrequency: string;
+  payoutFrequency: string;
   periods: FdSchedulePeriod[];
 }
 
@@ -142,6 +144,8 @@ export function generateFdInterestSchedule(params: {
       totalBenefit: p,
       isPeriodicPayout: false,
       schemeType,
+      compoundingFrequency,
+      payoutFrequency,
       periods: []
     };
   }
@@ -177,53 +181,72 @@ export function generateFdInterestSchedule(params: {
     let periodicInt = 0;
     let labelPrefix = 'महिना';
     let labelCode = 'M';
-    let statusText = 'दरमहा बचत खात्यात/रोख जमा (Monthly Payout)';
+    let statusText = 'दरमहा बचत खात्यात / रोख जमा';
 
     if (payoutFrequency === 'Quarterly') {
       periodicInt = Math.round((p * r) / 400); // 3 months
       labelPrefix = 'तिमाही';
       labelCode = 'Q';
-      statusText = 'दर तीन महिन्यांनी (तिमाही) बचत खात्यात जमा (Quarterly Payout)';
+      statusText = 'दर तिमाही बचत खात्यात / रोख जमा';
     } else if (payoutFrequency === 'Half-Yearly') {
       periodicInt = Math.round((p * r) / 200); // 6 months
       labelPrefix = 'सहामाही';
       labelCode = 'H';
-      statusText = 'दर सहा महिन्यांनी बचत खात्यात जमा (Half-Yearly Payout)';
+      statusText = 'दर सहामाही बचत खात्यात / रोख जमा';
     } else if (payoutFrequency === 'Yearly') {
       periodicInt = Math.round((p * r) / 100); // 12 months
       labelPrefix = 'वर्ष';
       labelCode = 'Y';
-      statusText = 'वार्षिक बचत खात्यात जमा (Yearly Payout)';
+      statusText = 'वार्षिक बचत खात्यात / रोख जमा';
     } else {
       // Monthly / MIS default
       periodicInt = Math.round((p * r) / 1200);
       labelPrefix = 'महिना';
       labelCode = 'M';
-      statusText = 'दरमहा बचत खात्यात/रोख जमा (Monthly Payout)';
+      statusText = 'दरमहा बचत खात्यात / रोख जमा';
     }
 
+    // Use anniversary cycle anchored to openingDate (e.g. 30/06/2026 -> 30/07/2026 -> ... -> 30/07/2027)
+    // so a 13-month MIS deposit generates exactly 13 full monthly cycles instead of a 1-day stub + 13 months.
     while (currFrom < end) {
-      let nextStep = getNextMilestoneBoundary(currFrom, stepMonths);
-      if (nextStep > end) nextStep = new Date(end.getTime());
+      const targetNextStep = addMonthsSafe(start, periodIdx * stepMonths);
+      const diffToEndDays = Math.round((end.getTime() - targetNextStep.getTime()) / (1000 * 60 * 60 * 24));
+
+      let nextStep: Date;
+      let isBrokenStub = false;
+
+      if (Math.abs(diffToEndDays) <= 3) {
+        // Snap minor 365-day / leap-year boundary differences to maturityDate as a full cycle
+        nextStep = new Date(end.getTime());
+      } else if (targetNextStep > end) {
+        // Genuine extra broken days stub at the end (e.g. 13 months + 10 days)
+        nextStep = new Date(end.getTime());
+        isBrokenStub = true;
+      } else {
+        nextStep = targetNextStep;
+      }
 
       const periodDays = Math.max(1, Math.round((nextStep.getTime() - currFrom.getTime()) / (1000 * 60 * 60 * 24)));
-      runningCumulativeInt += periodicInt;
+      const stepInterest = isBrokenStub
+        ? Math.round((p * r * periodDays) / 36500)
+        : periodicInt;
 
-      // The period end date for display is the day before nextStep begins (e.g. 30/06 instead of 01/07)
-      const periodToDate = nextStep > currFrom ? new Date(nextStep.getTime() - 24 * 60 * 60 * 1000) : nextStep;
+      runningCumulativeInt += stepInterest;
 
       periods.push({
         periodNo: periodIdx,
-        periodLabel: `${labelPrefix} ${periodIdx} (${labelCode}${periodIdx})`,
+        periodLabel: isBrokenStub
+          ? `अतिरिक्त दिवस (${periodDays}d)`
+          : `${labelPrefix} ${periodIdx} (${labelCode}${periodIdx})`,
         fromDate: formatDateIso(currFrom),
-        toDate: formatDateIso(periodToDate),
+        toDate: formatDateIso(nextStep),
         days: periodDays,
         openingBalance: p,
         interestRate: r,
-        interestAmount: periodicInt,
+        interestAmount: stepInterest,
         cumulativeInterest: runningCumulativeInt,
         closingBalance: p, // Principal remains constant
-        statusNote: statusText
+        statusNote: isBrokenStub ? 'उर्वरित दिवसांचे प्रो-राटा व्याज' : statusText
       });
 
       currFrom = nextStep;
@@ -245,6 +268,8 @@ export function generateFdInterestSchedule(params: {
       isPeriodicPayout: true,
       monthlyInterestAmount: periodicInt,
       schemeType,
+      compoundingFrequency,
+      payoutFrequency: isMis ? 'Monthly' : payoutFrequency,
       periods
     };
   }
@@ -255,6 +280,7 @@ export function generateFdInterestSchedule(params: {
     let nextStep = getNextMilestoneBoundary(currFrom, stepMonths);
     if (nextStep > end) nextStep = new Date(end.getTime());
 
+    const isFinalStep = nextStep.getTime() >= end.getTime();
     const periodDays = Math.max(1, Math.round((nextStep.getTime() - currFrom.getTime()) / (1000 * 60 * 60 * 24)));
     
     // Formula: (Principal * Rate * Days) / 36500 (Rounded to whole rupee)
@@ -270,17 +296,20 @@ export function generateFdInterestSchedule(params: {
 
     if (isCumulative) {
       closingBal = runningPrincipal + periodInt;
-      statusNote = 'पुढील मुद्दलात चक्रवाढ जमा (Compounded)';
+      statusNote = 'पुढील मुद्दलात चक्रवाढ जमा';
     } else {
       // Simple Interest: Principal stays constant, interest accumulates
       closingBal = p;
-      statusNote = 'मुदतअखेर देय तरतूद (Accrued for Maturity)';
+      statusNote = 'मुदतअखेर देय व्याज तरतूद';
     }
 
     runningCumulativeInt += periodInt;
 
-    // The period end date for display is the day before nextStep begins (e.g. 30/06 instead of 01/07)
-    const periodToDate = nextStep > currFrom ? new Date(nextStep.getTime() - 24 * 60 * 60 * 1000) : nextStep;
+    // For intermediate boundaries (e.g. nextStep = 01/07), display end of quarter (30/06).
+    // For the final period ending at maturityDate, display exact maturityDate.
+    const periodToDate = (!isFinalStep && nextStep > currFrom)
+      ? new Date(nextStep.getTime() - 24 * 60 * 60 * 1000)
+      : nextStep;
 
     periods.push({
       periodNo: periodIdx,
@@ -303,20 +332,21 @@ export function generateFdInterestSchedule(params: {
     periodIdx++;
   }
 
-  // Final alignment with target maturity amount if provided
+  // Final alignment with target maturity amount if provided so schedule and form match 100%
   let finalMaturity = isCumulative ? runningPrincipal : (p + runningCumulativeInt);
-  if (targetMaturityAmount && targetMaturityAmount > 0 && periods.length > 0) {
-    const diff = targetMaturityAmount - finalMaturity;
-    // If minor rounding diff (<= 5 Rs), align the last period so totals match 100%
-    if (Math.abs(diff) > 0 && Math.abs(diff) <= 10) {
+  if (targetMaturityAmount && targetMaturityAmount >= p && periods.length > 0) {
+    const diff = Math.round(targetMaturityAmount) - finalMaturity;
+    if (diff !== 0) {
       const lastPeriod = periods[periods.length - 1];
-      lastPeriod.interestAmount += diff;
-      lastPeriod.cumulativeInterest += diff;
-      if (isCumulative) {
-        lastPeriod.closingBalance = targetMaturityAmount;
+      if (lastPeriod.interestAmount + diff >= 0) {
+        lastPeriod.interestAmount += diff;
+        lastPeriod.cumulativeInterest += diff;
+        if (isCumulative) {
+          lastPeriod.closingBalance = Math.round(targetMaturityAmount);
+        }
+        runningCumulativeInt += diff;
+        finalMaturity = Math.round(targetMaturityAmount);
       }
-      runningCumulativeInt += diff;
-      finalMaturity = targetMaturityAmount;
     }
   }
 
@@ -332,6 +362,8 @@ export function generateFdInterestSchedule(params: {
     totalBenefit: finalMaturity,
     isPeriodicPayout: false,
     schemeType,
+    compoundingFrequency,
+    payoutFrequency,
     periods
   };
 }

@@ -344,12 +344,14 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
 
     setLoading(true);
     try {
+      const targetMember = members.find((m: any) => m.memberID?.toString() === selectedMemberId.toString())
+                        || members.find((m: any) => m.customerID?.toString() === selectedMemberId.toString());
       const res = await fetch('/api/ShareAccounts/Withdraw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerId: parseInt(selectedMemberId),
-          memberId: parseInt(selectedMemberId),
+          customerId: targetMember?.customerID || undefined,
+          memberId: targetMember?.memberID || parseInt(selectedMemberId),
           numberOfShares: qty,
           faceValue: rate,
           withdrawalDate: withdrawalDate,

@@ -12,7 +12,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class DepartmentMasterController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -53,7 +53,7 @@ namespace Bhisi.Api.Controllers
         {
             if (dept == null || string.IsNullOrWhiteSpace(dept.DepartmentName))
             {
-                return BadRequest("विभागाचे नाव आवश्यक आहे.");
+                return BadRequest(new { message = "विभागाचे नाव आवश्यक आहे." });
             }
 
             dept.DepartmentName = dept.DepartmentName.Trim();
@@ -65,7 +65,7 @@ namespace Bhisi.Api.Controllers
             }
             else
             {
-                dept.DepartmentCode = dept.DepartmentCode.Trim();
+                dept.DepartmentCode = dept.DepartmentCode.Trim().ToUpperInvariant();
             }
 
             try
@@ -88,11 +88,7 @@ namespace Bhisi.Api.Controllers
             }
             catch (Exception ex)
             {
-                if (dept.DepartmentID <= 0)
-                {
-                    dept.DepartmentID = new Random().Next(1000, 9999);
-                }
-                return Ok(dept);
+                return StatusCode(500, new { message = "विभाग माहिती सेव्ह करताना सर्व्हर त्रुटी आली.", error = ex.Message });
             }
         }
 

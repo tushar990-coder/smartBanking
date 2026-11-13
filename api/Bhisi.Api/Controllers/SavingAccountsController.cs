@@ -228,6 +228,7 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            string lastLegacyAccountNo = maxLegacySeq > 0 ? maxLegacySeq.ToString() : "0";
             if (maxLegacySeq > 0)
             {
                 nextLegacyAccountNo = (maxLegacySeq + 1).ToString();
@@ -238,6 +239,7 @@ namespace Bhisi.Api.Controllers
                 accountNo = nextNo,
                 formattedAccountNo = formattedNo,
                 displayAccountNo = formattedNo,
+                lastLegacyAccountNo = lastLegacyAccountNo,
                 nextLegacyAccountNo = nextLegacyAccountNo
             });
         }

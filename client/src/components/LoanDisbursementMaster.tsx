@@ -589,7 +589,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         setLoading(true);
         try {
             const bId = targetBranchId ?? selectedBranchId;
-            const url = bId ? `/api/LoanDisbursements?branchId=${bId}&pageSize=50` : '/api/LoanDisbursements?pageSize=50';
+            const url = bId ? `/api/LoanDisbursements?branchId=${bId}&pageSize=0` : '/api/LoanDisbursements?pageSize=0';
             const res = await axios.get(url);
             setDisbursements(Array.isArray(res.data) ? res.data : []);
         } catch (err) {

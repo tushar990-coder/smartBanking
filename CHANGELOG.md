@@ -1,5 +1,27 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-13] - आवृत्ती v2.6.22 (Member List & Share Certificate Report, System Audit Trail Overhaul, Universal Pagination & Last Legacy No, FD Interest Chart Fix, Loan Uchal Dinank & Manual Interest Effect, Employee Bank Details & Customer Bulk Entry QA Fixes)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) खातेदार बल्क नोंदणी व संपादन QA दोष निवारण (`CustomerBulkController.cs` & `CustomerBulkEntry.tsx`):**
+  * मल्टी-ब्रांच सुरक्षा (`User.ResolveOptionalBranchId` / `User.ResolveBranchId`), विद्यमान खातेदारांसाठी `isDirty` ट्रॅकिंग (बदल न झालेल्या नोंदी व रिकाम्या `BirthDate`/पत्त्यावर जबरदस्तीचा डिफॉल्ट रोखणे), फिल्टर ग्रिडवरील अचूक `origIdx` पेस्ट व `clientRowId` एरर मॅपिंग.
+  * Excel `cellDates` Date Serial अचूक रूपांतरण, अचूक हेडर मॅचिंग, Verhoeff आधार चेकसम, `Customer` मॉडलप्रमाणे `MaxLength`, soft-deleted KYC इंडेक्स क्लॅश सुरक्षा, ग्रिड Pagination (`२५/५०/१००`) व स्मार्ट transliteration संरक्षण लागू केले.
+* **२) खातेदार व कर्मचारी बँक तपशील QA सुधारणा (`EmployeeBankDetailsController.cs`, `EmployeeBankDetail.cs`, `EmployeeBankDetails.tsx`, `BankMastersController.cs`, `BranchMasterController.cs`, `DepartmentMasterController.cs` & `Program.cs`):**
+  * `EmployeeBankDetails` मध्ये कर्मचारी व सर्वसामान्य खातेदार बँक खात्यांसाठी सुरक्षित शाखा अलगाव, IFSC/MICR/खाते क्रमांक व्हॅलिडेशन, `JoiningDate`/`DepartmentID`/`BranchID` ऐच्छिक (Nullable) स्कीमा सिंक आणि स्वच्छ CBS UI/एक्सेल एक्सपोर्ट.
+* **३) कर्ज वसुली — कर्ज उचल दिनांक व मॅन्युअल मेंबर व्याज समायोजन (`LoanCollectionMaster.tsx`, `LoanCollectionsController.cs`, `LoanCollection.cs` & `LoanScheduleGenerator.cs`):**
+  * 'कर्ज खाते स्थिती व थकबाकी' पॅनेलमध्ये 'व्याज आकारणी पासून' च्या वर **'कर्ज उचल दिनांक'** ओळ जोडली.
+  * 'मेंबर व्याज' मॅन्युअल बदलल्यास **एकूण जमा (Total ₹)** रक्कम स्थिर ठेवून **मुद्दल (Principal ₹)** मधून स्वयंचलित समायोजन (`IsManualInterestOverride`) लागू केले.
+* **४) सभासद यादी व अधिकृत शेअर प्रमाणपत्र रिपोर्ट आणि शेअर्स सुधारणा (`ShareCertificateReport.tsx`, `ShareCertificatePreview.tsx`, `ShareCertificatesController.cs`, `ShareAccountsController.cs`, `ShareMaster.tsx`, `ShareOpeningBalance.tsx`, `ShareTransferMaster.tsx` & `ShareWithdrawal.tsx`):**
+  * अधिकृत शेअर प्रमाणपत्र व सभासद यादी अहवाल, प्रमाणपत्र क्र. व शेअर ट्रान्स्फर/इश्यू/विथड्रॉवल सिंक सुधारित केले.
+* **५) सिस्टम ऑडिट ट्रेल अहवाल सुधारणा (`AuditLogsController.cs` & `AuditLogReport.tsx`):**
+  * `AuditLogs` सोबत `UserLoginAudits` एकत्रित करून लॉगिन, अयशस्वी प्रयत्न, लॉकआउट आणि युझरनावाचे अचूक रिझोल्यूशन व शोध/फिल्टर सुविधा लागू केल्या.
+* **६) मुदत ठेव (FD) व्याज वेळापत्रक चार्ट दुरुस्ती (`FdInterestScheduleModal.tsx`, `FdAccountOpening.tsx` & `fdInterestSchedule.ts`):**
+  * मुदत ठेव स्कीमनुसार व्याज वेळापत्रक व चार्ट मोजणीतील तफावत दूर केली.
+* **७) सर्व मॉड्यूल्स पेजिनेशन (`X-Total-Count`), `lastLegacyAccountNo` व साईडबार/रिपोर्ट्स एकत्रीकरण (`Sidebar.tsx`, `ReportDashboard.tsx`, `AssetReports.tsx`, `LockerReports.tsx`, `CustomerMaster.tsx`, `MemberMaster.tsx`, `VoucherMaster.tsx`, `SavingTransactionEntry.tsx`, `PigmyCollectionMaster.tsx`, `SearchableSelect.tsx`, `CustomerSearchSelect.tsx`, `MemberSearchSelect.tsx`, `apiCache.ts` & संबंधित API कंट्रोलर्स):**
+  * सर्व्हर-साईड पेजिनेशन, सेव्हिंग/पिग्मी/आरडी/कर्ज/FD मध्ये `lastLegacyAccountNo` प्रदर्शन, `WithExposedHeaders("X-Total-Count", "X-Next-Legacy-Member-No", "Content-Disposition")`, आणि साईडबार/रिपोर्ट डॅशबोर्ड सुसूत्रता लागू केली.
+
+---
+
 ## 📅 [2026-11-12] - आवृत्ती v2.6.21 (Year-End Carry Forward Double-Counting Fix, Dynamic FY Baseline Resolution, Parallel Financial Year & EOD Alignment)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

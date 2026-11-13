@@ -119,7 +119,8 @@ export default function MemberOpeningBalanceForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const member = members.find(m => m.memberID.toString() === formData.cifNo || (m.customerID && m.customerID.toString() === formData.cifNo));
+    const member = members.find(m => m.memberID.toString() === formData.cifNo)
+                || members.find(m => m.customerID && m.customerID.toString() === formData.cifNo);
     if (!member) {
       alert("कृपया ड्रॉपडाऊनमधून वैध सभासद निवडा.");
       return;
@@ -317,7 +318,7 @@ export default function MemberOpeningBalanceForm() {
                 members={members}
                 value={formData.cifNo ? Number(formData.cifNo) : ''}
                 onChange={(val, selMember) => {
-                  const selected = selMember || members.find(m => m.memberID === val || m.customerID === val);
+                  const selected = selMember || members.find(m => m.memberID === val) || members.find(m => m.customerID === val);
                   if (selected) {
                     selectMember(selected);
                   } else {

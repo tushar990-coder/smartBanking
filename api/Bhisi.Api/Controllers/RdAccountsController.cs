@@ -219,6 +219,7 @@ namespace Bhisi.Api.Controllers
                     }
                 }
             }
+            string lastLegacyAccountNo = maxLegacySeq > 0 ? maxLegacySeq.ToString() : "0";
             string nextLegacyAccountNo = maxLegacySeq > 0 ? (maxLegacySeq + 1).ToString() : "1";
 
             return Ok(new
@@ -227,6 +228,7 @@ namespace Bhisi.Api.Controllers
                 accountNo = nextNo,
                 formattedAccountNo = formattedNo,
                 displayAccountNo = formattedNo,
+                lastLegacyAccountNo = lastLegacyAccountNo,
                 nextLegacyAccountNo = nextLegacyAccountNo,
                 debugDb = _context.Database.GetDbConnection().Database,
                 debugServer = _context.Database.GetDbConnection().DataSource

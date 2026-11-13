@@ -15,7 +15,13 @@ import {
 } from 'lucide-react';
 
 const LockerReports: React.FC = () => {
-  const [activeReportTab, setActiveReportTab] = useState<'occupancy' | 'allotment' | 'visits' | 'notices'>('occupancy');
+  const [activeReportTab, setActiveReportTab] = useState<'occupancy' | 'allotment' | 'visits' | 'notices'>(() => {
+    const rt = new URLSearchParams(window.location.search).get('reportType');
+    if (rt === 'occupancy' || rt === 'allotment' || rt === 'visits' || rt === 'notices') {
+      return rt;
+    }
+    return 'occupancy';
+  });
   
   // Data States
   const [lockers, setLockers] = useState<any[]>([]);

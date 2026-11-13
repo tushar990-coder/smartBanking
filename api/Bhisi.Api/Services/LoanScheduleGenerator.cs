@@ -304,6 +304,14 @@ namespace Bhisi.Api.Services
                     continue; // Skip interest from schedules that were due before software entry
                 }
 
+                if (string.Equals(s.Status, "Paid", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Installment was already settled (including any manual interest adjustment); consume up to its scheduled interest from pool without adding deficit
+                    decimal consumedForPaid = Math.Min(totalInterestPaid, s.InterestAmount);
+                    totalInterestPaid -= consumedForPaid;
+                    continue;
+                }
+
                 decimal interestPaidForThis = Math.Min(totalInterestPaid, s.InterestAmount);
                 totalInterestPaid -= interestPaidForThis;
                 totalUnpaidInterest += s.InterestAmount - interestPaidForThis;
@@ -347,13 +355,13 @@ namespace Bhisi.Api.Services
                 bool isPrincipalCovered = runningPrincipalPaid >= s.PrincipalAmount;
                 bool isInterestCovered = s.InterestAmount <= 0 || runningInterestPaid >= s.InterestAmount;
 
-                if (isPrincipalCovered && isInterestCovered)
+                if (isPrincipalCovered)
                 {
                     s.Status = "Paid";
                     runningPrincipalPaid -= s.PrincipalAmount;
                     if (s.InterestAmount > 0)
                     {
-                        runningInterestPaid -= s.InterestAmount;
+                        runningInterestPaid = Math.Max(0, runningInterestPaid - s.InterestAmount);
                     }
 
                     var lastColl = orderedCollections.LastOrDefault();

@@ -131,12 +131,17 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            string lastLegacyAccountNo = (long.TryParse(nextLegacyAccountNo, out long nextLoanLeg) && nextLoanLeg > 1)
+                ? (nextLoanLeg - 1).ToString()
+                : "0";
+
             string formattedNo = Helpers.AccountNumberHelper.Format14Digit(nextAccNo);
             return Ok(new {
                 nextAccountNo = nextAccNo,
                 accountNo = nextAccNo,
                 formattedAccountNo = formattedNo,
                 displayAccountNo = formattedNo,
+                lastLegacyAccountNo = lastLegacyAccountNo,
                 nextLegacyAccountNo = nextLegacyAccountNo
             });
         }

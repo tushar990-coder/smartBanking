@@ -122,7 +122,8 @@ try
             {
                 policy.AllowAnyOrigin()
                       .AllowAnyHeader()
-                      .AllowAnyMethod();
+                      .AllowAnyMethod()
+                      .WithExposedHeaders("X-Total-Count", "X-Next-Legacy-Member-No", "Content-Disposition");
             });
     });
 
@@ -3208,6 +3209,26 @@ try
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to verify or apply Multi-Branch & IBT schema DDL");
+        }
+
+        try
+        {
+            // Ensure EmployeeBankDetails allows nullable JoiningDate, DepartmentID, and BranchID
+            db.Database.ExecuteSqlRaw(@"
+            IF OBJECT_ID(N'[dbo].[EmployeeBankDetails]', N'U') IS NOT NULL
+            BEGIN
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'EmployeeBankDetails' AND COLUMN_NAME = 'JoiningDate' AND IS_NULLABLE = 'NO')
+                    ALTER TABLE [dbo].[EmployeeBankDetails] ALTER COLUMN [JoiningDate] datetime2 NULL;
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'EmployeeBankDetails' AND COLUMN_NAME = 'DepartmentID' AND IS_NULLABLE = 'NO')
+                    ALTER TABLE [dbo].[EmployeeBankDetails] ALTER COLUMN [DepartmentID] int NULL;
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'EmployeeBankDetails' AND COLUMN_NAME = 'BranchID' AND IS_NULLABLE = 'NO')
+                    ALTER TABLE [dbo].[EmployeeBankDetails] ALTER COLUMN [BranchID] int NULL;
+            END
+        ");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to verify EmployeeBankDetails nullable columns DDL");
         }
 
         try

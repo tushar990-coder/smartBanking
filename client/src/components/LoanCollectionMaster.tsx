@@ -292,6 +292,9 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
     // View All Receipts Modal State
     const [showReceiptsModal, setShowReceiptsModal] = useState(false);
+    const [receiptSearch, setReceiptSearch] = useState<string>('');
+    const [receiptPage, setReceiptPage] = useState<number>(1);
+    const [receiptPageSize, setReceiptPageSize] = useState<number>(100);
     const [editingReceiptId, setEditingReceiptId] = useState<number | null>(null);
     const [editData, setEditData] = useState<any>({});
 
@@ -301,6 +304,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [isSchedulePrintView, setIsSchedulePrintView] = useState(false);
     const [showFeesPanel, setShowFeesPanel] = useState(false);
     const [showAllocationMismatchModal, setShowAllocationMismatchModal] = useState(false);
+    const [isManualInterestOverride, setIsManualInterestOverride] = useState(false);
 
     const [formData, setFormData] = useState<Partial<LoanCollection>>({
         collectionDate: activeBusinessDate,
@@ -825,7 +829,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         setLoading(true);
         try {
             const bId = overrideBranchId !== undefined ? overrideBranchId : selectedBranchId;
-            const res = await axios.get(`/api/LoanCollections${bId ? `?branchId=${bId}&pageSize=50` : '?pageSize=50'}`);
+            const res = await axios.get(`/api/LoanCollections${bId ? `?branchId=${bId}&pageSize=0` : '?pageSize=0'}`);
             setCollections(res.data);
             
             // Calculate active business date's totals
@@ -1617,7 +1621,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
         // Auto-select 1 Installment (१ हप्ता): 1 Installment principal + old receivable interest + current days/schedule interest + penalty
         const totalDue = installment + yeneVyaj + currentInterestDue + penal;
-        autoApportion(totalDue, formData.fees || [], acc, dateStr);
+        setIsManualInterestOverride(false);
+        autoApportion(totalDue, formData.fees || [], acc, dateStr, false);
     };
 
     // Watch for collectionDate and accountDetails changes to recalculate interest and due amount (default: १ हप्ता)
@@ -1631,6 +1636,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const applyQuickAmount = (type: '1_INST' | 'OVERDUE_ONLY' | 'INTEREST_ONLY' | 'FULL_DUE') => {
         const account = selectedAccount;
         if (!account) return;
+        setIsManualInterestOverride(false);
         const dateStr = formData.collectionDate || new Date().toISOString().split('T')[0];
         const penal = account.overdueInterestBalance || 0;
         const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (account.interestBalance || 0);
@@ -1685,27 +1691,33 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
         if (type === 'INTEREST_ONLY') {
             const total = penal + yeneVyaj + currentInterestDue;
-            autoApportion(total, formData.fees || []);
+            autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === 'OVERDUE_ONLY') {
             const overduePrin = paikiThakbaki > 0 ? paikiThakbaki : vasulpatra;
             const total = overduePrin + penal + yeneVyaj + currentInterestDue;
-            autoApportion(total, formData.fees || []);
+            autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === '1_INST') {
             const total = oneInstallmentPrincipal + penal + yeneVyaj + currentInterestDue;
-            autoApportion(total, formData.fees || []);
+            autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === 'FULL_DUE') {
             const maxPrincipal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (account.principalBalance || 0);
             const total = maxPrincipal + penal + yeneVyaj + currentInterestDue;
-            autoApportion(total, formData.fees || []);
+            autoApportion(total, formData.fees || [], undefined, undefined, false);
         }
     };
 
     const handleTotalAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const val = parseFloat(e.target.value) || 0;
-        autoApportion(val, formData.fees || []);
+        const val = Math.max(0, parseFloat(e.target.value) || 0);
+        autoApportion(val, formData.fees || [], undefined, undefined, isManualInterestOverride);
     };
 
-    const autoApportion = (totalAmt: number, currentFees: any[], accountOverride?: any, dateOverride?: string) => {
+    const autoApportion = (
+        totalAmt: number,
+        currentFees: any[],
+        accountOverride?: any,
+        dateOverride?: string,
+        preserveManualInterest: boolean = false
+    ) => {
         const account = accountOverride || selectedAccount;
         if (!account) return;
         
@@ -1733,8 +1745,9 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const { vasulpatra } = getPrincipalDuesBreakdown(account, dateStr);
         let principalDue = vasulpatra;
 
-        // Check if we have schedule details loaded and is Flat rate
-        if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
+        if (preserveManualInterest) {
+            currentInterestDue = Math.max(0, Number(formData.interestCollected) || 0);
+        } else if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
             const collectionDateObj = parseDateSafe(dateStr);
             collectionDateObj.setHours(0, 0, 0, 0);
 
@@ -1804,10 +1817,32 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const { name, value } = e.target;
         const val = Math.max(0, parseFloat(value) || 0);
 
-        setFormData(p => ({
-            ...p,
-            [name]: val
-        }));
+        if (name === 'interestCollected') {
+            setIsManualInterestOverride(true);
+        }
+
+        setFormData(p => {
+            const nextState: Partial<LoanCollection> = {
+                ...p,
+                [name]: val
+            };
+
+            if (name === 'principalCollected') {
+                return nextState;
+            }
+
+            // मेंबर व्याज (interestCollected), येणे व्याज, दंड व्याज किंवा सरचार्ज बदलल्यास:
+            // एकूण जमा (totalAmountReceived) रक्कम कधीही बदलू नये; फक्त मुद्दल (principalCollected) रक्कम बदलावी!
+            const currentTotal = Number(p.totalAmountReceived) || 0;
+            const newReceivable = Number(name === 'receivableInterestCollected' ? val : p.receivableInterestCollected) || 0;
+            const newInterest = Number(name === 'interestCollected' ? val : p.interestCollected) || 0;
+            const newPenalty = Number(name === 'penaltyInterestCollected' ? val : p.penaltyInterestCollected) || 0;
+            const newSurcharge = Number(name === 'surchargeCollected' ? val : p.surchargeCollected) || 0;
+            const nonPrincipalSum = Math.round((newReceivable + newInterest + newPenalty + newSurcharge) * 100) / 100;
+
+            nextState.principalCollected = Math.max(0, Math.round((currentTotal - nonPrincipalSum) * 100) / 100);
+            return nextState;
+        });
     };
 
     const handleFeeChange = (index: number, field: string, val: any) => {
@@ -1930,7 +1965,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 transferFromSavingAccountNo: isSaving ? (formData.transferFromSavingAccountNo || null) : null,
                 savingCustomerName: isSaving ? (formData.savingCustomerName || null) : null,
                 loanAccountID: targetAccountId,
-                branchID: selectedBranchId
+                branchID: selectedBranchId,
+                isManualInterestOverride: isManualInterestOverride
             };
             const res = await axios.post('/api/LoanCollections', payload);
             const savedCollectionId = res.data?.loanCollectionID || res.data?.LoanCollectionID;
@@ -1986,6 +2022,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             });
             setAllowDateOverride(false);
             setShowFeesPanel(false);
+            setIsManualInterestOverride(false);
             setSelectedBorrowerKey(null);
             setSelectedCustomerId(null);
             setSelectedAccount(null);
@@ -2131,6 +2168,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         });
         setAllowDateOverride(false);
         setShowFeesPanel(false);
+        setIsManualInterestOverride(false);
         setShowAllocationMismatchModal(false);
         setNoLoanFoundAlert(null);
         setSelectedCustomerId(null);
@@ -2266,6 +2304,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             days = calculateElapsedDays(fromDateStrGrid, formData.collectionDate);
         }
 
+        const systemVyaj = vyaj;
+        if (isManualInterestOverride) {
+            vyaj = Math.max(0, Number(formData.interestCollected) || 0);
+        }
         const shillakKarjRakkam = Math.max(0, yeneBaki - (formData.principalCollected || 0));
         const ekunVasulpatra = vasulpatra + vyaj + yeneVyaj + dandVyaj + surcharge + vasuliFee;
 
@@ -2281,6 +2323,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             vasulpatra,
             paikiThakbaki,
             vyaj,
+            systemVyaj,
             yeneVyaj,
             dandVyaj,
             thakitHapteCount,
@@ -3358,13 +3401,29 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </div>
 
                                     <div className="p-1.5 rounded-sm bg-amber-50/80 border border-amber-200">
-                                        <div className="flex items-center justify-between mb-0.5">
+                                        <div className="flex items-center justify-between mb-0.5 gap-1">
                                             <label className="text-[11px] font-bold text-amber-950">मेंबर व्याज</label>
-                                            {duesSummary && duesSummary.days > 0 && (
-                                                <span className="text-[9.5px] font-mono font-semibold text-amber-800">
-                                                    {duesSummary.days} दिवस
-                                                </span>
-                                            )}
+                                            <div className="flex items-center gap-1">
+                                                {isManualInterestOverride && !isPassingMode && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setIsManualInterestOverride(false);
+                                                            const baseTot = Number(formData.totalAmountReceived) || 0;
+                                                            autoApportion(baseTot, formData.fees || [], undefined, undefined, false);
+                                                        }}
+                                                        className="px-1 py-0.2 text-[9px] font-bold bg-amber-200/90 hover:bg-amber-300 text-amber-950 rounded-xs border border-amber-400 cursor-pointer"
+                                                        title="सिस्टीमने मोजलेले व्याज पुन्हा लागू करा"
+                                                    >
+                                                        Auto
+                                                    </button>
+                                                )}
+                                                {duesSummary && duesSummary.days > 0 && (
+                                                    <span className="text-[9.5px] font-mono font-semibold text-amber-800">
+                                                        {duesSummary.days} दिवस
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                         <input
                                             type="number"
@@ -3813,6 +3872,13 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                                 {/* 3. Clean Scannable Dues & Interest Breakdown List in Soft Pastel Shades */}
                                 <div className="border border-gray-200 rounded-sm divide-y divide-gray-200/70 text-[11px] overflow-hidden">
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-teal-50/60">
+                                        <span className="text-teal-950 font-semibold">कर्ज उचल दिनांक</span>
+                                        <span className="font-mono font-bold text-teal-950">
+                                            {duesSummary.disbursementDate ? formatDateSafe(duesSummary.disbursementDate) : '-'}
+                                        </span>
+                                    </div>
+
                                     <div className="px-2.5 py-1.5 flex items-center justify-between bg-cyan-50/60">
                                         <span className="text-cyan-950 font-semibold">व्याज आकारणी पासून</span>
                                         <span className="font-mono font-bold text-cyan-950">
@@ -3859,7 +3925,14 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </div>
 
                                     <div className="px-2.5 py-1.5 flex items-center justify-between bg-amber-50/70">
-                                        <span className="text-amber-950 font-semibold">मेंबर व्याज</span>
+                                        <span className="text-amber-950 font-semibold">
+                                            मेंबर व्याज
+                                            {isManualInterestOverride && duesSummary.systemVyaj !== duesSummary.vyaj && (
+                                                <span className="text-[9.5px] text-amber-800/80 font-normal ml-1">
+                                                    (सिस्टीम: ₹{duesSummary.systemVyaj.toLocaleString('en-IN')})
+                                                </span>
+                                            )}
+                                        </span>
                                         <span className="font-mono font-bold text-amber-900">
                                             ₹{duesSummary.vyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>
@@ -4392,12 +4465,79 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                 </div>
             )}
 
-            {showReceiptsModal && (
+            {showReceiptsModal && (() => {
+                const q = receiptSearch.trim().toLowerCase();
+                const filteredReceipts = collections.filter(c => {
+                    if (!q) return true;
+                    const custName = c.loanAccount?.customer
+                        ? `${c.loanAccount.customer.firstName || ''} ${c.loanAccount.customer.lastName || ''}`.toLowerCase()
+                        : `${c.loanAccount?.member?.firstName || ''} ${c.loanAccount?.member?.lastName || ''}`.toLowerCase();
+                    const rNo = (c.receiptNo || '').toLowerCase();
+                    const lNo = (c.loanAccount?.loanAccountNo || '').toLowerCase();
+                    const legNo = (c.loanAccount?.legacyAccountNumber || '').toLowerCase();
+                    const cif = (c.loanAccount?.customer?.cifNo || c.loanAccount?.member?.memberCode || '').toLowerCase();
+                    return custName.includes(q) || rNo.includes(q) || lNo.includes(q) || legNo.includes(q) || cif.includes(q);
+                });
+                const totalReceiptPages = receiptPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredReceipts.length / receiptPageSize));
+                const safeReceiptPage = Math.min(receiptPage, totalReceiptPages);
+                const paginatedReceipts = receiptPageSize === 0
+                    ? filteredReceipts
+                    : filteredReceipts.slice((safeReceiptPage - 1) * receiptPageSize, safeReceiptPage * receiptPageSize);
+
+                return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-2">
                     <div className="bg-white rounded-sm shadow-xl w-full max-w-6xl flex flex-col max-h-[90vh]">
-                        <div className="bg-primary text-white p-2 flex justify-between items-center rounded-t-sm">
-                            <h2 className="text-sm font-bold flex items-center gap-2"><FileText size={16} /> सर्व जमा पावत्या (All Receipts)</h2>
-                            <button onClick={() => setShowReceiptsModal(false)} className="hover:text-red-200"><X size={16} /></button>
+                        <div className="bg-primary text-white p-2 px-3 flex justify-between items-center rounded-t-sm">
+                            <h2 className="text-sm font-bold flex items-center gap-2">
+                                <FileText size={16} />
+                                <span>सर्व जमा पावत्या (All Receipts: {filteredReceipts.length})</span>
+                            </h2>
+                            <button onClick={() => setShowReceiptsModal(false)} className="hover:text-red-200 cursor-pointer"><X size={16} /></button>
+                        </div>
+
+                        <div className="p-2 px-3 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 text-xs">
+                            <div className="relative w-full sm:w-80">
+                                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    value={receiptSearch}
+                                    onChange={(e) => {
+                                        setReceiptSearch(e.target.value);
+                                        setReceiptPage(1);
+                                    }}
+                                    placeholder="पावती क्र., नाव, कर्ज खाते क्र., जुना क्र. किंवा CIF ने शोधा..."
+                                    className="w-full pl-8 pr-6 py-1 border border-gray-300 rounded-sm bg-white text-xs h-[28px] focus:outline-none focus:border-primary"
+                                />
+                                {receiptSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setReceiptSearch('');
+                                            setReceiptPage(1);
+                                        }}
+                                        className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 cursor-pointer"
+                                    >
+                                        <X size={13} />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="font-bold text-gray-700">प्रति पान:</span>
+                                <select
+                                    value={receiptPageSize}
+                                    onChange={(e) => {
+                                        setReceiptPageSize(Number(e.target.value));
+                                        setReceiptPage(1);
+                                    }}
+                                    className="border border-gray-300 px-2 py-0.5 rounded-sm bg-white font-bold text-primary h-[28px]"
+                                >
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                    <option value={200}>200</option>
+                                    <option value={500}>500</option>
+                                    <option value={0}>सर्व ({filteredReceipts.length})</option>
+                                </select>
+                            </div>
                         </div>
                         
                         <div className="p-2 flex-1 overflow-auto bg-gray-50">
@@ -4414,7 +4554,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {collections.map(c => {
+                                    {paginatedReceipts.map(c => {
                                         const isEditing = editingReceiptId === c.loanCollectionID;
                                         return (
                                             <tr key={c.loanCollectionID} className="border-b hover:bg-blue-50/30 transition-colors">
@@ -4515,17 +4655,80 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             </tr>
                                         )
                                     })}
-                                    {collections.length === 0 && (
+                                    {paginatedReceipts.length === 0 && (
                                         <tr>
-                                            <td colSpan={7} className="p-2 text-center text-gray-500 italic">कोणतीही पावती उपलब्ध नाही.</td>
+                                            <td colSpan={7} className="p-4 text-center text-gray-500 italic">कोणतीही पावती उपलब्ध नाही.</td>
                                         </tr>
                                     )}
                                 </tbody>
                             </table>
                         </div>
+
+                        <div className="p-2 px-3 bg-slate-100 border-t border-gray-200 flex flex-wrap justify-between items-center gap-2 text-xs">
+                            <span className="text-gray-600 font-medium">
+                                दाखवत आहे:{' '}
+                                <b className="text-gray-900">
+                                    {filteredReceipts.length === 0
+                                        ? 0
+                                        : receiptPageSize === 0
+                                            ? `1 ते ${filteredReceipts.length}`
+                                            : `${(safeReceiptPage - 1) * receiptPageSize + 1} ते ${Math.min(safeReceiptPage * receiptPageSize, filteredReceipts.length)}`}
+                                </b>{' '}
+                                (एकूण पावत्या: <b className="text-primary">{filteredReceipts.length}</b>)
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                                {receiptPageSize > 0 && totalReceiptPages > 1 && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            disabled={safeReceiptPage <= 1}
+                                            onClick={() => setReceiptPage(1)}
+                                            className="px-2 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                                        >
+                                            ⏮️ पहिले
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={safeReceiptPage <= 1}
+                                            onClick={() => setReceiptPage(p => Math.max(1, p - 1))}
+                                            className="px-2.5 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                                        >
+                                            ⬅️ मागील पान
+                                        </button>
+                                        <span className="px-2.5 py-1 bg-primary text-white rounded-sm font-bold font-mono">
+                                            पान {safeReceiptPage} / {totalReceiptPages}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            disabled={safeReceiptPage >= totalReceiptPages}
+                                            onClick={() => setReceiptPage(p => Math.min(totalReceiptPages, p + 1))}
+                                            className="px-2.5 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                                        >
+                                            पुढील पान ➡️
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={safeReceiptPage >= totalReceiptPages}
+                                            onClick={() => setReceiptPage(totalReceiptPages)}
+                                            className="px-2 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                                        >
+                                            शेवटचे ⏭️
+                                        </button>
+                                    </>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setShowReceiptsModal(false)}
+                                    className="px-3.5 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded-sm font-bold cursor-pointer ml-2"
+                                >
+                                    बंद करा (Close)
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
 
             {/* Auto Lien Release Confirmation Modal on Loan Closure */}
             {lienPromptData && (

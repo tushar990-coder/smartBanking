@@ -41,25 +41,116 @@ namespace Bhisi.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAllCertificates(
             [FromQuery] int? memberId,
+            [FromQuery] int? branchId,
             [FromQuery] string? status,
             [FromQuery] DateTime? fromDate,
             [FromQuery] DateTime? toDate,
             [FromQuery] string? search)
         {
+            // Auto-sync: Ensure every active ShareAccount with TotalShareCount > 0 has at least one ShareCertificate record
+            var accountsWithoutCerts = await _context.ShareAccounts
+                .Include(sa => sa.Member)
+                .Where(sa => sa.TotalShareCount > 0 && sa.Status != "Closed"
+                    && !_context.ShareCertificates.Any(c => c.ShareAccountId == sa.ShareAccountId))
+                .OrderBy(sa => sa.MemberId)
+                .ThenBy(sa => sa.ShareAccountId)
+                .ToListAsync();
+
+            if (accountsWithoutCerts.Count > 0)
+            {
+                long maxToShareNo = await _context.ShareCertificates.MaxAsync(c => (long?)c.ToShareNo) ?? 0;
+                int certSeq = await _context.ShareCertificates.CountAsync();
+                var (userId, _, _) = GetCurrentUserContext();
+
+                foreach (var sa in accountsWithoutCerts)
+                {
+                    int shares = sa.TotalShareCount;
+                    if (shares <= 0) continue;
+
+                    decimal faceVal = sa.TotalShareAmount > 0 ? Math.Round(sa.TotalShareAmount / shares, 2) : 100m;
+                    if (faceVal <= 0) faceVal = 100m;
+
+                    long fromNo = maxToShareNo + 1;
+                    long toNo = fromNo + shares - 1;
+                    maxToShareNo = toNo;
+                    certSeq++;
+
+                    DateTime issueDt = sa.OpeningDate != default
+                        ? sa.OpeningDate
+                        : (sa.Member != null && sa.Member.JoiningDate != default ? sa.Member.JoiningDate : DateTime.Today);
+
+                    string certNo = !string.IsNullOrWhiteSpace(sa.LegacyAccountNumber)
+                        ? $"CERT-{sa.LegacyAccountNumber.Trim()}"
+                        : $"CERT-{issueDt.Year}-{certSeq:D5}";
+
+                    while (await _context.ShareCertificates.AnyAsync(c => c.CertificateNo == certNo))
+                    {
+                        certSeq++;
+                        certNo = $"CERT-{issueDt.Year}-{certSeq:D5}";
+                    }
+
+                    int custId = sa.CustomerID > 0
+                        ? sa.CustomerID
+                        : (sa.Member?.CustomerID ?? 1);
+
+                    _context.ShareCertificates.Add(new ShareCertificate
+                    {
+                        ShareAccountId = sa.ShareAccountId,
+                        CustomerID = custId,
+                        CertificateNo = certNo,
+                        IssueDate = issueDt,
+                        FromShareNo = fromNo,
+                        ToShareNo = toNo,
+                        NumberOfShares = shares,
+                        FaceValue = faceVal,
+                        Status = "Active",
+                        PrintCount = 0,
+                        CreatedBy = userId,
+                        CreatedDate = DateTime.UtcNow
+                    });
+                }
+
+                await _context.SaveChangesAsync();
+            }
+
             var query = _context.ShareCertificates
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(c => c.Customer)
+                    .ThenInclude(cust => cust!.Branch)
+                .Include(c => c.ShareAccount)
+                    .ThenInclude(sa => sa!.Customer)
+                        .ThenInclude(cust => cust!.Branch)
                 .Include(c => c.ShareAccount)
                     .ThenInclude(sa => sa!.Member)
                         .ThenInclude(m => m!.Customer)
-                .Where(c => c.Status != "OpeningBalance");
+                .Include(c => c.ShareAccount)
+                    .ThenInclude(sa => sa!.Member)
+                        .ThenInclude(m => m!.Branch)
+                .AsQueryable();
 
             if (memberId.HasValue && memberId.Value > 0)
             {
                 query = query.Where(c => c.ShareAccount != null && c.ShareAccount.MemberId == memberId.Value);
             }
 
-            if (!string.IsNullOrWhiteSpace(status) && status != "ALL")
+            if (branchId.HasValue && branchId.Value > 0)
             {
-                query = query.Where(c => c.Status == status);
+                query = query.Where(c =>
+                    (c.ShareAccount != null && c.ShareAccount.Member != null && c.ShareAccount.Member.BranchID == branchId.Value) ||
+                    (c.Customer != null && c.Customer.BranchID == branchId.Value));
+            }
+
+            if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+            {
+                if (status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    query = query.Where(c => c.Status == "Active" || c.Status == "Issued" || c.Status == "OpeningBalance");
+                }
+                else
+                {
+                    query = query.Where(c => c.Status == status);
+                }
             }
 
             if (fromDate.HasValue)
@@ -73,8 +164,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var list = await query
-                .OrderByDescending(c => c.IssueDate)
-                .ThenByDescending(c => c.CertificateId)
+                .OrderBy(c => c.CertificateId)
                 .ToListAsync();
 
             // Fetch Joint Members for all related members in one query
@@ -85,6 +175,7 @@ namespace Bhisi.Api.Controllers
                 .ToList();
 
             var jointMembersDict = await _context.JointMembers
+                .AsNoTracking()
                 .Where(j => memberIds.Contains(j.PrimaryMemberID) && j.Status == "Active")
                 .GroupBy(j => j.PrimaryMemberID)
                 .ToDictionaryAsync(
@@ -92,11 +183,36 @@ namespace Bhisi.Api.Controllers
                     g => string.Join(", ", g.Select(j => $"{j.FirstName} {j.MiddleName} {j.LastName}".Trim().Replace("  ", " ") + (string.IsNullOrWhiteSpace(j.RelationWithPrimary) ? "" : $" ({j.RelationWithPrimary})")))
                 );
 
+            var today = DateTime.Today;
+
             var result = list.Select(c =>
             {
                 var member = c.ShareAccount?.Member;
+                var customer = member?.Customer ?? c.ShareAccount?.Customer ?? c.Customer;
                 int mId = member?.MemberID ?? 0;
                 string joint = jointMembersDict.ContainsKey(mId) ? jointMembersDict[mId] : "";
+
+                string firstName = customer?.FirstName ?? "";
+                string middleName = customer?.MiddleName ?? "";
+                string lastName = customer?.LastName ?? "";
+                string fullName = string.Join(" ", new[] { firstName, middleName, lastName }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+
+                string firstNameEng = customer?.FirstNameEng ?? "";
+                string middleNameEng = customer?.MiddleNameEng ?? "";
+                string lastNameEng = customer?.LastNameEng ?? "";
+                string fullNameEng = string.Join(" ", new[] { firstNameEng, middleNameEng, lastNameEng }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+
+                int? age = null;
+                if (customer?.BirthDate != null)
+                {
+                    int calcAge = today.Year - customer.BirthDate.Value.Year;
+                    if (customer.BirthDate.Value.Date > today.AddYears(-calcAge)) calcAge--;
+                    if (calcAge > 0 && calcAge < 130) age = calcAge;
+                }
+
+                string normalizedStatus = (c.Status == "Issued" || c.Status == "OpeningBalance") ? "Active" : c.Status;
+                int resolvedBranchId = member?.BranchID ?? customer?.BranchID ?? 1;
+                string resolvedBranchName = member?.Branch?.BranchName ?? customer?.Branch?.BranchName ?? "मुख्य शाखा (Main Branch)";
 
                 return new
                 {
@@ -104,23 +220,33 @@ namespace Bhisi.Api.Controllers
                     c.CertificateNo,
                     IssueDate = c.IssueDate.ToString("yyyy-MM-dd"),
                     MemberId = mId,
-                    MemberName = $"{member?.Customer?.FirstName ?? ""} {(member?.Customer?.MiddleName != null ? member.Customer.MiddleName + " " : "")}{member?.Customer?.LastName ?? ""}".Trim(),
-                    MemberNameEng = $"{member?.Customer?.FirstNameEng ?? ""} {member?.Customer?.LastNameEng ?? ""}".Trim(),
-                    MemberNo = member?.MemberCode ?? "",
+                    BranchId = resolvedBranchId,
+                    BranchName = resolvedBranchName,
+                    MemberName = fullName,
+                    MemberNameEng = fullNameEng,
+                    MemberNo = member?.MemberCode ?? (mId > 0 ? $"MEM{mId:D4}" : ""),
                     AccountNo = c.ShareAccount?.AccountNo ?? "",
-                    CIFNo = member?.Customer?.CIFNo ?? "",
-                    LegacyMemberNo = member?.LegacyMemberNo ?? "",
+                    CIFNo = customer?.CIFNo ?? "",
+                    LegacyMemberNo = member?.LegacyMemberNo ?? c.ShareAccount?.LegacyAccountNumber ?? customer?.LegacyCustomerNo ?? "",
                     c.FromShareNo,
                     c.ToShareNo,
                     c.NumberOfShares,
                     c.FaceValue,
                     TotalAmount = c.NumberOfShares * c.FaceValue,
-                    c.Status,
+                    Status = normalizedStatus,
+                    RawStatus = c.Status,
                     c.PrintCount,
-                    MemberAddress = member?.Customer?.Address ?? member?.Customer?.Village ?? "",
-                    Village = member?.Customer?.Village ?? "",
-                    MobileNo = member?.Customer?.MobileNo ?? "",
-                    FatherHusbandName = member?.Customer?.MiddleName ?? "",
+                    c.CancellationReason,
+                    MemberAddress = customer?.Address ?? customer?.Village ?? "",
+                    Village = customer?.Village ?? "",
+                    Taluka = customer?.Taluka ?? "",
+                    District = customer?.District ?? "",
+                    MobileNo = customer?.MobileNo ?? "",
+                    FatherHusbandName = middleName,
+                    Occupation = customer?.Occupation ?? "",
+                    Age = age,
+                    NomineeName = customer?.NomineeName ?? "",
+                    NomineeRelation = customer?.NomineeRelation ?? "",
                     JointMemberNames = joint,
                     MembershipType = member?.MembershipType ?? "Regular"
                 };
@@ -132,7 +258,10 @@ namespace Bhisi.Api.Controllers
                 result = result.Where(c =>
                     c.CertificateNo.ToLower().Contains(s) ||
                     c.MemberNo.ToLower().Contains(s) ||
+                    c.LegacyMemberNo.ToLower().Contains(s) ||
+                    c.CIFNo.ToLower().Contains(s) ||
                     c.MemberName.ToLower().Contains(s) ||
+                    c.MemberNameEng.ToLower().Contains(s) ||
                     c.AccountNo.ToLower().Contains(s) ||
                     c.MobileNo.Contains(s) ||
                     c.Village.ToLower().Contains(s)
@@ -168,38 +297,58 @@ namespace Bhisi.Api.Controllers
                 ? string.Join(", ", jointMembers.Select(j => $"{j.FirstName} {j.MiddleName} {j.LastName}".Trim().Replace("  ", " ") + (string.IsNullOrWhiteSpace(j.RelationWithPrimary) ? "" : $" ({j.RelationWithPrimary})")))
                 : "";
 
-            var certificates = await _context.ShareCertificates
+            var list = await _context.ShareCertificates
+                .AsNoTracking()
+                .Include(c => c.Customer)
+                .Include(c => c.ShareAccount)
+                    .ThenInclude(sa => sa!.Customer)
                 .Include(c => c.ShareAccount)
                     .ThenInclude(sa => sa!.Member)
                         .ThenInclude(m => m!.Customer)
-                .Where(c => c.ShareAccountId == account.ShareAccountId && c.Status != "OpeningBalance")
+                .Where(c => c.ShareAccountId == account.ShareAccountId)
                 .OrderByDescending(c => c.IssueDate)
-                .Select(c => new
+                .ToListAsync();
+
+            var certificates = list.Select(c =>
+            {
+                var member = c.ShareAccount?.Member;
+                var customer = member?.Customer ?? c.ShareAccount?.Customer ?? c.Customer;
+                string firstName = customer?.FirstName ?? "";
+                string middleName = customer?.MiddleName ?? "";
+                string lastName = customer?.LastName ?? "";
+                string fullName = string.Join(" ", new[] { firstName, middleName, lastName }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+                string normalizedStatus = (c.Status == "Issued" || c.Status == "OpeningBalance") ? "Active" : c.Status;
+
+                return new
                 {
                     c.CertificateId,
                     c.CertificateNo,
                     IssueDate = c.IssueDate.ToString("yyyy-MM-dd"),
-                    MemberName = (c.ShareAccount!.Member!.Customer != null ? c.ShareAccount.Member.Customer.FirstName + " " + (c.ShareAccount.Member.Customer.MiddleName != null ? c.ShareAccount.Member.Customer.MiddleName + " " : "") + c.ShareAccount.Member.Customer.LastName : "").Trim(),
-                    MemberNameEng = (c.ShareAccount!.Member!.Customer != null ? (c.ShareAccount.Member.Customer.FirstNameEng != null ? c.ShareAccount.Member.Customer.FirstNameEng + " " : "") + (c.ShareAccount.Member.Customer.LastNameEng ?? "") : "").Trim(),
-                    MemberNo = c.ShareAccount.Member.MemberCode ?? "",
-                    AccountNo = c.ShareAccount.AccountNo,
-                    CIFNo = c.ShareAccount.Member.Customer != null ? c.ShareAccount.Member.Customer.CIFNo ?? "" : "",
-                    LegacyMemberNo = c.ShareAccount.Member.LegacyMemberNo ?? "",
+                    MemberName = fullName,
+                    MemberNameEng = $"{customer?.FirstNameEng ?? ""} {customer?.LastNameEng ?? ""}".Trim(),
+                    MemberNo = member?.MemberCode ?? "",
+                    AccountNo = c.ShareAccount?.AccountNo ?? "",
+                    CIFNo = customer?.CIFNo ?? "",
+                    LegacyMemberNo = member?.LegacyMemberNo ?? c.ShareAccount?.LegacyAccountNumber ?? "",
                     c.FromShareNo,
                     c.ToShareNo,
                     c.NumberOfShares,
                     c.FaceValue,
                     TotalAmount = c.NumberOfShares * c.FaceValue,
-                    c.Status,
+                    Status = normalizedStatus,
+                    RawStatus = c.Status,
                     c.PrintCount,
-                    MemberAddress = c.ShareAccount.Member.Customer != null ? (c.ShareAccount.Member.Customer.Address ?? c.ShareAccount.Member.Customer.Village ?? "") : "",
-                    Village = c.ShareAccount.Member.Customer != null ? (c.ShareAccount.Member.Customer.Village ?? "") : "",
-                    MobileNo = c.ShareAccount.Member.Customer != null ? (c.ShareAccount.Member.Customer.MobileNo ?? "") : "",
-                    FatherHusbandName = c.ShareAccount.Member.Customer != null ? (c.ShareAccount.Member.Customer.MiddleName ?? "") : "",
+                    MemberAddress = customer?.Address ?? customer?.Village ?? "",
+                    Village = customer?.Village ?? "",
+                    MobileNo = customer?.MobileNo ?? "",
+                    FatherHusbandName = middleName,
+                    Occupation = customer?.Occupation ?? "",
+                    NomineeName = customer?.NomineeName ?? "",
+                    NomineeRelation = customer?.NomineeRelation ?? "",
                     JointMemberNames = jointMemberNames,
-                    MembershipType = c.ShareAccount.Member.MembershipType ?? "Regular"
-                })
-                .ToListAsync();
+                    MembershipType = member?.MembershipType ?? "Regular"
+                };
+            }).ToList();
 
             return Ok(certificates);
         }

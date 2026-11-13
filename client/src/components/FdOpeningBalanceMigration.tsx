@@ -961,7 +961,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       memberCode: currentCustomer?.legacyCustomerNo || currentCustomer?.customerCode || '',
       cifNo: currentCustomer?.cifNo || '',
       schemeName: scheme?.schemeName || 'मुदत ठेव योजना',
-      isSeniorCitizen: false,
+      isSeniorCitizen: Boolean(formData.isSeniorCitizen),
     });
     setIsScheduleModalOpen(true);
   };
@@ -992,7 +992,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       memberCode: acc.memberCode || '',
       cifNo: acc.cifNo || '',
       schemeName: acc.schemeName || matchedScheme?.schemeName || 'मुदत ठेव योजना',
-      isSeniorCitizen: false,
+      isSeniorCitizen: Boolean((acc as any).isSeniorCitizen),
     });
     setIsScheduleModalOpen(true);
   };

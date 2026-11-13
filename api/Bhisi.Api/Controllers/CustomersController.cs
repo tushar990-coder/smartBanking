@@ -89,14 +89,16 @@ namespace Bhisi.Api.Controllers
             [FromQuery] string? status = null,
             [FromQuery] string? search = null,
             [FromQuery] int? page = null,
-            [FromQuery] int? pageSize = null)
+            [FromQuery] int? pageSize = null,
+            [FromQuery] string? sortDir = null)
         {
             try
             {
                 var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
                 int effectiveBranchId = isHeadOfficeAdmin ? (branchId ?? 0) : userBranchId;
+                bool isDesc = string.Equals(sortDir?.Trim(), "desc", StringComparison.OrdinalIgnoreCase);
                 int ver = _cache.GetOrCreate("customers_cache_ver", e => 1);
-                string cacheKey = $"customers_list_v{ver}_b{effectiveBranchId}_a{agentId ?? 0}_s{status ?? "all"}_srch{search ?? ""}_p{page ?? 0}_ps{pageSize ?? 0}";
+                string cacheKey = $"customers_list_v{ver}_b{effectiveBranchId}_a{agentId ?? 0}_s{status ?? "all"}_srch{search ?? ""}_p{page ?? 0}_ps{pageSize ?? 0}_sd{(isDesc ? "desc" : "asc")}";
 
                 if (_cache.TryGetValue(cacheKey, out List<Customer>? cached) && cached != null)
                 {
@@ -104,14 +106,22 @@ namespace Bhisi.Api.Controllers
                     {
                         Response.Headers["X-Total-Count"] = cachedTotal.ToString();
                     }
+                    else
+                    {
+                        Response.Headers["X-Total-Count"] = cached.Count.ToString();
+                    }
                     return cached;
                 }
 
-                var query = _context.Customers
+                var baseQuery = _context.Customers
                     .AsNoTracking()
+                    .Where(c => !c.IsDeleted)
                     .Include(c => c.Branch)
-                    .OrderBy(c => c.CustomerID)
                     .AsQueryable();
+
+                var query = isDesc
+                    ? baseQuery.OrderByDescending(c => c.CustomerID).AsQueryable()
+                    : baseQuery.OrderBy(c => c.CustomerID).AsQueryable();
 
                 if (agentId.HasValue && agentId.Value > 0)
                 {
@@ -163,8 +173,11 @@ namespace Bhisi.Api.Controllers
                     int p = page ?? 1;
                     int ps = pageSize ?? 50;
                     if (p < 1) p = 1;
-                    if (ps < 1 || ps > 500) ps = 50;
-                    query = query.Skip((p - 1) * ps).Take(ps);
+                    if (ps > 0 && ps < 10000)
+                    {
+                        if (ps > 5000) ps = 5000;
+                        query = query.Skip((p - 1) * ps).Take(ps);
+                    }
                 }
 
                 var rawCustomers = await query
@@ -408,7 +421,10 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetNextCifNo([FromQuery] int? branchId = null)
         {
             var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-            var statsQuery = _context.Customers.AsNoTracking().AsQueryable();
+            var statsQuery = _context.Customers
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted)
+                .AsQueryable();
             if (!isHeadOfficeAdmin)
             {
                 statsQuery = statsQuery.Where(c => c.BranchID == userBranchId);
@@ -424,6 +440,38 @@ namespace Bhisi.Api.Controllers
                 c.AadhaarNo != null && c.AadhaarNo != "" &&
                 c.PANNo != null && c.PANNo != "");
 
+            var legacyNumbers = await statsQuery
+                .Where(c => c.LegacyCustomerNo != null && c.LegacyCustomerNo != "")
+                .Select(c => c.LegacyCustomerNo!)
+                .ToListAsync();
+
+            long maxLegacySeq = 0;
+            foreach (var rawLegacy in legacyNumbers)
+            {
+                if (string.IsNullOrWhiteSpace(rawLegacy)) continue;
+                var trimmed = rawLegacy.Trim();
+                if (long.TryParse(trimmed, out long parsedNum))
+                {
+                    if (parsedNum > maxLegacySeq) maxLegacySeq = parsedNum;
+                }
+                else
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
+                    if (match.Success && long.TryParse(match.Groups[1].Value, out long extractedNum))
+                    {
+                        if (extractedNum > maxLegacySeq) maxLegacySeq = extractedNum;
+                    }
+                }
+            }
+
+            if (maxLegacySeq == 0 && totalCustomers > 0)
+            {
+                maxLegacySeq = totalCustomers;
+            }
+
+            string lastLegacyCustomerNo = maxLegacySeq > 0 ? maxLegacySeq.ToString() : "0";
+            string nextLegacyCustomerNo = (maxLegacySeq + 1).ToString();
+
             string candidateCif = await GenerateUniqueCifAsync();
             return Ok(new { 
                 nextCifNo = candidateCif, 
@@ -431,7 +479,9 @@ namespace Bhisi.Api.Controllers
                 totalActiveCustomers = activeCustomers,
                 totalCustomers = totalCustomers,
                 activeCustomers = activeCustomers,
-                kycCompleteCustomers = kycCompleteCustomers
+                kycCompleteCustomers = kycCompleteCustomers,
+                lastLegacyCustomerNo = lastLegacyCustomerNo,
+                nextLegacyCustomerNo = nextLegacyCustomerNo
             });
         }
 

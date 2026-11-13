@@ -269,18 +269,21 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
       .map((item) => item.raw);
   }, [indexedOptions, safeOptions, normalizedSearch, rawLower]);
 
-  const MAX_VISIBLE_OPTIONS = 100;
+  const [maxVisibleOptions, setMaxVisibleOptions] = useState<number>(200);
   const visibleOptions = useMemo(() => {
-    if (filteredOptions.length <= MAX_VISIBLE_OPTIONS) return filteredOptions;
-    const sliced = filteredOptions.slice(0, MAX_VISIBLE_OPTIONS);
+    if (filteredOptions.length <= maxVisibleOptions) return filteredOptions;
+    const sliced = filteredOptions.slice(0, maxVisibleOptions);
     if (selectedOption && !sliced.some((o: any) => String(o.value) === String(selectedOption.value))) {
-      return [selectedOption, ...sliced.slice(0, MAX_VISIBLE_OPTIONS - 1)];
+      return [selectedOption, ...sliced.slice(0, maxVisibleOptions - 1)];
     }
     return sliced;
-  }, [filteredOptions, selectedOption]);
+  }, [filteredOptions, selectedOption, maxVisibleOptions]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setMaxVisibleOptions(200);
+      return;
+    }
     const selectedIdx = visibleOptions.findIndex((o: any) => String(o.value) === String(value));
     setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0);
   }, [isOpen]);
@@ -519,6 +522,52 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 </div>
               );
             })}
+
+            {filteredOptions.length > visibleOptions.length && (
+              <div
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className="sticky bottom-0 bg-amber-50 border-t border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-900 flex flex-wrap items-center justify-between gap-2 z-10"
+              >
+                <span className="font-semibold">
+                  💡 एकूण <b>{filteredOptions.length}</b> पैकी पहिल्या <b>{visibleOptions.length}</b> नोंदी दिसत आहेत
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMaxVisibleOptions((prev) => prev + 200);
+                    }}
+                    className="px-2 py-0.5 bg-indigo-600 text-white rounded text-[10.5px] font-bold hover:bg-indigo-700 cursor-pointer"
+                  >
+                    ➕ पुढील २०० दाखवा
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMaxVisibleOptions(filteredOptions.length);
+                    }}
+                    className="px-2 py-0.5 bg-white text-slate-700 border border-slate-300 rounded text-[10.5px] font-bold hover:bg-slate-100 cursor-pointer"
+                  >
+                    सर्व ({filteredOptions.length}) दाखवा
+                  </button>
+                </div>
+              </div>
+            )}
 
             {filteredOptions.length === 0 && (
               <div className="px-3 py-6 text-slate-400 text-xs text-center flex flex-col items-center gap-1.5">

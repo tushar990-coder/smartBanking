@@ -487,9 +487,13 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     }
   };
 
+  const [historySearch, setHistorySearch] = useState<string>('');
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const [historyPageSize, setHistoryPageSize] = useState<number>(100);
+
   const fetchHistory = async () => {
     try {
-      const res = await axios.get('/api/PigmyCollections?page=1&pageSize=50');
+      const res = await axios.get('/api/PigmyCollections?pageSize=0');
       setHistory(res.data || []);
     } catch (err) {
       console.error(err);
@@ -2875,13 +2879,61 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       )}
 
       {/* TAB 4: COLLECTION HISTORY */}
-      {activeTab === 'history' && (
+      {activeTab === 'history' && (() => {
+        const q = historySearch.trim().toLowerCase();
+        const filteredHistory = history.filter((item) => {
+          if (!q) return true;
+          return (
+            (item.receiptNo || '').toLowerCase().includes(q) ||
+            (item.pigmyAccountNo || '').toLowerCase().includes(q) ||
+            (item.customerName || '').toLowerCase().includes(q) ||
+            (item.agentName || '').toLowerCase().includes(q)
+          );
+        });
+        const totalHistoryPages = historyPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredHistory.length / historyPageSize));
+        const safeHistoryPage = Math.min(historyPage, totalHistoryPages);
+        const paginatedHistory = historyPageSize === 0
+          ? filteredHistory
+          : filteredHistory.slice((safeHistoryPage - 1) * historyPageSize, safeHistoryPage * historyPageSize);
+
+        return (
         <div className="bg-white rounded-sm border border-gray-200 p-3 space-y-3">
-          <div className="flex justify-between items-center pb-2 border-b border-gray-200">
-            <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wider">नुकतेच झालेले पिग्मी व्यवहार (Recent Collections History)</h2>
-            <button onClick={fetchHistory} className="text-xs text-primary hover:underline flex items-center font-bold cursor-pointer">
-              <ArrowPathIcon className="w-3.5 h-3.5 mr-1" /> रिफ्रेश (Refresh)
-            </button>
+          <div className="flex flex-wrap justify-between items-center gap-2 pb-2 border-b border-gray-200">
+            <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
+              नुकतेच झालेले पिग्मी व्यवहार (Recent Collections History: {filteredHistory.length})
+            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={historySearch}
+                onChange={(e) => {
+                  setHistorySearch(e.target.value);
+                  setHistoryPage(1);
+                }}
+                placeholder="पावती क्र., खाते क्र., ग्राहक किंवा एजंट शोधा..."
+                className="border border-gray-300 rounded-sm px-2.5 py-1 text-xs w-64 bg-white focus:outline-none focus:border-primary"
+              />
+              <div className="flex items-center gap-1 text-xs">
+                <span className="font-bold text-gray-700">प्रति पान:</span>
+                <select
+                  value={historyPageSize}
+                  onChange={(e) => {
+                    setHistoryPageSize(Number(e.target.value));
+                    setHistoryPage(1);
+                  }}
+                  className="border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold text-primary"
+                >
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                  <option value={500}>500</option>
+                  <option value={0}>सर्व ({filteredHistory.length})</option>
+                </select>
+              </div>
+              <button onClick={fetchHistory} className="text-xs text-primary hover:underline flex items-center font-bold cursor-pointer">
+                <ArrowPathIcon className="w-3.5 h-3.5 mr-1" /> रिफ्रेश (Refresh)
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto border border-gray-200 rounded-sm">
@@ -2898,14 +2950,14 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 text-xs">
-                {history.length === 0 ? (
+                {paginatedHistory.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-gray-500 font-medium">
+                    <td colSpan={7} className="py-8 text-center text-gray-500 font-medium">
                       कोणताही इतिहास सापडला नाही.
                     </td>
                   </tr>
                 ) : (
-                  history.map((item) => (
+                  paginatedHistory.map((item) => (
                     <tr key={item.collectionId} className="hover:bg-blue-50/40 transition">
                       <td className="py-2 px-2.5 font-mono font-bold text-gray-900">{item.receiptNo}</td>
                       <td className="py-2 px-2.5">{new Date(item.collectionDate).toLocaleDateString('en-GB')}</td>
@@ -2928,8 +2980,62 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               </tbody>
             </table>
           </div>
+
+          <div className="flex flex-wrap justify-between items-center gap-2 pt-1 text-xs text-gray-600">
+            <span>
+              दाखवत आहे:{' '}
+              <b className="text-gray-900">
+                {filteredHistory.length === 0
+                  ? 0
+                  : historyPageSize === 0
+                    ? `1 ते ${filteredHistory.length}`
+                    : `${(safeHistoryPage - 1) * historyPageSize + 1} ते ${Math.min(safeHistoryPage * historyPageSize, filteredHistory.length)}`}
+              </b>{' '}
+              (एकूण: <b className="text-primary">{filteredHistory.length}</b>)
+            </span>
+            {historyPageSize > 0 && totalHistoryPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={safeHistoryPage <= 1}
+                  onClick={() => setHistoryPage(1)}
+                  className="px-2 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                >
+                  ⏮️ पहिले
+                </button>
+                <button
+                  type="button"
+                  disabled={safeHistoryPage <= 1}
+                  onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                  className="px-2.5 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                >
+                  ⬅️ मागील पान
+                </button>
+                <span className="px-2.5 py-1 bg-primary text-white rounded-sm font-bold font-mono">
+                  पान {safeHistoryPage} / {totalHistoryPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={safeHistoryPage >= totalHistoryPages}
+                  onClick={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
+                  className="px-2.5 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                >
+                  पुढील पान ➡️
+                </button>
+                <button
+                  type="button"
+                  disabled={safeHistoryPage >= totalHistoryPages}
+                  onClick={() => setHistoryPage(totalHistoryPages)}
+                  className="px-2 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 cursor-pointer"
+                >
+                  शेवटचे ⏭️
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      )}
+        );
+      })()}
 
         </div>
         </fieldset>

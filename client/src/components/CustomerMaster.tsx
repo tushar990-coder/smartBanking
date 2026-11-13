@@ -85,12 +85,15 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [directoryPage, setDirectoryPage] = useState<number>(1);
   const [directoryPageSize, setDirectoryPageSize] = useState<number>(50);
+  const [directorySortDir, setDirectorySortDir] = useState<'asc' | 'desc'>('asc');
   const [directoryTotalCount, setDirectoryTotalCount] = useState<number>(0);
   const [directoryLoading, setDirectoryLoading] = useState<boolean>(false);
   const [customerStats, setCustomerStats] = useState({
     totalCustomers: 0,
     activeCustomers: 0,
-    kycCompleteCustomers: 0
+    kycCompleteCustomers: 0,
+    lastLegacyCustomerNo: '',
+    nextLegacyCustomerNo: ''
   });
   const [legacyDuplicate, setLegacyDuplicate] = useState<{
     customerID: number;
@@ -265,9 +268,9 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
   // Fetch paginated directory only when the modal is open
   useEffect(() => {
     if (isListModalOpen) {
-      fetchCustomers(directoryPage, directoryPageSize, debouncedSearchQuery);
+      fetchCustomers(directoryPage, directoryPageSize, debouncedSearchQuery, directorySortDir);
     }
-  }, [isListModalOpen, directoryPage, directoryPageSize, debouncedSearchQuery]);
+  }, [isListModalOpen, directoryPage, directoryPageSize, debouncedSearchQuery, directorySortDir]);
 
   // Debounced server-side duplicate check for legacyCustomerNo
   useEffect(() => {
@@ -304,24 +307,29 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       if (response.ok && isMountedRef.current) {
         const text = await response.text();
         let generatedCif = '';
+        let suggestedLegacyNo = '';
         try {
           const parsed = JSON.parse(text);
           generatedCif = parsed.nextCifNo || parsed.cifNo || (typeof parsed === 'string' ? parsed : '');
           if (typeof parsed === 'object' && parsed !== null) {
+            suggestedLegacyNo = parsed.nextLegacyCustomerNo ? String(parsed.nextLegacyCustomerNo) : '';
             setCustomerStats({
               totalCustomers: Number(parsed.totalCustomers ?? parsed.totalActiveCustomers ?? 0),
               activeCustomers: Number(parsed.activeCustomers ?? parsed.totalActiveCustomers ?? 0),
-              kycCompleteCustomers: Number(parsed.kycCompleteCustomers ?? 0)
+              kycCompleteCustomers: Number(parsed.kycCompleteCustomers ?? 0),
+              lastLegacyCustomerNo: parsed.lastLegacyCustomerNo ? String(parsed.lastLegacyCustomerNo) : '',
+              nextLegacyCustomerNo: suggestedLegacyNo
             });
           }
         } catch {
           generatedCif = text.replace(/^"|"$/g, '').trim();
         }
 
-        if (updateFormCif && generatedCif && typeof generatedCif === 'string' && isMountedRef.current) {
+        if (updateFormCif && isMountedRef.current) {
           setFormData(prev => ({
             ...prev,
-            cifNo: generatedCif
+            cifNo: (generatedCif && typeof generatedCif === 'string') ? generatedCif : prev.cifNo,
+            legacyCustomerNo: suggestedLegacyNo || prev.legacyCustomerNo
           }));
         }
       }
@@ -333,13 +341,17 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
   const fetchCustomers = async (
     page: number = directoryPage,
     pageSize: number = directoryPageSize,
-    search: string = debouncedSearchQuery
+    search: string = debouncedSearchQuery,
+    sortDir: 'asc' | 'desc' = directorySortDir
   ) => {
     try {
       setDirectoryLoading(true);
+      const effectivePageSize = pageSize <= 0 ? 10000 : pageSize;
+      const effectivePage = pageSize <= 0 ? 1 : page;
       const params = new URLSearchParams({
-        page: String(page),
-        pageSize: String(pageSize)
+        page: String(effectivePage),
+        pageSize: String(effectivePageSize),
+        sortDir: sortDir
       });
       if (search) {
         params.set('search', search);
@@ -350,8 +362,10 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
         const data = await response.json();
         const rows = Array.isArray(data) ? data : [];
         setCustomers(rows);
-        if (totalHeader !== null) {
-          setDirectoryTotalCount(Number(totalHeader) || 0);
+        if (totalHeader !== null && Number(totalHeader) > 0) {
+          setDirectoryTotalCount(Number(totalHeader));
+        } else if (!search && customerStats.totalCustomers > rows.length) {
+          setDirectoryTotalCount(customerStats.totalCustomers);
         } else {
           setDirectoryTotalCount(rows.length);
         }
@@ -1392,7 +1406,22 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
               </div>
 
               <div>
-                <label className={labelClass}>जुना आयडी / लेगसी क्र.</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700">जुना आयडी / लेगसी क्र.</label>
+                  {customerStats.nextLegacyCustomerNo && (
+                    <span
+                      onClick={() => {
+                        if (editingId === null) {
+                          setFormData(prev => ({ ...prev, legacyCustomerNo: customerStats.nextLegacyCustomerNo }));
+                        }
+                      }}
+                      className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded cursor-pointer hover:bg-emerald-100"
+                      title="क्लिक केल्यास पुढील सुचवलेला क्रमांक भरेल"
+                    >
+                      शेवटचा: {customerStats.lastLegacyCustomerNo || '0'} | पुढील: {customerStats.nextLegacyCustomerNo}
+                    </span>
+                  )}
+                </div>
                 <input 
                   ref={legacyCustomerNoInputRef}
                   type="text" 
@@ -1400,7 +1429,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   value={formData.legacyCustomerNo || ''} 
                   onChange={handleChange}
                   className={`${inputClass} ${legacyDuplicate ? 'border-rose-500 bg-rose-50/50 text-rose-900 font-bold focus:ring-rose-500' : ''}`} 
-                  placeholder="उदा. 1234" 
+                  placeholder={customerStats.nextLegacyCustomerNo ? `पुढील क्र: ${customerStats.nextLegacyCustomerNo}` : "उदा. 1234"} 
                 />
                 {legacyDuplicate && (
                   <span className="text-[10px] text-rose-600 font-bold block mt-0.5 animate-pulse">
@@ -2562,13 +2591,24 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                 )}
               </div>
 
-              <div className="flex items-center gap-2 text-[11px]">
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
                 {directoryLoading && (
                   <span className="text-primary font-bold flex items-center gap-1">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     <span>लोड होत आहे...</span>
                   </span>
                 )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDirectorySortDir(prev => (prev === 'asc' ? 'desc' : 'asc'));
+                    setDirectoryPage(1);
+                  }}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded font-bold text-slate-800 h-[28px] cursor-pointer shadow-2xs flex items-center gap-1"
+                  title="यादीची क्रमवारी बदला (१ पासून किंवा शेवटच्या नोंदीपासून)"
+                >
+                  <span>{directorySortDir === 'asc' ? '⬆️ १ पासून (जुने ➔ नवीन)' : '⬇️ शेवटून (नवीन ➔ जुने)'}</span>
+                </button>
                 <label className="font-bold text-slate-600">प्रति पान:</label>
                 <select
                   value={directoryPageSize}
@@ -2576,11 +2616,13 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                     setDirectoryPageSize(Number(e.target.value));
                     setDirectoryPage(1);
                   }}
-                  className="border border-slate-300 rounded px-2 py-1 bg-white font-bold text-slate-800 h-[28px] outline-none"
+                  className="border border-slate-300 rounded px-2 py-1 bg-white font-bold text-slate-800 h-[28px] outline-none cursor-pointer"
                 >
                   <option value={50}>50</option>
                   <option value={100}>100</option>
                   <option value={200}>200</option>
+                  <option value={500}>500</option>
+                  <option value={0}>सर्व (All - {directoryTotalCount || totalCustomersCount})</option>
                 </select>
               </div>
             </div>
@@ -2613,7 +2655,9 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   {filteredCustomers.map((c, index) => (
                     <tr key={c.customerID} className="border-b border-slate-100 hover:bg-blue-50/50 transition">
                       <td className="p-2 text-center font-bold text-slate-500 bg-slate-50/60">
-                        {(directoryPage - 1) * directoryPageSize + index + 1}
+                        {directoryPageSize <= 0
+                          ? index + 1
+                          : (directoryPage - 1) * directoryPageSize + index + 1}
                       </td>
                       <td className="p-1.5 text-center">
                         <div className="w-7 h-7 mx-auto rounded-full bg-slate-200 overflow-hidden flex items-center justify-center border border-slate-300 shadow-2xs">
@@ -2721,41 +2765,103 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
             </div>
 
             {/* Pagination Footer */}
-            <div className="px-4 py-2 bg-slate-100 border-t border-slate-300 flex flex-wrap justify-between items-center gap-2 shrink-0 text-[11px]">
-              <div className="font-bold text-slate-700">
-                {directoryTotalCount > 0 ? (
-                  <span>
-                    दाखवत आहे: <span className="text-primary">{(directoryPage - 1) * directoryPageSize + 1}</span> ते{' '}
-                    <span className="text-primary">{Math.min(directoryPage * directoryPageSize, directoryTotalCount)}</span> (एकूण निकाल:{' '}
-                    <span className="text-slate-900">{directoryTotalCount}</span>)
-                  </span>
-                ) : (
-                  <span>एकूण निकाल: 0</span>
-                )}
-              </div>
+            {(() => {
+              const effectiveTotal = Math.max(directoryTotalCount, filteredCustomers.length);
+              const totalPages = directoryPageSize <= 0 ? 1 : Math.max(1, Math.ceil(effectiveTotal / directoryPageSize));
+              const startRow = effectiveTotal === 0 ? 0 : (directoryPageSize <= 0 ? 1 : (directoryPage - 1) * directoryPageSize + 1);
+              const endRow = effectiveTotal === 0 ? 0 : (directoryPageSize <= 0 ? effectiveTotal : Math.min(directoryPage * directoryPageSize, effectiveTotal));
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={directoryPage <= 1 || directoryLoading}
-                  onClick={() => setDirectoryPage(prev => Math.max(1, prev - 1))}
-                  className="px-3 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
-                >
-                  ⬅️ मागील पान (Prev)
-                </button>
-                <span className="font-black text-slate-800 px-2">
-                  पान क्र. {directoryPage} / {Math.max(1, Math.ceil(directoryTotalCount / directoryPageSize))}
-                </span>
-                <button
-                  type="button"
-                  disabled={directoryPage >= Math.max(1, Math.ceil(directoryTotalCount / directoryPageSize)) || directoryLoading}
-                  onClick={() => setDirectoryPage(prev => prev + 1)}
-                  className="px-3 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
-                >
-                  पुढील पान (Next) ➡️
-                </button>
-              </div>
-            </div>
+              // Build visible page numbers window (up to 7 buttons)
+              const pageNumbers: number[] = [];
+              const maxButtons = 7;
+              let startPage = Math.max(1, directoryPage - 3);
+              let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+              if (endPage - startPage + 1 < maxButtons) {
+                startPage = Math.max(1, endPage - maxButtons + 1);
+              }
+              for (let p = startPage; p <= endPage; p++) {
+                pageNumbers.push(p);
+              }
+
+              return (
+                <div className="px-4 py-2 bg-slate-100 border-t border-slate-300 flex flex-wrap justify-between items-center gap-2 shrink-0 text-[11px]">
+                  <div className="font-bold text-slate-700 flex items-center gap-3">
+                    {effectiveTotal > 0 ? (
+                      <span>
+                        दाखवत आहे: <span className="text-primary">{startRow}</span> ते{' '}
+                        <span className="text-primary">{endRow}</span> (एकूण निकाल:{' '}
+                        <span className="text-slate-900">{effectiveTotal}</span>)
+                      </span>
+                    ) : (
+                      <span>एकूण निकाल: 0</span>
+                    )}
+                    {customerStats.nextLegacyCustomerNo && (
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded font-black text-[10px]">
+                        पुढील सुचवलेला जुना क्र.: {customerStats.nextLegacyCustomerNo}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={directoryPage <= 1 || directoryLoading || directoryPageSize <= 0}
+                      onClick={() => setDirectoryPage(1)}
+                      className="px-2.5 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
+                      title="पहिल्या पानावर जा (First Page)"
+                    >
+                      ⏮️ पहिले
+                    </button>
+                    <button
+                      type="button"
+                      disabled={directoryPage <= 1 || directoryLoading || directoryPageSize <= 0}
+                      onClick={() => setDirectoryPage(prev => Math.max(1, prev - 1))}
+                      className="px-3 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
+                    >
+                      ⬅️ मागील पान (Prev)
+                    </button>
+
+                    {totalPages > 1 && pageNumbers.map(pNum => (
+                      <button
+                        key={pNum}
+                        type="button"
+                        disabled={directoryLoading}
+                        onClick={() => setDirectoryPage(pNum)}
+                        className={`min-w-[28px] px-2 py-1 rounded font-black border cursor-pointer transition ${
+                          pNum === directoryPage
+                            ? 'bg-primary text-white border-primary shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {pNum}
+                      </button>
+                    ))}
+
+                    <span className="font-black text-slate-800 px-1.5">
+                      पान क्र. {directoryPageSize <= 0 ? 1 : directoryPage} / {totalPages}
+                    </span>
+
+                    <button
+                      type="button"
+                      disabled={directoryPage >= totalPages || directoryLoading || directoryPageSize <= 0}
+                      onClick={() => setDirectoryPage(prev => Math.min(totalPages, prev + 1))}
+                      className="px-3 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
+                    >
+                      पुढील पान (Next) ➡️
+                    </button>
+                    <button
+                      type="button"
+                      disabled={directoryPage >= totalPages || directoryLoading || directoryPageSize <= 0}
+                      onClick={() => setDirectoryPage(totalPages)}
+                      className="px-2.5 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
+                      title="शेवटच्या पानावर जा (Last Page)"
+                    >
+                      शेवटचे ⏭️
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

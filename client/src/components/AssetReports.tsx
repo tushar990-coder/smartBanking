@@ -12,7 +12,13 @@ const AssetReports: React.FC = () => {
   const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
   const isHeadOfficeOrAdmin = user?.role === 'Admin' || user?.branchType === 'HeadOffice';
 
-  const [activeTab, setActiveTab] = useState<'register' | 'depreciation' | 'maintenance'>('register');
+  const [activeTab, setActiveTab] = useState<'register' | 'depreciation' | 'maintenance'>(() => {
+    const rt = new URLSearchParams(window.location.search).get('reportType');
+    if (rt === 'depreciation' || rt === 'maintenance' || rt === 'register') {
+      return rt;
+    }
+    return 'register';
+  });
   const [assets, setAssets] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);

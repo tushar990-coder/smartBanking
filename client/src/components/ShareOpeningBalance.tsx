@@ -382,10 +382,16 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
     const toNo = b.toShareNo ? b.toShareNo.toString() : (b.fromShareNo && b.shareQuantity ? (b.fromShareNo + b.shareQuantity - 1).toString() : '');
 
     let targetCustId = (b.customerId && b.customerId > 0) ? b.customerId.toString() : '';
-    if (!targetCustId && b.cifNo) {
+    if (!targetCustId && b.cifNo && b.cifNo.trim()) {
       const foundCust = Array.isArray(members) ? members.find(m => m && m.cifNo && m.cifNo.trim().toLowerCase() === b.cifNo.trim().toLowerCase()) : undefined;
       if (foundCust) {
         targetCustId = String(foundCust.customerID || foundCust.customerId || foundCust.id);
+      }
+    }
+    if (!targetCustId && b.memberId) {
+      const foundByMem = Array.isArray(members) ? members.find(m => m && Number(m.memberProfile?.memberID || m.memberID || 0) === Number(b.memberId)) : undefined;
+      if (foundByMem) {
+        targetCustId = String(foundByMem.customerID || foundByMem.customerId || foundByMem.id);
       }
     }
     if (!targetCustId) {
@@ -453,10 +459,10 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
 
       const existingBalForMember = Array.isArray(balances) ? balances.find(b => b && (
         (b.customerId && Number(b.customerId) === resolvedCustomerId) ||
-        (selMember?.cifNo && b.cifNo && b.cifNo.trim().toLowerCase() === selMember.cifNo.trim().toLowerCase())
+        (selMember?.cifNo && selMember.cifNo.trim() && b.cifNo && b.cifNo.trim().toLowerCase() === selMember.cifNo.trim().toLowerCase())
       )) : undefined;
 
-      const resolvedMemberId = existingBalForMember?.memberId || selMember?.memberProfile?.memberID || (selMember as any)?.memberID || resolvedCustomerId;
+      const resolvedMemberId = Number(existingBalForMember?.memberId || selMember?.memberProfile?.memberID || (selMember as any)?.memberID || 0);
 
       const payload = {
         certificateId: editCertificateId,

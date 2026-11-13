@@ -1,15 +1,71 @@
 import React from 'react';
 import Select, { components } from 'react-select';
 
-const MAX_RENDERED_OPTIONS = 100;
+const MAX_RENDERED_OPTIONS = 200;
 
 const CappedMenuList = (props: any) => {
   const { children } = props;
-  const cappedChildren =
-    Array.isArray(children) && children.length > MAX_RENDERED_OPTIONS
-      ? children.slice(0, MAX_RENDERED_OPTIONS)
-      : children;
-  return <components.MenuList {...props}>{cappedChildren}</components.MenuList>;
+  const inputValue = props.selectProps?.inputValue || '';
+  const [visibleCount, setVisibleCount] = React.useState(MAX_RENDERED_OPTIONS);
+
+  React.useEffect(() => {
+    setVisibleCount(MAX_RENDERED_OPTIONS);
+  }, [inputValue]);
+
+  const totalCount = Array.isArray(children) ? children.length : 0;
+  const isCapped = Array.isArray(children) && totalCount > visibleCount;
+  const cappedChildren = isCapped ? children.slice(0, visibleCount) : children;
+
+  return (
+    <components.MenuList {...props}>
+      {cappedChildren}
+      {isCapped && (
+        <div
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          className="sticky bottom-0 bg-amber-50 border-t border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-900 flex flex-wrap items-center justify-between gap-2 z-10"
+        >
+          <span className="font-semibold">
+            💡 एकूण <b>{totalCount}</b> पैकी पहिल्या <b>{visibleCount}</b> नोंदी दिसत आहेत (पुढील नावांसाठी वर टाईप करून शोधा)
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setVisibleCount((prev) => prev + 200);
+              }}
+              className="px-2 py-0.5 bg-primary text-white rounded text-[10.5px] font-bold hover:bg-primary/90 cursor-pointer shadow-2xs"
+            >
+              ➕ पुढील २०० दाखवा
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setVisibleCount(totalCount);
+              }}
+              className="px-2 py-0.5 bg-white text-slate-700 border border-slate-300 rounded text-[10.5px] font-bold hover:bg-slate-100 cursor-pointer"
+            >
+              सर्व ({totalCount}) दाखवा
+            </button>
+          </div>
+        </div>
+      )}
+    </components.MenuList>
+  );
 };
 
 const SELECT_COMPONENTS = { MenuList: CappedMenuList };
@@ -66,6 +122,7 @@ export default function MemberSearchSelect({
   hideMemberRef = false
 }: Props) {
   const isCustomerMode = hideMemberRef || valueType === 'customerId';
+  const [searchInput, setSearchInput] = React.useState<string>('');
   
   // Transform members into react-select options format
   const options = React.useMemo(() => {
@@ -103,6 +160,10 @@ export default function MemberSearchSelect({
       const fName = String(m.firstName || m.FirstName || m.firstNameEng || m.FirstNameEng || '').trim();
       const mName = String(m.middleName || m.MiddleName || m.middleNameEng || m.MiddleNameEng || '').trim();
       const lName = String(m.lastName || m.LastName || m.lastNameEng || m.LastNameEng || '').trim();
+      const fNameEng = String(m.firstNameEng || m.FirstNameEng || '').trim();
+      const mNameEng = String(m.middleNameEng || m.MiddleNameEng || '').trim();
+      const lNameEng = String(m.lastNameEng || m.LastNameEng || '').trim();
+      const fullNameEng = [fNameEng, mNameEng, lNameEng].filter(Boolean).join(' ').trim();
       const nick = String(m.nickName || m.NickName || '').trim();
 
       let fullName = String(m.fullName || m.FullName || m.name || m.Name || m.customerName || m.CustomerName || '').trim();
@@ -126,7 +187,7 @@ export default function MemberSearchSelect({
           ...m,
           memberID: memId > 0 ? memId : primaryValueId,
           memberIdOnly: memId,
-          customerID: custId > 0 ? custId : primaryValueId,
+          customerID: custId > 0 ? custId : undefined,
           memberCode: cleanMemCode,
           legacyMemberNo: rawLegacyMember,
           legacyCustomerNo: rawLegacyCust,
@@ -136,6 +197,10 @@ export default function MemberSearchSelect({
           firstName: fName,
           middleName: mName,
           lastName: lName,
+          firstNameEng: fNameEng,
+          middleNameEng: mNameEng,
+          lastNameEng: lNameEng,
+          fullNameEng: fullNameEng,
           nickName: nick,
           fullName: fullName
         }
@@ -171,59 +236,181 @@ export default function MemberSearchSelect({
     }
   }, [numericValue, options, isCustomerMode]);
 
-      // Pure Customer / CIF filter logic (Searches by CIF Number, Member Code (if not customer mode), Name, Mobile, Legacy IDs)
-  const matchesSearch = React.useCallback((opt: any, rawInput: string) => {
-    const input = rawInput.toLowerCase().trim();
-    if (!input) return true;
-    
+  // Smart Relevance Scoring for Member & CIF Search
+  const getMemberMatchScore = React.useCallback((opt: any, rawInput: string): number => {
+    const q = (rawInput || '').toLowerCase().trim();
+    if (!q) return 1;
+
     const { label, member } = opt;
-    
-    const searchString = `
-      ${label}
-      ${member.fullName || ''}
-      ${member.firstName || ''}
-      ${member.middleName || ''}
-      ${member.lastName || ''}
-      ${member.nickName || ''}
-      ${member.mobileNo || ''}
-      ${member.cifNo || ''}
-      ${!isCustomerMode ? (member.memberCode || '') : ''}
-      ${member.legacyCustomerNo || ''}
-      ${!isCustomerMode ? (member.legacyMemberNo || '') : ''}
-      ${member.customerID || ''}
-      ${!isCustomerMode ? (member.memberID || '') : ''}
-    `.toLowerCase();
-    
-    const cifNum = (member.cifNo || '').replace(/\D/g, '');
-    const cleanInput = input.replace(/\D/g, '');
-    if (cleanInput) {
-      if (cifNum && (cifNum.includes(cleanInput) || parseInt(cifNum) === parseInt(cleanInput))) return true;
-      if (member.customerID && (member.customerID.toString().includes(cleanInput) || member.customerID === parseInt(cleanInput))) return true;
-      if (member.legacyCustomerNo) {
-        const legStr = member.legacyCustomerNo.toString();
-        const legNum = legStr.replace(/\D/g, '');
-        if (legStr.includes(cleanInput) || (legNum && (legNum.includes(cleanInput) || parseInt(legNum, 10) === parseInt(cleanInput, 10)))) return true;
+    if (!member) return 0;
+
+    const cif = String(member.cifNo || '').toLowerCase().trim();
+    const cifDigits = cif.replace(/\D/g, '');
+    const cifInt = cifDigits ? parseInt(cifDigits, 10) : NaN;
+
+    const memCode = String(member.memberCode || '').toLowerCase().trim();
+    const memCodeDigits = memCode.replace(/\D/g, '');
+    const memCodeInt = memCodeDigits ? parseInt(memCodeDigits, 10) : NaN;
+
+    const legMem = String(member.legacyMemberNo || '').toLowerCase().trim();
+    const legMemDigits = legMem.replace(/\D/g, '');
+    const legMemInt = legMemDigits ? parseInt(legMemDigits, 10) : NaN;
+
+    const legCust = String(member.legacyCustomerNo || '').toLowerCase().trim();
+    const legCustDigits = legCust.replace(/\D/g, '');
+    const legCustInt = legCustDigits ? parseInt(legCustDigits, 10) : NaN;
+
+    const mobile = String(member.mobileNo || '').replace(/\D/g, '');
+    const aadhaar = String(member.aadhaarNo || '').replace(/\D/g, '');
+    const memId = Number(member.memberIdOnly || member.memberID || 0);
+    const custId = Number(member.customerID || 0);
+
+    // 1. Explicit CIF search (e.g. "CIF000015", "cif15", "cif 15") -> Match ONLY CIF!
+    if (/^cif[\s\-:]*\d*$/i.test(q)) {
+      const cifQueryDigits = q.replace(/^cif[\s\-:]*/i, '').replace(/\D/g, '');
+      if (!cifQueryDigits) return cif ? 100 : 0;
+      const queryCifInt = parseInt(cifQueryDigits, 10);
+      if (cif === q || (!isNaN(cifInt) && !isNaN(queryCifInt) && cifInt === queryCifInt)) {
+        return 1000;
       }
-      if (!isCustomerMode) {
-        const memCodeStr = (member.memberCode || '').toLowerCase();
-        const memCodeNum = memCodeStr.replace(/\D/g, '');
-        if (memCodeNum && (memCodeNum.includes(cleanInput) || parseInt(memCodeNum) === parseInt(cleanInput))) return true;
-        if (member.memberID && (member.memberID.toString().includes(cleanInput) || member.memberID === parseInt(cleanInput))) return true;
-        if (member.legacyMemberNo && member.legacyMemberNo.toString().includes(cleanInput)) return true;
+      if ((cifDigits && String(cifInt).startsWith(cifQueryDigits)) || cif.startsWith(q)) {
+        return 800;
       }
+      if (cifDigits && cifDigits.includes(cifQueryDigits)) {
+        return 500;
+      }
+      return 0;
     }
 
-    if (!isCustomerMode && member.memberCode && member.memberCode.toLowerCase().includes(input)) return true;
+    // 2. Explicit Member Code search (e.g. "MEM0015", "mem15") -> Match ONLY MemberCode / LegacyMemberNo!
+    if (!isCustomerMode && /^mem[\s\-:]*\d*$/i.test(q)) {
+      const memQueryDigits = q.replace(/^mem[\s\-:]*/i, '').replace(/\D/g, '');
+      if (!memQueryDigits) return memCode ? 100 : 0;
+      const queryMemInt = parseInt(memQueryDigits, 10);
+      if (memCode === q || (!isNaN(memCodeInt) && !isNaN(queryMemInt) && memCodeInt === queryMemInt)) {
+        return 1000;
+      }
+      if ((memCodeDigits && String(memCodeInt).startsWith(memQueryDigits)) || memCode.startsWith(q)) {
+        return 800;
+      }
+      if (memCodeDigits && memCodeDigits.includes(memQueryDigits)) {
+        return 500;
+      }
+      return 0;
+    }
 
-    return searchString.includes(input);
+    // 3. Pure numeric search (e.g. "15", "105", "9822...")
+    if (/^\d+$/.test(q)) {
+      const queryInt = parseInt(q, 10);
+
+      // Tier 1: Exact CIF or Legacy Member No match
+      const isExactCif = !isNaN(cifInt) && cifInt === queryInt;
+      const isExactLegMem = !isCustomerMode && (legMem === q || (!isNaN(legMemInt) && legMemInt === queryInt));
+      const isExactLegCust = legCust === q || (!isNaN(legCustInt) && legCustInt === queryInt);
+      const isExactMemCode = !isCustomerMode && !isNaN(memCodeInt) && memCodeInt === queryInt;
+
+      if (isExactCif && isExactLegMem) return 1050;
+      if (isExactCif) return 1000;
+      if (isExactLegMem) return 980;
+      if (isExactLegCust) return 960;
+      if (isExactMemCode) return 940;
+      if (!isCustomerMode && memId === queryInt) return 900;
+      if (custId === queryInt) return 880;
+
+      // Tier 2: Prefix match on CIF / Legacy No / MemberCode
+      if (cifDigits && String(cifInt).startsWith(q)) return 760;
+      if (!isCustomerMode && legMem && legMem.startsWith(q)) return 740;
+      if (legCust && legCust.startsWith(q)) return 720;
+      if (!isCustomerMode && memCodeDigits && String(memCodeInt).startsWith(q)) return 700;
+
+      // Tier 3: Substring match on CIF / Legacy No / MemberCode
+      if (
+        (cifDigits && cifDigits.includes(q)) ||
+        (!isCustomerMode && legMem && legMem.includes(q)) ||
+        (legCust && legCust.includes(q)) ||
+        (!isCustomerMode && memCodeDigits && memCodeDigits.includes(q))
+      ) {
+        return 450;
+      }
+
+      // Tier 4: Mobile / Aadhaar match ONLY when user types 4+ digits
+      if (q.length >= 4) {
+        if (mobile === q || aadhaar === q) return 800;
+        if (mobile.startsWith(q)) return 550;
+        if (mobile.includes(q) || aadhaar.includes(q)) return 300;
+      }
+
+      return 0;
+    }
+
+    // 4. Text / Name (Marathi + English) / Mixed Search
+    const fullName = String(member.fullName || '').toLowerCase();
+    const fName = String(member.firstName || '').toLowerCase();
+    const mName = String(member.middleName || '').toLowerCase();
+    const lName = String(member.lastName || '').toLowerCase();
+    const fNameEng = String(member.firstNameEng || '').toLowerCase();
+    const mNameEng = String(member.middleNameEng || '').toLowerCase();
+    const lNameEng = String(member.lastNameEng || '').toLowerCase();
+    const fullNameEng = String(member.fullNameEng || '').toLowerCase();
+    const nickName = String(member.nickName || '').toLowerCase();
+
+    if (cif === q) return 1000;
+    if (!isCustomerMode && (memCode === q || legMem === q)) return 980;
+    if (legCust === q) return 960;
+    if (fullName === q || (fullNameEng && fullNameEng === q)) return 920;
+    if (fullName.startsWith(q) || fName.startsWith(q) || (fullNameEng && fullNameEng.startsWith(q)) || (fNameEng && fNameEng.startsWith(q))) return 820;
+    if (lName.startsWith(q) || mName.startsWith(q) || (lNameEng && lNameEng.startsWith(q)) || (mNameEng && mNameEng.startsWith(q)) || nickName.startsWith(q)) return 760;
+
+    const searchString = `
+      ${label}
+      ${fullName}
+      ${fName}
+      ${mName}
+      ${lName}
+      ${fullNameEng}
+      ${fNameEng}
+      ${mNameEng}
+      ${lNameEng}
+      ${nickName}
+      ${mobile}
+      ${cif}
+      ${!isCustomerMode ? memCode : ''}
+      ${legCust}
+      ${!isCustomerMode ? legMem : ''}
+    `.toLowerCase();
+
+    const tokens = q.split(/\s+/).filter(Boolean);
+    if (tokens.length > 1) {
+      if (tokens.every((t: string) => searchString.includes(t))) {
+        const firstTokenStarts = fName.startsWith(tokens[0]) || lName.startsWith(tokens[0]) || (fNameEng && fNameEng.startsWith(tokens[0])) || (lNameEng && lNameEng.startsWith(tokens[0]));
+        return firstTokenStarts ? 700 : 600;
+      }
+      return 0;
+    }
+
+    return searchString.includes(q) ? 500 : 0;
   }, [isCustomerMode]);
+
+  const sortedOptions = React.useMemo(() => {
+    const q = searchInput.trim();
+    if (!q) return options;
+    const scored: { opt: any; score: number; idx: number }[] = [];
+    for (let i = 0; i < options.length; i++) {
+      const score = getMemberMatchScore(options[i], q);
+      if (score > 0) {
+        scored.push({ opt: options[i], score, idx: i });
+      }
+    }
+    scored.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.idx - b.idx));
+    return scored.map(s => s.opt);
+  }, [options, searchInput, getMemberMatchScore]);
 
   const filterOptionHandler = React.useCallback(
     (option: any, rawInput: string) => {
-      if (!rawInput) return true;
-      return matchesSearch(option.data, rawInput);
+      if (!rawInput || !rawInput.trim()) return true;
+      return getMemberMatchScore(option.data, rawInput) > 0;
     },
-    [matchesSearch]
+    [getMemberMatchScore]
   );
 
   const formatOptionLabel = (data: any, { context }: any) => {
@@ -320,11 +507,22 @@ export default function MemberSearchSelect({
   return (
     <div className={`relative z-50 ${className}`}>
       <Select
-        options={options}
+        options={sortedOptions}
         components={SELECT_COMPONENTS}
         value={selectedOption}
         isDisabled={isDisabled}
+        onInputChange={(newValue: string, actionMeta: any) => {
+          if (actionMeta?.action === 'input-change') {
+            setSearchInput(newValue || '');
+          } else if (actionMeta?.action === 'menu-close' || actionMeta?.action === 'set-value') {
+            setSearchInput('');
+          }
+        }}
+        onBlur={() => {
+          setSearchInput('');
+        }}
         onChange={(selected: any) => {
+          setSearchInput('');
           onChange(selected ? selected.value : '', selected ? selected.member : undefined);
         }}
         isClearable={isClearable}

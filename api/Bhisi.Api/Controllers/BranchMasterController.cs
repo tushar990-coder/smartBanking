@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
@@ -7,7 +8,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [Authorize]
     public class BranchMasterController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -39,6 +40,33 @@ namespace Bhisi.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<BranchMaster>> PostBranchMaster(BranchMaster branch)
         {
+            if (branch == null || string.IsNullOrWhiteSpace(branch.BranchName))
+            {
+                return BadRequest(new { message = "शाखेचे नाव आवश्यक आहे." });
+            }
+
+            branch.BranchName = branch.BranchName.Trim();
+            branch.BranchCode = string.IsNullOrWhiteSpace(branch.BranchCode)
+                ? $"BR{DateTime.Now:HHmmss}"
+                : branch.BranchCode.Trim().ToUpperInvariant();
+
+            var duplicate = await _context.BranchMasters.FirstOrDefaultAsync(b =>
+                b.BranchName.ToLower() == branch.BranchName.ToLower() ||
+                b.BranchCode.ToLower() == branch.BranchCode.ToLower());
+
+            if (duplicate != null)
+            {
+                if (duplicate.BranchName.Equals(branch.BranchName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Ok(duplicate);
+                }
+                return BadRequest(new { message = $"शाखा कोड '{branch.BranchCode}' आधीच अस्तित्वात आहे." });
+            }
+
+            branch.BranchType = string.IsNullOrWhiteSpace(branch.BranchType) ? "Branch" : branch.BranchType.Trim();
+            branch.CreatedDate = DateTime.Now;
+            branch.Status = true;
+
             _context.BranchMasters.Add(branch);
             await _context.SaveChangesAsync();
 

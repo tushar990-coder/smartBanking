@@ -91,6 +91,7 @@ export default function PigmyAccountOpening() {
   }, [user?.businessDate]);
 
   const [autoAccountNo, setAutoAccountNo] = useState<string>('लोड होत आहे...');
+  const [pigmyLegacyHint, setPigmyLegacyHint] = useState<{ last: string; next: string }>({ last: '0', next: '1' });
   const [isCustomAccountNo, setIsCustomAccountNo] = useState<boolean>(false);
   const [loadingAccountNo, setLoadingAccountNo] = useState<boolean>(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
@@ -302,6 +303,10 @@ export default function PigmyAccountOpening() {
       if (res.data) {
         const nextNo = res.data.accountNo || res.data.nextAccountNo || (typeof res.data === 'string' ? res.data : '');
         const nextLegacy = res.data.nextLegacyAccountNo ? String(res.data.nextLegacyAccountNo) : '1';
+        const lastLegacy = res.data.lastLegacyAccountNo
+          ? String(res.data.lastLegacyAccountNo)
+          : (parseInt(nextLegacy, 10) > 1 ? String(parseInt(nextLegacy, 10) - 1) : '0');
+        setPigmyLegacyHint({ last: lastLegacy, next: nextLegacy });
         if (nextNo) {
           setAutoAccountNo(nextNo);
           setFormData(prev => ({
@@ -682,12 +687,12 @@ export default function PigmyAccountOpening() {
 
             {/* OLD / LEGACY ACCOUNT NUMBER */}
             <div>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1 gap-1 flex-wrap">
                 <label className="font-semibold text-slate-700 text-xs">
                   जुना पिग्मी खाते क्र. (Old A/c No)
                 </label>
-                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-bold">
-                  ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded font-bold font-mono">
+                  शेवटचा: {pigmyLegacyHint.last} | पुढील: {pigmyLegacyHint.next}
                 </span>
               </div>
               <input 

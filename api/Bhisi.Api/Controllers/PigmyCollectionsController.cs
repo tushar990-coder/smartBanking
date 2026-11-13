@@ -138,22 +138,29 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(c => c.PigmyAccountId == pigmyAccountId.Value);
             }
 
+            int totalCount = await query.CountAsync();
+            Response.Headers["X-Total-Count"] = totalCount.ToString();
+
             query = query
                 .OrderByDescending(c => c.CollectionDate)
                 .ThenByDescending(c => c.CollectionId);
 
-            if (page.HasValue || pageSize.HasValue)
+            if (pageSize.HasValue && (pageSize.Value <= 0 || pageSize.Value >= 10000))
+            {
+                // Return all matching records when pageSize=0 or >= 10000
+            }
+            else if (page.HasValue || pageSize.HasValue)
             {
                 int p = page ?? 1;
-                int ps = pageSize ?? 50;
+                int ps = pageSize ?? 100;
                 if (p < 1) p = 1;
-                if (ps < 1 || ps > 500) ps = 50;
+                if (ps < 1 || ps > 5000) ps = 100;
                 query = query.Skip((p - 1) * ps).Take(ps);
             }
             else if (!fromDate.HasValue && !toDate.HasValue && !pigmyAccountId.HasValue)
             {
                 // Default safety limit for unconstrained queries (Pillar 2)
-                query = query.Take(50);
+                query = query.Take(200);
             }
 
             var collections = await query

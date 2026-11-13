@@ -6742,6 +6742,21 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- v2.6.22: EMPLOYEE BANK DETAILS NULLABLE METADATA COLUMNS
+-- ========================================================================
+IF OBJECT_ID(N'[dbo].[EmployeeBankDetails]', N'U') IS NOT NULL
+BEGIN
+    IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'EmployeeBankDetails' AND COLUMN_NAME = 'JoiningDate' AND IS_NULLABLE = 'NO')
+        ALTER TABLE [dbo].[EmployeeBankDetails] ALTER COLUMN [JoiningDate] DATETIME2 NULL;
+    IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'EmployeeBankDetails' AND COLUMN_NAME = 'DepartmentID' AND IS_NULLABLE = 'NO')
+        ALTER TABLE [dbo].[EmployeeBankDetails] ALTER COLUMN [DepartmentID] INT NULL;
+    IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'EmployeeBankDetails' AND COLUMN_NAME = 'BranchID' AND IS_NULLABLE = 'NO')
+        ALTER TABLE [dbo].[EmployeeBankDetails] ALTER COLUMN [BranchID] INT NULL;
+    PRINT 'Verified nullable columns on EmployeeBankDetails';
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

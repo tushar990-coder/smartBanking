@@ -436,7 +436,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
   };
 
   const selectMemberById = (mId: number, memberList = members) => {
-    const sel = memberList.find(m => m.memberID === mId || m.customerID === mId);
+    const sel = memberList.find(m => m.memberID === mId) || memberList.find(m => m.customerID === mId);
     if (sel) {
       setSelectedMemberId(sel.memberID);
       setLegacyMemberNo(sel.legacyMemberNo || '');
@@ -571,7 +571,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
     }, 100);
   };
 
-  const selectedMember = members.find(m => m.memberID === selectedMemberId);
+  const selectedMember = members.find(m => m.memberID === selectedMemberId) || members.find(m => m.customerID === selectedMemberId);
 
   const resetForm = () => {
     setSelectedMemberId('');
@@ -635,8 +635,8 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
     setMessage(null);
 
     const payload = {
-      customerId: selectedMemberId,
-      memberId: selectedMemberId,
+      customerId: selectedMember?.customerID || undefined,
+      memberId: selectedMember?.memberID || selectedMemberId,
       numberOfShares: Number(numberOfShares),
       transactionDate: transactionDate,
       faceValue: faceValue,
@@ -1073,7 +1073,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                 isDisabled={isPassing}
                 onChange={(val, selMember) => {
                   if (val) {
-                    const sel = selMember || members.find(m => m.memberID === val || m.customerID === val);
+                    const sel = selMember || members.find(m => m.memberID === val) || members.find(m => m.customerID === val);
                     const targetMemberId = sel?.memberID || (val as number);
                     setSelectedMemberId(targetMemberId);
                     setLegacyMemberNo(sel?.legacyMemberNo || '');

@@ -87,14 +87,21 @@ namespace Bhisi.Api.Controllers
                     query = query.Where(c => c.BranchID == branchId.Value);
                 }
 
+                int totalCount = await query.CountAsync();
+                Response.Headers["X-Total-Count"] = totalCount.ToString();
+
                 query = query.OrderByDescending(c => c.CollectionDate).ThenByDescending(c => c.LoanCollectionID);
 
-                int p = page ?? 1;
-                int ps = pageSize ?? 50;
-                if (p < 1) p = 1;
-                if (ps < 1 || ps > 500) ps = 50;
+                if (pageSize.HasValue && (pageSize.Value <= 0 || pageSize.Value >= 10000))
+                {
+                    return await query.ToListAsync();
+                }
 
-                // Bounded pagination prevents unbounded DB scans (Pillar 2)
+                int p = page ?? 1;
+                int ps = pageSize ?? 200;
+                if (p < 1) p = 1;
+                if (ps < 1 || ps > 5000) ps = 200;
+
                 return await query.Skip((p - 1) * ps).Take(ps).ToListAsync();
             }
             catch (Exception ex)
@@ -122,13 +129,21 @@ namespace Bhisi.Api.Controllers
                         fallbackQuery = fallbackQuery.Where(c => c.BranchID == branchId.Value);
                     }
 
-                    int p = page ?? 1;
-                    int ps = pageSize ?? 50;
-                    if (p < 1) p = 1;
-                    if (ps < 1 || ps > 500) ps = 50;
+                    int totalCount = await fallbackQuery.CountAsync();
+                    Response.Headers["X-Total-Count"] = totalCount.ToString();
 
-                    return await fallbackQuery.OrderByDescending(c => c.CollectionDate).ThenByDescending(c => c.LoanCollectionID)
-                        .Skip((p - 1) * ps).Take(ps).ToListAsync();
+                    var orderedFallback = fallbackQuery.OrderByDescending(c => c.CollectionDate).ThenByDescending(c => c.LoanCollectionID);
+                    if (pageSize.HasValue && (pageSize.Value <= 0 || pageSize.Value >= 10000))
+                    {
+                        return await orderedFallback.ToListAsync();
+                    }
+
+                    int p = page ?? 1;
+                    int ps = pageSize ?? 200;
+                    if (p < 1) p = 1;
+                    if (ps < 1 || ps > 5000) ps = 200;
+
+                    return await orderedFallback.Skip((p - 1) * ps).Take(ps).ToListAsync();
                 }
                 catch (Exception fallbackEx)
                 {
@@ -460,7 +475,13 @@ namespace Bhisi.Api.Controllers
                     surchargeCollected = collection.SurchargeCollected;
 
                     loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - penaltyPaid);
-                    loanAccount.InterestBalance = Math.Max(0, (existingReceivableInterest - receivablePaid) + (currentPeriodInterest - regularInterestPaid));
+                    // When the user manually overrides interest (IsManualInterestOverride) or collects principal (principalPaid > 0),
+                    // the current period's interest is settled at regularInterestPaid; do NOT push (currentPeriodInterest - regularInterestPaid) into InterestBalance (येणे व्याज).
+                    // Only carry forward unpaid current-period interest when PrincipalCollected == 0 and interest was not manually overridden (genuine partial interest-only payment).
+                    decimal unpaidCurrentPeriodInterest = (!collection.IsManualInterestOverride && principalPaid <= 0m)
+                        ? Math.Max(0m, currentPeriodInterest - regularInterestPaid)
+                        : 0m;
+                    loanAccount.InterestBalance = Math.Max(0m, (existingReceivableInterest - receivablePaid) + unpaidCurrentPeriodInterest);
                     loanAccount.PrincipalBalance = Math.Max(0, loanAccount.PrincipalBalance - principalPaid);
 
                     // CBS Waterfall: Settle Capitalized Interest first, then Pure Principal

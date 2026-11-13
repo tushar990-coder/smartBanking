@@ -201,6 +201,8 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const [success, setSuccess] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showTxnModal, setShowTxnModal] = useState(false);
+  const [txnPage, setTxnPage] = useState<number>(1);
+  const [txnPageSize, setTxnPageSize] = useState<number>(100);
 
   // CIF-First Multi-Account Selection State
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -539,7 +541,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
   const fetchTransactions = async (signal?: AbortSignal) => {
     try {
-      const response = await axios.get(`${API_URL}/SavingTransactions?page=1&pageSize=30`, { signal });
+      const response = await axios.get(`${API_URL}/SavingTransactions?pageSize=0`, { signal });
       if (!isMountedRef.current || signal?.aborted) return;
       setTransactions(response.data || []);
     } catch (err) {
@@ -778,6 +780,12 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       (t.voucherNo && t.voucherNo.toLowerCase().includes(query))
     );
   });
+
+  const totalTxnPages = txnPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredTransactions.length / txnPageSize));
+  const safeTxnPage = Math.min(txnPage, totalTxnPages);
+  const paginatedTransactions = txnPageSize === 0
+    ? filteredTransactions
+    : filteredTransactions.slice((safeTxnPage - 1) * txnPageSize, safeTxnPage * txnPageSize);
 
   const handlePassVoucher = async () => {
     const vId = passingVoucher?.voucherID || voucherIdFromUrl;
@@ -1601,58 +1609,83 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             <div className="px-3 py-2 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
               <div className="relative w-full sm:w-80">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="नाव, खाते क्र. किंवा व्हाउचर क्र. शोधा..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="border border-gray-300 pl-8 pr-6 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs w-full bg-white h-[28px]"
-                  autoFocus
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                  <input
+                    type="text"
+                    placeholder="नाव, खाते क्र. किंवा व्हाउचर क्र. शोधा..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setTxnPage(1);
+                    }}
+                    className="border border-gray-300 pl-8 pr-6 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs w-full bg-white h-[28px]"
+                    autoFocus
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setTxnPage(1);
+                      }}
+                      className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="font-bold text-gray-700">प्रति पान:</span>
+                    <select
+                      value={txnPageSize}
+                      onChange={(e) => {
+                        setTxnPageSize(Number(e.target.value));
+                        setTxnPage(1);
+                      }}
+                      className="border border-gray-300 px-2 py-0.5 rounded-sm text-xs bg-white font-bold text-primary h-[28px]"
+                    >
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value={200}>200</option>
+                      <option value={500}>500</option>
+                      <option value={0}>सर्व ({filteredTransactions.length})</option>
+                    </select>
+                  </div>
+                  <span className="text-xs text-gray-600 font-semibold">
+                    एकूण नोंदी: <b className="text-primary font-mono">{filteredTransactions.length}</b>
+                  </span>
+                </div>
               </div>
-              <span className="text-xs text-gray-600 font-semibold">
-                एकूण नोंदी: <b className="text-primary font-mono">{filteredTransactions.length}</b>
-              </span>
-            </div>
 
-            <div className="overflow-auto flex-1">
-              <table className="min-w-full divide-y divide-gray-200 text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-800 border-b border-slate-300 sticky top-0 z-10 font-bold">
-                  <tr>
-                    <th className="px-2 py-2 border-r border-gray-200 text-center w-12">#</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 text-left w-24">दिनांक</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 text-left">खाते क्र.</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 text-left">खातेदाराचे नाव</th>
-                    <th className="px-2 py-2 border-r border-gray-200 text-center w-20">प्रकार</th>
-                    <th className="px-2 py-2 border-r border-gray-200 text-center w-24">पद्धत</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">रक्कम (₹)</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">शिल्लक (₹)</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 text-left">तपशील</th>
-                    <th className="px-2.5 py-2 text-left w-32">व्हाउचर क्र.</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {filteredTransactions.length === 0 ? (
+              <div className="overflow-auto flex-1">
+                <table className="min-w-full divide-y divide-gray-200 text-xs border-collapse">
+                  <thead className="bg-slate-100 text-slate-800 border-b border-slate-300 sticky top-0 z-10 font-bold">
                     <tr>
-                      <td colSpan={10} className="px-4 py-10 text-center text-gray-500 font-semibold">
-                        कोणतेही व्यवहार आढळले नाहीत.
-                      </td>
+                      <th className="px-2 py-2 border-r border-gray-200 text-center w-12">#</th>
+                      <th className="px-2.5 py-2 border-r border-gray-200 text-left w-24">दिनांक</th>
+                      <th className="px-2.5 py-2 border-r border-gray-200 text-left">खाते क्र.</th>
+                      <th className="px-2.5 py-2 border-r border-gray-200 text-left">खातेदाराचे नाव</th>
+                      <th className="px-2 py-2 border-r border-gray-200 text-center w-20">प्रकार</th>
+                      <th className="px-2 py-2 border-r border-gray-200 text-center w-24">पद्धत</th>
+                      <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">रक्कम (₹)</th>
+                      <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">शिल्लक (₹)</th>
+                      <th className="px-2.5 py-2 border-r border-gray-200 text-left">तपशील</th>
+                      <th className="px-2.5 py-2 text-left w-32">व्हाउचर क्र.</th>
                     </tr>
-                  ) : (
-                    filteredTransactions.map((t: any, index: number) => (
-                      <tr key={t.transactionID} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500 font-mono">
-                          {index + 1}
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {paginatedTransactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="px-4 py-10 text-center text-gray-500 font-semibold">
+                          कोणतेही व्यवहार आढळले नाहीत.
                         </td>
+                      </tr>
+                    ) : (
+                      paginatedTransactions.map((t: any, index: number) => (
+                        <tr key={t.transactionID} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500 font-mono">
+                            {txnPageSize === 0 ? index + 1 : (safeTxnPage - 1) * txnPageSize + index + 1}
+                          </td>
                         <td className="px-2.5 py-1.5 border-r border-gray-200 text-left whitespace-nowrap text-gray-700">
                           {new Date(t.transactionDate).toLocaleDateString('en-GB', {
                             day: '2-digit',
@@ -1703,14 +1736,68 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
               </table>
             </div>
 
-            <div className="px-4 py-2 bg-slate-50 border-t border-gray-200 flex justify-end shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowTxnModal(false)}
-                className="bg-primary hover:opacity-90 text-white px-4 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
-              >
-                बंद करा (Close)
-              </button>
+            <div className="px-4 py-2 bg-slate-50 border-t border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0 text-xs">
+              <span className="text-gray-600 font-medium">
+                दाखवत आहे:{' '}
+                <b className="text-gray-900">
+                  {filteredTransactions.length === 0
+                    ? 0
+                    : txnPageSize === 0
+                      ? `1 ते ${filteredTransactions.length}`
+                      : `${(safeTxnPage - 1) * txnPageSize + 1} ते ${Math.min(safeTxnPage * txnPageSize, filteredTransactions.length)}`}
+                </b>{' '}
+                (एकूण: <b className="text-primary">{filteredTransactions.length}</b>)
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                {txnPageSize > 0 && totalTxnPages > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={safeTxnPage <= 1}
+                      onClick={() => setTxnPage(1)}
+                      className="px-2 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-40 cursor-pointer"
+                    >
+                      ⏮️ पहिले
+                    </button>
+                    <button
+                      type="button"
+                      disabled={safeTxnPage <= 1}
+                      onClick={() => setTxnPage((p) => Math.max(1, p - 1))}
+                      className="px-2.5 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-40 cursor-pointer"
+                    >
+                      ⬅️ मागील पान
+                    </button>
+                    <span className="px-2.5 py-1 bg-primary text-white rounded-sm font-bold font-mono">
+                      पान {safeTxnPage} / {totalTxnPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safeTxnPage >= totalTxnPages}
+                      onClick={() => setTxnPage((p) => Math.min(totalTxnPages, p + 1))}
+                      className="px-2.5 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-40 cursor-pointer"
+                    >
+                      पुढील पान ➡️
+                    </button>
+                    <button
+                      type="button"
+                      disabled={safeTxnPage >= totalTxnPages}
+                      onClick={() => setTxnPage(totalTxnPages)}
+                      className="px-2 py-1 bg-white border border-gray-300 rounded-sm font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-40 cursor-pointer"
+                    >
+                      शेवटचे ⏭️
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowTxnModal(false)}
+                  className="bg-primary hover:opacity-90 text-white px-4 py-1.5 rounded-sm text-xs font-bold cursor-pointer ml-2"
+                >
+                  बंद करा (Close)
+                </button>
+              </div>
             </div>
           </div>
         </div>

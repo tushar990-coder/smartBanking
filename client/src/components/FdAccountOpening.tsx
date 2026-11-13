@@ -12,7 +12,7 @@ import { MemberOption } from './common/MemberSearchSelect';
 import FdReceiptPrintModal from './FdReceiptPrintModal';
 import { FdInterestScheduleModal } from './FdInterestScheduleModal';
 import { generateFdInterestSchedule } from '../utils/fdInterestSchedule';
-import { Lock, Unlock, AlertCircle } from 'lucide-react';
+import { Lock, Unlock, AlertCircle, Landmark, UserCheck, IndianRupee, Wallet, RefreshCw, Layers, FilePlus2, Save } from 'lucide-react';
 
 interface Member extends MemberOption {}
 
@@ -196,6 +196,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   });
 
   const [duplicateLegacyInfo, setDuplicateLegacyInfo] = useState<{ isDuplicate: boolean; accountNo?: string; customerName?: string; message?: string } | null>(null);
+  const [fdLegacyHint, setFdLegacyHint] = useState<{ last: string; next: string }>({ last: '0', next: '1' });
 
   useEffect(() => {
     const receiptNo = (formData.legacyAccountNumber || '').trim();
@@ -1022,6 +1023,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
         ? response.data
         : (response.data.formattedAccountNo || response.data.displayAccountNo || response.data.accountNo || response.data.nextAccountNo || '');
       const nextLegacy = response.data?.nextLegacyAccountNo ? String(response.data.nextLegacyAccountNo) : '1';
+      const lastLegacy = response.data?.lastLegacyAccountNo ? String(response.data.lastLegacyAccountNo) : (parseInt(nextLegacy, 10) > 1 ? String(parseInt(nextLegacy, 10) - 1) : '0');
+      setFdLegacyHint({ last: lastLegacy, next: nextLegacy });
       setSuggestedAccountNo(val);
       if (!isManualAccountNo) {
         setNextAccountNo(val);
@@ -1503,49 +1506,63 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   };
 
   return (
-    <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
+    <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-50 space-y-3 font-sans text-xs">
       
-      {/* Outer Container matching Standard ERP Theme */}
-      <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col">
-
-        {/* Standard ERP Header Banner */}
-        <div className="bg-primary px-3 py-2 text-white flex items-center justify-between shadow-xs">
-          <div>
-            <h2 className="text-sm font-bold tracking-wide flex items-center gap-1.5">
-              <span>🏦 नवीन मुदत ठेव खाते अर्ज (New FD Account Opening)</span>
-            </h2>
-            <p className="text-[10px] text-blue-100 font-normal">नवीन मुदत ठेव खाते नोंदणी, ऑटो-इंटरेस्ट कॅल्क्युलेशन आणि पावती जनरेशन</p>
+      {/* Top Sleek CBS Header Banner (Matching Standard ERP Theme) */}
+      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary flex flex-wrap justify-between items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
+            <Landmark size={18} className="stroke-[2.5]" />
           </div>
-
-          <div className="flex items-center gap-2">
-            {!isPassingMode ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setView('form')}
-                  className={`px-2.5 py-0.5 rounded-sm text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
-                    view === 'form' ? 'bg-white text-primary font-bold border-white' : 'bg-blue-800/60 hover:bg-blue-800 text-white border-blue-400/40'
-                  }`}
-                >
-                  <span>✍️ नवीन अर्ज (New Form)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setView('list')}
-                  className={`px-2.5 py-0.5 rounded-sm text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
-                    view === 'list' ? 'bg-white text-primary font-bold border-white' : 'bg-blue-800/60 hover:bg-blue-800 text-white border-blue-400/40'
-                  }`}
-                >
-                  <span>👁️ खाती यादी ({fdList.length})</span>
-                </button>
-              </>
-            ) : (
-              <span className="bg-amber-400 text-slate-950 font-bold px-2.5 py-0.5 rounded text-xs flex items-center gap-1">
-                🔒 व्हाउचर तपासणी मोड (Checker Mode)
-              </span>
-            )}
+          <div>
+            <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
+              <span>नवीन मुदत ठेव खाते अर्ज</span>
+              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(New FD Account Opening)</span>
+            </h1>
+            <p className="text-[11px] text-gray-500 font-medium">
+              नवीन मुदत ठेव खाते नोंदणी, ऑटो-इंटरेस्ट कॅल्क्युलेशन आणि पावती जनरेशन
+            </p>
           </div>
         </div>
+
+        <div className="flex items-center gap-2">
+          {!isPassingMode ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setView('form')}
+                className={`px-3 py-1.5 rounded-sm text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                  view === 'form'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                }`}
+              >
+                <FilePlus2 className="w-3.5 h-3.5" />
+                <span>नवीन अर्ज (New Form)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('list')}
+                className={`px-3.5 py-1.5 rounded-sm text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                  view === 'list'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>📋 खाती यादी ({fdList.length})</span>
+              </button>
+            </>
+          ) : (
+            <span className="bg-amber-400 text-slate-950 font-bold px-2.5 py-1 rounded-sm text-xs flex items-center gap-1 border border-amber-500 shadow-2xs">
+              🔒 व्हाउचर तपासणी मोड (Checker Mode)
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Outer Container matching Standard ERP Theme */}
+      <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col">
 
         {/* Checker Mode Amber Alert Banner */}
         {isPassingMode && (
@@ -1572,14 +1589,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
         {/* ==================== FORM VIEW ==================== */}
         {view === 'form' && (
-          <div className="p-3">
+          <div className="p-3.5 sm:p-4 space-y-3">
             
             {/* Top Receipt Bar & Mode Selector */}
-            <div className="bg-gray-50 p-2 rounded border border-gray-200 mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="bg-primary/5 p-2.5 rounded-sm border border-primary/20 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-gray-700">ठेव पावती क्र. (Receipt No) *:</span>
+                <span className="text-[11px] font-bold text-gray-800">ठेव पावती क्र. (Receipt No) <span className="text-red-500">*</span>:</span>
                 {loadingAccountNo ? (
-                  <span className="text-xs text-blue-600 font-medium animate-pulse">क्रमांक तयार होत आहे...</span>
+                  <span className="text-xs text-primary font-medium animate-pulse">क्रमांक तयार होत आहे...</span>
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <input
@@ -1594,7 +1611,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         }
                       }}
                       placeholder="उदा. 001-401-0000006-2 किंवा क्र."
-                      className="w-48 font-mono font-bold text-blue-900 bg-white border border-blue-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                      className="w-48 font-mono font-bold text-primary bg-white border border-primary/30 rounded-sm px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary shadow-2xs"
                     />
                     {isManualAccountNo && suggestedAccountNo && (
                       <button
@@ -1612,7 +1629,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         ↺ रीसेट
                       </button>
                     )}
-                    <span className="text-[10px] text-slate-500">
+                    <span className="text-[10px] text-slate-500 font-medium">
                       {isManualAccountNo ? '(मॅन्युअल संपादित)' : '(स्वयंचलित पुढील क्र.)'}
                     </span>
                   </div>
@@ -1621,12 +1638,12 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
               {/* Mode Selection Pills */}
               {!isPassingMode && (
-                <div className="flex items-center gap-1 bg-white p-0.5 rounded border border-gray-300">
+                <div className="flex items-center gap-1 bg-white p-0.5 rounded-sm border border-primary/20 shadow-2xs">
                   <button
                     type="button"
                     onClick={() => setEntryMode('single')}
-                    className={`px-2.5 py-0.5 text-xs font-bold rounded cursor-pointer transition ${
-                      entryMode === 'single' ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                    className={`px-2.5 py-1 text-xs font-bold rounded-sm cursor-pointer transition ${
+                      entryMode === 'single' ? 'bg-primary text-white shadow-2xs' : 'text-gray-600 hover:bg-gray-100'
                     }`}
                   >
                     एकेरी पावती (Single)
@@ -1634,8 +1651,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   <button
                     type="button"
                     onClick={() => setEntryMode('bulk')}
-                    className={`px-2.5 py-0.5 text-xs font-bold rounded cursor-pointer transition ${
-                      entryMode === 'bulk' ? 'bg-blue-800 text-white' : 'text-gray-600 hover:bg-gray-100'
+                    className={`px-2.5 py-1 text-xs font-bold rounded-sm cursor-pointer transition ${
+                      entryMode === 'bulk' ? 'bg-primary text-white shadow-2xs' : 'text-gray-600 hover:bg-gray-100'
                     }`}
                   >
                     ✨ बल्क स्प्लिट (Bulk Split)
@@ -1644,41 +1661,52 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
               )}
             </div>
 
-            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-sm text-xs mb-2">{error}</div>}
-            {success && <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-sm text-xs mb-2">{success}</div>}
+            {error && <div className="bg-rose-50 border border-rose-300 text-rose-800 px-3 py-2 rounded-sm text-xs font-bold shadow-2xs">{error}</div>}
+            {success && <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 px-3 py-2 rounded-sm text-xs font-bold shadow-2xs">{success}</div>}
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} className="space-y-3">
               <fieldset disabled={isPassingMode} className="contents">
               
               {/* Section 1: बेसिक व खातेदार माहिती */}
-              <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 mb-3">
-                <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200 flex items-center justify-between">
-                  <span>१. प्राथमिक व खातेदार माहिती (Basic & Customer Details)</span>
-                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.2 rounded">
+              <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+                <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-primary" />
+                    <h2 className="text-xs font-bold text-primary">१. प्राथमिक व खातेदार माहिती (Basic & Customer Details)</h2>
+                  </div>
+                  <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
                     {entryMode === 'bulk' ? 'बल्क स्प्लिट मोड' : 'एकेरी मोड'}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch) *</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-start">
+                  <div className="lg:col-span-2">
+                    <div className="h-5 mb-1 flex items-center">
+                      <label className="block text-[11px] font-bold text-gray-700 truncate">
+                        शाखा (Branch) <span className="text-red-500">*</span>
+                      </label>
+                    </div>
                     {user?.role === 'Admin' ? (
                       <select name="branchID" value={formData.branchID} onChange={handleChange} required
-                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                        className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white font-medium">
                         {branches.map((b) => (
                           <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
                         ))}
                       </select>
                     ) : (
-                      <div className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-gray-100 font-bold text-gray-800 flex items-center gap-1">
+                      <div className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs bg-gray-100 font-bold text-gray-800 flex items-center gap-1 truncate">
                         <span>🔒</span>
-                        <span>{(Array.isArray(branches) ? branches : []).find(b => b.branchID === formData.branchID)?.branchName || user?.branchName || 'मुख्य शाखा'}</span>
+                        <span className="truncate">{(Array.isArray(branches) ? branches : []).find(b => b.branchID === formData.branchID)?.branchName || user?.branchName || 'मुख्य शाखा'}</span>
                       </div>
                     )}
                   </div>
 
-                  <div className="lg:col-span-2">
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खातेदार निवडा (Select Customer / CIF) *</label>
+                  <div className="lg:col-span-4">
+                    <div className="h-5 mb-1 flex items-center">
+                      <label className="block text-[11px] font-bold text-gray-700 truncate">
+                        खातेदार निवडा (Select Customer / CIF) <span className="text-red-500">*</span>
+                      </label>
+                    </div>
                     <CustomerSearchSelect
                       customers={customers}
                       value={formData.customerID ? Number(formData.customerID) : (formData.memberID ? Number(formData.memberID) : '')}
@@ -1691,10 +1719,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मुदत ठेव योजना (FD Scheme) *</label>
+                  <div className="lg:col-span-3">
+                    <div className="h-5 mb-1 flex items-center">
+                      <label className="block text-[11px] font-bold text-gray-700 truncate">
+                        मुदत ठेव योजना (FD Scheme) <span className="text-red-500">*</span>
+                      </label>
+                    </div>
                     <select name="fdSchemeID" value={formData.fdSchemeID} onChange={handleChange} required
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                      className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white font-medium">
                       <option value="0">--- योजना निवडा ---</option>
                       {schemes.map((s: any) => {
                         const durationInfo = s.schemeDurationModel === 'Slab'
@@ -1711,13 +1743,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     </select>
                   </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="block text-[11px] font-medium text-gray-600">
-                        जुना ठेव / पावती क्र. (Legacy No)
+                  <div className="lg:col-span-3">
+                    <div className="h-5 mb-1 flex items-center justify-between gap-1">
+                      <label className="block text-[11px] font-bold text-gray-700 whitespace-nowrap truncate" title="जुना ठेव / पावती क्र. (Legacy No)">
+                        जुना पावती क्र. (Legacy No)
                       </label>
-                      <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1 rounded font-bold" title="योजनेतील मागील शेवटच्या जुन्या पावती क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
-                        ⚡ स्वयं-सुचवलेला (Auto) | बदल करता येईल
+                      <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded font-bold whitespace-nowrap shrink-0" title="योजनेतील मागील शेवटच्या जुन्या पावती क्रमांकावरून पुढील क्रमांक स्वयंचलित सुचवला आहे. आवश्यक असल्यास बदलू शकता.">
+                        शेवटचा: {fdLegacyHint.last} | पुढील: {fdLegacyHint.next}
                       </span>
                     </div>
                     <input
@@ -1726,10 +1758,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                       value={formData.legacyAccountNumber}
                       onChange={handleChange}
                       placeholder="उदा. 45 / जुना पावती क्र."
-                      className={`w-full border rounded-sm px-2 py-1 text-xs font-mono font-bold focus:outline-none focus:ring-1 ${
+                      className={`w-full h-[30px] border rounded-sm px-2 text-xs font-mono font-bold focus:outline-none focus:ring-1 ${
                         duplicateLegacyInfo?.isDuplicate
                           ? 'border-red-500 bg-red-50 text-red-900 focus:ring-red-400'
-                          : 'border-amber-300 bg-amber-50/40 text-slate-900 focus:ring-blue-400'
+                          : 'border-amber-300 bg-amber-50/40 text-slate-900 focus:ring-primary focus:border-primary'
                       }`}
                     />
                     {duplicateLegacyInfo?.isDuplicate && (
@@ -1742,11 +1774,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
               </div>
 
               {/* Section 2: ठेव रक्कम व मुदत माहिती */}
-              <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 mb-3">
-                <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200 flex items-center justify-between">
-                  <span>२. ठेव रक्कम व मुदत गणित (Deposit & Duration Calculations)</span>
+              <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+                <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <IndianRupee className="w-4 h-4 text-primary" />
+                    <h2 className="text-xs font-bold text-primary">२. ठेव रक्कम व मुदत गणित (Deposit & Duration Calculations)</h2>
+                  </div>
                   {selectedScheme && (
-                    <span className="text-[10px] font-bold text-blue-900 bg-blue-100 border border-blue-300 px-2 py-0.5 rounded">
+                    <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
                       {selectedScheme.schemeDurationModel === 'Slab' 
                         ? `स्लॅब आधारित योजना (${selectedScheme.slabs?.length || 0} स्लॅब्स) | ${selectedScheme.interestType}` 
                         : `निश्चित मुदत: ${selectedScheme.durationMonths} महिने | ${selectedScheme.interestType}`}
@@ -1755,12 +1790,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                 </div>
 
                 {entryMode === 'single' && (
-                  <div className="grid grid-cols-1 md:grid-cols-6 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-start">
                     <div>
-                      <div className="flex items-center justify-between !mb-0.5">
-                        <label className="block text-[11px] font-medium text-gray-600">खाते उघडल्याची तारीख *</label>
+                      <div className="h-5 mb-1 flex items-center justify-between gap-1">
+                        <label className="block text-[11px] font-bold text-gray-700 whitespace-nowrap truncate">
+                          खाते उघडल्याची तारीख <span className="text-red-500">*</span>
+                        </label>
                         {!allowDateOverride && (
-                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200 shrink-0">
                             <Lock size={9} /> लॉक
                           </span>
                         )}
@@ -1773,10 +1810,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         required
                         disabled={!allowDateOverride}
                         readOnly={!allowDateOverride}
-                        className={`w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none font-semibold text-slate-800' : 'bg-white border-amber-400 font-bold'}`} 
+                        className={`w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none font-semibold text-slate-800' : 'bg-white border-amber-400 font-bold'}`} 
                       />
                       {isHOUser && (
-                        <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
+                        <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-1 select-none">
                           <input
                             type="checkbox"
                             checked={allowDateOverride}
@@ -1804,18 +1841,22 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">ठेव रक्कम (Deposit ₹) *</label>
+                      <div className="h-5 mb-1 flex items-center">
+                        <label className="block text-[11px] font-bold text-gray-700 truncate">
+                          ठेव रक्कम (Deposit ₹) <span className="text-red-500">*</span>
+                        </label>
+                      </div>
                       <input type="number" name="depositAmount" value={formData.depositAmount} onChange={handleChange} onFocus={(e) => e.target.select()} required
                         placeholder="उदा. 50,000"
-                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900" />
+                        className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white font-bold text-primary font-mono" />
                     </div>
 
                     {/* Duration input depending on scheme model */}
                     {selectedScheme?.schemeDurationModel === 'Slab' ? (
                       <div>
-                        <div className="flex justify-between items-center mb-0.5">
-                          <label className="text-[11px] font-medium text-gray-600">कालावधी (Duration) *</label>
-                          <span className="text-[10px] text-blue-700 font-semibold font-mono">({calcData.durationInDays || 0} दिवस)</span>
+                        <div className="h-5 mb-1 flex justify-between items-center gap-1">
+                          <label className="text-[11px] font-bold text-gray-700 truncate">कालावधी (Duration) <span className="text-red-500">*</span></label>
+                          <span className="text-[10px] text-primary font-semibold font-mono shrink-0">({calcData.durationInDays || 0} दिवस)</span>
                         </div>
                         <div className="flex gap-1">
                           <input 
@@ -1826,14 +1867,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             onFocus={(e) => e.target.select()}
                             required 
                             min="1"
-                            className="w-1/2 border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" 
+                            className="w-1/2 h-[30px] border border-gray-300 rounded-sm px-2 text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white font-mono" 
                             placeholder="संख्या"
                           />
                           <select 
                             name="durationType" 
                             value={formData.durationType} 
                             onChange={handleChange}
-                            className="w-1/2 border border-gray-300 rounded-sm px-1 py-1 text-xs bg-white font-medium focus:outline-none focus:ring-1 focus:ring-blue-400">
+                            className="w-1/2 h-[30px] border border-gray-300 rounded-sm px-1 text-xs bg-white font-medium focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
                             <option value="Days">दिवस (Days)</option>
                             <option value="Months">महिने (Months)</option>
                             <option value="Years">वर्षे (Years)</option>
@@ -1842,36 +1883,44 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                       </div>
                     ) : (
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">कालावधी (Duration)</label>
+                        <div className="h-5 mb-1 flex items-center">
+                          <label className="block text-[11px] font-bold text-gray-700 truncate">कालावधी (Duration)</label>
+                        </div>
                         <input 
                           type="text" 
                           value={selectedScheme ? `${selectedScheme.durationMonths} महिने (${calcData.durationInDays || 0} दिवस)` : 'योजना निवडा'} 
                           readOnly
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-slate-100 text-slate-800 cursor-not-allowed font-medium" 
+                          className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs bg-slate-100 text-slate-800 cursor-not-allowed font-medium" 
                         />
                       </div>
                     )}
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
-                        व्याजदर (%) <span className="text-[10px] text-emerald-600">(Locked)</span>
-                      </label>
+                      <div className="h-5 mb-1 flex items-center gap-1">
+                        <label className="block text-[11px] font-bold text-gray-700 truncate">
+                          व्याजदर (%) <span className="text-[10px] text-emerald-600">(Locked)</span>
+                        </label>
+                      </div>
                       <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : `${calcData.interestRate} %`} readOnly
-                        className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-bold text-emerald-800 cursor-not-allowed" />
+                        className="w-full h-[30px] border border-emerald-300 rounded-sm px-2 text-xs bg-emerald-50 font-bold text-emerald-800 cursor-not-allowed font-mono" />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मुदतपूर्ती तारीख (Maturity)</label>
+                      <div className="h-5 mb-1 flex items-center">
+                        <label className="block text-[11px] font-bold text-gray-700 truncate">मुदतपूर्ती तारीख (Maturity)</label>
+                      </div>
                       <input type="text" value={calcData.maturityDate ? new Date(calcData.maturityDate).toLocaleDateString('en-GB') : (formData.fdSchemeID === 0 ? 'योजना निवडा' : '-')} readOnly
-                        className="w-full border border-blue-200 rounded-sm px-2 py-1 text-xs bg-blue-50 font-bold text-blue-900 cursor-not-allowed font-mono" />
+                        className="w-full h-[30px] border border-primary/30 rounded-sm px-2 text-xs bg-primary/5 font-bold text-primary cursor-not-allowed font-mono" />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5 truncate" title={calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल परतावा (Principal ₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}>
-                        {calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल (₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}
-                      </label>
+                      <div className="h-5 mb-1 flex items-center">
+                        <label className="block text-[11px] font-bold text-gray-700 truncate" title={calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल परतावा (Principal ₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}>
+                          {calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल (₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}
+                        </label>
+                      </div>
                       <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : (calcData.maturityAmount > 0 ? `₹ ${Math.round(calcData.maturityAmount).toLocaleString('en-IN')}` : '₹ 0')} readOnly
-                        className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
+                        className="w-full h-[30px] border border-emerald-300 rounded-sm px-2 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
                     </div>
                   </div>
                 )}
@@ -1879,22 +1928,22 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                 {entryMode === 'bulk' && (
                   <div className="space-y-3">
                     {/* Bulk Header Controls */}
-                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2.5 bg-white p-2.5 rounded border border-blue-200 shadow-2xs">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2.5 bg-primary/5 p-2.5 rounded-sm border border-primary/20 shadow-2xs">
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खाते उघडल्याची तारीख *</label>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-0.5">खाते उघडल्याची तारीख <span className="text-red-500">*</span></label>
                         <input
                           type="date"
                           name="openingDate"
                           value={formData.openingDate}
                           onChange={handleChange}
                           required
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
-                          🎯 एकूण लक्ष्य ठेव (Total ₹) *
+                        <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                          🎯 एकूण लक्ष्य ठेव (Total ₹) <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="number"
@@ -1902,13 +1951,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           onChange={(e) => handleTotalAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
                           placeholder="उदा. 1,00,000"
                           required
-                          className="w-full border border-blue-400 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/50 font-black text-blue-950 font-mono"
+                          className="w-full border border-primary/40 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary bg-white font-black text-primary font-mono"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
-                          पावत्यांची संख्या (Count) *
+                        <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                          पावत्यांची संख्या (Count) <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="number"
@@ -1918,13 +1967,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           required
                           min="1"
                           max="50"
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-black text-center font-mono"
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white font-black text-center font-mono"
                         />
                       </div>
 
                       {/* Default Duration Controls */}
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
+                        <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
                           डिफॉल्ट कालावधी (Default Duration)
                         </label>
                         <div className="flex gap-1">
@@ -1956,7 +2005,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             }}
                             onFocus={(e) => e.target.select()}
                             min="1"
-                            className="w-1/2 border border-gray-300 rounded-sm px-1.5 py-1 text-xs font-bold text-center bg-white"
+                            className="w-1/2 border border-gray-300 rounded-sm px-1.5 py-1 text-xs font-bold text-center bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                           <select
                             name="durationType"
@@ -1983,7 +2032,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                 };
                               }));
                             }}
-                            className="w-1/2 border border-gray-300 rounded-sm px-1 py-1 text-xs bg-white font-medium"
+                            className="w-1/2 border border-gray-300 rounded-sm px-1 py-1 text-xs bg-white font-medium focus:outline-none focus:ring-1 focus:ring-primary"
                           >
                             <option value="Days">दिवस</option>
                             <option value="Months">महिने</option>
@@ -1997,7 +2046,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         <button
                           type="button"
                           onClick={handleDistributeEqually}
-                          className="flex-1 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 px-2 py-1 rounded text-[11px] font-bold shadow-2xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          className="flex-1 bg-primary/10 hover:bg-primary/15 text-primary border border-primary/30 px-2 py-1 rounded-sm text-[11px] font-bold shadow-2xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
                           title="एकूण रक्कम सर्व पावत्यांमध्ये समान वाटा"
                         >
                           <span>🔄</span>
@@ -2007,7 +2056,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         <button
                           type="button"
                           onClick={handleBalanceLastReceipt}
-                          className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-2 py-1 rounded text-[11px] font-bold shadow-2xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-2 py-1 rounded-sm text-[11px] font-bold shadow-2xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
                           title="उर्वरित तफावत शेवटच्या पावतीमध्ये आपोआप ॲडजस्ट करा"
                         >
                           <span>⚖️</span>
@@ -2017,7 +2066,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         <button
                           type="button"
                           onClick={handleAddReceiptRow}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-[11px] font-bold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                          className="bg-primary hover:opacity-90 text-white px-2.5 py-1 rounded-sm text-[11px] font-bold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
                           title="नवीन पावती जोडा"
                         >
                           <span>➕</span>
@@ -2027,10 +2076,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     </div>
 
                     {/* Dynamic Interactive Receipt Rows Grid */}
-                    <div className="overflow-x-auto border border-blue-200 rounded bg-white shadow-2xs">
+                    <div className="overflow-x-auto border border-gray-200 rounded-sm bg-white shadow-2xs">
                       <table className="w-full text-left text-[11px] border-collapse">
                         <thead>
-                          <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
+                          <tr className="bg-primary/10 text-gray-800 font-bold border-b border-primary/20">
                             <th className="py-1.5 px-2 text-center w-8">#</th>
                             <th className="py-1.5 px-2 w-48">
                               <div className="flex items-center justify-between gap-1">
@@ -2039,7 +2088,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                   type="button"
                                   onClick={() => handleReSequenceAccountNumbers()}
                                   title="पहिल्या पावती क्रमांकावरून पुढील सर्व पावत्या सलग करा (Auto-Sequence All Rows)"
-                                  className="text-[9px] px-1.5 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-900 border border-blue-300 rounded font-bold cursor-pointer transition-colors"
+                                  className="text-[9px] px-1.5 py-0.5 bg-white hover:bg-primary/10 text-primary border border-primary/30 rounded font-bold cursor-pointer transition-colors"
                                 >
                                   ⚡ सलग करा
                                 </button>
@@ -2064,14 +2113,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                     सध्या कोणतीही पावती तयार केलेली नाही.
                                   </p>
                                   <p className="text-[11px] text-slate-500 max-w-md">
-                                    कृपया वरील <strong className="text-blue-700">'एकूण लक्ष्य ठेव'</strong> व <strong className="text-blue-700">'पावत्यांची संख्या'</strong> प्रविष्ट करा म्हणजे वाटप आपोआप होईल, किंवा थेट <strong className="text-emerald-700">'+ पावती जोडा'</strong> बटणावर क्लिक करा.
+                                    कृपया वरील <strong className="text-primary">'एकूण लक्ष्य ठेव'</strong> व <strong className="text-primary">'पावत्यांची संख्या'</strong> प्रविष्ट करा म्हणजे वाटप आपोआप होईल, किंवा थेट <strong className="text-primary">'+ पावती जोडा'</strong> बटणावर क्लिक करा.
                                   </p>
                                 </div>
                               </td>
                             </tr>
                           ) : (
                             receiptRows.map((row, idx) => (
-                              <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
+                              <tr key={row.id} className="hover:bg-primary/5 transition-colors">
                                 <td className="py-1 px-2 text-center font-bold text-slate-500 bg-slate-50/50">
                                   {idx + 1}
                                 </td>
@@ -2081,7 +2130,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                     value={row.accountNo}
                                     onChange={(e) => handleRowAccountNoChange(idx, e.target.value)}
                                     placeholder={predictSequentialAccountNo(nextAccountNo, idx)}
-                                    className="w-full border border-blue-200 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-blue-950 bg-blue-50/20 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                                    className="w-full border border-primary/30 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-primary bg-primary/5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
                                   />
                                 </td>
                                 <td className="py-1 px-2">
@@ -2090,7 +2139,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                     value={row.legacyAccountNumber}
                                     onChange={(e) => handleRowLegacyNoChange(idx, e.target.value)}
                                     placeholder="उदा. 45"
-                                    className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                    className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                                   />
                                 </td>
                                 <td className="py-1 px-2 text-right">
@@ -2102,10 +2151,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                     min="1"
                                     step="1"
                                     placeholder="0"
-                                    className={`w-full border rounded px-2 py-0.5 text-xs text-right font-black focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                                    className={`w-full border rounded px-2 py-0.5 text-xs text-right font-black focus:outline-none focus:ring-1 focus:ring-primary ${
                                       Number(row.depositAmount) <= 0
                                         ? 'border-red-400 bg-red-50 text-red-700'
-                                        : 'border-blue-300 bg-blue-50/20 text-blue-950 font-mono'
+                                        : 'border-primary/30 bg-primary/5 text-primary font-mono'
                                     }`}
                                   />
                                 </td>
@@ -2117,12 +2166,12 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                       onChange={(e) => handleRowDurationChange(idx, row.durationType, parseInt(e.target.value, 10) || 1)}
                                       onFocus={(e) => e.target.select()}
                                       min="1"
-                                      className="w-14 border border-slate-200 rounded px-1 py-0.5 text-xs text-center font-bold bg-white"
+                                      className="w-14 border border-slate-200 rounded px-1 py-0.5 text-xs text-center font-bold bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                                     />
                                     <select
                                       value={row.durationType}
                                       onChange={(e) => handleRowDurationChange(idx, e.target.value as any, row.durationValue)}
-                                      className="border border-slate-200 rounded px-1 py-0.5 text-[10px] bg-white text-slate-700"
+                                      className="border border-slate-200 rounded px-1 py-0.5 text-[10px] bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary"
                                     >
                                       <option value="Days">दिवस</option>
                                       <option value="Months">महिने</option>
@@ -2162,7 +2211,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             <td colSpan={3} className="py-2 px-2 text-right uppercase tracking-wider text-[11px]">
                               ग्रिड बेरीज (Grid Total):
                             </td>
-                            <td className="py-2 px-2 text-right font-black text-blue-950 font-mono text-xs">
+                            <td className="py-2 px-2 text-right font-black text-primary font-mono text-xs">
                               ₹ {roundedGridTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
                             <td colSpan={3} className="py-2 px-2 text-right text-[11px] text-slate-600">
@@ -2178,7 +2227,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     </div>
 
                     {/* Financial Reconciliation Cockpit (हिशोब ताळेबंद बार) */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-2.5 rounded border shadow-2xs transition-all bg-white border-slate-200">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-2.5 rounded-sm border shadow-2xs transition-all bg-white border-slate-200">
                       {/* Target Total Card */}
                       <div className="bg-slate-50 border border-slate-200 rounded p-2 flex flex-col justify-between">
                         <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
@@ -2193,14 +2242,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                       </div>
 
                       {/* Grid Sum Card */}
-                      <div className="bg-blue-50/50 border border-blue-200 rounded p-2 flex flex-col justify-between">
-                        <span className="text-[10px] uppercase font-bold text-blue-700 tracking-wider">
+                      <div className="bg-primary/5 border border-primary/20 rounded p-2 flex flex-col justify-between">
+                        <span className="text-[10px] uppercase font-bold text-primary tracking-wider">
                           📊 पावत्यांची बेरीज (Grid Sum)
                         </span>
-                        <span className="text-base font-black text-blue-950 font-mono mt-0.5">
+                        <span className="text-base font-black text-primary font-mono mt-0.5">
                           ₹ {roundedGridTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </span>
-                        <span className="text-[10px] text-blue-700">
+                        <span className="text-[10px] text-primary">
                           सरासरी प्रति पावती: ₹ {receiptRows.length > 0 ? Math.round(roundedGridTotal / receiptRows.length).toLocaleString('en-IN') : 0}
                         </span>
                       </div>
@@ -2244,7 +2293,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             <button
                               type="button"
                               onClick={handleBalanceLastReceipt}
-                              className="text-[10px] font-black underline hover:no-underline text-blue-800 cursor-pointer"
+                              className="text-[10px] font-black underline hover:no-underline text-primary cursor-pointer"
                             >
                               शेवटची ॲडजस्ट करा
                             </button>
@@ -2277,49 +2326,52 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
                 {/* Calculation Info Banner */}
                 {selectedScheme && (
-                  <div className="mt-2.5 p-2 bg-gradient-to-r from-emerald-50 via-slate-50 to-teal-50 border border-emerald-200 rounded flex flex-wrap justify-between items-center gap-2 text-xs shadow-2xs">
-                    <div className="flex items-center gap-2">
+                  <div className="mt-2.5 p-2.5 bg-primary/5 border border-primary/20 rounded-sm flex flex-wrap justify-between items-center gap-2 text-xs shadow-2xs">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-base">{calcData.isPeriodicPayout ? '💰' : '📊'}</span>
-                      <div>
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-bold text-slate-800">{selectedScheme.schemeName} ({selectedScheme.schemeCode})</span>
-                        <span className="ml-2 text-[11px] text-slate-500 font-medium">
-                          कालावधी: <b>{calcData.durationValue} {calcData.durationType === 'Days' ? 'दिवस' : calcData.durationType === 'Years' ? 'वर्षे' : 'महिने'} ({calcData.durationInDays} दिवस)</b> | व्याज प्रकार: <b>{selectedScheme.interestType}</b>
+                        <span className="text-[11px] text-slate-600 font-medium">
+                          | कालावधी: <b>{calcData.durationValue} {calcData.durationType === 'Days' ? 'दिवस' : calcData.durationType === 'Years' ? 'वर्षे' : 'महिने'} ({calcData.durationInDays} दिवस)</b> | व्याज प्रकार: <b>{selectedScheme.interestType}</b>
                         </span>
                         {calcData.matchedSlab && (
-                          <span className="ml-2 bg-blue-100 text-blue-800 border border-blue-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                          <span className="bg-primary/10 text-primary border border-primary/30 px-1.5 py-0.5 rounded text-[10px] font-bold">
                             🎯 लागू स्लॅब: {calcData.matchedSlab.fromDays} ते {calcData.matchedSlab.toDays} दिवस ({calcData.matchedSlab.interestRate}%)
                           </span>
                         )}
                         {calcData.isPeriodicPayout && (
-                          <span className="ml-2 bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.5 rounded text-[10px] font-black animate-pulse">
+                          <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.5 rounded text-[10px] font-black">
                             ⚡ मासिक परतावा योजना (MIS)
                           </span>
                         )}
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2.5 font-semibold text-slate-700">
-                      <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
-                        व्याजदर: <b className="text-emerald-700 font-bold">{calcData.interestRate} %</b> {formData.isSeniorCitizen && <span className="text-[10px] text-amber-700 bg-amber-100 px-1 rounded">(ज्येष्ठ नागरिक)</span>}
+                    <div className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-700">
+                      <span className="h-7 inline-flex items-center gap-1 bg-white px-2.5 rounded-sm border border-slate-200 text-xs">
+                        <span>व्याजदर:</span>
+                        <b className="text-emerald-700 font-bold">{calcData.interestRate} %</b>
+                        {formData.isSeniorCitizen && <span className="text-[10px] text-amber-700 bg-amber-100 px-1 rounded">(ज्येष्ठ नागरिक)</span>}
                       </span>
-                      <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
-                        मुदतपूर्ती तारीख: <b className="text-indigo-950 font-bold">{calcData.maturityDate ? new Date(calcData.maturityDate).toLocaleDateString('en-GB') : '-'}</b>
+                      <span className="h-7 inline-flex items-center gap-1 bg-white px-2.5 rounded-sm border border-slate-200 text-xs">
+                        <span>मुदतपूर्ती तारीख:</span>
+                        <b className="text-primary font-bold font-mono">{calcData.maturityDate ? new Date(calcData.maturityDate).toLocaleDateString('en-GB') : '-'}</b>
                       </span>
                       {calcData.isPeriodicPayout ? (
                         <>
-                          <span className="bg-emerald-600 text-white px-2.5 py-1 rounded font-extrabold shadow-2xs flex items-center gap-1">
+                          <span className="h-7 inline-flex items-center gap-1 bg-emerald-600 text-white px-2.5 rounded-sm font-extrabold shadow-2xs text-xs">
                             <span>दरमहा व्याज परतावा:</span>
-                            <span className="text-amber-200 text-sm font-black">₹ {calcData.monthlyInterestAmount.toLocaleString('en-IN')}</span>
+                            <span className="text-amber-200 font-black">₹ {calcData.monthlyInterestAmount.toLocaleString('en-IN')}</span>
                             <span className="text-[10px] opacity-90">/महा</span>
                           </span>
-                          <span className="bg-blue-700 text-white px-2.5 py-1 rounded font-bold shadow-2xs">
+                          <span className="h-7 inline-flex items-center bg-primary text-white px-2.5 rounded-sm font-bold shadow-2xs text-xs">
                             मुदतपूर्ती मुद्दल परत: ₹ {calcData.maturityAmount.toLocaleString('en-IN')}
                           </span>
-                          <span className="bg-slate-800 text-white px-2 py-1 rounded font-medium text-[11px] shadow-2xs" title="मुद्दल + एकूण कालावधीत मिळालेले मासिक व्याज">
+                          <span className="h-7 inline-flex items-center bg-slate-800 text-white px-2.5 rounded-sm font-medium text-[11px] shadow-2xs" title="मुद्दल + एकूण कालावधीत मिळालेले मासिक व्याज">
                             एकूण परतावा लाभ: ₹ {calcData.totalBenefitAmount.toLocaleString('en-IN')}
                           </span>
                         </>
                       ) : (
-                        <span className="bg-emerald-700 text-white px-3 py-1 rounded font-extrabold shadow-2xs">
+                        <span className="h-7 inline-flex items-center bg-emerald-700 text-white px-3 rounded-sm font-extrabold shadow-2xs text-xs">
                           {entryMode === 'bulk' ? `प्रति पावती मुदतपूर्ती: ₹ ${calcData.maturityAmount.toLocaleString('en-IN')}` : `एकूण मुदतपूर्ती: ₹ ${calcData.maturityAmount.toLocaleString('en-IN')}`}
                         </span>
                       )}
@@ -2329,7 +2381,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         <button
                           type="button"
                           onClick={() => setIsScheduleModalOpen(true)}
-                          className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-2.5 py-1 rounded font-bold shadow-xs hover:shadow text-xs flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap"
+                          className="h-7 bg-primary hover:opacity-90 active:scale-95 text-white px-2.5 rounded-sm font-bold shadow-xs hover:shadow text-xs inline-flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap"
                           title="सविस्तर तिमाही/मासिक व्याज तक्ता व वेळापत्रक पहा"
                         >
                           <span>📊</span>
@@ -2342,14 +2394,20 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
               </div>
 
               {/* Section 3: भरणा पद्धत व वारसदार */}
-              <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 mb-3">
-                <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200">
-                  ३. भरणा पद्धत व वारसदार माहिती (Payment Mode & Nominee)
+              <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-3">
+                <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
+                  <Wallet className="w-4 h-4 text-primary" />
+                  <h2 className="text-xs font-bold text-primary">३. भरणा पद्धत व वारसदार माहिती (Payment Mode & Nominee)</h2>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 items-end">
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">भरणा प्रकार (Payment Mode) *</label>
+                {/* Row 1: Payment Mode & Corresponding Ledger / Account */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                  <div className="md:col-span-3">
+                    <div className="h-5 mb-1 flex items-center">
+                      <label className="block text-[11px] font-bold text-gray-700 truncate">
+                        भरणा प्रकार (Payment Mode) <span className="text-red-500">*</span>
+                      </label>
+                    </div>
                     <select
                       value={paymentMode}
                       onChange={(e: any) => {
@@ -2361,7 +2419,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           setBankAccountLedgerID(bankLedgers[0].ledgerID);
                         }
                       }}
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900">
+                      className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white font-bold text-primary">
                       <option value="Cash">💵 रोख (Cash)</option>
                       <option value="Bank">🏦 बँक ट्रान्सफर</option>
                       <option value="Transfer">🔄 बचत ट्रान्सफर</option>
@@ -2370,7 +2428,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
                   {/* Reflecting Cash Ledger Badge */}
                   {paymentMode === 'Cash' && (
-                    <div className="md:col-span-3">
+                    <div className="md:col-span-9">
                       <CashLedgerReflectBadge 
                         branchId={formData.branchID} 
                         transactionType="Deposit" 
@@ -2382,7 +2440,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   {/* Conditional Fields for Bank Payment */}
                   {paymentMode === 'Bank' && (
                     <>
-                      <div className="md:col-span-2">
+                      <div className="md:col-span-5">
                         <BankLedgerSelect
                           ledgers={allLedgers}
                           value={bankAccountLedgerID}
@@ -2391,31 +2449,37 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           showCountBadge
                         />
                       </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">चेक / संदर्भ क्र. (Ref/Cheque No)</label>
+                      <div className="md:col-span-2">
+                        <div className="h-5 mb-1 flex items-center">
+                          <label className="block text-[11px] font-bold text-gray-700 truncate">चेक / संदर्भ क्र. (Ref/Cheque)</label>
+                        </div>
                         <input type="text" value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} placeholder="चेक क्र. किंवा UTR"
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white h-[30px]" />
+                          className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white" />
                       </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">चेक तारीख (Cheque Date)</label>
+                      <div className="md:col-span-2">
+                        <div className="h-5 mb-1 flex items-center">
+                          <label className="block text-[11px] font-bold text-gray-700 truncate">चेक तारीख (Cheque Date)</label>
+                        </div>
                         <input type="date" value={chequeDate} onChange={(e) => setChequeDate(e.target.value)}
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white h-[30px]" />
+                          className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white" />
                       </div>
                     </>
                   )}
 
                   {/* Conditional Fields for SB Transfer Payment */}
                   {paymentMode === 'Transfer' && (
-                    <div className="md:col-span-3">
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
-                        खातेदाराचे बचत खाते निवडा (Select SB Account for Transfer) *
-                      </label>
+                    <div className="md:col-span-9">
+                      <div className="h-5 mb-1 flex items-center">
+                        <label className="block text-[11px] font-bold text-gray-700 truncate">
+                          खातेदाराचे बचत खाते निवडा (Select SB Account for Transfer) <span className="text-red-500">*</span>
+                        </label>
+                      </div>
                       {customerSavingsAccounts.length > 0 ? (
                         <select
                           value={selectedSavingAccountID}
                           onChange={(e) => setSelectedSavingAccountID(parseInt(e.target.value, 10) || 0)}
                           required
-                          className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-emerald-50 font-bold text-emerald-950"
+                          className="w-full h-[30px] border border-emerald-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-emerald-50 font-bold text-emerald-950"
                         >
                           {customerSavingsAccounts.map((acc: any) => {
                             const accId = acc.savingAccountID || acc.savingAccountId;
@@ -2431,24 +2495,31 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           })}
                         </select>
                       ) : (
-                        <div className="p-1.5 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[11px] font-semibold flex items-center justify-between">
+                        <div className="h-[30px] px-2.5 bg-amber-50 border border-amber-200 rounded-sm text-amber-800 text-[11px] font-semibold flex items-center justify-between">
                           <span>⚠️ या खातेदाराचे कोणतेही बचत खाते उघडलेले नाही!</span>
                           <span className="text-[10px] text-amber-700">कृपया रोख किंवा बँक पर्याय वापरा.</span>
                         </div>
                       )}
                     </div>
                   )}
+                </div>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">वारसदाराचे नाव (Nominee Name)</label>
+                {/* Row 2: Nominee Name, Relation & Remarks (Full 12-Col Aligned Grid) */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                  <div className="md:col-span-4">
+                    <div className="h-5 mb-1 flex items-center">
+                      <label className="block text-[11px] font-bold text-gray-700 truncate">वारसदाराचे नाव (Nominee Name)</label>
+                    </div>
                     <input type="text" name="nomineeName" value={formData.nomineeName} onChange={handleChange}
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" placeholder="वारसदाराचे नाव" />
+                      className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white" placeholder="वारसदाराचे नाव" />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">वारसदाराशी नाते (Relation)</label>
+                  <div className="md:col-span-3">
+                    <div className="h-5 mb-1 flex items-center">
+                      <label className="block text-[11px] font-bold text-gray-700 truncate">वारसदाराशी नाते (Relation)</label>
+                    </div>
                     <select name="nomineeRelation" value={formData.nomineeRelation} onChange={handleChange}
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                      className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white">
                       <option value="">-- नाते निवडा --</option>
                       <option value="स्वतः (Self)">स्वतः (Self)</option>
                       <option value="पती (Husband)">पती (Husband)</option>
@@ -2462,17 +2533,19 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शेरा (Remarks)</label>
+                  <div className="md:col-span-5">
+                    <div className="h-5 mb-1 flex items-center">
+                      <label className="block text-[11px] font-bold text-gray-700 truncate">शेरा (Remarks)</label>
+                    </div>
                     <input type="text" name="remarks" value={formData.remarks} onChange={handleChange}
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" placeholder="शेरा टाका..." />
+                      className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white" placeholder="शेरा टाका..." />
                   </div>
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-700 cursor-pointer">
                     <input type="checkbox" name="isSeniorCitizen" checked={formData.isSeniorCitizen} onChange={handleChange}
-                      className="w-3.5 h-3.5 text-emerald-600 rounded border-gray-300" />
+                      className="w-3.5 h-3.5 text-primary rounded border-gray-300 focus:ring-primary" />
                     <span>👴 खातेदार ज्येष्ठ नागरिक (Senior Citizen) सवलत लागू करा</span>
                   </label>
 
@@ -2485,34 +2558,35 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
               </div>
 
               {/* Section 4: स्वयंचलित नूतनीकरण सुविधा (CBS Auto-Renewal Facility) */}
-              <div className="bg-sky-50/80 p-2.5 rounded border border-sky-200 mb-3 shadow-2xs">
-                <div className="flex flex-wrap items-center justify-between pb-1.5 mb-2 border-b border-sky-200 gap-2">
-                  <div className="text-[11px] font-bold text-sky-950 uppercase tracking-wider flex items-center gap-1.5">
-                    <span>🔄</span> ४. स्वयंचलित नूतनीकरण सुविधा (CBS Auto-Renewal Facility)
+              <div className="bg-primary/5 p-3.5 rounded-sm border border-primary/20 space-y-2.5 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between pb-1.5 border-b border-primary/20 gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <RefreshCw className="w-4 h-4 text-primary" />
+                    <h2 className="text-xs font-bold text-primary">४. स्वयंचलित नूतनीकरण सुविधा (CBS Auto-Renewal Facility)</h2>
                   </div>
-                  <label className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-950 cursor-pointer bg-white px-2.5 py-0.5 rounded border border-sky-300 shadow-2xs hover:bg-sky-50 transition-colors">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-bold text-primary cursor-pointer bg-white px-2.5 py-0.5 rounded-sm border border-primary/30 shadow-2xs hover:bg-primary/5 transition-colors">
                     <input
                       type="checkbox"
                       name="isAutoRenewable"
                       checked={formData.isAutoRenewable}
                       onChange={handleChange}
-                      className="w-3.5 h-3.5 text-sky-600 rounded border-gray-300 focus:ring-sky-500"
+                      className="w-3.5 h-3.5 text-primary rounded border-gray-300 focus:ring-primary"
                     />
                     <span>स्वयंचलित नूतनीकरण पर्याय लागू करा (Enable Auto-Renewal)</span>
                   </label>
                 </div>
 
                 {formData.isAutoRenewable ? (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-white p-2.5 rounded border border-sky-200">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-white p-2.5 rounded-sm border border-primary/20">
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
-                        नूतनीकरण पर्याय (Renewal Mode) *
+                      <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                        नूतनीकरण पर्याय (Renewal Mode) <span className="text-red-500">*</span>
                       </label>
                       <select
                         name="autoRenewalOption"
                         value={formData.autoRenewalOption}
                         onChange={handleChange}
-                        className="w-full border border-sky-300 rounded px-2 py-1 text-xs bg-sky-50/50 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                        className="w-full border border-primary/30 rounded-sm px-2 py-1 text-xs bg-primary/5 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
                       >
                         <option value="PrincipalPlusInterest">
                           💰 मुद्दल + जमा व्याज (Principal + Interest Reinvestment)
@@ -2524,7 +2598,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                      <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
                         कमाल नूतनीकरण मर्यादा (वेळा)
                       </label>
                       <div className="flex items-center gap-1.5">
@@ -2535,13 +2609,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           max={10}
                           value={formData.maxAutoRenewalCycles || 3}
                           onChange={handleChange}
-                          className="w-20 border border-gray-300 rounded px-2 py-1 text-xs text-center font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                          className="w-20 border border-gray-300 rounded-sm px-2 py-1 text-xs text-center font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
                         />
                         <span className="text-[10px] text-slate-500 font-medium">वेळा (डिफॉल्ट: ३)</span>
                       </div>
                     </div>
 
-                    <div className="text-[10px] text-slate-600 bg-sky-50/50 p-2 rounded border border-sky-100 leading-snug">
+                    <div className="text-[10px] text-slate-600 bg-primary/5 p-2 rounded-sm border border-primary/15 leading-snug">
                       ℹ️ <strong className="text-slate-800">आरबीआय नियम:</strong> मुदतपूर्ती दिवशी प्रचलित (Prevailing) व्याजदराने ऑटो-रिन्यू होईल. ठेवीदारास १४ दिवसांचा विनामूल्य रिव्हर्सल कालावधी मिळतो.
                     </div>
                   </div>
@@ -2555,13 +2629,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
               </fieldset>
 
               {/* Form Controls */}
-              <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2">
+              <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                 {isPassingMode ? (
                   <div className="w-full flex items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
-                      className="px-4 py-1.5 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      className="px-4 py-1.5 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-sm shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <span>↩️</span> पासिंग यादीवर परत जा
                     </button>
@@ -2571,7 +2645,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         type="button"
                         onClick={() => setRejectModalOpen(true)}
                         disabled={passingActionLoading}
-                        className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-sm shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                       >
                         <span>❌</span> नामंजूर / रद्द करा
                       </button>
@@ -2580,7 +2654,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         type="button"
                         onClick={handlePassVoucher}
                         disabled={passingActionLoading}
-                        className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                       >
                         <span>✅</span> {passingActionLoading ? 'मंजूर होत आहे...' : 'मंजूर व पास करा (Pass)'}
                       </button>
@@ -2590,7 +2664,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   <div className="w-full flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       {entryMode === 'bulk' && isBulkSubmitDisabled && (
-                        <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded flex items-center gap-1.5 shadow-2xs">
+                        <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded-sm flex items-center gap-1.5 shadow-2xs">
                           <span>⛔</span>
                           {hasInvalidRow ? (
                             <span>सर्व पावत्यांची रक्कम ० पेक्षा जास्त असणे बंधनकारक आहे.</span>
@@ -2606,10 +2680,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     <button
                       type="submit"
                       disabled={loading || (entryMode === 'bulk' && isBulkSubmitDisabled)}
-                      className={`px-4 py-1.5 rounded-sm shadow-xs text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      className={`px-6 py-2 rounded-sm shadow-xs text-xs font-bold transition-all flex items-center gap-1.5 ${
                         entryMode === 'bulk' && isBulkSubmitDisabled
                           ? 'bg-slate-300 text-slate-500 border border-slate-300 cursor-not-allowed opacity-80'
-                          : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
+                          : 'bg-primary hover:opacity-90 text-white cursor-pointer active:scale-95'
                       }`}
                       title={
                         entryMode === 'bulk' && isBulkSubmitDisabled
@@ -2619,7 +2693,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           : ''
                       }
                     >
-                      <span>💾 {entryMode === 'bulk' ? `बल्क पावत्या सेव्ह करा (${receiptRows.length})` : 'मुदत ठेव खाते उघडा (Open FD)'}</span>
+                      <Save className="w-4 h-4" />
+                      <span>{entryMode === 'bulk' ? `बल्क पावत्या सेव्ह करा (${receiptRows.length})` : 'मुदत ठेव खाते उघडा (Open FD)'}</span>
                     </button>
                   </div>
                 )}
@@ -2630,10 +2705,11 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
         {/* ==================== LIST VIEW ==================== */}
         {view === 'list' && (
-          <div className="p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
-                <span>📊</span> उघडलेल्या मुदत ठेव खात्यांची यादी (FD Accounts List)
+          <div className="p-3.5 sm:p-4">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-primary" />
+                <span>उघडलेल्या मुदत ठेव खात्यांची यादी (FD Accounts List)</span>
               </div>
 
               <div className="relative w-64">
@@ -2642,7 +2718,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   placeholder="पावती क्र / नाव / कोड शोधा..."
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
-                  className="w-full pl-7 pr-2 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                  className="w-full pl-3 pr-2 py-1 border border-gray-300 rounded-sm text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white"
                 />
               </div>
             </div>
@@ -2650,7 +2726,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
             <div className="overflow-x-auto border border-gray-200 rounded-sm">
               <table className="w-full text-[11px] border-collapse">
                 <thead>
-                  <tr className="bg-slate-900 text-white font-semibold border-b border-slate-800">
+                  <tr className="bg-primary text-white font-semibold border-b border-primary/20">
                     <th className="px-3 py-2 text-left font-mono">पावती क्र. (Account No)</th>
                     <th className="px-3 py-2 text-left">खातेदाराचे नाव & CIF / कोड</th>
                     <th className="px-3 py-2 text-left">ठेव योजना (Scheme)</th>
@@ -2670,8 +2746,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     <tr><td colSpan={10} className="text-center py-4 text-gray-400">कोणतेही मुदत ठेव खाते सापडले नाही.</td></tr>
                   ) : (
                     filteredList.map((fd: any) => (
-                      <tr key={fd.fdAccountID} className="hover:bg-emerald-50/50 border-b border-gray-100 transition-colors">
-                        <td className="px-3 py-1.5 font-mono text-blue-900">
+                      <tr key={fd.fdAccountID} className="hover:bg-primary/5 border-b border-gray-100 transition-colors">
+                        <td className="px-3 py-1.5 font-mono text-primary">
                           <div className="font-bold">{fd.accountNo}</div>
                           {fd.legacyAccountNumber && (
                             <div className="text-[10px] text-amber-800 font-semibold">
@@ -2687,7 +2763,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         <td className="px-3 py-1.5 text-right font-extrabold text-emerald-800">{formatCurrency(fd.depositAmount)}</td>
                         <td className="px-3 py-1.5 text-center font-bold">{fd.interestRate}%</td>
                         <td className="px-3 py-1.5 text-center font-bold text-gray-700">{fd.paymentMode || 'Cash'}</td>
-                        <td className="px-3 py-1.5 text-right font-extrabold text-blue-900">
+                        <td className="px-3 py-1.5 text-right font-extrabold text-primary">
                           <div>{formatCurrency(fd.maturityAmount)}</div>
                           {(fd.monthlyInterestAmount > 0 || fd.interestType === 'MIS' || fd.interestType === 'Monthly Interest') && (
                             <div className="text-[10px] text-emerald-700 font-bold">
@@ -2706,7 +2782,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             <button
                               type="button"
                               onClick={() => setSelectedPrintAccount(fd)}
-                              className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"
+                              className="px-2 py-0.5 bg-primary hover:opacity-90 text-white rounded-sm text-[10px] font-bold cursor-pointer transition-colors"
                               title="पावती प्रिंट करा"
                             >
                               🖨️ प्रिंट
@@ -2714,7 +2790,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             <button
                               type="button"
                               onClick={() => setDeleteConfirm({ id: fd.fdAccountID, accountNo: fd.accountNo })}
-                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors shadow-2xs"
+                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded-sm text-[10px] font-bold cursor-pointer transition-colors shadow-2xs"
                               title="खाते व पासिंग व्हाउचर थेट डिलीट करा"
                             >
                               🗑️ डिलीट

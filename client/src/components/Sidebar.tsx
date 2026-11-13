@@ -21,9 +21,7 @@ import {
   Moon, 
   Calculator, 
   ShieldCheck, 
-  Landmark,
   FileSpreadsheet, 
-  FileText,
   FileCheck,
   Settings, 
   UserCog,
@@ -50,19 +48,50 @@ export default function Sidebar({
   
   // Helpers to detect active state
   const isSharesActive = activeTab === 'members' || activeTab === 'share-master' || activeTab === 'share-transfer' || activeTab === 'member-closure' || activeTab === 'share-withdrawal';
-  const isLoanActive = activeTab === 'loan' || activeTab.startsWith('loan') || activeTab === 'gold-loan-details' || activeTab === 'employee-bank' || activeTab === 'employer-master';
-  const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing' || activeTab === 'saving-passbook';
-  const isFdActive = activeTab === 'fd' || activeTab.startsWith('fd-');
-  const isRdActive = activeTab === 'rd' || activeTab === 'rd-dashboard' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-reports' || activeTab === 'rd-khatavani-report';
-  const isPigmyActive = activeTab === 'pigmy' || activeTab.startsWith('pigmy');
-  const isVoucherActive = activeTab === 'voucher' || activeTab === 'voucher-posting' || activeTab === 'voucher-batch-print';
+  const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-documents' || activeTab === 'employee-bank' || activeTab === 'employer-master';
+  const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing';
+  const isFdActive = activeTab === 'fd' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-mis-payout' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate';
+  const isRdActive = activeTab === 'rd' || activeTab === 'rd-dashboard' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-collection' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-scheme';
+  const isPigmyActive = activeTab === 'pigmy' || activeTab === 'pigmy-account' || activeTab === 'pigmy-agent' || activeTab === 'pigmy-collection' || activeTab === 'pigmy-collect' || activeTab === 'pigmy-daybook' || activeTab === 'pigmy-commission' || activeTab === 'pigmy-interest' || activeTab === 'pigmy-closure' || activeTab === 'pigmy-scheme';
+  const isVoucherActive = activeTab === 'voucher' || activeTab === 'voucher-posting';
   const isCashierActive = activeTab === 'cashier-dashboard' || activeTab === 'cash-management' || activeTab === 'cash-allocation' || activeTab === 'cash-denomination';
-  const isInvActive = activeTab === 'investment' || activeTab.startsWith('inv-');
-  const isAssetActive = activeTab === 'assets' || activeTab.startsWith('asset-');
-  const isLockerActive = activeTab === 'locker' || activeTab.startsWith('locker-');
-  const isNpaActive = activeTab === 'npa-dashboard' || activeTab === 'npa-statement' || activeTab === 'collateral-compliance' || activeTab === 'npa-defaulters';
-  const isLegalActive = activeTab === 'legal-recovery' || activeTab.startsWith('sec101-');
-  const isReportsActive = activeTab === 'reports' || activeTab === 'crr-report' || activeTab === 'regulatory-mis-report' || activeTab === 'swanidhi-report' || activeTab === 'trial-balance' || activeTab === 'trial-balance-namuna-n' || activeTab === 'daybook' || activeTab === 'draft-daybook' || activeTab === 'legacy-daybook' || activeTab === 'daybook-summary' || activeTab === 'profit-loss' || activeTab === 'balance-sheet' || activeTab === 'balance-sheet-form-n' || activeTab === 'general-ledger' || activeTab === 'member-balance-report' || activeTab === 'loan-disbursement-register' || activeTab === 'loan-collection-register' || activeTab === 'loan-ledger-report' || activeTab === 'loan-outstanding-report' || activeTab === 'loan-overdue-report' || activeTab === 'saving-account-list-report' || activeTab === 'saving-khatavani-report' || activeTab === 'rd-khatavani-report' || activeTab === 'pigmy-khatavani-report' || activeTab === 'npa-register' || activeTab === 'loan-rate' || activeTab === 'sabhasad-labhansh-report' || activeTab === 'shares-khatavani-report';
+  const isInvActive = activeTab === 'investment' || activeTab === 'inv-institution' || activeTab === 'inv-account' || activeTab === 'inv-claim' || activeTab === 'inv-accrual' || activeTab === 'inv-scheme';
+  const isAssetActive = activeTab === 'assets' || activeTab === 'asset-category' || activeTab === 'asset-master' || activeTab === 'asset-purchase';
+  const isLockerActive = activeTab === 'locker' || activeTab === 'locker-dashboard' || activeTab === 'locker-master' || activeTab === 'locker-types' || activeTab === 'locker-allotment' || activeTab === 'locker-visit-register' || activeTab === 'locker-rent-renewal' || activeTab === 'locker-surrender';
+  const isNpaActive = activeTab === 'npa-dashboard' || activeTab === 'npa-config';
+  const isLegalActive = activeTab === 'legal-recovery' || (activeTab.startsWith('sec101-') && activeTab !== 'sec101-reports');
+  const isReportsActive =
+    activeTab === 'reports' ||
+    activeTab.endsWith('-report') ||
+    activeTab.includes('-reports') ||
+    activeTab === 'crr-report' ||
+    activeTab === 'regulatory-mis-report' ||
+    activeTab === 'swanidhi-report' ||
+    activeTab === 'trial-balance' ||
+    activeTab === 'trial-balance-namuna-n' ||
+    activeTab === 'cash-book' ||
+    activeTab === 'daybook' ||
+    activeTab === 'draft-daybook' ||
+    activeTab === 'legacy-daybook' ||
+    activeTab === 'daybook-summary' ||
+    activeTab === 'profit-loss' ||
+    activeTab === 'balance-sheet' ||
+    activeTab === 'balance-sheet-form-n' ||
+    activeTab === 'general-ledger' ||
+    activeTab === 'voucher-batch-print' ||
+    activeTab === 'loan-disbursement-register' ||
+    activeTab === 'loan-collection-register' ||
+    activeTab === 'interest-waiver-register' ||
+    activeTab === 'aadhaar-list' ||
+    activeTab === 'saving-passbook' ||
+    activeTab === 'fd-customer-summary' ||
+    activeTab === 'npa-register' ||
+    activeTab === 'npa-statement' ||
+    activeTab === 'npa-defaulters' ||
+    activeTab === 'collateral-compliance' ||
+    activeTab === 'sec101-reports' ||
+    activeTab === 'loan-rate' ||
+    activeTab === 'audit-logs';
 
   const getItemClass = (isActive: boolean) => `
     w-full flex items-center ${isSidebarOpen ? 'px-2.5 justify-start' : 'px-0 justify-center'} py-1 rounded-lg text-[11.5px] leading-snug transition-all duration-150 select-none cursor-pointer group ${
@@ -196,15 +225,6 @@ export default function Sidebar({
           {isSidebarOpen && <span className="truncate">खातेदार बल्क नोंदणी (Grid)</span>}
         </button>
 
-        <button 
-          onClick={() => handleNavigate('customer-list-report')}
-          title="खातेदार यादी अहवाल"
-          className={getItemClass(activeTab === 'customer-list-report')}
-        >
-          <FileText size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'customer-list-report' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
-          {isSidebarOpen && <span className="truncate">खातेदार यादी अहवाल</span>}
-        </button>
-
         {/* ========================================================================= */}
         {/* GROUP 2: BANKING MODULES                                                  */}
         {/* ========================================================================= */}
@@ -281,17 +301,9 @@ export default function Sidebar({
               {renderSubDot(activeTab === 'gold-loan-details')}
               <span className="truncate">सुवर्ण कर्ज तारण</span>
             </li>
-            <li className={getSubItemClass(activeTab === 'gold-jewelry-report')} onClick={() => handleNavigate('gold-jewelry-report')}>
-              {renderSubDot(activeTab === 'gold-jewelry-report')}
-              <span className="truncate">सोने जिन्नस यादी</span>
-            </li>
             <li className={getSubItemClass(activeTab === 'loan-collection')} onClick={() => handleNavigate('loan-collection')}>
               {renderSubDot(activeTab === 'loan-collection')}
               <span className="truncate">कर्ज वसुली नोंदी</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'loan-outstanding-report')} onClick={() => handleNavigate('loan-outstanding-report')}>
-              {renderSubDot(activeTab === 'loan-outstanding-report')}
-              <span className="truncate">कर्ज येणे बाकी अहवाल</span>
             </li>
             <li className={getSubItemClass(activeTab === 'loan-interest-posting')} onClick={() => handleNavigate('loan-interest-posting')}>
               {renderSubDot(activeTab === 'loan-interest-posting')}
@@ -300,10 +312,6 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'loan-documents')} onClick={() => handleNavigate('loan-documents')}>
               {renderSubDot(activeTab === 'loan-documents')}
               <span className="truncate">कर्ज कागदपत्रे</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'loan-rate')} onClick={() => handleNavigate('loan-rate')}>
-              {renderSubDot(activeTab === 'loan-rate')}
-              <span className="truncate">कर्ज योजना व व्याजदर</span>
             </li>
             <li className={getSubItemClass(activeTab === 'employer-master')} onClick={() => handleNavigate('employer-master')}>
               {renderSubDot(activeTab === 'employer-master')}
@@ -343,10 +351,6 @@ export default function Sidebar({
               {renderSubDot(activeTab === 'saving-posting')}
               <span className="truncate">व्याज आकारणी</span>
             </li>
-            <li className={getSubItemClass(activeTab === 'saving-passbook')} onClick={() => handleNavigate('saving-passbook')}>
-              {renderSubDot(activeTab === 'saving-passbook')}
-              <span className="truncate">पासबुक प्रिंट</span>
-            </li>
           </ul>
         )}
 
@@ -381,14 +385,6 @@ export default function Sidebar({
               {renderSubDot(activeTab === 'fd-mis-payout')}
               <span className="truncate">मासिक व्याज ट्रान्सफर (MIS)</span>
             </li>
-            <li className={getSubItemClass(activeTab === 'fd-reports')} onClick={() => handleNavigate('fd-reports')}>
-              {renderSubDot(activeTab === 'fd-reports')}
-              <span className="truncate">मुदत ठेव अहवाल</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'fd-customer-summary')} onClick={() => handleNavigate('fd-customer-summary')}>
-              {renderSubDot(activeTab === 'fd-customer-summary')}
-              <span className="truncate">मुदतबंद ठेव यादी (CBS)</span>
-            </li>
           </ul>
         )}
 
@@ -422,14 +418,6 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'rd-accrual')} onClick={() => handleNavigate('rd-accrual')}>
               {renderSubDot(activeTab === 'rd-accrual')}
               <span className="truncate">व्याज तरतूद</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'rd-reports')} onClick={() => handleNavigate('rd-reports')}>
-              {renderSubDot(activeTab === 'rd-reports')}
-              <span className="truncate">आरडी अहवाल</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'rd-khatavani-report')} onClick={() => handleNavigate('rd-khatavani-report')}>
-              {renderSubDot(activeTab === 'rd-khatavani-report')}
-              <span className="truncate">आरडी खतावणी (Ledger)</span>
             </li>
           </ul>
         )}
@@ -477,14 +465,6 @@ export default function Sidebar({
               {renderSubDot(activeTab === 'pigmy-closure')}
               <span className="truncate">खाते बंद (Closure)</span>
             </li>
-            <li className={getSubItemClass(activeTab.startsWith('pigmy-reports'))} onClick={() => handleNavigate('pigmy-reports')}>
-              {renderSubDot(activeTab.startsWith('pigmy-reports'))}
-              <span className="truncate">पिग्मी अहवाल</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'pigmy-khatavani-report')} onClick={() => handleNavigate('pigmy-khatavani-report')}>
-              {renderSubDot(activeTab === 'pigmy-khatavani-report')}
-              <span className="truncate">पिग्मी खतावणी (Ledger)</span>
-            </li>
           </ul>
         )}
 
@@ -510,10 +490,6 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'voucher-posting')} onClick={() => handleNavigate('voucher-posting')}>
               {renderSubDot(activeTab === 'voucher-posting')}
               <span className="truncate">वाउचर पासिंग</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'voucher-batch-print')} onClick={() => handleNavigate('voucher-batch-print')}>
-              {renderSubDot(activeTab === 'voucher-batch-print')}
-              <span className="truncate">बॅच प्रिंट</span>
             </li>
           </ul>
         )}
@@ -579,10 +555,6 @@ export default function Sidebar({
               {renderSubDot(activeTab === 'inv-accrual')}
               <span className="truncate">व्याज तरतूद</span>
             </li>
-            <li className={getSubItemClass(activeTab === 'inv-reports')} onClick={() => handleNavigate('inv-reports')}>
-              {renderSubDot(activeTab === 'inv-reports')}
-              <span className="truncate">गुंतवणूक अहवाल</span>
-            </li>
           </ul>
         )}
 
@@ -612,10 +584,6 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'asset-purchase')} onClick={() => handleNavigate('asset-purchase')}>
               {renderSubDot(activeTab === 'asset-purchase')}
               <span className="truncate">नवीन खरेदी</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'asset-reports')} onClick={() => handleNavigate('asset-reports')}>
-              {renderSubDot(activeTab === 'asset-reports')}
-              <span className="truncate">मालमत्ता अहवाल</span>
             </li>
           </ul>
         )}
@@ -662,10 +630,6 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'locker-surrender')} onClick={() => handleNavigate('locker-surrender')}>
               {renderSubDot(activeTab === 'locker-surrender')}
               <span className="truncate">लॉकर समर्पण</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'locker-reports')} onClick={() => handleNavigate('locker-reports')}>
-              {renderSubDot(activeTab === 'locker-reports')}
-              <span className="truncate">लॉकर अहवाल</span>
             </li>
           </ul>
         )}
@@ -740,24 +704,6 @@ export default function Sidebar({
         >
           <ShieldCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'audit-compliance' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
           {isSidebarOpen && <span className="truncate">ऑडीट व कम्प्लायन्स</span>}
-        </button>
-
-        <button 
-          onClick={() => handleNavigate('regulatory-mis-report')}
-          title="महाराष्ट्र राज्य नियामक मंडळ MIS अहवाल"
-          className={getItemClass(activeTab === 'regulatory-mis-report')}
-        >
-          <Landmark size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'regulatory-mis-report' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
-          {isSidebarOpen && <span className="truncate">नियामक मंडळ MIS</span>}
-        </button>
-
-        <button 
-          onClick={() => handleNavigate('crr-report')}
-          title="CRR रोख राखीव प्रमाण व तरलता अहवाल"
-          className={getItemClass(activeTab === 'crr-report')}
-        >
-          <Coins size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'crr-report' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
-          {isSidebarOpen && <span className="truncate">CRR तरलता अहवाल</span>}
         </button>
 
         {/* ========================================================================= */}

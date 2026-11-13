@@ -12,7 +12,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class BankMastersController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -61,7 +61,7 @@ namespace Bhisi.Api.Controllers
                     new BankMaster { BankID = 1, BankName = "स्टेट बँक ऑफ इंडिया (SBI)" },
                     new BankMaster { BankID = 2, BankName = "बँक ऑफ महाराष्ट्र (Bank of Maharashtra)" },
                     new BankMaster { BankID = 3, BankName = "बँक ऑफ बडोदा (Bank of Baroda)" },
-                    new BankMaster { BankName = "सेंट्रल बँक ऑफ इंडिया (Central Bank of India)" },
+                    new BankMaster { BankID = 4, BankName = "सेंट्रल बँक ऑफ इंडिया (Central Bank of India)" },
                     new BankMaster { BankID = 5, BankName = "युनियन बँक ऑफ इंडिया (Union Bank of India)" },
                     new BankMaster { BankID = 6, BankName = "एचडीएफसी बँक (HDFC Bank)" },
                     new BankMaster { BankID = 7, BankName = "आयसीआयसीआय बँक (ICICI Bank)" },
@@ -91,10 +91,14 @@ namespace Bhisi.Api.Controllers
         {
             if (bank == null || string.IsNullOrWhiteSpace(bank.BankName))
             {
-                return BadRequest("बँकेचे नाव आवश्यक आहे.");
+                return BadRequest(new { message = "बँकेचे नाव आवश्यक आहे." });
             }
 
             bank.BankName = bank.BankName.Trim();
+            if (bank.BankName.Length > 100)
+            {
+                return BadRequest(new { message = "बँकेचे नाव कमाल १०० अक्षरांपर्यंत असावे." });
+            }
 
             try
             {
@@ -113,12 +117,7 @@ namespace Bhisi.Api.Controllers
             }
             catch (Exception ex)
             {
-                // In case database table is not created yet, return the bank object so frontend UX does not block
-                if (bank.BankID <= 0)
-                {
-                    bank.BankID = new Random().Next(1000, 9999);
-                }
-                return Ok(bank);
+                return StatusCode(500, new { message = "बँक माहिती सेव्ह करताना सर्व्हर त्रुटी आली.", error = ex.Message });
             }
         }
     }

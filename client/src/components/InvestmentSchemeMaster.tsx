@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Ledger {
   ledgerID: number;
@@ -66,6 +68,7 @@ interface Institution {
 }
 
 const InvestmentSchemeMaster: React.FC = () => {
+  const { user } = useAuth();
   const [schemes, setSchemes] = useState<InvestmentScheme[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -85,7 +88,7 @@ const InvestmentSchemeMaster: React.FC = () => {
   const API_URL = '/api';
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     investmentInstitutionID: 0,
     schemeCode: '',
     schemeName: '',
@@ -235,7 +238,7 @@ const InvestmentSchemeMaster: React.FC = () => {
     setIsEditMode(false);
     setEditId(null);
     setFormData({
-      branchID: 1,
+      branchID: resolveWriteBranchId(user),
       investmentInstitutionID: 0,
       schemeCode: '',
       schemeName: '',
@@ -268,7 +271,7 @@ const InvestmentSchemeMaster: React.FC = () => {
     setIsEditMode(true);
     setEditId(sId);
     setFormData({
-      branchID: scheme.branchID || 1,
+      branchID: scheme.branchID || resolveWriteBranchId(user),
       investmentInstitutionID: Number(scheme.investmentInstitutionID || 0),
       schemeCode: scheme.schemeCode || '',
       schemeName: scheme.schemeName || '',
@@ -324,7 +327,7 @@ const InvestmentSchemeMaster: React.FC = () => {
 
     // Core Banking Data Payload
     const payload = {
-      branchID: 1,
+      branchID: resolveWriteBranchId(user, formData.branchID),
       investmentInstitutionID: Number(formData.investmentInstitutionID),
       schemeCode: formData.schemeCode.trim(),
       schemeName: formData.schemeName.trim(),

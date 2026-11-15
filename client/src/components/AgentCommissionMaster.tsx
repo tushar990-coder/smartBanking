@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 import { formatLocalYmd, getBusinessDateStr, parseYmdAsLocalDate } from '../utils/businessDateUtils';
 import { 
   Calculator, 
@@ -87,7 +88,9 @@ interface SavingAccount {
 }
 
 export default function AgentCommissionMaster() {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [activeTab, setActiveTab] = useState<'payouts' | 'settings' | 'history'>('payouts');
 
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -102,9 +105,10 @@ export default function AgentCommissionMaster() {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Filters
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : (user?.branchID || 0);
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = typeof effectiveBranch === 'number' && effectiveBranch > 0
+    ? effectiveBranch
+    : (isHOUser ? 0 : (user?.branchID || 1));
 
   const todayStr = getBusinessDateStr(user?.businessDate);
   const activeBizDate = parseYmdAsLocalDate(todayStr);
@@ -419,9 +423,14 @@ export default function AgentCommissionMaster() {
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs grid grid-cols-1 md:grid-cols-7 gap-3 print:hidden">
             <div>
               <label className={labelClass}>शाखा (Branch)</label>
-              <select value={selectedBranchId} onChange={(e) => setSelectedBranchId(Number(e.target.value))} className={inputClass}>
-                <option value={0}>सर्व शाखा (All Branches)</option>
-                {branches.map(b => (
+              <select
+                value={selectedBranchId}
+                onChange={(e) => setSelectedBranchId(Number(e.target.value))}
+                disabled={!isHOUser}
+                className={inputClass}
+              >
+                {isHOUser && <option value={0}>सर्व शाखा (All Branches)</option>}
+                {(isHOUser ? branches : branches.filter(b => b.branchID === lockedBranchId)).map(b => (
                   <option key={b.branchID} value={b.branchID}>{b.branchName} ({b.branchCode})</option>
                 ))}
               </select>
@@ -734,9 +743,14 @@ export default function AgentCommissionMaster() {
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs grid grid-cols-1 md:grid-cols-5 gap-3 print:hidden">
             <div>
               <label className={labelClass}>शाखा (Branch)</label>
-              <select value={selectedBranchId} onChange={(e) => setSelectedBranchId(Number(e.target.value))} className={inputClass}>
-                <option value={0}>सर्व शाखा (All Branches)</option>
-                {branches.map(b => (
+              <select
+                value={selectedBranchId}
+                onChange={(e) => setSelectedBranchId(Number(e.target.value))}
+                disabled={!isHOUser}
+                className={inputClass}
+              >
+                {isHOUser && <option value={0}>सर्व शाखा (All Branches)</option>}
+                {(isHOUser ? branches : branches.filter(b => b.branchID === lockedBranchId)).map(b => (
                   <option key={b.branchID} value={b.branchID}>{b.branchName} ({b.branchCode})</option>
                 ))}
               </select>

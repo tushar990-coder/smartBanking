@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import { getCachedMasterData } from '../utils/apiCache';
 import {
   CheckCircle2,
@@ -251,18 +252,15 @@ export const FdMisInterestPayout: React.FC = () => {
   const [schemes, setSchemes] = useState<any[]>(() => getCachedMasterData('/api/FdSchemes') || []);
   const [selectedSchemeId, setSelectedSchemeId] = useState<number | ''>('');
 
-  const isHeadOfficeOrAdmin = Boolean(
-    user?.role === 'Admin' ||
-    (user as any)?.roleName === 'Admin' ||
-    (user as any)?.isHeadOffice ||
-    user?.branchID === 0 ||
-    !user?.branchID
-  );
+  const isHeadOfficeOrAdmin = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
+  const [branchID, setBranchID] = useState<number>(() => resolveWriteBranchId(user, localStorage.getItem('globalBranchId')));
 
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : 1);
-  const [branchID, setBranchID] = useState<number>(initialBranchId);
+  useEffect(() => {
+    if (lockedBranchId) {
+      setBranchID(lockedBranchId);
+    }
+  }, [lockedBranchId]);
 
   const getBizDateStr = (b?: string) => {
     if (b && b.trim()) return b.split('T')[0];

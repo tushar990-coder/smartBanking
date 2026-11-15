@@ -6757,6 +6757,96 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- INVESTMENT INTEREST ACCRUALS & RECEIPTS ENHANCED AUDIT/TDS COLUMNS
+-- ========================================================================
+IF OBJECT_ID('dbo.InvestmentInterestReceipts', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('InvestmentInterestReceipts', 'ReceiptType') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [ReceiptType] NVARCHAR(30) NOT NULL CONSTRAINT [DF_InvestmentInterestReceipts_ReceiptType] DEFAULT N'DepositInterest';
+    IF COL_LENGTH('InvestmentInterestReceipts', 'GrossAmount') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [GrossAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_InvestmentInterestReceipts_GrossAmount] DEFAULT 0.00;
+    IF COL_LENGTH('InvestmentInterestReceipts', 'TdsAmount') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_InvestmentInterestReceipts_TdsAmount] DEFAULT 0.00;
+    IF COL_LENGTH('InvestmentInterestReceipts', 'TdsLedgerID') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [TdsLedgerID] INT NULL;
+    IF COL_LENGTH('InvestmentInterestReceipts', 'PaymentMode') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [PaymentMode] NVARCHAR(20) NULL;
+    IF COL_LENGTH('InvestmentInterestReceipts', 'BankLedgerID') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [BankLedgerID] INT NULL;
+    IF COL_LENGTH('InvestmentInterestReceipts', 'ReferenceNo') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [ReferenceNo] NVARCHAR(100) NULL;
+    IF COL_LENGTH('InvestmentInterestReceipts', 'Remarks') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [Remarks] NVARCHAR(300) NULL;
+
+    UPDATE [dbo].[InvestmentInterestReceipts]
+    SET [GrossAmount] = [ReceivedAmount]
+    WHERE [GrossAmount] = 0 AND [ReceivedAmount] > 0;
+
+    PRINT 'Verified enhanced TDS/Audit columns on InvestmentInterestReceipts';
+END
+GO
+
+IF OBJECT_ID('dbo.InvestmentInterestAccruals', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('InvestmentInterestAccruals', 'FromDate') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestAccruals] ADD [FromDate] DATETIME2 NULL;
+    IF COL_LENGTH('InvestmentInterestAccruals', 'CalculationDays') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestAccruals] ADD [CalculationDays] INT NULL;
+    IF COL_LENGTH('InvestmentInterestAccruals', 'CalculationMethod') IS NULL
+        ALTER TABLE [dbo].[InvestmentInterestAccruals] ADD [CalculationMethod] NVARCHAR(30) NULL;
+
+    PRINT 'Verified enhanced period columns on InvestmentInterestAccruals';
+END
+GO
+
+-- ========================================================================
+-- BRANCH-WISE LEGACY UNIQUENESS & LOOKUP COMPOSITE INDEXES (NON-UNIQUE)
+-- ========================================================================
+IF OBJECT_ID('dbo.Customers', 'U') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Customers_Branch_LegacyCustomerNo' AND object_id = OBJECT_ID('dbo.Customers'))
+BEGIN
+    SET QUOTED_IDENTIFIER ON;
+    SET ANSI_NULLS ON;
+    CREATE NONCLUSTERED INDEX [IX_Customers_Branch_LegacyCustomerNo]
+    ON [dbo].[Customers] ([BranchID], [LegacyCustomerNo])
+    WHERE [IsDeleted] = 0 AND [LegacyCustomerNo] IS NOT NULL AND [LegacyCustomerNo] <> '';
+    PRINT '  -> Created Index IX_Customers_Branch_LegacyCustomerNo';
+END
+GO
+
+IF OBJECT_ID('dbo.Members', 'U') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Members_Branch_LegacyMemberNo' AND object_id = OBJECT_ID('dbo.Members'))
+BEGIN
+    SET QUOTED_IDENTIFIER ON;
+    SET ANSI_NULLS ON;
+    CREATE NONCLUSTERED INDEX [IX_Members_Branch_LegacyMemberNo]
+    ON [dbo].[Members] ([BranchID], [LegacyMemberNo])
+    WHERE [IsDeleted] = 0 AND [LegacyMemberNo] IS NOT NULL AND [LegacyMemberNo] <> '';
+    PRINT '  -> Created Index IX_Members_Branch_LegacyMemberNo';
+END
+GO
+
+IF OBJECT_ID('dbo.LoanAccounts', 'U') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_LoanAccounts_Branch_Scheme_Legacy' AND object_id = OBJECT_ID('dbo.LoanAccounts'))
+BEGIN
+    SET QUOTED_IDENTIFIER ON;
+    SET ANSI_NULLS ON;
+    CREATE NONCLUSTERED INDEX [IX_LoanAccounts_Branch_Scheme_Legacy]
+    ON [dbo].[LoanAccounts] ([BranchID], [LoanRateID], [LegacyAccountNumber])
+    WHERE [LegacyAccountNumber] IS NOT NULL AND [LegacyAccountNumber] <> '';
+    PRINT '  -> Created Index IX_LoanAccounts_Branch_Scheme_Legacy';
+END
+GO
+
+IF OBJECT_ID('dbo.FdAccounts', 'U') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_FdAccounts_Branch_Scheme_Legacy' AND object_id = OBJECT_ID('dbo.FdAccounts'))
+BEGIN
+    SET QUOTED_IDENTIFIER ON;
+    SET ANSI_NULLS ON;
+    CREATE NONCLUSTERED INDEX [IX_FdAccounts_Branch_Scheme_Legacy]
+    ON [dbo].[FdAccounts] ([BranchID], [FdSchemeID], [LegacyAccountNumber])
+    WHERE [LegacyAccountNumber] IS NOT NULL AND [LegacyAccountNumber] <> '';
+    PRINT '  -> Created Index IX_FdAccounts_Branch_Scheme_Legacy';
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

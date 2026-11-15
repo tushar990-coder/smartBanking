@@ -24,8 +24,9 @@ import {
   Clock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { getCachedMasterData } from '../utils/apiCache';
+import { getCachedMasterArray, safeArray } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Institution {
   institutionID: number;
@@ -66,16 +67,17 @@ const isValidIsoDate = (dateStr: string): boolean => {
 };
 
 const InvestmentOpeningBalance: React.FC = () => {
-  const { user } = useAuth();
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
+  const initialBranchId = resolveWriteBranchId(user, globalBranchId);
 
-  const [institutions, setInstitutions] = useState<Institution[]>(() => getCachedMasterData<any[]>('/api/InvestmentInstitutions') || []);
-  const [schemes, setSchemes] = useState<Scheme[]>(() => getCachedMasterData<any[]>('/api/InvestmentSchemes') || []);
-  const [filteredSchemes, setFilteredSchemes] = useState<Scheme[]>(() => getCachedMasterData<any[]>('/api/InvestmentSchemes') || []);
-  const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
+  const [institutions, setInstitutions] = useState<Institution[]>(() => getCachedMasterArray<Institution>('/api/InvestmentInstitutions'));
+  const [schemes, setSchemes] = useState<Scheme[]>(() => getCachedMasterArray<Scheme>('/api/InvestmentSchemes'));
+  const [filteredSchemes, setFilteredSchemes] = useState<Scheme[]>(() => getCachedMasterArray<Scheme>('/api/InvestmentSchemes'));
+  const [branches, setBranches] = useState<any[]>(() => getCachedMasterArray<any>('/api/Branches'));
   const [migratedAccounts, setMigratedAccounts] = useState<any[]>(() =>
-    (getCachedMasterData<any[]>('/api/InvestmentAccounts') || []).filter((a: any) => a.isLegacyAccount)
+    getCachedMasterArray<any>('/api/InvestmentAccounts').filter((a: any) => a.isLegacyAccount)
   );
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -146,14 +148,14 @@ const InvestmentOpeningBalance: React.FC = () => {
   const fetchBranches = async () => {
     try {
       const res = await axios.get(`${API_URL}/Branches`);
-      setBranches(res.data || []);
+      setBranches(safeArray(res.data));
     } catch {}
   };
 
   const fetchInstitutions = async () => {
     try {
       const res = await axios.get(`${API_URL}/InvestmentInstitutions`);
-      const list = (res.data || []).map((i: any) => ({
+      const list = safeArray(res.data).map((i: any) => ({
         ...i,
         institutionID: Number(i.institutionID || i.institutionId || i.InvestmentInstitutionID || i.investmentInstitutionID || 0)
       }));
@@ -164,7 +166,7 @@ const InvestmentOpeningBalance: React.FC = () => {
   const fetchSchemes = async () => {
     try {
       const res = await axios.get(`${API_URL}/InvestmentSchemes`);
-      const list = (res.data || []).map((s: any) => ({
+      const list = safeArray(res.data).map((s: any) => ({
         ...s,
         schemeID: Number(s.schemeID || s.schemeId || s.SchemeID || 0),
         investmentInstitutionID: Number(s.investmentInstitutionID || s.investmentInstitutionId || s.InvestmentInstitutionID || 0),
@@ -187,9 +189,7 @@ const InvestmentOpeningBalance: React.FC = () => {
   const fetchMigratedAccounts = async () => {
     try {
       const res = await axios.get(`${API_URL}/InvestmentAccounts`);
-      if (Array.isArray(res.data)) {
-        setMigratedAccounts(res.data.filter((a: any) => a.isLegacyAccount));
-      }
+      setMigratedAccounts(safeArray(res.data).filter((a: any) => a.isLegacyAccount));
     } catch (err) {
       console.error('Failed to fetch migrated investment accounts', err);
     }
@@ -213,14 +213,15 @@ const InvestmentOpeningBalance: React.FC = () => {
 
   useEffect(() => {
     const selectedInstId = Number(formData.investmentInstitutionID || 0);
+    const safeSchemes = safeArray(schemes);
     if (selectedInstId > 0) {
-      setFilteredSchemes(schemes.filter((s: any) => Number(s.investmentInstitutionID || 0) === selectedInstId));
+      setFilteredSchemes(safeSchemes.filter((s: any) => Number(s.investmentInstitutionID || 0) === selectedInstId));
     } else {
-      setFilteredSchemes(schemes);
+      setFilteredSchemes(safeSchemes);
     }
   }, [formData.investmentInstitutionID, schemes]);
 
-  const selectedScheme = schemes.find(s => s.schemeID === Number(formData.schemeID));
+  const selectedScheme = safeArray(schemes).find(s => s.schemeID === Number(formData.schemeID));
   const isShareMode = selectedScheme ? selectedScheme.investmentType === 'Share' : false;
 
   useEffect(() => {
@@ -730,9 +731,10 @@ const InvestmentOpeningBalance: React.FC = () => {
                   name="branchID" 
                   value={formData.branchID} 
                   onChange={handleChange}
-                  className={inputClass}
+                  disabled={!isHOUser}
+                  className={`${inputClass} ${!isHOUser ? 'bg-slate-100 cursor-not-allowed' : ''}`}
                 >
-                  {branches.map((b: any) => (
+                  {(lockedBranchId ? branches.filter((b: any) => b.branchID === lockedBranchId) : branches).map((b: any) => (
                     <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
                   ))}
                 </select>

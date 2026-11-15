@@ -220,10 +220,11 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Members/next-code
         [HttpGet("next-code")]
-        public async Task<IActionResult> GetNextMemberCode([FromQuery] bool includeLegacy = false)
+        public async Task<IActionResult> GetNextMemberCode([FromQuery] bool includeLegacy = false, [FromQuery] int? branchId = null)
         {
             try
             {
+                int effectiveBranchId = User.ResolveRequiredBranchId(branchId > 0 ? branchId : null);
                 // Only consider codes of active shareholding members (TotalShareCount > 0)
                 var activeShareholderMemberIds = await _context.ShareAccounts
                     .AsNoTracking()
@@ -271,7 +272,7 @@ namespace Bhisi.Api.Controllers
 
                 var existingLegacyList = await _context.Members
                     .AsNoTracking()
-                    .Where(m => !m.IsDeleted && m.LegacyMemberNo != null && m.LegacyMemberNo != "")
+                    .Where(m => !m.IsDeleted && m.BranchID == effectiveBranchId && m.LegacyMemberNo != null && m.LegacyMemberNo != "")
                     .Select(m => m.LegacyMemberNo!)
                     .ToListAsync();
 
@@ -599,7 +600,7 @@ namespace Bhisi.Api.Controllers
                 var existingLegacyMember = await _context.Members
                     .AsNoTracking()
                     .Include(m => m.Customer)
-                    .FirstOrDefaultAsync(m => m.MemberID != id && !m.IsDeleted && m.LegacyMemberNo == req.LegacyMemberNo);
+                    .FirstOrDefaultAsync(m => m.MemberID != id && !m.IsDeleted && m.BranchID == existingMember.BranchID && m.LegacyMemberNo == req.LegacyMemberNo);
                 if (existingLegacyMember != null)
                 {
                     string legacyName = existingLegacyMember.Customer != null ? $"{existingLegacyMember.Customer.FirstName} {existingLegacyMember.Customer.LastName}".Trim() : "Member";
@@ -846,7 +847,7 @@ namespace Bhisi.Api.Controllers
                 var existingLegacyMember = await _context.Members
                     .AsNoTracking()
                     .Include(m => m.Customer)
-                    .FirstOrDefaultAsync(m => !m.IsDeleted && m.LegacyMemberNo == req.LegacyMemberNo);
+                    .FirstOrDefaultAsync(m => !m.IsDeleted && m.BranchID == req.BranchID && m.LegacyMemberNo == req.LegacyMemberNo);
                 if (existingLegacyMember != null)
                 {
                     string legacyName = existingLegacyMember.Customer != null ? $"{existingLegacyMember.Customer.FirstName} {existingLegacyMember.Customer.LastName}".Trim() : "Member";

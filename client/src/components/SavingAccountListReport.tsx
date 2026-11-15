@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 import { 
   Printer, 
   FileSpreadsheet, 
@@ -63,14 +65,16 @@ const formatDisplayDate = (dStr?: string | null) => {
 };
 
 export default function SavingAccountListReport() {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [data, setData] = useState<SavingAccountDto[]>([]);
   const [sansthaDetail, setSansthaDetail] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [branches, setBranches] = useState<any[]>([]);
   
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? (globalBranchStr as string) : 'all';
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   // Filters
@@ -246,11 +250,11 @@ export default function SavingAccountListReport() {
             <select
               value={selectedBranchId}
               onChange={(e) => setSelectedBranchId(e.target.value)}
-              disabled={hasGlobalBranch}
+              disabled={!isHOUser}
               className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
             >
-              <option value="all">सर्व शाखा (All Branches)</option>
-              {branches.map((b) => (
+              {isHOUser && <option value="all">सर्व शाखा (All Branches)</option>}
+              {(isHOUser || !lockedBranchId ? branches : branches.filter((b) => Number(b.branchID) === Number(lockedBranchId))).map((b) => (
                 <option key={b.branchID} value={b.branchID}>
                   {b.branchName}
                 </option>

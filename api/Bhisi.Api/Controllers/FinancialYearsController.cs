@@ -13,7 +13,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class FinancialYearsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -308,6 +308,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/FinancialYears/{id}/carry-forward
         [HttpPost("{id}/carry-forward")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager")]
         public async Task<IActionResult> CarryForwardBalances(int id, [FromBody] CarryForwardRequestDto? request)
         {
             request ??= new CarryForwardRequestDto();
@@ -636,6 +637,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/FinancialYears/{id}/toggle-lock
         [HttpPost("{id}/toggle-lock")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager")]
         public async Task<IActionResult> ToggleFinancialYearLock(int id, [FromBody] ToggleLockRequestDto? request)
         {
             var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.FinancialYearID == id);
@@ -696,6 +698,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager")]
         public async Task<ActionResult<FinancialYear>> PostFinancialYear(FinancialYear financialYear)
         {
             if (string.IsNullOrWhiteSpace(financialYear.YearCode))
@@ -765,6 +768,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPut("{id}")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager")]
         public async Task<IActionResult> PutFinancialYear(int id, FinancialYear financialYear)
         {
             if (id != financialYear.FinancialYearID)
@@ -852,6 +856,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager")]
         public async Task<IActionResult> DeleteFinancialYear(int id)
         {
             var financialYear = await _context.FinancialYears.FindAsync(id);

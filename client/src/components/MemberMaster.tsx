@@ -8,6 +8,7 @@ import {
   CheckCircle, Percent, ArrowRight, ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import { getCachedMasterData } from '../utils/apiCache';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
@@ -206,7 +207,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
 
   // Member Core Form State
   const [formData, setFormData] = useState({
-    branchID: user?.branchID || 1,
+    branchID: resolveWriteBranchId(user, localStorage.getItem('globalBranchId')),
     memberCode: '',
     legacyMemberNo: '',
     cifNo: '',
@@ -951,7 +952,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       seconderMemberID: ''
     });
     setFormData({
-      branchID: user?.branchID || 1,
+      branchID: resolveWriteBranchId(user, localStorage.getItem('globalBranchId')),
       memberCode: '',
       legacyMemberNo: '',
       cifNo: '',
@@ -1205,9 +1206,10 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                   value={formData.branchID} 
                   onChange={e => setFormData(prev => ({ ...prev, branchID: Number(e.target.value) }))}
                   required
-                  className={inputClass}
+                  disabled={!isHeadOfficeUser(user)}
+                  className={`${inputClass} ${!isHeadOfficeUser(user) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                 >
-                  {branches.map(b => (
+                  {(getLockedBranchId(user) ? branches.filter(b => b.branchID === getLockedBranchId(user)) : branches).map(b => (
                     <option key={b.branchID} value={b.branchID}>{b.branchName} ({b.branchCode})</option>
                   ))}
                 </select>

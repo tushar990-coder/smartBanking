@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 export interface LegacyDaybookProps {
   initialVoucherStatus?: 'approved' | 'pending';
@@ -73,8 +74,9 @@ const formatShortVoucherDisplay = (raw?: string | null): string => {
 };
 
 export default function LegacyDaybook({ initialVoucherStatus }: LegacyDaybookProps = {}) {
-  const { user } = useAuth();
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const pagesAreaRef = useRef<HTMLDivElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [reportViewType, setReportViewType] = useState<'detailed' | 'ledger-wise'>('detailed');
@@ -99,13 +101,8 @@ export default function LegacyDaybook({ initialVoucherStatus }: LegacyDaybookPro
   const [address, setAddress] = useState<string>('');
   const [registrationNo, setRegistrationNo] = useState<string>('');
   const [branches, setBranches] = useState<any[]>([]);
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch
-    ? (globalBranchStr as string)
-    : !isHOUser && user?.branchID
-    ? user.branchID.toString()
-    : 'all';
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   useEffect(() => {
@@ -461,11 +458,11 @@ export default function LegacyDaybook({ initialVoucherStatus }: LegacyDaybookPro
               <select
                 value={selectedBranchId}
                 onChange={e => setSelectedBranchId(e.target.value)}
-                disabled={hasGlobalBranch || !isHOUser}
+                disabled={!isHOUser}
                 className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-gray-100 disabled:text-gray-500 cursor-pointer disabled:cursor-not-allowed"
               >
                 {isHOUser && <option value="all">सर्व शाखा (All)</option>}
-                {branches.map(b => (
+                {(isHOUser || !lockedBranchId ? branches : branches.filter(b => Number(b.branchID) === Number(lockedBranchId))).map(b => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}
                   </option>

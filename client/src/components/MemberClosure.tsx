@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Member extends MemberOption {}
 
@@ -37,6 +39,7 @@ interface ClosureInfo {
 }
 
 const MemberClosure: React.FC = () => {
+  const { user } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<string>('');
   const [closureInfo, setClosureInfo] = useState<ClosureInfo | null>(null);
@@ -154,7 +157,7 @@ const MemberClosure: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          branchId: 1,
+          branchId: resolveWriteBranchId(user),
           narration: 'Member Closure',
           paymentMode: closureInfo.shareBalance > 0 ? paymentMode : 'Cash',
           bankLedgerId: closureInfo.shareBalance > 0 && paymentMode === 'Bank' ? bankLedgerId : null

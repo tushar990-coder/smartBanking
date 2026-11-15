@@ -93,16 +93,6 @@ namespace Bhisi.Api.Controllers
                     .Select(a => a.LegacyAccountNumber!)
                     .ToListAsync();
 
-                if (existingLegacyList.Count == 0)
-                {
-                    existingLegacyList = await _context.LoanAccounts
-                        .Where(a => a.LoanRateID == loanRateId.Value &&
-                                    a.LegacyAccountNumber != null &&
-                                    a.LegacyAccountNumber != "")
-                        .Select(a => a.LegacyAccountNumber!)
-                        .ToListAsync();
-                }
-
                 int maxLegacySeq = 0;
                 foreach (var legacyStr in existingLegacyList)
                 {
@@ -591,6 +581,7 @@ namespace Bhisi.Api.Controllers
             {
                 string cleanLegacy = loanAccount.LegacyAccountNumber.Trim();
                 var dup = await _context.LoanAccounts.AsNoTracking().FirstOrDefaultAsync(l => 
+                    l.BranchID == loanAccount.BranchID &&
                     l.LoanRateID == loanAccount.LoanRateID && 
                     l.LegacyAccountNumber != null && 
                     l.LegacyAccountNumber.Trim() == cleanLegacy);
@@ -1749,6 +1740,7 @@ namespace Bhisi.Api.Controllers
             {
                 int? excludeId = dto.LoanOpeningBalanceID > 0 ? dto.LoanOpeningBalanceID : null;
                 var duplicateLegacyQuery = _context.LoanAccounts.AsNoTracking().Where(l => 
+                    l.BranchID == dto.BranchID &&
                     l.LoanRateID == dto.LoanRateID && 
                     l.LegacyAccountNumber != null && 
                     l.LegacyAccountNumber.Trim() == cleanLegacyAccountNo);

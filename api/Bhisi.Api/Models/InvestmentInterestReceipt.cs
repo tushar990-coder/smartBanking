@@ -34,8 +34,34 @@ namespace Bhisi.Api.Models
         public DateTime ReceiptDate { get; set; }
 
         [Required]
+        [StringLength(30)]
+        public string ReceiptType { get; set; } = "DepositInterest"; // DepositInterest, ShareDividend
+
         [Column(TypeName = "decimal(18,2)")]
-        public decimal ReceivedAmount { get; set; }
+        public decimal GrossAmount { get; set; } = 0;
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal TdsAmount { get; set; } = 0;
+
+        public int? TdsLedgerID { get; set; }
+
+        [ForeignKey("TdsLedgerID")]
+        public virtual Ledger? TdsLedger { get; set; }
+
+        [Required]
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal ReceivedAmount { get; set; } // Net cash/bank received (GrossAmount - TdsAmount)
+
+        [StringLength(20)]
+        public string? PaymentMode { get; set; } = "Bank";
+
+        public int? BankLedgerID { get; set; }
+
+        [StringLength(100)]
+        public string? ReferenceNo { get; set; }
+
+        [StringLength(300)]
+        public string? Remarks { get; set; }
 
         public int? VoucherID { get; set; }
 

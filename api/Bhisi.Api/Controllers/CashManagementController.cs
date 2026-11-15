@@ -188,7 +188,7 @@ namespace Bhisi.Api.Controllers
                     .Include(c => c.Branch)
                     .Include(c => c.User)
                     .Include(c => c.CashLedger)
-                    .Where(c => c.BranchId == targetBranchId || !c.BranchId.HasValue);
+                    .Where(c => c.BranchId == targetBranchId);
 
                 var cashiers = await query.OrderBy(c => c.IsHeadCashier ? 0 : 1).ThenBy(c => c.CashierName).ToListAsync();
 
@@ -241,7 +241,7 @@ namespace Bhisi.Api.Controllers
                             .Include(c => c.Branch)
                             .Include(c => c.User)
                             .Include(c => c.CashLedger)
-                            .Where(c => c.BranchId == targetBranchId || !c.BranchId.HasValue)
+                            .Where(c => c.BranchId == targetBranchId)
                             .OrderBy(c => c.IsHeadCashier ? 0 : 1).ThenBy(c => c.CashierName)
                             .ToListAsync();
                     }
@@ -440,7 +440,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.FromCashier)
                 .Include(a => a.ToCashier)
                 .Include(a => a.Branch)
-                .Where(a => !a.BranchId.HasValue || a.BranchId == targetBranchId);
+                .Where(a => a.BranchId == targetBranchId);
 
             if (cashierId.HasValue && cashierId.Value > 0)
             {
@@ -540,6 +540,10 @@ namespace Bhisi.Api.Controllers
                 return NotFound("हस्तांतरण नोंद सापडली नाही.");
             }
 
+            if (alloc.BranchId.HasValue && !User.CanAccessBranch(alloc.BranchId.Value))
+            {
+                return StatusCode(403, "आपल्याला इतर शाखेतील कॅश हस्तांतरण स्थिती बदलण्याची परवानगी नाही.");
+            }
             alloc.Status = dto.Status;
             if (!string.IsNullOrWhiteSpace(dto.Remarks))
             {
@@ -566,7 +570,7 @@ namespace Bhisi.Api.Controllers
             var query = _context.CashDenominations
                 .Include(d => d.Cashier)
                 .Include(d => d.Branch)
-                .Where(d => !d.BranchId.HasValue || d.BranchId == targetBranchId);
+                .Where(d => d.BranchId == targetBranchId);
 
             if (cashierId.HasValue && cashierId.Value > 0)
             {
@@ -691,7 +695,7 @@ namespace Bhisi.Api.Controllers
             // 1. Cashiers list strictly filtered by target branch
             var cashiers = await _context.Cashiers
                 .Include(c => c.CashLedger)
-                .Where(c => c.IsActive && (c.BranchId == targetBranchId || !c.BranchId.HasValue))
+                .Where(c => c.IsActive && c.BranchId == targetBranchId)
                 .ToListAsync();
 
             var headCashier = cashiers.FirstOrDefault(c => c.IsHeadCashier);
@@ -699,13 +703,13 @@ namespace Bhisi.Api.Controllers
             // 2. Fetch dynamic scheme settings for this specific branch
             var setting = await _context.CashManagementSettings
                 .Include(s => s.MainVaultLedger)
-                .FirstOrDefaultAsync(s => s.BranchId == targetBranchId || !s.BranchId.HasValue);
+                .FirstOrDefaultAsync(s => s.BranchId == targetBranchId);
 
             // 3. Allocations for today in this branch
             var allocationsToday = await _context.CashAllocations
                 .Where(a => a.AllocationDate.Date == targetDate && 
                             a.Status == "ACCEPTED" &&
-                            (!a.BranchId.HasValue || a.BranchId == targetBranchId))
+                            a.BranchId == targetBranchId)
                 .ToListAsync();
 
             decimal totalAllocatedToTellers = allocationsToday

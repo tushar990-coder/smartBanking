@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import {
   FileText,
   UserCheck,
@@ -175,7 +176,7 @@ export default function RdAccountOpening({
   const [printAccount, setPrintAccount] = useState<RdAccountItem | null>(null);
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     memberID: '',
     rdSchemeID: '',
     accountType: 'Single', // Single, Joint, Minor
@@ -442,7 +443,10 @@ export default function RdAccountOpening({
         setBranches(bList);
         setAgents(agList);
 
-        const defaultBranch = bList.length > 0 ? bList[0].branchID : 1;
+        const defaultBranch = isHeadOfficeUser(user)
+          ? (bList.length > 0 ? bList[0].branchID : 1)
+          : (getLockedBranchId(user) ?? (bList.length > 0 ? bList[0].branchID : 1));
+        setFormData(prev => ({ ...prev, branchID: defaultBranch }));
         fetchNextAccountNo(defaultBranch);
         const sRes = await axios.get(`/api/RdSchemes?branchId=${defaultBranch}`);
         if (!isMounted) return;
@@ -949,8 +953,14 @@ export default function RdAccountOpening({
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                       <div className="sm:col-span-3">
                         <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
-                        <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass}>
-                          {(Array.isArray(branches) ? branches : []).map((b, idx) => (
+                        <select
+                          name="branchID"
+                          value={formData.branchID}
+                          onChange={handleChange}
+                          disabled={!isHeadOfficeUser(user)}
+                          className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-600`}
+                        >
+                          {(isHeadOfficeUser(user) ? (Array.isArray(branches) ? branches : []) : (Array.isArray(branches) ? branches : []).filter(b => Number(b.branchID) === (getLockedBranchId(user) ?? formData.branchID))).map((b, idx) => (
                             <option key={`branch-${b.branchID ?? '0'}-${idx}`} value={b.branchID}>{b.branchName}</option>
                           ))}
                         </select>

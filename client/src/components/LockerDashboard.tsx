@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId } from '../utils/branchAccess';
 import { 
   KeyRound, 
   Box, 
@@ -76,7 +77,7 @@ export default function LockerDashboard({ onNavigate }: LockerDashboardProps) {
     };
   }, []);
 
-  const selectedBranchId = localStorage.getItem('globalBranchId') || (user?.branchID ? user.branchID.toString() : 'all');
+  const selectedBranchId = getEffectiveBranchId(user, localStorage.getItem('globalBranchId'));
 
   const fetchDashboardData = async () => {
     setLoading(true);

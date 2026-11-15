@@ -24,6 +24,7 @@ import {
   X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { safeArray } from '../utils/apiCache';
 
 interface Branch {
   branchID: number;
@@ -123,10 +124,10 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
         axios.get('/api/FinancialYears')
       ]);
 
-      const branchList: Branch[] = Array.isArray(branchRes.data) ? branchRes.data : [];
+      const branchList: Branch[] = safeArray<Branch>(branchRes.data);
       setBranches(branchList);
 
-      const fyList: FinancialYear[] = Array.isArray(fyRes.data) ? fyRes.data : [];
+      const fyList: FinancialYear[] = safeArray<FinancialYear>(fyRes.data);
       setFinancialYears(fyList);
 
       // Default active branch: initialBranchId or Head Office or first branch
@@ -332,8 +333,8 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
       return;
     }
 
-    const branch = branches.find(b => b.branchID === selectedBranchId);
-    const fy = financialYears.find(f => f.financialYearID === selectedFyId);
+    const branch = safeArray(branches).find(b => b.branchID === selectedBranchId);
+    const fy = safeArray(financialYears).find(f => f.financialYearID === selectedFyId);
 
     const exportData = filteredRows.map((r, i) => ({
       'अ.क्र.': i + 1,
@@ -358,7 +359,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
 
   // 7. Computed Metrics & Filters
   const selectedBranch = useMemo(() => {
-    return branches.find(b => b.branchID === selectedBranchId);
+    return safeArray(branches).find(b => b.branchID === selectedBranchId);
   }, [branches, selectedBranchId]);
 
   const filteredRows = useMemo(() => {

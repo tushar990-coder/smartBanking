@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import { safeArray } from '../utils/apiCache';
 import { 
   Coins, 
   Plus, 
@@ -146,8 +147,8 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
 
   // Auto-sync "भाग भांडवल जमा खाते" (Share Capital Ledger) whenever selected scheme or schemes list changes
   useEffect(() => {
-    if (!defaultSchemeId || schemes.length === 0) return;
-    const selScheme = schemes.find(s => String(s.shareSchemeId) === String(defaultSchemeId));
+    if (!defaultSchemeId || safeArray(schemes).length === 0) return;
+    const selScheme = safeArray(schemes).find(s => String(s.shareSchemeId) === String(defaultSchemeId));
     if (selScheme) {
       const capId = getSchemeCapitalLedgerId(selScheme);
       if (capId) {
@@ -175,7 +176,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       const res = await fetch('/api/Customers', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setMembers(Array.isArray(data) ? data : (data?.value || []));
+        setMembers(safeArray(data));
       }
     } catch (error) {
       console.error('Failed to fetch members/customers', error);
@@ -187,7 +188,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       const res = await fetch('/api/ShareAccounts/OpeningBalance', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setExistingBalances(Array.isArray(data) ? data : []);
+        setExistingBalances(safeArray(data));
       }
     } catch (error) {
       console.error('Failed to fetch existing balances', error);
@@ -199,7 +200,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       const res = await fetch('/api/ShareSchemes', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        const activeSchemes = Array.isArray(data) ? data.filter((s: ShareScheme) => s.isActive) : [];
+        const activeSchemes = safeArray<ShareScheme>(data).filter((s: ShareScheme) => s.isActive);
         setSchemes(activeSchemes);
         if (activeSchemes.length > 0) {
           const first = activeSchemes[0];
@@ -220,7 +221,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       const res = await fetch('/api/Ledgers', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        const safeLedgers = Array.isArray(data) ? data : [];
+        const safeLedgers = safeArray(data);
         setLedgers(safeLedgers);
         // Auto select share capital ledger if available
         const shareCapital = safeLedgers.find((l: any) => 
@@ -274,8 +275,8 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       return;
     }
 
-    const loadedRows: GridRow[] = existingBalances.map(b => {
-      const m = members.find((mem: any) => (
+    const loadedRows: GridRow[] = safeArray(existingBalances).map(b => {
+      const m = safeArray(members).find((mem: any) => (
         (b.customerId && String(mem.customerID ?? '') === String(b.customerId)) ||
         (b.cifNo && mem.cifNo && mem.cifNo.trim().toLowerCase() === b.cifNo.trim().toLowerCase()) ||
         String(mem.memberID ?? '') === String(b.memberId) ||
@@ -372,7 +373,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
         const safeFv = (isNaN(fv) || fv <= 0) ? 100 : fv;
 
         if (field === 'memberId') {
-          const selMember = selectedMemberObj || members.find((m: any) => 
+          const selMember = selectedMemberObj || safeArray(members).find((m: any) => 
             String(m.memberID ?? '') === String(value) || 
             String(m.customerID ?? '') === String(value) || 
             String(m.id ?? '') === String(value) || 
@@ -395,7 +396,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
             updated.legacyMemberNo = rawLegacy;
 
             // 🔍 Check if member already has an existing opening balance
-            const existing = existingBalances.find((b: any) => (
+            const existing = safeArray(existingBalances).find((b: any) => (
               (b.customerId && String(b.customerId) === String(value)) ||
               (selMember?.cifNo && b.cifNo && b.cifNo.trim().toLowerCase() === selMember.cifNo.trim().toLowerCase()) ||
               (b.memberId && String(b.memberId) === String(value) && (!b.customerId || String(b.customerId) === String(value)))
@@ -428,7 +429,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
         }
 
         if (field === 'shareSchemeId') {
-          const selScheme = schemes.find(s => s.shareSchemeId === value);
+          const selScheme = safeArray(schemes).find(s => s.shareSchemeId === value);
           if (selScheme) {
             updated.faceValue = selScheme.shareFaceValue || 100;
           }
@@ -533,7 +534,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
   const handleAutoSequenceAll = () => {
     // 💡 Determine start share number:
     // If the first valid row in the grid has a fromShareNo (e.g. 1), use that as sequence start!
-    const firstFilled = rows.find(r => r.memberId !== '' && (typeof r.shareQuantity === 'number' ? r.shareQuantity > 0 : parseInt(r.shareQuantity || '0', 10) > 0));
+    const firstFilled = safeArray(rows).find(r => r.memberId !== '' && (typeof r.shareQuantity === 'number' ? r.shareQuantity > 0 : parseInt(r.shareQuantity || '0', 10) > 0));
     let currentFromShare = startShareNo;
     if (firstFilled) {
       const fFrom = typeof firstFilled.fromShareNo === 'number' ? firstFilled.fromShareNo : parseInt(firstFilled.fromShareNo || '0', 10);
@@ -651,7 +652,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
 
     try {
       const payloadRecords = validRows.map(r => {
-        const m = members.find((mem: any) => 
+        const m = safeArray(members).find((mem: any) => 
           String(mem.memberID ?? '') === String(r.memberId) || 
           String(mem.customerID ?? '') === String(r.memberId) || 
           String(mem.id ?? '') === String(r.memberId) ||
@@ -730,7 +731,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       if (cols.length === 0 || !cols[0]) return;
 
       const searchKey = cols[0].toLowerCase();
-      const matchedMember = members.find((m: any) => 
+      const matchedMember = safeArray(members).find((m: any) => 
         (m.memberCode && m.memberCode.toLowerCase() === searchKey) ||
         (m.memberProfile?.memberCode && m.memberProfile.memberCode.toLowerCase() === searchKey) ||
         (m.cifNo && m.cifNo.toLowerCase() === searchKey) ||
@@ -749,7 +750,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       const divPay = cols[6] ? parseFloat(cols[6].replace(/[^\d.]/g, '')) : '';
 
       const mId = matchedMember ? ((matchedMember as any).customerID || matchedMember.memberID) : '';
-      const existing = mId ? existingBalances.find((b: any) => (
+      const existing = mId ? safeArray(existingBalances).find((b: any) => (
         (b.customerId && String(b.customerId) === String(mId)) ||
         (b.memberId === mId && (!b.customerId || String(b.customerId) === String(mId)))
       )) : null;
@@ -953,7 +954,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
               onChange={(e) => {
                 const sId = e.target.value;
                 setDefaultSchemeId(sId);
-                const sel = schemes.find(s => String(s.shareSchemeId) === String(sId));
+                const sel = safeArray(schemes).find(s => String(s.shareSchemeId) === String(sId));
                 const capId = getSchemeCapitalLedgerId(sel);
                 if (capId) {
                   setDefaultLedgerId(capId);

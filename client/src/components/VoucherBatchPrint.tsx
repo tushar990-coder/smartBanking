@@ -9,14 +9,12 @@ import CbsReportLayout, {
 } from './common/CbsReportLayout';
 import { VoucherPrintTemplate, fmtVoucherAmt, toMarathiNum } from './VoucherPrint';
 import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 export default function VoucherBatchPrint() {
-  const { user } = useAuth();
-  const isHOUser =
-    user?.role === 'Admin' ||
-    user?.role === 'SuperAdmin' ||
-    user?.role === 'HeadOffice' ||
-    user?.role === 'HO_Manager';
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
 
   const getBizDateStr = (b?: string) => {
     if (b && b.trim()) return b.split('T')[0];
@@ -35,14 +33,7 @@ export default function VoucherBatchPrint() {
   const [signatureTier, setSignatureTier] = useState<'3-tier' | '4-tier'>('3-tier');
   const [digitMode, setDigitMode] = useState<'marathi' | 'english'>('english');
 
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch
-    ? (globalBranchStr as string)
-    : !isHOUser && user?.branchID
-    ? user.branchID.toString()
-    : 'all';
-  const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(() => String(getEffectiveBranchId(user, globalBranchId) ?? 'all'));
   const [branches, setBranches] = useState<any[]>([]);
 
   const [vouchers, setVouchers] = useState<any[]>([]);
@@ -348,12 +339,12 @@ export default function VoucherBatchPrint() {
         <label className="text-[10.5px] font-semibold text-slate-600 whitespace-nowrap">शाखा:</label>
         <select
           value={selectedBranchId}
-          disabled={hasGlobalBranch || !isHOUser}
+          disabled={!isHOUser}
           onChange={(e) => setSelectedBranchId(e.target.value)}
-          className="h-6 border border-slate-300 rounded-xs px-1 text-[10.5px] font-medium bg-white text-slate-800 w-28"
+          className={`h-6 border border-slate-300 rounded-xs px-1 text-[10.5px] font-medium text-slate-800 w-28 ${!isHOUser ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
         >
-          <option value="all">सर्व शाखा (All)</option>
-          {branches.map((b: any) => (
+          {isHOUser && <option value="all">सर्व शाखा (All)</option>}
+          {(lockedBranchId ? branches.filter((b: any) => b.branchID === lockedBranchId) : branches).map((b: any) => (
             <option key={b.branchID} value={String(b.branchID)}>
               {b.branchName}
             </option>

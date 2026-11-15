@@ -33,18 +33,32 @@ namespace Bhisi.Api.Controllers
 
         private int GetCurrentAgentId(int? explicitAgentId = null)
         {
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? string.Empty;
+
+            // Strict Security: If authenticated as AGENT, ALWAYS trust JWT claim first so headers/query params cannot impersonate another agent
+            if (string.Equals(roleClaim, "AGENT", StringComparison.OrdinalIgnoreCase))
+            {
+                var agentClaimJwt = User.Claims.FirstOrDefault(c =>
+                    c.Type == "agentId" ||
+                    c.Type == "AgentId");
+                if (agentClaimJwt != null && int.TryParse(agentClaimJwt.Value, out int jwtAgentId) && jwtAgentId > 0)
+                {
+                    return jwtAgentId;
+                }
+
+                var nameIdJwt = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+                if (nameIdJwt != null && int.TryParse(nameIdJwt.Value, out int jwtNameId) && jwtNameId > 0)
+                {
+                    return jwtNameId;
+                }
+            }
+
             if (explicitAgentId.HasValue && explicitAgentId.Value > 0)
             {
                 return explicitAgentId.Value;
             }
 
-            // 1. Check explicit X-Agent-Id header
-            if (Request.Headers.TryGetValue("X-Agent-Id", out var headerVal) && int.TryParse(headerVal, out int hId) && hId > 0)
-            {
-                return hId;
-            }
-
-            // 2. Try JWT Claims: "agentId" or "AgentId"
+            // 1. Try JWT Claims: "agentId" or "AgentId"
             var agentClaim = User.Claims.FirstOrDefault(c => 
                 c.Type == "agentId" || 
                 c.Type == "AgentId");
@@ -54,18 +68,16 @@ namespace Bhisi.Api.Controllers
                 return id;
             }
 
+            // 2. Fallback to explicit X-Agent-Id header for staff/branch queries
+            if (Request.Headers.TryGetValue("X-Agent-Id", out var headerVal) && int.TryParse(headerVal, out int hId) && hId > 0)
+            {
+                return hId;
+            }
+
             // 3. Fallback to query param
             if (Request.Query.TryGetValue("agentId", out var qVal) && int.TryParse(qVal, out int qId) && qId > 0)
             {
                 return qId;
-            }
-
-            // 4. Fallback to NameIdentifier if role is AGENT
-            var nameIdClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
-            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
-            if (roleClaim?.Value == "AGENT" && nameIdClaim != null && int.TryParse(nameIdClaim.Value, out int nId) && nId > 0)
-            {
-                return nId;
             }
 
             return 0;
@@ -144,7 +156,6 @@ namespace Bhisi.Api.Controllers
         // ==========================================
         // 2b. GET /api/PigmyApp/customers
         // ==========================================
-        [AllowAnonymous]
         [HttpGet("api/PigmyApp/customers")]
         public async Task<IActionResult> GetMobileCustomers([FromQuery] int? agentId)
         {

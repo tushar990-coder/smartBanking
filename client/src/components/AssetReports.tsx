@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Ledger {
   ledgerID: number;
@@ -9,8 +10,8 @@ interface Ledger {
 
 const AssetReports: React.FC = () => {
   const { user, globalBranchId } = useAuth();
-  const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
-  const isHeadOfficeOrAdmin = user?.role === 'Admin' || user?.branchType === 'HeadOffice';
+  const isHeadOfficeOrAdmin = isHeadOfficeUser(user);
+  const effectiveBranchId = resolveWriteBranchId(user, globalBranchId);
 
   const [activeTab, setActiveTab] = useState<'register' | 'depreciation' | 'maintenance'>(() => {
     const rt = new URLSearchParams(window.location.search).get('reportType');
@@ -262,9 +263,14 @@ const AssetReports: React.FC = () => {
               <div className="flex flex-wrap gap-2 items-end bg-gray-50 border p-2 rounded print:hidden text-xs">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-600">शाखा (Branch)</label>
-                  <select value={regBranch} onChange={e => setRegBranch(e.target.value)} className="border rounded px-2 py-0.5 bg-white mt-0.5">
-                    <option value="all">सर्व शाखा (All Branches)</option>
-                    {branches.map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
+                  <select
+                    value={regBranch}
+                    onChange={e => setRegBranch(e.target.value)}
+                    disabled={!isHeadOfficeOrAdmin}
+                    className="border rounded px-2 py-0.5 bg-white mt-0.5 disabled:bg-slate-100 disabled:text-slate-600"
+                  >
+                    {isHeadOfficeOrAdmin && <option value="all">सर्व शाखा (All Branches)</option>}
+                    {(isHeadOfficeOrAdmin ? branches : branches.filter(b => Number(b.branchID) === effectiveBranchId)).map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
                   </select>
                 </div>
                 <div>
@@ -361,9 +367,14 @@ const AssetReports: React.FC = () => {
               <form onSubmit={handlePreviewDepreciation} className="grid grid-cols-4 gap-2 items-end bg-gray-50 p-3 border rounded text-xs">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-600">शाखा (Branch) *</label>
-                  <select value={depBranch} onChange={e => setDepBranch(parseInt(e.target.value))} className="w-full border rounded px-2 py-1 bg-white mt-0.5">
-                    <option value={0}>🌟 सर्व शाखा एकत्रित (All Branches - Consolidated)</option>
-                    {branches.map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
+                  <select
+                    value={depBranch}
+                    onChange={e => setDepBranch(parseInt(e.target.value))}
+                    disabled={!isHeadOfficeOrAdmin}
+                    className="w-full border rounded px-2 py-1 bg-white mt-0.5 disabled:bg-slate-100 disabled:text-slate-600"
+                  >
+                    {isHeadOfficeOrAdmin && <option value={0}>🌟 सर्व शाखा एकत्रित (All Branches - Consolidated)</option>}
+                    {(isHeadOfficeOrAdmin ? branches : branches.filter(b => Number(b.branchID) === effectiveBranchId)).map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
                   </select>
                 </div>
                 <div>

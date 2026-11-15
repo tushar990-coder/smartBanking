@@ -489,17 +489,23 @@ namespace Bhisi.Api.Controllers
         [HttpGet("check-legacy")]
         public async Task<IActionResult> CheckLegacyCustomerNo(
             [FromQuery] string? legacyNo = null,
-            [FromQuery] int? excludeId = null)
+            [FromQuery] int? excludeId = null,
+            [FromQuery] int? branchId = null)
         {
             if (string.IsNullOrWhiteSpace(legacyNo))
             {
                 return Ok(new { exists = false });
             }
 
+            int effectiveBranchId = User.ResolveRequiredBranchId(branchId > 0 ? branchId : null);
             string trimmed = legacyNo.Trim();
             var existing = await _context.Customers
                 .AsNoTracking()
-                .Where(c => !c.IsDeleted && c.LegacyCustomerNo != null && c.LegacyCustomerNo == trimmed && (!excludeId.HasValue || c.CustomerID != excludeId.Value))
+                .Where(c => !c.IsDeleted
+                    && c.BranchID == effectiveBranchId
+                    && c.LegacyCustomerNo != null
+                    && c.LegacyCustomerNo == trimmed
+                    && (!excludeId.HasValue || c.CustomerID != excludeId.Value))
                 .Select(c => new
                 {
                     customerID = c.CustomerID,
@@ -639,15 +645,15 @@ namespace Bhisi.Api.Controllers
             customer.PANNo = string.IsNullOrWhiteSpace(customer.PANNo) ? null : customer.PANNo.Trim().ToUpper();
             customer.LegacyCustomerNo = string.IsNullOrWhiteSpace(customer.LegacyCustomerNo) ? null : customer.LegacyCustomerNo.Trim();
 
-            // Duplicate checks
+            // Duplicate checks (Branch-wise unique LegacyCustomerNo)
             if (!string.IsNullOrWhiteSpace(customer.LegacyCustomerNo))
             {
                 var existingLegacyCust = await _context.Customers
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(c => !c.IsDeleted && c.LegacyCustomerNo != null && c.LegacyCustomerNo == customer.LegacyCustomerNo);
+                    .FirstOrDefaultAsync(c => !c.IsDeleted && c.BranchID == customer.BranchID && c.LegacyCustomerNo != null && c.LegacyCustomerNo == customer.LegacyCustomerNo);
                 if (existingLegacyCust != null)
                 {
-                    return BadRequest(new { message = $"हा जुना ग्राहक आयडी ({customer.LegacyCustomerNo}) आधीच ग्राहक '{existingLegacyCust.FirstName} {existingLegacyCust.LastName}' (CIF: {existingLegacyCust.CIFNo}) साठी नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा जुना ग्राहक आयडी ({customer.LegacyCustomerNo}) या शाखेत आधीच ग्राहक '{existingLegacyCust.FirstName} {existingLegacyCust.LastName}' (CIF: {existingLegacyCust.CIFNo}) साठी नोंदवला आहे." });
                 }
             }
 
@@ -747,16 +753,16 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(403, new { message = "आपण केवळ आपल्या शाखेतील ग्राहकांची माहिती अद्ययावत करू शकता." });
             }
 
-            // Duplicate checks for update
+            // Duplicate checks for update (Branch-wise unique LegacyCustomerNo)
             customer.LegacyCustomerNo = string.IsNullOrWhiteSpace(customer.LegacyCustomerNo) ? null : customer.LegacyCustomerNo.Trim();
             if (!string.IsNullOrWhiteSpace(customer.LegacyCustomerNo))
             {
                 var existingLegacyCust = await _context.Customers
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(c => c.CustomerID != id && !c.IsDeleted && c.LegacyCustomerNo != null && c.LegacyCustomerNo == customer.LegacyCustomerNo);
+                    .FirstOrDefaultAsync(c => c.CustomerID != id && !c.IsDeleted && c.BranchID == existingCustomer.BranchID && c.LegacyCustomerNo != null && c.LegacyCustomerNo == customer.LegacyCustomerNo);
                 if (existingLegacyCust != null)
                 {
-                    return BadRequest(new { message = $"हा जुना ग्राहक आयडी ({customer.LegacyCustomerNo}) आधीच ग्राहक '{existingLegacyCust.FirstName} {existingLegacyCust.LastName}' (CIF: {existingLegacyCust.CIFNo}) साठी नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा जुना ग्राहक आयडी ({customer.LegacyCustomerNo}) या शाखेत आधीच ग्राहक '{existingLegacyCust.FirstName} {existingLegacyCust.LastName}' (CIF: {existingLegacyCust.CIFNo}) साठी नोंदवला आहे." });
                 }
             }
 

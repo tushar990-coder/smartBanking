@@ -245,7 +245,7 @@ namespace Bhisi.Api.Controllers
                             var aadhaar = reader["Adhar_no"].ToString() ?? "";
 
                             var legacyStr = legacyId.ToString();
-                            var existing = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.LegacyMemberNo == legacyStr || (empCode != null && m.LegacyMemberNo == empCode));
+                            var existing = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.BranchID == 1 && (m.LegacyMemberNo == legacyStr || (empCode != null && m.LegacyMemberNo == empCode)));
                             if (existing == null)
                             {
                                 var mappedEmployerId = 0;

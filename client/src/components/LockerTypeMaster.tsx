@@ -18,6 +18,8 @@ import {
   List
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Ledger {
   ledgerID: number;
@@ -49,6 +51,7 @@ interface LockerType {
 }
 
 const LockerTypeMaster: React.FC = () => {
+  const { user } = useAuth();
   const [types, setTypes] = useState<LockerType[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +62,7 @@ const LockerTypeMaster: React.FC = () => {
 
   const [formData, setFormData] = useState({
     lockerTypeID: 0,
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     typeCode: '',
     typeName: '',
     dimensions: '',
@@ -128,7 +131,7 @@ const LockerTypeMaster: React.FC = () => {
   const handleReset = () => {
     setFormData({
       lockerTypeID: 0,
-      branchID: 1,
+      branchID: resolveWriteBranchId(user),
       typeCode: '',
       typeName: '',
       dimensions: '',

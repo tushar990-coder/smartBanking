@@ -1,5 +1,20 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-15] - आवृत्ती v2.6.23 (Branch-Level Access Control, Branch-Wise Unique Legacy Numbers & Investment Interest Accrual / Receipt Overhaul)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) शाखा स्तरीय अधिकार व क्रॉस-ब्रँच सुरक्षा (`UserContextExtensions.cs`, `EnforceBranchScopeAttribute.cs`, `AuthController.cs`, `UsersController.cs`, `VouchersController.cs`, `VoucherPostingController.cs`, `ReportsController.cs`, `Program.cs`, `branchAccess.ts`, `BranchSelector.tsx`, `AuthContext.tsx`, `App.tsx` व ४०+ फॉर्म्स/रिपोर्ट्स):**
+  * सामान्य शाखा युझरला (`Clerk`, `Cashier`, `BranchManager` इ.) लॉगिनला आणि सर्व स्क्रीन, रिपोर्ट व बॅकएंड API मध्ये स्वतःच्या `DefaultBranchID` पुरतेच मर्यादित ठेवले (`All Branches` व इतर शाखा निषिद्ध).
+  * केवळ Head Office (`HO`) रोल्सनाच सर्व शाखा व एकत्रित (`All Branches`) अहवाल तसेच शाखा बदलण्याची (`Switch Branch`) मुभा ठेवली.
+* **२) जुने खाते / सभासद / ग्राहक क्रमांक शाखानिहाय युनिक (`CustomersController.cs`, `MembersController.cs`, `LoanAccountsController.cs`, `LoanDisbursementsController.cs`, `FdAccountsController.cs`, `RdAccountsController.cs`, `SavingAccountsController.cs`, `PigmyAccountsController.cs`, `DataImportController.cs`, `Program.cs` & `master_vps_update_schema.sql`):**
+  * `LegacyCustomerNo`, `LegacyMemberNo` व सर्व योजना खात्यांचे `LegacyAccountNumber` डुप्लिकेट तपासताना `BranchID` चा समावेश केला, ज्यामुळे वेगवेगळ्या शाखांमध्ये समान जुने रजिस्टर क्रमांक (उदा. शाखा १ मध्ये १०५ व शाखा २ मध्ये १०५) सुरक्षितपणे नोंदवता येतात.
+  * जुने ग्लोबल युनिक इंडेक्स काढून शाखानिहाय कंपोझिट युनिक फिल्टर्ड इंडेक्सेस लागू केले.
+* **३) संस्था गुंतवणूक व्याज तरतूद व प्राप्ती सुधारणा (`InvestmentAccountsController.cs`, `InvestmentInterestAccrual.cs`, `InvestmentInterestReceipt.cs`, `InvestmentInterestAccrualPosting.tsx`, `VoucherRollbackAndDeleteService.cs`):**
+  * ठेव व्याज व शेअर लाभांश प्राप्ती प्रकार (`DepositInterest` / `ShareDividend`), Gross/TDS/Net मोजणी व डायनॅमिक TDS लेजर, `FromDate`/`CalculationDays`/`CalculationMethod` तरतूद, बँक/रोख मोड आणि स्वच्छ पेस्टल UI लागू केला.
+  * युनिट व इंटिग्रेशन चाचण्या (`BranchAccessAndLegacyUniquenessTests.cs`) जोडल्या.
+
+---
+
 ## 📅 [2026-11-13] - आवृत्ती v2.6.22 (Member List & Share Certificate Report, System Audit Trail Overhaul, Universal Pagination & Last Legacy No, FD Interest Chart Fix, Loan Uchal Dinank & Manual Interest Effect, Employee Bank Details & Customer Bulk Entry QA Fixes)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

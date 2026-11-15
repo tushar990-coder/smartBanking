@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { isHeadOfficeUser } from '../utils/branchAccess';
 import {
   Trash2,
   CheckCircle2,
@@ -142,7 +143,11 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     params.set('allDates', 'false');
 
     const globalBranchStr = localStorage.getItem('globalBranchId');
-    const isHO = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+    const isHO = isHeadOfficeUser(user);
+    if (!isHO) {
+      params.set('branchId', String(user?.branchID || 1));
+      return `?${params.toString()}`;
+    }
     if (globalBranchStr && globalBranchStr !== 'all') {
       const parsed = parseInt(globalBranchStr, 10);
       if (!isNaN(parsed) && parsed > 0) {
@@ -150,13 +155,13 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         return `?${params.toString()}`;
       }
     }
-    if (globalBranchStr === 'all' && isHO) {
+    if (globalBranchStr === 'all') {
       return `?${params.toString()}`;
     }
-    if (isHO && (!user?.branchID || user.branchID <= 0)) {
+    if (!user?.branchID || user.branchID <= 0) {
       return `?${params.toString()}`;
     }
-    params.set('branchId', String(user?.branchID || 1));
+    params.set('branchId', String(user.branchID));
     return `?${params.toString()}`;
   };
 

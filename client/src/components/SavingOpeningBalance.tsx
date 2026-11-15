@@ -3,7 +3,8 @@ import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import { useAuth } from '../context/AuthContext';
-import { getCachedMasterData } from '../utils/apiCache';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
+import { getCachedMasterArray, safeArray } from '../utils/apiCache';
 import {
   Wallet,
   CheckCircle2,
@@ -40,16 +41,16 @@ interface CustomerItem extends CustomerOption {
 const SavingOpeningBalance: React.FC = () => {
   const { user } = useAuth();
   const [customers, setCustomers] = useState<CustomerItem[]>(
-    () => getCachedMasterData<CustomerItem[]>('/api/Customers') || []
+    () => getCachedMasterArray<CustomerItem>('/api/Customers')
   );
   const [branches, setBranches] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/Branches') || []
+    () => getCachedMasterArray<any>('/api/Branches')
   );
   const [ledgers, setLedgers] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/Ledgers') || []
+    () => getCachedMasterArray<any>('/api/Ledgers')
   );
   const [schemes, setSchemes] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/SavingSettings/Interest') || []
+    () => getCachedMasterArray<any>('/api/SavingSettings/Interest')
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,15 +58,20 @@ const SavingOpeningBalance: React.FC = () => {
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [migratedAccounts, setMigratedAccounts] = useState<any[]>(() =>
-    (getCachedMasterData<any[]>('/api/SavingAccounts') || []).filter((a: any) => a.isLegacyAccount)
+    getCachedMasterArray<any>('/api/SavingAccounts').filter((a: any) => a.isLegacyAccount)
   );
   const [allSavingAccounts, setAllSavingAccounts] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/SavingAccounts') || []
+    () => getCachedMasterArray<any>('/api/SavingAccounts')
   );
   const [showDuplicateConfirmModal, setShowDuplicateConfirmModal] = useState(false);
   const [confirmedCustomerID, setConfirmedCustomerID] = useState<number | null>(null);
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [modalAccountTypeFilter, setModalAccountTypeFilter] = useState('ALL');
-  const [modalBranchFilter, setModalBranchFilter] = useState('ALL');
+  const [modalBranchFilter, setModalBranchFilter] = useState<string>(() => {
+    const eff = getEffectiveBranchId(user, localStorage.getItem('globalBranchId'));
+    return !eff || eff === 'all' ? 'ALL' : String(eff);
+  });
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [editAccountId, setEditAccountId] = useState<number | null>(null);
@@ -82,7 +88,7 @@ const SavingOpeningBalance: React.FC = () => {
 
   const defaultCachedScheme = schemes.length > 0 ? schemes[0] : null;
   const initialFormState = {
-    branchID: user?.branchID || 1,
+    branchID: resolveWriteBranchId(user, localStorage.getItem('globalBranchId')),
     customerID: 0,
     oldAccountNo: '',
     settingID: defaultCachedScheme ? defaultCachedScheme.settingID : 0,
@@ -130,7 +136,7 @@ const SavingOpeningBalance: React.FC = () => {
   };
 
   const getCustomerDisplayName = (cId: number) => {
-    const cust = customers.find(m => (m.customerID || m.id) === cId);
+    const cust = safeArray(customers).find(m => (m.customerID || m.id) === cId);
     if (!cust) return `खातेदार #${cId}`;
     const cif = cust.cifNo ? `[CIF: ${cust.cifNo}] ` : '';
     const name = `${cust.firstName || ''} ${cust.middleName ? cust.middleName + ' ' : ''}${cust.lastName || ''}`.trim();
@@ -179,9 +185,10 @@ const SavingOpeningBalance: React.FC = () => {
     try {
       const response = await axios.get(`${API_URL}/SavingSettings/Interest`);
       if (!isMountedRef.current) return;
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        setSchemes(response.data);
-        const defaultScheme = response.data[0];
+      const list = safeArray(response.data);
+      if (list.length > 0) {
+        setSchemes(list);
+        const defaultScheme = list[0];
         const mappedLedgerId = defaultScheme.savingLiabilityLedgerID || defaultScheme.ledgerID || defaultScheme.interestExpenseLedgerID || 0;
         setFormData(prev => ({
           ...prev,
@@ -210,11 +217,10 @@ const SavingOpeningBalance: React.FC = () => {
     try {
       const response = await axios.get(`${API_URL}/SavingAccounts`);
       if (!isMountedRef.current) return;
-      if (Array.isArray(response.data)) {
-        setAllSavingAccounts(response.data);
-        const legacyOnly = response.data.filter((a: any) => a.isLegacyAccount);
-        setMigratedAccounts(legacyOnly);
-      }
+      const list = safeArray(response.data);
+      setAllSavingAccounts(list);
+      const legacyOnly = list.filter((a: any) => a.isLegacyAccount);
+      setMigratedAccounts(legacyOnly);
     } catch (err) {
       if (isMountedRef.current) {
         console.error('Error fetching migrated accounts', err);
@@ -225,8 +231,8 @@ const SavingOpeningBalance: React.FC = () => {
   const fetchLedgers = async () => {
     try {
       const response = await axios.get(`${API_URL}/Ledgers`);
-      if (isMountedRef.current && Array.isArray(response.data)) {
-        setLedgers(response.data);
+      if (isMountedRef.current) {
+        setLedgers(safeArray(response.data));
       }
     } catch (error) {
       if (isMountedRef.current) {
@@ -239,7 +245,7 @@ const SavingOpeningBalance: React.FC = () => {
     try {
       const response = await axios.get(`${API_URL}/Branches`);
       if (isMountedRef.current) {
-        setBranches(response.data);
+        setBranches(safeArray(response.data));
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -252,7 +258,7 @@ const SavingOpeningBalance: React.FC = () => {
     try {
       const response = await axios.get(`${API_URL}/Customers`);
       if (isMountedRef.current) {
-        setCustomers(response.data);
+        setCustomers(safeArray(response.data));
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -281,7 +287,7 @@ const SavingOpeningBalance: React.FC = () => {
       return;
     }
 
-    const selectedScheme = schemes.find(s => s.settingID === sId);
+    const selectedScheme = safeArray(schemes).find(s => s.settingID === sId);
     if (selectedScheme) {
       const mappedLedgerId = selectedScheme.savingLiabilityLedgerID || selectedScheme.ledgerID || selectedScheme.interestExpenseLedgerID || 0;
       setFormData(prev => ({
@@ -382,7 +388,7 @@ const SavingOpeningBalance: React.FC = () => {
     setError('');
     setSuccess('');
 
-    const selected = customers.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
+    const selected = safeArray(customers).find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
     const resolvedCustomerId = selected?.customerID || (selected?.id ? Number(selected.id) : Number(formData.customerID));
 
     if (!resolvedCustomerId) {
@@ -413,7 +419,7 @@ const SavingOpeningBalance: React.FC = () => {
 
     // Check duplicate account
     if (!isEditMode && confirmedCustomerID !== Number(formData.customerID)) {
-      const existing = allSavingAccounts.filter((a: any) => 
+      const existing = safeArray(allSavingAccounts).filter((a: any) => 
         resolvedCustomerId > 0 && a.customerID === resolvedCustomerId
       );
       if (existing.length > 0) {
@@ -428,7 +434,7 @@ const SavingOpeningBalance: React.FC = () => {
   const executeSave = async (finalJointHolders?: number[], customCustomerId?: number) => {
     setLoading(true);
     try {
-      const selected = customers.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
+      const selected = safeArray(customers).find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
       const resolvedCustomerId = customCustomerId !== undefined ? customCustomerId : (selected?.customerID || (selected?.id ? Number(selected.id) : Number(formData.customerID)));
 
       const jointIds = finalJointHolders !== undefined ? finalJointHolders : (formData.accountType === 'Joint' ? jointHolderCustomerIDs : []);
@@ -477,8 +483,8 @@ const SavingOpeningBalance: React.FC = () => {
     if (filteredMigrated.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा उपलब्ध नाही.');
     const rows = filteredMigrated.map((acc, i) => {
       const jointNames = (acc.jointHolders || []).map((jh: any) => jh.customerName || `${jh.customer?.firstName || ''} ${jh.customer?.lastName || ''}`.trim()).filter(Boolean).join(', ');
-      const ledgerObj = ledgers.find(l => l.ledgerID === acc.ledgerID);
-      const schemeObj = schemes.find(s => s.settingID === acc.settingID);
+      const ledgerObj = safeArray(ledgers).find(l => l.ledgerID === acc.ledgerID);
+      const schemeObj = safeArray(schemes).find(s => s.settingID === acc.settingID);
       return {
         'अ.क्र.': i + 1,
         'बचत खाते क्र. (CBS)': acc.accountNo,
@@ -540,19 +546,19 @@ const SavingOpeningBalance: React.FC = () => {
 
   const selectedCustomer = React.useMemo(() => {
     if (Number(formData.customerID) > 0) {
-      const matchCust = customers.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
+      const matchCust = safeArray(customers).find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
       if (matchCust) return matchCust;
     }
     return null;
   }, [formData.customerID, customers]);
 
-  const existingCustomerAccounts = allSavingAccounts.filter((a: any) => {
+  const existingCustomerAccounts = safeArray(allSavingAccounts).filter((a: any) => {
     if (a.savingAccountID === editAccountId) return false;
     if (formData.customerID && a.customerID === Number(formData.customerID)) return true;
     return false;
   });
 
-  const filteredMigrated = migratedAccounts.filter(acc => {
+  const filteredMigrated = safeArray(migratedAccounts).filter(acc => {
     const q = searchQuery.toLowerCase().trim();
     const jointNames = (acc.jointHolders || []).map((jh: any) => jh.customerName || `${jh.customer?.firstName || ''} ${jh.customer?.lastName || ''}`.trim()).join(' ').toLowerCase();
     
@@ -574,10 +580,11 @@ const SavingOpeningBalance: React.FC = () => {
   });
 
   // KPI Calculations
-  const totalMigratedBalance = migratedAccounts.reduce((sum, a) => sum + (a.openingBalance || 0), 0);
-  const activeCount = migratedAccounts.filter(a => a.status === 'Active').length;
-  const avgRate = migratedAccounts.length > 0
-    ? (migratedAccounts.reduce((sum, a) => sum + (a.interestRate || 4), 0) / migratedAccounts.length).toFixed(2)
+  const safeMigrated = safeArray(migratedAccounts);
+  const totalMigratedBalance = safeMigrated.reduce((sum, a) => sum + (a.openingBalance || 0), 0);
+  const activeCount = safeMigrated.filter(a => a.status === 'Active').length;
+  const avgRate = safeMigrated.length > 0
+    ? (safeMigrated.reduce((sum, a) => sum + (a.interestRate || 4), 0) / safeMigrated.length).toFixed(2)
     : '4.00';
 
   return (
@@ -724,8 +731,14 @@ const SavingOpeningBalance: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div>
                 <label className={labelClass}>शाखा (Branch)</label>
-                <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass}>
-                  {branches.map((b) => (
+                <select
+                  name="branchID"
+                  value={formData.branchID}
+                  onChange={handleChange}
+                  disabled={!isHOUser}
+                  className={`${inputClass} ${!isHOUser ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                >
+                  {(lockedBranchId ? safeArray(branches).filter((b) => b.branchID === lockedBranchId) : safeArray(branches)).map((b) => (
                     <option key={b.branchID} value={b.branchID}>
                       {b.branchName}
                     </option>
@@ -739,7 +752,7 @@ const SavingOpeningBalance: React.FC = () => {
                 </label>
                 <div className="flex items-center h-[28px] px-2 bg-slate-100 border border-slate-300 rounded-sm font-mono font-bold text-xs text-primary shadow-2xs">
                   {isEditMode
-                    ? (allSavingAccounts.find(a => a.savingAccountID === editAccountId)?.accountNo || 'नोंद झालेले')
+                    ? (safeArray(allSavingAccounts).find(a => a.savingAccountID === editAccountId)?.accountNo || 'नोंद झालेले')
                     : (nextAccountNoPreview || 'HO10100001')}
                   <span className="ml-auto text-[9px] text-gray-500 font-sans font-normal">
                     {isEditMode ? '(अद्ययावत)' : '(ऑटो जनरेट)'}
@@ -875,7 +888,7 @@ const SavingOpeningBalance: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
                       <CustomerSearchSelect
-                        customers={customers.filter(m => (m.customerID || m.id) !== Number(formData.customerID) && !jointHolderCustomerIDs.includes(m.customerID || m.id || 0))}
+                        customers={safeArray(customers).filter(m => (m.customerID || m.id) !== Number(formData.customerID) && !jointHolderCustomerIDs.includes(m.customerID || m.id || 0))}
                         value={selectedJointCustomerID || ''}
                         onChange={handleJointCustomerSelect}
                         placeholder="-- सह-खातेदार शोधा व निवडा --"
@@ -939,22 +952,22 @@ const SavingOpeningBalance: React.FC = () => {
               <div>
                 <label className={labelClass}>बचत ठेव योजना (Scheme)</label>
                 <select name="settingID" value={formData.settingID} onChange={handleSchemeChange} className={inputClass}>
-                  {schemes.length === 0 ? (
+                  {safeArray(schemes).length === 0 ? (
                     <option value="-1">-- कोणतीही योजना उपलब्ध नाही (डिफॉल्ट दर वापरा) --</option>
                   ) : (
-                    schemes.map((s) => (
+                    safeArray(schemes).map((s) => (
                       <option key={s.settingID} value={s.settingID}>
                         {s.schemeName || `व्याजदर सेटिंग #${s.settingID}`} ({s.interestRate}% | किमान: ₹{Number(s.minimumBalance ?? 0)})
                       </option>
                     ))
                   )}
-                  {schemes.length > 0 && <option value="-1">-- इतर / सानुकूल डिफॉल्ट दर वापरा --</option>}
+                  {safeArray(schemes).length > 0 && <option value="-1">-- इतर / सानुकूल डिफॉल्ट दर वापरा --</option>}
                 </select>
                 <div className="text-[9px] text-emerald-800 font-medium mt-0.5 leading-tight flex items-center gap-1 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
                   <span className="font-bold">देयता लेजर:</span>
                   <span className="font-mono truncate">
                     {(() => {
-                      const mappedL = ledgers.find(l => l.ledgerID === formData.ledgerID);
+                      const mappedL = safeArray(ledgers).find(l => l.ledgerID === formData.ledgerID);
                       return mappedL ? `${mappedL.ledgerID} - ${mappedL.ledgerName}` : `बचत ठेव (${formData.ledgerID || 7})`;
                     })()}
                   </span>
@@ -1146,10 +1159,11 @@ const SavingOpeningBalance: React.FC = () => {
                 <select
                   value={modalBranchFilter}
                   onChange={(e) => setModalBranchFilter(e.target.value)}
-                  className="text-xs border border-gray-300 rounded-sm px-2 py-1 h-[30px] bg-white focus:outline-none focus:border-primary"
+                  disabled={!isHeadOfficeUser(user)}
+                  className={`text-xs border border-gray-300 rounded-sm px-2 py-1 h-[30px] focus:outline-none focus:border-primary ${!isHeadOfficeUser(user) ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
                 >
-                  <option value="ALL">-- सर्व शाखा (All Branches) --</option>
-                  {branches.map(b => (
+                  {isHeadOfficeUser(user) && <option value="ALL">-- सर्व शाखा (All Branches) --</option>}
+                  {(getLockedBranchId(user) ? safeArray(branches).filter(b => b.branchID === getLockedBranchId(user)) : safeArray(branches)).map(b => (
                     <option key={b.branchID} value={b.branchID?.toString()}>
                       {b.branchName}
                     </option>
@@ -1217,8 +1231,8 @@ const SavingOpeningBalance: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
                     {filteredMigrated.map((acc, idx) => {
-                      const schemeObj = schemes.find(s => s.settingID === acc.settingID);
-                      const ledgerObj = ledgers.find(l => l.ledgerID === acc.ledgerID);
+                      const schemeObj = safeArray(schemes).find(s => s.settingID === acc.settingID);
+                      const ledgerObj = safeArray(ledgers).find(l => l.ledgerID === acc.ledgerID);
                       return (
                         <tr key={acc.savingAccountID} className="hover:bg-primary/5 transition-colors">
                           {/* 1. Sr. No. */}

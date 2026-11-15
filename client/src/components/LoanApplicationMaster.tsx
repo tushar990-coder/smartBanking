@@ -6,6 +6,7 @@ import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import { useAuth } from '../context/AuthContext';
 import { getCachedMasterData } from '../utils/apiCache';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import {
   Landmark,
   CheckCircle2,
@@ -224,17 +225,16 @@ interface LoanApplicationMasterProps {
 }
 
 const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, editingApplicationId, isReadOnly, onNavigate, initialSuccessMessage, resetTrigger }) => {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
   const queryParams = new URLSearchParams(window.location.search);
   const voucherIdFromUrl = queryParams.get('voucherId');
   const isPassingMode = Boolean(isReadOnly || queryParams.get('passingMode') === 'true');
 
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : (user?.branchID || 1);
+  const initialBranchId = resolveWriteBranchId(user, globalBranchId);
   const [selectedBranchId, setSelectedBranchId] = useState<number>(initialBranchId);
-  const [filterBranchId, setFilterBranchId] = useState<string>(hasGlobalBranch ? (globalBranchStr as string) : 'all');
+  const [filterBranchId, setFilterBranchId] = useState<string>(() => String(getEffectiveBranchId(user, globalBranchId) ?? 'all'));
 
   const [applications, setApplications] = useState<LoanApplication[]>([]);
   const [members, setMembers] = useState<Member[]>(() => {
@@ -2045,11 +2045,11 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                         setFormData(prev => ({ ...prev, branchID: newBranchId }));
                         fetchNextAppNo(newBranchId);
                       }}
-                      disabled={isPassingMode || isEditing || hasGlobalBranch}
-                      className={`${inputClass} font-semibold ${hasGlobalBranch ? 'bg-slate-100 cursor-not-allowed' : ''}`}
+                      disabled={isPassingMode || isEditing || !isHeadOfficeUser(user)}
+                      className={`${inputClass} font-semibold ${!isHeadOfficeUser(user) ? 'bg-slate-100 cursor-not-allowed' : ''}`}
                       required
                     >
-                      {branches.map(b => (
+                      {(getLockedBranchId(user) ? branches.filter(b => b.branchID === getLockedBranchId(user)) : branches).map(b => (
                         <option key={b.branchID} value={b.branchID}>
                           {b.branchName} ({b.branchCode || 'HQ'})
                         </option>
@@ -2985,11 +2985,11 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                     setFilterBranchId(newFilter);
                     fetchData(newFilter);
                   }}
-                  disabled={hasGlobalBranch}
-                  className={`px-2 py-1 border border-gray-300 rounded-sm text-xs h-[30px] bg-white focus:outline-none focus:border-primary shadow-2xs font-semibold ${hasGlobalBranch ? 'bg-slate-100 cursor-not-allowed' : ''}`}
+                  disabled={!isHeadOfficeUser(user)}
+                  className={`px-2 py-1 border border-gray-300 rounded-sm text-xs h-[30px] bg-white focus:outline-none focus:border-primary shadow-2xs font-semibold ${!isHeadOfficeUser(user) ? 'bg-slate-100 cursor-not-allowed' : ''}`}
                 >
-                  <option value="all">सर्व शाखा (All Branches)</option>
-                  {branches.map(b => (
+                  {isHeadOfficeUser(user) && <option value="all">सर्व शाखा (All Branches)</option>}
+                  {(getLockedBranchId(user) ? branches.filter(b => b.branchID === getLockedBranchId(user)) : branches).map(b => (
                     <option key={b.branchID} value={b.branchID}>
                       {b.branchName} ({b.branchCode || 'HQ'})
                     </option>

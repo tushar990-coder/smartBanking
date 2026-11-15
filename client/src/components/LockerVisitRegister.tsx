@@ -17,6 +17,8 @@ import {
   Filter 
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 
 interface AllotmentOption {
   allotmentID: number;
@@ -53,6 +55,7 @@ interface VisitRecord {
 }
 
 const LockerVisitRegister: React.FC = () => {
+  const { user } = useAuth();
   const [visits, setVisits] = useState<VisitRecord[]>([]);
   const [allotments, setAllotments] = useState<AllotmentOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,7 +68,7 @@ const LockerVisitRegister: React.FC = () => {
 
   // Form State
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     allotmentID: '',
     visitDate: new Date().toISOString().split('T')[0],
     timeIn: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -144,7 +147,7 @@ const LockerVisitRegister: React.FC = () => {
 
   const handleReset = () => {
     setFormData({
-      branchID: 1,
+      branchID: resolveWriteBranchId(user),
       allotmentID: '',
       visitDate: new Date().toISOString().split('T')[0],
       timeIn: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

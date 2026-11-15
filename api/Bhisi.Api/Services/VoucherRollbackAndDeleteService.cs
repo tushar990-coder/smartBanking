@@ -2456,17 +2456,39 @@ namespace Bhisi.Api.Services
             if (prematures.Any()) _context.InvestmentPrematureWithdrawals.RemoveRange(prematures);
 
             // 8C. Investment Interest Receipts & Accruals
+            var affectedInvIds = new HashSet<int>();
             var intReceipts = await _context.InvestmentInterestReceipts
                 .Where(r => r.VoucherID.HasValue && voucherIds.Contains(r.VoucherID.Value))
                 .ToListAsync();
+            foreach (var r in intReceipts) affectedInvIds.Add(r.InvestmentAccountID);
             if (intReceipts.Any()) _context.InvestmentInterestReceipts.RemoveRange(intReceipts);
 
             var intAccruals = await _context.InvestmentInterestAccruals
                 .Where(a => a.VoucherID.HasValue && voucherIds.Contains(a.VoucherID.Value))
                 .ToListAsync();
+            foreach (var a in intAccruals) affectedInvIds.Add(a.InvestmentAccountID);
             if (intAccruals.Any()) _context.InvestmentInterestAccruals.RemoveRange(intAccruals);
 
             await _context.SaveChangesAsync();
+
+            if (affectedInvIds.Any())
+            {
+                foreach (int invId in affectedInvIds)
+                {
+                    var invAcc = await _context.InvestmentAccounts.FindAsync(invId);
+                    if (invAcc == null) continue;
+                    decimal accrued = await _context.InvestmentInterestAccruals
+                        .Where(a => a.InvestmentAccountID == invId)
+                        .SumAsync(a => (decimal?)a.InterestAmount) ?? 0m;
+                    decimal received = await _context.InvestmentInterestReceipts
+                        .Where(r => r.InvestmentAccountID == invId)
+                        .SumAsync(r => (decimal?)(r.GrossAmount > 0m ? r.GrossAmount : r.ReceivedAmount)) ?? 0m;
+                    decimal outstanding = Math.Max(0m, invAcc.AccruedInterestTillMigration + accrued - received);
+                    invAcc.BookValue = invAcc.Status == "Active" ? Math.Round(invAcc.PrincipalAmount + outstanding, 2, MidpointRounding.AwayFromZero) : 0m;
+                    _context.Entry(invAcc).State = EntityState.Modified;
+                }
+                await _context.SaveChangesAsync();
+            }
 
             // 8D. Investment Renewals
             var renewals = await _context.InvestmentRenewals

@@ -28,24 +28,24 @@ import {
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
-import { getCachedMasterData } from '../utils/apiCache';
+import { getCachedMasterArray, safeArray } from '../utils/apiCache';
 import * as XLSX from 'xlsx';
 
 export default function PigmyOpeningBalance() {
   const [customers, setCustomers] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/Customers') || []
+    () => getCachedMasterArray<any>('/api/Customers')
   );
   const [schemes, setSchemes] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/PigmySchemes') || []
+    () => getCachedMasterArray<any>('/api/PigmySchemes')
   );
   const [agents, setAgents] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/PigmyAgents') || []
+    () => getCachedMasterArray<any>('/api/PigmyAgents')
   );
   const [financialYears, setFinancialYears] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/FinancialYears') || []
+    () => getCachedMasterArray<any>('/api/FinancialYears')
   );
   const [migratedAccounts, setMigratedAccounts] = useState<any[]>(
-    () => getCachedMasterData<any[]>('/api/PigmyAccounts') || []
+    () => getCachedMasterArray<any>('/api/PigmyAccounts')
   );
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -128,10 +128,11 @@ export default function PigmyOpeningBalance() {
         axios.get('/api/FinancialYears')
       ]);
 
-      if (schemesRes.data) setSchemes(schemesRes.data);
-      if (agentsRes.data) setAgents(agentsRes.data);
-      if (yearsRes.data && Array.isArray(yearsRes.data) && yearsRes.data.length > 0) {
-        const sortedYears = [...yearsRes.data].sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+      setSchemes(safeArray(schemesRes.data));
+      setAgents(safeArray(agentsRes.data));
+      const yearsList = safeArray(yearsRes.data);
+      if (yearsList.length > 0) {
+        const sortedYears = [...yearsList].sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
         setFinancialYears(sortedYears);
 
         // Find the earliest created year or active year
@@ -149,7 +150,7 @@ export default function PigmyOpeningBalance() {
       setTimeout(async () => {
         try {
           const customersRes = await axios.get('/api/Customers');
-          if (customersRes.data) setCustomers(customersRes.data);
+          setCustomers(safeArray(customersRes.data));
         } catch (bgErr) {
           console.error('Failed to fetch customers in background', bgErr);
         }
@@ -161,7 +162,7 @@ export default function PigmyOpeningBalance() {
   };
 
   const handleFinancialYearChange = (yearCode: string) => {
-    const matchedYear = financialYears.find(y => y.yearCode === yearCode);
+    const matchedYear = safeArray(financialYears).find(y => y.yearCode === yearCode);
     if (matchedYear) {
       const computedAsOfDate = computeAsOfDateFromStartDate(matchedYear.startDate);
       setFormData(prev => ({
@@ -178,9 +179,7 @@ export default function PigmyOpeningBalance() {
   const fetchMigratedAccounts = async () => {
     try {
       const res = await axios.get('/api/PigmyAccounts');
-      if (Array.isArray(res.data)) {
-        setMigratedAccounts(res.data);
-      }
+      setMigratedAccounts(safeArray(res.data));
     } catch (error) {
       console.error('Failed to fetch migrated accounts', error);
     }
@@ -188,7 +187,8 @@ export default function PigmyOpeningBalance() {
 
   const resetForm = () => {
     setEditingAccountId(null);
-    const initialYear = financialYears.length > 0 ? (financialYears.find((y: any) => y.isActive) || financialYears[0]) : null;
+    const yearsList = safeArray(financialYears);
+    const initialYear = yearsList.length > 0 ? (yearsList.find((y: any) => y.isActive) || yearsList[0]) : null;
     const computedAsOfDate = initialYear ? computeAsOfDateFromStartDate(initialYear.startDate) : new Date().toISOString().split('T')[0];
 
     setFormData({
@@ -253,7 +253,7 @@ export default function PigmyOpeningBalance() {
 
   const maxAllowedOpeningDate = React.useMemo(() => {
     if (formData.asOfDate) return formData.asOfDate;
-    const matchedYear = financialYears.find(y => y.yearCode === formData.financialYear);
+    const matchedYear = safeArray(financialYears).find(y => y.yearCode === formData.financialYear);
     if (matchedYear && matchedYear.startDate) {
       return computeAsOfDateFromStartDate(matchedYear.startDate);
     }
@@ -286,9 +286,9 @@ export default function PigmyOpeningBalance() {
         asOfDate: formData.asOfDate || null
       };
 
-      const customerObj = customers.find(c => String(c.customerID || c.id) === String(formData.customerID));
-      const schemeObj = schemes.find(s => String(s.pigmySchemeID || s.id) === String(formData.pigmySchemeID));
-      const agentObj = agents.find(a => String(a.pigmyAgentID || a.id) === String(formData.pigmyAgentID));
+      const customerObj = safeArray(customers).find(c => String(c.customerID || c.id) === String(formData.customerID));
+      const schemeObj = safeArray(schemes).find(s => String(s.pigmySchemeID || s.id) === String(formData.pigmySchemeID));
+      const agentObj = safeArray(agents).find(a => String(a.pigmyAgentID || a.id) === String(formData.pigmyAgentID));
 
       if (editingAccountId) {
         await axios.put(`/api/PigmyAccounts/${editingAccountId}`, {
@@ -296,7 +296,7 @@ export default function PigmyOpeningBalance() {
           totalDepositedAmount: parseFloat(formData.openingBalance || '0'),
           ...payload
         });
-        const updatedAccount = migratedAccounts.find(a => a.pigmyAccountID === editingAccountId);
+        const updatedAccount = safeArray(migratedAccounts).find(a => a.pigmyAccountID === editingAccountId);
         const accNo = updatedAccount?.accountNo || `PG-${editingAccountId}`;
         setSuccessModalData({
           isEdit: true,

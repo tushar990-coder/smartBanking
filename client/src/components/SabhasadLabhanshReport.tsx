@@ -11,6 +11,8 @@ import {
   Calendar
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface DividendRow {
   memberID: number;
@@ -44,6 +46,9 @@ const formatDisplayDate = (dStr?: string | null) => {
 };
 
 export default function SabhasadLabhanshReport() {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [ledgers, setLedgers] = useState<any[]>([]);
   const [selectedLedgerId, setSelectedLedgerId] = useState<string>('');
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -67,9 +72,8 @@ export default function SabhasadLabhanshReport() {
   ], [ledgers]);
 
   const [branches, setBranches] = useState<any[]>([]);
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? (globalBranchStr as string) : 'all';
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   useEffect(() => {
@@ -283,16 +287,16 @@ export default function SabhasadLabhanshReport() {
               <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
               <select
                 value={selectedBranchId}
-                disabled={hasGlobalBranch}
+                disabled={!isHOUser}
                 onChange={(e) => {
                   const val = e.target.value;
                   setSelectedBranchId(val);
                   if (selectedLedgerId) fetchReport(val);
                 }}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32"
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-slate-100 disabled:text-slate-600"
               >
-                <option value="all">सर्व शाखा (All)</option>
-                {branches.map((b: any) => (
+                {isHOUser && <option value="all">सर्व शाखा (All)</option>}
+                {(isHOUser || !lockedBranchId ? branches : branches.filter((b: any) => Number(b.branchID) === Number(lockedBranchId))).map((b: any) => (
                   <option key={b.branchID} value={b.branchID.toString()}>
                     {b.branchName}
                   </option>

@@ -10,6 +10,8 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
+    [EnforceBranchScope]
     public class ShareAccountsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -112,7 +114,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/ShareAccounts/Member/5 or api/ShareAccounts/Customer/5
-        [AllowAnonymous]
         [HttpGet("Member/{memberId}")]
         [HttpGet("ByMember/{memberId}")]
         [HttpGet("Customer/{customerId}")]
@@ -983,7 +984,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/ShareAccounts/OpeningBalance
-        [AllowAnonymous]
         [HttpGet("OpeningBalance")]
         public async Task<IActionResult> GetOpeningBalances()
         {
@@ -1211,7 +1211,6 @@ namespace Bhisi.Api.Controllers
             return candidateCode;
         }
 
-        [AllowAnonymous]
         [HttpGet("NextShareConfig")]
         [HttpGet("NextRange")]
         public async Task<IActionResult> GetNextShareConfig()
@@ -1271,7 +1270,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // POST: api/ShareAccounts/OpeningBalance
-        [AllowAnonymous]
         [HttpPost("OpeningBalance")]
         public async Task<IActionResult> CreateOpeningBalance([FromBody] ShareOpeningBalanceRequest request)
         {
@@ -1324,6 +1322,7 @@ namespace Bhisi.Api.Controllers
                     var existingLegacyMembers = await _context.Members
                         .Include(m => m.Customer)
                         .Where(m => m.MemberID != member.MemberID && !m.IsDeleted &&
+                            m.BranchID == member.BranchID &&
                             m.LegacyMemberNo == trimmedLegacyNo)
                         .ToListAsync();
 
@@ -1613,7 +1612,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // POST: api/ShareAccounts/BulkOpeningBalance
-        [AllowAnonymous]
         [HttpPost("BulkOpeningBalance")]
         public async Task<IActionResult> CreateBulkOpeningBalance([FromBody] BulkShareOpeningBalanceRequest bulkRequest)
         {
@@ -1909,7 +1907,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // PUT: api/ShareAccounts/OpeningBalance/5
-        [AllowAnonymous]
         [HttpPut("OpeningBalance/{id}")]
         public async Task<IActionResult> UpdateOpeningBalance(int id, [FromBody] ShareOpeningBalanceRequest request)
         {
@@ -1967,7 +1964,7 @@ namespace Bhisi.Api.Controllers
                         var trimmedLegacy = request.LegacyMemberNo.Trim();
                         var existingWithSameNo = await _context.Members
                             .Include(m => m.Customer)
-                            .Where(m => m.MemberID != member.MemberID && !m.IsDeleted && m.LegacyMemberNo == trimmedLegacy)
+                            .Where(m => m.MemberID != member.MemberID && !m.IsDeleted && m.BranchID == member.BranchID && m.LegacyMemberNo == trimmedLegacy)
                             .ToListAsync();
 
                         foreach (var exMem in existingWithSameNo)
@@ -2171,7 +2168,6 @@ namespace Bhisi.Api.Controllers
 
         // DELETE: api/ShareAccounts/OpeningBalance/{id}
         // DELETE: api/ShareAccounts/OpeningBalance/Certificate/{certId}
-        [AllowAnonymous]
         [HttpDelete("OpeningBalance/{id}")]
         [HttpDelete("OpeningBalance/Certificate/{certId}")]
         public async Task<IActionResult> DeleteOpeningBalance(int? id, int? certId)
@@ -2441,7 +2437,6 @@ namespace Bhisi.Api.Controllers
             public int LedgerId { get; set; }
         }
 
-        [AllowAnonymous]
         [HttpPost("SyncImportedBalances")]
         public async Task<IActionResult> SyncImportedBalances([FromBody] SyncShareBalancesRequest request)
         {
@@ -2610,7 +2605,6 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/ShareAccounts/ResequenceMemberCodes
         // POST: api/ShareAccounts/ResequenceMemberCodes
-        [AllowAnonymous]
         [HttpPost("ResequenceMemberCodes")]
         public async Task<IActionResult> ResequenceMemberCodes([FromQuery] string orderBy = "CertificateNo")
         {
@@ -2643,7 +2637,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // POST: api/ShareAccounts/Transfer
-        [AllowAnonymous]
         [HttpPost("Transfer")]
         public async Task<IActionResult> TransferShares([FromBody] ShareTransferRequest request)
         {
@@ -3011,7 +3004,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/ShareAccounts/TransferHistory
-        [AllowAnonymous]
         [HttpGet("TransferHistory")]
         public async Task<IActionResult> GetTransferHistory([FromQuery] int? page = null, [FromQuery] int? pageSize = null)
         {
@@ -3059,7 +3051,6 @@ namespace Bhisi.Api.Controllers
             return Ok(transfers);
         }
         // POST: api/ShareAccounts/CancelTransfer/5
-        [AllowAnonymous]
         [HttpPost("CancelTransfer/{transactionId}")]
         public async Task<IActionResult> CancelTransfer(int transactionId)
         {
@@ -3628,7 +3619,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/ShareAccounts/by-voucher/{voucherId}
-        [AllowAnonymous]
         [HttpGet("by-voucher/{voucherId}")]
         public async Task<IActionResult> GetByVoucher(int voucherId)
         {

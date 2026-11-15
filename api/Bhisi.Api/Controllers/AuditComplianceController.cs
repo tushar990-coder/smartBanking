@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 
@@ -8,7 +9,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class AuditComplianceController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -239,29 +240,33 @@ namespace Bhisi.Api.Controllers
 
         // 5. GET C.D. Ratio & Spread Calculation
         [HttpGet("CdRatio")]
-        public async Task<IActionResult> GetCdRatio()
+        public async Task<IActionResult> GetCdRatio([FromQuery] int? branchId = null)
         {
             try
             {
-                var totalLoans = await _context.LoanAccounts
-                    .Where(l => l.Status == "Active")
-                    .SumAsync(l => (decimal?)l.PrincipalBalance) ?? 0m;
+                int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
 
-                var savingDeposits = await _context.SavingAccountMasters
-                    .Where(s => s.Status == "Active")
-                    .SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
+                var loanQ = _context.LoanAccounts.Where(l => l.Status == "Active");
+                var savQ = _context.SavingAccountMasters.Where(s => s.Status == "Active");
+                var fdQ = _context.FdAccounts.Where(f => f.Status == "Active");
+                var rdQ = _context.RdAccounts.Where(r => r.Status == "Active");
+                var pigQ = _context.PigmyAccounts.Where(p => p.Status == "Active");
 
-                var fdDeposits = await _context.FdAccounts
-                    .Where(f => f.Status == "Active")
-                    .SumAsync(f => (decimal?)f.DepositAmount) ?? 0m;
+                if (scopedBranch.HasValue && scopedBranch.Value > 0)
+                {
+                    int bId = scopedBranch.Value;
+                    loanQ = loanQ.Where(l => l.BranchID == bId);
+                    savQ = savQ.Where(s => s.BranchID == bId);
+                    fdQ = fdQ.Where(f => f.BranchID == bId);
+                    rdQ = rdQ.Where(r => r.BranchID == bId);
+                    pigQ = pigQ.Where(p => p.BranchID == bId);
+                }
 
-                var rdDeposits = await _context.RdAccounts
-                    .Where(r => r.Status == "Active")
-                    .SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
-
-                var pigmyDeposits = await _context.PigmyAccounts
-                    .Where(p => p.Status == "Active")
-                    .SumAsync(p => (decimal?)p.TotalDepositedAmount) ?? 0m;
+                var totalLoans = await loanQ.SumAsync(l => (decimal?)l.PrincipalBalance) ?? 0m;
+                var savingDeposits = await savQ.SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
+                var fdDeposits = await fdQ.SumAsync(f => (decimal?)f.DepositAmount) ?? 0m;
+                var rdDeposits = await rdQ.SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
+                var pigmyDeposits = await pigQ.SumAsync(p => (decimal?)p.TotalDepositedAmount) ?? 0m;
 
                 decimal totalDeposits = savingDeposits + fdDeposits + rdDeposits + pigmyDeposits;
                 decimal casaDeposits = savingDeposits; // Current + Savings

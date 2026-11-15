@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 import {
   CreditCard,
   Building2,
@@ -83,22 +85,12 @@ export default function TodaysTasksDashboard({
   onCloseLoginModal,
   branchId: propBranchId
 }: TodaysTasksDashboardProps) {
+  const { user, globalBranchId } = useAuth();
   // 1. Resolve Effective Branch ID dynamically
   const effectiveBranchId = useMemo<number>(() => {
     if (propBranchId && propBranchId > 0) return propBranchId;
-    try {
-      const storedGlobal = sessionStorage.getItem('globalBranchId');
-      if (storedGlobal && parseInt(storedGlobal, 10) > 0) {
-        return parseInt(storedGlobal, 10);
-      }
-      const userStr = sessionStorage.getItem('user');
-      if (userStr) {
-        const u = JSON.parse(userStr);
-        if (u.branchID || u.BranchID) return Number(u.branchID || u.BranchID);
-      }
-    } catch (_) {}
-    return 1;
-  }, [propBranchId]);
+    return resolveWriteBranchId(user, globalBranchId);
+  }, [propBranchId, user, globalBranchId]);
 
   // View & Filter States
   const [viewMode, setViewMode] = useState<'CARDS' | 'GRID'>('CARDS');

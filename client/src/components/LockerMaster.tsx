@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 import { 
   Plus, 
   Grid, 
@@ -63,6 +65,7 @@ interface LockerMasterProps {
 }
 
 const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) => {
+  const { user } = useAuth();
   const [lockers, setLockers] = useState<LockerItem[]>([]);
   const [lockerTypes, setLockerTypes] = useState<LockerType[]>([]);
   const [cabinets, setCabinets] = useState<string[]>([]);
@@ -81,7 +84,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
 
   const [formData, setFormData] = useState({
     lockerID: 0,
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     cabinetNo: 'C-1',
     lockerNo: '',
     keyNo: '',
@@ -94,7 +97,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
   // Bulk Create Modal State
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [bulkData, setBulkData] = useState({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     cabinetNo: 'C-1',
     startNo: 1,
     endNo: 20,
@@ -348,7 +351,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
             onClick={() => {
               setFormData({
                 lockerID: 0,
-                branchID: 1,
+                branchID: resolveWriteBranchId(user),
                 cabinetNo: cabinets[0] || 'C-1',
                 lockerNo: '',
                 keyNo: '',

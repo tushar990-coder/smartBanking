@@ -23,7 +23,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/DemandRecoveries
         [HttpGet]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<ActionResult<IEnumerable<DemandRecovery>>> GetDemandRecoveries()
         {
             return await _context.DemandRecoveries
@@ -35,7 +35,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPost("process")]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<ActionResult<object>> ProcessRecovery([FromBody] ProcessRecoveryDto request)
         {
             if (request == null || request.DemandNoticeId <= 0)

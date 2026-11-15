@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 using Bhisi.Api.Services;
 
@@ -13,6 +14,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class NpaController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -93,6 +95,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet("statement")]
         public async Task<IActionResult> GetNpaStatement([FromQuery] DateTime? asOfDate, [FromQuery] int? branchId = null)
         {
+            branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
             var date = asOfDate ?? DateTime.Today;
             
             // Find the latest classification run before or on this date

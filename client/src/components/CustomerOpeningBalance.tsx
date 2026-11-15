@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Wallet, Search, PlusCircle, Save, Trash2, RefreshCw, BookOpen, Layers, ArrowUpRight, ArrowDownLeft, AlertCircle, Filter, Edit2, X } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
+import { safeArray } from '../utils/apiCache';
 
 interface Ledger {
   ledgerID: number;
@@ -63,7 +64,7 @@ export default function CustomerOpeningBalanceForm() {
         if (!isMounted) return;
 
         if (lRes.ok) {
-          const data = await lRes.json();
+          const data = safeArray<Ledger>(await lRes.json());
           if (isMounted) {
             const personalLedgers = data.filter((l: Ledger) => {
               const typeMatch = l.accountType === 'Personal Account' || l.accountType === 'Sundry Debtors' || l.accountType === 'Sundry Creditors';
@@ -81,12 +82,12 @@ export default function CustomerOpeningBalanceForm() {
         }
 
         if (cRes.ok && isMounted) {
-          const cData = await cRes.json();
+          const cData = safeArray<Customer>(await cRes.json());
           if (isMounted) setCustomers(cData);
         }
 
         if (bRes.ok && isMounted) {
-          const bData = await bRes.json();
+          const bData = safeArray<CustomerOpeningBalance>(await bRes.json());
           if (isMounted) setBalances(bData);
         }
       } catch (err) {
@@ -261,7 +262,7 @@ export default function CustomerOpeningBalanceForm() {
     return 'Dr';
   };
 
-  const selectedLedger = ledgers.find(l => l.ledgerID === Number(formData.ledgerID));
+  const selectedLedger = safeArray(ledgers).find(l => l.ledgerID === Number(formData.ledgerID));
   const isFilteringByLedger = Boolean(formData.ledgerID && !showAllLedgers);
 
   const isSchemeLedger = (ledgerName?: string) => {
@@ -274,7 +275,7 @@ export default function CustomerOpeningBalanceForm() {
            l.includes('saving') || l.includes('pigmy') || l.includes('recurring');
   };
 
-  const filteredBalances = balances.filter(b => {
+  const filteredBalances = safeArray(balances).filter(b => {
     // 1. Exclude records from other modules (FD, Saving, etc.)
     if (b.sourceModule && b.sourceModule !== 'CustomerOpeningBalance') return false;
 
@@ -299,7 +300,7 @@ export default function CustomerOpeningBalanceForm() {
   const netType = totalDebit >= totalCredit ? 'Dr' : 'Cr';
 
   const existingEntry = (formData.ledgerID && selectedCustomerId && !editingId)
-    ? balances.find(b => b.customerID === Number(selectedCustomerId) && b.ledgerID === Number(formData.ledgerID))
+    ? safeArray(balances).find(b => b.customerID === Number(selectedCustomerId) && b.ledgerID === Number(formData.ledgerID))
     : null;
 
   return (
@@ -386,7 +387,7 @@ export default function CustomerOpeningBalanceForm() {
                 value={formData.ledgerID}
                 onChange={e => {
                   const selectedId = e.target.value;
-                  const chosenLedger = ledgers.find(l => String(l.ledgerID) === selectedId);
+                  const chosenLedger = safeArray(ledgers).find(l => String(l.ledgerID) === selectedId);
                   const autoBalanceType = chosenLedger ? getLedgerDefaultBalanceType(chosenLedger) : formData.balanceType;
                   setFormData(prev => ({ 
                     ...prev, 

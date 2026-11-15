@@ -667,7 +667,7 @@ function App() {
             </div>
             <div className="hidden sm:flex items-center space-x-1">
               <span className="text-gray-400 text-xs">🏢</span>
-              {(user.role === 'Admin' || user.role === 'HO_Manager' || user.role === 'HO Manager') && headerBranches.length > 0 ? (
+              {(user.role === 'Admin' || user.role === 'SuperAdmin' || user.role === 'Super Admin' || user.role === 'SystemAdmin' || user.role === 'HeadOffice' || user.role === 'HO_Manager' || user.role === 'HO Manager' || user.role === 'Auditor' || user.role === 'GeneralManager' || user.role === 'CEO' || user.role === 'Chairman') && headerBranches.length > 0 ? (
                 <select
                   value={user.branchID}
                   onChange={async (e) => {
@@ -759,7 +759,7 @@ function App() {
           </div>
         </header>
 
-        <div key={`${activeTab}-${lastMemberId || 'clean'}-${navKey}`} className="flex-1 w-full overflow-y-auto">
+        <div key={`${activeTab}-${lastMemberId || 'clean'}-${navKey}-${user?.branchID || 0}`} className="flex-1 w-full overflow-y-auto">
           {/* Quick return to Khatedar 360 Sticky Banner */}
           {activeTab !== 'member-360' && activeTab !== 'customer-360' && activeTab !== 'khatedar-360' && Boolean(new URLSearchParams(window.location.search).get('customerId') || new URLSearchParams(window.location.search).get('memberId') || lastMemberId) && (
             <div className="bg-primary text-white px-3.5 py-1.5 flex items-center justify-between shadow-xs border-b border-white/20 font-sans shrink-0 sticky top-0 z-30 animate-in fade-in duration-200">

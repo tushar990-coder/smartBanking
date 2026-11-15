@@ -12,6 +12,7 @@ import BankLedgerSelect from './common/BankLedgerSelect';
 import { filterBankLedgers, isBankAccountLedger, isCashLedgerOption } from '../utils/bankLedgerUtils';
 import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
+import { isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Ledger {
   ledgerID: number;
@@ -83,13 +84,13 @@ interface VoucherMasterProps {
 }
 
 export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
   const [ledgers, setLedgers] = useState<Ledger[]>(() => getCachedMasterData<Ledger[]>('/api/Ledgers') || []);
   const [customers, setCustomers] = useState<Customer[]>(() => getCachedMasterData<Customer[]>('/api/Customers') || []);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : 1;
+  const initialBranchId = resolveWriteBranchId(user, globalBranchId);
   const [selectedBranchId, setSelectedBranchId] = useState<number>(initialBranchId);
   const [expandedVoucherId, setExpandedVoucherId] = useState<number | null>(null);
   const [printingVoucherId, setPrintingVoucherId] = useState<number | null>(null);
@@ -108,7 +109,6 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   
-  const { user } = useAuth();
   const userRoleLower = String(user?.roleName || user?.role || '').trim().toLowerCase();
   const isStrictlyCashier = userRoleLower === 'cashier';
   
@@ -1201,10 +1201,10 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                 <select 
                   value={selectedBranchId} 
                   onChange={handleBranchChange} 
-                  disabled={isPassingMode || editingVoucherId !== null || hasGlobalBranch}
+                  disabled={isPassingMode || editingVoucherId !== null || !isHOUser}
                   className={`${inputClass} font-bold disabled:bg-slate-100 disabled:text-slate-500`}
                 >
-                  {branches.map(b => (
+                  {(isHOUser ? branches : branches.filter(b => Number(b.branchID) === (user?.branchID || selectedBranchId))).map(b => (
                     <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
                   ))}
                 </select>

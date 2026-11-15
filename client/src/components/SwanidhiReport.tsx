@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 import { 
   Printer, 
   FileSpreadsheet, 
@@ -94,6 +96,8 @@ const fmtLakh = (n: number | null | undefined) => {
 };
 
 export default function SwanidhiReport() {
+  const { user } = useAuth();
+  const activeBranchId = resolveWriteBranchId(user);
   const [activeTab, setActiveTab] = useState<'report' | 'mapping'>('report');
   const [asOnDate, setAsOnDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedMultiplier, setSelectedMultiplier] = useState<number>(10.0);
@@ -105,7 +109,7 @@ export default function SwanidhiReport() {
   const [allLedgers, setAllLedgers] = useState<LedgerItem[]>([]);
   const [savedMappings, setSavedMappings] = useState<MappingItem[]>([]);
   const [settings, setSettings] = useState<SwanidhiSettingData>({
-    branchID: 1,
+    branchID: activeBranchId,
     borrowingLimitMultiplier: 10.0,
     year1DividendRate: 9.0,
     year2DividendRate: 9.0,
@@ -132,7 +136,7 @@ export default function SwanidhiReport() {
       const res = await axios.get('/api/Swanidhi/Report', {
         params: {
           asOnDate: dateVal,
-          branchId: 1,
+          branchId: activeBranchId,
           customMultiplier: multVal
         }
       });
@@ -152,7 +156,7 @@ export default function SwanidhiReport() {
 
   const fetchConfig = async () => {
     try {
-      const res = await axios.get('/api/Swanidhi/Config', { params: { branchId: 1 } });
+      const res = await axios.get('/api/Swanidhi/Config', { params: { branchId: activeBranchId } });
       if (res.data) {
         setCategories(res.data.categories || []);
         setAllLedgers(res.data.allLedgers || []);
@@ -173,7 +177,7 @@ export default function SwanidhiReport() {
     setErrorMsg('');
     try {
       const payload = {
-        branchID: 1,
+        branchID: activeBranchId,
         borrowingLimitMultiplier: Number(settings.borrowingLimitMultiplier) || 10.0,
         year1DividendRate: Number(settings.year1DividendRate) || 0,
         year2DividendRate: Number(settings.year2DividendRate) || 0,

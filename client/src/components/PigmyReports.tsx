@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 import { 
   Printer, 
   FileSpreadsheet, 
@@ -126,6 +128,9 @@ const formatDisplayDate = (dStr?: string | null) => {
 };
 
 export default function PigmyReports() {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const parseReportType = (): string => {
     const params = new URLSearchParams(window.location.search);
     const fullTab = params.get('tab') || '';
@@ -157,9 +162,8 @@ export default function PigmyReports() {
   const reportRef = useRef<HTMLDivElement>(null);
 
   // Filters
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : 0;
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = typeof effectiveBranch === 'number' && effectiveBranch > 0 ? effectiveBranch : (isHOUser ? 0 : (user?.branchID || 1));
 
   const todayStr = new Date().toISOString().split('T')[0];
   const [selectedBranchId, setSelectedBranchId] = useState<number>(initialBranchId);
@@ -478,12 +482,12 @@ export default function PigmyReports() {
               <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
               <select
                 value={selectedBranchId}
-                disabled={hasGlobalBranch}
+                disabled={!isHOUser}
                 onChange={(e) => setSelectedBranchId(Number(e.target.value))}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32"
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-slate-100 disabled:text-slate-600"
               >
-                <option value={0}>सर्व शाखा (All)</option>
-                {branches.map((b) => (
+                {isHOUser && <option value={0}>सर्व शाखा (All)</option>}
+                {(isHOUser || !lockedBranchId ? branches : branches.filter((b) => Number(b.branchID) === Number(lockedBranchId))).map((b) => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}
                   </option>

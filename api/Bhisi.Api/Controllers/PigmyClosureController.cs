@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
@@ -12,6 +13,8 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
+    [EnforceBranchScope]
     public class PigmyClosureController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -19,6 +22,32 @@ namespace Bhisi.Api.Controllers
         public PigmyClosureController(AppDbContext context)
         {
             _context = context;
+        }
+
+        private async Task<PigmyAccount?> FindPigmyAccountForBranchAsync(string accountNo, int? branchId, bool includeDetails)
+        {
+            string key = (accountNo ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(key)) return null;
+            int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
+
+            IQueryable<PigmyAccount> query = _context.PigmyAccounts;
+            if (includeDetails)
+            {
+                query = query
+                    .Include(a => a.Customer)
+                    .Include(a => a.PigmyScheme)
+                        .ThenInclude(s => s!.Slabs);
+            }
+
+            if (scopedBranch.HasValue && scopedBranch.Value > 0)
+            {
+                return await query.FirstOrDefaultAsync(a =>
+                    a.BranchID == scopedBranch.Value &&
+                    (a.AccountNo == key || a.LegacyAccountNumber == key || a.OldAccountNo == key));
+            }
+
+            return await query.FirstOrDefaultAsync(a =>
+                a.AccountNo == key || a.LegacyAccountNumber == key || a.OldAccountNo == key);
         }
 
         public class ActiveLoanDto
@@ -181,15 +210,12 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/PigmyClosure/Preview/{accountNo}
         [HttpGet("Preview/{accountNo}")]
-        public async Task<ActionResult<ClosurePreviewResult>> PreviewClosure(string accountNo)
+        public async Task<ActionResult<ClosurePreviewResult>> PreviewClosure(string accountNo, [FromQuery] int? branchId = null)
         {
-            var account = await _context.PigmyAccounts
-                .Include(a => a.Customer)
-                .Include(a => a.PigmyScheme)
-                    .ThenInclude(s => s!.Slabs)
-                .FirstOrDefaultAsync(a => a.AccountNo == accountNo || a.LegacyAccountNumber == accountNo || a.OldAccountNo == accountNo);
+            var account = await FindPigmyAccountForBranchAsync(accountNo, branchId, includeDetails: true);
 
             if (account == null) return NotFound("Account not found.");
+            if (!User.CanAccessBranch(account.BranchID)) return Forbid();
             if (account.Status == "Closed") return BadRequest("Account is already closed.");
 
             bool isPremature = DateTime.Today < account.MaturityDate;
@@ -258,20 +284,17 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/PigmyClosure/PreviewWithdrawal/{accountNo}?amount=5000
         [HttpGet("PreviewWithdrawal/{accountNo}")]
-        public async Task<ActionResult<WithdrawalPreviewResult>> PreviewWithdrawal(string accountNo, [FromQuery] decimal amount)
+        public async Task<ActionResult<WithdrawalPreviewResult>> PreviewWithdrawal(string accountNo, [FromQuery] decimal amount, [FromQuery] int? branchId = null)
         {
             if (amount <= 0)
             {
                 return BadRequest("कृपया वैध विड्रॉल रक्कम प्रविष्ट करा (Amount must be > 0).");
             }
 
-            var account = await _context.PigmyAccounts
-                .Include(a => a.Customer)
-                .Include(a => a.PigmyScheme)
-                    .ThenInclude(s => s!.Slabs)
-                .FirstOrDefaultAsync(a => a.AccountNo == accountNo || a.LegacyAccountNumber == accountNo || a.OldAccountNo == accountNo);
+            var account = await FindPigmyAccountForBranchAsync(accountNo, branchId, includeDetails: true);
 
             if (account == null) return NotFound("Account not found.");
+            if (!User.CanAccessBranch(account.BranchID)) return Forbid();
             if (account.Status == "Closed") return BadRequest("Account is already closed.");
             if (amount > account.TotalDepositedAmount)
             {
@@ -352,13 +375,10 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("कृपया वैध विड्रॉल रक्कम प्रविष्ट करा (Amount must be > 0).");
             }
 
-            var account = await _context.PigmyAccounts
-                .Include(a => a.Customer)
-                .Include(a => a.PigmyScheme)
-                    .ThenInclude(s => s!.Slabs)
-                .FirstOrDefaultAsync(a => a.AccountNo == request.AccountNo || a.LegacyAccountNumber == request.AccountNo || a.OldAccountNo == request.AccountNo);
+            var account = await FindPigmyAccountForBranchAsync(request.AccountNo, request.BranchId > 0 ? request.BranchId : null, includeDetails: true);
 
             if (account == null) return NotFound("Account not found.");
+            if (!User.CanAccessBranch(account.BranchID)) return Forbid();
             if (account.Status == "Closed") return BadRequest("Account is already closed.");
             if (request.Amount > account.TotalDepositedAmount)
             {
@@ -801,10 +821,11 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/PigmyClosure/WithdrawalsHistory/{accountNo}
         [HttpGet("WithdrawalsHistory/{accountNo}")]
-        public async Task<ActionResult<IEnumerable<object>>> GetWithdrawalsHistory(string accountNo)
+        public async Task<ActionResult<IEnumerable<object>>> GetWithdrawalsHistory(string accountNo, [FromQuery] int? branchId = null)
         {
-            var account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.AccountNo == accountNo || a.LegacyAccountNumber == accountNo || a.OldAccountNo == accountNo);
+            var account = await FindPigmyAccountForBranchAsync(accountNo, branchId, includeDetails: false);
             if (account == null) return NotFound("Account not found.");
+            if (!User.CanAccessBranch(account.BranchID)) return Forbid();
 
             var history = await _context.PigmyWithdrawals
                 .Include(w => w.AppliedSlab)
@@ -838,13 +859,10 @@ namespace Bhisi.Api.Controllers
         [HttpPost("Close")]
         public async Task<IActionResult> CloseAccount([FromBody] ClosureRequest request)
         {
-            var account = await _context.PigmyAccounts
-                .Include(a => a.Customer)
-                .Include(a => a.PigmyScheme)
-                    .ThenInclude(s => s!.Slabs)
-                .FirstOrDefaultAsync(a => a.AccountNo == request.AccountNo || a.LegacyAccountNumber == request.AccountNo || a.OldAccountNo == request.AccountNo);
+            var account = await FindPigmyAccountForBranchAsync(request.AccountNo, request.BranchId > 0 ? request.BranchId : null, includeDetails: true);
 
             if (account == null) return NotFound("Account not found.");
+            if (!User.CanAccessBranch(account.BranchID)) return Forbid();
             if (account.Status == "Closed") return BadRequest("Account is already closed.");
 
             // 1. Verify Active Loan / Lien Protection

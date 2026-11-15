@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { getCachedMasterData } from '../utils/apiCache';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import { Calculator, Search, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface PreviewItem {
@@ -28,18 +29,18 @@ interface PreviewItem {
 }
 
 const FdAccrualPosting: React.FC = () => {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [branches, setBranches] = useState<any[]>(() => getCachedMasterData('/api/Branches') || []);
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string) : 1);
+  const initialBranchId = resolveWriteBranchId(user, globalBranchId);
   const [branchID, setBranchID] = useState<number>(initialBranchId);
 
   useEffect(() => {
-    if (user?.branchID && user.role !== 'Admin') {
-      setBranchID(user.branchID);
+    if (lockedBranchId) {
+      setBranchID(lockedBranchId);
     }
-  }, [user]);
+  }, [lockedBranchId]);
 
   const getBizDateStr = (b?: string) => {
     if (b && b.trim()) return b.split('T')[0];
@@ -230,7 +231,7 @@ const FdAccrualPosting: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mb-2">
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch) *</label>
-            {user?.role === 'Admin' ? (
+            {isHOUser ? (
               <select
                 value={branchID}
                 onChange={(e) => setBranchID(parseInt(e.target.value, 10))}

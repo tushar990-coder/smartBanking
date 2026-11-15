@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 import { formatLocalYmd, getBusinessDateStr, parseYmdAsLocalDate } from '../utils/businessDateUtils';
 
 interface InterestPreviewResult {
@@ -67,7 +68,7 @@ const PigmyInterestPosting: React.FC = () => {
         startDate,
         endDate,
         postingDate,
-        branchId: 1
+        branchId: resolveWriteBranchId(user)
       });
       const successMsg = res.data?.message || 'व्याज खात्यात यशस्वीरीत्या जमा झाले.';
       setMessage(successMsg + (res.data?.voucherNo ? ` (व्हाउचर क्र.: ${res.data.voucherNo})` : ''));

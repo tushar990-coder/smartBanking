@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 import { 
   Printer, 
   FileSpreadsheet, 
@@ -56,6 +58,9 @@ const formatDisplayDate = (dStr?: string | null) => {
 };
 
 export default function RdReports() {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const parseReportType = (): string => {
     const params = new URLSearchParams(window.location.search);
     const fullTab = params.get('tab') || '';
@@ -77,9 +82,8 @@ export default function RdReports() {
   const [schemes, setSchemes] = useState<any[]>([]);
   const [selectedSchemeId, setSelectedSchemeId] = useState<string>('all');
 
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? (globalBranchStr as string) : 'all';
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   const reportRef = useRef<HTMLDivElement>(null);
@@ -370,12 +374,12 @@ export default function RdReports() {
               <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
               <select
                 value={selectedBranchId}
-                disabled={hasGlobalBranch}
+                disabled={!isHOUser}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-26 sm:w-30"
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-26 sm:w-30 disabled:bg-slate-100 disabled:text-slate-600"
               >
-                <option value="all">सर्व शाखा (All)</option>
-                {branches.map((b: any) => (
+                {isHOUser && <option value="all">सर्व शाखा (All)</option>}
+                {(isHOUser || !lockedBranchId ? branches : branches.filter((b: any) => Number(b.branchID) === Number(lockedBranchId))).map((b: any) => (
                   <option key={b.branchID} value={b.branchID.toString()}>
                     {b.branchName}
                   </option>

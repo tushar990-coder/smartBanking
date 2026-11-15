@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 import {
   Wallet,
   Save,
@@ -44,11 +45,11 @@ export default function CashSchemeSettingMaster() {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [cashiers, setCashiers] = useState<CashierItem[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);
+  const [selectedBranchId, setSelectedBranchId] = useState<number>(resolveWriteBranchId(user));
 
   const [settings, setSettings] = useState({
     id: 0,
-    branchId: 1,
+    branchId: resolveWriteBranchId(user),
     mainVaultLedgerId: 0,
     cashShortageLedgerId: 0,
     cashExcessLedgerId: 0,

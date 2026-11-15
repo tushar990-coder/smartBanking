@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import api from '../utils/api';
+import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import {
   Repeat,
   Layers,
@@ -55,6 +57,8 @@ const getMaxOpeningDate = () => {
 };
 
 export default function RdOpeningBalanceMigration() {
+  const { user } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
   const [customers, setCustomers] = useState<Customer[]>(() => {
     const c = getCachedMasterData<Customer[]>('/api/Customers');
     return Array.isArray(c) ? c : [];
@@ -86,7 +90,7 @@ export default function RdOpeningBalanceMigration() {
   const installmentInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     customerID: '',
     rdSchemeID: '',
     accountNo: 'AUTO',
@@ -192,7 +196,10 @@ export default function RdOpeningBalanceMigration() {
         const bList = Array.isArray(bRaw) ? bRaw : (Array.isArray(bRaw?.value) ? bRaw.value : (Array.isArray(bRaw?.data) ? bRaw.data : []));
         setBranches(bList);
 
-        const defaultBranch = bList.length > 0 ? bList[0].branchID : 1;
+        const defaultBranch = isHOUser
+          ? (bList.length > 0 ? bList[0].branchID : 1)
+          : (getLockedBranchId(user) ?? (bList.length > 0 ? bList[0].branchID : 1));
+        setFormData(prev => ({ ...prev, branchID: defaultBranch }));
         fetchNextAccountNo(defaultBranch);
         const sRes = await api.get(`/RdSchemes?branchId=${defaultBranch}`);
         if (!isMounted) return;
@@ -752,8 +759,14 @@ export default function RdOpeningBalanceMigration() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div>
                 <label className={labelClass}>शाखा (Branch)</label>
-                <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass}>
-                  {branches.map((b) => (
+                <select
+                  name="branchID"
+                  value={formData.branchID}
+                  onChange={handleChange}
+                  disabled={!isHOUser}
+                  className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-600`}
+                >
+                  {(isHOUser ? branches : branches.filter((b) => Number(b.branchID) === (getLockedBranchId(user) ?? formData.branchID))).map((b) => (
                     <option key={b.branchID} value={b.branchID}>
                       {b.branchName}
                     </option>

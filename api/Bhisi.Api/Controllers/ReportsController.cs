@@ -28,7 +28,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/Reports/system-health
-        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         [HttpGet("system-health")]
         public async Task<IActionResult> GetSystemHealth([FromQuery] int branchId = 1)
         {
@@ -604,7 +603,7 @@ namespace Bhisi.Api.Controllers
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
                 }
 
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -645,7 +644,7 @@ namespace Bhisi.Api.Controllers
                 vouchersQuery = vouchersQuery.Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled");
             }
 
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
             }
@@ -776,7 +775,7 @@ namespace Bhisi.Api.Controllers
                               && ld.PaymentMode != "Opening Balance"
                               && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
 
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
@@ -839,7 +838,7 @@ namespace Bhisi.Api.Controllers
                     .Where(lc => lc.LoanAccount != null && lc.CollectionDate >= startDate && lc.CollectionDate <= endDate
                               && !lc.VoucherID.HasValue);
 
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     unvoucheredColQuery = unvoucheredColQuery.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
@@ -1044,7 +1043,7 @@ namespace Bhisi.Api.Controllers
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
                 }
 
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -1081,7 +1080,7 @@ namespace Bhisi.Api.Controllers
                 vouchersQuery = vouchersQuery.Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled");
             }
 
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
             }
@@ -1101,7 +1100,7 @@ namespace Bhisi.Api.Controllers
                               && !ld.VoucherID.HasValue
                               && ld.PaymentMode != "Opening Balance"
                               && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
@@ -1114,7 +1113,7 @@ namespace Bhisi.Api.Controllers
                 var unvoucheredColQuery = _context.LoanCollections.AsNoTracking()
                     .Where(lc => lc.LoanAccount != null && lc.CollectionDate >= rangeStart && lc.CollectionDate <= rangeEnd
                               && !lc.VoucherID.HasValue);
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     unvoucheredColQuery = unvoucheredColQuery.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
@@ -1551,7 +1550,7 @@ namespace Bhisi.Api.Controllers
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
                 }
 
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -1588,7 +1587,7 @@ namespace Bhisi.Api.Controllers
                 vouchersQuery = vouchersQuery.Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled");
             }
             
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
             }
@@ -1677,7 +1676,7 @@ namespace Bhisi.Api.Controllers
                               && !ld.VoucherID.HasValue
                               && ld.PaymentMode != "Opening Balance"
                               && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     unvoucheredDisbQuerySummary = unvoucheredDisbQuerySummary.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
@@ -1718,7 +1717,7 @@ namespace Bhisi.Api.Controllers
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .Where(lc => lc.CollectionDate >= startDate && lc.CollectionDate <= endDate
                               && !lc.VoucherID.HasValue);
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     unvoucheredColQuerySummary = unvoucheredColQuerySummary.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
@@ -1895,7 +1894,7 @@ namespace Bhisi.Api.Controllers
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
                 }
 
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -1933,7 +1932,7 @@ namespace Bhisi.Api.Controllers
                 vouchersQuery = vouchersQuery.Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled");
             }
 
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
             }
@@ -1954,7 +1953,7 @@ namespace Bhisi.Api.Controllers
                               && !ld.VoucherID.HasValue
                               && ld.PaymentMode != "Opening Balance"
                               && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
@@ -1965,7 +1964,7 @@ namespace Bhisi.Api.Controllers
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .Where(lc => lc.CollectionDate >= rangeStart && lc.CollectionDate <= rangeEnd
                               && !lc.VoucherID.HasValue);
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     unvoucheredColQuery = unvoucheredColQuery.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
@@ -2281,7 +2280,7 @@ namespace Bhisi.Api.Controllers
                 var toDateEnd = toDate.Value.Date.AddDays(1).AddTicks(-1);
                 query = query.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate <= toDateEnd);
             }
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
             }
@@ -2641,7 +2640,7 @@ namespace Bhisi.Api.Controllers
                     : effectiveStart.Value;
                 allVdsQuery = allVdsQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= minQueryDate);
             }
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 allVdsQuery = allVdsQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
             }
@@ -2913,7 +2912,7 @@ namespace Bhisi.Api.Controllers
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
                 }
 
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -2933,7 +2932,7 @@ namespace Bhisi.Api.Controllers
                         .ThenInclude(m => m!.Customer)
                 .Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled" && v.VoucherDate >= rangeStart && v.VoucherDate <= rangeEnd);
 
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
             }
@@ -3062,7 +3061,7 @@ namespace Bhisi.Api.Controllers
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fyBaseline.BaselineStartDate.Value);
                 }
 
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     priorDrQuery = priorDrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
                     priorCrQuery = priorCrQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
@@ -3099,7 +3098,7 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(vd => vd.Member)
                         .ThenInclude(m => m!.Customer)
                 .Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled" && v.VoucherDate >= startDate && v.VoucherDate <= endDate);
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
             }
@@ -3157,7 +3156,7 @@ namespace Bhisi.Api.Controllers
             );
 
             var membersQuery = _context.Members.Include(m => m.Customer).AsQueryable();
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 membersQuery = membersQuery.Where(m => m.BranchID == branchId.Value);
             }
@@ -3183,7 +3182,7 @@ namespace Bhisi.Api.Controllers
                 var dateEnd = asOfDate.Value.Date.AddDays(1).AddTicks(-1);
                 query = query.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate <= dateEnd);
             }
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
             }
@@ -3258,7 +3257,7 @@ namespace Bhisi.Api.Controllers
             if (nonMemberCustomerIds.Count > 0)
             {
                 var nonMemberCustomersQuery = _context.Customers.AsNoTracking().Where(c => nonMemberCustomerIds.Contains(c.CustomerID));
-                if (branchId.HasValue)
+                if (branchId.HasValue && branchId.Value > 0)
                 {
                     nonMemberCustomersQuery = nonMemberCustomersQuery.Where(c => c.BranchID == branchId.Value);
                 }
@@ -3347,7 +3346,7 @@ namespace Bhisi.Api.Controllers
                 var toDateEnd = toDate.Value.Date.AddDays(1).AddTicks(-1);
                 query = query.Where(d => d.DisbursementDate <= toDateEnd);
             }
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(d => d.LoanAccount != null && d.LoanAccount.BranchID == branchId.Value);
             }
@@ -4247,15 +4246,15 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
-                branchId = User.ResolveBranchId(branchId);
+                branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
                 // Members
                 var membersQuery = _context.Members.Include(m => m.Customer).AsNoTracking();
-                if (branchId.HasValue) membersQuery = membersQuery.Where(m => m.BranchID == branchId.Value);
+                if (branchId.HasValue && branchId.Value > 0) membersQuery = membersQuery.Where(m => m.BranchID == branchId.Value);
                 var totalMembers = await membersQuery.CountAsync();
 
                 // Loan Module
                 var loanAccountsQuery = _context.LoanAccounts.AsNoTracking();
-                if (branchId.HasValue) loanAccountsQuery = loanAccountsQuery.Where(l => l.BranchID == branchId.Value);
+                if (branchId.HasValue && branchId.Value > 0) loanAccountsQuery = loanAccountsQuery.Where(l => l.BranchID == branchId.Value);
 
                 var totalLoanAccounts = await loanAccountsQuery.CountAsync();
                 var activeLoanAccounts = await loanAccountsQuery.Where(l => l.Status == "Active").CountAsync();
@@ -4265,19 +4264,19 @@ namespace Bhisi.Api.Controllers
                 var totalLoanOverdueBalance = await loanAccountsQuery.Where(l => l.Status == "Active").SumAsync(l => (decimal?)l.OverdueInterestBalance) ?? 0m;
                 
                 var loanCollectionsQuery = _context.LoanCollections.AsNoTracking();
-                if (branchId.HasValue) loanCollectionsQuery = loanCollectionsQuery.Where(c => (c.BranchID != 0 ? c.BranchID : (c.LoanAccount != null ? c.LoanAccount.BranchID : 1)) == branchId.Value);
+                if (branchId.HasValue && branchId.Value > 0) loanCollectionsQuery = loanCollectionsQuery.Where(c => (c.BranchID != 0 ? c.BranchID : (c.LoanAccount != null ? c.LoanAccount.BranchID : 1)) == branchId.Value);
                 var totalLoanCollected = await loanCollectionsQuery.SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
                 
                 // Saving Module
                 var savingAccountsQuery = _context.SavingAccountMasters.AsNoTracking();
-                if (branchId.HasValue) savingAccountsQuery = savingAccountsQuery.Where(s => s.BranchID == branchId.Value);
+                if (branchId.HasValue && branchId.Value > 0) savingAccountsQuery = savingAccountsQuery.Where(s => s.BranchID == branchId.Value);
 
                 var totalSavingAccounts = await savingAccountsQuery.CountAsync();
                 var activeSavingAccounts = await savingAccountsQuery.Where(s => s.Status == "Active").CountAsync();
                 var totalSavingBalance = await savingAccountsQuery.Where(s => s.Status == "Active").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
                 
                 var savingTxnsQuery = _context.SavingTransactions.AsNoTracking();
-                if (branchId.HasValue) savingTxnsQuery = savingTxnsQuery.Where(t => t.SavingAccount != null && t.SavingAccount.BranchID == branchId.Value);
+                if (branchId.HasValue && branchId.Value > 0) savingTxnsQuery = savingTxnsQuery.Where(t => t.SavingAccount != null && t.SavingAccount.BranchID == branchId.Value);
                 var totalSavingDeposits = await savingTxnsQuery
                     .Where(t => t.TransactionType == "Deposit" && t.Narration != "Opening Balance")
                     .SumAsync(t => (decimal?)t.Amount) ?? 0m;
@@ -4287,13 +4286,13 @@ namespace Bhisi.Api.Controllers
 
                 // Member OB
                 var memberOBsQuery = _context.MemberOpeningBalances.AsNoTracking();
-                if (branchId.HasValue) memberOBsQuery = memberOBsQuery.Where(o => o.Member != null && o.Member.BranchID == branchId.Value);
+                if (branchId.HasValue && branchId.Value > 0) memberOBsQuery = memberOBsQuery.Where(o => o.Member != null && o.Member.BranchID == branchId.Value);
                 var totalMemberOBDr = await memberOBsQuery.Where(o => o.BalanceType == "Dr").SumAsync(o => (decimal?)o.Amount) ?? 0m;
                 var totalMemberOBCr = await memberOBsQuery.Where(o => o.BalanceType == "Cr").SumAsync(o => (decimal?)o.Amount) ?? 0m;
 
                 // Voucher / Accounting
                 var vouchersQuery = _context.Vouchers.AsNoTracking();
-                if (branchId.HasValue) vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
+                if (branchId.HasValue && branchId.Value > 0) vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
                 var totalVouchers = await vouchersQuery.CountAsync();
                 var totalLedgers = await _context.Ledgers.AsNoTracking().CountAsync();
 
@@ -9371,13 +9370,15 @@ namespace Bhisi.Api.Controllers
                                 (baselineFyId == 0 || ob.FinancialYearID == baselineFyId))
                     .ToListAsync();
 
-                // Fetch all approved IBT vouchers within the requested date range
+                branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
+
                 var ibtVouchers = await _context.Vouchers
                     .Include(v => v.VoucherDetails)
                     .Where(v => v.IsIbtVoucher && 
                                 v.Status == "Approved" && 
                                 v.VoucherDate.Date >= startDate.Date && 
-                                v.VoucherDate.Date <= endDate.Date)
+                                v.VoucherDate.Date <= endDate.Date &&
+                                (!branchId.HasValue || v.BranchID == branchId.Value || v.TargetBranchID == branchId.Value))
                     .ToListAsync();
 
                 var matrixCells = new List<IbtMatrixCellDto>();

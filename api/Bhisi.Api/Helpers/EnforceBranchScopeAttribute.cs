@@ -1,14 +1,24 @@
 using System;
-using System.Security.Claims;
+using System.Linq;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Bhisi.Api.Helpers
 {
     /// <summary>
+    /// Marks a controller or action as intentionally handling its own cross-branch query logic
+    /// (for example IBT pair views or HO system endpoints).
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+    public class SkipBranchScopeAttribute : Attribute
+    {
+    }
+
+    /// <summary>
     /// Core Banking Security Filter:
     /// Enforces strict branch isolation based on the authenticated user's JWT token claims.
     /// - If the user is a Head Office Admin / Auditor, requested branch parameters are respected.
-    /// - If the user is a branch operator (Clerk/Cashier/Agent), parameters are forcibly locked
+    /// - If the user is a branch operator (Clerk/Cashier/Manager/Agent), parameters are forcibly locked
     ///   to their assigned token BranchID to prevent horizontal privilege escalation and data leaks.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
@@ -16,6 +26,15 @@ namespace Bhisi.Api.Helpers
     {
         public override void OnActionExecuting(ActionExecutingContext context)
         {
+            var endpointMetadata = context.ActionDescriptor?.EndpointMetadata;
+            if (endpointMetadata != null &&
+                (endpointMetadata.OfType<SkipBranchScopeAttribute>().Any() ||
+                 endpointMetadata.OfType<IAllowAnonymous>().Any()))
+            {
+                base.OnActionExecuting(context);
+                return;
+            }
+
             var user = context.HttpContext.User;
             if (user == null || user.Identity?.IsAuthenticated != true)
             {
@@ -32,8 +51,8 @@ namespace Bhisi.Api.Helpers
 
             int operatingBranch = user.GetOperatingBranchId();
 
-            // 1. Intercept standard query / route arguments
-            string[] branchParamNames = { "branchId", "branchID", "targetBranchId", "targetBranchID" };
+            // 1. Intercept standard query / route arguments (both int and int?)
+            string[] branchParamNames = { "branchId", "branchID", "targetBranchId", "targetBranchID", "queryBranchId", "operatingBranchId" };
             foreach (var param in branchParamNames)
             {
                 if (context.ActionArguments.ContainsKey(param))
@@ -42,15 +61,25 @@ namespace Bhisi.Api.Helpers
                 }
             }
 
-            // 2. Intercept complex model properties if passed in request body
+            // 2. Intercept complex model properties (both int and int?) if passed in request body
             foreach (var arg in context.ActionArguments.Values)
             {
                 if (arg != null && arg.GetType().IsClass && arg.GetType() != typeof(string))
                 {
-                    var prop = arg.GetType().GetProperty("BranchID") ?? arg.GetType().GetProperty("BranchId");
-                    if (prop != null && prop.CanWrite && prop.PropertyType == typeof(int))
+                    foreach (var propName in new[] { "BranchID", "BranchId" })
                     {
-                        prop.SetValue(arg, operatingBranch);
+                        var prop = arg.GetType().GetProperty(propName);
+                        if (prop != null && prop.CanWrite)
+                        {
+                            if (prop.PropertyType == typeof(int))
+                            {
+                                prop.SetValue(arg, operatingBranch);
+                            }
+                            else if (prop.PropertyType == typeof(int?))
+                            {
+                                prop.SetValue(arg, (int?)operatingBranch);
+                            }
+                        }
                     }
                 }
             }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import {
   Building2,
   Plus,
@@ -66,8 +67,8 @@ interface Ledger extends RawLedgerItem {
 const AssetMaster: React.FC = () => {
   const { user, globalBranchId } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
-  const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
-  const isHeadOfficeOrAdmin = user?.role === 'Admin' || user?.branchType === 'HeadOffice';
+  const isHeadOfficeOrAdmin = isHeadOfficeUser(user);
+  const effectiveBranchId = resolveWriteBranchId(user, globalBranchId);
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -1043,10 +1044,11 @@ const AssetMaster: React.FC = () => {
                 <select 
                   value={branchFilter} 
                   onChange={e => setBranchFilter(e.target.value)} 
-                  className="border border-gray-300 rounded-sm px-2 py-0.5 text-[11px] bg-white h-[28px] focus:ring-1 focus:ring-primary focus:border-primary"
+                  disabled={!isHeadOfficeOrAdmin}
+                  className="border border-gray-300 rounded-sm px-2 py-0.5 text-[11px] bg-white h-[28px] focus:ring-1 focus:ring-primary focus:border-primary disabled:bg-slate-100 disabled:text-slate-600"
                 >
-                  <option value="all">सर्व शाखा (All)</option>
-                  {branches.map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
+                  {isHeadOfficeOrAdmin && <option value="all">सर्व शाखा (All)</option>}
+                  {(isHeadOfficeOrAdmin ? branches : branches.filter(b => Number(b.branchID) === effectiveBranchId)).map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
                 </select>
               </div>
 

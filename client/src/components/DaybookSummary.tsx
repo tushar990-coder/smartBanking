@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface DaybookSummaryLedgerDto {
   ledgerId: number;
@@ -41,7 +42,7 @@ const getTodayDate = () => {
 };
 
 export default function DaybookSummary() {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
   const [voucherStatus, setVoucherStatus] = useState<'approved' | 'pending' | 'all'>('approved');
   const [fromDate, setFromDate] = useState<string>(getTodayDate());
   const [toDate, setToDate] = useState<string>(getTodayDate());
@@ -53,14 +54,10 @@ export default function DaybookSummary() {
   const [registrationNo, setRegistrationNo] = useState<string>('');
   const [branches, setBranches] = useState<any[]>([]);
 
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch
-    ? (globalBranchStr as string)
-    : !isHOUser && user?.branchID
-    ? user.branchID.toString()
-    : 'all';
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   useEffect(() => {
@@ -343,11 +340,11 @@ export default function DaybookSummary() {
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                disabled={hasGlobalBranch || !isHOUser}
+                disabled={!isHOUser}
                 className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-gray-100 disabled:text-gray-500 cursor-pointer disabled:cursor-not-allowed"
               >
                 {isHOUser && <option value="all">सर्व शाखा (All)</option>}
-                {branches.map((b) => (
+                {(isHOUser || !lockedBranchId ? branches : branches.filter((b) => Number(b.branchID) === Number(lockedBranchId))).map((b) => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}
                   </option>

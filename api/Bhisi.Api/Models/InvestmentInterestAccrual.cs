@@ -33,6 +33,13 @@ namespace Bhisi.Api.Models
         [Required]
         public DateTime AccrualDate { get; set; }
 
+        public DateTime? FromDate { get; set; }
+
+        public int? CalculationDays { get; set; }
+
+        [StringLength(30)]
+        public string? CalculationMethod { get; set; }
+
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal InterestAmount { get; set; }

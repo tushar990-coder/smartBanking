@@ -99,6 +99,12 @@ function buildCacheKey(normalizedUrl: string): string {
   return `${getActiveBranchContextKey()}::${normalizedUrl.toLowerCase()}`;
 }
 
+function isHtmlPayload(raw: any): boolean {
+  if (typeof raw !== 'string') return false;
+  const trimmed = raw.trim().toLowerCase();
+  return trimmed.startsWith('<!doctype') || trimmed.startsWith('<html');
+}
+
 function ensureParsedCacheData(raw: any): any {
   if (typeof raw === 'string') {
     const trimmed = raw.trim();
@@ -116,6 +122,25 @@ function ensureParsedCacheData(raw: any): any {
   return raw;
 }
 
+function unwrapCollectionPayload(parsed: any): any {
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    if (Array.isArray(parsed.value)) return parsed.value;
+    if (Array.isArray(parsed.data)) return parsed.data;
+    if (Array.isArray(parsed.$values)) return parsed.$values;
+    if (Array.isArray(parsed.items)) return parsed.items;
+    if (Array.isArray(parsed.records)) return parsed.records;
+  }
+  return parsed;
+}
+
+/**
+ * Safely normalizes API or cache payloads into a guaranteed Array (never throws on .find/.filter/.map).
+ */
+export function safeArray<T = any>(input: any): T[] {
+  const unwrapped = unwrapCollectionPayload(ensureParsedCacheData(input));
+  return Array.isArray(unwrapped) ? unwrapped : [];
+}
+
 function ensureJsonStringBody(raw: any): string {
   if (typeof raw === 'string') {
     return raw;
@@ -131,11 +156,11 @@ export function getCachedMasterData<T = any>(url: string, params?: any): T | nul
   const key = buildCacheKey(norm);
   const hit = memoryCache.get(key);
   if (hit && Date.now() - hit.timestamp < hit.ttl) {
-    let parsed = ensureParsedCacheData(hit.data);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      if (Array.isArray((parsed as any).value)) parsed = (parsed as any).value;
-      else if (Array.isArray((parsed as any).data)) parsed = (parsed as any).data;
+    if (isHtmlPayload(hit.data)) {
+      memoryCache.delete(key);
+      return null;
     }
+    const parsed = unwrapCollectionPayload(ensureParsedCacheData(hit.data));
     hit.data = parsed;
     return parsed as T;
   }
@@ -145,7 +170,7 @@ export function getCachedMasterData<T = any>(url: string, params?: any): T | nul
     const baseKey = buildCacheKey(isRd ? '/api/rdschemes' : '/api/fdschemes');
     const baseHit = memoryCache.get(baseKey);
     if (baseHit && Date.now() - baseHit.timestamp < baseHit.ttl) {
-      const baseList = ensureParsedCacheData(baseHit.data);
+      const baseList = unwrapCollectionPayload(ensureParsedCacheData(baseHit.data));
       baseHit.data = baseList;
       if (Array.isArray(baseList)) {
         const sp = new URLSearchParams(norm.split('?')[1] || '');
@@ -158,6 +183,13 @@ export function getCachedMasterData<T = any>(url: string, params?: any): T | nul
     }
   }
   return null;
+}
+
+/**
+ * Synchronously read cached master array data, guaranteed to return an Array.
+ */
+export function getCachedMasterArray<T = any>(url: string, params?: any): T[] {
+  return safeArray<T>(getCachedMasterData(url, params));
 }
 
 /**
@@ -362,15 +394,18 @@ export function setupAxiosCacheAdapter(targetInstance: any = axios): void {
     const requestPromise = runDefault()
       .then((response: any) => {
         if (response && response.status >= 200 && response.status < 300) {
-          const parsedData = ensureParsedCacheData(response.data);
-          memoryCache.set(cacheKey, {
-            data: parsedData,
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-            timestamp: Date.now(),
-            ttl: rule.ttl,
-          });
+          const ct = String(response.headers?.['content-type'] || response.headers?.['Content-Type'] || '').toLowerCase();
+          if (!ct.includes('text/html') && !isHtmlPayload(response.data)) {
+            const parsedData = ensureParsedCacheData(response.data);
+            memoryCache.set(cacheKey, {
+              data: parsedData,
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+              timestamp: Date.now(),
+              ttl: rule.ttl,
+            });
+          }
         }
         return response;
       })
@@ -439,9 +474,16 @@ export async function executeCachedFetch(
   const fetchPromise = originalFetch(input, init)
     .then(async (response) => {
       if (response && response.ok) {
+        const ct = String(response.headers?.get?.('content-type') || '').toLowerCase();
+        if (ct.includes('text/html')) {
+          return { data: null, status: response.status, statusText: response.statusText, headers: {}, rawResponse: response };
+        }
         const cloned = response.clone();
         try {
           const rawJson = await cloned.json();
+          if (isHtmlPayload(rawJson)) {
+            return { data: null, status: response.status, statusText: response.statusText, headers: {}, rawResponse: response };
+          }
           const data = ensureParsedCacheData(rawJson);
           const capturedHeaders: Record<string, string> = {};
           try {

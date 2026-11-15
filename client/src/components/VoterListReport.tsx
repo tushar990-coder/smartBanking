@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
 import CbsReportLayout, { formatDisplayDate } from "./common/CbsReportLayout";
+import { useAuth } from "../context/AuthContext";
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from "../utils/branchAccess";
 import { 
   Search, 
   RefreshCw, 
@@ -53,12 +55,14 @@ const fmtCurrency = (n: number | null | undefined) => {
 };
 
 export default function VoterListReport() {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [sanstha, setSanstha] = useState<SansthaDetail | null>(null);
   const [branches, setBranches] = useState<any[]>([]);
   
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? (globalBranchStr as string) : 'all';
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   const [membershipTypeFilter, setMembershipTypeFilter] = useState<string>('सर्व');
@@ -173,12 +177,12 @@ export default function VoterListReport() {
         <label className="text-[10.5px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
         <select
           value={selectedBranchId}
-          disabled={hasGlobalBranch}
+          disabled={!isHOUser}
           onChange={(e) => setSelectedBranchId(e.target.value)}
-          className="h-6 border border-gray-300 rounded-xs px-1 text-[10.5px] font-medium bg-white focus:outline-none focus:border-primary w-28"
+          className="h-6 border border-gray-300 rounded-xs px-1 text-[10.5px] font-medium bg-white focus:outline-none focus:border-primary w-28 disabled:bg-slate-100 disabled:text-slate-600"
         >
-          <option value="all">सर्व शाखा</option>
-          {branches.map((b: any) => (
+          {isHOUser && <option value="all">सर्व शाखा</option>}
+          {(isHOUser || !lockedBranchId ? branches : branches.filter((b: any) => Number(b.branchID) === Number(lockedBranchId))).map((b: any) => (
             <option key={b.branchID} value={b.branchID.toString()}>
               {b.branchName}
             </option>

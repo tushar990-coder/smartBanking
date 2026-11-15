@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
@@ -73,7 +74,7 @@ export default function PigmyAccountOpening() {
     accountNo: '',
     legacyAccountNumber: '',
     customerID: '',
-    branchID: '1',
+    branchID: String(resolveWriteBranchId(user, localStorage.getItem('globalBranchId'))),
     pigmySchemeID: '',
     pigmyAgentID: '',
     openingDate: activeBusinessDate,
@@ -806,12 +807,16 @@ export default function PigmyAccountOpening() {
                 शाखा निवडा (Select Branch) <span className="text-rose-500">*</span>
               </label>
               <select 
-                className="w-full border border-slate-300 rounded-xl px-3 py-1.5 bg-slate-50 focus:bg-white focus:border-primary outline-none"
+                className={`w-full border border-slate-300 rounded-xl px-3 py-1.5 focus:bg-white focus:border-primary outline-none ${!isHeadOfficeUser(user) ? 'bg-slate-100 cursor-not-allowed' : 'bg-slate-50'}`}
                 value={formData.branchID}
+                disabled={!isHeadOfficeUser(user)}
                 onChange={(e) => setFormData({ ...formData, branchID: e.target.value })}
               >
                 {branches.length > 0 ? (
-                  branches.map((b, idx) => {
+                  (getLockedBranchId(user)
+                    ? branches.filter((b, idx) => Number(b.branchID || b.branchId || idx + 1) === getLockedBranchId(user))
+                    : branches
+                  ).map((b, idx) => {
                     const bId = b.branchID || b.branchId || idx + 1;
                     return (
                       <option key={`br-${bId}-${idx}`} value={bId}>
@@ -820,7 +825,7 @@ export default function PigmyAccountOpening() {
                     );
                   })
                 ) : (
-                  <option key="br-default" value="1">[HO] मुख्य शाखा (Head Office)</option>
+                  <option key="br-default" value={String(resolveWriteBranchId(user))}>[HO] मुख्य शाखा (Head Office)</option>
                 )}
               </select>
             </div>

@@ -64,7 +64,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("ParentGroupID");
 
-                    b.ToTable("AccountGroups", t =>
+                    b.ToTable("AccountGroups", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AccountGroups");
                         });
@@ -258,7 +258,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("PigmyAgentID");
 
-                    b.ToTable("AgentCustomerRequests", t =>
+                    b.ToTable("AgentCustomerRequests", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AgentCustomerRequests");
                         });
@@ -347,7 +347,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("FinancialYearID");
 
-                    b.ToTable("Assets", t =>
+                    b.ToTable("Assets", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Assets");
                         });
@@ -417,7 +417,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("FinancialYearID");
 
-                    b.ToTable("AssetAllocations", t =>
+                    b.ToTable("AssetAllocations", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AssetAllocations");
                         });
@@ -487,7 +487,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("FinancialYearID");
 
-                    b.ToTable("AssetCategories", t =>
+                    b.ToTable("AssetCategories", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AssetCategories");
                         });
@@ -564,7 +564,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("AssetDepreciations", t =>
+                    b.ToTable("AssetDepreciations", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AssetDepreciations");
                         });
@@ -641,7 +641,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("AssetDisposals", t =>
+                    b.ToTable("AssetDisposals", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AssetDisposals");
                         });
@@ -718,7 +718,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("AssetMaintenances", t =>
+                    b.ToTable("AssetMaintenances", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AssetMaintenances");
                         });
@@ -804,7 +804,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("AssetPurchases", t =>
+                    b.ToTable("AssetPurchases", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AssetPurchases");
                         });
@@ -879,7 +879,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("ToBranchID");
 
-                    b.ToTable("AssetTransfers", t =>
+                    b.ToTable("AssetTransfers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AssetTransfers");
                         });
@@ -944,7 +944,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("FinancialYearID");
 
-                    b.ToTable("AssetVerifications", t =>
+                    b.ToTable("AssetVerifications", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AssetVerifications");
                         });
@@ -983,7 +983,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LedgerID");
 
-                    b.ToTable("AuditLedgerMappings", t =>
+                    b.ToTable("AuditLedgerMappings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AuditLedgerMappings");
                         });
@@ -1038,7 +1038,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("AuditLogID");
 
-                    b.ToTable("AuditLogs", t =>
+                    b.ToTable("AuditLogs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_AuditLogs");
                         });
@@ -1061,7 +1061,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("BankID");
 
-                    b.ToTable("BankMasters", t =>
+                    b.ToTable("BankMasters", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_BankMasters");
                         });
@@ -1098,7 +1098,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("ParentMemberID");
 
-                    b.ToTable("BorrowerLinkedAccounts", t =>
+                    b.ToTable("BorrowerLinkedAccounts", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_BorrowerLinkedAccounts");
                         });
@@ -1157,7 +1157,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("DefaultCashLedgerID");
 
-                    b.ToTable("Branches", t =>
+                    b.ToTable("Branches", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Branches");
                         });
@@ -1186,7 +1186,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("BranchDayEndStatuses", t =>
+                    b.ToTable("BranchDayEndStatuses", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_BranchDayEndStatuses");
                         });
@@ -1262,7 +1262,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("BranchID");
 
-                    b.ToTable("BranchMasters", t =>
+                    b.ToTable("BranchMasters", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_BranchMasters");
                         });
@@ -1327,7 +1327,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("ToCashierId");
 
-                    b.ToTable("CashAllocations", t =>
+                    b.ToTable("CashAllocations", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CashAllocations");
                         });
@@ -1419,7 +1419,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("CashierId");
 
-                    b.ToTable("CashDenominations", t =>
+                    b.ToTable("CashDenominations", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CashDenominations");
                         });
@@ -1478,7 +1478,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("MainVaultLedgerId");
 
-                    b.ToTable("CashManagementSettings", t =>
+                    b.ToTable("CashManagementSettings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CashManagementSettings");
                         });
@@ -1538,7 +1538,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Cashiers", t =>
+                    b.ToTable("Cashiers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Cashiers");
                         });
@@ -1609,7 +1609,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("CashierId");
 
-                    b.ToTable("CashierBalances", t =>
+                    b.ToTable("CashierBalances", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CashierBalances");
                         });
@@ -1646,7 +1646,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("SequenceID");
 
-                    b.ToTable("CifSequences", t =>
+                    b.ToTable("CifSequences", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CifSequences");
                         });
@@ -1721,7 +1721,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LoanAccountID");
 
-                    b.ToTable("CollateralComplianceLogs", t =>
+                    b.ToTable("CollateralComplianceLogs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CollateralComplianceLogs");
                         });
@@ -1796,7 +1796,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("MemberID");
 
-                    b.ToTable("CommitteeMembers", t =>
+                    b.ToTable("CommitteeMembers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CommitteeMembers");
                         });
@@ -2050,7 +2050,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("Village");
 
-                    b.ToTable("Customers", t =>
+                    b.ToTable("Customers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Customers");
                         });
@@ -2167,7 +2167,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("BatchID");
 
-                    b.ToTable("CustomerImportBatches", t =>
+                    b.ToTable("CustomerImportBatches", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CustomerImportBatches");
                         });
@@ -2216,7 +2216,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LedgerID");
 
-                    b.ToTable("CustomerOpeningBalances", t =>
+                    b.ToTable("CustomerOpeningBalances", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_CustomerOpeningBalances");
                         });
@@ -2330,7 +2330,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("DeceasedClaimSettlements", t =>
+                    b.ToTable("DeceasedClaimSettlements", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_DeceasedClaimSettlements");
                         });
@@ -2385,7 +2385,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("MemberId");
 
-                    b.ToTable("DemandMemberDetails", t =>
+                    b.ToTable("DemandMemberDetails", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_DemandMemberDetails");
                         });
@@ -2439,7 +2439,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("EmployerId");
 
-                    b.ToTable("DemandNotices", t =>
+                    b.ToTable("DemandNotices", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_DemandNotices");
                         });
@@ -2484,7 +2484,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherId");
 
-                    b.ToTable("DemandRecoveries", t =>
+                    b.ToTable("DemandRecoveries", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_DemandRecoveries");
                         });
@@ -2531,7 +2531,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("DepartmentID");
 
-                    b.ToTable("DepartmentMasters", t =>
+                    b.ToTable("DepartmentMasters", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_DepartmentMasters");
                         });
@@ -2578,7 +2578,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherId");
 
-                    b.ToTable("DividendDistributions", t =>
+                    b.ToTable("DividendDistributions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_DividendDistributions");
                         });
@@ -2666,7 +2666,7 @@ namespace Bhisi.Api.Migrations
                     b.HasIndex("EmployeeID")
                         .IsUnique();
 
-                    b.ToTable("EmployeeBankDetails", t =>
+                    b.ToTable("EmployeeBankDetails", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_EmployeeBankDetails");
                         });
@@ -2709,7 +2709,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("EmployerMasters", t =>
+                    b.ToTable("EmployerMasters", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_EmployerMasters");
                         });
@@ -2760,7 +2760,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("EodBatchProcessLogs", t =>
+                    b.ToTable("EodBatchProcessLogs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_EodBatchProcessLogs");
                         });
@@ -2919,7 +2919,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("SavingAccountID");
 
-                    b.ToTable("FdAccounts", t =>
+                    b.ToTable("FdAccounts", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_FdAccounts");
                         });
@@ -2950,7 +2950,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("FdAccountSequences", t =>
+                    b.ToTable("FdAccountSequences", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_FdAccountSequences");
                         });
@@ -3057,7 +3057,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("OldFdAccountID");
 
-                    b.ToTable("FdAutoRenewalLogs", t =>
+                    b.ToTable("FdAutoRenewalLogs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_FdAutoRenewalLogs");
                         });
@@ -3117,7 +3117,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("FdInterestAccruals", t =>
+                    b.ToTable("FdInterestAccruals", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_FdInterestAccruals");
                         });
@@ -3269,7 +3269,7 @@ namespace Bhisi.Api.Migrations
                         .IsUnique()
                         .HasDatabaseName("UQ_FdSchemes_SchemeCode");
 
-                    b.ToTable("FdSchemes", t =>
+                    b.ToTable("FdSchemes", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_FdSchemes");
                         });
@@ -3316,7 +3316,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("FdSchemeID");
 
-                    b.ToTable("FdSchemeInterestSlabs", t =>
+                    b.ToTable("FdSchemeInterestSlabs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_FdSchemeInterestSlabs");
                         });
@@ -3380,7 +3380,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("FdTransactions", t =>
+                    b.ToTable("FdTransactions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_FdTransactions");
                         });
@@ -3415,7 +3415,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("FinancialYearID");
 
-                    b.ToTable("FinancialYears", t =>
+                    b.ToTable("FinancialYears", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_FinancialYears");
                         });
@@ -3470,7 +3470,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LoanAccountID");
 
-                    b.ToTable("GoldLoanDetails", t =>
+                    b.ToTable("GoldLoanDetails", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_GoldLoanDetails");
                         });
@@ -3578,7 +3578,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("SchemeID");
 
-                    b.ToTable("InvestmentAccounts", t =>
+                    b.ToTable("InvestmentAccounts", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentAccounts");
                         });
@@ -3609,7 +3609,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("InvestmentAccountSequences", t =>
+                    b.ToTable("InvestmentAccountSequences", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentAccountSequences");
                         });
@@ -3681,7 +3681,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("InvestmentInstitutions", t =>
+                    b.ToTable("InvestmentInstitutions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentInstitutions");
                         });
@@ -3738,7 +3738,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("InvestmentInterestAccruals", t =>
+                    b.ToTable("InvestmentInterestAccruals", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentInterestAccruals");
                         });
@@ -3792,7 +3792,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("InvestmentInterestReceipts", t =>
+                    b.ToTable("InvestmentInterestReceipts", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentInterestReceipts");
                         });
@@ -3854,7 +3854,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("InvestmentMaturities", t =>
+                    b.ToTable("InvestmentMaturities", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentMaturities");
                         });
@@ -3924,7 +3924,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("InvestmentPrematureWithdrawals", t =>
+                    b.ToTable("InvestmentPrematureWithdrawals", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentPrematureWithdrawals");
                         });
@@ -3988,7 +3988,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("InvestmentRenewals", t =>
+                    b.ToTable("InvestmentRenewals", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentRenewals");
                         });
@@ -4080,7 +4080,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("InvestmentInstitutionID");
 
-                    b.ToTable("InvestmentSchemes", t =>
+                    b.ToTable("InvestmentSchemes", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentSchemes");
                         });
@@ -4120,7 +4120,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("InvestmentVoucherMappings", t =>
+                    b.ToTable("InvestmentVoucherMappings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_InvestmentVoucherMappings");
                         });
@@ -4220,7 +4220,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("PrimaryMemberID");
 
-                    b.ToTable("JointMembers", t =>
+                    b.ToTable("JointMembers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_JointMembers");
                         });
@@ -4282,7 +4282,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("GroupID");
 
-                    b.ToTable("Ledgers", t =>
+                    b.ToTable("Ledgers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Ledgers");
                         });
@@ -4326,7 +4326,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("DebitLedgerId");
 
-                    b.ToTable("LegalRecoveryLedgerMappings", t =>
+                    b.ToTable("LegalRecoveryLedgerMappings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LegalRecoveryLedgerMappings");
                         });
@@ -4474,7 +4474,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("RecommendedByDirectorID");
 
-                    b.ToTable("LoanAccounts", t =>
+                    b.ToTable("LoanAccounts", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanAccounts");
                         });
@@ -4544,7 +4544,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LoanAccountID");
 
-                    b.ToTable("LoanAccountNpaStatuses", t =>
+                    b.ToTable("LoanAccountNpaStatuses", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanAccountNpaStatuses");
                         });
@@ -4649,7 +4649,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("RecommendedByDirectorID");
 
-                    b.ToTable("LoanApplications", t =>
+                    b.ToTable("LoanApplications", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanApplications");
                         });
@@ -4746,7 +4746,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("LoanCollections", t =>
+                    b.ToTable("LoanCollections", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanCollections");
                         });
@@ -4778,7 +4778,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LoanCollectionID");
 
-                    b.ToTable("LoanCollectionFees", t =>
+                    b.ToTable("LoanCollectionFees", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanCollectionFees");
                         });
@@ -4871,7 +4871,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("LoanDisbursements", t =>
+                    b.ToTable("LoanDisbursements", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanDisbursements");
                         });
@@ -4903,7 +4903,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LoanDisbursementID");
 
-                    b.ToTable("LoanDisbursementDeductions", t =>
+                    b.ToTable("LoanDisbursementDeductions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanDisbursementDeductions");
                         });
@@ -4944,7 +4944,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LoanAccountID");
 
-                    b.ToTable("LoanDocuments", t =>
+                    b.ToTable("LoanDocuments", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanDocuments");
                         });
@@ -5012,7 +5012,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LoanAccountID");
 
-                    b.ToTable("LoanInstallmentSchedules", t =>
+                    b.ToTable("LoanInstallmentSchedules", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanInstallmentSchedules");
                         });
@@ -5109,7 +5109,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("LoanRateID");
 
-                    b.ToTable("LoanRates", t =>
+                    b.ToTable("LoanRates", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LoanRates");
                         });
@@ -5167,7 +5167,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LockerTypeID");
 
-                    b.ToTable("Lockers", t =>
+                    b.ToTable("Lockers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Lockers");
                         });
@@ -5291,7 +5291,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("MemberID");
 
-                    b.ToTable("LockerAllotments", t =>
+                    b.ToTable("LockerAllotments", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LockerAllotments");
                         });
@@ -5373,7 +5373,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("LockerRentPostings", t =>
+                    b.ToTable("LockerRentPostings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LockerRentPostings");
                         });
@@ -5445,7 +5445,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("LockerSurrenders", t =>
+                    b.ToTable("LockerSurrenders", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LockerSurrenders");
                         });
@@ -5524,7 +5524,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("RentIncomeLedgerID");
 
-                    b.ToTable("LockerTypes", t =>
+                    b.ToTable("LockerTypes", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LockerTypes");
                         });
@@ -5588,7 +5588,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("LockerVisitRegisters", t =>
+                    b.ToTable("LockerVisitRegisters", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_LockerVisitRegisters");
                         });
@@ -5658,7 +5658,7 @@ namespace Bhisi.Api.Migrations
                         .IsUnique()
                         .HasFilter("[MemberCode] IS NOT NULL AND [MemberCode] <> ''");
 
-                    b.ToTable("Members", t =>
+                    b.ToTable("Members", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Members");
                         });
@@ -5712,7 +5712,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("MemberID");
 
-                    b.ToTable("MemberOpeningBalances", t =>
+                    b.ToTable("MemberOpeningBalances", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_MemberOpeningBalances");
                         });
@@ -5750,7 +5750,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("NpaClassificationRunID");
 
-                    b.ToTable("NpaClassificationRuns", t =>
+                    b.ToTable("NpaClassificationRuns", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_NpaClassificationRuns");
                         });
@@ -5769,7 +5769,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("FinancialYear");
 
-                    b.ToTable("NpaConfigs", t =>
+                    b.ToTable("NpaConfigs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_NpaConfigs");
                         });
@@ -5822,7 +5822,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("NpaProvisionSlabID");
 
-                    b.ToTable("NpaProvisionSlabs", t =>
+                    b.ToTable("NpaProvisionSlabs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_NpaProvisionSlabs");
                         });
@@ -5866,7 +5866,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("OverdueInterestLedgers", t =>
+                    b.ToTable("OverdueInterestLedgers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_OverdueInterestLedgers");
                         });
@@ -5910,7 +5910,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("OverdueRecoveryLedgers", t =>
+                    b.ToTable("OverdueRecoveryLedgers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_OverdueRecoveryLedgers");
                         });
@@ -6002,7 +6002,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("PigmySchemeID");
 
-                    b.ToTable("PigmyAccounts", t =>
+                    b.ToTable("PigmyAccounts", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyAccounts");
                         });
@@ -6034,7 +6034,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("PigmyAccountSequences", t =>
+                    b.ToTable("PigmyAccountSequences", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyAccountSequences");
                         });
@@ -6100,7 +6100,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("CustomerID");
 
-                    b.ToTable("PigmyAgents", t =>
+                    b.ToTable("PigmyAgents", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyAgents");
                         });
@@ -6161,7 +6161,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("ToAgentID");
 
-                    b.ToTable("PigmyAgentAccountTransfers", t =>
+                    b.ToTable("PigmyAgentAccountTransfers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyAgentAccountTransfers");
                         });
@@ -6216,7 +6216,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherId");
 
-                    b.ToTable("PigmyAgentCashDeposits", t =>
+                    b.ToTable("PigmyAgentCashDeposits", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyAgentCashDeposits");
                         });
@@ -6271,7 +6271,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherId");
 
-                    b.ToTable("PigmyAgentCommissions", t =>
+                    b.ToTable("PigmyAgentCommissions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyAgentCommissions");
                         });
@@ -6364,7 +6364,7 @@ namespace Bhisi.Api.Migrations
                         .IsUnique()
                         .HasFilter("[CollectionSource] IN ('MANUAL', 'IMPORT')");
 
-                    b.ToTable("PigmyCollections", t =>
+                    b.ToTable("PigmyCollections", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyCollections");
                         });
@@ -6410,7 +6410,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("AgentId");
 
-                    b.ToTable("PigmyCommissionSettings", t =>
+                    b.ToTable("PigmyCommissionSettings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyCommissionSettings");
                         });
@@ -6462,7 +6462,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherId");
 
-                    b.ToTable("PigmyInterestLogs", t =>
+                    b.ToTable("PigmyInterestLogs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyInterestLogs");
                         });
@@ -6510,7 +6510,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("PigmyAccountID");
 
-                    b.ToTable("PigmyOpeningBalances", t =>
+                    b.ToTable("PigmyOpeningBalances", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyOpeningBalances");
                         });
@@ -6594,7 +6594,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("PigmyLiabilityLedgerID");
 
-                    b.ToTable("PigmySchemes", t =>
+                    b.ToTable("PigmySchemes", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmySchemes");
                         });
@@ -6641,7 +6641,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("PigmySchemeID");
 
-                    b.ToTable("PigmySchemeInterestSlabs", t =>
+                    b.ToTable("PigmySchemeInterestSlabs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmySchemeInterestSlabs");
                         });
@@ -6702,7 +6702,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("PigmyAccountID");
 
-                    b.ToTable("PigmyTransactions", t =>
+                    b.ToTable("PigmyTransactions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyTransactions");
                         });
@@ -6743,7 +6743,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("DebitLedgerId");
 
-                    b.ToTable("PigmyVoucherMappings", t =>
+                    b.ToTable("PigmyVoucherMappings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyVoucherMappings");
                         });
@@ -6829,7 +6829,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("PigmyAccountID");
 
-                    b.ToTable("PigmyWithdrawals", t =>
+                    b.ToTable("PigmyWithdrawals", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_PigmyWithdrawals");
                         });
@@ -7017,7 +7017,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("SavingAccountID");
 
-                    b.ToTable("RdAccounts", t =>
+                    b.ToTable("RdAccounts", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_RdAccounts");
                         });
@@ -7057,7 +7057,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("RdAccountSequences", t =>
+                    b.ToTable("RdAccountSequences", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_RdAccountSequences");
                         });
@@ -7125,7 +7125,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("RDInstallmentSchedules", t =>
+                    b.ToTable("RDInstallmentSchedules", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_RDInstallmentSchedules");
                         });
@@ -7182,7 +7182,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("RdInterestAccruals", t =>
+                    b.ToTable("RdInterestAccruals", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_RdInterestAccruals");
                         });
@@ -7302,7 +7302,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("RdLiabilityLedgerID");
 
-                    b.ToTable("RdSchemes", t =>
+                    b.ToTable("RdSchemes", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_RdSchemes");
                         });
@@ -7385,7 +7385,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("RdTransactions", t =>
+                    b.ToTable("RdTransactions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_RdTransactions");
                         });
@@ -7423,7 +7423,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("RoleID");
 
-                    b.ToTable("Roles", t =>
+                    b.ToTable("Roles", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Roles");
                         });
@@ -7472,7 +7472,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("RolePermissionID");
 
-                    b.ToTable("RolePermissions", t =>
+                    b.ToTable("RolePermissions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_RolePermissions");
                         });
@@ -7561,7 +7561,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("SansthaID");
 
-                    b.ToTable("SansthaDetails", t =>
+                    b.ToTable("SansthaDetails", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SansthaDetails");
                         });
@@ -7619,7 +7619,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("SavingAccountID");
 
-                    b.ToTable("SavingAccountClosings", t =>
+                    b.ToTable("SavingAccountClosings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingAccountClosings");
                         });
@@ -7650,7 +7650,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("SavingAccountID");
 
-                    b.ToTable("SavingAccountJointHolders", t =>
+                    b.ToTable("SavingAccountJointHolders", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingAccountJointHolders");
                         });
@@ -7778,7 +7778,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("SavingSchemeID");
 
-                    b.ToTable("SavingAccountMasters", t =>
+                    b.ToTable("SavingAccountMasters", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingAccountMasters");
                         });
@@ -7810,7 +7810,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("SavingAccountSequences", t =>
+                    b.ToTable("SavingAccountSequences", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingAccountSequences");
                         });
@@ -7853,7 +7853,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("FinancialYearID");
 
-                    b.ToTable("SavingInterestPostings", t =>
+                    b.ToTable("SavingInterestPostings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingInterestPostings");
                         });
@@ -7922,7 +7922,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("SavingLiabilityLedgerID");
 
-                    b.ToTable("SavingInterestSettings", t =>
+                    b.ToTable("SavingInterestSettings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingInterestSettings");
                         });
@@ -7967,7 +7967,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("TransactionID");
 
-                    b.ToTable("SavingPassbooks", t =>
+                    b.ToTable("SavingPassbooks", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingPassbooks");
                         });
@@ -8038,7 +8038,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("TargetSavingAccountID");
 
-                    b.ToTable("SavingTransactions", t =>
+                    b.ToTable("SavingTransactions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingTransactions");
                         });
@@ -8070,7 +8070,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("LedgerID");
 
-                    b.ToTable("SavingVoucherMappings", t =>
+                    b.ToTable("SavingVoucherMappings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SavingVoucherMappings");
                         });
@@ -8160,7 +8160,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("CaseId");
 
-                    b.ToTable("Sec101AttachmentAuctions", t =>
+                    b.ToTable("Sec101AttachmentAuctions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Sec101AttachmentAuctions");
                         });
@@ -8267,7 +8267,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("MemberId");
 
-                    b.ToTable("Sec101CaseMasters", t =>
+                    b.ToTable("Sec101CaseMasters", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Sec101CaseMasters");
                         });
@@ -8323,7 +8323,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("CaseId");
 
-                    b.ToTable("Sec101HearingLogs", t =>
+                    b.ToTable("Sec101HearingLogs", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Sec101HearingLogs");
                         });
@@ -8389,7 +8389,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherId");
 
-                    b.ToTable("Sec101LegalExpenses", t =>
+                    b.ToTable("Sec101LegalExpenses", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Sec101LegalExpenses");
                         });
@@ -8479,7 +8479,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("MemberId");
 
-                    b.ToTable("Sec101NoticeHistories", t =>
+                    b.ToTable("Sec101NoticeHistories", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Sec101NoticeHistories");
                         });
@@ -8505,7 +8505,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("SecurityTypeID");
 
-                    b.ToTable("SecurityTypes", t =>
+                    b.ToTable("SecurityTypes", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SecurityTypes");
                         });
@@ -8564,7 +8564,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("MemberId");
 
-                    b.ToTable("ShareAccounts", t =>
+                    b.ToTable("ShareAccounts", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_ShareAccounts");
                         });
@@ -8636,7 +8636,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("ShareAccountId");
 
-                    b.ToTable("ShareCertificates", t =>
+                    b.ToTable("ShareCertificates", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_ShareCertificates");
                         });
@@ -8674,7 +8674,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("CertificateId");
 
-                    b.ToTable("ShareCertificatePrintHistories", t =>
+                    b.ToTable("ShareCertificatePrintHistories", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_ShareCertificatePrintHistories");
                         });
@@ -8782,7 +8782,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("ShareTransferFeeLedgerID");
 
-                    b.ToTable("ShareSchemes", t =>
+                    b.ToTable("ShareSchemes", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_ShareSchemes");
                         });
@@ -8835,7 +8835,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherId");
 
-                    b.ToTable("ShareTransactions", t =>
+                    b.ToTable("ShareTransactions", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_ShareTransactions");
                         });
@@ -8922,7 +8922,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("NotificationID");
 
-                    b.ToTable("SystemNotifications", t =>
+                    b.ToTable("SystemNotifications", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_SystemNotifications");
                         });
@@ -8965,7 +8965,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("__SystemVersionHistory", t =>
+                    b.ToTable("__SystemVersionHistory", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed___SystemVersionHistory");
                         });
@@ -9033,7 +9033,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("RoleID");
 
-                    b.ToTable("Users", t =>
+                    b.ToTable("Users", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Users");
                         });
@@ -9075,7 +9075,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("UserID");
 
-                    b.ToTable("UserLoginAudits", t =>
+                    b.ToTable("UserLoginAudits", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_UserLoginAudits");
                         });
@@ -9143,7 +9143,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("BranchID");
 
-                    b.ToTable("Vouchers", t =>
+                    b.ToTable("Vouchers", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_Vouchers");
                         });
@@ -9190,7 +9190,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("VoucherID");
 
-                    b.ToTable("VoucherDetails", t =>
+                    b.ToTable("VoucherDetails", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_VoucherDetails");
                         });
@@ -9223,7 +9223,7 @@ namespace Bhisi.Api.Migrations
 
                     b.HasIndex("DebitLedgerID");
 
-                    b.ToTable("VoucherMappings", t =>
+                    b.ToTable("VoucherMappings", null, t =>
                         {
                             t.HasTrigger("trg_AutoReseed_VoucherMappings");
                         });

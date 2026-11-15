@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { Package, Search, X, Edit, Trash2, Plus, Eye, RefreshCw, CheckCircle2, BookOpen } from 'lucide-react';
 import SearchableSelect, { SearchableSelectOption } from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 
 interface AssetCategory {
   categoryID: number;
@@ -23,6 +25,7 @@ interface AssetCategory {
 }
 
 const AssetCategoryMaster: React.FC = () => {
+  const { user } = useAuth();
   const [categories, setCategories] = useState<AssetCategory[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [ledgers, setLedgers] = useState<any[]>([]);
@@ -39,7 +42,7 @@ const AssetCategoryMaster: React.FC = () => {
   const API_URL = '/api';
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     categoryCode: '',
     categoryName: '',
     usefulLifeMonths: 36,
@@ -179,7 +182,7 @@ const AssetCategoryMaster: React.FC = () => {
     setIsEditMode(false);
     setEditId(null);
     setFormData({
-      branchID: 1,
+      branchID: resolveWriteBranchId(user),
       categoryCode: '',
       categoryName: '',
       usefulLifeMonths: 36,

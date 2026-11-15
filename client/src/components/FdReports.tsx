@@ -13,6 +13,7 @@ import {
   FileText
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 export const format14DigitDisplay = (num?: string) => {
   if (!num) return '-';
@@ -186,7 +187,8 @@ const fmtCurrency = (n: number | null | undefined) => {
 };
 
 export default function FdReports({ onNavigate }: FdReportsProps) {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
 
   const [reportType, setReportType] = useState<string>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -205,9 +207,10 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
   const [selectedCustomerID, setSelectedCustomerID] = useState<number>(0);
   const [sansthaDetail, setSansthaDetail] = useState<any>(null);
 
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : 1;
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = typeof effectiveBranch === 'number' && effectiveBranch > 0
+    ? effectiveBranch
+    : (isHOUser ? 0 : (user?.branchID || 1));
   const [branchID, setBranchID] = useState<number>(initialBranchId);
 
   const [data, setData] = useState<FdAccountReportRow[]>([]);
@@ -1293,10 +1296,11 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           <select
             value={branchID}
             onChange={(e) => setBranchID(parseInt(e.target.value, 10))}
-            className="h-5 text-[10.5px] border-none bg-transparent focus:ring-0 p-0 text-slate-800 font-semibold cursor-pointer max-w-[120px]"
+            disabled={!isHOUser}
+            className="h-5 text-[10.5px] border-none bg-transparent focus:ring-0 p-0 text-slate-800 font-semibold cursor-pointer max-w-[120px] disabled:text-slate-500 disabled:cursor-not-allowed"
           >
-            <option value={0}>सर्व शाखा (All)</option>
-            {branches.map((b) => (
+            {isHOUser && <option value={0}>सर्व शाखा (All)</option>}
+            {(isHOUser ? branches : branches.filter((b) => Number(b.branchID) === (user?.branchID || branchID))).map((b) => (
               <option key={b.branchID} value={b.branchID}>
                 {b.branchName}
               </option>

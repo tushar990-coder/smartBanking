@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { filterBankAccountLedgers, RawLedgerItem } from '../utils/bankLedgerUtils';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface CashBookEntry {
   voucherNo: string;
@@ -43,8 +44,9 @@ interface SansthaDetails {
 }
 
 export default function CashBookReport() {
-  const { user } = useAuth();
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const getBizDateStr = (b?: string) => {
     if (b && b.trim()) return b.split('T')[0];
     const n = new Date();
@@ -66,13 +68,8 @@ export default function CashBookReport() {
   const [error, setError] = useState<string | null>(null);
   const [branches, setBranches] = useState<any[]>([]);
 
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch
-    ? (globalBranchStr as string)
-    : !isHOUser && user?.branchID
-    ? user.branchID.toString()
-    : 'all';
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
   const [bookMode, setBookMode] = useState<'Cash' | 'Bank'>('Cash');
   const [bankLedgers, setBankLedgers] = useState<RawLedgerItem[]>([]);
@@ -353,11 +350,11 @@ export default function CashBookReport() {
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                disabled={hasGlobalBranch || !isHOUser}
+                disabled={!isHOUser}
                 className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-gray-100 disabled:text-gray-500 cursor-pointer disabled:cursor-not-allowed"
               >
                 {isHOUser && <option value="all">सर्व शाखा (All)</option>}
-                {branches.map((b) => (
+                {(isHOUser || !lockedBranchId ? branches : branches.filter((b) => Number(b.branchID) === Number(lockedBranchId))).map((b) => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}
                   </option>

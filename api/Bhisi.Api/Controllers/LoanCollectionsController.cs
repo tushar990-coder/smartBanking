@@ -715,7 +715,7 @@ namespace Bhisi.Api.Controllers
                         string pNo = collection.TransferFromPigmyAccountNo.Trim();
                         sourcePigmyAcc = await _context.PigmyAccounts
                             .Include(p => p.PigmyScheme)
-                            .FirstOrDefaultAsync(p => p.AccountNo == pNo || p.LegacyAccountNumber == pNo || p.OldAccountNo == pNo || p.PreviousAccountNo == pNo);
+                            .FirstOrDefaultAsync(p => p.AccountNo == pNo || ((p.LegacyAccountNumber == pNo || p.OldAccountNo == pNo || p.PreviousAccountNo == pNo) && p.BranchID == loanAccount.BranchID));
                     }
                     else if (loanAccount.CustomerID > 0)
                     {
@@ -787,7 +787,8 @@ namespace Bhisi.Api.Controllers
                         sourceSavingAcc = await _context.SavingAccountMasters
                             .Include(s => s.SavingScheme)
                             .Include(s => s.Customer)
-                            .FirstOrDefaultAsync(s => s.AccountNo == sNo || s.LegacyAccountNumber == sNo || s.OldAccountNo == sNo);
+                            .Where(s => s.AccountNo == sNo || ((s.LegacyAccountNumber == sNo || s.OldAccountNo == sNo) && s.BranchID == loanAccount.BranchID))
+                            .FirstOrDefaultAsync();
                     }
                     else if (loanAccount.CustomerID > 0)
                     {

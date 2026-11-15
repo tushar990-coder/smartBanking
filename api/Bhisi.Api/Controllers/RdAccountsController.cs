@@ -178,7 +178,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/RdAccounts/next-account-no?branchId=1&schemeId=1
-        [AllowAnonymous]
         [HttpGet("next-account-no")]
         [HttpGet("next-account-no/{branchId:int?}")]
         public async Task<ActionResult<object>> GetNextAccountNo(
@@ -186,7 +185,7 @@ namespace Bhisi.Api.Controllers
             [FromQuery(Name = "branchId")] int? queryBranchId = null,
             [FromQuery(Name = "schemeId")] int? schemeId = null)
         {
-            int targetBranchId = branchId ?? queryBranchId ?? 1;
+            int targetBranchId = User.ResolveRequiredBranchId(branchId ?? queryBranchId);
             string nextNo = await GenerateNextRdAccountNo(targetBranchId, schemeId, incrementSequence: false);
             string formattedNo = LuhnHelper.Format14Digit(nextNo);
 

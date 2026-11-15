@@ -6,6 +6,28 @@ namespace Bhisi.Api.Helpers
     public static class UserContextExtensions
     {
         /// <summary>
+        /// Single Source of Truth for Head Office / Multi-Branch roles.
+        /// Non-HO roles (Manager, BranchManager, Cashier, Clerk, Accountant, User, AGENT) are strictly locked to DefaultBranchID.
+        /// </summary>
+        public static bool IsHeadOfficeRole(string? roleName)
+        {
+            if (string.IsNullOrWhiteSpace(roleName)) return false;
+
+            string trimmed = roleName.Trim();
+            return trimmed.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("Super Admin", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("Auditor", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("GeneralManager", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("CEO", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("Chairman", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Determines whether the authenticated user has Head Office or Administrative privileges across branches.
         /// STRICT CBS RULE: Privilege is based on user ROLE, NEVER on operating BranchID == 1.
         /// </summary>
@@ -17,19 +39,15 @@ namespace Bhisi.Api.Helpers
                             ?? user.FindFirst("Role")?.Value 
                             ?? user.FindFirst("role")?.Value;
 
-            if (string.IsNullOrWhiteSpace(roleClaim)) return false;
+            return IsHeadOfficeRole(roleClaim);
+        }
 
-            return roleClaim.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("Super Admin", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("Auditor", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("GeneralManager", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("CEO", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("Chairman", StringComparison.OrdinalIgnoreCase);
+        /// <summary>
+        /// Returns true if the authenticated user is a branch-level operator locked to their DefaultBranchID.
+        /// </summary>
+        public static bool IsBranchLockedUser(this ClaimsPrincipal? user)
+        {
+            return user != null && !user.IsHeadOfficeAdmin();
         }
 
         /// <summary>
@@ -41,6 +59,7 @@ namespace Bhisi.Api.Helpers
 
             var branchClaim = user.FindFirst("BranchID")?.Value 
                               ?? user.FindFirst("branchId")?.Value 
+                              ?? user.FindFirst("DefaultBranchID")?.Value
                               ?? user.FindFirst("branch")?.Value;
 
             if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int bid) && bid > 0)

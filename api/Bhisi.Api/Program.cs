@@ -42,7 +42,10 @@ try
     });
 
     // Add services to the container.
-    builder.Services.AddControllers().AddJsonOptions(options =>
+    builder.Services.AddControllers(options =>
+    {
+        options.Filters.Add<EnforceBranchScopeAttribute>();
+    }).AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
         options.JsonSerializerOptions.Converters.Add(new SafeNullableDateTimeConverter());
@@ -79,6 +82,58 @@ try
             ValidateIssuer = false,
             ValidateAudience = false,
             ClockSkew = TimeSpan.Zero
+        };
+        options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var principal = context.Principal;
+                if (principal == null) return;
+
+                string role = principal.GetUserRole();
+                if (string.Equals(role, "AGENT", StringComparison.OrdinalIgnoreCase)) return;
+
+                var idClaim = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (!int.TryParse(idClaim, out int uid) || uid <= 0) return;
+
+                string authHeader = context.Request.Headers["Authorization"].ToString();
+                string? rawToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? authHeader.Substring(7).Trim()
+                    : null;
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var dbUser = await db.Users.AsNoTracking()
+                    .Where(u => u.UserID == uid)
+                    .Select(u => new
+                    {
+                        u.IsActive,
+                        u.IsLocked,
+                        u.ActiveSessionToken,
+                        u.DefaultBranchID,
+                        RoleName = u.Role != null ? u.Role.RoleName : null
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (dbUser == null || !dbUser.IsActive || dbUser.IsLocked)
+                {
+                    context.Fail("User account is inactive or locked.");
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(rawToken) && !string.IsNullOrEmpty(dbUser.ActiveSessionToken) &&
+                    !string.Equals(dbUser.ActiveSessionToken, rawToken, StringComparison.Ordinal))
+                {
+                    context.Fail("Session expired or invalidated by branch switch / new login.");
+                    return;
+                }
+
+                if (!UserContextExtensions.IsHeadOfficeRole(dbUser.RoleName) &&
+                    dbUser.DefaultBranchID.HasValue && dbUser.DefaultBranchID.Value > 0 &&
+                    principal.GetOperatingBranchId() != dbUser.DefaultBranchID.Value)
+                {
+                    context.Fail("Branch assignment mismatch.");
+                }
+            }
         };
     });
 
@@ -719,10 +774,51 @@ try
                     ON [dbo].[LoanAccounts] ([BranchID], [LoanAccountNo])
                     WHERE [LoanAccountNo] IS NOT NULL AND [LoanAccountNo] <> '';
                 END
+
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanAccounts_Branch_Scheme_Legacy' AND object_id = OBJECT_ID('LoanAccounts'))
+                BEGIN
+                    SET QUOTED_IDENTIFIER ON;
+                    SET ANSI_NULLS ON;
+                    CREATE NONCLUSTERED INDEX [IX_LoanAccounts_Branch_Scheme_Legacy]
+                    ON [dbo].[LoanAccounts] ([BranchID], [LoanRateID], [LegacyAccountNumber])
+                    WHERE [LegacyAccountNumber] IS NOT NULL AND [LegacyAccountNumber] <> '';
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Customers')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Customers_Branch_LegacyCustomerNo' AND object_id = OBJECT_ID('Customers'))
+                BEGIN
+                    SET QUOTED_IDENTIFIER ON;
+                    SET ANSI_NULLS ON;
+                    CREATE NONCLUSTERED INDEX [IX_Customers_Branch_LegacyCustomerNo]
+                    ON [dbo].[Customers] ([BranchID], [LegacyCustomerNo])
+                    WHERE [IsDeleted] = 0 AND [LegacyCustomerNo] IS NOT NULL AND [LegacyCustomerNo] <> '';
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_FdAccounts_Branch_Scheme_Legacy' AND object_id = OBJECT_ID('FdAccounts'))
+                BEGIN
+                    SET QUOTED_IDENTIFIER ON;
+                    SET ANSI_NULLS ON;
+                    CREATE NONCLUSTERED INDEX [IX_FdAccounts_Branch_Scheme_Legacy]
+                    ON [dbo].[FdAccounts] ([BranchID], [FdSchemeID], [LegacyAccountNumber])
+                    WHERE [LegacyAccountNumber] IS NOT NULL AND [LegacyAccountNumber] <> '';
+                END
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Members')
             BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_Branch_LegacyMemberNo' AND object_id = OBJECT_ID('Members'))
+                BEGIN
+                    SET QUOTED_IDENTIFIER ON;
+                    SET ANSI_NULLS ON;
+                    CREATE NONCLUSTERED INDEX [IX_Members_Branch_LegacyMemberNo]
+                    ON [dbo].[Members] ([BranchID], [LegacyMemberNo])
+                    WHERE [IsDeleted] = 0 AND [LegacyMemberNo] IS NOT NULL AND [LegacyMemberNo] <> '';
+                END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'IsDeleted')
                 BEGIN
                     ALTER TABLE [Members] ADD [IsDeleted] bit NOT NULL DEFAULT 0;
@@ -3108,6 +3204,40 @@ try
                     ALTER TABLE [dbo].[InvestmentRenewals] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentRenewals_TdsAmount DEFAULT 0.00;
                 IF COL_LENGTH('InvestmentRenewals', 'TdsLedgerID') IS NULL
                     ALTER TABLE [dbo].[InvestmentRenewals] ADD [TdsLedgerID] INT NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentInterestReceipts')
+            BEGIN
+                IF COL_LENGTH('InvestmentInterestReceipts', 'ReceiptType') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [ReceiptType] NVARCHAR(30) NOT NULL CONSTRAINT DF_InvestmentInterestReceipts_ReceiptType DEFAULT N'DepositInterest';
+                IF COL_LENGTH('InvestmentInterestReceipts', 'GrossAmount') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [GrossAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentInterestReceipts_GrossAmount DEFAULT 0.00;
+                IF COL_LENGTH('InvestmentInterestReceipts', 'TdsAmount') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentInterestReceipts_TdsAmount DEFAULT 0.00;
+                IF COL_LENGTH('InvestmentInterestReceipts', 'TdsLedgerID') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [TdsLedgerID] INT NULL;
+                IF COL_LENGTH('InvestmentInterestReceipts', 'PaymentMode') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [PaymentMode] NVARCHAR(20) NULL;
+                IF COL_LENGTH('InvestmentInterestReceipts', 'BankLedgerID') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [BankLedgerID] INT NULL;
+                IF COL_LENGTH('InvestmentInterestReceipts', 'ReferenceNo') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [ReferenceNo] NVARCHAR(100) NULL;
+                IF COL_LENGTH('InvestmentInterestReceipts', 'Remarks') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [Remarks] NVARCHAR(300) NULL;
+
+                UPDATE [dbo].[InvestmentInterestReceipts]
+                SET [GrossAmount] = [ReceivedAmount]
+                WHERE [GrossAmount] = 0 AND [ReceivedAmount] > 0;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentInterestAccruals')
+            BEGIN
+                IF COL_LENGTH('InvestmentInterestAccruals', 'FromDate') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestAccruals] ADD [FromDate] DATETIME2 NULL;
+                IF COL_LENGTH('InvestmentInterestAccruals', 'CalculationDays') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestAccruals] ADD [CalculationDays] INT NULL;
+                IF COL_LENGTH('InvestmentInterestAccruals', 'CalculationMethod') IS NULL
+                    ALTER TABLE [dbo].[InvestmentInterestAccruals] ADD [CalculationMethod] NVARCHAR(30) NULL;
             END
         ");
             Log.Information("Investment Dynamic TDS Ledger & Amount schema auto-migration verified.");

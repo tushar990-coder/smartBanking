@@ -470,6 +470,7 @@ namespace Bhisi.Api.Controllers
                     {
                         string cleanLegacy = disbursement.LoanAccount.LegacyAccountNumber.Trim();
                         var dup = await _context.LoanAccounts.AsNoTracking().FirstOrDefaultAsync(l => 
+                            l.BranchID == branchIdForAcc &&
                             l.LoanRateID == disbursement.LoanAccount.LoanRateID && 
                             l.LegacyAccountNumber != null && 
                             l.LegacyAccountNumber.Trim() == cleanLegacy);

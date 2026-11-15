@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import api from '../utils/api';
+import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import SearchableSelect from './SearchableSelect';
-import { getCachedMasterData } from '../utils/apiCache';
+import { getCachedMasterData, safeArray } from '../utils/apiCache';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import {
   Landmark,
@@ -141,18 +143,17 @@ const formatDurationDisplay = (acc: FdAccountRecord): string => {
 };
 
 const FdOpeningBalanceMigration: React.FC = () => {
-  const [customers, setCustomers] = useState<Customer[]>(() => {
-    const c = getCachedMasterData('/api/Customers');
-    return Array.isArray(c) ? c : [];
-  });
-  const [schemes, setSchemes] = useState<FdScheme[]>(() => {
-    const s = getCachedMasterData('/api/FdSchemes');
-    return Array.isArray(s) ? s : [];
-  });
-  const [branches, setBranches] = useState<any[]>(() => {
-    const b = getCachedMasterData('/api/Branches');
-    return Array.isArray(b) ? b : [];
-  });
+  const { user } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const [customers, setCustomers] = useState<Customer[]>(() =>
+    safeArray(getCachedMasterData('/api/Customers'))
+  );
+  const [schemes, setSchemes] = useState<FdScheme[]>(() =>
+    safeArray(getCachedMasterData('/api/FdSchemes'))
+  );
+  const [branches, setBranches] = useState<any[]>(() =>
+    safeArray(getCachedMasterData('/api/Branches'))
+  );
   const [migratedAccounts, setMigratedAccounts] = useState<FdAccountRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -198,7 +199,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
   };
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     customerID: 0,
     isSeniorCitizen: false,
     fdSchemeID: 0,
@@ -272,11 +273,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
     try {
       const response = await api.get('/Branches');
       if (!isMountedRef.current) return;
-      const raw = response.data;
-      const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
+      const list = safeArray(response.data);
       setBranches(list);
       if (list.length > 0) {
-        const firstBranchId = list[0].branchID;
+        const firstBranchId = isHOUser ? list[0].branchID : (getLockedBranchId(user) ?? list[0].branchID);
         setFormData(prev => ({ ...prev, branchID: firstBranchId }));
         fetchNextAccountNo(firstBranchId);
         fetchSchemes(firstBranchId);
@@ -292,9 +292,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     try {
       const response = await api.get('/Customers');
       if (isMountedRef.current) {
-        const raw = response.data;
-        const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
-        setCustomers(list);
+        setCustomers(safeArray(response.data));
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -309,9 +307,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       const url = activeBranch ? `/FdSchemes?branchId=${activeBranch}` : `/FdSchemes`;
       const response = await api.get(url);
       if (isMountedRef.current) {
-        const raw = response.data;
-        const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
-        setSchemes(list);
+        setSchemes(safeArray(response.data));
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -324,10 +320,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
     try {
       const response = await api.get('/FdAccounts');
       if (!isMountedRef.current) return;
-      const raw = response.data;
-      const rawList = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : (Array.isArray(raw?.data) ? raw.data : []));
-      const list = rawList
-        .filter((a: any) => a.isLegacyAccount)
+      const list = safeArray(response.data)
+        .filter((a: any) => a && a.isLegacyAccount)
         .sort((a: any, b: any) => (a.accountNo || '').localeCompare(b.accountNo || '') || (a.fdAccountID - b.fdAccountID));
       setMigratedAccounts(list);
     } catch (err) {
@@ -1464,8 +1458,14 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">शाखा (Branch)</label>
                 </div>
-                <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass}>
-                  {(Array.isArray(branches) ? branches : []).map((b) => (
+                <select
+                  name="branchID"
+                  value={formData.branchID}
+                  onChange={handleChange}
+                  disabled={!isHOUser}
+                  className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-600`}
+                >
+                  {(isHOUser ? (Array.isArray(branches) ? branches : []) : (Array.isArray(branches) ? branches : []).filter(b => Number(b.branchID) === (getLockedBranchId(user) ?? formData.branchID))).map((b) => (
                     <option key={b.branchID} value={b.branchID}>
                       {b.branchName}
                     </option>

@@ -284,12 +284,13 @@ namespace Bhisi.Api.Controllers
                 return Ok(new { isDuplicate = false });
             }
 
+            int effectiveBranchId = User.ResolveRequiredBranchId(branchId > 0 ? branchId : null);
             var trimmed = receiptNo.Trim();
             var query = _context.FdAccounts
                 .Include(a => a.Customer)
                 .Include(a => a.FdScheme)
                 .Where(a => a.FdSchemeID == schemeId 
-                    && (branchId <= 0 || a.BranchID == branchId)
+                    && a.BranchID == effectiveBranchId
                     && a.LegacyAccountNumber != null 
                     && a.LegacyAccountNumber.Trim() == trimmed);
 
@@ -5368,7 +5369,6 @@ namespace Bhisi.Api.Controllers
         // GET: api/FdAccounts/MemberLedger/5 or api/FdAccounts/CustomerLedger/5
         [HttpGet("MemberLedger/{memberId}")]
         [HttpGet("CustomerLedger/{customerId}")]
-        [AllowAnonymous]
         public async Task<IActionResult> GetMemberFdLedger(
             int? memberId, 
             int? customerId, 
@@ -5408,6 +5408,12 @@ namespace Bhisi.Api.Controllers
             }
 
             if (member == null && customer == null) return NotFound("सभासद किंवा ग्राहक सापडला नाही.");
+
+            int ownerBranchId = customer?.BranchID ?? member?.BranchID ?? 0;
+            if (ownerBranchId > 0 && !User.CanAccessBranch(ownerBranchId))
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर शाखेतील खातेदाराची माहिती पाहण्याची परवानगी नाही." });
+            }
 
             int? targetCustId = customer?.CustomerID ?? member?.CustomerID;
             int? targetMemId = member?.MemberID;

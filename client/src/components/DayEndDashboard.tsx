@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getCachedMasterData } from '../utils/apiCache';
+import { isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Branch {
   branchID: number;
@@ -71,13 +72,7 @@ const DayEndDashboard: React.FC = () => {
 
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const isHeadOfficeOrAdmin =
-    user?.role === 'Admin' ||
-    user?.role === 'SuperAdmin' ||
-    user?.role === 'HeadOffice' ||
-    user?.role === 'HO_Manager' ||
-    user?.branchType === 'HeadOffice' ||
-    user?.branchID === 1;
+  const isHeadOfficeOrAdmin = isHeadOfficeUser(user);
 
   const canManageDayEnd =
     isHeadOfficeOrAdmin ||

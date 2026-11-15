@@ -2,15 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class PigmyAgentsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -22,7 +25,6 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/PigmyAgents/next-id
         [HttpGet("next-id")]
-        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         public async Task<ActionResult<object>> GetNextAgentId()
         {
             int maxId = await _context.PigmyAgents.AnyAsync()
@@ -35,13 +37,20 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/PigmyAgents
         [HttpGet]
-        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
-        public async Task<ActionResult<IEnumerable<PigmyAgent>>> GetPigmyAgents()
+        public async Task<ActionResult<IEnumerable<PigmyAgent>>> GetPigmyAgents([FromQuery] int? branchId = null)
         {
-            return await _context.PigmyAgents
+            int? effectiveBranchId = User.ResolveOptionalBranchId(branchId);
+            var query = _context.PigmyAgents
                 .Include(a => a.Branch)
                 .Include(a => a.Customer)
-                .ToListAsync();
+                .AsQueryable();
+
+            if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
+            {
+                query = query.Where(a => a.BranchID == effectiveBranchId.Value);
+            }
+
+            return await query.ToListAsync();
         }
 
         // GET: api/PigmyAgents/5
@@ -58,14 +67,25 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
+            if (pigmyAgent.BranchID.HasValue && !User.CanAccessBranch(pigmyAgent.BranchID.Value))
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर शाखेतील एजंटची माहिती पाहण्याची परवानगी नाही." });
+            }
+
             return pigmyAgent;
         }
 
         // GET: api/PigmyAgents/5/customers
         [HttpGet("{id}/customers")]
-        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         public async Task<IActionResult> GetAgentCustomers(int id)
         {
+            var pigmyAgent = await _context.PigmyAgents.AsNoTracking().FirstOrDefaultAsync(a => a.PigmyAgentID == id);
+            if (pigmyAgent == null) return NotFound();
+            if (pigmyAgent.BranchID.HasValue && !User.CanAccessBranch(pigmyAgent.BranchID.Value))
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर शाखेतील एजंटचे खातेदार पाहण्याची परवानगी नाही." });
+            }
+
             var customerIds = await _context.PigmyAccounts
                 .Where(a => a.PigmyAgentID == id)
                 .Select(a => a.CustomerID)

@@ -34,6 +34,9 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DepositCollateralSelectorModal, { EligibleDeposit } from './DepositCollateralSelectorModal';
+import { safeArray } from '../utils/apiCache';
+import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Customer {
   customerID: number;
@@ -167,6 +170,9 @@ const getDisbursedAmt = (b: any): number => {
 };
 
 export default function LoanOpeningBalanceMaster() {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [allAccounts, setAllAccounts] = useState<LoanOpeningBalance[]>([]);
   const [showListModal, setShowListModal] = useState(false);
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
@@ -571,7 +577,7 @@ export default function LoanOpeningBalanceMaster() {
   };
   const [formData, setFormData] = useState({
     loanOpeningBalanceID: 0,
-    branchID: '1',
+    branchID: String(resolveWriteBranchId(user, globalBranchId)),
     customerID: '',
     loanRateID: '',
     loanAccountNo: '',
@@ -753,18 +759,19 @@ export default function LoanOpeningBalanceMaster() {
       const response = await fetch(BRANCHES_API);
       if (response.ok) {
         const data = await response.json();
-        setBranches(data);
+        setBranches(safeArray(data));
       }
     } catch (error) {
       console.error("Error fetching branches", error);
     }
   };
 
+  const safeAllAccounts = safeArray(allAccounts);
   const balances = loanFilterType === 'opening'
-    ? allAccounts.filter((d: any) => d.isOpeningBalance === true)
+    ? safeAllAccounts.filter((d: any) => d.isOpeningBalance === true)
     : (loanFilterType === 'regular' 
-        ? allAccounts.filter((d: any) => d.isOpeningBalance !== true) 
-        : allAccounts);
+        ? safeAllAccounts.filter((d: any) => d.isOpeningBalance !== true) 
+        : safeAllAccounts);
 
   const filteredBalances = balances.filter(balance => {
     const term = searchTerm.toLowerCase();
@@ -799,7 +806,7 @@ export default function LoanOpeningBalanceMaster() {
     const cleanLegacy = formData.legacyAccountNumber.trim().toLowerCase();
     const currentRateId = Number(formData.loanRateID);
     return (
-      allAccounts.find(
+      safeArray(allAccounts).find(
         (acc) =>
           Number(acc.loanRateID) === currentRateId &&
           (acc.legacyAccountNumber || '').trim().toLowerCase() === cleanLegacy &&
@@ -813,7 +820,7 @@ export default function LoanOpeningBalanceMaster() {
       const response = await fetch(GET_API_URL);
       if (response.ok) {
         const data = await response.json();
-        setAllAccounts(data);
+        setAllAccounts(safeArray(data));
       }
     } catch (error) {
       console.error("Error fetching balances", error);
@@ -827,7 +834,7 @@ export default function LoanOpeningBalanceMaster() {
       const response = await fetch(CUSTOMERS_API);
       if (response.ok) {
         const data = await response.json();
-        setCustomers(data);
+        setCustomers(safeArray(data));
       }
     } catch (error) {
       console.error("Error fetching customers", error);
@@ -839,7 +846,7 @@ export default function LoanOpeningBalanceMaster() {
       const response = await fetch(LOAN_RATES_API);
       if (response.ok) {
         const data = await response.json();
-        setLoanRates(data);
+        setLoanRates(safeArray(data));
       }
     } catch (error) {
       console.error("Error fetching loan rates", error);
@@ -877,7 +884,7 @@ export default function LoanOpeningBalanceMaster() {
     }
 
     if (name === 'loanRateID') {
-      const selectedRate = loanRates.find(r => r.loanRateID.toString() === value);
+      const selectedRate = safeArray(loanRates).find(r => r.loanRateID.toString() === value);
       if (selectedRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(selectedRate.collateralCategory || '')) {
         // Only auto-open modal if the scheme explicitly made collateral mandatory for opening balance
         if (selectedRate.isCollateralMandatoryForOpeningBalance && formData.customerID && depositCollaterals.length === 0) {
@@ -906,7 +913,7 @@ export default function LoanOpeningBalanceMaster() {
 
     // Auto-fill Interest Rate and Duration when Loan Type is selected
     if (name === 'loanRateID') {
-      const loanRate = loanRates.find(r => r.loanRateID.toString() === value);
+      const loanRate = safeArray(loanRates).find(r => r.loanRateID.toString() === value);
       if (loanRate) {
         updates.interestRate = (loanRate.interestRate || 0).toString();
         updates.durationMonths = (loanRate.durationMonths || 12).toString();
@@ -1197,7 +1204,7 @@ export default function LoanOpeningBalanceMaster() {
 
       if (mappedChart.length > 0 && !isInstAmountEdited) {
         const firstRow = mappedChart[0];
-        const rateObj = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+        const rateObj = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
         let instAmount = Math.round(parseFloat(firstRow.total) || 0);
         
         if (rateObj) {
@@ -1223,7 +1230,7 @@ export default function LoanOpeningBalanceMaster() {
     setIsInterestManuallyEdited(false);
     setFormData({
       loanOpeningBalanceID: 0,
-      branchID: '1',
+      branchID: String(resolveWriteBranchId(user, globalBranchId)),
       customerID: '',
       loanRateID: '',
       loanAccountNo: '',
@@ -1288,14 +1295,14 @@ export default function LoanOpeningBalanceMaster() {
     if (formData.legacyAccountNumber && formData.legacyAccountNumber.trim()) {
       const cleanLegacy = formData.legacyAccountNumber.trim().toLowerCase();
       const currentRateId = Number(formData.loanRateID);
-      const duplicateAcc = allAccounts.find(
+      const duplicateAcc = safeArray(allAccounts).find(
         (acc) =>
           Number(acc.loanRateID) === currentRateId &&
           (acc.legacyAccountNumber || '').trim().toLowerCase() === cleanLegacy &&
           (!isEditing || acc.loanAccountID !== formData.loanOpeningBalanceID)
       );
       if (duplicateAcc) {
-        const selectedRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+        const selectedRate = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
         const schemeName = selectedRate ? `${selectedRate.loanCode} - ${selectedRate.shortName || selectedRate.loanType}` : 'सदर कर्ज योजना';
         const custName = duplicateAcc.customer 
           ? `${duplicateAcc.customer.firstName || ''} ${duplicateAcc.customer.lastName || ''}`.trim()
@@ -1305,7 +1312,7 @@ export default function LoanOpeningBalanceMaster() {
       }
     }
 
-    const selectedRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+    const selectedRate = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
     const isDepositScheme = selectedRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(selectedRate.collateralCategory || '');
     if (isDepositScheme && selectedRate.isCollateralMandatoryForOpeningBalance && depositCollaterals.length === 0) {
       alert(`सदर कर्ज योजनेसाठी (${selectedRate.shortName || selectedRate.loanType}) आरंभिक शिल्लक नोंदणीतही तारण ठेव जोडणे अनिवार्य केले आहे. कृपया ठेव जोडा किंवा 'कर्ज दर/प्रकार' सेटिंग्जमध्ये हे ऐच्छिक करा.`);
@@ -1783,8 +1790,15 @@ export default function LoanOpeningBalanceMaster() {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-2.5 gap-y-2.5">
               <div className="lg:col-span-1 sm:col-span-1">
                 <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
-                <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass} required disabled={isEditing}>
-                  {branches.map(b => (
+                <select
+                  name="branchID"
+                  value={formData.branchID}
+                  onChange={handleChange}
+                  className={`${inputClass} ${!isHOUser ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                  required
+                  disabled={isEditing || !isHOUser}
+                >
+                  {(lockedBranchId ? branches.filter(b => b.branchID === lockedBranchId) : branches).map(b => (
                     <option key={b.branchID} value={b.branchID.toString()}>{b.branchName}</option>
                   ))}
                 </select>
@@ -2173,7 +2187,7 @@ export default function LoanOpeningBalanceMaster() {
                 </div>
                 <div className="flex items-center gap-2">
                   {(() => {
-                    const curRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+                    const curRate = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
                     const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
                     return (
                       <button
@@ -2211,7 +2225,7 @@ export default function LoanOpeningBalanceMaster() {
                   })()}
 
                   {(() => {
-                    const curRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+                    const curRate = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
                     const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
                     if (!isDepScheme) return null;
                     return (
@@ -2222,7 +2236,7 @@ export default function LoanOpeningBalanceMaster() {
                   })()}
 
                   {(() => {
-                    const curRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+                    const curRate = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
                     const isGoldScheme = !!(curRate && (
                       curRate.collateralCategory === 'Gold' ||
                       /gold|सोने|सोन्या|सुवर्ण|दागिन|अलंकार/i.test(
@@ -2366,7 +2380,7 @@ export default function LoanOpeningBalanceMaster() {
                     </span>
                   </h2>
                   <div className="text-[10px] text-white/80 font-normal">
-                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | खातेदार: {customers.find(c => c.customerID.toString() === formData.customerID)?.firstName || '-'} | कर्ज वाटप दिनांक: {formData.loanDisbursementDate ? new Date(formData.loanDisbursementDate).toLocaleDateString('en-GB') : '-'}
+                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | खातेदार: {safeArray(customers).find(c => c.customerID.toString() === formData.customerID)?.firstName || '-'} | कर्ज वाटप दिनांक: {formData.loanDisbursementDate ? new Date(formData.loanDisbursementDate).toLocaleDateString('en-GB') : '-'}
                   </div>
                 </div>
               </div>
@@ -3417,8 +3431,8 @@ export default function LoanOpeningBalanceMaster() {
 
       {/* 🛡️ DEPOSIT COLLATERAL SELECTOR MODAL (FD, Pigmy, RD, Saving) */}
       {(() => {
-        const curRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
-        const selectedCust = customers.find(c => c.customerID.toString() === formData.customerID);
+        const curRate = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
+        const selectedCust = safeArray(customers).find(c => c.customerID.toString() === formData.customerID);
         return (
           <DepositCollateralSelectorModal
             isOpen={showDepositModal}

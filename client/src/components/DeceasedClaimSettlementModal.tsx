@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import BankLedgerSelect from './common/BankLedgerSelect';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 import { 
   X, 
   CheckCircle, 
@@ -44,6 +46,7 @@ interface Props {
 }
 
 export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId, onSettled }: Props) {
+  const { user } = useAuth();
   const [claimInfo, setClaimInfo] = useState<DeceasedClaimInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -123,7 +126,7 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
     setSubmitting(true);
     try {
       const payload = {
-        branchId: 1,
+        branchId: resolveWriteBranchId(user),
         ...formData,
         paymentMode: (claimInfo?.netPayable || 0) > 0 ? paymentMode : 'Cash',
         bankLedgerId: (claimInfo?.netPayable || 0) > 0 && paymentMode === 'Bank' ? bankLedgerId : null

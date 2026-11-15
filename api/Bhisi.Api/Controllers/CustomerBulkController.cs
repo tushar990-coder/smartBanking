@@ -350,9 +350,9 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/CustomerBulk/validate-live
         [HttpPost("validate-live")]
-        public async Task<IActionResult> ValidateLive([FromBody] List<BulkCustomerRowDto> rows)
+        public async Task<IActionResult> ValidateLive([FromBody] List<BulkCustomerRowDto> rows, [FromQuery] int? branchId = null)
         {
-            var valResult = await RunInternalValidationAsync(rows ?? new List<BulkCustomerRowDto>());
+            var valResult = await RunInternalValidationAsync(rows ?? new List<BulkCustomerRowDto>(), branchId);
             return Ok(new
             {
                 totalRows = valResult.TotalRows,
@@ -362,7 +362,7 @@ namespace Bhisi.Api.Controllers
             });
         }
 
-        private async Task<BulkValidationResult> RunInternalValidationAsync(List<BulkCustomerRowDto> rows)
+        private async Task<BulkValidationResult> RunInternalValidationAsync(List<BulkCustomerRowDto> rows, int? fallbackBranchId = null)
         {
             if (rows == null || rows.Count == 0)
             {
@@ -374,6 +374,13 @@ namespace Bhisi.Api.Controllers
                     Results = new List<RowValidationItem>()
                 };
             }
+
+            bool isHoAdmin = User.IsHeadOfficeAdmin();
+            int operatingBranchId = User.ResolveBranchId(fallbackBranchId);
+            int ResolveRowBranchId(BulkCustomerRowDto row) =>
+                isHoAdmin && row.BranchID.HasValue && row.BranchID.Value > 0
+                    ? row.BranchID.Value
+                    : operatingBranchId;
 
             var results = new List<RowValidationItem>(rows.Count);
 
@@ -423,8 +430,8 @@ namespace Bhisi.Api.Controllers
             var ckycFreq = rows.Where(r => !string.IsNullOrWhiteSpace(r.CKYCNo))
                 .GroupBy(r => r.CKYCNo!.Trim()).ToDictionary(g => g.Key, g => g.Count());
             var legacyFreq = rows.Where(r => !string.IsNullOrWhiteSpace(r.LegacyCustomerNo))
-                .GroupBy(r => r.LegacyCustomerNo!.Trim(), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+                .GroupBy(r => $"{ResolveRowBranchId(r)}::{r.LegacyCustomerNo!.Trim().ToUpperInvariant()}")
+                .ToDictionary(g => g.Key, g => g.Count());
 
             // 2. Fetch existing DB records. Unique SQL indexes (Aadhaar/PAN/CKYC) apply even to soft-deleted rows!
             var dbMobileRecords = inputMobiles.Count == 0 ? new() : await _context.Customers
@@ -454,7 +461,7 @@ namespace Bhisi.Api.Controllers
             var dbLegacyRecords = inputLegacys.Count == 0 ? new() : await _context.Customers
                 .AsNoTracking()
                 .Where(c => !c.IsDeleted && c.LegacyCustomerNo != null && inputLegacys.Contains(c.LegacyCustomerNo))
-                .Select(c => new { c.CustomerID, c.LegacyCustomerNo })
+                .Select(c => new { c.CustomerID, c.BranchID, c.LegacyCustomerNo })
                 .ToListAsync();
 
             var mobileRegex = new Regex(@"^[6-9]\d{9}$", RegexOptions.Compiled);
@@ -624,17 +631,19 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // LegacyCustomerNo validation
+                // LegacyCustomerNo validation (Branch-wise unique)
                 if (!string.IsNullOrWhiteSpace(r.LegacyCustomerNo))
                 {
                     var leg = r.LegacyCustomerNo.Trim();
-                    if (legacyFreq.TryGetValue(leg, out int lCount) && lCount > 1)
+                    int rowBranchId = ResolveRowBranchId(r);
+                    string legKey = $"{rowBranchId}::{leg.ToUpperInvariant()}";
+                    if (legacyFreq.TryGetValue(legKey, out int lCount) && lCount > 1)
                     {
-                        item.Errors.Add($"या ग्रिडमध्ये जुना ग्राहक क्र. '{leg}' एकापेक्षा जास्त वेळा आला आहे.");
+                        item.Errors.Add($"या शाखेतील ग्रिडमध्ये जुना ग्राहक क्र. '{leg}' एकापेक्षा जास्त वेळा आला आहे.");
                     }
-                    else if (dbLegacyRecords.Any(c => c.LegacyCustomerNo != null && c.LegacyCustomerNo.Equals(leg, StringComparison.OrdinalIgnoreCase) && c.CustomerID != r.CustomerID))
+                    else if (dbLegacyRecords.Any(c => c.BranchID == rowBranchId && c.LegacyCustomerNo != null && c.LegacyCustomerNo.Equals(leg, StringComparison.OrdinalIgnoreCase) && c.CustomerID != r.CustomerID))
                     {
-                        item.Errors.Add($"हा जुना ग्राहक क्र. '{leg}' बँकेत आधीच नोंदवला आहे.");
+                        item.Errors.Add($"हा जुना ग्राहक क्र. '{leg}' या शाखेत आधीच नोंदवला आहे.");
                     }
                 }
 
@@ -686,7 +695,7 @@ namespace Bhisi.Api.Controllers
             bool isHoAdmin = User.IsHeadOfficeAdmin();
             int targetBranchId = User.ResolveBranchId(request.BranchID);
 
-            var valResult = await RunInternalValidationAsync(request.Customers);
+            var valResult = await RunInternalValidationAsync(request.Customers, targetBranchId);
 
             var validCandidates = new List<BulkCustomerRowDto>();
             var skippedCandidates = new List<BulkCustomerRowDto>();

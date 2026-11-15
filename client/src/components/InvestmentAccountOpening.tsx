@@ -32,6 +32,7 @@ import SearchableSelect from './SearchableSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Institution {
   institutionID: number;
@@ -66,12 +67,12 @@ const isValidIsoDate = (dateStr: string): boolean => {
 };
 
 const InvestmentAccountOpening: React.FC = () => {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [allowDateOverride, setAllowDateOverride] = useState(false);
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
+  const initialBranchId = resolveWriteBranchId(user, globalBranchId);
 
   const [institutions, setInstitutions] = useState<Institution[]>(() => getCachedMasterData<any[]>('/api/InvestmentInstitutions') || []);
   const [schemes, setSchemes] = useState<Scheme[]>(() => getCachedMasterData<any[]>('/api/InvestmentSchemes') || []);
@@ -695,9 +696,10 @@ const InvestmentAccountOpening: React.FC = () => {
                   name="branchID" 
                   value={formData.branchID} 
                   onChange={handleChange}
-                  className={inputClass}
+                  disabled={!isHOUser}
+                  className={`${inputClass} ${!isHOUser ? 'bg-slate-100 cursor-not-allowed' : ''}`}
                 >
-                  {branches.map((b: any) => (
+                  {(lockedBranchId ? branches.filter((b: any) => b.branchID === lockedBranchId) : branches).map((b: any) => (
                     <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
                   ))}
                 </select>

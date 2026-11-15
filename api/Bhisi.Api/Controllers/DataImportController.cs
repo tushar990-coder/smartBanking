@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -268,6 +269,7 @@ namespace Bhisi.Api.Controllers
             {
                 return BadRequest(new { message = "No data provided." });
             }
+            branchId = User.ResolveRequiredBranchId(branchId > 0 ? branchId : null);
 
             var allSchemes = await _context.SavingInterestSettings
                 .AsNoTracking()
@@ -308,7 +310,8 @@ namespace Bhisi.Api.Controllers
                     accountNo = "AUTO"; // Or handle your custom auto-generation here later
                 }
 
-                var member = await _context.Members.FirstOrDefaultAsync(m => m.LegacyMemberNo == row.MemberCode || m.MemberCode == row.MemberCode);
+                var member = await _context.Members.FirstOrDefaultAsync(m => m.BranchID == branchId && (m.LegacyMemberNo == row.MemberCode || m.MemberCode == row.MemberCode))
+                    ?? await _context.Members.FirstOrDefaultAsync(m => m.MemberCode == row.MemberCode);
                 if (member == null)
                 {
                     errors.Add($"Row {rowNum}: Member with Code or Old Code '{row.MemberCode}' not found.");
@@ -484,7 +487,8 @@ namespace Bhisi.Api.Controllers
                     accountNo = "AUTO"; 
                 }
 
-                var member = await _context.Members.FirstOrDefaultAsync(m => m.LegacyMemberNo == row.MemberCode || m.MemberCode == row.MemberCode);
+                var member = await _context.Members.FirstOrDefaultAsync(m => m.BranchID == branchId && (m.LegacyMemberNo == row.MemberCode || m.MemberCode == row.MemberCode))
+                    ?? await _context.Members.FirstOrDefaultAsync(m => m.MemberCode == row.MemberCode);
                 if (member == null)
                 {
                     errors.Add($"Row {rowNum}: Member with Code or Old Code '{row.MemberCode}' not found.");

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
+import { isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface AssetCategory {
   categoryID: number;
@@ -54,8 +55,8 @@ interface Asset {
 
 export default function DeadstockOpeningBalance() {
   const { user, globalBranchId } = useAuth();
-  const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
-  const isHeadOfficeOrAdmin = user?.role === 'Admin' || user?.branchType === 'HeadOffice';
+  const isHeadOfficeOrAdmin = isHeadOfficeUser(user);
+  const effectiveBranchId = resolveWriteBranchId(user, globalBranchId);
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
 
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -516,10 +517,11 @@ export default function DeadstockOpeningBalance() {
                 name="branchID"
                 value={formData.branchID}
                 onChange={handleInputChange}
-                className={selectClass}
+                disabled={!isHeadOfficeOrAdmin}
+                className={`${selectClass} disabled:bg-slate-100 disabled:text-slate-600`}
                 required
               >
-                {branches.map((b: any) => (
+                {(isHeadOfficeOrAdmin ? branches : branches.filter((b: any) => Number(b.branchID) === effectiveBranchId)).map((b: any) => (
                   <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
                 ))}
               </select>

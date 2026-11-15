@@ -475,8 +475,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     }
 
     let rate = 0;
-    if (scheme.schemeDurationModel === 'Slab' && scheme.slabs && scheme.slabs.length > 0) {
-      const matchedSlab = scheme.slabs.find(
+    const schemeSlabs = Array.isArray(scheme.slabs) ? scheme.slabs : [];
+    if (scheme.schemeDurationModel === 'Slab' && schemeSlabs.length > 0) {
+      const matchedSlab = schemeSlabs.find(
         (s: any) => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays) && s.isActive !== false
       );
       if (matchedSlab) {
@@ -1145,8 +1146,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     let rate = 0;
     let matchedSlab: any = null;
 
-    if (selected.schemeDurationModel === 'Slab' && selected.slabs && selected.slabs.length > 0) {
-      matchedSlab = selected.slabs.find((s: any) => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays) && s.isActive !== false);
+    const selectedSlabs = Array.isArray(selected.slabs) ? selected.slabs : [];
+    if (selected.schemeDurationModel === 'Slab' && selectedSlabs.length > 0) {
+      matchedSlab = selectedSlabs.find((s: any) => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays) && s.isActive !== false);
       if (matchedSlab) {
         rate = Number(formData.isSeniorCitizen ? (matchedSlab.seniorCitizenRate || matchedSlab.interestRate) : matchedSlab.interestRate) || 0;
       } else {
@@ -1305,7 +1307,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
         return;
       }
       const requiredTotal = entryMode === 'bulk' ? (Number(totalDepositAmount) || 0) : (parseFloat(formData.depositAmount as any) || 0);
-      const selectedSb = customerSavingsAccounts.find(a => (a.savingAccountID || a.savingAccountId) === selectedSavingAccountID);
+      const selectedSb = (Array.isArray(customerSavingsAccounts) ? customerSavingsAccounts : []).find(a => (a.savingAccountID || a.savingAccountId) === selectedSavingAccountID);
       if (selectedSb) {
         const curBal = Number(selectedSb.currentBalance ?? 0);
         const lienAmt = Number(selectedSb.lienAmount ?? 0);

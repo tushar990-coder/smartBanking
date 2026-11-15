@@ -7,6 +7,7 @@ import {
   Building2, BookOpen, FileSpreadsheet
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import { transliterateMarathi } from '../utils/transliterateMarathi';
 import { isValidAadhaar, isValidPAN, maskAadhaar } from '../utils/kycValidation';
 import DeceasedClaimSettlementModal from './DeceasedClaimSettlementModal';
@@ -169,7 +170,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
   });
 
   const [formData, setFormData] = useState({
-    branchID: user?.branchID || 1,
+    branchID: resolveWriteBranchId(user, localStorage.getItem('globalBranchId')),
     cifNo: '',
     legacyCustomerNo: '',
     firstName: '',
@@ -1017,7 +1018,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       initialDepositAmount: 0
     });
     setFormData({
-      branchID: user?.branchID || 1,
+      branchID: resolveWriteBranchId(user, localStorage.getItem('globalBranchId')),
       cifNo: '',
       legacyCustomerNo: '',
       firstName: '',
@@ -1385,9 +1386,10 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   value={formData.branchID || 1} 
                   onChange={handleChange} 
                   required
-                  className={inputClass}
+                  disabled={!isHeadOfficeUser(user)}
+                  className={`${inputClass} ${!isHeadOfficeUser(user) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                 >
-                  {branches.map(b => (
+                  {(getLockedBranchId(user) ? branches.filter(b => b.branchID === getLockedBranchId(user)) : branches).map(b => (
                     <option key={b.branchID} value={b.branchID}>{b.branchName} ({b.branchCode})</option>
                   ))}
                 </select>

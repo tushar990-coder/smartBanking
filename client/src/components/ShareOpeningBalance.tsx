@@ -992,7 +992,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
                   <div className="text-[9px] text-emerald-800 font-medium mt-0.5 flex items-center gap-1 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
                     <span className="font-bold">योजनेनुसार लेजर:</span>
                     <span className="font-mono truncate">
-                      {ledgers.find(l => l.ledgerID === selectedScheme.shareCapitalLedgerID)?.ledgerName || 'मॅप केलेले लेजर'}
+                      {(Array.isArray(ledgers) ? ledgers : []).find(l => l.ledgerID === selectedScheme.shareCapitalLedgerID)?.ledgerName || 'मॅप केलेले लेजर'}
                     </span>
                   </div>
                 )}
@@ -1256,7 +1256,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
             {selectedScheme && selectedScheme.dividendPayableLedgerID && (
               <div className="text-[10px] text-gray-500 font-medium flex items-center gap-1.5 pt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                <span>योजनेनुसार मॅप केलेले लेजर: <strong>{ledgers.find(l => l.ledgerID === selectedScheme.dividendPayableLedgerID)?.ledgerName || 'मॅप केलेले'}</strong></span>
+                <span>योजनेनुसार मॅप केलेले लेजर: <strong>{(Array.isArray(ledgers) ? ledgers : []).find(l => l.ledgerID === selectedScheme.dividendPayableLedgerID)?.ledgerName || 'मॅप केलेले'}</strong></span>
               </div>
             )}
           </div>

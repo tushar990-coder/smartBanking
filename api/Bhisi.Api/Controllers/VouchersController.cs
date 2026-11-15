@@ -154,6 +154,11 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
+            if (!User.CanAccessBranch(voucher.BranchID))
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर शाखेतील व्हाउचर पाहण्याची परवानगी नाही." });
+            }
+
             return voucher;
         }
 
@@ -161,7 +166,8 @@ namespace Bhisi.Api.Controllers
         [HttpGet("next-number")]
         public async Task<ActionResult<object>> GetNextVoucherNo([FromQuery] string type, [FromQuery] int branchId = 1)
         {
-            string voucherNo = await GenerateVoucherNo(branchId, type);
+            int effectiveBranchId = User.ResolveRequiredBranchId(branchId);
+            string voucherNo = await GenerateVoucherNo(effectiveBranchId, type);
             return Ok(new { nextNumber = voucherNo });
         }
 
@@ -542,6 +548,11 @@ namespace Bhisi.Api.Controllers
             var existingVoucher = await _context.Vouchers.Include(v => v.VoucherDetails).FirstOrDefaultAsync(v => v.VoucherID == id);
             if (existingVoucher == null) return NotFound();
 
+            if (!User.CanAccessBranch(existingVoucher.BranchID))
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर शाखेतील व्हाउचर बदलण्याची परवानगी नाही." });
+            }
+
             if (existingVoucher.Status == "Approved" && !User.IsHeadOfficeAdmin())
             {
                 return BadRequest("पोस्ट झालेले (Approved) व्हाउचर थेट बदलता येत नाही. आवश्यक असल्यास रिव्हर्सल किंवा कॅन्सलेशन करावे.");
@@ -811,6 +822,11 @@ namespace Bhisi.Api.Controllers
         {
             var voucher = await _context.Vouchers.FindAsync(id);
             if (voucher == null) return NotFound();
+
+            if (!User.CanAccessBranch(voucher.BranchID))
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर शाखेतील व्हाउचर मंजूर करण्याची परवानगी नाही." });
+            }
 
             if (voucher.Status == "Approved") return BadRequest("Voucher is already approved.");
 

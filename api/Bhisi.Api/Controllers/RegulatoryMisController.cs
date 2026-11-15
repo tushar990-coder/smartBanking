@@ -7,13 +7,15 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
+    [EnforceBranchScope]
     public class RegulatoryMisController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -66,6 +68,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> AutoCompute([FromQuery] string? asOnDate, [FromQuery] int branchId = 0)
         {
             await EnsureTableExistsAsync();
+            int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
 
             DateTime targetDate = DateTime.Today;
             if (!string.IsNullOrWhiteSpace(asOnDate) && DateTime.TryParse(asOnDate, out var parsedDate))
@@ -77,14 +80,17 @@ namespace Bhisi.Api.Controllers
             {
                 // 1. Sanstha Details
                 var sanstha = await _context.SansthaDetails.AsNoTracking().FirstOrDefaultAsync();
-                int branchCount = await _context.Branches.AsNoTracking().CountAsync(b => b.IsActive);
+                int branchCount = scopedBranch.HasValue
+                    ? 1
+                    : await _context.Branches.AsNoTracking().CountAsync(b => b.IsActive);
                 if (branchCount == 0) branchCount = 1;
 
                 // 2. Member Statistics
-                var activeMembers = await _context.Members.AsNoTracking()
+                var memberQuery = _context.Members.AsNoTracking()
                     .Include(m => m.Customer)
-                    .Where(m => m.Status == "Active" || string.IsNullOrEmpty(m.Status))
-                    .ToListAsync();
+                    .Where(m => m.Status == "Active" || string.IsNullOrEmpty(m.Status));
+                if (scopedBranch.HasValue) memberQuery = memberQuery.Where(m => m.BranchID == scopedBranch.Value);
+                var activeMembers = await memberQuery.ToListAsync();
 
                 int regularMembersCount = activeMembers.Count(m => 
                     string.IsNullOrEmpty(m.MembershipType) || 
@@ -107,7 +113,8 @@ namespace Bhisi.Api.Controllers
 
                 // 3. Paid-up Share Capital
                 decimal paidUpCapital = await _context.ShareAccounts.AsNoTracking()
-                    .Where(s => s.Status == "Active" || string.IsNullOrEmpty(s.Status))
+                    .Include(s => s.Member)
+                    .Where(s => (s.Status == "Active" || string.IsNullOrEmpty(s.Status)) && (!scopedBranch.HasValue || (s.Member != null && s.Member.BranchID == scopedBranch.Value)))
                     .SumAsync(s => s.TotalShareAmount);
 
                 if (paidUpCapital == 0)
@@ -165,22 +172,22 @@ namespace Bhisi.Api.Controllers
 
                 // 5. Deposits Calculation (FD, Saving, RD, Pigmy)
                 var fdList = await _context.FdAccounts.AsNoTracking()
-                    .Where(f => f.Status == "Active" || string.IsNullOrEmpty(f.Status))
+                    .Where(f => (f.Status == "Active" || string.IsNullOrEmpty(f.Status)) && (!scopedBranch.HasValue || f.BranchID == scopedBranch.Value))
                     .Select(f => new { f.CustomerID, f.DepositAmount })
                     .ToListAsync();
 
                 var sbList = await _context.SavingAccountMasters.AsNoTracking()
-                    .Where(s => s.Status == "Active" || string.IsNullOrEmpty(s.Status))
+                    .Where(s => (s.Status == "Active" || string.IsNullOrEmpty(s.Status)) && (!scopedBranch.HasValue || s.BranchID == scopedBranch.Value))
                     .Select(s => new { s.CustomerID, s.CurrentBalance })
                     .ToListAsync();
 
                 var rdList = await _context.RdAccounts.AsNoTracking()
-                    .Where(r => r.Status == "Active" || string.IsNullOrEmpty(r.Status))
+                    .Where(r => (r.Status == "Active" || string.IsNullOrEmpty(r.Status)) && (!scopedBranch.HasValue || r.BranchID == scopedBranch.Value))
                     .Select(r => new { r.CustomerID, CurrentBalance = r.TotalDepositedAmount })
                     .ToListAsync();
 
                 var pigmyList = await _context.PigmyAccounts.AsNoTracking()
-                    .Where(p => p.Status == "Active" || string.IsNullOrEmpty(p.Status))
+                    .Where(p => (p.Status == "Active" || string.IsNullOrEmpty(p.Status)) && (!scopedBranch.HasValue || p.BranchID == scopedBranch.Value))
                     .Select(p => new { p.CustomerID, CurrentBalance = p.TotalDepositedAmount })
                     .ToListAsync();
 
@@ -255,7 +262,7 @@ namespace Bhisi.Api.Controllers
                 // 6. Loans & Overdue
                 var loanList = await _context.LoanAccounts.AsNoTracking()
                     .Include(l => l.LoanRate)
-                    .Where(l => l.Status == "Active" || string.IsNullOrEmpty(l.Status))
+                    .Where(l => (l.Status == "Active" || string.IsNullOrEmpty(l.Status)) && (!scopedBranch.HasValue || l.BranchID == scopedBranch.Value))
                     .ToListAsync();
 
                 int regLoanCount = 0; decimal regLoanAmount = 0;
@@ -540,11 +547,12 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetSavedReport([FromQuery] string financialYear = "2025-2026", [FromQuery] int branchId = 0)
         {
             await EnsureTableExistsAsync();
+            int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
 
             var query = _context.RegulatoryMisReports.AsNoTracking()
                 .Where(r => r.FinancialYear == financialYear);
 
-            if (branchId > 0) query = query.Where(r => r.BranchID == branchId);
+            if (scopedBranch.HasValue && scopedBranch.Value > 0) query = query.Where(r => r.BranchID == scopedBranch.Value);
 
             var report = await query.OrderByDescending(r => r.MisReportID).FirstOrDefaultAsync();
             if (report == null) return NotFound(new { message = "No saved report found for this financial year." });
@@ -573,11 +581,16 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> SaveReport([FromBody] SaveReportRequest req)
         {
             await EnsureTableExistsAsync();
+            req.BranchID = User.ResolveRequiredBranchId(req.BranchID > 0 ? req.BranchID : null);
 
             RegulatoryMisReport? report = null;
             if (req.MisReportID.HasValue && req.MisReportID.Value > 0)
             {
                 report = await _context.RegulatoryMisReports.FindAsync(req.MisReportID.Value);
+                if (report != null && !User.CanAccessBranch(report.BranchID))
+                {
+                    return Forbid();
+                }
             }
 
             if (report == null)
@@ -628,6 +641,7 @@ namespace Bhisi.Api.Controllers
 
             var report = await _context.RegulatoryMisReports.FindAsync(id);
             if (report == null) return NotFound("Report not found.");
+            if (!User.CanAccessBranch(report.BranchID)) return Forbid();
 
             report.IsLocked = true;
             report.UpdatedOn = DateTime.Now;

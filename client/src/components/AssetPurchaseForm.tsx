@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { RawLedgerItem } from '../utils/bankLedgerUtils';
+import { isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Category {
   categoryID: number;
@@ -25,7 +26,7 @@ export interface AssetPurchaseFormProps {
 
 const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, voucherId, isPassingMode }) => {
   const { user, globalBranchId } = useAuth();
-  const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
+  const effectiveBranchId = resolveWriteBranchId(user, globalBranchId);
 
   const queryParams = new URLSearchParams(window.location.search);
   const effectiveVoucherId = voucherId || queryParams.get('voucherId');
@@ -372,8 +373,9 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch)</label>
                 <select name="branchID" value={formData.purchase.branchID} onChange={handlePurchaseChange}
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
-                  {branches.map((b: any) => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
+                  disabled={!isHeadOfficeUser(user)}
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-slate-100 disabled:text-slate-600">
+                  {(isHeadOfficeUser(user) ? branches : branches.filter((b: any) => Number(b.branchID) === effectiveBranchId)).map((b: any) => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
                 </select>
               </div>
               <div className="md:col-span-2">

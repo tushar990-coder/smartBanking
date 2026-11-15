@@ -2,13 +2,15 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin,HO_Manager,HO Manager")]
+    [Authorize(Roles = "Admin,SuperAdmin,Super Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager")]
+    [SkipBranchScope]
     public class UsersController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -58,6 +60,16 @@ namespace Bhisi.Api.Controllers
             if (await _context.Users.AnyAsync(u => u.Username == dto.Username))
             {
                 return BadRequest("Username already exists.");
+            }
+
+            var targetRole = await _context.Roles.FindAsync(dto.RoleID);
+            if (targetRole == null)
+            {
+                return BadRequest("अवैध रोल निवडला आहे.");
+            }
+            if (!UserContextExtensions.IsHeadOfficeRole(targetRole.RoleName) && (!dto.DefaultBranchID.HasValue || dto.DefaultBranchID.Value <= 0))
+            {
+                return BadRequest("शाखा-स्तरीय रोलसाठी (Clerk / Cashier / Manager / Accountant) DefaultBranchID निवडणे अनिवार्य आहे.");
             }
 
             var user = new User
@@ -120,6 +132,16 @@ namespace Bhisi.Api.Controllers
             if ((user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase)) && !dto.IsActive)
             {
                 return BadRequest("Master Administrator account cannot be deactivated.");
+            }
+
+            var targetRole = await _context.Roles.FindAsync(dto.RoleID);
+            if (targetRole == null)
+            {
+                return BadRequest("अवैध रोल निवडला आहे.");
+            }
+            if (!UserContextExtensions.IsHeadOfficeRole(targetRole.RoleName) && (!dto.DefaultBranchID.HasValue || dto.DefaultBranchID.Value <= 0))
+            {
+                return BadRequest("शाखा-स्तरीय रोलसाठी (Clerk / Cashier / Manager / Accountant) DefaultBranchID निवडणे अनिवार्य आहे.");
             }
 
             user.Username = dto.Username;

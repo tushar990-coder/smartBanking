@@ -6,13 +6,14 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class AuthController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -24,6 +25,7 @@ namespace Bhisi.Api.Controllers
             _configuration = configuration;
         }
 
+        [AllowAnonymous]
         [HttpPost("login")]
         public async Task<ActionResult<LoginResponseDto>> Login(LoginRequestDto request)
         {
@@ -88,13 +90,32 @@ namespace Bhisi.Api.Controllers
                             return Unauthorized("Invalid agent mobile number or password.");
                         }
 
-                        int branchId = agent.BranchID ?? (request.BranchID > 0 ? request.BranchID : 1);
+                        if (!agent.BranchID.HasValue || agent.BranchID.Value <= 0)
+                        {
+                            return BadRequest("या पिग्मी एजंटसाठी शाखा नेमलेली नाही. कृपया मुख्य कार्यालयाकडून शाखा नेमून घ्या.");
+                        }
+
+                        if (request.BranchID > 0 && request.BranchID != agent.BranchID.Value)
+                        {
+                            string assignedBranchName = agent.Branch?.BranchName ?? $"शाखा #{agent.BranchID.Value}";
+                            return StatusCode(403, $"आपली नेमणूक '{assignedBranchName}' या शाखेत आहे. आपण इतर शाखेत लॉगिन करू शकत नाही.");
+                        }
+
+                        int branchId = agent.BranchID.Value;
                         var agentBranch = await _context.Branches.FindAsync(branchId) 
                                           ?? await _context.Branches.FirstOrDefaultAsync() 
                                           ?? new Branch { BranchID = 1, BranchName = "Main Branch" };
                         var agentFy = await _context.FinancialYears.FindAsync(request.FinancialYearID) 
                                       ?? await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive) 
                                       ?? await _context.FinancialYears.FirstOrDefaultAsync();
+
+                        var agentActiveDateRecord = await _context.BranchDayEndStatuses
+                            .Where(b => b.BranchID == branchId && b.BusinessDate.Year >= 2000)
+                            .OrderByDescending(b => b.BusinessDate)
+                            .FirstOrDefaultAsync();
+                        DateTime agentBusinessDate = agentActiveDateRecord != null
+                            ? (agentActiveDateRecord.IsDayClosed ? agentActiveDateRecord.BusinessDate.AddDays(1) : agentActiveDateRecord.BusinessDate)
+                            : DateTime.Today;
 
                         var tokenHandlerAgent = new JwtSecurityTokenHandler();
                         var keyStrAgent = _configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
@@ -110,7 +131,9 @@ namespace Bhisi.Api.Controllers
                                 new Claim("AgentId", agent.PigmyAgentID.ToString()),
                                 new Claim("MobileNo", agent.Customer?.MobileNo ?? string.Empty),
                                 new Claim("BranchID", agentBranch.BranchID.ToString()),
-                                new Claim("FinancialYearID", (agentFy?.FinancialYearID ?? 1).ToString())
+                                new Claim("DefaultBranchID", agentBranch.BranchID.ToString()),
+                                new Claim("FinancialYearID", (agentFy?.FinancialYearID ?? 1).ToString()),
+                                new Claim("BusinessDate", agentBusinessDate.ToString("yyyy-MM-dd"))
                             }),
                             Expires = DateTime.UtcNow.AddDays(7),
                             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(keyAgent), SecurityAlgorithms.HmacSha256Signature)
@@ -126,10 +149,11 @@ namespace Bhisi.Api.Controllers
                             AgentId = agent.PigmyAgentID,
                             MobileNo = agent.Customer?.MobileNo ?? string.Empty,
                             BranchID = agentBranch.BranchID,
+                            DefaultBranchID = agentBranch.BranchID,
                             BranchName = agentBranch.BranchName,
                             FinancialYearID = agentFy?.FinancialYearID ?? 1,
                             FinancialYearCode = agentFy?.YearCode ?? "2026-2027",
-                            BusinessDate = DateTime.Today.ToString("yyyy-MM-dd"),
+                            BusinessDate = agentBusinessDate.ToString("yyyy-MM-dd"),
                             RequirePasswordChange = false
                         });
                     }
@@ -199,12 +223,33 @@ namespace Bhisi.Api.Controllers
                      ?? await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive)
                      ?? await _context.FinancialYears.FirstOrDefaultAsync();
 
-            var branch = await _context.Branches.FindAsync(request.BranchID)
-                         ?? await _context.Branches.FirstOrDefaultAsync();
-            
-            if (fy == null || branch == null)
+            string effectiveRole = user.Role?.RoleName ?? "User";
+            bool isHoRole = UserContextExtensions.IsHeadOfficeRole(effectiveRole);
+
+            if (!isHoRole)
             {
-                return BadRequest("Invalid Financial Year or Branch selected.");
+                if (!user.DefaultBranchID.HasValue || user.DefaultBranchID.Value <= 0)
+                {
+                    await LogAudit(user.UserID, "Failed - No Default Branch Assigned");
+                    return BadRequest("आपल्या युझर खात्याला कोणतीही शाखा नेमलेली नाही. कृपया मुख्य कार्यालय / ॲडमिनकडून आपल्या खात्याला DefaultBranchID नेमून घ्या.");
+                }
+
+                if (request.BranchID > 0 && request.BranchID != user.DefaultBranchID.Value)
+                {
+                    string assignedBranchName = user.DefaultBranch?.BranchName ?? $"शाखा #{user.DefaultBranchID.Value}";
+                    await LogAudit(user.UserID, $"Failed - Cross-Branch Login Blocked (Requested {request.BranchID}, Assigned {user.DefaultBranchID.Value})");
+                    return StatusCode(403, $"शाखा सुरक्षा नियम: आपली नेमणूक '{assignedBranchName}' या शाखेत आहे. आपण इतर शाखेत लॉगिन करू शकत नाही.");
+                }
+
+                request.BranchID = user.DefaultBranchID.Value;
+            }
+
+            var branch = await _context.Branches.FindAsync(request.BranchID)
+                         ?? (isHoRole ? await _context.Branches.FirstOrDefaultAsync() : null);
+            
+            if (fy == null || branch == null || !branch.IsActive)
+            {
+                return BadRequest("Invalid or Inactive Financial Year / Branch selected.");
             }
 
             request.FinancialYearID = fy.FinancialYearID;
@@ -313,6 +358,7 @@ namespace Bhisi.Api.Controllers
                     new Claim(ClaimTypes.Name, user.Username),
                     new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "User"),
                     new Claim("BranchID", request.BranchID.ToString()),
+                    new Claim("DefaultBranchID", (user.DefaultBranchID ?? request.BranchID).ToString()),
                     new Claim("FinancialYearID", request.FinancialYearID.ToString()),
                     new Claim("BusinessDate", businessDate.ToString("yyyy-MM-dd"))
                 }),
@@ -333,6 +379,7 @@ namespace Bhisi.Api.Controllers
                 Username = user.Username,
                 Role = user.Role?.RoleName ?? "User",
                 BranchID = request.BranchID,
+                DefaultBranchID = user.DefaultBranchID ?? request.BranchID,
                 BranchName = branch.BranchName,
                 FinancialYearID = request.FinancialYearID,
                 FinancialYearCode = fy.YearCode,
@@ -346,6 +393,7 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        [AllowAnonymous]
         [HttpGet("branch-business-date/{branchId}")]
         public async Task<IActionResult> GetBranchBusinessDate(int branchId)
         {
@@ -511,6 +559,7 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        [Authorize]
         [HttpPost("switch-branch")]
         public async Task<ActionResult<SwitchBranchResponseDto>> SwitchBranch([FromBody] SwitchBranchRequestDto request)
         {
@@ -533,15 +582,7 @@ namespace Bhisi.Api.Controllers
 
                 // Strict Role-based access: Only HO/Admin/SuperAdmin/Auditor can switch branches
                 string userRole = user.Role?.RoleName ?? "User";
-                bool canSwitch = userRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                                 userRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
-                                 userRole.Equals("Super Admin", StringComparison.OrdinalIgnoreCase) ||
-                                 userRole.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
-                                 userRole.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
-                                 userRole.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
-                                 userRole.Equals("Auditor", StringComparison.OrdinalIgnoreCase);
-
-                if (!canSwitch)
+                if (!UserContextExtensions.IsHeadOfficeRole(userRole))
                 {
                     return StatusCode(403, "आपल्या पदाला (Role) इतर शाखेत स्विच करण्याची परवानगी नाही. केवळ मुख्य कार्यालय/ॲडमिनला ही परवानगी आहे.");
                 }
@@ -555,12 +596,30 @@ namespace Bhisi.Api.Controllers
                 var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive) 
                                ?? await _context.FinancialYears.FirstOrDefaultAsync();
 
-                var activeDateRecord = await _context.BranchDayEndStatuses
-                    .Where(b => b.BranchID == request.TargetBranchID)
+                var lastClosedRecord = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == request.TargetBranchID && b.IsDayClosed && b.BusinessDate.Year >= 2000)
                     .OrderByDescending(b => b.BusinessDate)
                     .FirstOrDefaultAsync();
 
-                DateTime businessDate = activeDateRecord?.BusinessDate ?? DateTime.Today;
+                var oldestUnclosedRecord = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == request.TargetBranchID && !b.IsDayClosed && b.BusinessDate.Year >= 2000
+                             && (lastClosedRecord == null || b.BusinessDate > lastClosedRecord.BusinessDate))
+                    .OrderBy(b => b.BusinessDate)
+                    .FirstOrDefaultAsync();
+
+                DateTime businessDate;
+                if (oldestUnclosedRecord != null)
+                {
+                    businessDate = oldestUnclosedRecord.BusinessDate;
+                }
+                else if (lastClosedRecord != null)
+                {
+                    businessDate = lastClosedRecord.BusinessDate.AddDays(1);
+                }
+                else
+                {
+                    businessDate = activeFy?.StartDate ?? DateTime.Today;
+                }
 
                 var tokenHandler = new JwtSecurityTokenHandler();
                 var keyStr = _configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
@@ -573,7 +632,9 @@ namespace Bhisi.Api.Controllers
                         new Claim(ClaimTypes.Name, user.Username),
                         new Claim(ClaimTypes.Role, userRole),
                         new Claim("BranchID", targetBranch.BranchID.ToString()),
-                        new Claim("FinancialYearID", (activeFy?.FinancialYearID ?? 1).ToString())
+                        new Claim("DefaultBranchID", (user.DefaultBranchID ?? targetBranch.BranchID).ToString()),
+                        new Claim("FinancialYearID", (activeFy?.FinancialYearID ?? 1).ToString()),
+                        new Claim("BusinessDate", businessDate.ToString("yyyy-MM-dd"))
                     }),
                     Expires = DateTime.UtcNow.AddDays(7),
                     SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)

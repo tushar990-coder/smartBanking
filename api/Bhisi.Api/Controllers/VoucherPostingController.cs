@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -15,6 +16,8 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
+    [EnforceBranchScope]
     public class VoucherPostingController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -239,6 +242,15 @@ namespace Bhisi.Api.Controllers
                     return NotFound("कोणतेही वैध प्रलंबित व्हाउचर्स सापडले नाहीत. (No valid pending vouchers found.)");
                 }
 
+                int approverId = User.GetUserId();
+                bool isHoApprover = User.IsHeadOfficeAdmin();
+
+                if (!isHoApprover && vouchers.Any(v => !User.CanAccessBranch(v.BranchID)))
+                {
+                    await dbTransaction.RollbackAsync();
+                    return StatusCode(403, "आपल्याला इतर शाखेतील व्हाउचर मंजूर करण्याची परवानगी नाही.");
+                }
+
                 if (targetLoginDate.HasValue)
                 {
                     DateTime dayStart = targetLoginDate.Value.Date;
@@ -296,7 +308,7 @@ namespace Bhisi.Api.Controllers
                     foreach (var voucher in sortedGroupVouchers)
                     {
                         // 1. Audit Check: Maker-Checker Segregation of Duties
-                        if (voucher.CreatedBy > 0 && voucher.CreatedBy == request.ApprovedBy && request.ApprovedBy != 1)
+                        if (voucher.CreatedBy > 0 && voucher.CreatedBy == approverId && !isHoApprover)
                         {
                             await dbTransaction.RollbackAsync();
                             return BadRequest($"सुरक्षा ऑडिट त्रुटी: व्हाउचर क्र. {voucher.VoucherNo} स्वतः तयार करणाऱ्या युझरला मंजूर करण्याची परवानगी नाही (Maker-Checker Restriction).");
@@ -320,7 +332,7 @@ namespace Bhisi.Api.Controllers
                         }
 
                         voucher.Status = "Approved";
-                        voucher.ApprovedBy = request.ApprovedBy;
+                        voucher.ApprovedBy = approverId;
                         voucher.ApprovedOn = DateTime.Now;
 
                         // 🌟 Synchronize Share Certificate Status upon Voucher Passing
@@ -419,12 +431,12 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("अन-पास करण्यासाठी कोणतेही व्हाउचर निवडलेले नाही. (No vouchers selected for unpass.)");
             }
 
-            int userId = request.UnpassedBy > 0 ? request.UnpassedBy : 1;
-            string username = !string.IsNullOrWhiteSpace(request.Username) ? request.Username : "User-" + userId;
-            string userRole = !string.IsNullOrWhiteSpace(request.UserRole) ? request.UserRole : "Admin";
+            int userId = User.GetUserId();
+            string username = User.GetUsername();
+            string userRole = User.GetUserRole();
             string reason = !string.IsNullOrWhiteSpace(request.Reason) ? request.Reason.Trim() : "मंजुरी रद्द व प्रलंबित केले (Reverted to Pending)";
 
-            bool isHOUser = userRole == "Admin" || userRole == "SuperAdmin" || userRole == "HO_Manager" || userRole == "HO Manager" || userRole == "Manager";
+            bool isHOUser = User.IsHeadOfficeAdmin();
 
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
@@ -454,6 +466,12 @@ namespace Bhisi.Api.Controllers
                 if (!vouchers.Any())
                 {
                     return NotFound("निवडलेले कोणतेही मंजूर व्हाउचर्स सापडले नाहीत किंवा आधीच प्रलंबित आहेत. (No valid approved vouchers found to unpass.)");
+                }
+
+                if (!isHOUser && vouchers.Any(v => !User.CanAccessBranch(v.BranchID)))
+                {
+                    await dbTransaction.RollbackAsync();
+                    return StatusCode(403, "आपल्याला इतर शाखेतील व्हाउचर अन-पास करण्याची परवानगी नाही.");
                 }
 
                 int unpassedCount = 0;
@@ -691,30 +709,11 @@ namespace Bhisi.Api.Controllers
             string? dtoUserRole,
             string actionSource)
         {
-            bool isAuthenticated = User?.Identity?.IsAuthenticated == true;
-            int claimUserId = isAuthenticated ? User.GetUserId() : 0;
-            int effectiveUserId = claimUserId > 0 ? claimUserId : (dtoUserId > 0 ? dtoUserId : 1);
-
-            string claimUsername = isAuthenticated ? User.GetUsername() : string.Empty;
-            string effectiveUsername = !string.IsNullOrWhiteSpace(claimUsername)
-                ? claimUsername
-                : (!string.IsNullOrWhiteSpace(dtoUsername) ? dtoUsername!.Trim() : $"User-{effectiveUserId}");
-
-            string claimRole = isAuthenticated ? User.GetUserRole() : string.Empty;
-            string effectiveRole = !string.IsNullOrWhiteSpace(claimRole)
-                ? claimRole
-                : (!string.IsNullOrWhiteSpace(dtoUserRole) ? dtoUserRole!.Trim() : "Admin");
-
-            bool roleIsHo = effectiveRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
-                            effectiveRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                            effectiveRole.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase) ||
-                            effectiveRole.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
-                            effectiveRole.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
-                            effectiveRole.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
-                            effectiveRole.Equals("Manager", StringComparison.OrdinalIgnoreCase);
-
-            int userBranchId = isAuthenticated ? User.GetOperatingBranchId() : 0;
-            bool isHoAdmin = (isAuthenticated && User.IsHeadOfficeAdmin()) || roleIsHo || userBranchId <= 0;
+            int effectiveUserId = User.GetUserId();
+            string effectiveUsername = User.GetUsername();
+            string effectiveRole = User.GetUserRole();
+            int userBranchId = User.GetOperatingBranchId();
+            bool isHoAdmin = User.IsHeadOfficeAdmin();
 
             return new VoucherDeleteRequestContext
             {

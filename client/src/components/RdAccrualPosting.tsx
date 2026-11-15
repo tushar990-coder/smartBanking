@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { getBusinessDateStr } from '../utils/businessDateUtils';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Branch {
   branchID: number;
@@ -9,12 +10,18 @@ interface Branch {
 }
 
 export default function RdAccrualPosting() {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string) : 1);
+  const initialBranchId = resolveWriteBranchId(user, globalBranchId);
   const [branchID, setBranchID] = useState<number>(initialBranchId);
+
+  useEffect(() => {
+    if (lockedBranchId) {
+      setBranchID(lockedBranchId);
+    }
+  }, [lockedBranchId]);
   const [accrualDate, setAccrualDate] = useState(getBusinessDateStr(user?.businessDate));
 
   useEffect(() => {
@@ -89,10 +96,11 @@ export default function RdAccrualPosting() {
               <label className={labelClass}>शाखा निवडा (Select Branch)</label>
               <select 
                 value={branchID} 
-                onChange={(e) => setBranchID(parseInt(e.target.value))} 
-                className={inputClass}
+                onChange={(e) => setBranchID(parseInt(e.target.value, 10))} 
+                disabled={!isHOUser}
+                className={`${inputClass} ${!isHOUser ? 'bg-gray-100 cursor-not-allowed' : ''}`}
               >
-                {branches.map((b) => (
+                {(lockedBranchId ? branches.filter((b) => b.branchID === lockedBranchId) : branches).map((b) => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}
                   </option>

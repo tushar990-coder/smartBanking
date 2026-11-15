@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import { Calculator, Calendar, CheckCircle2, ShieldAlert, Zap, Search } from 'lucide-react';
 
 interface Branch {
@@ -32,9 +34,12 @@ interface InterestPostingItem {
 }
 
 const LoanInterestPostingMaster: React.FC = () => {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loanRates, setLoanRates] = useState<LoanRate[]>([]);
-  const [branchID, setBranchID] = useState<number>(1);
+  const [branchID, setBranchID] = useState<number>(() => resolveWriteBranchId(user, globalBranchId));
   const [loanRateID, setLoanRateID] = useState<number | null>(null);
   const [postingDate, setPostingDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [postingMode, setPostingMode] = useState<string>('SchemeDefault'); // SchemeDefault, ForceSeparate, ForceCapitalize
@@ -57,7 +62,11 @@ const LoanInterestPostingMaster: React.FC = () => {
     try {
       const res = await axios.get('/api/Branches');
       setBranches(res.data);
-      if (res.data.length > 0) setBranchID(res.data[0].branchID);
+      if (lockedBranchId) {
+        setBranchID(lockedBranchId);
+      } else if (res.data.length > 0 && (!globalBranchId || globalBranchId === 'all')) {
+        setBranchID(res.data[0].branchID);
+      }
     } catch (err) {
       console.error('Error fetching branches', err);
     }
@@ -162,10 +171,11 @@ const LoanInterestPostingMaster: React.FC = () => {
             <label className="block text-xs font-bold text-gray-700 mb-1">शाखा निवडा (Branch)</label>
             <select
               value={branchID}
-              onChange={(e) => setBranchID(parseInt(e.target.value))}
-              className="w-full text-xs border border-gray-300 rounded px-2.5 py-1.5 focus:outline-none focus:border-primary"
+              onChange={(e) => setBranchID(parseInt(e.target.value, 10))}
+              disabled={!isHOUser}
+              className={`w-full text-xs border border-gray-300 rounded px-2.5 py-1.5 focus:outline-none focus:border-primary ${!isHOUser ? 'bg-gray-100 cursor-not-allowed' : ''}`}
             >
-              {branches.map((b) => (
+              {(lockedBranchId ? branches.filter((b) => b.branchID === lockedBranchId) : branches).map((b) => (
                 <option key={b.branchID} value={b.branchID}>
                   {b.branchName}
                 </option>

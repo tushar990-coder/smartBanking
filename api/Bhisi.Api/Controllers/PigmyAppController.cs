@@ -12,7 +12,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [Microsoft.AspNetCore.Authorization.Authorize]
     public class PigmyAppController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -32,6 +32,7 @@ namespace Bhisi.Api.Controllers
         }
 
         // POST: api/PigmyApp/Login
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {

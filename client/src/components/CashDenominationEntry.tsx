@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import api from '../utils/api';
 import { 
   Calculator, 
@@ -24,11 +25,13 @@ interface CashDenominationProps {
 }
 
 export default function CashDenominationEntry({ onNavigate, initialCashierId }: CashDenominationProps) {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<any[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);
+  const [selectedBranchId, setSelectedBranchId] = useState<number>(() => resolveWriteBranchId(user, globalBranchId));
   const [cashiers, setCashiers] = useState<any[]>([]);
   const [selectedCashierId, setSelectedCashierId] = useState<number>(initialCashierId || 0);
   const [selectedDate, setSelectedDate] = useState<string>(activeBusinessDate);
@@ -252,10 +255,11 @@ export default function CashDenominationEntry({ onNavigate, initialCashierId }: 
                 <Building size={13} className="text-white/80" />
                 <select
                   value={selectedBranchId}
+                  disabled={!isHOUser}
                   onChange={(e) => setSelectedBranchId(Number(e.target.value))}
-                  className="bg-transparent font-bold text-white outline-none cursor-pointer text-xs"
+                  className={`bg-transparent font-bold text-white outline-none text-xs ${!isHOUser ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}
                 >
-                  {branches.map((b, idx) => {
+                  {(lockedBranchId ? branches.filter((b, idx) => Number(b.branchID ?? b.BranchID ?? b.id ?? idx) === lockedBranchId) : branches).map((b, idx) => {
                     const bId = b.branchID ?? b.BranchID ?? b.id ?? idx;
                     const bName = b.branchName ?? b.BranchName ?? `शाखा ${bId}`;
                     return (

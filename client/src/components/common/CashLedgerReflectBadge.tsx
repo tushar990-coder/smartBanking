@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { resolveWriteBranchId } from '../../utils/branchAccess';
 
 interface CashLedgerReflectBadgeProps {
   branchId?: number;
@@ -15,13 +16,11 @@ const CashLedgerReflectBadge: React.FC<CashLedgerReflectBadgeProps> = ({
   className = '',
   customTitle
 }) => {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
   const [cashLedger, setCashLedger] = useState<{ id: number; name: string; branchName: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const activeBranchId = branchId || (hasGlobalBranch ? parseInt(globalBranchStr as string) : (user?.branchID || 1));
+  const activeBranchId = branchId || resolveWriteBranchId(user, globalBranchId);
 
   useEffect(() => {
     let isMounted = true;

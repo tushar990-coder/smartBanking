@@ -13,7 +13,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class VoucherMappingsController : ControllerBase
     {
         private readonly AppDbContext _context;

@@ -8,6 +8,7 @@ import {
 import * as XLSX from 'xlsx';
 import ShareCertificatePreview from './ShareCertificatePreview';
 import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface Props {
     onClose: () => void;
@@ -52,15 +53,13 @@ const format14DigitDisplay = (num?: string) => {
 };
 
 const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete }) => {
-    const { user } = useAuth();
-    const globalBranchStr = localStorage.getItem('globalBranchId');
-    const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-    const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : (user?.branchID || 1);
-
-    const isHOUser = user?.role === 'Admin' || user?.role === 'HO_Manager' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice';
+    const { user, globalBranchId } = useAuth();
+    const isHOUser = isHeadOfficeUser(user);
+    const lockedBranchId = getLockedBranchId(user);
+    const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
 
     const [selectedBranchId, setSelectedBranchId] = useState<string>(
-        isHOUser ? (hasGlobalBranch ? String(initialBranchId) : 'all') : String(user?.branchID || initialBranchId)
+        effectiveBranch === null ? 'all' : String(effectiveBranch)
     );
     const [branches, setBranches] = useState<any[]>([]);
     const [disbursements, setDisbursements] = useState<any[]>([]);
@@ -316,7 +315,7 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                                 disabled={!isHOUser}
                             >
                                 {isHOUser && <option value="all">सर्व शाखा (All Branches)</option>}
-                                {branches.map((b: any) => (
+                                {(lockedBranchId ? branches.filter((b: any) => b.branchID === lockedBranchId) : branches).map((b: any) => (
                                     <option key={b.branchID} value={b.branchID}>
                                         {b.branchName} ({b.branchCode})
                                     </option>

@@ -6,6 +6,7 @@ interface AuthUser {
   username: string;
   role: string;
   branchID: number;
+  defaultBranchID?: number;
   branchName: string;
   financialYearID: number;
   financialYearCode: string;
@@ -121,10 +122,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(updatedUser);
       sessionStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
+      localStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
       sessionStorage.setItem('globalBranchId', branchID.toString());
       localStorage.setItem('globalBranchId', branchID.toString());
-      invalidateApiCache('/api/dashboard');
+      invalidateApiCache('/api/');
       prewarmMasterDataCache();
+      try {
+        window.dispatchEvent(new CustomEvent('globalBranchChange', { detail: { branchId: branchID.toString() } }));
+      } catch (_) {}
 
       try {
         const channel = new BroadcastChannel('smart_banking_session_sync');

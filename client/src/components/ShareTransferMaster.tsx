@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 import { 
   ArrowRight, ArrowLeft, RefreshCw, CheckCircle, XCircle, AlertCircle, Award, FileText, UserCheck, 
   ShieldCheck, Printer, List, Trash2, X, Search, Users, CheckCircle2, RotateCcw, 
@@ -378,7 +379,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
         fromMemberId: fromMemberObj?.memberID || parseInt(fromMemberId),
         toMemberId: toMemberObj?.memberID || parseInt(toMemberId),
         numberOfShares: sharesCount,
-        branchId: 1,
+        branchId: resolveWriteBranchId(user),
         transferDate: transferDate ? new Date(transferDate) : null,
         resolutionNo: resolutionNo.trim() || null,
         resolutionDate: resolutionDate ? new Date(resolutionDate) : null,

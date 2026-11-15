@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { safeArray } from '../utils/apiCache';
 import { 
   BookOpen, 
   Layers, 
@@ -88,7 +89,7 @@ export default function LedgerMaster() {
       try {
         const response = await axios.get(LEDGER_API_URL);
         if (response.data && isMounted) {
-          setLedgers(response.data);
+          setLedgers(safeArray(response.data));
         }
       } catch (err) {
         if (isMounted) console.error("Error fetching ledgers", err);
@@ -124,7 +125,7 @@ export default function LedgerMaster() {
     try {
       const response = await axios.get(LEDGER_API_URL);
       if (response.data) {
-        setLedgers(response.data);
+        setLedgers(safeArray(response.data));
       }
       fetchNextLedgerId();
     } catch (err) {
@@ -144,7 +145,7 @@ export default function LedgerMaster() {
   };
 
   const ensureGroupCodes = (list: AccountGroup[]): AccountGroup[] => {
-    return list.map(g => ({
+    return safeArray(list).map(g => ({
       ...g,
       groupCode: g.groupCode && g.groupCode.trim() !== '' ? g.groupCode.trim() : g.groupID.toString()
     }));
@@ -286,7 +287,7 @@ export default function LedgerMaster() {
 
   const handleGroupChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedGroupId = e.target.value;
-    const selectedGroup = groups.find(g => g.groupID.toString() === selectedGroupId);
+    const selectedGroup = safeArray(groups).find(g => g.groupID.toString() === selectedGroupId);
 
     let suggestedReportType = formData.reportType;
     let suggestedAccountType = formData.accountType;
@@ -375,8 +376,8 @@ export default function LedgerMaster() {
     setIsSaving(true);
     try {
       const assignedId = formData.ledgerID ? parseInt(formData.ledgerID) : (editId || 0);
-      const existingLedger = editId ? ledgers.find(l => l.ledgerID === editId) : null;
-      const selectedGroup = groups.find(g => g.groupID.toString() === formData.groupID.toString());
+      const existingLedger = editId ? safeArray(ledgers).find(l => l.ledgerID === editId) : null;
+      const selectedGroup = safeArray(groups).find(g => g.groupID.toString() === formData.groupID.toString());
       let resolvedAccountType = formData.accountType;
       if (selectedGroup) {
         const gName = (selectedGroup.groupName + ' ' + (selectedGroup.groupNameEnglish || '')).toLowerCase();
@@ -521,8 +522,8 @@ export default function LedgerMaster() {
   // Excel Export Handler
   const exportToExcel = () => {
     try {
-      const exportData = ledgers.map((l, index) => {
-        const grp = groups.find(g => g.groupID === l.groupID);
+      const exportData = safeArray(ledgers).map((l, index) => {
+        const grp = safeArray(groups).find(g => g.groupID === l.groupID);
         return {
           'अनु. क्र.': index + 1,
           'खाते क्र. (Ledger ID)': l.ledgerID,
@@ -674,7 +675,7 @@ const convertMarathiDigits = (val: string): string => {
     const keepGroupAndAncestors = (groupId: number | null | undefined) => {
       if (!groupId || groupsToKeep.has(groupId)) return;
       groupsToKeep.add(groupId);
-      const group = groups.find(g => g.groupID === groupId);
+      const group = safeArray(groups).find(g => g.groupID === groupId);
       if (group && group.parentGroupID) {
         keepGroupAndAncestors(group.parentGroupID);
       }

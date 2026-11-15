@@ -1067,7 +1067,7 @@ namespace Bhisi.Api.Helpers
                 .SumAsync(a => (decimal?)a.InterestAmount) ?? 0m;
             decimal totalReceiptsOnOld = await context.InvestmentInterestReceipts
                 .Where(r => r.InvestmentAccountID == oldAccount.InvestmentAccountID)
-                .SumAsync(r => (decimal?)r.ReceivedAmount) ?? 0m;
+                .SumAsync(r => (decimal?)(r.GrossAmount > 0m ? r.GrossAmount : r.ReceivedAmount)) ?? 0m;
             decimal outstandingReceivable = Math.Max(0m, oldAccount.AccruedInterestTillMigration + totalAccruedOnOld - totalReceiptsOnOld);
 
             decimal receivableCleared = (totalInterestRecognized > 0m && oldMapping.InterestReceivableLedgerID > 0)

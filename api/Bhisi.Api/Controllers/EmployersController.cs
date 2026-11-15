@@ -24,7 +24,6 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Employers
         [HttpGet]
-        [AllowAnonymous]
         public async Task<ActionResult<IEnumerable<EmployerMaster>>> GetEmployerMasters()
         {
             return await _context.EmployerMasters.ToListAsync();

@@ -370,7 +370,7 @@ const FdSchemeMaster: React.FC = () => {
     }
 
     // Check duplicate SchemeCode across existing schemes
-    const duplicate = schemes.find(
+    const duplicate = (Array.isArray(schemes) ? schemes : []).find(
       (s) => (s.schemeCode || '').trim().toLowerCase() === code.toLowerCase() &&
              (!isEditMode || s.fdSchemeID !== editSchemeId)
     );

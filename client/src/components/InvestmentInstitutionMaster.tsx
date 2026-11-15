@@ -22,6 +22,8 @@ import {
   User
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 
 interface InvestmentInstitution {
   institutionID: number;
@@ -38,6 +40,7 @@ interface InvestmentInstitution {
 }
 
 const InvestmentInstitutionMaster: React.FC = () => {
+  const { user } = useAuth();
   const [institutions, setInstitutions] = useState<InvestmentInstitution[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,7 +58,7 @@ const InvestmentInstitutionMaster: React.FC = () => {
   const API_URL = '/api';
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     institutionName: '',
     institutionType: 'Bank',
     institutionBranchName: '',
@@ -107,7 +110,7 @@ const InvestmentInstitutionMaster: React.FC = () => {
     setIsEditMode(false);
     setEditId(null);
     setFormData({
-      branchID: 1,
+      branchID: resolveWriteBranchId(user),
       institutionName: '',
       institutionType: 'Bank',
       institutionBranchName: '',

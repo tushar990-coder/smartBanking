@@ -19,6 +19,8 @@ import {
 import SearchableSelect from './SearchableSelect';
 import * as XLSX from 'xlsx';
 import CbsReportLayout, { formatDisplayDate, CbsPaperSize } from './common/CbsReportLayout';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface LoanDetail {
     loanAccountID?: number;
@@ -71,15 +73,17 @@ interface GuarantorRow {
 }
 
 const GuarantorReport: React.FC = () => {
+    const { user, globalBranchId } = useAuth();
+    const isHOUser = isHeadOfficeUser(user);
+    const lockedBranchId = getLockedBranchId(user);
     const [guarantors, setGuarantors] = useState<GuarantorRow[]>([]);
     const [sansthaInfo, setSansthaInfo] = useState<any>(null);
     const [members, setMembers] = useState<any[]>([]);
     const [branches, setBranches] = useState<any[]>([]);
     const [asOnDateDisplay, setAsOnDateDisplay] = useState<string>(new Date().toLocaleDateString('en-GB'));
     
-    const globalBranchStr = localStorage.getItem('globalBranchId');
-    const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-    const initialBranchId = hasGlobalBranch ? (globalBranchStr as string) : 'all';
+    const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+    const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
     const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
     const [selectedMemberId, setSelectedMemberId] = useState<number | ''>('');
@@ -174,10 +178,11 @@ const GuarantorReport: React.FC = () => {
 
     const handleReset = () => {
         setSelectedMemberId('');
-        if (!hasGlobalBranch) setSelectedBranchId('all');
+        const resetBranch = !isHOUser && lockedBranchId ? String(lockedBranchId) : (globalBranchId ? String(globalBranchId) : 'all');
+        setSelectedBranchId(resetBranch);
         setSearchTerm('');
         setAuditFilter('all');
-        fetchReport(undefined, hasGlobalBranch ? initialBranchId : 'all');
+        fetchReport(undefined, resetBranch);
     };
 
     // Filter Guarantors based on live search & audit risk category
@@ -323,16 +328,16 @@ const GuarantorReport: React.FC = () => {
                 <label className="text-[10.5px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
                 <select 
                     value={selectedBranchId} 
-                    disabled={hasGlobalBranch} 
+                    disabled={!isHOUser} 
                     onChange={(e) => {
                         const val = e.target.value;
                         setSelectedBranchId(val);
                         fetchReport(selectedMemberId ? Number(selectedMemberId) : undefined, val);
                     }}
-                    className="h-6 border border-gray-300 rounded-xs px-1 text-[10.5px] font-medium bg-white focus:outline-none focus:border-primary w-28 sm:w-32"
+                    className="h-6 border border-gray-300 rounded-xs px-1 text-[10.5px] font-medium bg-white focus:outline-none focus:border-primary w-28 sm:w-32 disabled:bg-slate-100 disabled:text-slate-600"
                 >
-                    <option value="all">सर्व शाखा (All)</option>
-                    {branches.map(b => (
+                    {isHOUser && <option value="all">सर्व शाखा (All)</option>}
+                    {(isHOUser || !lockedBranchId ? branches : branches.filter(b => Number(b.branchID) === Number(lockedBranchId))).map(b => (
                         <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
                     ))}
                 </select>

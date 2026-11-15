@@ -80,7 +80,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/ShareSchemes/NextCode or NextSchemeCode
-        [AllowAnonymous]
         [HttpGet("NextCode")]
         [HttpGet("NextSchemeCode")]
         public async Task<ActionResult<object>> GetNextSchemeCode([FromQuery] string? memberType)

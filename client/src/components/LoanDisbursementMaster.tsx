@@ -16,6 +16,7 @@ import BankLedgerSelect from './common/BankLedgerSelect';
 import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
 import { getCachedMasterData } from '../utils/apiCache';
 import { useAuth } from '../context/AuthContext';
+import { isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Member {
     memberID: number;
@@ -192,7 +193,7 @@ export const format14DigitDisplay = (num?: string) => {
 };
 
 const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisbursement, onRequestEditApplication, onSaveSuccess, onNavigate }) => {
-    const { user } = useAuth();
+    const { user, globalBranchId } = useAuth();
     
     // Passing / Checker Mode URL Parameters
     const queryParams = new URLSearchParams(window.location.search);
@@ -211,9 +212,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const [branches, setBranches] = useState<any[]>(() => getCachedMasterData<any[]>('/api/Branches') || []);
     const [savingAccounts, setSavingAccounts] = useState<any[]>(() => getCachedMasterData<any[]>('/api/SavingAccounts') || []);
     
-    const globalBranchStr = localStorage.getItem('globalBranchId');
-    const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-    const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : 1;
+    const initialBranchId = resolveWriteBranchId(user, globalBranchId);
     const [selectedBranchId, setSelectedBranchId] = useState<number>(initialBranchId);
     
     const [showListModal, setShowListModal] = useState(false);
@@ -1788,7 +1787,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                     fetchNextLoanAccountNo(newBid, newAccountData.loanRateID);
                                                 }
                                             }} 
-                                            disabled={sourceType === 'ExistingAccount' || hasGlobalBranch || (user?.role !== 'Admin' && user?.role !== 'HO_Manager')}
+                                            disabled={sourceType === 'ExistingAccount' || !isHeadOfficeUser(user)}
                                             className={inputClass}
                                         >
                                             {branches.map(b => (

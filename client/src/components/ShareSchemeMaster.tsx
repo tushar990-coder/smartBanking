@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 
 interface Ledger {
   ledgerID: number;
@@ -102,6 +104,7 @@ const getTodayStr = () => {
 };
 
 const ShareSchemeMaster: React.FC = () => {
+  const { user } = useAuth();
   const [schemes, setSchemes] = useState<ShareScheme[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -120,7 +123,7 @@ const ShareSchemeMaster: React.FC = () => {
   const API_URL = '/api';
 
   const [formData, setFormData] = useState<ShareSchemeFormData>({
-    branchID: 1,
+    branchID: resolveWriteBranchId(user),
     schemeCode: '',
     schemeName: 'नियमित सभासद शेअर योजना',
     memberType: 'Regular',
@@ -368,7 +371,7 @@ const ShareSchemeMaster: React.FC = () => {
     setIsEditMode(false);
     setEditSchemeId(null);
     setFormData({
-      branchID: 1,
+      branchID: resolveWriteBranchId(user),
       schemeCode: '',
       schemeName: 'नियमित सभासद शेअर योजना',
       memberType: 'Regular',
@@ -413,7 +416,7 @@ const ShareSchemeMaster: React.FC = () => {
     }
 
     const payload = {
-      branchID: 1,
+      branchID: resolveWriteBranchId(user, formData.branchID),
       schemeCode: formData.schemeCode.trim(),
       schemeName: formData.schemeName.trim(),
       memberType: formData.memberType,

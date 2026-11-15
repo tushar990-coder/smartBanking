@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import CbsReportLayout, { CbsPaperSize, CbsSignatureTier } from './common/CbsReportLayout';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface InvestmentAccount {
   investmentAccountID: number;
@@ -42,6 +44,9 @@ interface InvestmentAccount {
 }
 
 const InvestmentReports: React.FC = () => {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const [accounts, setAccounts] = useState<InvestmentAccount[]>([]);
   const [schemes, setSchemes] = useState<any[]>([]);
   const [selectedSchemeId, setSelectedSchemeId] = useState<number | ''>('');
@@ -52,9 +57,8 @@ const InvestmentReports: React.FC = () => {
   const [paperSize, setPaperSize] = useState<CbsPaperSize>('a4-landscape');
   const [signatureTier, setSignatureTier] = useState<CbsSignatureTier>('3-tier');
 
-  const globalBranchStr = localStorage.getItem('globalBranchId');
-  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : 0;
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const initialBranchId = typeof effectiveBranch === 'number' && effectiveBranch > 0 ? effectiveBranch : (isHOUser ? 0 : (user?.branchID || 1));
   const [selectedBranch, setSelectedBranch] = useState<number>(initialBranchId);
 
   const [statusFilter, setStatusFilter] = useState('');
@@ -349,12 +353,12 @@ const InvestmentReports: React.FC = () => {
         <label className="text-[10.5px] font-semibold text-gray-600">शाखा:</label>
         <select
           value={selectedBranch}
-          disabled={hasGlobalBranch}
+          disabled={!isHOUser}
           onChange={(e) => setSelectedBranch(parseInt(e.target.value))}
-          className="h-6 border border-gray-300 rounded px-1 text-[10.5px] bg-white text-slate-800"
+          className="h-6 border border-gray-300 rounded px-1 text-[10.5px] bg-white text-slate-800 disabled:bg-slate-100 disabled:text-slate-600"
         >
-          <option value={0}>सर्व शाखा (All)</option>
-          {branches.map((b: any) => (
+          {isHOUser && <option value={0}>सर्व शाखा (All)</option>}
+          {(isHOUser || !lockedBranchId ? branches : branches.filter((b: any) => Number(b.branchID) === Number(lockedBranchId))).map((b: any) => (
             <option key={b.branchID} value={b.branchID}>
               {b.branchName}
             </option>

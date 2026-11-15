@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { resolveWriteBranchId } from '../utils/branchAccess';
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { 
   ExclamationTriangleIcon, 
@@ -102,6 +103,7 @@ interface PigmyClosureMasterProps {
 }
 
 const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: propVoucherId, isPassingMode: propIsPassingMode, onNavigate }) => {
+  const { user } = useAuth();
   const queryParams = new URLSearchParams(window.location.search);
   const voucherId = propVoucherId || (queryParams.get('voucherId') ? parseInt(queryParams.get('voucherId')!, 10) : undefined);
   const isPassingMode = propIsPassingMode ?? (queryParams.get('passingMode') === 'true');
@@ -121,7 +123,6 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
   const [withdrawalPreview, setWithdrawalPreview] = useState<WithdrawalPreview | null>(null);
   const [withdrawalHistory, setWithdrawalHistory] = useState<WithdrawalHistoryItem[]>([]);
   
-  const { user } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
 
   // Form States
@@ -343,7 +344,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       const res = await axios.post('/api/PigmyClosure/Withdraw', {
         accountNo: withdrawalPreview.accountNo,
         amount: withdrawalPreview.requestedAmount,
-        branchId: 1,
+        branchId: resolveWriteBranchId(user),
         withdrawalDate: transactionDate,
         paymentMode,
         bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : null,
@@ -402,7 +403,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
     try {
       const res = await axios.post('/api/PigmyClosure/Close', {
         accountNo: closurePreview.accountNo,
-        branchId: 1,
+        branchId: resolveWriteBranchId(user),
         closureDate: transactionDate,
         paymentMode,
         bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : null,

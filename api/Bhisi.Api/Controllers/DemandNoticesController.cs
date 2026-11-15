@@ -24,7 +24,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/DemandNotices
         [HttpGet]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<ActionResult<IEnumerable<DemandNotice>>> GetDemandNotices()
         {
             return await _context.DemandNotices
@@ -36,7 +36,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/DemandNotices/5
         [HttpGet("{id}")]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<ActionResult<DemandNotice>> GetDemandNotice(int id)
         {
             var demandNotice = await _context.DemandNotices

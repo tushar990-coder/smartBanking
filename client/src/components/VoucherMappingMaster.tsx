@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import SearchableSelect from './SearchableSelect';
+import { safeArray } from '../utils/apiCache';
 
 interface AccountGroup {
   groupID?: number;
@@ -70,7 +71,7 @@ export default function VoucherMappingMaster() {
       const response = await fetch(API_URL);
       if (response.ok) {
         const data = await response.json();
-        setMappings(data);
+        setMappings(safeArray<VoucherMapping>(data));
       }
     } catch (err) {
       console.error('Failed to fetch voucher mappings:', err);
@@ -84,7 +85,7 @@ export default function VoucherMappingMaster() {
       const response = await fetch(LEDGER_API);
       if (response.ok) {
         const data = await response.json();
-        setLedgers(data);
+        setLedgers(safeArray<Ledger>(data));
       }
     } catch (err) {
       console.error('Failed to fetch ledgers:', err);
@@ -94,7 +95,7 @@ export default function VoucherMappingMaster() {
   const ledgerOptions = useMemo(() => {
     return [
       { value: 0, label: '-- डिफॉल्ट नाही (डायनॅमिक / पर्यायी) --' },
-      ...ledgers.map(l => {
+      ...safeArray(ledgers).map(l => {
         const groupInfo = l.accountGroup?.groupName ? ` [${l.accountGroup.groupName}]` : (l.accountType ? ` [${l.accountType}]` : '');
         const eng = l.ledgerNameEnglish ? ` (${l.ledgerNameEnglish})` : '';
         return {
@@ -107,7 +108,7 @@ export default function VoucherMappingMaster() {
 
   // Check if selected transaction type already has a mapping
   const existingMappingForSelectedType = useMemo(() => {
-    return mappings.find(m => m.transactionType === formData.transactionType);
+    return safeArray(mappings).find(m => m.transactionType === formData.transactionType);
   }, [mappings, formData.transactionType]);
 
   const handleEdit = (mapping: VoucherMapping) => {

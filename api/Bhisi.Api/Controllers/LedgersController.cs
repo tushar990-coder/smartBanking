@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 
 namespace Bhisi.Api.Controllers
@@ -62,23 +63,45 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Ledgers/5/info
         [HttpGet("{id}/info")]
-        public async Task<ActionResult<object>> GetLedgerInfo(int id)
+        public async Task<ActionResult<object>> GetLedgerInfo(int id, [FromQuery] int? branchId = null)
         {
             var ledger = await _context.Ledgers.FindAsync(id);
             if (ledger == null) return NotFound();
 
-            // 1. Calculate Balance
-            var vds = await _context.VoucherDetails
+            int? scopedBranch = User.ResolveOptionalBranchId(branchId.HasValue && branchId.Value > 0 ? branchId : null);
+            var asOfDate = DateTime.Today;
+            var baseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, asOfDate, scopedBranch);
+            var obMap = await BranchLedgerBalanceHelper.GetOpeningBalanceMapAsync(
+                _context,
+                scopedBranch,
+                baseline.BaselineFinancialYearId > 0 ? baseline.BaselineFinancialYearId : null,
+                asOfDate,
+                baseline);
+
+            // 1. Calculate Balance using BranchLedgerOpeningBalances + FY baseline + Approved vouchers
+            var vdQuery = _context.VoucherDetails
                 .Include(vd => vd.Voucher)
-                .Where(vd => vd.LedgerID == id && vd.Voucher.Status == "Approved")
-                .ToListAsync();
+                .Where(vd => vd.LedgerID == id
+                    && vd.Voucher.Status == "Approved"
+                    && vd.Voucher.VoucherDate.Date <= asOfDate.Date);
+
+            if (baseline.BaselineStartDate.HasValue)
+            {
+                vdQuery = vdQuery.Where(vd => vd.Voucher.VoucherDate.Date >= baseline.BaselineStartDate.Value.Date);
+            }
+
+            if (scopedBranch.HasValue)
+            {
+                vdQuery = vdQuery.Where(vd => vd.Voucher.BranchID == scopedBranch.Value);
+            }
+
+            var vds = await vdQuery.ToListAsync();
             decimal totalDr = vds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
             decimal totalCr = vds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
 
-            decimal drBal = ledger.OpeningBalanceType == "Dr" ? ledger.OpeningBalance : 0;
-            decimal crBal = ledger.OpeningBalanceType == "Cr" ? ledger.OpeningBalance : 0;
-            drBal += totalDr;
-            crBal += totalCr;
+            var obEntry = obMap.TryGetValue(id, out var ob) ? ob : (Dr: 0m, Cr: 0m);
+            decimal drBal = obEntry.Dr + totalDr;
+            decimal crBal = obEntry.Cr + totalCr;
 
             decimal netBalance = 0;
             string balType = "";
@@ -126,6 +149,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<Ledger>> PostLedger(Ledger ledger)
         {
             ledger.AccountGroup = null; // Prevent creating new group
+            ledger.OpeningBalance = 0m; // Global OB deprecated; use BranchLedgerOpeningBalances
             if (string.IsNullOrEmpty(ledger.OpeningBalanceType))
             {
                 ledger.OpeningBalanceType = "Dr";
@@ -278,10 +302,6 @@ namespace Bhisi.Api.Controllers
             existing.ReportType = ledger.ReportType;
             existing.AccountType = ledger.AccountType;
             existing.IsActive = ledger.IsActive;
-            existing.OpeningBalance = ledger.OpeningBalance;
-            existing.OpeningBalanceType = string.IsNullOrWhiteSpace(ledger.OpeningBalanceType)
-                ? existing.OpeningBalanceType
-                : ledger.OpeningBalanceType;
             if (!string.IsNullOrWhiteSpace(ledger.LedgerCode))
             {
                 existing.LedgerCode = ledger.LedgerCode;

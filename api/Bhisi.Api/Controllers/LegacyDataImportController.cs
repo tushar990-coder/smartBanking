@@ -534,6 +534,10 @@ namespace Bhisi.Api.Controllers
                 var ledgers = await _context.Ledgers.Where(l => l.LegacyLedgerId != null).ToListAsync();
                 var ledgerMap = ledgers.ToDictionary(l => l.LegacyLedgerId!.Value, l => l.LedgerID);
                 var accountGroups = await _context.AccountGroups.ToListAsync();
+                int hoBranchId = await Helpers.BranchLedgerBalanceHelper.GetHeadOfficeBranchIdAsync(_context);
+                int initialFyId = req.FinancialYearId > 0
+                    ? req.FinancialYearId
+                    : await Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(_context);
 
                 int importedOpeningBalances = 0;
                 int importedVouchers = 0;
@@ -565,8 +569,14 @@ namespace Bhisi.Api.Controllers
                                         drCr = "Cr";
                                     }
                                     
-                                    ledgerToUpdate.OpeningBalance = amt;
-                                    ledgerToUpdate.OpeningBalanceType = drCr;
+                                    await Helpers.BranchLedgerBalanceHelper.SetBranchLedgerOpeningBalanceAsync(
+                                        _context,
+                                        hoBranchId,
+                                        systemLedgerId,
+                                        amt,
+                                        drCr,
+                                        "Legacy SQL Migration OB",
+                                        initialFyId);
                                     importedOpeningBalances++;
                                 }
                             }

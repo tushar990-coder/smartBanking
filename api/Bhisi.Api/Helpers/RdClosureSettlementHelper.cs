@@ -745,7 +745,7 @@ namespace Bhisi.Api.Helpers
                 }
                 else
                 {
-                    int ibtLedgerId = await IbtLedgerHelper.GetIbtLedgerIdAsync(context, operatingBranchId, homeBranchId);
+                    var (counterIbtLedgerId, homeIbtLedgerId) = await IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(context, operatingBranchId, homeBranchId);
                     int? counterScrollNo = await ResolveNextScrollNoIfApprovedAsync(context, vStatus, operatingBranchId, effClosureDate);
                     string counterVNo = $"PV-{operatingBranchId}-{effClosureDate:yyyyMMdd}-RD-CLOSE-{account.AccountNo}";
 
@@ -772,7 +772,7 @@ namespace Bhisi.Api.Helpers
                     context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = counterVoucher.VoucherID,
-                        LedgerID = ibtLedgerId,
+                        LedgerID = counterIbtLedgerId,
                         DrCr = "Dr",
                         Amount = settlement.FinalPayout,
                         CustomerID = account.CustomerID,
@@ -828,7 +828,7 @@ namespace Bhisi.Api.Helpers
                         homeVoucher.VoucherID,
                         account,
                         settlement,
-                        ibtLedgerId,
+                        homeIbtLedgerId,
                         linkedMemberId);
 
                     await context.SaveChangesAsync();
@@ -1018,7 +1018,7 @@ namespace Bhisi.Api.Helpers
                 }
                 else
                 {
-                    int ibtLedgerId = await IbtLedgerHelper.GetIbtLedgerIdAsync(context, operatingBranchId, homeBranchId);
+                    var (counterIbtLedgerId, homeIbtLedgerId) = await IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(context, operatingBranchId, homeBranchId);
                     int? counterScrollNo = await ResolveNextScrollNoIfApprovedAsync(context, vStatus, operatingBranchId, effClosureDate);
                     string counterVNo = $"PV-{operatingBranchId}-{effClosureDate:yyyyMMdd}-RD-PRECLOSE-{account.AccountNo}";
 
@@ -1045,7 +1045,7 @@ namespace Bhisi.Api.Helpers
                     context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = counterVoucher.VoucherID,
-                        LedgerID = ibtLedgerId,
+                        LedgerID = counterIbtLedgerId,
                         DrCr = "Dr",
                         Amount = settlement.FinalPayout,
                         CustomerID = account.CustomerID,
@@ -1101,7 +1101,7 @@ namespace Bhisi.Api.Helpers
                         homeVoucher.VoucherID,
                         account,
                         settlement,
-                        ibtLedgerId,
+                        homeIbtLedgerId,
                         linkedMemberId);
 
                     await context.SaveChangesAsync();

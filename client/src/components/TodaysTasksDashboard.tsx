@@ -36,8 +36,10 @@ import {
   TrendingUp,
   FolderCheck,
   Filter,
-  ChevronRight
+  ChevronRight,
+  Printer
 } from 'lucide-react';
+import FdReceiptPrintModal from './FdReceiptPrintModal';
 
 interface TodaysTasksDashboardProps {
   onNavigate?: (tab: string, params?: any) => void;
@@ -126,6 +128,11 @@ export default function TodaysTasksDashboard({
   const [logsLoading, setLogsLoading] = useState(false);
   const [runningBatch, setRunningBatch] = useState(false);
   const [batchResult, setBatchResult] = useState<any | null>(null);
+  const [sansthaFdPolicy, setSansthaFdPolicy] = useState<string>('NEW_RECEIPT');
+  const [policyLoadError, setPolicyLoadError] = useState<string>('');
+  const [batchPrintAccount, setBatchPrintAccount] = useState<any | null>(null);
+  const [batchPrintSide, setBatchPrintSide] = useState<'front' | 'endorsement'>('front');
+  const [loadingPrintId, setLoadingPrintId] = useState<number | null>(null);
   const [revertingId, setRevertingId] = useState<number | null>(null);
   const [revertReason, setRevertReason] = useState('');
   const [showRevertDialog, setShowRevertDialog] = useState<any | null>(null);
@@ -231,6 +238,23 @@ export default function TodaysTasksDashboard({
     fetchLiveNotifications(isMountedRef);
     if (!showLoginModal) {
       fetchAutoRenewalData(isMountedRef);
+      axios
+        .get('/api/SansthaDetails')
+        .then(r => {
+          if (!isMountedRef.current) return;
+          const row = Array.isArray(r.data) ? r.data[0] : r.data;
+          if (!row?.fdRenewalReceiptPolicy) {
+            setPolicyLoadError('संस्था FD पावती धोरण सेट केलेले नाही.');
+            return;
+          }
+          setPolicyLoadError('');
+          setSansthaFdPolicy(row.fdRenewalReceiptPolicy);
+        })
+        .catch(err => {
+          if (!isMountedRef.current) return;
+          console.error('SansthaDetails policy load failed', err);
+          setPolicyLoadError('संस्था पावती धोरण लोड करण्यात अडचण आली.');
+        });
     }
 
     return () => {
@@ -266,6 +290,38 @@ export default function TodaysTasksDashboard({
       );
     } finally {
       setRunningBatch(false);
+    }
+  };
+
+  const handleOpenBatchPrintModal = async (it: any, side: 'front' | 'endorsement') => {
+    const newId = Number(it?.newFdAccountID || 0);
+    if (newId <= 0) {
+      alert('नवीन मुदत ठेव खाते ID उपलब्ध नाही. पावती प्रिंट करता येत नाही.');
+      return;
+    }
+    setLoadingPrintId(newId);
+    try {
+      const res = await axios.get(`/api/FdAccounts/${newId}`);
+      const acc = res.data;
+      if (!acc) {
+        alert('खाते माहिती लोड झाली नाही.');
+        return;
+      }
+      setBatchPrintSide(side);
+      setBatchPrintAccount({
+        ...acc,
+        oldReceiptNo: it.oldReceiptNo || acc.oldReceiptNo,
+        oldAccountNo: it.oldAccountNo,
+        oldDepositAmount: it.oldAmount || it.oldPrincipal,
+        effectivePolicy: it.receiptPolicy || sansthaFdPolicy
+      });
+    } catch (err: any) {
+      alert(
+        'पावती प्रिंटसाठी खाते माहिती लोड करताना त्रुटी आली: ' +
+          (err.response?.data?.message || err.message)
+      );
+    } finally {
+      setLoadingPrintId(null);
     }
   };
 
@@ -1100,6 +1156,29 @@ export default function TodaysTasksDashboard({
                   <span className="bg-indigo-100/80 text-indigo-800 border border-indigo-200 text-[9px] font-bold px-2 py-0.5 rounded-full">
                     आरबीआय १४-दिवसीय सवलत लागू
                   </span>
+                  <span
+                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                      sansthaFdPolicy === 'RETAIN_ORIGINAL'
+                        ? 'bg-amber-100 text-amber-900 border-amber-300'
+                        : sansthaFdPolicy === 'NEXT_LEGACY'
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                        : 'bg-sky-100 text-sky-900 border-sky-300'
+                    }`}
+                  >
+                    पावती धोरण:{' '}
+                    {sansthaFdPolicy === 'RETAIN_ORIGINAL'
+                      ? 'मूळ पावती क्र. कायम (Same)'
+                      : sansthaFdPolicy === 'NEXT_LEGACY'
+                      ? 'पुढील जुना FD क्र. (Next)'
+                      : sansthaFdPolicy === 'HYBRID_CHOICE'
+                      ? 'हायब्रीड धोरण (Auto: नवीन क्र.)'
+                      : 'नवीन CBS पावती क्र.'}
+                  </span>
+                  {policyLoadError && (
+                    <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                      ⚠️ {policyLoadError}
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-slate-600 flex items-center gap-2 mt-0.5 flex-wrap">
                   <span>
@@ -1761,7 +1840,10 @@ export default function TodaysTasksDashboard({
                       {autoRenewalCandidates.map(c => (
                         <tr key={c.fdAccountID} className="hover:bg-sky-50/50 transition-colors">
                           <td className="p-2 font-mono font-bold text-sky-800 text-xs">
-                            {c.accountNo}
+                            <div>{c.receiptNo || c.accountNo}</div>
+                            {c.receiptNo && c.receiptNo !== c.accountNo && (
+                              <div className="text-[9px] text-slate-500 font-normal">CBS: {c.accountNo}</div>
+                            )}
                           </td>
                           <td className="p-2">
                             <div className="font-bold text-slate-800">{c.customerName}</div>
@@ -1902,10 +1984,23 @@ export default function TodaysTasksDashboard({
                     <div key={idx} className="py-1.5 flex justify-between items-center">
                       <div>
                         <div className="font-bold text-slate-800">
-                          {it.oldAccountNo} ➜{' '}
-                          <span className="text-sky-700 font-mono">{it.newAccountNo || '-'}</span>
+                          पावती: {it.oldReceiptNo || it.oldAccountNo} ➜{' '}
+                          <span className="text-sky-700 font-mono">{it.newReceiptNo || it.newAccountNo || '-'}</span>
+                          {it.renewalCycleNo > 0 && (
+                            <span className="ml-1 text-[9px] bg-amber-100 text-amber-900 px-1 rounded">
+                              सायकल #{it.renewalCycleNo}
+                            </span>
+                          )}
                         </div>
+                        {it.newAccountNo && it.newReceiptNo && it.newAccountNo !== it.newReceiptNo && (
+                          <div className="text-[9px] text-slate-500 font-mono">CBS संदर्भ: {it.newAccountNo}</div>
+                        )}
                         <div className="text-[10px] text-slate-500">{it.customerName}</div>
+                        {it.voucherNo && (
+                          <div className="text-[9.5px] text-amber-800 font-semibold mt-0.5">
+                            🧾 व्हाउचर: <span className="font-mono">{it.voucherNo}</span> ({it.voucherStatus || 'Pending'} — Pass Voucher ला मंजूर करा)
+                          </div>
+                        )}
                         {it.errorMessage && (
                           <div className="text-[10px] text-rose-600 font-semibold mt-0.5">
                             ⚠️ {it.errorMessage}
@@ -1927,6 +2022,28 @@ export default function TodaysTasksDashboard({
                             ₹ {Number(it.renewedAmount).toLocaleString('en-IN')}
                           </div>
                         )}
+                        {it.status === 'Success' && it.newFdAccountID > 0 && (
+                          <div className="flex items-center justify-end gap-1 mt-1">
+                            <button
+                              type="button"
+                              disabled={loadingPrintId === it.newFdAccountID}
+                              onClick={() => handleOpenBatchPrintModal(it, 'front')}
+                              className="px-1.5 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 rounded text-[9.5px] font-bold cursor-pointer inline-flex items-center gap-0.5 disabled:opacity-50"
+                            >
+                              <Printer className="w-2.5 h-2.5" />
+                              <span>पावती</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={loadingPrintId === it.newFdAccountID}
+                              onClick={() => handleOpenBatchPrintModal(it, 'endorsement')}
+                              className="px-1.5 py-0.5 bg-sky-100 hover:bg-sky-200 text-sky-950 border border-sky-300 rounded text-[9.5px] font-bold cursor-pointer inline-flex items-center gap-0.5 disabled:opacity-50"
+                            >
+                              <RotateCcw className="w-2.5 h-2.5" />
+                              <span>शेरा</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1934,7 +2051,21 @@ export default function TodaysTasksDashboard({
               )}
             </div>
 
-            <div className="p-3 bg-white border-t border-slate-200 text-right">
+            <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between gap-2">
+              {onNavigate && batchResult.successCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchResult(null);
+                    onNavigate('voucher-posting');
+                  }}
+                  className="px-3.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 font-bold text-xs rounded transition-colors cursor-pointer"
+                >
+                  📋 Pass Voucher (व्हाउचर पासिंग) ला जा
+                </button>
+              ) : (
+                <span />
+              )}
               <button
                 type="button"
                 onClick={() => setBatchResult(null)}
@@ -2151,6 +2282,14 @@ export default function TodaysTasksDashboard({
             </div>
           </div>
         </div>
+      )}
+
+      {batchPrintAccount && (
+        <FdReceiptPrintModal
+          account={batchPrintAccount}
+          initialSide={batchPrintSide}
+          onClose={() => setBatchPrintAccount(null)}
+        />
       )}
     </div>
   );

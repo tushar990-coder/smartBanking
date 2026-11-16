@@ -10,6 +10,7 @@ namespace Bhisi.Api.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
+    [EnforceBranchScope]
     public class AuditComplianceController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -185,25 +186,29 @@ namespace Bhisi.Api.Controllers
 
         // 4. GET Owned Funds & Exposure Limits Calculation
         [HttpGet("OwnedFunds")]
-        public async Task<IActionResult> GetOwnedFunds()
+        public async Task<IActionResult> GetOwnedFunds([FromQuery] int? branchId = null, [FromQuery] DateTime? asOnDate = null)
         {
             try
             {
-                var mappings = await _context.AuditLedgerMappings.Include(m => m.Ledger).ToListAsync();
+                int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
+                DateTime targetDate = asOnDate ?? DateTime.Today;
 
-                decimal paidUpCapital = await GetMappedBalanceSum(mappings, "SHARE_CAPITAL");
-                decimal shareReserve = await GetMappedBalanceSum(mappings, "SHARE_RESERVE");
+                var mappings = await _context.AuditLedgerMappings.Include(m => m.Ledger).ToListAsync();
+                var balances = await GetMappedAsOfBalancesAsync(mappings, targetDate, scopedBranch);
+
+                decimal paidUpCapital = SumCategoryFromMap(mappings, balances, "SHARE_CAPITAL", isCreditNormal: true);
+                decimal shareReserve = SumCategoryFromMap(mappings, balances, "SHARE_RESERVE", isCreditNormal: true);
                 decimal totalCapitalPartA = paidUpCapital + shareReserve;
 
-                decimal statutoryReserve = await GetMappedBalanceSum(mappings, "STATUTORY_RESERVE");
-                decimal buildingFund = await GetMappedBalanceSum(mappings, "BUILDING_FUND");
-                decimal dividendEqFund = await GetMappedBalanceSum(mappings, "DIVIDEND_EQ_FUND");
-                decimal invDeprFund = await GetMappedBalanceSum(mappings, "INVESTMENT_DEPR_FUND");
-                decimal badDebtReserve = await GetMappedBalanceSum(mappings, "BAD_DEBT_RESERVE");
+                decimal statutoryReserve = SumCategoryFromMap(mappings, balances, "STATUTORY_RESERVE", isCreditNormal: true);
+                decimal buildingFund = SumCategoryFromMap(mappings, balances, "BUILDING_FUND", isCreditNormal: true);
+                decimal dividendEqFund = SumCategoryFromMap(mappings, balances, "DIVIDEND_EQ_FUND", isCreditNormal: true);
+                decimal invDeprFund = SumCategoryFromMap(mappings, balances, "INVESTMENT_DEPR_FUND", isCreditNormal: true);
+                decimal badDebtReserve = SumCategoryFromMap(mappings, balances, "BAD_DEBT_RESERVE", isCreditNormal: true);
 
                 decimal totalReservesPartB = statutoryReserve + buildingFund + dividendEqFund + invDeprFund + badDebtReserve;
 
-                decimal accumulatedLoss = await GetMappedBalanceSum(mappings, "ACCUMULATED_LOSS");
+                decimal accumulatedLoss = SumCategoryFromMap(mappings, balances, "ACCUMULATED_LOSS", isCreditNormal: false);
                 decimal totalDeductionsPartC = accumulatedLoss;
 
                 decimal netOwnedFunds = (totalCapitalPartA + totalReservesPartB) - totalDeductionsPartC;
@@ -215,6 +220,8 @@ namespace Bhisi.Api.Controllers
 
                 return Ok(new
                 {
+                    BranchID = scopedBranch ?? 0,
+                    AsOnDate = targetDate.Date,
                     PaidUpCapital = paidUpCapital,
                     ShareReserve = shareReserve,
                     TotalPartA = totalCapitalPartA,
@@ -248,9 +255,9 @@ namespace Bhisi.Api.Controllers
 
                 var loanQ = _context.LoanAccounts.Where(l => l.Status == "Active");
                 var savQ = _context.SavingAccountMasters.Where(s => s.Status == "Active");
-                var fdQ = _context.FdAccounts.Where(f => f.Status == "Active");
-                var rdQ = _context.RdAccounts.Where(r => r.Status == "Active");
-                var pigQ = _context.PigmyAccounts.Where(p => p.Status == "Active");
+                var fdQ = _context.FdAccounts.AsNoTracking().Where(FdDepositQueryHelper.LiveFdPredicate);
+                var rdQ = _context.RdAccounts.AsNoTracking().Where(FdDepositQueryHelper.LiveRdPredicate);
+                var pigQ = _context.PigmyAccounts.AsNoTracking().Where(FdDepositQueryHelper.LivePigmyPredicate);
 
                 if (scopedBranch.HasValue && scopedBranch.Value > 0)
                 {
@@ -311,21 +318,37 @@ namespace Bhisi.Api.Controllers
 
         // 6. GET CRR & SLR Compliance
         [HttpGet("CrrSlr")]
-        public async Task<IActionResult> GetCrrSlr()
+        public async Task<IActionResult> GetCrrSlr([FromQuery] int? branchId = null, [FromQuery] DateTime? asOnDate = null)
         {
             try
             {
+                int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
+                DateTime targetDate = asOnDate ?? DateTime.Today;
+
                 var mappings = await _context.AuditLedgerMappings.Include(m => m.Ledger).ToListAsync();
+                var balances = await GetMappedAsOfBalancesAsync(mappings, targetDate, scopedBranch);
 
-                decimal cashBalance = await GetMappedBalanceSum(mappings, "CASH_IN_HAND");
-                decimal approvedBankBalances = await GetMappedBalanceSum(mappings, "APPROVED_BANK");
-                decimal otherBankBalances = await GetMappedBalanceSum(mappings, "OTHER_BANK");
-                decimal govtSecurities = await GetMappedBalanceSum(mappings, "GOVT_SECURITIES");
+                decimal cashBalance = SumCategoryFromMap(mappings, balances, "CASH_IN_HAND", isCreditNormal: false);
+                decimal approvedBankBalances = SumCategoryFromMap(mappings, balances, "APPROVED_BANK", isCreditNormal: false);
+                decimal otherBankBalances = SumCategoryFromMap(mappings, balances, "OTHER_BANK", isCreditNormal: false);
+                decimal govtSecurities = SumCategoryFromMap(mappings, balances, "GOVT_SECURITIES", isCreditNormal: false);
 
-                var savingDeposits = await _context.SavingAccountMasters.Where(s => s.Status == "Active").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
-                var fdDeposits = await _context.FdAccounts.Where(f => f.Status == "Active").SumAsync(f => (decimal?)f.DepositAmount) ?? 0m;
-                var rdDeposits = await _context.RdAccounts.Where(r => r.Status == "Active").SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
-                var pigmyDeposits = await _context.PigmyAccounts.Where(p => p.Status == "Active").SumAsync(p => (decimal?)p.TotalDepositedAmount) ?? 0m;
+                var savQ = _context.SavingAccountMasters.Where(s => s.Status == "Active");
+                var rdQ = _context.RdAccounts.AsNoTracking().Where(FdDepositQueryHelper.LiveRdPredicate);
+                var pigQ = _context.PigmyAccounts.AsNoTracking().Where(FdDepositQueryHelper.LivePigmyPredicate);
+
+                if (scopedBranch.HasValue && scopedBranch.Value > 0)
+                {
+                    int bId = scopedBranch.Value;
+                    savQ = savQ.Where(s => s.BranchID == bId);
+                    rdQ = rdQ.Where(r => r.BranchID == bId);
+                    pigQ = pigQ.Where(p => p.BranchID == bId);
+                }
+
+                var savingDeposits = await savQ.SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
+                var fdDeposits = await FdDepositQueryHelper.GetLiveFdTotalAsOfAsync(_context, targetDate, scopedBranch);
+                var rdDeposits = await rdQ.SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
+                var pigmyDeposits = await pigQ.SumAsync(p => (decimal?)p.TotalDepositedAmount) ?? 0m;
 
                 decimal totalDeposits = savingDeposits + fdDeposits + rdDeposits + pigmyDeposits;
 
@@ -341,6 +364,8 @@ namespace Bhisi.Api.Controllers
 
                 return Ok(new
                 {
+                    BranchID = scopedBranch ?? 0,
+                    AsOnDate = targetDate.Date,
                     TotalDeposits = totalDeposits,
                     CashBalance = cashBalance,
                     ApprovedBankBalances = approvedBankBalances,
@@ -366,29 +391,40 @@ namespace Bhisi.Api.Controllers
 
         // 7. GET CRAR (Capital to Risk Weighted Assets) Calculation
         [HttpGet("Crar")]
-        public async Task<IActionResult> GetCrar()
+        public async Task<IActionResult> GetCrar([FromQuery] int? branchId = null, [FromQuery] DateTime? asOnDate = null)
         {
             try
             {
-                var mappings = await _context.AuditLedgerMappings.Include(m => m.Ledger).ToListAsync();
+                int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
+                DateTime targetDate = asOnDate ?? DateTime.Today;
 
-                decimal paidUpCapital = await GetMappedBalanceSum(mappings, "SHARE_CAPITAL");
-                decimal statutoryReserve = await GetMappedBalanceSum(mappings, "STATUTORY_RESERVE");
-                decimal buildingFund = await GetMappedBalanceSum(mappings, "BUILDING_FUND");
+                var mappings = await _context.AuditLedgerMappings.Include(m => m.Ledger).ToListAsync();
+                var balances = await GetMappedAsOfBalancesAsync(mappings, targetDate, scopedBranch);
+
+                decimal paidUpCapital = SumCategoryFromMap(mappings, balances, "SHARE_CAPITAL", isCreditNormal: true);
+                decimal statutoryReserve = SumCategoryFromMap(mappings, balances, "STATUTORY_RESERVE", isCreditNormal: true);
+                decimal buildingFund = SumCategoryFromMap(mappings, balances, "BUILDING_FUND", isCreditNormal: true);
                 decimal netOwnedFunds = paidUpCapital + statutoryReserve + buildingFund;
                 if (netOwnedFunds <= 0) netOwnedFunds = 100000;
 
                 // Risk Weighted Assets breakdown
-                decimal cashAmount = await GetMappedBalanceSum(mappings, "CASH_IN_HAND");
+                decimal cashAmount = SumCategoryFromMap(mappings, balances, "CASH_IN_HAND", isCreditNormal: false);
                 decimal cashRWA = cashAmount * 0.0m; // 0%
 
-                decimal govtSecAmount = await GetMappedBalanceSum(mappings, "GOVT_SECURITIES");
+                decimal govtSecAmount = SumCategoryFromMap(mappings, balances, "GOVT_SECURITIES", isCreditNormal: false);
                 decimal govtSecRWA = govtSecAmount * 0.025m; // 2.5%
 
-                decimal bankDepositAmount = await GetMappedBalanceSum(mappings, "APPROVED_BANK") + await GetMappedBalanceSum(mappings, "OTHER_BANK");
+                decimal bankDepositAmount = SumCategoryFromMap(mappings, balances, "APPROVED_BANK", isCreditNormal: false)
+                    + SumCategoryFromMap(mappings, balances, "OTHER_BANK", isCreditNormal: false);
                 decimal bankDepositRWA = bankDepositAmount * 0.20m; // 20%
 
-                decimal securedLoans = await _context.LoanAccounts.Where(l => l.Status == "Active").SumAsync(l => (decimal?)l.PrincipalBalance) ?? 0m;
+                var loanQ = _context.LoanAccounts.Where(l => l.Status == "Active");
+                if (scopedBranch.HasValue && scopedBranch.Value > 0)
+                {
+                    int bId = scopedBranch.Value;
+                    loanQ = loanQ.Where(l => l.BranchID == bId);
+                }
+                decimal securedLoans = await loanQ.SumAsync(l => (decimal?)l.PrincipalBalance) ?? 0m;
                 decimal securedLoansRWA = securedLoans * 1.0m; // 100%
 
                 decimal totalRWA = cashRWA + govtSecRWA + bankDepositRWA + securedLoansRWA;
@@ -399,6 +435,8 @@ namespace Bhisi.Api.Controllers
 
                 return Ok(new
                 {
+                    BranchID = scopedBranch ?? 0,
+                    AsOnDate = targetDate.Date,
                     NetOwnedFunds = netOwnedFunds,
                     CashAmount = cashAmount,
                     CashRWA = cashRWA,
@@ -491,20 +529,47 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        private async Task<decimal> GetMappedBalanceSum(List<AuditLedgerMapping> mappings, string categoryCode)
+        private async Task<Dictionary<int, decimal>> GetMappedAsOfBalancesAsync(
+            List<AuditLedgerMapping> mappings,
+            DateTime targetDate,
+            int? scopedBranch)
         {
-            try
+            var mappedIds = mappings.Select(m => m.LedgerID).Where(id => id > 0).Distinct().ToList();
+            if (mappedIds.Count == 0)
             {
-                var mappedLedgerIds = mappings.Where(m => m.CategoryCode == categoryCode).Select(m => m.LedgerID).ToList();
-                if (!mappedLedgerIds.Any()) return 0m;
+                return new Dictionary<int, decimal>();
+            }
 
-                var ledgers = await _context.Ledgers.Where(l => mappedLedgerIds.Contains(l.LedgerID)).ToListAsync();
-                return ledgers.Sum(l => Math.Abs(l.OpeningBalance));
-            }
-            catch
+            return await BranchLedgerBalanceHelper.GetAsOfLedgerBalancesAsync(
+                _context,
+                mappedIds,
+                targetDate,
+                scopedBranch,
+                approvedOnly: true);
+        }
+
+        private static decimal SumCategoryFromMap(
+            List<AuditLedgerMapping> mappings,
+            Dictionary<int, decimal> netDrBalances,
+            string categoryCode,
+            bool isCreditNormal)
+        {
+            var mappedLedgerIds = mappings
+                .Where(m => m.CategoryCode == categoryCode && m.LedgerID > 0)
+                .Select(m => m.LedgerID)
+                .Distinct();
+
+            decimal total = 0m;
+            foreach (int lId in mappedLedgerIds)
             {
-                return 0m;
+                if (netDrBalances.TryGetValue(lId, out var netDr))
+                {
+                    decimal naturalBal = isCreditNormal ? -netDr : netDr;
+                    total += Math.Max(0m, naturalBal);
+                }
             }
+
+            return Math.Round(total, 2);
         }
     }
 

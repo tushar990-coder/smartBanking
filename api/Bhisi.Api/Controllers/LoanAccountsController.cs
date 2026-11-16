@@ -1864,6 +1864,8 @@ namespace Bhisi.Api.Controllers
                     .Where(l => ledgerIds.Contains(l.LedgerID))
                     .ToDictionaryAsync(l => l.LedgerID, l => l);
 
+                var obMap = await Helpers.BranchLedgerBalanceHelper.GetOpeningBalanceMapAsync(_context, branchId);
+
                 var schemeSummaries = new List<LoanGlReconciliationDto>();
 
                 foreach (var rate in allRates)
@@ -1873,14 +1875,17 @@ namespace Bhisi.Api.Controllers
                     Ledger? loanLedger = rate.LoanLedgerID.HasValue && ledgers.TryGetValue(rate.LoanLedgerID.Value, out var ll) ? ll : null;
                     Ledger? intLedger = rate.ReceivableInterestLedgerID.HasValue && ledgers.TryGetValue(rate.ReceivableInterestLedgerID.Value, out var il) ? il : null;
 
-                    decimal glOpening = loanLedger?.OpeningBalance ?? 0m;
-                    string glBalanceType = loanLedger?.OpeningBalanceType ?? "Dr";
+                    decimal loanNetDr = loanLedger != null && obMap.TryGetValue(loanLedger.LedgerID, out var lOb)
+                        ? (lOb.Dr - lOb.Cr)
+                        : 0m;
+                    decimal glOpening = Math.Abs(loanNetDr);
+                    string glBalanceType = loanNetDr >= 0m ? "Dr" : "Cr";
                     decimal slPrincipal = rateAccounts.Sum(a => a.PrincipalBalance);
                     decimal slPure = rateAccounts.Sum(a => a.PurePrincipalBalance > 0 ? a.PurePrincipalBalance : a.PrincipalBalance);
                     decimal slCap = rateAccounts.Sum(a => a.CapitalizedInterestAmount);
                     int count = rateAccounts.Count;
 
-                    decimal diff = glOpening - slPrincipal;
+                    decimal diff = loanNetDr - slPrincipal;
                     string status;
                     string msg;
 
@@ -1906,9 +1911,12 @@ namespace Bhisi.Api.Controllers
                     }
 
                     // Interest
-                    decimal glIntOpening = intLedger?.OpeningBalance ?? 0m;
+                    decimal intNetDr = intLedger != null && obMap.TryGetValue(intLedger.LedgerID, out var iOb)
+                        ? (iOb.Dr - iOb.Cr)
+                        : 0m;
+                    decimal glIntOpening = Math.Abs(intNetDr);
                     decimal slIntTotal = rateAccounts.Sum(a => a.InterestBalance + a.OverdueInterestBalance);
-                    decimal intDiff = glIntOpening - slIntTotal;
+                    decimal intDiff = intNetDr - slIntTotal;
                     string intStatus = intLedger == null ? "NoLedger" : (Math.Abs(intDiff) < 0.01m ? "Reconciled" : (intDiff > 0 ? "Pending" : "Excess"));
 
                     schemeSummaries.Add(new LoanGlReconciliationDto
@@ -1956,7 +1964,7 @@ namespace Bhisi.Api.Controllers
                     // Overall branch aggregate across all distinct ledgers and accounts
                     decimal totalGl = ledgers.Values
                         .Where(l => allRates.Any(r => r.LoanLedgerID == l.LedgerID))
-                        .Sum(l => l.OpeningBalance);
+                        .Sum(l => obMap.TryGetValue(l.LedgerID, out var lOb) ? (lOb.Dr - lOb.Cr) : 0m);
                     decimal totalSl = schemeSummaries.Sum(s => s.SlTotalPrincipalBalance);
                     decimal totalPure = schemeSummaries.Sum(s => s.SlTotalPurePrincipal);
                     decimal totalCap = schemeSummaries.Sum(s => s.SlTotalCapitalizedInterest);
@@ -1972,7 +1980,7 @@ namespace Bhisi.Api.Controllers
 
                     decimal totalGlInt = ledgers.Values
                         .Where(l => allRates.Any(r => r.ReceivableInterestLedgerID == l.LedgerID))
-                        .Sum(l => l.OpeningBalance);
+                        .Sum(l => obMap.TryGetValue(l.LedgerID, out var iOb) ? (iOb.Dr - iOb.Cr) : 0m);
                     decimal totalSlInt = schemeSummaries.Sum(s => s.SlTotalInterestBalance);
                     decimal totalIntDiff = totalGlInt - totalSlInt;
 
@@ -2040,47 +2048,47 @@ namespace Bhisi.Api.Controllers
                 var loanRate = await _context.LoanRates.FindAsync(loanRateId);
                 if (loanRate == null) return;
 
-                // 1. Sync Principal Loan Ledger (मालमत्ता - कर्ज येणे)
-                if (loanRate.LoanLedgerID.HasValue && loanRate.LoanLedgerID.Value > 0)
+                var allBranchIds = await _context.Branches.AsNoTracking().Select(b => b.BranchID).ToListAsync();
+                if (allBranchIds.Count == 0) allBranchIds.Add(1);
+                int initialFyId = await Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(_context);
+
+                // 1. Sync Principal Loan Ledger per branch in BranchLedgerOpeningBalances
+                if (loanRate.LoanLedgerID.HasValue && loanRate.LoanLedgerID.Value > 0 && initialFyId > 0)
                 {
                     int loanLedgerId = loanRate.LoanLedgerID.Value;
-                    var ledger = await _context.Ledgers.FindAsync(loanLedgerId);
-                    if (ledger != null)
-                    {
-                        var mappedRateIds = await _context.LoanRates
-                            .Where(r => r.LoanLedgerID == loanLedgerId)
-                            .Select(r => r.LoanRateID)
-                            .ToListAsync();
+                    var mappedRateIds = await _context.LoanRates
+                        .Where(r => r.LoanLedgerID == loanLedgerId)
+                        .Select(r => r.LoanRateID)
+                        .ToListAsync();
 
+                    foreach (int bId in allBranchIds)
+                    {
                         decimal totalPrincipal = await _context.LoanAccounts
-                            .Where(a => mappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
+                            .Where(a => a.BranchID == bId && mappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
                             .SumAsync(a => a.PrincipalBalance);
 
-                        ledger.OpeningBalance = totalPrincipal;
-                        ledger.OpeningBalanceType = "Dr";
-                        _context.Entry(ledger).State = EntityState.Modified;
+                        await Helpers.BranchLedgerBalanceHelper.SetBranchLedgerOpeningBalanceAsync(
+                            _context, bId, loanLedgerId, totalPrincipal, "Dr", "कर्ज सुरुवातीची शिल्लक सिंक", initialFyId);
                     }
                 }
 
-                // 2. Sync Receivable Interest Ledger (येणे व्याज)
-                if (loanRate.ReceivableInterestLedgerID.HasValue && loanRate.ReceivableInterestLedgerID.Value > 0)
+                // 2. Sync Receivable Interest Ledger per branch in BranchLedgerOpeningBalances
+                if (loanRate.ReceivableInterestLedgerID.HasValue && loanRate.ReceivableInterestLedgerID.Value > 0 && initialFyId > 0)
                 {
                     int intLedgerId = loanRate.ReceivableInterestLedgerID.Value;
-                    var intLedger = await _context.Ledgers.FindAsync(intLedgerId);
-                    if (intLedger != null)
-                    {
-                        var intMappedRateIds = await _context.LoanRates
-                            .Where(r => r.ReceivableInterestLedgerID == intLedgerId)
-                            .Select(r => r.LoanRateID)
-                            .ToListAsync();
+                    var intMappedRateIds = await _context.LoanRates
+                        .Where(r => r.ReceivableInterestLedgerID == intLedgerId)
+                        .Select(r => r.LoanRateID)
+                        .ToListAsync();
 
+                    foreach (int bId in allBranchIds)
+                    {
                         decimal totalInterest = await _context.LoanAccounts
-                            .Where(a => intMappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
+                            .Where(a => a.BranchID == bId && intMappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
                             .SumAsync(a => a.InterestBalance + a.OverdueInterestBalance);
 
-                        intLedger.OpeningBalance = totalInterest;
-                        intLedger.OpeningBalanceType = "Dr";
-                        _context.Entry(intLedger).State = EntityState.Modified;
+                        await Helpers.BranchLedgerBalanceHelper.SetBranchLedgerOpeningBalanceAsync(
+                            _context, bId, intLedgerId, totalInterest, "Dr", "कर्ज येणे व्याज सुरुवातीची शिल्लक सिंक", initialFyId);
                     }
                 }
 

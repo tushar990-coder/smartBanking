@@ -1008,7 +1008,7 @@ namespace Bhisi.Api.Controllers
                 else
                 {
                     // DUAL-VOUCHER IBT (INTER-BRANCH TRANSFER) ARCHITECTURE
-                    int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, collectingBranch, targetHomeBranchId);
+                    var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, collectingBranch, targetHomeBranchId);
 
                     // 1. Voucher 1: Collecting / Counter Branch (Dr Cash, Cr IBT)
                     var counterVoucher = new Voucher
@@ -1058,11 +1058,11 @@ namespace Bhisi.Api.Controllers
                     if (cashLedgerId > 0 && totalReceiptAmount > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = drCustId, MemberID = drCustId == custId ? memId : null });
 
-                    if (ibtLedgerId > 0 && totalReceiptAmount > 0)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+                    if (counterIbtLedgerId > 0 && totalReceiptAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = counterIbtLedgerId, DrCr = "Cr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
 
-                    if (ibtLedgerId > 0 && totalReceiptAmount > 0)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+                    if (homeIbtLedgerId > 0 && totalReceiptAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
 
                     if (waiverLedger != null && totalWaiverAmount > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = waiverLedger.LedgerID, DrCr = "Dr", Amount = totalWaiverAmount, CustomerID = custId, MemberID = memId });

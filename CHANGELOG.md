@@ -1,5 +1,21 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-16] - आवृत्ती v2.6.24 (Multi-Branch IBT & HO Consolidated Reporting, Unified Active+Matured FD Status, Auto-Renewal Rollback & Full FD Renewal Receipt Numbering Policy Engine with NEXT_LEGACY)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) मुदत ठेव नूतनीकरण पावती क्रमांक धोरण इंजिन (`FdRenewalPolicyHelper.cs`, `SansthaDetail.cs`, `SansthaDetailsController.cs`, `SansthaMaster.tsx`, `FdWithdrawalMaturity.tsx`, `FdReceiptPrintModal.tsx`, `TodaysTasksDashboard.tsx` & `FdAccountsController.cs`):**
+  * संस्था मास्टरमध्ये शून्य-फॉलबॅक (Zero-Fallback) सह ४ स्पष्ट धोरणे लागू केली: **`NEW_RECEIPT`** (नवीन १४-अंकी CBS पावती क्र.), **`RETAIN_ORIGINAL`** (पहिला मूळ पावती/जुना क्र. कायम — *Same*), **`NEXT_LEGACY`** (मॅन्युअल व ऑटो-रिन्यू दोन्हीमध्ये आपोआप पुढील जुना FD क्र. — *Next*), आणि **`HYBRID_CHOICE`** (मॅन्युअल स्क्रीनवर बटणाद्वारे निवड) तसेच **`CUSTOM`** प्री-प्रिंटेड पावती क्र. पर्याय.
+  * `RootFdAccountID`, `ParentFdAccountID` व `RenewalCycleNo` द्वारे नूतनीकरण साखळी ट्रॅकिंग, अनसंबंधित सक्रिय खात्यांशी पावती क्रमांक टक्कर प्रतिबंध, Pass Voucher प्रलंबित सूचना आणि मुदत ठेव पावतीच्या मागील बाजूवर नूतनीकरण शेरा (Back-Side Endorsement Print).
+* **२) स्वयंचलित नूतनीकरण व्हाउचर डिलीट रोलबॅक व मॅन्युअल/ऑटो नंबरिंग सिंक (`VoucherRollbackAndDeleteService.cs`, `FdRenewalRollbackHelper.cs` & `FdAccountsController.cs`):**
+  * `JV-FD-AUTOREN-` ओळख व `RejectVoucher`/डिलीटवर नवीन रिन्यू झालेले FD खाते काढून मूळ खाते `Matured` स्थितीत अचूक पूर्ववत केले जाते.
+  * मॅन्युअल व `RunAutoRenewalBatch` दोन्हीकडे एकसमान १४-अंकी CBS `AccountNo` आणि प्रलंबित व्हाउचर नोंद (`Pending`) लागू केली.
+* **३) थेट व ऐतिहासिक FD स्थिती (`Active` + `Matured`) एकत्रीकरण (`FdDepositQueryHelper.cs`, `CrrReportController.cs`, `AuditComplianceController.cs`, `SwanidhiController.cs`, `RegulatoryMisController.cs`, `MembersController.cs` & `DashboardController.cs`):**
+  * CRR, ऑडिट अनुपालन, स्वनिधी व नियामक MIS अहवालांमध्ये दुहेरी मोजणी (Double-Counting) टाळून `Active` आणि नूतनीकरण/बंद न झालेल्या `Matured` ठेवींची अचूक मोजणी लागू केली.
+* **४) मल्टी-ब्रांच IBT अ‍ॅटोमिक मंजुरी व HO एकत्रित अहवाल (`IbtLedgerHelper.cs`, `BranchLedgerBalanceHelper.cs`, `BranchLedgerOpeningBalancesController.cs`, `VouchersController.cs`, `ReportsController.cs`, `EodBodService.cs`, `FinancialYearBaselineHelper.cs` & `dateFormat.ts`):**
+  * आंतर-शाखा (IBT) दुहेरी लेजर पोस्टिंग, Head Office एकत्रित आरंभीची शिल्लक व अहवाल आणि xUnit चाचणी संच (`FdRenewalPolicyAndAutoRenewalTests.cs`, `FdAutoRenewalRollbackTests.cs`, `FdNumberingAndPassVoucherTests.cs`, `FdDepositStatusAndAsOfSnapshotTests.cs`, `HoAndConsolidatedReportingTests.cs`, `IbtAtomicAndDirectionalLedgerTests.cs`) जोडले.
+
+---
+
 ## 📅 [2026-11-15] - आवृत्ती v2.6.23 (Branch-Level Access Control, Branch-Wise Unique Legacy Numbers & Investment Interest Accrual / Receipt Overhaul)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

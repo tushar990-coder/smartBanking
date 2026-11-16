@@ -2750,7 +2750,19 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     filteredList.map((fd: any) => (
                       <tr key={fd.fdAccountID} className="hover:bg-primary/5 border-b border-gray-100 transition-colors">
                         <td className="px-3 py-1.5 font-mono text-primary">
-                          <div className="font-bold">{fd.accountNo}</div>
+                          <div className="font-bold flex items-center gap-1.5">
+                            <span>{fd.receiptNo || fd.accountNo}</span>
+                            {(fd.renewalCycleNo || 0) > 0 && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                नूतनीकरण #{fd.renewalCycleNo}
+                              </span>
+                            )}
+                          </div>
+                          {fd.receiptNo && fd.receiptNo !== fd.accountNo && (
+                            <div className="text-[10px] text-slate-500 font-normal">
+                              CBS: {fd.accountNo}
+                            </div>
+                          )}
                           {fd.legacyAccountNumber && (
                             <div className="text-[10px] text-amber-800 font-semibold">
                               जुना क्र: {fd.legacyAccountNumber}

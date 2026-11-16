@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 
 namespace Bhisi.Api.Controllers
@@ -12,6 +13,7 @@ namespace Bhisi.Api.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Microsoft.AspNetCore.Authorization.Authorize]
+    [EnforceBranchScope]
     public class SwanidhiController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -85,7 +87,8 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await EnsureTablesExistAsync();
-                int bId = branchId ?? 1;
+                int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
+                int bId = scopedBranch ?? 1;
 
                 var savedMappings = await _context.SwanidhiLedgerMappings
                     .Include(m => m.Ledger).ThenInclude(l => l!.AccountGroup)
@@ -318,7 +321,8 @@ namespace Bhisi.Api.Controllers
             {
                 await EnsureTablesExistAsync();
                 DateTime targetDate = asOnDate ?? DateTime.Today;
-                int bId = branchId ?? 1;
+                int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
+                int bId = scopedBranch ?? 1;
 
                 // Load Settings
                 var setting = await _context.SwanidhiSettings.FirstOrDefaultAsync(s => s.BranchID == bId);
@@ -345,59 +349,39 @@ namespace Bhisi.Api.Controllers
                 // Get Sanstha details
                 var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
 
-                // Compute Ledger Balances As of Target Date
-                var mappedLedgerIds = mappings.Select(m => m.LedgerID).Distinct().ToList();
-
-                // Query vouchers up to target date
-                var vDetails = await _context.VoucherDetails
-                    .Where(vd => mappedLedgerIds.Contains(vd.LedgerID) &&
-                                 vd.Voucher != null &&
-                                 vd.Voucher.Status == "Approved" &&
-                                 vd.Voucher.VoucherDate.Date <= targetDate.Date)
-                    .Select(vd => new {
-                        vd.LedgerID,
-                        vd.DrCr,
-                        vd.Amount
-                    })
+                var borrowingLedgers = await _context.Ledgers
+                    .AsNoTracking()
+                    .Where(l => l.AccountGroup != null &&
+                                (l.AccountGroup.NatureOfGroup == "Liability" || l.AccountGroup.NatureOfGroup == "Liabilities") &&
+                                (l.LedgerName.Contains("बँक कर्ज") || l.LedgerName.Contains("शिखर") || l.LedgerName.Contains("मध्यवर्ती") || l.LedgerName.Contains("कर्ज उचल") || l.LedgerName.Contains("उचल कर्ज")))
                     .ToListAsync();
 
-                var vGroups = vDetails.GroupBy(vd => vd.LedgerID)
-                    .ToDictionary(g => g.Key, g => new
-                    {
-                        Dr = g.Where(x => x.DrCr == "Dr").Sum(x => x.Amount),
-                        Cr = g.Where(x => x.DrCr == "Cr").Sum(x => x.Amount)
-                    });
+                // Compute Ledger Balances As of Target Date from BranchLedgerOpeningBalances + FY Baseline + Approved Vouchers
+                var allTargetLedgerIds = mappings.Select(m => m.LedgerID)
+                    .Concat(borrowingLedgers.Select(l => l.LedgerID))
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .ToList();
+
+                var asOfNetDrBalances = await BranchLedgerBalanceHelper.GetAsOfLedgerBalancesAsync(
+                    _context,
+                    allTargetLedgerIds,
+                    targetDate,
+                    scopedBranch,
+                    approvedOnly: true);
 
                 // Function to get Credit Balance (for Liabilities, Capital, Reserves)
                 decimal GetCreditBalance(Ledger? l)
                 {
-                    if (l == null) return 0;
-                    decimal opening = l.OpeningBalance;
-                    if (l.OpeningBalanceType == "Dr") opening = -opening;
-
-                    decimal dr = 0, cr = 0;
-                    if (vGroups.TryGetValue(l.LedgerID, out var tx))
-                    {
-                        dr = tx.Dr;
-                        cr = tx.Cr;
-                    }
-                    return opening + cr - dr;
+                    if (l == null) return 0m;
+                    return asOfNetDrBalances.TryGetValue(l.LedgerID, out var netDr) ? -netDr : 0m;
                 }
 
                 // Function to get Debit Balance (for Losses, Assets)
                 decimal GetDebitBalance(Ledger? l)
                 {
-                    if (l == null) return 0;
-                    decimal opening = l.OpeningBalance;
-                    if (l.OpeningBalanceType == "Cr") opening = -opening;
-
-                    decimal dr = 0, cr = 0;
-                    if (vGroups.TryGetValue(l.LedgerID, out var tx))
-                    {
-                        dr = tx.Dr;
-                        cr = tx.Cr;
-                    }
-                    return opening + dr - cr;
+                    if (l == null) return 0m;
+                    return asOfNetDrBalances.TryGetValue(l.LedgerID, out var netDr) ? netDr : 0m;
                 }
 
                 // 1. वसूल भाग भांडवल (Paid-up Capital)
@@ -435,9 +419,13 @@ namespace Bhisi.Api.Controllers
                 // If 0, auto-estimate 0.40% from standard active loans
                 if (standardAssetProvision == 0)
                 {
-                    decimal standardLoans = await _context.LoanAccounts
-                        .Where(l => l.Status == "Active")
-                        .SumAsync(l => l.PrincipalBalance);
+                    var stdLoanQ = _context.LoanAccounts.Where(l => l.Status == "Active");
+                    if (scopedBranch.HasValue && scopedBranch.Value > 0)
+                    {
+                        int sbId = scopedBranch.Value;
+                        stdLoanQ = stdLoanQ.Where(l => l.BranchID == sbId);
+                    }
+                    decimal standardLoans = await stdLoanQ.SumAsync(l => l.PrincipalBalance);
                     standardAssetProvision = Math.Round(standardLoans * 0.0040m, 2); // 0.40%
                 }
                 var stdItems = stdMappings.Select(m => new SwanidhiItemDetailDto(
@@ -445,7 +433,7 @@ namespace Bhisi.Api.Controllers
                 )).ToList();
 
                 // 6. शिल्लक निव्वळ नफा (Undistributed Net Profit - स्पष्टीकरण-२)
-                // Calculate P&L Net Profit up to targetDate
+                // Calculate P&L Net Profit up to targetDate using FY Baseline & branch scope
                 decimal netProfit = 0;
                 if (setting?.ManualCertifiedNetProfit.HasValue == true && setting.ManualCertifiedNetProfit.Value > 0)
                 {
@@ -453,24 +441,39 @@ namespace Bhisi.Api.Controllers
                 }
                 else
                 {
-                    // Income Cr - Dr
+                    var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, targetDate, branchId: scopedBranch);
+                    DateTime? pnlStart = (fyBaseline.TargetFyStartDate ?? fyBaseline.BaselineStartDate)?.Date;
+
                     var incomeLedgers = await _context.Ledgers
                         .Where(l => l.AccountGroup != null && l.AccountGroup.NatureOfGroup == "Income")
                         .Select(l => l.LedgerID)
                         .ToListAsync();
                     
                     var expLedgers = await _context.Ledgers
-                        .Where(l => l.AccountGroup != null && l.AccountGroup.NatureOfGroup == "Expense")
+                        .Where(l => l.AccountGroup != null && (l.AccountGroup.NatureOfGroup == "Expense" || l.AccountGroup.NatureOfGroup == "Expenses"))
                         .Select(l => l.LedgerID)
                         .ToListAsync();
 
-                    var incVouchers = await _context.VoucherDetails
-                        .Where(vd => incomeLedgers.Contains(vd.LedgerID) && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.VoucherDate.Date <= targetDate.Date)
-                        .SumAsync(vd => (vd.DrCr == "Cr" ? vd.Amount : -vd.Amount));
+                    var incVouchersQ = _context.VoucherDetails
+                        .Where(vd => incomeLedgers.Contains(vd.LedgerID) && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.VoucherDate.Date <= targetDate.Date);
+                    var expVouchersQ = _context.VoucherDetails
+                        .Where(vd => expLedgers.Contains(vd.LedgerID) && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.VoucherDate.Date <= targetDate.Date);
 
-                    var expVouchers = await _context.VoucherDetails
-                        .Where(vd => expLedgers.Contains(vd.LedgerID) && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.VoucherDate.Date <= targetDate.Date)
-                        .SumAsync(vd => (vd.DrCr == "Dr" ? vd.Amount : -vd.Amount));
+                    if (pnlStart.HasValue)
+                    {
+                        DateTime pStart = pnlStart.Value;
+                        incVouchersQ = incVouchersQ.Where(vd => vd.Voucher!.VoucherDate >= pStart);
+                        expVouchersQ = expVouchersQ.Where(vd => vd.Voucher!.VoucherDate >= pStart);
+                    }
+                    if (scopedBranch.HasValue && scopedBranch.Value > 0)
+                    {
+                        int sbId = scopedBranch.Value;
+                        incVouchersQ = incVouchersQ.Where(vd => vd.Voucher!.BranchID == sbId);
+                        expVouchersQ = expVouchersQ.Where(vd => vd.Voucher!.BranchID == sbId);
+                    }
+
+                    var incVouchers = await incVouchersQ.SumAsync(vd => (vd.DrCr == "Cr" ? vd.Amount : -vd.Amount));
+                    var expVouchers = await expVouchersQ.SumAsync(vd => (vd.DrCr == "Dr" ? vd.Amount : -vd.Amount));
 
                     netProfit = Math.Max(0, incVouchers - expVouchers);
                 }
@@ -501,17 +504,24 @@ namespace Bhisi.Api.Controllers
                 decimal maxBorrowingLimit = Math.Round(netOwnedFunds * multiplier, 2);
 
                 // Actual Outside Liabilities (Deposits + External Loans)
-                decimal savingBalance = await _context.SavingAccountMasters.Where(s => s.Status == "Active").SumAsync(s => s.CurrentBalance);
-                decimal fdBalance = await _context.FdAccounts.Where(f => f.Status == "Active").SumAsync(f => f.DepositAmount);
-                decimal rdBalance = await _context.RdAccounts.Where(r => r.Status == "Active").SumAsync(r => r.TotalDepositedAmount);
-                decimal pigmyBalance = await _context.PigmyAccounts.Where(p => p.Status == "Active").SumAsync(p => p.TotalDepositedAmount - p.TotalWithdrawnAmount);
+                var savBalQ = _context.SavingAccountMasters.Where(s => s.Status == "Active");
+                var rdBalQ = _context.RdAccounts.AsNoTracking().Where(FdDepositQueryHelper.LiveRdPredicate);
+                var pigBalQ = _context.PigmyAccounts.AsNoTracking().Where(FdDepositQueryHelper.LivePigmyPredicate);
+
+                if (scopedBranch.HasValue && scopedBranch.Value > 0)
+                {
+                    int sbId = scopedBranch.Value;
+                    savBalQ = savBalQ.Where(s => s.BranchID == sbId);
+                    rdBalQ = rdBalQ.Where(r => r.BranchID == sbId);
+                    pigBalQ = pigBalQ.Where(p => p.BranchID == sbId);
+                }
+
+                decimal savingBalance = await savBalQ.SumAsync(s => s.CurrentBalance);
+                decimal fdBalance = await FdDepositQueryHelper.GetLiveFdTotalAsOfAsync(_context, targetDate, scopedBranch);
+                decimal rdBalance = await rdBalQ.SumAsync(r => r.TotalDepositedAmount);
+                decimal pigmyBalance = await pigBalQ.SumAsync(p => p.TotalDepositedAmount - p.TotalWithdrawnAmount);
                 
                 // Outside Bank Loans / External Borrowings if any
-                var borrowingLedgers = await _context.Ledgers
-                    .Where(l => l.AccountGroup != null &&
-                                (l.AccountGroup.NatureOfGroup == "Liability" || l.AccountGroup.NatureOfGroup == "Liabilities") &&
-                                (l.LedgerName.Contains("बँक कर्ज") || l.LedgerName.Contains("शिखर") || l.LedgerName.Contains("मध्यवर्ती") || l.LedgerName.Contains("कर्ज उचल") || l.LedgerName.Contains("उचल कर्ज")))
-                    .ToListAsync();
                 decimal outsideBankLoans = borrowingLedgers.Sum(l => Math.Max(0, GetCreditBalance(l)));
 
                 decimal actualOutsideLiabilities = savingBalance + fdBalance + rdBalance + pigmyBalance + outsideBankLoans;

@@ -199,6 +199,24 @@ export default function LedgerOpeningBalance({ defaultFilter = 'All' }: LedgerOp
         </div>
       </div>
 
+      {/* CBS Cutover Notice: Global OB Locked */}
+      <div className="mb-3 p-3 bg-amber-50 border border-amber-300 rounded-sm shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-amber-950">
+        <div className="text-xs leading-relaxed">
+          <strong className="font-extrabold">सूचना (CBS कटओव्हर नियम):</strong> बहु-शाखा तेरीज पत्रक अचूक राहण्यासाठी सर्व शाखांची लेजर सुरुवातीची शिल्लक आता केवळ{' '}
+          <strong>शाखानिहाय लेजर सुरुवातीची शिल्लक (Branch Ledger Opening Balance)</strong> स्क्रीनमधूनच बदलली जाऊ शकते. जुन्या ग्लोबल मास्टरवरील बदल तात्पुरते बंद (Locked) केले आहेत.
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            window.history.pushState(null, '', '/?tab=branch-ledger-opening');
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }}
+          className="px-3 py-1.5 bg-primary hover:bg-primary/95 text-white rounded-sm text-[11px] font-bold shrink-0 cursor-pointer shadow-2xs"
+        >
+          शाखानिहाय ओपनिंग बॅलन्स उघडा →
+        </button>
+      </div>
+
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
@@ -324,60 +342,22 @@ export default function LedgerOpeningBalance({ defaultFilter = 'All' }: LedgerOp
                     <td className="px-2 py-1.5 border-r border-gray-200 text-gray-700 font-medium">{ledger.accountGroup?.groupName || '-'}</td>
                     <td className="px-2 py-1.5 border-r border-gray-200 text-gray-600">{ledger.accountType || ledger.reportType || '-'}</td>
                     <td className="px-2 py-1.5 border-r border-gray-200 text-right">
-                      {editingId === ledger.ledgerID ? (
-                        <div className="flex items-center gap-1 justify-end">
-                          <input 
-                            ref={amountInputRef}
-                            type="number" 
-                            step="0.01" 
-                            value={editFormData.openingBalance} 
-                            onChange={(e) => setEditFormData({...editFormData, openingBalance: parseFloat(e.target.value) || 0})}
-                            className="w-36 border border-primary bg-amber-50/80 font-bold font-mono px-2 py-0.5 rounded-sm focus:outline-none focus:ring-1 focus:ring-primary text-xs h-[26px]"
-                          />
-                          <select 
-                            value={editFormData.openingBalanceType} 
-                            onChange={(e) => setEditFormData({...editFormData, openingBalanceType: e.target.value})}
-                            className="border border-gray-300 px-1 py-0.5 rounded-sm bg-white focus:outline-none focus:border-primary font-bold text-xs h-[26px] cursor-pointer"
-                          >
-                            <option value="Dr">Dr (नावे)</option>
-                            <option value="Cr">Cr (जमा)</option>
-                          </select>
-                        </div>
-                      ) : (
-                        <span className={`font-mono font-bold ${ledger.openingBalanceType === 'Dr' ? 'text-blue-700' : 'text-emerald-700'}`}>
-                          ₹{ledger.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} <span className="text-[10px] px-1 py-0.2 rounded bg-slate-100 border border-slate-300">{ledger.openingBalanceType}</span>
-                        </span>
-                      )}
+                      <span className={`font-mono font-bold ${ledger.openingBalanceType === 'Dr' ? 'text-blue-700' : 'text-emerald-700'}`}>
+                        ₹{ledger.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} <span className="text-[10px] px-1 py-0.2 rounded bg-slate-100 border border-slate-300">{ledger.openingBalanceType}</span>
+                      </span>
                     </td>
                     <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                      {editingId === ledger.ledgerID ? (
-                        <div className="flex justify-center items-center gap-1">
-                          <button 
-                            type="button" 
-                            onClick={() => handleSaveClick(ledger)} 
-                            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold flex items-center gap-0.5 cursor-pointer shadow-2xs"
-                          >
-                            <Save className="w-3 h-3" />
-                            <span>जतन</span>
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => setEditingId(null)} 
-                            className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded text-[10px] font-bold cursor-pointer"
-                          >
-                            रद्द
-                          </button>
-                        </div>
-                      ) : (
-                        <button 
-                          type="button" 
-                          onClick={() => handleEditClick(ledger)} 
-                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-bold flex items-center gap-1 mx-auto cursor-pointer"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                          <span>बदला</span>
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.history.pushState(null, '', '/?tab=branch-ledger-opening');
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded text-[10px] font-bold mx-auto cursor-pointer"
+                        title="फक्त शाखानिहाय ओपनिंग बॅलन्स मधून बदला"
+                      >
+                        शाखानिहाय लॉक
+                      </button>
                     </td>
                   </tr>
                 ))

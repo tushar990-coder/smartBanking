@@ -954,26 +954,15 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // Update Ledger Opening Balance
-                var ledger = await _context.Ledgers.FindAsync(savingAccount.LedgerID);
-                if (ledger != null)
-                {
-                    if (ledger.OpeningBalanceType == "Cr")
-                    {
-                        ledger.OpeningBalance += savingAccount.OpeningBalance;
-                    }
-                    else
-                    {
-                        ledger.OpeningBalance -= savingAccount.OpeningBalance;
-                        if (ledger.OpeningBalance < 0)
-                        {
-                            ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
-                            ledger.OpeningBalanceType = "Cr";
-                        }
-                    }
-                    _context.Entry(ledger).State = EntityState.Modified;
-                    await _context.SaveChangesAsync();
-                }
+                // Update Branch Ledger Opening Balance
+                await Helpers.BranchLedgerBalanceHelper.AdjustBranchLedgerOpeningDeltaAsync(
+                    _context,
+                    savingAccount.BranchID > 0 ? savingAccount.BranchID : 1,
+                    savingAccount.LedgerID,
+                    savingAccount.OpeningBalance,
+                    "Cr",
+                    "बचत ठेव सुरुवातीची शिल्लक");
+                await _context.SaveChangesAsync();
 
                 // Audit in CustomerOpeningBalances
                 var custOb = new CustomerOpeningBalance
@@ -1122,78 +1111,28 @@ namespace Bhisi.Api.Controllers
                         return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(existing.AccountNo) });
                     }
 
-                    // Adjust General Ledgers
+                    // Adjust Branch Ledger Opening Balances
+                    int accBranchId = existing.BranchID > 0 ? existing.BranchID : 1;
                     if (oldLedgerId == newLedgerId)
                     {
                         decimal balanceDiff = newBalance - oldBalance;
                         if (balanceDiff != 0)
                         {
-                            var ledger = await _context.Ledgers.FindAsync(newLedgerId);
-                            if (ledger != null)
-                            {
-                                if (ledger.OpeningBalanceType == "Cr")
-                                {
-                                    ledger.OpeningBalance += balanceDiff;
-                                }
-                                else
-                                {
-                                    ledger.OpeningBalance -= balanceDiff;
-                                    if (ledger.OpeningBalance < 0)
-                                    {
-                                        ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
-                                        ledger.OpeningBalanceType = "Cr";
-                                    }
-                                }
-                                _context.Entry(ledger).State = EntityState.Modified;
-                            }
+                            await Helpers.BranchLedgerBalanceHelper.AdjustBranchLedgerOpeningDeltaAsync(
+                                _context, accBranchId, newLedgerId, balanceDiff, "Cr", "बचत ठेव सुरुवातीची शिल्लक सुधारणा");
                         }
                     }
                     else
                     {
-                        // Reverse from old ledger
                         if (oldBalance > 0)
                         {
-                            var oldLedger = await _context.Ledgers.FindAsync(oldLedgerId);
-                            if (oldLedger != null)
-                            {
-                                if (oldLedger.OpeningBalanceType == "Cr")
-                                {
-                                    oldLedger.OpeningBalance -= oldBalance;
-                                    if (oldLedger.OpeningBalance < 0)
-                                    {
-                                        oldLedger.OpeningBalance = Math.Abs(oldLedger.OpeningBalance);
-                                        oldLedger.OpeningBalanceType = "Dr";
-                                    }
-                                }
-                                else
-                                {
-                                    oldLedger.OpeningBalance += oldBalance;
-                                }
-                                _context.Entry(oldLedger).State = EntityState.Modified;
-                            }
+                            await Helpers.BranchLedgerBalanceHelper.AdjustBranchLedgerOpeningDeltaAsync(
+                                _context, accBranchId, oldLedgerId, -oldBalance, "Cr", "बचत ठेव सुरुवातीची शिल्लक वर्ग");
                         }
-
-                        // Add to new ledger
                         if (newBalance > 0)
                         {
-                            var newLedger = await _context.Ledgers.FindAsync(newLedgerId);
-                            if (newLedger != null)
-                            {
-                                if (newLedger.OpeningBalanceType == "Cr")
-                                {
-                                    newLedger.OpeningBalance += newBalance;
-                                }
-                                else
-                                {
-                                    newLedger.OpeningBalance -= newBalance;
-                                    if (newLedger.OpeningBalance < 0)
-                                    {
-                                        newLedger.OpeningBalance = Math.Abs(newLedger.OpeningBalance);
-                                        newLedger.OpeningBalanceType = "Cr";
-                                    }
-                                }
-                                _context.Entry(newLedger).State = EntityState.Modified;
-                            }
+                            await Helpers.BranchLedgerBalanceHelper.AdjustBranchLedgerOpeningDeltaAsync(
+                                _context, accBranchId, newLedgerId, newBalance, "Cr", "बचत ठेव सुरुवातीची शिल्लक वर्ग");
                         }
                     }
 
@@ -1462,28 +1401,17 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // If it's a legacy account, reverse the Ledger and reconcile CustomerOpeningBalances safely
+                // If it's a legacy account, reverse the Branch Ledger Opening Balance and reconcile CustomerOpeningBalances safely
                 if (savingAccount.IsLegacyAccount && savingAccount.OpeningBalance > 0)
                 {
-                    // 1. Adjust General Ledger Opening Balance
-                    var ledger = await _context.Ledgers.FindAsync(savingAccount.LedgerID);
-                    if (ledger != null)
-                    {
-                        if (ledger.OpeningBalanceType == "Cr")
-                        {
-                            ledger.OpeningBalance -= savingAccount.OpeningBalance;
-                            if (ledger.OpeningBalance < 0)
-                            {
-                                ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
-                                ledger.OpeningBalanceType = "Dr";
-                            }
-                        }
-                        else // Dr
-                        {
-                            ledger.OpeningBalance += savingAccount.OpeningBalance;
-                        }
-                        _context.Entry(ledger).State = EntityState.Modified;
-                    }
+                    // 1. Adjust Branch Ledger Opening Balance
+                    await Helpers.BranchLedgerBalanceHelper.AdjustBranchLedgerOpeningDeltaAsync(
+                        _context,
+                        savingAccount.BranchID > 0 ? savingAccount.BranchID : 1,
+                        savingAccount.LedgerID,
+                        -savingAccount.OpeningBalance,
+                        "Cr",
+                        "बचत ठेव सुरुवातीची शिल्लक रद्द");
 
                     // 2. Safe CustomerOpeningBalances Reconciliation
                     var otherCustomerLegacyAccounts = await _context.SavingAccountMasters

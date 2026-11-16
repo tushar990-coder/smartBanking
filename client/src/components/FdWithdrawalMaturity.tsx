@@ -33,6 +33,7 @@ import { RawLedgerItem, filterBankAccountLedgers } from '../utils/bankLedgerUtil
 import { FdInterestScheduleModal, FdScheduleOverdueInfo } from './FdInterestScheduleModal';
 import { generateFdInterestSchedule, FdScheduleSummary } from '../utils/fdInterestSchedule';
 import FdReceiptPrintModal from './FdReceiptPrintModal';
+import { formatDateDDMMYYYY } from '../utils/dateFormat';
 
 interface Ledger {
   ledgerID: number;
@@ -79,6 +80,9 @@ interface FdAccount {
   fdAccountID: number;
   branchID: number;
   accountNo: string;
+  receiptNo?: string | null;
+  parentFdAccountID?: number | null;
+  renewalCycleNo?: number;
   customerID?: number;
   customerName?: string;
   cifNo?: string;
@@ -108,6 +112,7 @@ interface FdAccount {
   legacyAccountNumber?: string | null;
   isLegacyAccount?: boolean;
   alreadyPostedInterest?: number;
+  branchName?: string;
 }
 
 // प्रभावी स्थिती: API status + मुदतपूर्ती तारीख यावरून (Matured / Active / इतर)
@@ -271,7 +276,43 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [renewalDurationType, setRenewalDurationType] = useState<'Days' | 'Months' | 'Years'>('Months');
   const [renewedSuccessData, setRenewedSuccessData] = useState<any | null>(null);
   const [showReceiptPrintModal, setShowReceiptPrintModal] = useState<boolean>(false);
+  const [printInitialSide, setPrintInitialSide] = useState<'front' | 'endorsement'>('front');
   const [printAccountData, setPrintAccountData] = useState<any | null>(null);
+  const openRenewedPrintModal = (data: any, side: 'front' | 'endorsement') => {
+    setPrintAccountData({
+      fdAccountID: data.fdAccountID || 0,
+      accountNo: data.newAccountNo,
+      receiptNo: data.newReceiptNo || data.newAccountNo,
+      oldReceiptNo: data.oldReceiptNo,
+      oldAccountNo: data.oldAccountNo,
+      oldDepositAmount: data.oldDepositAmount,
+      effectivePolicy: data.effectivePolicy,
+      durationText: data.duration,
+      branchName: data.branchName,
+      renewalCycleNo: data.renewalCycleNo || 1,
+      parentFdAccountID: data.parentFdAccountID || null,
+      customerName: data.customerName,
+      cifNo: data.cifNo,
+      schemeName: data.schemeName,
+      schemeCode: data.schemeCode,
+      depositAmount: data.depositAmount,
+      interestRate: data.interestRate,
+      openingDate: data.openingDateIso || data.openingDate,
+      maturityDate: data.maturityDateIso || data.maturityDate,
+      maturityAmount: data.maturityAmount,
+      status: 'Active',
+      interestType: data.interestType,
+      monthlyInterestAmount: data.monthlyInterestAmount
+    });
+    setPrintInitialSide(side);
+    setShowReceiptPrintModal(true);
+  };
+  const [sansthaRenewalPolicy, setSansthaRenewalPolicy] = useState<'NEW_RECEIPT' | 'RETAIN_ORIGINAL' | 'NEXT_LEGACY' | 'HYBRID_CHOICE'>('NEW_RECEIPT');
+  const [allowManualRenewalReceipt, setAllowManualRenewalReceipt] = useState<boolean>(false);
+  const [sansthaPolicyError, setSansthaPolicyError] = useState<string>('');
+  const [receiptNoMode, setReceiptNoMode] = useState<'NEW_RECEIPT' | 'RETAIN_ORIGINAL' | 'NEXT_LEGACY' | 'CUSTOM'>('NEW_RECEIPT');
+  const [customReceiptNo, setCustomReceiptNo] = useState<string>('');
+  const [nextLegacyPreview, setNextLegacyPreview] = useState<string>('');
 
   const computeDaysForTenor = (baseDateStr: string, dType: 'Days' | 'Months' | 'Years', dVal: number): number => {
     const start = new Date((baseDateStr || activeBusinessDate) + 'T00:00:00');
@@ -625,7 +666,65 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     fetchAccounts();
     fetchSchemes();
     fetchBankLedgers();
+    axios
+      .get(`${API_URL}/SansthaDetails`)
+      .then((res) => {
+        const row = Array.isArray(res.data) ? res.data[0] : res.data;
+        if (!row) {
+          setSansthaPolicyError('संस्था पावती क्रमांक धोरण माहिती उपलब्ध नाही. कृपया संस्था मास्टर तपासा.');
+          return;
+        }
+        setSansthaPolicyError('');
+        const pol = (row.fdRenewalReceiptPolicy || 'NEW_RECEIPT') as 'NEW_RECEIPT' | 'RETAIN_ORIGINAL' | 'NEXT_LEGACY' | 'HYBRID_CHOICE';
+        setSansthaRenewalPolicy(pol);
+        const allowManual = pol === 'RETAIN_ORIGINAL' ? false : Boolean(row.allowManualReceiptNoOnRenewal);
+        setAllowManualRenewalReceipt(allowManual);
+        setReceiptNoMode(
+          pol === 'RETAIN_ORIGINAL'
+            ? 'RETAIN_ORIGINAL'
+            : pol === 'NEXT_LEGACY'
+            ? 'NEXT_LEGACY'
+            : 'NEW_RECEIPT'
+        );
+      })
+      .catch((err) => {
+        console.error('Failed to fetch SansthaDetails FD renewal policy', err);
+        setSansthaPolicyError('संस्था पावती धोरण लोड करण्यात त्रुटी आली. कृपया नेटवर्क तपासून पेज रिफ्रेश करा.');
+      });
   }, []);
+
+  useEffect(() => {
+    const branchId = selectedAccount?.branchID;
+    const schemeId = targetSchemeId > 0 ? targetSchemeId : selectedAccount?.fdSchemeID;
+    const needsNextLegacyPreview =
+      Boolean(branchId && branchId > 0) &&
+      (sansthaRenewalPolicy === 'NEXT_LEGACY' ||
+        receiptNoMode === 'NEXT_LEGACY' ||
+        sansthaRenewalPolicy === 'HYBRID_CHOICE');
+
+    if (!needsNextLegacyPreview || !branchId) {
+      setNextLegacyPreview('');
+      return;
+    }
+
+    let cancelled = false;
+    const qs = schemeId && schemeId > 0 ? `?schemeId=${schemeId}` : '';
+    axios
+      .get(`${API_URL}/FdAccounts/next-account-no/${branchId}${qs}`)
+      .then((res) => {
+        if (!cancelled) {
+          setNextLegacyPreview(res.data?.nextLegacyAccountNo ? String(res.data.nextLegacyAccountNo) : '');
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch next legacy FD number preview', err);
+        if (!cancelled) setNextLegacyPreview('');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAccount?.branchID, selectedAccount?.fdSchemeID, targetSchemeId, sansthaRenewalPolicy, receiptNoMode]);
 
   const fetchBankLedgers = async () => {
     try {
@@ -827,8 +926,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       // Background loading of full accounts list for dropdown searches
       axios.get(`${API_URL}/FdAccounts`).then(response => {
         const rawList: FdAccount[] = response.data || [];
-        setAllClosedAccounts(rawList.filter((a: any) => a.status === 'Closed'));
-        const activeList: FdAccount[] = rawList.filter((a: any) => a.status !== 'Closed');
+        setAllClosedAccounts(rawList.filter((a: any) => a.status === 'Closed' || a.status === 'Renewed'));
+        const activeList: FdAccount[] = rawList.filter((a: any) => a.status !== 'Closed' && a.status !== 'Renewed');
         setAccounts(prev => {
           // Keep current selection intact when updating full list
           if (prev.length > 0 && fastTrackDone) {
@@ -951,8 +1050,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       // Refresh accounts list
       const accRes = await axios.get(`${API_URL}/FdAccounts`);
       const rawList: FdAccount[] = accRes.data || [];
-      const updatedClosed = rawList.filter((a: any) => a.status === 'Closed');
-      const updatedActive = rawList.filter((a: any) => a.status !== 'Closed');
+      const updatedClosed = rawList.filter((a: any) => a.status === 'Closed' || a.status === 'Renewed');
+      const updatedActive = rawList.filter((a: any) => a.status !== 'Closed' && a.status !== 'Renewed');
       setAllClosedAccounts(updatedClosed);
       setAccounts(updatedActive);
 
@@ -1555,6 +1654,12 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
+        if (receiptNoMode === 'CUSTOM' && !customReceiptNo.trim()) {
+          setError('कस्टम पावती क्र. निवडला असल्यास कृपया नवीन प्री-प्रिंटेड पावती क्रमांक प्रविष्ट करा.');
+          setLoading(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
 
         const targetScheme = schemes.find(s => s.fdSchemeID === targetSchemeId);
         const payload = {
@@ -1576,7 +1681,10 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           isManualAmountOverride: isManualOverride,
           customAccruedInterest: isManualOverride && customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null,
           customOverdueInterest: isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
-          manualOverrideReason: isManualOverride ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null
+          manualOverrideReason: isManualOverride ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null,
+          // पावती क्रमांक धोरण
+          receiptNoMode: receiptNoMode,
+          customReceiptNo: receiptNoMode === 'CUSTOM' && customReceiptNo.trim() ? customReceiptNo.trim() : null
         };
 
         const response = await axios.post(
@@ -1584,20 +1692,35 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           payload
         );
         const resData = response.data;
-        setSuccess(`✅ ${resData.message} (नवीन पावती क्र: ${resData.newAccountNo}${resData.voucherNo ? ` | व्हाउचर: ${resData.voucherNo}` : ''}${resData.interestVoucherNo ? ` | व्याज व्हाउचर: ${resData.interestVoucherNo}` : ''})${resData.overdueInterest > 0 ? ` [समाविष्ट Overdue व्याज: ₹${resData.overdueInterest.toLocaleString()}]` : ''}`);
+        const shownReceiptNo = resData.newReceiptNo || resData.newAccountNo;
+        setSuccess(`✅ ${resData.message} (पावती क्र: ${shownReceiptNo}${shownReceiptNo !== resData.newAccountNo ? ` | CBS: ${resData.newAccountNo}` : ''}${resData.voucherNo ? ` | व्हाउचर: ${resData.voucherNo} [Pass Voucher ला Pending]` : ''}${resData.interestVoucherNo ? ` | व्याज व्हाउचर: ${resData.interestVoucherNo}` : ''})${resData.overdueInterest > 0 ? ` [समाविष्ट Overdue व्याज: ₹${resData.overdueInterest.toLocaleString()}]` : ''}`);
 
         // Set rich post-renewal data for instant review and printing
         const sim = renewalSimulation;
+        const openingIso = resData.openingDate || sim?.effectiveStartDateStr || closureDate;
+        const maturityIso = resData.maturityDate || sim?.simMaturityDateStr || '';
         setRenewedSuccessData({
           oldAccountNo: selectedAccount.accountNo,
+          oldReceiptNo: resData.oldReceiptNo || selectedAccount.receiptNo || selectedAccount.legacyAccountNumber || selectedAccount.accountNo,
+          oldDepositAmount: selectedAccount.depositAmount,
+          parentFdAccountID: selectedAccount.fdAccountID,
+          branchName: selectedAccount.branchName || '',
           newAccountNo: resData.newAccountNo,
+          newReceiptNo: shownReceiptNo,
+          effectivePolicy: resData.effectivePolicy || sansthaRenewalPolicy,
+          renewalCycleNo: resData.renewalCycleNo || ((selectedAccount.renewalCycleNo || 0) + 1),
+          voucherNo: resData.voucherNo || '',
+          interestVoucherNo: resData.interestVoucherNo || '',
+          voucherStatus: resData.voucherStatus || 'Pending',
           depositAmount: resData.newDeposit || sim?.newDepositAmount || 0,
           schemeName: resData.schemeName || targetScheme?.schemeName || '',
           schemeCode: resData.schemeCode || targetScheme?.schemeCode || '',
           interestRate: resData.interestRate || sim?.appliedRate || 0,
           duration: `${renewalDurationValue} ${renewalDurationType === 'Days' ? 'दिवस' : renewalDurationType === 'Years' ? 'वर्षे' : 'महिने'} (${sim?.totalDays || 0} दिवस)`,
-          openingDate: resData.openingDate ? resData.openingDate.split('T')[0].split('-').reverse().join('/') : (sim?.effectiveStartDateStr?.split('-').reverse().join('/') || ''),
-          maturityDate: resData.maturityDate ? resData.maturityDate.split('T')[0].split('-').reverse().join('/') : (sim?.simMaturityDateStr || ''),
+          openingDateIso: openingIso,
+          maturityDateIso: maturityIso,
+          openingDate: formatDateDDMMYYYY(openingIso),
+          maturityDate: formatDateDDMMYYYY(maturityIso),
           maturityAmount: resData.maturityAmount || sim?.simMaturityAmount || 0,
           customerName: resData.customerName || selectedAccount.customerName || '',
           cifNo: resData.cifNo || selectedAccount.cifNo || '',
@@ -1605,6 +1728,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           interestType: targetScheme?.interestType || 'Simple',
           monthlyInterestAmount: sim?.monthlyPayout || 0
         });
+        setCustomReceiptNo('');
       }
 
       // Refresh list & Reset
@@ -2060,36 +2184,32 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                   मुदत ठेव नूतनीकरण यशस्वीरीत्या पूर्ण झाले! (FD Renewal Completed)
                 </h3>
                 <p className="text-[11px] text-emerald-200">
-                  नवीन मुदत ठेव पावती सिस्टीममध्ये जनरेट झाली असून नवीन खाते क्रमांक वाटप करण्यात आला आहे.
+                  नवीन मुदत ठेव पावती जनरेट झाली आहे.
+                  {renewedSuccessData.voucherNo && (
+                    <span className="ml-1.5 inline-block bg-amber-400/20 border border-amber-300/60 text-amber-200 px-2 py-0.2 rounded font-bold">
+                      🧾 व्हाउचर: {renewedSuccessData.voucherNo}
+                      {renewedSuccessData.interestVoucherNo ? ` / ${renewedSuccessData.interestVoucherNo}` : ''} (Pass Voucher ला Pending)
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setPrintAccountData({
-                    fdAccountID: renewedSuccessData.fdAccountID || 0,
-                    accountNo: renewedSuccessData.newAccountNo,
-                    customerName: renewedSuccessData.customerName,
-                    cifNo: renewedSuccessData.cifNo,
-                    schemeName: renewedSuccessData.schemeName,
-                    schemeCode: renewedSuccessData.schemeCode,
-                    depositAmount: renewedSuccessData.depositAmount,
-                    interestRate: renewedSuccessData.interestRate,
-                    openingDate: renewedSuccessData.openingDate,
-                    maturityDate: renewedSuccessData.maturityDate,
-                    maturityAmount: renewedSuccessData.maturityAmount,
-                    status: 'Active',
-                    interestType: renewedSuccessData.interestType,
-                    monthlyInterestAmount: renewedSuccessData.monthlyInterestAmount
-                  });
-                  setShowReceiptPrintModal(true);
-                }}
+                onClick={() => openRenewedPrintModal(renewedSuccessData, 'front')}
                 className="bg-amber-400 hover:bg-amber-300 text-amber-950 font-bold px-3.5 py-1.5 rounded-sm text-xs shadow-md flex items-center gap-1.5 cursor-pointer transition-all border border-amber-300"
               >
                 <Printer className="w-4 h-4 text-amber-900" />
-                <span>नवीन ठेव पावती प्रिंट करा (Print Receipt)</span>
+                <span>नवीन ठेव पावती प्रिंट करा</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openRenewedPrintModal(renewedSuccessData, 'endorsement')}
+                className="bg-sky-100 hover:bg-sky-200 text-sky-950 font-bold px-3 py-1.5 rounded-sm text-xs shadow-sm flex items-center gap-1.5 cursor-pointer transition-all border border-sky-300"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-sky-800" />
+                <span>मागील शेरा प्रिंट (Endorsement)</span>
               </button>
               <button
                 type="button"
@@ -2109,12 +2229,17 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-black/20 p-3 rounded-sm border border-emerald-600/40 text-[11.5px]">
             <div>
-              <span className="text-emerald-300 block text-[10px]">मूळ खाते (Old FD):</span>
-              <strong className="font-mono text-white">{renewedSuccessData.oldAccountNo}</strong>
+              <span className="text-emerald-300 block text-[10px]">मूळ पावती / खाते (Old FD):</span>
+              <strong className="font-mono text-white">{renewedSuccessData.oldReceiptNo || renewedSuccessData.oldAccountNo}</strong>
             </div>
             <div>
-              <span className="text-emerald-300 block text-[10px]">नवीन खाते क्र. (New FD):</span>
-              <strong className="font-mono text-amber-300 text-xs font-black">{renewedSuccessData.newAccountNo}</strong>
+              <span className="text-emerald-300 block text-[10px]">नूतनीकृत पावती क्र. (Receipt No):</span>
+              <strong className="font-mono text-amber-300 text-xs font-black">
+                {renewedSuccessData.newReceiptNo || renewedSuccessData.newAccountNo}
+              </strong>
+              {renewedSuccessData.newReceiptNo && renewedSuccessData.newReceiptNo !== renewedSuccessData.newAccountNo && (
+                <span className="block text-[9.5px] text-emerald-200 font-mono">CBS: {renewedSuccessData.newAccountNo}</span>
+              )}
             </div>
             <div>
               <span className="text-emerald-300 block text-[10px]">नवीन योजना (Scheme):</span>
@@ -2409,9 +2534,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                     खाते स्थिती
                                   </th>
                                   <td className="px-2.5 py-1.5">
-                                    {!isPassingMode && acc.status === 'Closed' ? (
+                                    {!isPassingMode && (acc.status === 'Closed' || acc.status === 'Renewed') ? (
                                       <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-rose-50 text-rose-800 border-rose-300">
-                                        बंद / नूतनीकरण झालेले (Closed)
+                                        {acc.status === 'Renewed' ? 'नूतनीकरण झालेले (Renewed)' : 'बंद झालेले (Closed)'}
                                       </span>
                                     ) : (
                                       <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm border ${
@@ -2820,6 +2945,91 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                     </select>
                                   </FormRow>
                                 )}
+
+                                {/* पावती क्रमांक धोरण व संदर्भ (Receipt Numbering Option) */}
+                                <FormRow label="पावती क्रमांक (Receipt No)">
+                                  <div className="space-y-1.5">
+                                    {sansthaPolicyError && (
+                                      <div className="px-2.5 py-1 bg-rose-50 border border-rose-300 rounded text-[10.5px] font-bold text-rose-800">
+                                        ⚠️ {sansthaPolicyError}
+                                      </div>
+                                    )}
+                                    {(sansthaRenewalPolicy === 'HYBRID_CHOICE' || allowManualRenewalReceipt) ? (
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        {(sansthaRenewalPolicy === 'NEW_RECEIPT' || sansthaRenewalPolicy === 'HYBRID_CHOICE') && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setReceiptNoMode('NEW_RECEIPT')}
+                                            className={`px-2.5 py-1 rounded text-[11px] font-bold border cursor-pointer ${
+                                              receiptNoMode === 'NEW_RECEIPT'
+                                                ? 'bg-primary text-white border-primary'
+                                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            नवीन CBS पावती क्र.
+                                          </button>
+                                        )}
+                                        {(sansthaRenewalPolicy === 'RETAIN_ORIGINAL' || sansthaRenewalPolicy === 'HYBRID_CHOICE') && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setReceiptNoMode('RETAIN_ORIGINAL')}
+                                            className={`px-2.5 py-1 rounded text-[11px] font-bold border cursor-pointer ${
+                                              receiptNoMode === 'RETAIN_ORIGINAL'
+                                                ? 'bg-amber-600 text-white border-amber-700'
+                                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            मूळ क्र. कायम ({acc.receiptNo || acc.legacyAccountNumber || acc.accountNo})
+                                          </button>
+                                        )}
+                                        {(sansthaRenewalPolicy === 'NEXT_LEGACY' || sansthaRenewalPolicy === 'HYBRID_CHOICE') && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setReceiptNoMode('NEXT_LEGACY')}
+                                            className={`px-2.5 py-1 rounded text-[11px] font-bold border cursor-pointer ${
+                                              receiptNoMode === 'NEXT_LEGACY'
+                                                ? 'bg-emerald-600 text-white border-emerald-700'
+                                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            पुढील जुना FD क्र.{nextLegacyPreview ? ` (${nextLegacyPreview})` : ''}
+                                          </button>
+                                        )}
+                                        {allowManualRenewalReceipt && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setReceiptNoMode('CUSTOM')}
+                                            className={`px-2.5 py-1 rounded text-[11px] font-bold border cursor-pointer ${
+                                              receiptNoMode === 'CUSTOM'
+                                                ? 'bg-indigo-600 text-white border-indigo-700'
+                                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            कस्टम / प्री-प्रिंटेड क्र.
+                                          </button>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded text-[11px] font-bold text-slate-800">
+                                        {sansthaRenewalPolicy === 'RETAIN_ORIGINAL'
+                                          ? `📌 मूळ पावती क्र. "${acc.receiptNo || acc.legacyAccountNumber || acc.accountNo}" कायम राहील (नूतनीकरण सायकल #${(acc.renewalCycleNo || 0) + 1})`
+                                          : sansthaRenewalPolicy === 'NEXT_LEGACY'
+                                          ? `🔢 पुढील जुना FD क्रमांक आपोआप तयार होईल${nextLegacyPreview ? `: ${nextLegacyPreview}` : ''} (संस्था धोरणानुसार)`
+                                          : '🆕 नवीन १४-अंकी CBS पावती क्रमांक आपोआप तयार होईल (संस्था धोरणानुसार)'}
+                                      </div>
+                                    )}
+
+                                    {receiptNoMode === 'CUSTOM' && allowManualRenewalReceipt && (
+                                      <input
+                                        type="text"
+                                        value={customReceiptNo}
+                                        onChange={(e) => setCustomReceiptNo(e.target.value)}
+                                        placeholder="नवीन प्री-प्रिंटेड पावती क्रमांक टाका (उदा. 895)..."
+                                        className={`${ctrl} font-mono font-bold`}
+                                      />
+                                    )}
+                                  </div>
+                                </FormRow>
 
                                 {/* Live Renewal Simulation & Maturity Calculator Card */}
                                 {renewalSimulation && (
@@ -3796,8 +4006,18 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono font-bold text-xs text-slate-900 tracking-wide">
-                              {acc.accountNo}
+                              {acc.receiptNo || acc.accountNo}
                             </span>
+                            {acc.receiptNo && acc.receiptNo !== acc.accountNo && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+                                CBS: {acc.accountNo}
+                              </span>
+                            )}
+                            {(acc.renewalCycleNo || 0) > 0 && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                नूतनीकरण #{acc.renewalCycleNo}
+                              </span>
+                            )}
                             {acc.legacyAccountNumber && acc.legacyAccountNumber.trim() && (
                               <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300">
                                 जुना: {acc.legacyAccountNumber.trim()}
@@ -4018,6 +4238,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       {showReceiptPrintModal && printAccountData && (
         <FdReceiptPrintModal
           account={printAccountData}
+          initialSide={printInitialSide}
           onClose={() => setShowReceiptPrintModal(false)}
         />
       )}

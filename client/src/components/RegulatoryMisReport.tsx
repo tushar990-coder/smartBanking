@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 import { 
   Building2, 
   Calendar, 
@@ -51,12 +53,22 @@ const fmtInt = (n: number | null | undefined): string => {
 };
 
 export default function RegulatoryMisReport() {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+
+  const [branches, setBranches] = useState<Array<{ branchID: number; branchCode?: string; branchName: string }>>([]);
   const [activeTab, setActiveTab] = useState<number>(1);
   const [financialYear, setFinancialYear] = useState<string>('2025-2026');
   const [asOnDate, setAsOnDate] = useState<string>(
     new Date().getFullYear() + '-03-31'
   );
-  const [branchId, setBranchId] = useState<number>(0);
+  const [branchId, setBranchId] = useState<number>(
+    !isHOUser && lockedBranchId
+      ? lockedBranchId
+      : (effectiveBranch && effectiveBranch !== 'all' ? Number(effectiveBranch) : 0)
+  );
   const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState<boolean>(false);
@@ -258,11 +270,25 @@ export default function RegulatoryMisReport() {
     signatoryDesignation: 'मुख्य कार्यकारी अधिकारी / व्यवस्थापक'
   });
 
+  useEffect(() => {
+    axios.get('/api/Branches')
+      .then(res => setBranches(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setBranches([]));
+  }, []);
+
+  useEffect(() => {
+    if (!isHOUser && lockedBranchId) {
+      setBranchId(lockedBranchId);
+    } else if (globalBranchId !== undefined && globalBranchId !== null && globalBranchId !== '') {
+      setBranchId(globalBranchId === 'all' ? 0 : Number(globalBranchId) || 0);
+    }
+  }, [globalBranchId, isHOUser, lockedBranchId]);
+
   // Load Sanstha Details on mount
   useEffect(() => {
     fetchSansthaDetails();
     fetchAutoCompute();
-  }, [financialYear]);
+  }, [financialYear, branchId]);
 
   const fetchSansthaDetails = async () => {
     try {
@@ -656,6 +682,27 @@ export default function RegulatoryMisReport() {
               onChange={(e) => setAsOnDate(e.target.value)}
               className="px-2.5 py-1 border border-gray-300 rounded-sm focus:ring-1 focus:ring-primary focus:border-primary font-medium text-gray-800 bg-white h-[30px]"
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-primary" />
+            <label className="font-bold text-gray-700">शाखा:</label>
+            <select
+              value={branchId}
+              onChange={(e) => setBranchId(Number(e.target.value))}
+              disabled={!isHOUser && !!lockedBranchId}
+              className="px-2.5 py-1 border border-gray-300 rounded-sm focus:ring-1 focus:ring-primary focus:border-primary font-bold text-gray-800 bg-white h-[30px] disabled:bg-slate-100 disabled:cursor-not-allowed"
+            >
+              {isHOUser && <option value={0}>सर्व शाखा (Consolidated)</option>}
+              {(isHOUser || !lockedBranchId
+                ? branches
+                : branches.filter(b => Number(b.branchID) === Number(lockedBranchId))
+              ).map(b => (
+                <option key={b.branchID} value={b.branchID}>
+                  {b.branchCode ? `${b.branchCode} - ` : ''}{b.branchName}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

@@ -6847,6 +6847,52 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- FD RENEWAL RECEIPT POLICY, CHAIN TRACKING & LEGACY NEXT NUMBERING v2.6.24
+-- ========================================================================
+IF OBJECT_ID('dbo.SansthaDetails', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('SansthaDetails', 'FdRenewalReceiptPolicy') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SansthaDetails] ADD [FdRenewalReceiptPolicy] nvarchar(30) NOT NULL DEFAULT 'NEW_RECEIPT';
+        PRINT '  -> Added SansthaDetails.FdRenewalReceiptPolicy';
+    END
+    IF COL_LENGTH('SansthaDetails', 'AllowManualReceiptNoOnRenewal') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SansthaDetails] ADD [AllowManualReceiptNoOnRenewal] bit NOT NULL DEFAULT 0;
+        PRINT '  -> Added SansthaDetails.AllowManualReceiptNoOnRenewal';
+    END
+END
+GO
+
+IF OBJECT_ID('dbo.FdAccounts', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('FdAccounts', 'ReceiptNo') IS NULL
+        ALTER TABLE [dbo].[FdAccounts] ADD [ReceiptNo] nvarchar(50) NULL;
+    IF COL_LENGTH('FdAccounts', 'RootFdAccountID') IS NULL
+        ALTER TABLE [dbo].[FdAccounts] ADD [RootFdAccountID] int NULL;
+    IF COL_LENGTH('FdAccounts', 'RenewalCycleNo') IS NULL
+        ALTER TABLE [dbo].[FdAccounts] ADD [RenewalCycleNo] int NOT NULL DEFAULT 0;
+
+    IF COL_LENGTH('FdAccounts', 'ReceiptNo') IS NOT NULL
+    BEGIN
+        EXEC(N'UPDATE [dbo].[FdAccounts] SET [ReceiptNo] = COALESCE(NULLIF(LTRIM(RTRIM([LegacyAccountNumber])), ''''), [AccountNo]) WHERE [ReceiptNo] IS NULL OR LTRIM(RTRIM([ReceiptNo])) = '''';');
+        EXEC(N'UPDATE [dbo].[FdAccounts] SET [RootFdAccountID] = [FdAccountID] WHERE [RootFdAccountID] IS NULL AND [ParentFdAccountID] IS NULL;');
+        PRINT '  -> Verified & backfilled FdAccounts ReceiptNo / RootFdAccountID / RenewalCycleNo';
+    END
+END
+GO
+
+IF OBJECT_ID('dbo.FdAutoRenewalLogs', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('FdAutoRenewalLogs', 'OldReceiptNo') IS NULL
+        ALTER TABLE [dbo].[FdAutoRenewalLogs] ADD [OldReceiptNo] nvarchar(50) NULL;
+    IF COL_LENGTH('FdAutoRenewalLogs', 'NewReceiptNo') IS NULL
+        ALTER TABLE [dbo].[FdAutoRenewalLogs] ADD [NewReceiptNo] nvarchar(50) NULL;
+    PRINT '  -> Verified FdAutoRenewalLogs OldReceiptNo / NewReceiptNo';
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

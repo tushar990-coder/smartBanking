@@ -111,7 +111,23 @@ namespace Bhisi.Api.Controllers
 
                 decimal kycPercentage = totalMembersCount > 0 ? Math.Round((decimal)kycCount * 100m / totalMembersCount, 2) : 100m;
 
-                // 3. Paid-up Share Capital
+                // 4. Ledgers Balances (Reserves, Funds, Cash & Bank) — BranchLedgerOpeningBalances + Approved Vouchers
+                var allLedgers = await _context.Ledgers.AsNoTracking()
+                    .Include(l => l.AccountGroup)
+                    .Where(l => l.IsActive)
+                    .ToListAsync();
+
+                var ledgerBalances = await BranchLedgerBalanceHelper.GetAsOfLedgerBalancesAsync(
+                    _context,
+                    allLedgers.Select(l => l.LedgerID),
+                    targetDate,
+                    scopedBranch,
+                    approvedOnly: true);
+
+                decimal GetCrBal(int ledgerId) => ledgerBalances.TryGetValue(ledgerId, out var netDr) ? -netDr : 0m;
+                decimal GetDrBal(int ledgerId) => ledgerBalances.TryGetValue(ledgerId, out var netDr) ? netDr : 0m;
+
+                // 3. Paid-up Share Capital (if ShareAccounts empty, fallback to Share Capital ledger as-of balance)
                 decimal paidUpCapital = await _context.ShareAccounts.AsNoTracking()
                     .Include(s => s.Member)
                     .Where(s => (s.Status == "Active" || string.IsNullOrEmpty(s.Status)) && (!scopedBranch.HasValue || (s.Member != null && s.Member.BranchID == scopedBranch.Value)))
@@ -119,62 +135,55 @@ namespace Bhisi.Api.Controllers
 
                 if (paidUpCapital == 0)
                 {
-                    // Fallback to Share Capital ledger balance
-                    paidUpCapital = await _context.Ledgers.AsNoTracking()
-                        .Where(l => l.IsActive && (l.LedgerName.Contains("भाग") || l.LedgerName.Contains("Share Capital")))
-                        .SumAsync(l => l.OpeningBalance);
+                    paidUpCapital = allLedgers
+                        .Where(l => l.LedgerName.Contains("भाग") || l.LedgerName.Contains("Share Capital"))
+                        .Sum(l => Math.Max(0m, GetCrBal(l.LedgerID)));
                 }
-
-                // 4. Ledgers Balances (Reserves, Funds, Cash & Bank)
-                var allLedgers = await _context.Ledgers.AsNoTracking()
-                    .Include(l => l.AccountGroup)
-                    .Where(l => l.IsActive)
-                    .ToListAsync();
 
                 // Reserve Fund
                 decimal reserveFund = allLedgers
                     .Where(l => (l.LedgerName.Contains("राखीव") || l.LedgerName.Contains("Statutory Reserve")) && !l.LedgerName.Contains("इमारत"))
-                    .Sum(l => l.OpeningBalanceType == "Cr" ? l.OpeningBalance : -l.OpeningBalance);
+                    .Sum(l => GetCrBal(l.LedgerID));
 
                 // Building Fund
                 decimal buildingFund = allLedgers
                     .Where(l => l.LedgerName.Contains("इमारत") || l.LedgerName.Contains("Building"))
-                    .Sum(l => l.OpeningBalanceType == "Cr" ? l.OpeningBalance : -l.OpeningBalance);
+                    .Sum(l => GetCrBal(l.LedgerID));
 
                 // BDDR (संशयित बुडीत निधी)
                 decimal bddrFund = allLedgers
                     .Where(l => l.LedgerName.Contains("संशयित") || l.LedgerName.Contains("बुडीत") || l.LedgerName.Contains("BDDR"))
-                    .Sum(l => l.OpeningBalanceType == "Cr" ? l.OpeningBalance : -l.OpeningBalance);
+                    .Sum(l => GetCrBal(l.LedgerID));
 
                 // Other Reserves
                 decimal otherReserves = allLedgers
                     .Where(l => l.AccountGroup != null && (l.AccountGroup.GroupName.Contains("निधी") || l.AccountGroup.GroupName.Contains("Reserve")) &&
                                 !l.LedgerName.Contains("राखीव") && !l.LedgerName.Contains("इमारत") && !l.LedgerName.Contains("बुडीत"))
-                    .Sum(l => l.OpeningBalanceType == "Cr" ? l.OpeningBalance : -l.OpeningBalance);
+                    .Sum(l => GetCrBal(l.LedgerID));
 
                 // Cash in Hand
                 decimal cashInHand = allLedgers
                     .Where(l => l.AccountType != null && (l.AccountType.ToLower() == "cash" || l.LedgerName.Contains("रोख") || l.LedgerName.ToLower().Contains("cash in hand")))
-                    .Sum(l => l.OpeningBalanceType == "Dr" ? l.OpeningBalance : -l.OpeningBalance);
+                    .Sum(l => GetDrBal(l.LedgerID));
 
                 // Bank Savings, Current, OD
                 decimal bankSavings = allLedgers
                     .Where(l => l.AccountType != null && l.AccountType.ToLower() == "bank" && (l.LedgerName.Contains("बचत") || l.LedgerName.ToLower().Contains("saving")))
-                    .Sum(l => l.OpeningBalanceType == "Dr" ? l.OpeningBalance : -l.OpeningBalance);
+                    .Sum(l => GetDrBal(l.LedgerID));
 
                 decimal bankCurrent = allLedgers
                     .Where(l => l.AccountType != null && l.AccountType.ToLower() == "bank" && (l.LedgerName.Contains("चालू") || l.LedgerName.ToLower().Contains("current")))
-                    .Sum(l => l.OpeningBalanceType == "Dr" ? l.OpeningBalance : -l.OpeningBalance);
+                    .Sum(l => GetDrBal(l.LedgerID));
 
                 decimal bankOd = allLedgers
                     .Where(l => l.AccountType != null && l.AccountType.ToLower() == "bank" && (l.LedgerName.Contains("अधिकर्ष") || l.LedgerName.ToLower().Contains("od") || l.LedgerName.ToLower().Contains("overdraft")))
-                    .Sum(l => l.OpeningBalanceType == "Cr" ? l.OpeningBalance : 0m);
+                    .Sum(l => Math.Max(0m, GetCrBal(l.LedgerID)));
 
                 // 5. Deposits Calculation (FD, Saving, RD, Pigmy)
-                var fdList = await _context.FdAccounts.AsNoTracking()
-                    .Where(f => (f.Status == "Active" || string.IsNullOrEmpty(f.Status)) && (!scopedBranch.HasValue || f.BranchID == scopedBranch.Value))
+                var fdSnapshots = await FdDepositQueryHelper.GetLiveFdSnapshotsAsOfAsync(_context, targetDate, scopedBranch);
+                var fdList = fdSnapshots
                     .Select(f => new { f.CustomerID, f.DepositAmount })
-                    .ToListAsync();
+                    .ToList();
 
                 var sbList = await _context.SavingAccountMasters.AsNoTracking()
                     .Where(s => (s.Status == "Active" || string.IsNullOrEmpty(s.Status)) && (!scopedBranch.HasValue || s.BranchID == scopedBranch.Value))
@@ -182,12 +191,14 @@ namespace Bhisi.Api.Controllers
                     .ToListAsync();
 
                 var rdList = await _context.RdAccounts.AsNoTracking()
-                    .Where(r => (r.Status == "Active" || string.IsNullOrEmpty(r.Status)) && (!scopedBranch.HasValue || r.BranchID == scopedBranch.Value))
+                    .Where(FdDepositQueryHelper.LiveRdPredicate)
+                    .Where(r => !scopedBranch.HasValue || r.BranchID == scopedBranch.Value)
                     .Select(r => new { r.CustomerID, CurrentBalance = r.TotalDepositedAmount })
                     .ToListAsync();
 
                 var pigmyList = await _context.PigmyAccounts.AsNoTracking()
-                    .Where(p => (p.Status == "Active" || string.IsNullOrEmpty(p.Status)) && (!scopedBranch.HasValue || p.BranchID == scopedBranch.Value))
+                    .Where(FdDepositQueryHelper.LivePigmyPredicate)
+                    .Where(p => !scopedBranch.HasValue || p.BranchID == scopedBranch.Value)
                     .Select(p => new { p.CustomerID, CurrentBalance = p.TotalDepositedAmount })
                     .ToListAsync();
 

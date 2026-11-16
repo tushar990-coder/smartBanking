@@ -473,7 +473,7 @@ namespace Bhisi.Api.Controllers
                 if (cashOutflow > 0)
                 {
                     decimal currentCash = 0;
-                    var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, voucher.VoucherDate);
+                    var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, voucher.VoucherDate, branchId: voucher.BranchID);
                     int activeFyId = fyBaseline.BaselineFinancialYearId;
 
                     var branchOb = await _context.BranchLedgerOpeningBalances
@@ -481,10 +481,6 @@ namespace Bhisi.Api.Controllers
                     if (branchOb != null)
                     {
                         currentCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
-                    }
-                    else if (!fyBaseline.IsCarriedForwardYear && voucher.BranchID == 1)
-                    {
-                        currentCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
                     }
                     var approvedCashQuery = _context.VoucherDetails
                         .Include(vd => vd.Voucher)
@@ -623,7 +619,7 @@ namespace Bhisi.Api.Controllers
                 if (cashOutflow > 0)
                 {
                     decimal currentCash = 0;
-                    var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, voucher.VoucherDate);
+                    var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, voucher.VoucherDate, branchId: existingVoucher.BranchID);
                     int activeFyId = fyBaseline.BaselineFinancialYearId;
 
                     var branchOb = await _context.BranchLedgerOpeningBalances
@@ -631,10 +627,6 @@ namespace Bhisi.Api.Controllers
                     if (branchOb != null)
                     {
                         currentCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
-                    }
-                    else if (!fyBaseline.IsCarriedForwardYear && existingVoucher.BranchID == 1)
-                    {
-                        currentCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
                     }
                     var approvedCashQuery = _context.VoucherDetails
                         .Include(vd => vd.Voucher)
@@ -820,7 +812,9 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<IActionResult> ApproveVoucher(int id, [FromBody] ApprovalDto dto)
         {
-            var voucher = await _context.Vouchers.FindAsync(id);
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                .FirstOrDefaultAsync(v => v.VoucherID == id);
             if (voucher == null) return NotFound();
 
             if (!User.CanAccessBranch(voucher.BranchID))
@@ -836,42 +830,105 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"सुरक्षा नियम: फक्त चालू लॉगिन तारखेचेच ({targetLoginDate.Value:dd/MM/yyyy}) व्हाउचर मंजूर करता येतात. व्हाउचर क्र. {voucher.VoucherNo} ची तारीख ({voucher.VoucherDate:dd/MM/yyyy}) वेगळी आहे.");
             }
 
-            var closedFyOnApprove = await _context.FinancialYears
-                .AsNoTracking()
-                .FirstOrDefaultAsync(fy => fy.IsClosed &&
-                                           voucher.VoucherDate.Date >= fy.StartDate.Date &&
-                                           voucher.VoucherDate.Date <= fy.EndDate.Date);
-            if (closedFyOnApprove != null)
-            {
-                return BadRequest($"दिनांक {voucher.VoucherDate:dd/MM/yyyy} ही तारीख बंद केलेल्या आर्थिक वर्षात ({closedFyOnApprove.YearCode}) येते. बंद आर्थिक वर्षातील व्हाउचर मंजूर करता येणार नाही.");
-            }
-
-            var dayStatus = await _context.BranchDayEndStatuses
-                .AsNoTracking()
-                .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)
-                .FirstOrDefaultAsync();
-            if (dayStatus != null && dayStatus.IsDayClosed)
-            {
-                return BadRequest($"दिनांक {voucher.VoucherDate:dd/MM/yyyy} ची दिवसअखेर (Day-End) पूर्ण झाली आहे. बंद झालेल्या तारखेचा व्हाउचर मंजूर करता येणार नाही.");
-            }
-
             int approverId = User.GetUserId();
-            if (approverId <= 0 && dto.ApprovedBy > 0)
+            if (approverId <= 0 && dto != null && dto.ApprovedBy > 0)
             {
                 approverId = dto.ApprovedBy;
             }
 
-            if (voucher.CreatedBy > 0 && approverId > 0 && voucher.CreatedBy == approverId && !User.IsHeadOfficeAdmin())
+            bool isHoAdmin = User.IsHeadOfficeAdmin();
+            if (voucher.CreatedBy > 0 && approverId > 0 && voucher.CreatedBy == approverId && !isHoAdmin)
             {
                 return BadRequest("व्हाऊचर तयार करणारा वापरकर्ता स्वतःचा व्हाऊचर स्वतः अ‍ॅप्रुव्ह करू शकत नाही (Maker-Checker Rule).");
             }
 
-            voucher.Status = "Approved";
-            voucher.ApprovedBy = approverId;
-            voucher.ApprovedOn = DateTime.Now;
+            using var dbTransaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // Atomically include any linked bidirectional IBT sibling so pairs never stay half-approved
+                var expandedIds = await Helpers.IbtLedgerHelper.ExpandIbtSiblingIdsAsync(_context, new[] { id });
+                var pairVouchers = await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .Where(v => expandedIds.Contains(v.VoucherID) && v.Status == "Pending")
+                    .ToListAsync();
 
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Voucher approved successfully." });
+                if (!pairVouchers.Any())
+                {
+                    pairVouchers.Add(voucher);
+                }
+
+                // Validate Closed Financial Year, Branch Day-End lock, Maker-Checker, and Dr == Cr across ALL vouchers in the pair BEFORE mutating
+                foreach (var pv in pairVouchers)
+                {
+                    if (pv.CreatedBy > 0 && approverId > 0 && pv.CreatedBy == approverId && !isHoAdmin)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest("व्हाऊचर तयार करणारा वापरकर्ता स्वतःचा व्हाऊचर स्वतः अ‍ॅप्रुव्ह करू शकत नाही (Maker-Checker Rule).");
+                    }
+
+                    var closedFyOnApprove = await _context.FinancialYears
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(fy => fy.IsClosed &&
+                                                   pv.VoucherDate.Date >= fy.StartDate.Date &&
+                                                   pv.VoucherDate.Date <= fy.EndDate.Date);
+                    if (closedFyOnApprove != null)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"दिनांक {pv.VoucherDate:dd/MM/yyyy} ही तारीख बंद केलेल्या आर्थिक वर्षात ({closedFyOnApprove.YearCode}) येते. बंद आर्थिक वर्षातील व्हाउचर मंजूर करता येणार नाही.");
+                    }
+
+                    var dayStatus = await _context.BranchDayEndStatuses
+                        .AsNoTracking()
+                        .Where(b => b.BranchID == pv.BranchID && b.BusinessDate.Date == pv.VoucherDate.Date)
+                        .FirstOrDefaultAsync();
+                    if (dayStatus != null && dayStatus.IsDayClosed)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"दिनांक {pv.VoucherDate:dd/MM/yyyy} (शाखा #{pv.BranchID}) ची दिवसअखेर (Day-End) पूर्ण झाली आहे. बंद झालेल्या तारखेचा व्हाउचर मंजूर करता येणार नाही.");
+                    }
+
+                    decimal totalDr = pv.VoucherDetails?.Where(d => d.DrCr == "Dr").Sum(d => d.Amount) ?? 0;
+                    decimal totalCr = pv.VoucherDetails?.Where(d => d.DrCr == "Cr").Sum(d => d.Amount) ?? 0;
+                    if (Math.Abs(totalDr - totalCr) > 0.01m)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"व्हाउचर तफावत त्रुटी: व्हाउचर क्र. {pv.VoucherNo} मध्ये नावे (Dr: ₹{totalDr:N2}) व जमा (Cr: ₹{totalCr:N2}) रक्कमेत तफावत आहे.");
+                    }
+                }
+
+                // Assign per-branch, per-date sequential ScrollNo & mark all linked vouchers Approved
+                var nextScrollByBranchDate = new Dictionary<(int BranchID, DateTime Date), int>();
+                foreach (var pv in pairVouchers.OrderBy(v => v.BranchID).ThenBy(v => v.VoucherID))
+                {
+                    if (!pv.ScrollNo.HasValue || pv.ScrollNo.Value <= 0)
+                    {
+                        var key = (pv.BranchID, pv.VoucherDate.Date);
+                        if (!nextScrollByBranchDate.TryGetValue(key, out int curMax))
+                        {
+                            curMax = await _context.Vouchers
+                                .Where(v => v.BranchID == pv.BranchID && v.VoucherDate.Date == pv.VoucherDate.Date && v.ScrollNo != null)
+                                .Select(v => (int?)v.ScrollNo)
+                                .MaxAsync() ?? 0;
+                        }
+                        curMax++;
+                        nextScrollByBranchDate[key] = curMax;
+                        pv.ScrollNo = curMax;
+                    }
+
+                    pv.Status = "Approved";
+                    pv.ApprovedBy = approverId > 0 ? approverId : (int?)null;
+                    pv.ApprovedOn = DateTime.Now;
+                }
+
+                await _context.SaveChangesAsync();
+                await dbTransaction.CommitAsync();
+                return Ok(new { message = pairVouchers.Count > 1 ? $"Voucher pair ({pairVouchers.Count}) approved successfully." : "Voucher approved successfully." });
+            }
+            catch (Exception ex)
+            {
+                await dbTransaction.RollbackAsync();
+                return StatusCode(500, new { message = "Error approving voucher.", error = ex.Message });
+            }
         }
 
         // POST: api/Vouchers/5/Reject (100% Physical Hard Delete + State Rollback — zero soft-delete Status = "Rejected")

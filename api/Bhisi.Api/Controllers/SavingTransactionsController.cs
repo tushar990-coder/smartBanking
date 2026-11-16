@@ -435,7 +435,7 @@ namespace Bhisi.Api.Controllers
                 else
                 {
                     // DUAL-VOUCHER IBT ENGINE FOR CROSS-BRANCH SAVING TRANSACTION
-                    int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, targetBranchId, homeBranchId);
+                    var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, targetBranchId, homeBranchId);
                     var homeBranch = await _context.Branches.FindAsync(homeBranchId);
                     string hbCode = homeBranch?.BranchCode ?? "HB";
 
@@ -475,7 +475,7 @@ namespace Bhisi.Api.Controllers
                         counterVoucher.VoucherDetails.Add(new VoucherDetail
                         {
                             VoucherID = counterVoucher.VoucherID,
-                            LedgerID = ibtLedgerId,
+                            LedgerID = counterIbtLedgerId,
                             DrCr = "Cr",
                             Amount = txn.Amount,
                             CustomerID = account.CustomerID
@@ -504,7 +504,7 @@ namespace Bhisi.Api.Controllers
                         homeVoucher.VoucherDetails.Add(new VoucherDetail
                         {
                             VoucherID = homeVoucher.VoucherID,
-                            LedgerID = ibtLedgerId,
+                            LedgerID = homeIbtLedgerId,
                             DrCr = "Dr",
                             Amount = txn.Amount,
                             CustomerID = account.CustomerID
@@ -557,7 +557,7 @@ namespace Bhisi.Api.Controllers
                         homeVoucher.VoucherDetails.Add(new VoucherDetail
                         {
                             VoucherID = homeVoucher.VoucherID,
-                            LedgerID = ibtLedgerId,
+                            LedgerID = homeIbtLedgerId,
                             DrCr = "Cr",
                             Amount = txn.Amount,
                             CustomerID = account.CustomerID
@@ -586,7 +586,7 @@ namespace Bhisi.Api.Controllers
                         counterVoucher.VoucherDetails.Add(new VoucherDetail
                         {
                             VoucherID = counterVoucher.VoucherID,
-                            LedgerID = ibtLedgerId,
+                            LedgerID = counterIbtLedgerId,
                             DrCr = "Dr",
                             Amount = txn.Amount,
                             CustomerID = account.CustomerID

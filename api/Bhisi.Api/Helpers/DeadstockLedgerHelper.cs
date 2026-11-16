@@ -191,26 +191,6 @@ namespace Bhisi.Api.Helpers
             }
 
             await context.SaveChangesAsync();
-
-            // 8. Synchronize consolidated OpeningBalance on Ledgers table
-            foreach (var ledgerId in touchedLedgerIds)
-            {
-                var ledger = await context.Ledgers.FindAsync(ledgerId);
-                if (ledger != null)
-                {
-                    decimal totalDr = await context.BranchLedgerOpeningBalances
-                        .Where(b => b.LedgerID == ledgerId && b.FinancialYearID == activeFyId && b.OpeningBalanceType == "Dr")
-                        .SumAsync(b => b.OpeningBalance);
-
-                    if (totalDr >= 0)
-                    {
-                        ledger.OpeningBalance = totalDr;
-                        ledger.OpeningBalanceType = "Dr";
-                    }
-                }
-            }
-
-            await context.SaveChangesAsync();
         }
     }
 }

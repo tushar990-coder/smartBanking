@@ -88,17 +88,41 @@ namespace Bhisi.Api.Controllers
                     : activeRecord.BusinessDate.Date;
             }
 
+            if (dbBusinessDate.HasValue)
+            {
+                return dbBusinessDate.Value;
+            }
+
             var claimDate = User?.FindFirst("BusinessDate")?.Value;
             if (!string.IsNullOrWhiteSpace(claimDate) && DateTime.TryParse(claimDate, out DateTime parsedClaimDate))
             {
-                if (dbBusinessDate.HasValue)
-                {
-                    return parsedClaimDate.Date < dbBusinessDate.Value ? parsedClaimDate.Date : dbBusinessDate.Value;
-                }
                 return parsedClaimDate.Date;
             }
 
-            return dbBusinessDate ?? DateTime.Today;
+            return DateTime.Today;
+        }
+
+        private async Task<int> ResolveMatchingFinancialYearIdAsync(DateTime targetDate)
+        {
+            var matchedFy = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => targetDate.Date >= fy.StartDate.Date && targetDate.Date <= fy.EndDate.Date);
+            if (matchedFy != null) return matchedFy.FinancialYearID;
+
+            var openActiveFy = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsActive && !fy.IsClosed);
+            if (openActiveFy != null) return openActiveFy.FinancialYearID;
+
+            throw new InvalidOperationException(
+                $"दिनांक {targetDate:dd/MM/yyyy} साठी वैध सक्रिय आर्थिक वर्ष (Financial Year) प्रणालीत उपलब्ध नाही.");
+        }
+
+        private async Task<Ledger?> ResolveStrictSchemeLedgerByIdAsync(int? ledgerId)
+        {
+            if (!ledgerId.HasValue || ledgerId.Value <= 0) return null;
+            var ledger = await _context.Ledgers.FindAsync(ledgerId.Value);
+            return (ledger != null && ledger.IsActive) ? ledger : null;
         }
 
         private (bool isHO, int? userBranchId) GetUserBranchInfoLegacyUnused()
@@ -111,23 +135,28 @@ namespace Bhisi.Api.Controllers
         private async Task<(string AccountNo, string FormattedAccountNo, int NextSeq)> GenerateNextFdAccountNoAsync(int branchId, int? schemeId = null, bool incrementSequence = false)
         {
             var branch = await _context.Branches.FindAsync(branchId);
-            int branchIdNum = branch != null ? branch.BranchID : branchId;
+            if (branchId <= 0 || branch == null)
+            {
+                throw new InvalidOperationException($"अवैध शाखा क्र. ({branchId}) — मुदत ठेव खाते क्रमांक तयार करता येत नाही.");
+            }
+            int branchIdNum = branch.BranchID;
 
-            int schemeCodeNum = 401; // Default FD Scheme Code (400 series)
+            int schemeCodeNum = 401;
             if (schemeId.HasValue && schemeId.Value > 0)
             {
                 var scheme = await _context.FdSchemes.FindAsync(schemeId.Value);
-                if (scheme != null)
+                if (scheme == null)
                 {
-                    var sDigits = new string((scheme.SchemeCode ?? "").Where(char.IsDigit).ToArray());
-                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
-                    {
-                        schemeCodeNum = parsed < 100 ? 400 + parsed : parsed;
-                    }
-                    else
-                    {
-                        schemeCodeNum = 400 + scheme.FdSchemeID;
-                    }
+                    throw new InvalidOperationException($"मुदत ठेव योजना क्र. ({schemeId.Value}) सापडली नाही.");
+                }
+                var sDigits = new string((scheme.SchemeCode ?? "").Where(char.IsDigit).ToArray());
+                if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
+                {
+                    schemeCodeNum = parsed < 100 ? 400 + parsed : parsed;
+                }
+                else
+                {
+                    schemeCodeNum = 400 + scheme.FdSchemeID;
                 }
             }
 
@@ -171,9 +200,8 @@ namespace Bhisi.Api.Controllers
                 _context.FdAccountSequences.Add(seq);
                 await _context.SaveChangesAsync();
             }
-            else
+            else if (seq.CurrentValue != maxSeq)
             {
-                if (seq.CurrentValue != maxSeq) { seq.CurrentValue = maxSeq; await _context.SaveChangesAsync(); } } if (false) {
                 seq.CurrentValue = maxSeq;
                 await _context.SaveChangesAsync();
             }
@@ -200,35 +228,7 @@ namespace Bhisi.Api.Controllers
 
         private async Task<string> CalculateNextFdLegacyAccountNoAsync(int branchId, int? schemeId)
         {
-            var query = _context.FdAccounts
-                .AsNoTracking()
-                .Where(a => a.BranchID == branchId && a.LegacyAccountNumber != null && a.LegacyAccountNumber != "");
-
-            if (schemeId.HasValue && schemeId.Value > 0)
-            {
-                query = query.Where(a => a.FdSchemeID == schemeId.Value);
-            }
-
-            var legacyList = await query.Select(a => a.LegacyAccountNumber!).ToListAsync();
-            long maxLegacySeq = 0;
-            foreach (var raw in legacyList)
-            {
-                if (string.IsNullOrWhiteSpace(raw)) continue;
-                string trimmed = raw.Trim();
-                if (long.TryParse(trimmed, out long exactNum) && exactNum > 0 && exactNum < 1000000000L)
-                {
-                    if (exactNum > maxLegacySeq) maxLegacySeq = exactNum;
-                }
-                else
-                {
-                    var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)$");
-                    if (match.Success && long.TryParse(match.Groups[1].Value, out long suffixNum) && suffixNum > 0 && suffixNum < 1000000000L)
-                    {
-                        if (suffixNum > maxLegacySeq) maxLegacySeq = suffixNum;
-                    }
-                }
-            }
-            return maxLegacySeq > 0 ? (maxLegacySeq + 1).ToString() : "1";
+            return await Helpers.FdRenewalPolicyHelper.GenerateNextLegacyAccountNoAsync(_context, branchId, schemeId);
         }
 
         // GET: api/FdAccounts/next-account-no  (global fallback, 14-digit CBS)
@@ -399,7 +399,11 @@ namespace Bhisi.Api.Controllers
                     PrematurePenaltyLedgerID = f.FdScheme != null ? f.FdScheme.PrematurePenaltyLedgerID : null,
                     PrematurePenaltyLedgerName = f.FdScheme != null && f.FdScheme.PrematurePenaltyLedger != null ? f.FdScheme.PrematurePenaltyLedger.LedgerName : "",
                     f.AccountNo,
+                    f.ReceiptNo,
                     f.LegacyAccountNumber,
+                    f.ParentFdAccountID,
+                    f.RootFdAccountID,
+                    f.RenewalCycleNo,
                     f.OpeningDate,
                     f.DepositAmount,
                     f.DurationType,
@@ -455,7 +459,13 @@ namespace Bhisi.Api.Controllers
                     f.PrematurePenaltyLedgerID,
                     f.PrematurePenaltyLedgerName,
                     f.AccountNo,
+                    ReceiptNo = !string.IsNullOrWhiteSpace(f.ReceiptNo)
+                        ? f.ReceiptNo
+                        : (!string.IsNullOrWhiteSpace(f.LegacyAccountNumber) ? f.LegacyAccountNumber : f.AccountNo),
                     f.LegacyAccountNumber,
+                    f.ParentFdAccountID,
+                    f.RootFdAccountID,
+                    f.RenewalCycleNo,
                     f.OpeningDate,
                     f.DepositAmount,
                     f.DurationType,
@@ -523,7 +533,11 @@ namespace Bhisi.Api.Controllers
                     ? Math.Round((f.DepositAmount * f.InterestRate) / 1200.0m, 0, MidpointRounding.AwayFromZero)
                     : 0m,
                 f.AccountNo,
+                ReceiptNo = Helpers.FdRenewalPolicyHelper.GetEffectiveReceiptNo(f),
                 f.LegacyAccountNumber,
+                f.ParentFdAccountID,
+                f.RootFdAccountID,
+                f.RenewalCycleNo,
                 f.OpeningDate,
                 f.DepositAmount,
                 f.DurationType,
@@ -643,6 +657,16 @@ namespace Bhisi.Api.Controllers
                 if (existingAcc != null)
                 {
                     return BadRequest($"पावती / खाते क्रमांक '{account.AccountNo}' आधीच अस्तित्वात आहे (खातेदार: {existingAcc.Customer?.FullName ?? "इतर"}). कृपया वेगळा क्रमांक टाका किंवा सिस्टीमने सुचवलेला क्रमांक वापरा.");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(account.ReceiptNo))
+            {
+                var receiptConflict = await Helpers.FdRenewalPolicyHelper.FindUnrelatedActiveReceiptConflictAsync(
+                    _context, account.BranchID, chainRootId: 0, currentParentId: 0, account.ReceiptNo);
+                if (receiptConflict != null)
+                {
+                    return BadRequest($"पावती क्रमांक '{account.ReceiptNo.Trim()}' आधीच सक्रिय मुदत ठेव खाते क्र. '{receiptConflict.AccountNo}' साठी नोंदवला आहे. कृपया अद्वितीय पावती क्रमांक द्या.");
                 }
             }
 
@@ -767,11 +791,28 @@ namespace Bhisi.Api.Controllers
 
                     // 5. Default attributes
                     account.Status = "Active";
+                    account.RenewalCycleNo = 0;
+                    if (string.IsNullOrWhiteSpace(account.ReceiptNo))
+                    {
+                        account.ReceiptNo = !string.IsNullOrWhiteSpace(account.LegacyAccountNumber)
+                            ? account.LegacyAccountNumber.Trim()
+                            : Helpers.AccountNumberHelper.Format14Digit(account.AccountNo);
+                    }
+                    else
+                    {
+                        account.ReceiptNo = account.ReceiptNo.Trim();
+                    }
                     // Do not override IsLegacyAccount and LegacyAccruedInt sent from frontend
                     account.FinancialYearID = (await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive))?.FinancialYearID ?? 1;
 
                     _context.FdAccounts.Add(account);
                     await _context.SaveChangesAsync();
+
+                    if (!account.RootFdAccountID.HasValue || account.RootFdAccountID.Value <= 0)
+                    {
+                        account.RootFdAccountID = account.FdAccountID;
+                        await _context.SaveChangesAsync();
+                    }
 
                     // 6. Post Accounting Voucher (Only if it's a NEW account, not Legacy)
                     Ledger? fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme);
@@ -1061,7 +1102,11 @@ namespace Bhisi.Api.Controllers
                         .Where(m => m.FdAccountID == id && m.VoucherID.HasValue && m.VoucherID.Value > 0)
                         .Select(m => m.VoucherID!.Value)
                         .ToListAsync();
-                    var preCheckIds = preCheckTxVIds.Union(preCheckAccVIds).Union(preCheckMisVIds).Distinct().ToList();
+                    var preCheckAutoVIds = await _context.FdAutoRenewalLogs
+                        .Where(l => l.NewFdAccountID == id && l.VoucherID.HasValue && l.VoucherID.Value > 0)
+                        .Select(l => l.VoucherID!.Value)
+                        .ToListAsync();
+                    var preCheckIds = preCheckTxVIds.Union(preCheckAccVIds).Union(preCheckMisVIds).Union(preCheckAutoVIds).Distinct().ToList();
 
                     bool hasApprovedLinkedVoucher = await _context.Vouchers.AnyAsync(v =>
                         v.Status == "Approved" &&
@@ -1070,8 +1115,10 @@ namespace Bhisi.Api.Controllers
                          v.VoucherNo == $"JV-FD-{accountNo}" ||
                          v.VoucherNo == $"REC-FD-OP-{accountNo}" ||
                          v.VoucherNo == $"JV-FD-OP-{accountNo}" ||
-                         (!string.IsNullOrEmpty(accountNo) &&
-                          v.VoucherNo.StartsWith("JV-FD-REN-") && v.Narration != null && v.Narration.Contains(accountNo))));
+                         v.VoucherNo == $"JV-FD-REN-{accountNo}" ||
+                         v.VoucherNo == $"JV-FD-AUTOREN-{accountNo}" ||
+                         v.VoucherNo == $"PAY-FD-INT-{accountNo}" ||
+                         v.VoucherNo == $"JV-FD-INT-{accountNo}"));
 
                     if (hasApprovedLinkedVoucher)
                     {
@@ -1668,7 +1715,11 @@ namespace Bhisi.Api.Controllers
                         CustomerID = finalCustomerId,
                         FdSchemeID = req.FdSchemeID,
                         AccountNo = resolvedAccountNo,
+                        ReceiptNo = !string.IsNullOrWhiteSpace(item.LegacyAccountNumber)
+                            ? item.LegacyAccountNumber.Trim()
+                            : Helpers.AccountNumberHelper.Format14Digit(resolvedAccountNo),
                         LegacyAccountNumber = item.LegacyAccountNumber?.Trim(),
+                        RenewalCycleNo = 0,
                         OpeningDate = req.OpeningDate,
                         DepositAmount = p,
                         DurationType = durType,
@@ -1705,6 +1756,18 @@ namespace Bhisi.Api.Controllers
                 }
 
                 await _context.SaveChangesAsync();
+
+                foreach (var createdAcc in createdAccounts)
+                {
+                    if (!createdAcc.RootFdAccountID.HasValue || createdAcc.RootFdAccountID.Value <= 0)
+                    {
+                        createdAcc.RootFdAccountID = createdAcc.FdAccountID;
+                    }
+                }
+                if (createdAccounts.Any())
+                {
+                    await _context.SaveChangesAsync();
+                }
 
                 // 8. Create Consolidated Accounting Voucher
                 var (voucherStatus, approvedBy, approvedOn) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, req.TotalAmount, currentOperatorId);
@@ -1971,8 +2034,26 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            account.RenewalCycleNo = 0;
+            if (string.IsNullOrWhiteSpace(account.ReceiptNo))
+            {
+                account.ReceiptNo = !string.IsNullOrWhiteSpace(account.LegacyAccountNumber)
+                    ? account.LegacyAccountNumber.Trim()
+                    : Helpers.AccountNumberHelper.Format14Digit(account.AccountNo);
+            }
+            else
+            {
+                account.ReceiptNo = account.ReceiptNo.Trim();
+            }
+
             _context.FdAccounts.Add(account);
             await _context.SaveChangesAsync();
+
+            if (!account.RootFdAccountID.HasValue || account.RootFdAccountID.Value <= 0)
+            {
+                account.RootFdAccountID = account.FdAccountID;
+                await _context.SaveChangesAsync();
+            }
 
             // Create or fetch real opening voucher for data integrity
             var openingVoucherNo = $"JV-FD-OP-{account.AccountNo}";
@@ -3104,7 +3185,7 @@ namespace Bhisi.Api.Controllers
                             // CBS Dual-Voucher IBT Engine for Cross-Branch FD Maturity Payout
                             int counterBranchId = operatingBranchId;
                             int homeBranchId = account.BranchID;
-                            int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, counterBranchId, homeBranchId);
+                            var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, counterBranchId, homeBranchId);
 
                             // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash/Payout Ledger
                             var counterVoucher = new Voucher
@@ -3126,7 +3207,7 @@ namespace Bhisi.Api.Controllers
                             await _context.SaveChangesAsync();
 
                             // Dr IBT
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = counterIbtLedgerId, DrCr = "Dr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             // Cr Cash
                             _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
@@ -3168,7 +3249,7 @@ namespace Bhisi.Api.Controllers
                             }
 
                             // Cr IBT Ledger
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                             finalVoucherId = counterVoucher.VoucherID;
                         }
@@ -4063,7 +4144,7 @@ namespace Bhisi.Api.Controllers
                             // CBS Dual-Voucher IBT Engine for Cross-Branch FD Premature Close
                             int counterBranchId = operatingBranchId;
                             int homeBranchId = account.BranchID;
-                            int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, counterBranchId, homeBranchId);
+                            var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, counterBranchId, homeBranchId);
 
                             // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash/Payout Ledger
                             var counterVoucher = new Voucher
@@ -4085,7 +4166,7 @@ namespace Bhisi.Api.Controllers
                             await _context.SaveChangesAsync();
 
                             // Dr IBT
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = counterIbtLedgerId, DrCr = "Dr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             // Cr Cash
                             _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
@@ -4117,7 +4198,7 @@ namespace Bhisi.Api.Controllers
                             if (isPeriodicPayout)
                             {
                                 // Cr IBT Ledger
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                                 // Cr Clawback Income / Recovery
                                 if (penaltyClawback > 0 && clawbackLedger != null)
@@ -4141,7 +4222,7 @@ namespace Bhisi.Api.Controllers
                                 }
 
                                 // Cr IBT Ledger
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                                 // Cr Interest Expense / Clawback Income
                                 if (penaltyClawback > 0 && clawbackLedger != null)
@@ -4427,24 +4508,48 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    // Close Old Account
-                    oldAccount.Status = "Closed";
-                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType})" + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "") + manualAuditNote;
-                    await _context.SaveChangesAsync();
+                    // Mark Old Account as Renewed (retains distinct audit status vs cash/maturity Closed)
+                    string oldEffectiveReceipt = Helpers.FdRenewalPolicyHelper.GetEffectiveReceiptNo(oldAccount);
+                    var (parentFdId, rootFdId, nextCycleNo) = Helpers.FdRenewalPolicyHelper.ComputeRenewalChainMetadata(oldAccount);
+                    if (!oldAccount.RootFdAccountID.HasValue || oldAccount.RootFdAccountID.Value <= 0)
+                    {
+                        oldAccount.RootFdAccountID = rootFdId;
+                    }
+                    if (string.IsNullOrWhiteSpace(oldAccount.ReceiptNo))
+                    {
+                        oldAccount.ReceiptNo = oldEffectiveReceipt;
+                    }
 
                     // 2. Generate Standardized 14-Digit CBS Account Number (sequence-synced & duplicate-safe)
-                    var (_, formattedNewAccountNo, _) = await GenerateNextFdAccountNoAsync(
+                    var (rawNewAccountNo, formattedNewAccountNo, _) = await GenerateNextFdAccountNoAsync(
                         oldAccount.BranchID,
                         request.TargetSchemeID,
                         incrementSequence: true);
 
-                    // Determine correct Financial Year corresponding to new deposit opening date
-                    var matchingFy = await _context.FinancialYears
-                        .FirstOrDefaultAsync(fy => newOpeningDate.Date >= fy.StartDate.Date && newOpeningDate.Date <= fy.EndDate.Date);
+                    var resolvedReceipt = await Helpers.FdRenewalPolicyHelper.ResolveRenewalReceiptNumbersAsync(
+                        _context,
+                        oldAccount,
+                        request.TargetSchemeID,
+                        rawNewAccountNo,
+                        formattedNewAccountNo,
+                        request.ReceiptNoMode,
+                        request.CustomReceiptNo);
 
-                    int targetFinancialYearId = matchingFy?.FinancialYearID 
-                        ?? (await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive))?.FinancialYearID 
-                        ?? (oldAccount.FinancialYearID > 0 ? oldAccount.FinancialYearID : 1);
+                    if (!string.IsNullOrEmpty(resolvedReceipt.ValidationError))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(resolvedReceipt.ValidationError);
+                    }
+
+                    oldAccount.Status = "Renewed";
+                    oldAccount.Remarks = (oldAccount.Remarks ?? "")
+                        + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType}, नवीन CBS: {formattedNewAccountNo}, पावती क्र.: {resolvedReceipt.ReceiptNo}, सायकल #{nextCycleNo})"
+                        + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "")
+                        + manualAuditNote;
+                    await _context.SaveChangesAsync();
+
+                    // Determine correct Financial Year corresponding to new deposit opening date (strict zero-fallback)
+                    int targetFinancialYearId = await ResolveMatchingFinancialYearIdAsync(newOpeningDate);
 
                     // 🛡️ कालावधी प्रकार व मूल्य निश्चिती (Days, Months, Years Support)
                     string durType = !string.IsNullOrWhiteSpace(request.DurationType)
@@ -4503,6 +4608,11 @@ namespace Bhisi.Api.Controllers
                         CustomerID = oldAccount.CustomerID,
                         FdSchemeID = request.TargetSchemeID,
                         AccountNo = formattedNewAccountNo,
+                        ReceiptNo = resolvedReceipt.ReceiptNo,
+                        LegacyAccountNumber = resolvedReceipt.LegacyAccountNumber,
+                        ParentFdAccountID = parentFdId,
+                        RootFdAccountID = rootFdId,
+                        RenewalCycleNo = nextCycleNo,
                         OpeningDate = newOpeningDate,
                         DepositAmount = newDepositAmount,
                         InterestRate = appliedRate,
@@ -4513,7 +4623,7 @@ namespace Bhisi.Api.Controllers
                         Status = "Active",
                         NomineeName = oldAccount.NomineeName,
                         NomineeRelation = oldAccount.NomineeRelation,
-                        Remarks = $"नूतनीकरण खाते (Renewed from): {oldAccount.AccountNo}" 
+                        Remarks = $"नूतनीकरण खाते (Renewed from): {oldAccount.AccountNo} | पावती क्र.: {resolvedReceipt.ReceiptNo} (मूळ पावती: {oldEffectiveReceipt}, सायकल #{nextCycleNo})" 
                             + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {appliedRate}%]" : "")
                             + (newOpeningDate != closureDate ? $" [सुरुवात दिनांक: {newOpeningDate:dd/MM/yyyy}]" : "") 
                             + (overdueInterest > 0 ? $" [समाविष्ट Overdue व्याज: ₹{overdueInterest:F2}]" : "")
@@ -4548,11 +4658,13 @@ namespace Bhisi.Api.Controllers
                     _context.FdAccounts.Add(newAccount);
                     await _context.SaveChangesAsync();
 
-                    // 3. Post Renewal Vouchers
-                    var oldLiabilityLedger = await ResolveFdLiabilityLedgerAsync(oldAccount.FdScheme);
-                    var targetLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme ?? oldAccount.FdScheme);
-                    var payableLedger = await ResolveInterestPayableLedgerAsync(oldAccount.FdScheme ?? scheme);
-                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(oldAccount.FdScheme ?? scheme);
+                    // 3. Post Renewal Vouchers (Strict Scheme Ledger Mapping - zero cross-scheme fallback)
+                    var ledgerSourceScheme = oldAccount.FdScheme;
+                    var targetLedgerScheme = scheme ?? oldAccount.FdScheme;
+                    var oldLiabilityLedger = await ResolveStrictSchemeLedgerByIdAsync(ledgerSourceScheme?.FdLiabilityLedgerID);
+                    var targetLiabilityLedger = await ResolveStrictSchemeLedgerByIdAsync(targetLedgerScheme?.FdLiabilityLedgerID);
+                    var payableLedger = await ResolveStrictSchemeLedgerByIdAsync((ledgerSourceScheme ?? targetLedgerScheme)?.InterestPayableLedgerID);
+                    var expenseLedger = await ResolveStrictSchemeLedgerByIdAsync((ledgerSourceScheme ?? targetLedgerScheme)?.InterestExpenseLedgerID);
 
                     if (oldLiabilityLedger == null || targetLiabilityLedger == null)
                     {
@@ -4707,6 +4819,9 @@ namespace Bhisi.Api.Controllers
                             };
                             _context.Vouchers.Add(voucher2);
                             await _context.SaveChangesAsync();
+
+                            voucher1.RelatedVoucherID = voucher2.VoucherID;
+                            voucher2.RelatedVoucherID = voucher1.VoucherID;
 
                             if (savTx != null)
                             {
@@ -4864,7 +4979,12 @@ namespace Bhisi.Api.Controllers
 
                     return Ok(new { 
                         Message = "FD Renewed successfully", 
-                        NewAccountNo = newAccount.AccountNo, 
+                        NewAccountNo = newAccount.AccountNo,
+                        NewReceiptNo = Helpers.FdRenewalPolicyHelper.GetEffectiveReceiptNo(newAccount),
+                        OldReceiptNo = oldEffectiveReceipt,
+                        RenewalCycleNo = newAccount.RenewalCycleNo,
+                        RootFdAccountId = newAccount.RootFdAccountID,
+                        EffectivePolicy = resolvedReceipt.EffectiveMode,
                         NewDeposit = newDepositAmount, 
                         OverdueInterest = overdueInterest,
                         NewFdAccountId = newAccount.FdAccountID,
@@ -4880,6 +5000,8 @@ namespace Bhisi.Api.Controllers
                         CustomerName = customer != null ? $"{customer.FirstName} {customer.LastName}".Trim() : "",
                         CifNo = customer?.CIFNo ?? "",
                         VoucherNo = request.RenewalType == "PrincipalOnly" ? voucher1?.VoucherNo : singleVoucher?.VoucherNo,
+                        VoucherStatus = "Pending",
+                        VoucherDate = closureDate,
                         InterestVoucherNo = (request.RenewalType == "PrincipalOnly" && voucher2 != null) ? voucher2.VoucherNo : null
                     });
                 }
@@ -4907,9 +5029,10 @@ namespace Bhisi.Api.Controllers
                 return NotFound("मुदत ठेव खाते सापडले नाही.");
             }
 
-            if (string.Equals(existing.Status, "Closed", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(existing.Status, "Closed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(existing.Status, "Renewed", StringComparison.OrdinalIgnoreCase))
             {
-                return BadRequest("सदर मुदत ठेव खाते आधीच बंद (Closed) झालेले असल्याने संपादित करता येत नाही.");
+                return BadRequest($"सदर मुदत ठेव खाते आधीच '{existing.Status}' झालेले असल्याने संपादित करता येत नाही.");
             }
 
             // [RULE-FD-LEGACY-DUP] Prevent duplicate Old Receipt No under the same Scheme & Branch
@@ -4923,7 +5046,10 @@ namespace Bhisi.Api.Controllers
                         && a.BranchID == account.BranchID 
                         && a.FdSchemeID == account.FdSchemeID 
                         && a.LegacyAccountNumber != null 
-                        && a.LegacyAccountNumber.Trim() == trimmedLegacy);
+                        && a.LegacyAccountNumber.Trim() == trimmedLegacy
+                        && !(existing.RootFdAccountID.HasValue && existing.RootFdAccountID.Value > 0
+                             && a.RootFdAccountID == existing.RootFdAccountID
+                             && (a.Status == "Closed" || a.Status == "Renewed")));
 
                 if (duplicate != null)
                 {
@@ -6008,38 +6134,31 @@ namespace Bhisi.Api.Controllers
             // Save all Customer/Member Opening Balances changes
             await _context.SaveChangesAsync();
 
-            // 3. Update Ledgers Opening Balance
+            // 3. Sync BranchLedgerOpeningBalances for affected ledgers
+            await Helpers.BranchLedgerBalanceHelper.SyncCustomerOpeningBalancesToBranchAsync(
+                _context, affectedLedgerIds, "मुदत ठेव सुरुवातीची शिल्लक सिंक");
+
+            await _context.SaveChangesAsync();
+
             var updatedLedgers = new List<object>();
+            var initialFyId = await Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(_context);
             foreach (var lId in affectedLedgerIds)
             {
                 var ledger = allLedgers.FirstOrDefault(l => l.LedgerID == lId);
                 if (ledger == null) continue;
-
-                var custObsForLedger = await _context.CustomerOpeningBalances.Where(b => b.LedgerID == lId).ToListAsync();
-                decimal totalDr = custObsForLedger.Where(b => b.BalanceType == "Dr").Sum(b => b.Amount);
-                decimal totalCr = custObsForLedger.Where(b => b.BalanceType == "Cr").Sum(b => b.Amount);
-
-                if (totalCr >= totalDr)
-                {
-                    ledger.OpeningBalance = totalCr - totalDr;
-                    ledger.OpeningBalanceType = "Cr";
-                }
-                else
-                {
-                    ledger.OpeningBalance = totalDr - totalCr;
-                    ledger.OpeningBalanceType = "Dr";
-                }
-
-                _context.Entry(ledger).State = EntityState.Modified;
+                var branchRows = await _context.BranchLedgerOpeningBalances
+                    .Where(b => b.LedgerID == lId && (initialFyId == 0 || b.FinancialYearID == initialFyId))
+                    .ToListAsync();
+                decimal totalCr = branchRows.Where(b => b.OpeningBalanceType == "Cr").Sum(b => b.OpeningBalance);
+                decimal totalDr = branchRows.Where(b => b.OpeningBalanceType == "Dr").Sum(b => b.OpeningBalance);
+                decimal net = totalCr - totalDr;
                 updatedLedgers.Add(new {
                     ledgerId = ledger.LedgerID,
                     ledgerName = ledger.LedgerName,
-                    openingBalance = ledger.OpeningBalance,
-                    openingBalanceType = ledger.OpeningBalanceType
+                    openingBalance = Math.Abs(net),
+                    openingBalanceType = net >= 0 ? "Cr" : "Dr"
                 });
             }
-
-            await _context.SaveChangesAsync();
 
             return new
             {
@@ -6166,7 +6285,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.FdScheme)
                     .ThenInclude(s => s!.Slabs)
                 .Include(a => a.SavingAccount)
-                .Where(a => a.Status == "Active" && a.IsAutoRenewable && a.MaturityDate.Date <= targetDate && a.AutoRenewalCount < a.MaxAutoRenewalCycles);
+                .Where(a => (a.Status == "Active" || a.Status == "Matured") && a.IsAutoRenewable && a.MaturityDate.Date <= targetDate && a.AutoRenewalCount < a.MaxAutoRenewalCycles);
 
             var (isHO, userBranchId) = GetUserBranchInfo();
             if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
@@ -6241,6 +6360,8 @@ namespace Bhisi.Api.Controllers
                 {
                     FdAccountID = acc.FdAccountID,
                     AccountNo = acc.AccountNo,
+                    ReceiptNo = Helpers.FdRenewalPolicyHelper.GetEffectiveReceiptNo(acc),
+                    RenewalCycleNo = acc.RenewalCycleNo,
                     CustomerID = acc.CustomerID,
                     CustomerName = acc.Customer?.CustomerName ?? "सभासद",
                     ContactNo = acc.Customer?.MobileNo,
@@ -6287,7 +6408,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.FdScheme)
                     .ThenInclude(s => s!.Slabs)
                 .Include(a => a.SavingAccount)
-                .Where(a => a.Status == "Active" && a.IsAutoRenewable && a.MaturityDate.Date <= processDate && a.AutoRenewalCount < a.MaxAutoRenewalCycles);
+                .Where(a => (a.Status == "Active" || a.Status == "Matured") && a.IsAutoRenewable && a.MaturityDate.Date <= processDate && a.AutoRenewalCount < a.MaxAutoRenewalCycles);
 
             var (isHO, userBranchId) = GetUserBranchInfo();
             if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
@@ -6304,7 +6425,10 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(a => request.SpecificAccountIDs.Contains(a.FdAccountID));
             }
 
-            var candidates = await query.OrderBy(a => a.MaturityDate).ToListAsync();
+            var candidates = await query
+                .OrderBy(a => a.MaturityDate)
+                .ThenBy(a => a.FdAccountID)
+                .ToListAsync();
 
             var result = new AutoRenewalBatchResultDto
             {
@@ -6321,9 +6445,29 @@ namespace Bhisi.Api.Controllers
                 using var itemTx = await _context.Database.BeginTransactionAsync();
                 try
                 {
-                    if (oldAccount.IsLienMarked)
+                    bool hasCollateral = oldAccount.IsLienMarked ||
+                                         await _context.LoanDepositCollaterals.AnyAsync(c =>
+                                             c.CollateralType == "FixedDeposit" && c.DepositAccountID == oldAccount.FdAccountID) ||
+                                         (!string.IsNullOrEmpty(oldAccount.AccountNo) && await _context.LoanAccounts.AnyAsync(l =>
+                                             l.Status == "Active" && l.SecurityDetails != null && l.SecurityDetails.Contains(oldAccount.AccountNo)));
+
+                    if (hasCollateral)
                     {
-                        throw new InvalidOperationException($"सदर खाते तारण (Lien Marked) असल्याने स्वयंचलित नूतनीकरण प्रतिबंधित आहे. कृपया कर्ज खाते व तारण बोजा तपासा.");
+                        throw new InvalidOperationException("सदर खाते कर्जासाठी तारण (Lien/Collateral) असल्यामुळे स्वयंचलित नूतनीकरण प्रतिबंधित आहे. कृपया कर्ज खाते व तारण बोजा तपासा.");
+                    }
+
+                    bool hasPendingSettlementOrRenewal = await _context.FdTransactions.AnyAsync(t =>
+                        t.FdAccountID == oldAccount.FdAccountID &&
+                        t.VoucherID > 0 &&
+                        (t.TransactionType == "Payout" ||
+                         t.TransactionType == "Premature_Close" ||
+                         t.TransactionType == "Close" ||
+                         t.TransactionType == "Renewal") &&
+                        _context.Vouchers.Any(v => v.VoucherID == t.VoucherID && v.Status == "Pending"));
+
+                    if (hasPendingSettlementOrRenewal)
+                    {
+                        throw new InvalidOperationException("सदर खात्यावर क्लोजर किंवा नूतनीकरणाचे प्रलंबित (Pending) व्हाउचर आधीच अस्तित्वात असल्याने स्वयंचलित नूतनीकरण करता येत नाही.");
                     }
 
                     var scheme = oldAccount.FdScheme;
@@ -6362,18 +6506,19 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    // Saving account resolution for PrincipalOnly interest payout
+                    // Strict Saving account requirement for PrincipalOnly interest payout (zero Cash / random-account fallback)
                     SavingAccountMaster? targetSaving = null;
                     if (oldAccount.AutoRenewalOption == "PrincipalOnly" && interestPayoutAmount > 0)
                     {
-                        if (oldAccount.SavingAccountID.HasValue && oldAccount.SavingAccountID.Value > 0)
+                        if (!oldAccount.SavingAccountID.HasValue || oldAccount.SavingAccountID.Value <= 0)
                         {
-                            targetSaving = await _context.SavingAccountMasters.FindAsync(oldAccount.SavingAccountID.Value);
+                            throw new InvalidOperationException("केवळ मुद्दल (PrincipalOnly) ऑटो-नूतनीकरणासाठी खात्याला सक्रिय बचत खाते (Saving Account) संलग्न असणे अनिवार्य आहे.");
                         }
-                        if (targetSaving == null || targetSaving.Status != "Active")
+
+                        targetSaving = await _context.SavingAccountMasters.FindAsync(oldAccount.SavingAccountID.Value);
+                        if (targetSaving == null || !string.Equals(targetSaving.Status, "Active", StringComparison.OrdinalIgnoreCase))
                         {
-                            targetSaving = await _context.SavingAccountMasters
-                                .FirstOrDefaultAsync(s => s.CustomerID == oldAccount.CustomerID && s.Status == "Active");
+                            throw new InvalidOperationException($"संलग्न बचत खाते (ID: {oldAccount.SavingAccountID.Value}) सक्रिय (Active) नसल्याने केवळ मुद्दल (PrincipalOnly) ऑटो-नूतनीकरण करता येत नाही.");
                         }
                     }
 
@@ -6417,27 +6562,46 @@ namespace Bhisi.Api.Controllers
                         prevailingRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
                     }
 
-                    var branch = await _context.Branches.FindAsync(oldAccount.BranchID);
-                    string branchPrefix = branch != null ? branch.BranchCode : "HO";
-
-                    var seq = await _context.FdAccountSequences
-                        .FirstOrDefaultAsync(s => s.BranchID == oldAccount.BranchID && s.ProductType == "FD");
-
-                    if (seq == null)
+                    // Resolve active open business date for voucher posting so overdue auto-renewals appear in Pass Voucher Queue
+                    DateTime voucherPostingDate = await ResolveActiveBusinessDateAsync(oldAccount.BranchID);
+                    var closedFyVoucher = await _context.FinancialYears
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(fy => fy.IsClosed && voucherPostingDate.Date >= fy.StartDate.Date && voucherPostingDate.Date <= fy.EndDate.Date);
+                    if (closedFyVoucher != null)
                     {
-                        seq = new FdAccountSequence { BranchID = oldAccount.BranchID, ProductType = "FD", CurrentValue = 0 };
-                        _context.FdAccountSequences.Add(seq);
+                        throw new InvalidOperationException($"सध्याची व्यवसाय तारीख ({voucherPostingDate:dd/MM/yyyy}) बंद आर्थिक वर्षात ({closedFyVoucher.YearCode}) मोडत असल्याने स्वयंचलित नूतनीकरण व्हाउचर पोस्ट करता येत नाही.");
                     }
 
-                    seq.CurrentValue += 1;
-                    await _context.SaveChangesAsync();
+                    // Standardized 14-Digit CBS Account Number (identical to Manual Renew)
+                    var (rawNewAccNo, formattedNewAccountNo, _) = await GenerateNextFdAccountNoAsync(
+                        oldAccount.BranchID,
+                        oldAccount.FdSchemeID,
+                        incrementSequence: true);
 
-                    var matchingFy = await _context.FinancialYears
-                        .FirstOrDefaultAsync(fy => newOpeningDate.Date >= fy.StartDate.Date && newOpeningDate.Date <= fy.EndDate.Date);
+                    string oldEffectiveReceipt = Helpers.FdRenewalPolicyHelper.GetEffectiveReceiptNo(oldAccount);
+                    var (parentFdId, rootFdId, chainCycleNo) = Helpers.FdRenewalPolicyHelper.ComputeRenewalChainMetadata(oldAccount);
+                    if (!oldAccount.RootFdAccountID.HasValue || oldAccount.RootFdAccountID.Value <= 0)
+                    {
+                        oldAccount.RootFdAccountID = rootFdId;
+                    }
+                    if (string.IsNullOrWhiteSpace(oldAccount.ReceiptNo))
+                    {
+                        oldAccount.ReceiptNo = oldEffectiveReceipt;
+                    }
 
-                    int targetFinancialYearId = matchingFy?.FinancialYearID 
-                        ?? (await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive))?.FinancialYearID 
-                        ?? (oldAccount.FinancialYearID > 0 ? oldAccount.FinancialYearID : 1);
+                    var resolvedReceipt = await Helpers.FdRenewalPolicyHelper.ResolveRenewalReceiptNumbersAsync(
+                        _context,
+                        oldAccount,
+                        oldAccount.FdSchemeID,
+                        rawNewAccNo,
+                        formattedNewAccountNo);
+
+                    if (!string.IsNullOrEmpty(resolvedReceipt.ValidationError))
+                    {
+                        throw new InvalidOperationException(resolvedReceipt.ValidationError);
+                    }
+
+                    int targetFinancialYearId = await ResolveMatchingFinancialYearIdAsync(newOpeningDate);
 
                     int nextCycleCount = oldAccount.AutoRenewalCount + 1;
                     bool willStillAutoRenew = nextCycleCount < oldAccount.MaxAutoRenewalCycles;
@@ -6449,7 +6613,9 @@ namespace Bhisi.Api.Controllers
                         FinancialYearID = targetFinancialYearId,
                         CustomerID = oldAccount.CustomerID,
                         FdSchemeID = oldAccount.FdSchemeID,
-                        AccountNo = $"{branchPrefix}-{oldAccount.BranchID:D3}-FD-{seq.CurrentValue:D6}",
+                        AccountNo = formattedNewAccountNo,
+                        ReceiptNo = resolvedReceipt.ReceiptNo,
+                        LegacyAccountNumber = resolvedReceipt.LegacyAccountNumber,
                         OpeningDate = newOpeningDate,
                         DepositAmount = newDepositAmount,
                         InterestRate = prevailingRate,
@@ -6466,8 +6632,10 @@ namespace Bhisi.Api.Controllers
                         AutoRenewalOption = oldAccount.AutoRenewalOption ?? "PrincipalPlusInterest",
                         MaxAutoRenewalCycles = oldAccount.MaxAutoRenewalCycles,
                         AutoRenewalCount = nextCycleCount,
-                        ParentFdAccountID = oldAccount.FdAccountID,
-                        Remarks = $"स्वयंचलित नूतनीकरण (Auto-Renewed): मूळ खाते {oldAccount.AccountNo} (सायकल {nextCycleCount}/{oldAccount.MaxAutoRenewalCycles})"
+                        ParentFdAccountID = parentFdId,
+                        RootFdAccountID = rootFdId,
+                        RenewalCycleNo = chainCycleNo,
+                        Remarks = $"स्वयंचलित नूतनीकरण (Auto-Renewed): मूळ खाते {oldAccount.AccountNo} | पावती क्र.: {resolvedReceipt.ReceiptNo} (मूळ पावती: {oldEffectiveReceipt}, सायकल {nextCycleCount}/{oldAccount.MaxAutoRenewalCycles})"
                             + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {prevailingRate}%]" : "")
                     };
 
@@ -6497,13 +6665,13 @@ namespace Bhisi.Api.Controllers
                     _context.FdAccounts.Add(newAccount);
                     await _context.SaveChangesAsync();
 
-                    oldAccount.Status = "Closed";
-                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | स्वयंचलित नूतनीकरण: {newAccount.AccountNo} ({newOpeningDate:dd/MM/yyyy})";
+                    oldAccount.Status = "Renewed";
+                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | स्वयंचलित नूतनीकरण: {newAccount.AccountNo} (पावती क्र.: {resolvedReceipt.ReceiptNo}, दि. {voucherPostingDate:dd/MM/yyyy})";
                     await _context.SaveChangesAsync();
 
-                    var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme);
-                    var payableLedger = await ResolveInterestPayableLedgerAsync(scheme);
-                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(scheme);
+                    var fdLiabilityLedger = await ResolveStrictSchemeLedgerByIdAsync(scheme.FdLiabilityLedgerID);
+                    var payableLedger = await ResolveStrictSchemeLedgerByIdAsync(scheme.InterestPayableLedgerID);
+                    var expenseLedger = await ResolveStrictSchemeLedgerByIdAsync(scheme.InterestExpenseLedgerID);
 
                     decimal alreadyPosted = Math.Max(accruedFromTx, oldAccount.LegacyAccruedInt);
                     decimal payableInterestAmount = Math.Min(accruedInt, alreadyPosted);
@@ -6511,48 +6679,68 @@ namespace Bhisi.Api.Controllers
 
                     if (fdLiabilityLedger == null)
                     {
-                        throw new InvalidOperationException("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही.");
+                        throw new InvalidOperationException("मुदत ठेव योजनेत दायित्व लेजर (FD Liability Ledger) मॅप केलेले नाही किंवा ते निष्क्रिय आहे.");
                     }
+
+                    if (payableInterestAmount > 0 && payableLedger == null)
+                    {
+                        throw new InvalidOperationException("मुदत ठेव योजनेत देणे व्याज लेजर (Interest Payable Ledger) मॅप केलेले नाही.");
+                    }
+
+                    if (expenseInterestAmount > 0 && expenseLedger == null)
+                    {
+                        throw new InvalidOperationException("मुदत ठेव योजनेत व्याज खर्च लेजर (Interest Expense Ledger) मॅप केलेले नाही.");
+                    }
+
+                    int currentOperatorId = int.TryParse(
+                        User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User?.FindFirst("UserID")?.Value,
+                        out int parsedOpId) && parsedOpId > 0 ? parsedOpId : 1;
+
+                    string autoVoucherNo = await Helpers.FdRenewalRollbackHelper.BuildCollisionSafeVoucherNoAsync(
+                        _context, $"JV-FD-AUTOREN-{newAccount.AccountNo}");
 
                     int payoutLedgerId = 0;
                     if (oldAccount.AutoRenewalOption == "PrincipalOnly" && interestPayoutAmount > 0)
                     {
-                        if (targetSaving != null)
+                        if (targetSaving == null)
                         {
-                            targetSaving.CurrentBalance += interestPayoutAmount;
-                            payoutLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, targetSaving);
+                            throw new InvalidOperationException("केवळ मुद्दल (PrincipalOnly) ऑटो-नूतनीकरणासाठी संलग्न सक्रिय बचत खाते अनिवार्य आहे.");
+                        }
 
-                            _context.SavingTransactions.Add(new SavingTransaction
-                            {
-                                SavingAccountID = targetSaving.SavingAccountID,
-                                CustomerID = targetSaving.CustomerID,
-                                BranchID = oldAccount.BranchID > 0 ? oldAccount.BranchID : targetSaving.BranchID,
-                                TransactionDate = newOpeningDate,
-                                TransactionType = "Deposit",
-                                PaymentMode = "Transfer",
-                                Amount = interestPayoutAmount,
-                                BalanceAfterTxn = targetSaving.CurrentBalance,
-                                Narration = $"मुदत ठेव ऑटो-नूतनीकरण व्याज जमा: {oldAccount.AccountNo}",
-                                VoucherNo = $"JV-FD-AUTOREN-{newAccount.AccountNo}",
-                                CreatedBy = 1,
-                                CreatedOn = DateTime.Now
-                            });
-                        }
-                        else
+                        targetSaving.CurrentBalance += interestPayoutAmount;
+                        payoutLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, targetSaving);
+                        if (payoutLedgerId <= 0)
                         {
-                            payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, oldAccount.BranchID, "FD");
+                            throw new InvalidOperationException($"बचत खाते क्र. {targetSaving.AccountNo} साठी दायित्व लेजर (Saving Liability Ledger) सापडले नाही.");
                         }
+
+                        _context.SavingTransactions.Add(new SavingTransaction
+                        {
+                            SavingAccountID = targetSaving.SavingAccountID,
+                            CustomerID = targetSaving.CustomerID,
+                            BranchID = oldAccount.BranchID > 0 ? oldAccount.BranchID : targetSaving.BranchID,
+                            TransactionDate = voucherPostingDate,
+                            TransactionType = "Deposit",
+                            PaymentMode = "Transfer",
+                            Amount = interestPayoutAmount,
+                            BalanceAfterTxn = targetSaving.CurrentBalance,
+                            Narration = $"मुदत ठेव ऑटो-नूतनीकरण व्याज जमा: पावती क्र. {oldEffectiveReceipt} ({oldAccount.AccountNo})",
+                            VoucherNo = autoVoucherNo,
+                            CreatedBy = currentOperatorId,
+                            CreatedOn = DateTime.Now
+                        });
                     }
 
                     var voucher = new Voucher
                     {
                         BranchID = oldAccount.BranchID,
-                        VoucherNo = $"JV-FD-AUTOREN-{newAccount.AccountNo}",
-                        VoucherDate = newOpeningDate,
+                        VoucherNo = autoVoucherNo,
+                        VoucherDate = voucherPostingDate,
                         VoucherType = "Journal",
                         TotalAmount = totalMaturityAmount,
-                        Narration = $"मुदत ठेव स्वयंचलित नूतनीकरण (FD Auto-Renewal Batch): {oldAccount.AccountNo} -> {newAccount.AccountNo} (सायकल {nextCycleCount}/{oldAccount.MaxAutoRenewalCycles})",
-                        CreatedBy = 1,
+                        Status = "Pending",
+                        Narration = $"मुदत ठेव स्वयंचलित नूतनीकरण (FD Auto-Renewal Batch): पावती क्र. {oldEffectiveReceipt} -> {resolvedReceipt.ReceiptNo} [{oldAccount.AccountNo} -> {newAccount.AccountNo}] (सायकल {nextCycleCount}/{oldAccount.MaxAutoRenewalCycles})",
+                        CreatedBy = currentOperatorId,
                         CreatedOn = DateTime.Now
                     };
                     _context.Vouchers.Add(voucher);
@@ -6591,7 +6779,7 @@ namespace Bhisi.Api.Controllers
                         BranchID = oldAccount.BranchID,
                         FdAccountID = oldAccount.FdAccountID,
                         VoucherID = voucher.VoucherID,
-                        TransactionDate = newOpeningDate,
+                        TransactionDate = voucherPostingDate,
                         TransactionType = "Renewal",
                         DebitCredit = "Dr",
                         Amount = totalMaturityAmount
@@ -6602,7 +6790,7 @@ namespace Bhisi.Api.Controllers
                         BranchID = newAccount.BranchID,
                         FdAccountID = newAccount.FdAccountID,
                         VoucherID = voucher.VoucherID,
-                        TransactionDate = newOpeningDate,
+                        TransactionDate = voucherPostingDate,
                         TransactionType = "Opening",
                         DebitCredit = "Cr",
                         Amount = newDepositAmount
@@ -6613,11 +6801,13 @@ namespace Bhisi.Api.Controllers
                     {
                         InstitutionID = oldAccount.InstitutionID,
                         BranchID = oldAccount.BranchID,
-                        BatchDate = newOpeningDate,
+                        BatchDate = voucherPostingDate,
                         OldFdAccountID = oldAccount.FdAccountID,
                         NewFdAccountID = newAccount.FdAccountID,
                         OldAccountNo = oldAccount.AccountNo,
                         NewAccountNo = newAccount.AccountNo,
+                        OldReceiptNo = oldEffectiveReceipt,
+                        NewReceiptNo = resolvedReceipt.ReceiptNo,
                         CustomerID = oldAccount.CustomerID,
                         CustomerName = customer?.CustomerName ?? "सभासद",
                         RenewalOption = oldAccount.AutoRenewalOption ?? "PrincipalPlusInterest",
@@ -6641,8 +6831,16 @@ namespace Bhisi.Api.Controllers
                     {
                         OldFdAccountID = oldAccount.FdAccountID,
                         OldAccountNo = oldAccount.AccountNo,
+                        OldReceiptNo = oldEffectiveReceipt,
                         NewFdAccountID = newAccount.FdAccountID,
                         NewAccountNo = newAccount.AccountNo,
+                        NewReceiptNo = resolvedReceipt.ReceiptNo,
+                        EffectivePolicy = resolvedReceipt.EffectiveMode,
+                        RenewalCycleNo = newAccount.RenewalCycleNo,
+                        VoucherID = voucher.VoucherID,
+                        VoucherNo = voucher.VoucherNo,
+                        VoucherDate = voucher.VoucherDate,
+                        VoucherStatus = voucher.Status,
                         CustomerName = customer?.CustomerName ?? "सभासद",
                         RenewedAmount = newDepositAmount,
                         InterestPaidOut = interestPayoutAmount,
@@ -7055,18 +7253,48 @@ namespace Bhisi.Api.Controllers
             {
                 var openingTx = await _context.FdTransactions
                     .Include(t => t.FdAccount)
+                        .ThenInclude(a => a!.Customer)
+                    .Include(t => t.FdAccount)
+                        .ThenInclude(a => a!.FdScheme)
+                    .Include(t => t.FdAccount)
+                        .ThenInclude(a => a!.Branch)
                     .FirstOrDefaultAsync(t => t.VoucherID == voucherId && t.TransactionType == "Opening");
                 renewedToAccount = openingTx?.FdAccount;
 
-                if (renewedToAccount == null)
+                var autoLog = await _context.FdAutoRenewalLogs
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(l => l.VoucherID == voucherId);
+
+                if (renewedToAccount == null && autoLog?.NewFdAccountID != null && autoLog.NewFdAccountID.Value > 0)
                 {
-                    string suffixNewNo = Helpers.FdRenewalRollbackHelper.ExtractAccountSuffixFromRenewalVoucherNo(voucher.VoucherNo);
-                    renewedToAccount = await Helpers.FdRenewalRollbackHelper.FindFdAccountByAnyNumberAsync(_context, suffixNewNo);
+                    renewedToAccount = await _context.FdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.FdScheme)
+                        .Include(a => a.Branch)
+                        .FirstOrDefaultAsync(a => a.FdAccountID == autoLog.NewFdAccountID.Value);
+                }
+
+                if (account == null && autoLog != null && autoLog.OldFdAccountID > 0)
+                {
+                    account = await _context.FdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.FdScheme)
+                        .Include(a => a.Branch)
+                        .FirstOrDefaultAsync(a => a.FdAccountID == autoLog.OldFdAccountID);
+                }
+
+                if (account == null && renewedToAccount?.ParentFdAccountID != null && renewedToAccount.ParentFdAccountID.Value > 0)
+                {
+                    account = await _context.FdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.FdScheme)
+                        .Include(a => a.Branch)
+                        .FirstOrDefaultAsync(a => a.FdAccountID == renewedToAccount.ParentFdAccountID.Value);
                 }
             }
 
-            // 2. Fallback: Parse from VoucherNo / Narration (Closure & Renewal, 14-digit CBS + legacy safe)
-            if (account == null)
+            // 2. Closure VoucherNo lookup when FdTransaction is absent (non-renewal closures only)
+            if (account == null && !isRenewalVoucher)
             {
                 string vNo = voucher.VoucherNo ?? "";
                 string accNoCandidate = "";
@@ -7074,11 +7302,6 @@ namespace Bhisi.Api.Controllers
                 else if (vNo.StartsWith("JV-FD-PRECLOSE-")) accNoCandidate = vNo.Substring("JV-FD-PRECLOSE-".Length).Trim();
                 else if (vNo.StartsWith("PMT-FD-CLOSE-")) accNoCandidate = vNo.Substring("PMT-FD-CLOSE-".Length).Trim();
                 else if (vNo.StartsWith("PAY-FD-CLOSE-")) accNoCandidate = vNo.Substring("PAY-FD-CLOSE-".Length).Trim();
-                else if (isRenewalVoucher)
-                {
-                    var (parsedOld, _) = Helpers.FdRenewalRollbackHelper.ExtractOldAndNewAccFromText(renewedToAccount?.Remarks, voucher.Narration);
-                    accNoCandidate = parsedOld;
-                }
 
                 if (!string.IsNullOrEmpty(accNoCandidate))
                 {
@@ -7088,22 +7311,6 @@ namespace Bhisi.Api.Controllers
                         .Include(a => a.FdScheme)
                         .Include(a => a.Branch)
                         .FirstOrDefaultAsync(a => a.AccountNo != null && variants.Contains(a.AccountNo));
-                }
-            }
-
-            // 3. Fallback: Search by Customer linked in VoucherDetails
-            if (account == null)
-            {
-                var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
-                if (custId.HasValue)
-                {
-                    account = await _context.FdAccounts
-                        .Include(a => a.Customer)
-                        .Include(a => a.FdScheme)
-                        .Include(a => a.Branch)
-                        .Where(a => a.CustomerID == custId.Value)
-                        .OrderByDescending(a => a.FdAccountID)
-                        .FirstOrDefaultAsync();
                 }
             }
 
@@ -7131,7 +7338,11 @@ namespace Bhisi.Api.Controllers
                     account.FdSchemeID,
                     SchemeName = account.FdScheme?.SchemeName ?? "",
                     account.AccountNo,
+                    ReceiptNo = Helpers.FdRenewalPolicyHelper.GetEffectiveReceiptNo(account),
                     account.LegacyAccountNumber,
+                    account.ParentFdAccountID,
+                    account.RootFdAccountID,
+                    account.RenewalCycleNo,
                     account.DepositAmount,
                     account.InterestRate,
                     account.OpeningDate,
@@ -7175,7 +7386,8 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = $"मुदत ठेव खाते ID #{id} सापडले नाही." });
             }
 
-            bool wasClosedBeforeHeal = string.Equals(preCheck.Status, "Closed", StringComparison.OrdinalIgnoreCase);
+            bool wasClosedBeforeHeal = string.Equals(preCheck.Status, "Closed", StringComparison.OrdinalIgnoreCase) ||
+                                       string.Equals(preCheck.Status, "Renewed", StringComparison.OrdinalIgnoreCase);
 
             // Clean up any orphaned renewal vouchers / orphaned Renewal FdTransactions on this account first
             await HealOrphanedRenewalsInternalAsync(id);
@@ -7190,9 +7402,9 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = $"मुदत ठेव खाते ID #{id} सापडले नाही." });
             }
 
-            if (account.Status != "Closed" && !wasClosedBeforeHeal)
+            if (account.Status != "Closed" && account.Status != "Renewed" && !wasClosedBeforeHeal)
             {
-                return BadRequest(new { message = $"हे खाते आधीच '{account.Status}' स्थितीत आहे. केवळ बंद (Closed) झालेली खातीच पूर्ववत (Reopen) करता येतात." });
+                return BadRequest(new { message = $"हे खाते आधीच '{account.Status}' स्थितीत आहे. केवळ बंद (Closed) किंवा नूतनीकरण (Renewed) झालेली खातीच पूर्ववत (Reopen) करता येतात." });
             }
 
             // Check if there is an active un-deleted Payout / Premature_Close / Renewal transaction
@@ -7245,7 +7457,11 @@ namespace Bhisi.Api.Controllers
                 {
                     account.FdAccountID,
                     account.AccountNo,
+                    ReceiptNo = Helpers.FdRenewalPolicyHelper.GetEffectiveReceiptNo(account),
                     account.LegacyAccountNumber,
+                    account.ParentFdAccountID,
+                    account.RootFdAccountID,
+                    account.RenewalCycleNo,
                     account.DepositAmount,
                     account.MaturityDate,
                     account.Status,
@@ -7271,6 +7487,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.Customer)
                 .Include(a => a.FdScheme)
                 .FirstOrDefaultAsync(a => a.AccountNo == term || 
+                                          (a.ReceiptNo != null && a.ReceiptNo.Trim() == term) ||
                                           a.LegacyAccountNumber == term || 
                                           (a.LegacyAccountNumber != null && a.LegacyAccountNumber.Trim() == term) ||
                                           a.AccountNo.EndsWith(term));
@@ -7390,12 +7607,18 @@ namespace Bhisi.Api.Controllers
         public decimal? CustomOverdueInterest { get; set; }
         public decimal? CustomTotalPayout { get; set; }
         public string? ManualOverrideReason { get; set; }
+
+        // पावती क्रमांक धोरण (Receipt Numbering Option)
+        public string? ReceiptNoMode { get; set; } // "NEW_RECEIPT", "RETAIN_ORIGINAL", "CUSTOM"
+        public string? CustomReceiptNo { get; set; }
     }
 
     public class AutoRenewalCandidateDto
     {
         public int FdAccountID { get; set; }
         public string AccountNo { get; set; } = string.Empty;
+        public string ReceiptNo { get; set; } = string.Empty;
+        public int RenewalCycleNo { get; set; }
         public int CustomerID { get; set; }
         public string CustomerName { get; set; } = string.Empty;
         public string? ContactNo { get; set; }
@@ -7447,8 +7670,16 @@ namespace Bhisi.Api.Controllers
     {
         public int OldFdAccountID { get; set; }
         public string OldAccountNo { get; set; } = string.Empty;
+        public string OldReceiptNo { get; set; } = string.Empty;
         public int? NewFdAccountID { get; set; }
         public string? NewAccountNo { get; set; }
+        public string? NewReceiptNo { get; set; }
+        public string? EffectivePolicy { get; set; }
+        public int RenewalCycleNo { get; set; }
+        public int? VoucherID { get; set; }
+        public string? VoucherNo { get; set; }
+        public DateTime? VoucherDate { get; set; }
+        public string VoucherStatus { get; set; } = "Pending";
         public string CustomerName { get; set; } = string.Empty;
         public decimal RenewedAmount { get; set; }
         public decimal InterestPaidOut { get; set; }

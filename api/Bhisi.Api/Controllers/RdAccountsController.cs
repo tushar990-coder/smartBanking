@@ -281,11 +281,14 @@ namespace Bhisi.Api.Controllers
                             .Where(a => a.IsLegacyAccount && a.Status == "Active")
                             .SumAsync(a => a.TotalDepositedAmount);
 
-                        var currentLedgerSum = await _context.Ledgers
-                            .Where(l => schemeLedgerIds.Contains(l.LedgerID))
-                            .SumAsync(l => l.OpeningBalance);
+                        var initialFyId = await Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(_context);
+                        var currentLedgerSum = initialFyId > 0
+                            ? await _context.BranchLedgerOpeningBalances
+                                .Where(b => b.FinancialYearID == initialFyId && schemeLedgerIds.Contains(b.LedgerID))
+                                .SumAsync(b => b.OpeningBalanceType == "Cr" ? b.OpeningBalance : -b.OpeningBalance)
+                            : 0m;
 
-                        if (totalLegacySum > 0 && currentLedgerSum != totalLegacySum)
+                        if (totalLegacySum > 0 && Math.Abs(currentLedgerSum - totalLegacySum) > 0.01m)
                         {
                             await SyncRdOpeningBalancesInternalAsync();
                         }
@@ -1539,7 +1542,7 @@ namespace Bhisi.Api.Controllers
                     else
                     {
                         // CBS Dual-Voucher IBT Engine for Cross-Branch RD Collection
-                        int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, collectingBranchId, homeBranchId);
+                        var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, collectingBranchId, homeBranchId);
                         var (vStatusColl, appByColl, appOnColl) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, totalReceived, makerUserId);
 
                         var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
@@ -1576,7 +1579,7 @@ namespace Bhisi.Api.Controllers
                         // Dr Cash/Bank/Saving/Pigmy
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = totalReceived, CustomerID = sourceSavingAcc != null ? sourceSavingAcc.CustomerID : (sourcePigmyAcc != null ? sourcePigmyAcc.CustomerID : null) });
                         // Cr IBT
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalReceived });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = counterIbtLedgerId, DrCr = "Cr", Amount = totalReceived });
 
                         // 2. Home Branch Voucher (Branch B, Journal): Dr IBT, Cr RD Liability, Cr Penalty Income
                         var homeVoucher = new Voucher
@@ -1602,7 +1605,7 @@ namespace Bhisi.Api.Controllers
                         counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
 
                         // Dr IBT
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalReceived });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Dr", Amount = totalReceived });
                         // Cr RD Liability
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalInstallmentPrincipal, CustomerID = account.CustomerID });
                         // Cr Penalty Income
@@ -2170,7 +2173,7 @@ namespace Bhisi.Api.Controllers
                     else
                     {
                         // CBS Dual-Voucher IBT Engine for Cross-Branch RD Maturity Payout
-                        int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, operatingBranchId, homeBranchId);
+                        var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, operatingBranchId, homeBranchId);
 
                         // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash
                         var counterVoucher = new Voucher
@@ -2190,7 +2193,7 @@ namespace Bhisi.Api.Controllers
                         await _context.SaveChangesAsync();
 
                         // Dr IBT
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = counterIbtLedgerId, DrCr = "Dr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                         // Cr Cash
                         counterVoucher.VoucherType = payoutCheck.VoucherType;
                         ApplyRdClosureSavingCredit(payoutCheck.TargetSavingAccount, totalPayout, effClosureDate, operatingBranchId, $"JV-RD-CLOSE-{account.AccountNo}", $"आरडी मुदतपूर्ती परतावा जमा (RD A/C: {account.AccountNo})");
@@ -2226,7 +2229,7 @@ namespace Bhisi.Api.Controllers
                         }
 
                         // Cr IBT
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Cr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                         await _context.SaveChangesAsync();
                         finalVoucherId = counterVoucher.VoucherID;
@@ -2424,7 +2427,7 @@ namespace Bhisi.Api.Controllers
                     else
                     {
                         // CBS Dual-Voucher IBT Engine for Cross-Branch RD Premature Payout
-                        int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, operatingBranchId, homeBranchId);
+                        var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, operatingBranchId, homeBranchId);
 
                         // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash
                         var counterVoucher = new Voucher
@@ -2444,7 +2447,7 @@ namespace Bhisi.Api.Controllers
                         await _context.SaveChangesAsync();
 
                         // Dr IBT
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = counterIbtLedgerId, DrCr = "Dr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                         // Cr Cash
                         counterVoucher.VoucherType = payoutCheck.VoucherType;
                         ApplyRdClosureSavingCredit(payoutCheck.TargetSavingAccount, netPayout, closureDate, operatingBranchId, $"JV-RD-PRECLOSE-{account.AccountNo}", $"आरडी मुदतपूर्व बंद परतावा जमा (RD A/C: {account.AccountNo})");
@@ -2500,7 +2503,7 @@ namespace Bhisi.Api.Controllers
                         }
 
                         // Cr IBT
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Cr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                         await _context.SaveChangesAsync();
                         finalVoucherId = counterVoucher.VoucherID;
@@ -2957,16 +2960,9 @@ namespace Bhisi.Api.Controllers
             // Save Customer/Member Opening Balances changes
             await _context.SaveChangesAsync();
 
-            // Update Ledgers Opening Balance
-            foreach (var lId in affectedLedgerIds)
-            {
-                var ledger = allLedgers.FirstOrDefault(l => l.LedgerID == lId);
-                if (ledger == null) continue;
-                decimal sumObs = allCustObs.Where(c => c.LedgerID == lId).Sum(c => c.Amount);
-                ledger.OpeningBalance = sumObs;
-                ledger.OpeningBalanceType = "Cr";
-                _context.Entry(ledger).State = EntityState.Modified;
-            }
+            // Update BranchLedgerOpeningBalances per branch
+            await Helpers.BranchLedgerBalanceHelper.SyncCustomerOpeningBalancesToBranchAsync(
+                _context, affectedLedgerIds, "आवर्ती ठेव सुरुवातीची शिल्लक सिंक");
 
             await _context.SaveChangesAsync();
             return new { TotalDepositsSynced = totalDepositsSynced, TotalAccruedSynced = totalAccruedSynced };

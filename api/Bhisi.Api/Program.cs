@@ -709,6 +709,26 @@ try
                 ALTER TABLE [dbo].[FdAccounts] ADD [LienLoanAccountNo] nvarchar(50) NULL;
             IF COL_LENGTH('FdAccounts', 'LienAmount') IS NULL
                 ALTER TABLE [dbo].[FdAccounts] ADD [LienAmount] decimal(18,2) NULL;
+            IF COL_LENGTH('FdAccounts', 'ReceiptNo') IS NULL
+                ALTER TABLE [dbo].[FdAccounts] ADD [ReceiptNo] nvarchar(50) NULL;
+            IF COL_LENGTH('FdAccounts', 'RootFdAccountID') IS NULL
+                ALTER TABLE [dbo].[FdAccounts] ADD [RootFdAccountID] int NULL;
+            IF COL_LENGTH('FdAccounts', 'RenewalCycleNo') IS NULL
+                ALTER TABLE [dbo].[FdAccounts] ADD [RenewalCycleNo] int NOT NULL DEFAULT 0;
+
+            IF OBJECT_ID('FdAccounts', 'U') IS NOT NULL AND COL_LENGTH('FdAccounts', 'ReceiptNo') IS NOT NULL
+            BEGIN
+                EXEC(N'UPDATE [dbo].[FdAccounts] SET [ReceiptNo] = COALESCE(NULLIF(LTRIM(RTRIM([LegacyAccountNumber])), ''''), [AccountNo]) WHERE [ReceiptNo] IS NULL OR LTRIM(RTRIM([ReceiptNo])) = '''';');
+                EXEC(N'UPDATE [dbo].[FdAccounts] SET [RootFdAccountID] = [FdAccountID] WHERE [RootFdAccountID] IS NULL AND [ParentFdAccountID] IS NULL;');
+            END
+
+            IF OBJECT_ID('FdAutoRenewalLogs', 'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH('FdAutoRenewalLogs', 'OldReceiptNo') IS NULL
+                    ALTER TABLE [dbo].[FdAutoRenewalLogs] ADD [OldReceiptNo] nvarchar(50) NULL;
+                IF COL_LENGTH('FdAutoRenewalLogs', 'NewReceiptNo') IS NULL
+                    ALTER TABLE [dbo].[FdAutoRenewalLogs] ADD [NewReceiptNo] nvarchar(50) NULL;
+            END
 
             IF COL_LENGTH('PigmyAccounts', 'IsLienMarked') IS NULL
                 ALTER TABLE [dbo].[PigmyAccounts] ADD [IsLienMarked] bit NOT NULL DEFAULT 0;
@@ -1074,6 +1094,14 @@ try
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'IsPanCompulsory')
                 BEGIN
                     ALTER TABLE [SansthaDetails] ADD [IsPanCompulsory] bit NOT NULL DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'FdRenewalReceiptPolicy')
+                BEGIN
+                    ALTER TABLE [SansthaDetails] ADD [FdRenewalReceiptPolicy] nvarchar(30) NOT NULL DEFAULT 'NEW_RECEIPT';
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'AllowManualReceiptNoOnRenewal')
+                BEGIN
+                    ALTER TABLE [SansthaDetails] ADD [AllowManualReceiptNoOnRenewal] bit NOT NULL DEFAULT 0;
                 END
             END
 
@@ -3366,7 +3394,8 @@ try
             // Core Banking Inter-Branch Transfer (IBT) Startup Auto-Sync & Historical Self-Healing
             Bhisi.Api.Helpers.IbtLedgerHelper.EnsureIbtLedgerProvisionedAsync(db).GetAwaiter().GetResult();
             int repaired = Bhisi.Api.Helpers.IbtLedgerHelper.RepairHistoricalCrossBranchCollectionsAsync(db).GetAwaiter().GetResult();
-            Log.Information("Core Banking Inter-Branch Transfer (IBT) ledger provisioned. Repaired historical cross-branch collections: {RepairedCount}", repaired);
+            int syncedHalfIbt = Bhisi.Api.Helpers.IbtLedgerHelper.RepairHalfApprovedIbtPairsAsync(db).GetAwaiter().GetResult();
+            Log.Information("Core Banking Inter-Branch Transfer (IBT) ledger provisioned. Repaired collections: {RepairedCount}, Synced half-approved IBT pairs: {SyncedCount}", repaired, syncedHalfIbt);
         }
         catch (Exception ex)
         {
@@ -3375,35 +3404,43 @@ try
 
         try
         {
-            // Core Banking Loan Opening Balance to GL Auto-Sync Startup Initialization
-            var loanRatesWithLedgers = db.LoanRates
-                .Where(r => r.LoanLedgerID.HasValue && r.LoanLedgerID.Value > 0)
-                .ToList();
-
-            foreach (var rate in loanRatesWithLedgers)
+            // Core Banking Loan Opening Balance to Branch GL Auto-Sync Startup Initialization
+            int initialFyId = Bhisi.Api.Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(db).GetAwaiter().GetResult();
+            var branchIds = db.Branches.Select(b => b.BranchID).ToList();
+            if (initialFyId > 0 && branchIds.Any())
             {
-                int loanLedgerId = rate.LoanLedgerID!.Value;
-                var ledger = db.Ledgers.Find(loanLedgerId);
-                if (ledger != null)
+                var loanLedgerGroups = db.LoanRates
+                    .Where(r => r.LoanLedgerID.HasValue && r.LoanLedgerID.Value > 0)
+                    .ToList()
+                    .GroupBy(r => r.LoanLedgerID!.Value)
+                    .Select(g => new { LedgerID = g.Key, RateIds = g.Select(r => r.LoanRateID).ToList() })
+                    .ToList();
+
+                foreach (var item in loanLedgerGroups)
                 {
-                    var mappedRateIds = db.LoanRates
-                        .Where(r => r.LoanLedgerID == loanLedgerId)
-                        .Select(r => r.LoanRateID)
-                        .ToList();
+                    if (db.Ledgers.Find(item.LedgerID) == null) continue;
 
-                    decimal totalPrincipal = db.LoanAccounts
-                        .Where(a => mappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
-                        .Sum(a => a.PrincipalBalance);
-
-                    if (totalPrincipal > 0 || ledger.OpeningBalance != totalPrincipal)
+                    foreach (int bId in branchIds)
                     {
-                        ledger.OpeningBalance = totalPrincipal;
-                        ledger.OpeningBalanceType = "Dr";
+                        bool exists = db.BranchLedgerOpeningBalances.Any(b =>
+                            b.BranchID == bId && b.LedgerID == item.LedgerID && b.FinancialYearID == initialFyId);
+                        if (exists) continue;
+
+                        decimal totalPrincipal = db.LoanAccounts
+                            .Where(a => a.BranchID == bId && item.RateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
+                            .Sum(a => a.PrincipalBalance);
+
+                        if (totalPrincipal > 0)
+                        {
+                            Bhisi.Api.Helpers.BranchLedgerBalanceHelper.SetBranchLedgerOpeningBalanceAsync(
+                                db, bId, item.LedgerID, totalPrincipal, "Dr",
+                                "Startup Loan SL->Branch OB Backfill", initialFyId).GetAwaiter().GetResult();
+                        }
                     }
                 }
+                db.SaveChanges();
             }
-            db.SaveChanges();
-            Log.Information("Loan Schemes GL Opening Balances auto-synchronized with sub-ledger on startup.");
+            Log.Information("Loan Schemes Branch GL Opening Balances checked on startup.");
         }
         catch (Exception ex)
         {
@@ -3412,8 +3449,10 @@ try
 
         try
         {
-            // Core Banking Pigmy Opening Balance to GL Auto-Sync Startup Initialization
+            // Core Banking Pigmy Opening Balance to Branch GL Auto-Sync Startup Initialization
             var pigmySchemes = db.PigmySchemes.ToList();
+            int initialFyId = Bhisi.Api.Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(db).GetAwaiter().GetResult();
+            var branchIds = db.Branches.Select(b => b.BranchID).ToList();
 
             foreach (var scheme in pigmySchemes)
             {
@@ -3432,22 +3471,25 @@ try
                     }
                 }
 
-                if (liabilityLedgerId > 0)
+                if (liabilityLedgerId > 0 && initialFyId > 0 && branchIds.Any() && db.Ledgers.Find(liabilityLedgerId) != null)
                 {
-                    var ledger = db.Ledgers.Find(liabilityLedgerId);
-                    if (ledger != null)
+                    var mappedSchemeIds = db.PigmySchemes
+                        .Where(s => s.PigmyLiabilityLedgerID == liabilityLedgerId)
+                        .Select(s => s.PigmySchemeID)
+                        .ToList();
+                    if (!mappedSchemeIds.Contains(scheme.PigmySchemeID))
                     {
-                        var mappedSchemeIds = db.PigmySchemes
-                            .Where(s => s.PigmyLiabilityLedgerID == liabilityLedgerId)
-                            .Select(s => s.PigmySchemeID)
-                            .ToList();
-                        if (!mappedSchemeIds.Contains(scheme.PigmySchemeID))
-                        {
-                            mappedSchemeIds.Add(scheme.PigmySchemeID);
-                        }
+                        mappedSchemeIds.Add(scheme.PigmySchemeID);
+                    }
+
+                    foreach (int bId in branchIds)
+                    {
+                        bool exists = db.BranchLedgerOpeningBalances.Any(b =>
+                            b.BranchID == bId && b.LedgerID == liabilityLedgerId && b.FinancialYearID == initialFyId);
+                        if (exists) continue;
 
                         var accounts = db.PigmyAccounts
-                            .Where(a => mappedSchemeIds.Contains(a.PigmySchemeID) && a.Status == "Active")
+                            .Where(a => a.BranchID == bId && mappedSchemeIds.Contains(a.PigmySchemeID) && a.Status == "Active")
                             .Select(a => a.PigmyAccountID)
                             .ToList();
 
@@ -3461,16 +3503,17 @@ try
                                 .Sum();
                         }
 
-                        if (totalOpeningCr > 0 || ledger.OpeningBalance != totalOpeningCr)
+                        if (totalOpeningCr > 0)
                         {
-                            ledger.OpeningBalance = totalOpeningCr;
-                            ledger.OpeningBalanceType = "Cr";
+                            Bhisi.Api.Helpers.BranchLedgerBalanceHelper.SetBranchLedgerOpeningBalanceAsync(
+                                db, bId, liabilityLedgerId, totalOpeningCr, "Cr",
+                                "Startup Pigmy SL->Branch OB Backfill", initialFyId).GetAwaiter().GetResult();
                         }
                     }
                 }
             }
             db.SaveChanges();
-            Log.Information("Pigmy Schemes GL Opening Balances auto-synchronized with sub-ledger on startup.");
+            Log.Information("Pigmy Schemes Branch GL Opening Balances checked on startup.");
         }
         catch (Exception ex)
         {

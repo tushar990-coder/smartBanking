@@ -1,0 +1,521 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Bhisi.Api.Controllers;
+using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
+using Bhisi.Api.Models;
+using Bhisi.Api.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Xunit;
+
+namespace Bhisi.Api.Tests
+{
+    public class FdAutoRenewalRollbackTests
+    {
+        private static AppDbContext CreateContext()
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(databaseName: $"BhisiFdAutoRenRollback_{Guid.NewGuid()}")
+                .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+                .Options;
+            return new AppDbContext(options);
+        }
+
+        private static ClaimsPrincipal BuildPrincipal(int userId, string username, string role, int branchId, DateTime businessDate)
+        {
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                new Claim(ClaimTypes.Name, username),
+                new Claim(ClaimTypes.Role, role),
+                new Claim("BranchID", branchId.ToString()),
+                new Claim("DefaultBranchID", branchId.ToString()),
+                new Claim("BusinessDate", businessDate.ToString("yyyy-MM-dd"))
+            };
+            return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestJwt"));
+        }
+
+        private static void AttachUser(ControllerBase controller, ClaimsPrincipal principal)
+        {
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = principal }
+            };
+        }
+
+        private static JsonElement ParseOkJson(IActionResult actionResult)
+        {
+            var ok = Assert.IsType<OkObjectResult>(actionResult);
+            var json = JsonSerializer.Serialize(ok.Value);
+            return JsonDocument.Parse(json).RootElement;
+        }
+
+        private static async Task<FdScheme> SeedEnvironmentAsync(AppDbContext db, DateTime businessDate, string policy = "RETAIN_ORIGINAL")
+        {
+            db.SansthaDetails.Add(new SansthaDetail
+            {
+                SansthaID = 1,
+                SansthaName = "स्मार्ट पतसंस्था",
+                FdRenewalReceiptPolicy = policy,
+                AllowManualReceiptNoOnRenewal = false
+            });
+
+            db.Branches.Add(new Branch
+            {
+                BranchID = 1,
+                BranchCode = "HO",
+                BranchName = "मुख्य शाखा (HO)",
+                IsActive = true
+            });
+
+            db.FinancialYears.Add(new FinancialYear
+            {
+                FinancialYearID = 1,
+                YearCode = "2026-2027",
+                StartDate = new DateTime(2026, 4, 1),
+                EndDate = new DateTime(2027, 3, 31),
+                IsActive = true,
+                IsClosed = false
+            });
+
+            db.BranchDayEndStatuses.Add(new BranchDayEndStatus
+            {
+                BranchID = 1,
+                BusinessDate = businessDate.Date,
+                IsDayClosed = false
+            });
+
+            db.AccountGroups.AddRange(
+                new AccountGroup { GroupID = 1, GroupName = "ठेवी", NatureOfGroup = "Liabilities", IsActive = true },
+                new AccountGroup { GroupID = 2, GroupName = "खर्च", NatureOfGroup = "Expenses", IsActive = true }
+            );
+
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 101, GroupID = 1, LedgerCode = "FD-LIAB", LedgerName = "मुदत ठेव दायित्व", AccountType = "Fixed Deposit", IsActive = true },
+                new Ledger { LedgerID = 102, GroupID = 1, LedgerCode = "FD-PAY", LedgerName = "मुदत ठेव देणे व्याज", AccountType = "Payable", IsActive = true },
+                new Ledger { LedgerID = 103, GroupID = 2, LedgerCode = "FD-EXP", LedgerName = "मुदत ठेव व्याज खर्च", AccountType = "Expenses", IsActive = true },
+                new Ledger { LedgerID = 104, GroupID = 1, LedgerCode = "SAV-LIAB", LedgerName = "बचत ठेव दायित्व", AccountType = "Saving", IsActive = true }
+            );
+
+            var scheme = new FdScheme
+            {
+                FdSchemeID = 1,
+                SchemeCode = "FD401",
+                SchemeName = "साधारण मुदत ठेव",
+                DurationMonths = 12,
+                DurationType = "Months",
+                SchemeDurationModel = "Fixed",
+                InterestRate = 10.00m,
+                SeniorCitizenInterestRate = 10.50m,
+                InterestType = "Simple",
+                PrematureInterestRate = 8.00m,
+                FdLiabilityLedgerID = 101,
+                InterestPayableLedgerID = 102,
+                InterestExpenseLedgerID = 103,
+                IsActive = true
+            };
+            db.FdSchemes.Add(scheme);
+
+            db.Customers.Add(new Customer
+            {
+                CustomerID = 1,
+                CIFNo = "CIF000001",
+                FirstName = "विजय",
+                LastName = "जाधव",
+                BirthDate = new DateTime(1980, 1, 1),
+                BranchID = 1
+            });
+
+            db.Members.Add(new Member
+            {
+                MemberID = 1,
+                CustomerID = 1,
+                MemberCode = "M001",
+                BranchID = 1,
+                Status = "Active"
+            });
+
+            db.SavingAccountMasters.Add(new SavingAccountMaster
+            {
+                SavingAccountID = 50,
+                BranchID = 1,
+                CustomerID = 1,
+                AccountNo = "SAV-001",
+                LedgerID = 104,
+                OpeningBalance = 5000m,
+                CurrentBalance = 5000m,
+                Status = "Active"
+            });
+
+            await db.SaveChangesAsync();
+            return scheme;
+        }
+
+        [Fact]
+        public async Task RejectVoucher_AutoRenewal_PrincipalOnly_WithSavingTransfer_AtomicallyReversesAndRestoresMatured()
+        {
+            await using var db = CreateContext();
+            var businessDate = DateTime.Today;
+            await SeedEnvironmentAsync(db, businessDate, policy: "RETAIN_ORIGINAL");
+
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 901,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = 1,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000901-1",
+                ReceiptNo = "FD-RCPT-901",
+                OpeningDate = businessDate.AddYears(-1),
+                MaturityDate = businessDate,
+                DepositAmount = 100000m,
+                InterestRate = 10.00m,
+                DurationType = "Months",
+                DurationValue = 12,
+                DurationInDays = 365,
+                MaturityAmount = 110000m,
+                Status = "Matured",
+                IsAutoRenewable = true,
+                AutoRenewalOption = "PrincipalOnly",
+                SavingAccountID = 50,
+                MaxAutoRenewalCycles = 3,
+                AutoRenewalCount = 0
+            });
+            await db.SaveChangesAsync();
+
+            var adminUser = BuildPrincipal(1, "admin", "Admin", 1, businessDate);
+            var fdCtrl = new FdAccountsController(db);
+            AttachUser(fdCtrl, adminUser);
+
+            var batchRes = ParseOkJson(await fdCtrl.RunAutoRenewalBatch(new AutoRenewalBatchRequest
+            {
+                BranchID = 1,
+                ProcessDate = businessDate,
+                SpecificAccountIDs = new List<int> { 901 }
+            }));
+
+            var item = batchRes.GetProperty("Items")[0];
+            int newFdId = item.GetProperty("NewFdAccountID").GetInt32();
+            string voucherNo = item.GetProperty("VoucherNo").GetString()!;
+            Assert.StartsWith("JV-FD-AUTOREN-", voucherNo);
+
+            // Confirm PrincipalOnly credited interest into linked SavingAccount 50
+            var savAfterAutoRen = await db.SavingAccountMasters.FindAsync(50);
+            Assert.True(savAfterAutoRen!.CurrentBalance > 5000m);
+            Assert.True(await db.SavingTransactions.AnyAsync(st => st.VoucherNo == voucherNo));
+
+            var voucher = await db.Vouchers.FirstAsync(v => v.VoucherNo == voucherNo);
+            var postingCtrl = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(postingCtrl, adminUser);
+
+            var rejectRes = await postingCtrl.RejectVoucher(voucher.VoucherID, new VoucherPostingController.VoucherRejectDto
+            {
+                Reason = "Auto-renewal PrincipalOnly rollback verification"
+            });
+            Assert.IsType<OkObjectResult>(rejectRes);
+
+            // Strict assertions: child FD removed, logs & txs removed, saving balance & tx reversed, parent restored to Matured
+            Assert.Null(await db.FdAccounts.FindAsync(newFdId));
+            Assert.False(await db.FdAutoRenewalLogs.AnyAsync());
+            Assert.False(await db.FdTransactions.AnyAsync(t => t.FdAccountID == newFdId || t.VoucherID == voucher.VoucherID));
+            Assert.False(await db.SavingTransactions.AnyAsync(st => st.VoucherNo == voucherNo));
+
+            var savRestored = await db.SavingAccountMasters.FindAsync(50);
+            Assert.Equal(5000m, savRestored!.CurrentBalance);
+
+            var oldRestored = await db.FdAccounts.FindAsync(901);
+            Assert.NotNull(oldRestored);
+            Assert.Equal("Matured", oldRestored!.Status);
+            Assert.Equal(0, oldRestored.AutoRenewalCount);
+            Assert.Equal("FD-RCPT-901", oldRestored.ReceiptNo);
+        }
+
+        [Fact]
+        public async Task RejectVoucher_StrictZeroFallback_IncompleteFkChain_FailsExplicitlyWithoutGuessing()
+        {
+            await using var db = CreateContext();
+            var businessDate = DateTime.Today;
+            await SeedEnvironmentAsync(db, businessDate);
+
+            // Intentionally seed text Remarks + Narration matching old/new numbers WITHOUT FdTransactions/FdAutoRenewalLogs/ParentFdAccountID FKs
+            db.FdAccounts.AddRange(
+                new FdAccount
+                {
+                    FdAccountID = 910,
+                    BranchID = 1,
+                    CustomerID = 1,
+                    FdSchemeID = 1,
+                    AccountNo = "FD-OLD-910",
+                    OpeningDate = businessDate.AddYears(-1),
+                    MaturityDate = businessDate.AddDays(-1),
+                    DepositAmount = 50000m,
+                    Status = "Renewed"
+                },
+                new FdAccount
+                {
+                    FdAccountID = 911,
+                    BranchID = 1,
+                    CustomerID = 1,
+                    FdSchemeID = 1,
+                    AccountNo = "FD-NEW-911",
+                    OpeningDate = businessDate,
+                    MaturityDate = businessDate.AddYears(1),
+                    DepositAmount = 55000m,
+                    Status = "Active",
+                    ParentFdAccountID = null,
+                    Remarks = "Renewed from: FD-OLD-910"
+                }
+            );
+
+            var brokenVoucher = new Voucher
+            {
+                VoucherID = 5001,
+                BranchID = 1,
+                VoucherNo = "JV-FD-REN-FD-NEW-911",
+                VoucherDate = businessDate,
+                VoucherType = "Journal",
+                TotalAmount = 55000m,
+                Status = "Pending",
+                Narration = "मुदत ठेव नूतनीकरण (FD Renewal): FD-OLD-910 -> FD-NEW-911"
+            };
+            db.Vouchers.Add(brokenVoucher);
+            await db.SaveChangesAsync();
+
+            var adminUser = BuildPrincipal(1, "admin", "Admin", 1, businessDate);
+            var postingCtrl = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(postingCtrl, adminUser);
+
+            // Must fail fast (400) instead of using regex/Narration/Remarks fallback!
+            var res = await postingCtrl.RejectVoucher(5001, new VoucherPostingController.VoucherRejectDto
+            {
+                Reason = "Verify zero fallback failure"
+            });
+            var objRes = Assert.IsAssignableFrom<ObjectResult>(res);
+            Assert.Equal(StatusCodes.Status400BadRequest, objRes.StatusCode);
+
+            // Nothing guessed or deleted
+            Assert.NotNull(await db.Vouchers.FindAsync(5001));
+            Assert.NotNull(await db.FdAccounts.FindAsync(911));
+            Assert.Equal("Renewed", (await db.FdAccounts.FindAsync(910))!.Status);
+        }
+
+        [Fact]
+        public async Task RejectVoucher_DownstreamGuards_BlocksLien_NextCycle_InterestAccrual_And_ApprovedSibling()
+        {
+            await using var db = CreateContext();
+            var businessDate = DateTime.Today;
+            await SeedEnvironmentAsync(db, businessDate);
+
+            // Scenario A: Lien marked on renewed newAccount
+            db.FdAccounts.AddRange(
+                new FdAccount { FdAccountID = 920, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-920", OpeningDate = businessDate.AddYears(-1), MaturityDate = businessDate, DepositAmount = 50000m, Status = "Renewed" },
+                new FdAccount { FdAccountID = 921, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-921", OpeningDate = businessDate, MaturityDate = businessDate.AddYears(1), DepositAmount = 55000m, Status = "Active", ParentFdAccountID = 920, IsLienMarked = true }
+            );
+            db.Vouchers.Add(new Voucher { VoucherID = 5010, BranchID = 1, VoucherNo = "JV-FD-AUTOREN-FD-921", VoucherDate = businessDate, VoucherType = "Journal", TotalAmount = 55000m, Status = "Pending" });
+            db.FdTransactions.AddRange(
+                new FdTransaction { FdTransactionID = 701, BranchID = 1, FdAccountID = 920, VoucherID = 5010, TransactionDate = businessDate, TransactionType = "Renewal", DebitCredit = "Dr", Amount = 55000m },
+                new FdTransaction { FdTransactionID = 702, BranchID = 1, FdAccountID = 921, VoucherID = 5010, TransactionDate = businessDate, TransactionType = "Opening", DebitCredit = "Cr", Amount = 55000m }
+            );
+
+            // Scenario B: Next cycle (Cycle 2) already created from renewed account
+            db.FdAccounts.AddRange(
+                new FdAccount { FdAccountID = 930, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-930", OpeningDate = businessDate.AddYears(-2), MaturityDate = businessDate.AddYears(-1), DepositAmount = 40000m, Status = "Renewed" },
+                new FdAccount { FdAccountID = 931, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-931", OpeningDate = businessDate.AddYears(-1), MaturityDate = businessDate, DepositAmount = 44000m, Status = "Renewed", ParentFdAccountID = 930 },
+                new FdAccount { FdAccountID = 932, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-932", OpeningDate = businessDate, MaturityDate = businessDate.AddYears(1), DepositAmount = 48000m, Status = "Active", ParentFdAccountID = 931 }
+            );
+            db.Vouchers.Add(new Voucher { VoucherID = 5011, BranchID = 1, VoucherNo = "JV-FD-AUTOREN-FD-931", VoucherDate = businessDate, VoucherType = "Journal", TotalAmount = 44000m, Status = "Pending" });
+            db.FdTransactions.AddRange(
+                new FdTransaction { FdTransactionID = 703, BranchID = 1, FdAccountID = 930, VoucherID = 5011, TransactionDate = businessDate, TransactionType = "Renewal", DebitCredit = "Dr", Amount = 44000m },
+                new FdTransaction { FdTransactionID = 704, BranchID = 1, FdAccountID = 931, VoucherID = 5011, TransactionDate = businessDate, TransactionType = "Opening", DebitCredit = "Cr", Amount = 44000m }
+            );
+
+            // Scenario C: Subsequent Interest Accrual exists on renewed account
+            db.FdAccounts.AddRange(
+                new FdAccount { FdAccountID = 940, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-940", OpeningDate = businessDate.AddYears(-1), MaturityDate = businessDate, DepositAmount = 30000m, Status = "Renewed" },
+                new FdAccount { FdAccountID = 941, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-941", OpeningDate = businessDate, MaturityDate = businessDate.AddYears(1), DepositAmount = 33000m, Status = "Active", ParentFdAccountID = 940 }
+            );
+            db.Vouchers.AddRange(
+                new Voucher { VoucherID = 5012, BranchID = 1, VoucherNo = "JV-FD-REN-FD-941", VoucherDate = businessDate, VoucherType = "Journal", TotalAmount = 33000m, Status = "Pending" },
+                new Voucher { VoucherID = 5013, BranchID = 1, VoucherNo = "JV-FD-ACC-941", VoucherDate = businessDate, VoucherType = "Journal", TotalAmount = 500m, Status = "Pending" }
+            );
+            db.FdTransactions.AddRange(
+                new FdTransaction { FdTransactionID = 705, BranchID = 1, FdAccountID = 940, VoucherID = 5012, TransactionDate = businessDate, TransactionType = "Renewal", DebitCredit = "Dr", Amount = 33000m },
+                new FdTransaction { FdTransactionID = 706, BranchID = 1, FdAccountID = 941, VoucherID = 5012, TransactionDate = businessDate, TransactionType = "Opening", DebitCredit = "Cr", Amount = 33000m }
+            );
+            db.FdInterestAccruals.Add(new FdInterestAccrual { AccrualID = 801, BranchID = 1, FdAccountID = 941, VoucherID = 5013, AccrualDate = businessDate, InterestAmount = 500m });
+
+            // Scenario D: Paired sibling PAY-FD-INT-* voucher is Approved
+            db.FdAccounts.AddRange(
+                new FdAccount { FdAccountID = 950, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-950", OpeningDate = businessDate.AddYears(-1), MaturityDate = businessDate, DepositAmount = 20000m, Status = "Renewed" },
+                new FdAccount { FdAccountID = 951, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-951", OpeningDate = businessDate, MaturityDate = businessDate.AddYears(1), DepositAmount = 20000m, Status = "Active", ParentFdAccountID = 950 }
+            );
+            db.Vouchers.AddRange(
+                new Voucher { VoucherID = 5014, BranchID = 1, VoucherNo = "JV-FD-REN-FD-951", VoucherDate = businessDate, VoucherType = "Journal", TotalAmount = 20000m, Status = "Pending", RelatedVoucherID = 5015 },
+                new Voucher { VoucherID = 5015, BranchID = 1, VoucherNo = "PAY-FD-INT-FD-951", VoucherDate = businessDate, VoucherType = "Payment", TotalAmount = 2000m, Status = "Approved", RelatedVoucherID = 5014 }
+            );
+            db.FdTransactions.AddRange(
+                new FdTransaction { FdTransactionID = 707, BranchID = 1, FdAccountID = 950, VoucherID = 5014, TransactionDate = businessDate, TransactionType = "Renewal", DebitCredit = "Dr", Amount = 20000m },
+                new FdTransaction { FdTransactionID = 708, BranchID = 1, FdAccountID = 951, VoucherID = 5014, TransactionDate = businessDate, TransactionType = "Opening", DebitCredit = "Cr", Amount = 20000m },
+                new FdTransaction { FdTransactionID = 709, BranchID = 1, FdAccountID = 950, VoucherID = 5015, TransactionDate = businessDate, TransactionType = "Interest Payout", DebitCredit = "Dr", Amount = 2000m }
+            );
+
+            await db.SaveChangesAsync();
+
+            var adminUser = BuildPrincipal(1, "admin", "Admin", 1, businessDate);
+            var postingCtrl = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(postingCtrl, adminUser);
+
+            foreach (int vId in new[] { 5010, 5011, 5012, 5014 })
+            {
+                var res = await postingCtrl.RejectVoucher(vId, new VoucherPostingController.VoucherRejectDto
+                {
+                    Reason = "Downstream protection check"
+                });
+                var objRes = Assert.IsAssignableFrom<ObjectResult>(res);
+                Assert.Equal(StatusCodes.Status400BadRequest, objRes.StatusCode);
+            }
+
+            // Ensure protected accounts were NOT deleted
+            Assert.NotNull(await db.FdAccounts.FindAsync(921));
+            Assert.NotNull(await db.FdAccounts.FindAsync(931));
+            Assert.NotNull(await db.FdAccounts.FindAsync(941));
+            Assert.NotNull(await db.FdAccounts.FindAsync(951));
+            Assert.NotNull(await db.Vouchers.FindAsync(5015));
+        }
+
+        [Fact]
+        public async Task DeleteFdAccount_OnAutoRenewedChild_CleansAutoRenVoucherAndLogsAndRestoresOldMatured()
+        {
+            await using var db = CreateContext();
+            var businessDate = DateTime.Today;
+            await SeedEnvironmentAsync(db, businessDate, policy: "RETAIN_ORIGINAL");
+
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 960,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = 1,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000960-1",
+                ReceiptNo = "FD-RCPT-960",
+                OpeningDate = businessDate.AddYears(-1),
+                MaturityDate = businessDate,
+                DepositAmount = 75000m,
+                InterestRate = 10.00m,
+                DurationType = "Months",
+                DurationValue = 12,
+                DurationInDays = 365,
+                MaturityAmount = 82500m,
+                Status = "Matured",
+                IsAutoRenewable = true,
+                AutoRenewalOption = "PrincipalPlusInterest",
+                MaxAutoRenewalCycles = 3,
+                AutoRenewalCount = 0
+            });
+            await db.SaveChangesAsync();
+
+            var adminUser = BuildPrincipal(1, "admin", "Admin", 1, businessDate);
+            var fdCtrl = new FdAccountsController(db);
+            AttachUser(fdCtrl, adminUser);
+
+            var batchRes = ParseOkJson(await fdCtrl.RunAutoRenewalBatch(new AutoRenewalBatchRequest
+            {
+                BranchID = 1,
+                ProcessDate = businessDate,
+                SpecificAccountIDs = new List<int> { 960 }
+            }));
+
+            int newFdId = batchRes.GetProperty("Items")[0].GetProperty("NewFdAccountID").GetInt32();
+            string voucherNo = batchRes.GetProperty("Items")[0].GetProperty("VoucherNo").GetString()!;
+
+            var deleteRes = await fdCtrl.DeleteFdAccount(newFdId);
+            Assert.IsType<OkObjectResult>(deleteRes);
+
+            Assert.Null(await db.FdAccounts.FindAsync(newFdId));
+            Assert.False(await db.Vouchers.AnyAsync(v => v.VoucherNo == voucherNo));
+            Assert.False(await db.FdAutoRenewalLogs.AnyAsync());
+
+            var restoredOld = await db.FdAccounts.FindAsync(960);
+            Assert.NotNull(restoredOld);
+            Assert.Equal("Matured", restoredOld!.Status);
+            Assert.Equal(0, restoredOld.AutoRenewalCount);
+        }
+
+        [Fact]
+        public async Task HealOrphanedRenewalsAsync_StrictFkPass1_Pass2_Pass3A_Pass3B_WorksWithoutTextFallback()
+        {
+            await using var db = CreateContext();
+            var businessDate = DateTime.Today;
+            await SeedEnvironmentAsync(db, businessDate);
+
+            // Pass 1: Orphaned Pending JV-FD-AUTOREN-* voucher whose child FD doesn't exist
+            db.FdAccounts.Add(new FdAccount { FdAccountID = 970, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-970", OpeningDate = businessDate.AddYears(-1), MaturityDate = businessDate, DepositAmount = 10000m, Status = "Renewed", AutoRenewalCount = 1 });
+            db.Vouchers.Add(new Voucher { VoucherID = 6001, BranchID = 1, VoucherNo = "JV-FD-AUTOREN-MISSING970", VoucherDate = businessDate, VoucherType = "Journal", TotalAmount = 11000m, Status = "Pending" });
+            db.FdTransactions.Add(new FdTransaction { FdTransactionID = 801, BranchID = 1, FdAccountID = 970, VoucherID = 6001, TransactionDate = businessDate, TransactionType = "Renewal", DebitCredit = "Dr", Amount = 11000m });
+            db.FdAutoRenewalLogs.Add(new FdAutoRenewalLog { LogID = 901, BranchID = 1, BatchDate = businessDate, OldFdAccountID = 970, NewFdAccountID = 99999, VoucherID = 6001, OldAccountNo = "FD-970", NewAccountNo = "MISSING", CustomerID = 1, CustomerName = "विजय जाधव" });
+
+            // Pass 2: Orphaned child FD with ParentFdAccountID FK whose renewal voucher is missing
+            db.FdAccounts.AddRange(
+                new FdAccount { FdAccountID = 971, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-971", OpeningDate = businessDate.AddYears(-1), MaturityDate = businessDate, DepositAmount = 20000m, Status = "Renewed" },
+                new FdAccount { FdAccountID = 972, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-972", OpeningDate = businessDate, MaturityDate = businessDate.AddYears(1), DepositAmount = 22000m, Status = "Active", ParentFdAccountID = 971 }
+            );
+
+            // Pass 3A: Orphaned Renewal FdTransaction with no child FD
+            db.FdAccounts.Add(new FdAccount { FdAccountID = 973, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-973", OpeningDate = businessDate.AddYears(-1), MaturityDate = businessDate, DepositAmount = 30000m, Status = "Renewed" });
+            db.FdTransactions.Add(new FdTransaction { FdTransactionID = 802, BranchID = 1, FdAccountID = 973, VoucherID = 6099, TransactionDate = businessDate, TransactionType = "Renewal", DebitCredit = "Dr", Amount = 33000m });
+
+            // Pass 3B: Stuck Renewed parent account with zero Renewal tx and zero child FK
+            db.FdAccounts.Add(new FdAccount { FdAccountID = 974, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "FD-974", OpeningDate = businessDate.AddYears(-1), MaturityDate = businessDate, DepositAmount = 40000m, Status = "Renewed" });
+
+            await db.SaveChangesAsync();
+
+            await FdRenewalRollbackHelper.HealOrphanedRenewalsAsync(db, force: true);
+
+            Assert.Null(await db.Vouchers.FindAsync(6001));
+            Assert.Null(await db.FdAccounts.FindAsync(972));
+            Assert.Null(await db.FdTransactions.FindAsync(802));
+            Assert.False(await db.FdAutoRenewalLogs.AnyAsync());
+
+            Assert.Equal("Matured", (await db.FdAccounts.FindAsync(970))!.Status);
+            Assert.Equal(0, (await db.FdAccounts.FindAsync(970))!.AutoRenewalCount);
+            Assert.Equal("Matured", (await db.FdAccounts.FindAsync(971))!.Status);
+            Assert.Equal("Matured", (await db.FdAccounts.FindAsync(973))!.Status);
+            Assert.Equal("Matured", (await db.FdAccounts.FindAsync(974))!.Status);
+        }
+
+        [Fact]
+        public async Task BuildCollisionSafeVoucherNoAsync_StrictZeroFallback_ThrowsOnDuplicate()
+        {
+            await using var db = CreateContext();
+            var businessDate = DateTime.Today;
+            await SeedEnvironmentAsync(db, businessDate);
+
+            db.Vouchers.Add(new Voucher
+            {
+                VoucherID = 7001,
+                BranchID = 1,
+                VoucherNo = "JV-FD-AUTOREN-FD001",
+                VoucherDate = businessDate,
+                VoucherType = "Journal",
+                TotalAmount = 1000m,
+                Status = "Pending"
+            });
+            await db.SaveChangesAsync();
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                FdRenewalRollbackHelper.BuildCollisionSafeVoucherNoAsync(db, "JV-FD-AUTOREN-FD001"));
+
+            string okNo = await FdRenewalRollbackHelper.BuildCollisionSafeVoucherNoAsync(db, "JV-FD-AUTOREN-FD002");
+            Assert.Equal("JV-FD-AUTOREN-FD002", okNo);
+        }
+    }
+}

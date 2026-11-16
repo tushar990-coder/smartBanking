@@ -268,11 +268,6 @@ namespace Bhisi.Api.Controllers
                     var obRows = sourceOpeningBalances.Where(b => b.LedgerID == ledger.LedgerID).ToList();
                     decimal obDr = obRows.Where(x => x.OpeningBalanceType == "Dr").Sum(x => x.OpeningBalance);
                     decimal obCr = obRows.Where(x => x.OpeningBalanceType == "Cr").Sum(x => x.OpeningBalance);
-                    if (obRows.Count == 0 && ledger.OpeningBalance > 0)
-                    {
-                        if (ledger.OpeningBalanceType == "Cr") obCr += ledger.OpeningBalance;
-                        else obDr += ledger.OpeningBalance;
-                    }
                     if (Math.Abs((obDr + lDr) - (obCr + lCr)) >= 0.01m)
                     {
                         carriedLedgerCount++;
@@ -494,11 +489,6 @@ namespace Bhisi.Api.Controllers
                         if (srcOb.OpeningBalanceType == "Cr") obCr = srcOb.OpeningBalance;
                         else obDr = srcOb.OpeningBalance;
                     }
-                    else if (isHoBranch && ledger.OpeningBalance > 0)
-                    {
-                        if (ledger.OpeningBalanceType == "Cr") obCr = ledger.OpeningBalance;
-                        else obDr = ledger.OpeningBalance;
-                    }
 
                     decimal periodDr = 0m;
                     decimal periodCr = 0m;
@@ -537,7 +527,7 @@ namespace Bhisi.Api.Controllers
                         // Asset / Liability ledger -> Carry forward closing balance as new Opening Balance
                         decimal newObAmount = Math.Round(Math.Abs(closingNetDr), 2);
                         string newObType = closingNetDr >= 0m ? "Dr" : "Cr";
-                        bool hadPriorOrLegacyBalance = branchSourceObs.ContainsKey(ledger.LedgerID) || (isHoBranch && ledger.OpeningBalance > 0);
+                        bool hadPriorBalance = branchSourceObs.ContainsKey(ledger.LedgerID);
 
                         if (branchTargetObs.TryGetValue(ledger.LedgerID, out var existingTarget))
                         {
@@ -547,7 +537,7 @@ namespace Bhisi.Api.Controllers
                             existingTarget.UpdatedOn = DateTime.UtcNow;
                             updatedRecordsCount++;
                         }
-                        else if (newObAmount >= 0.01m || hadPriorOrLegacyBalance)
+                        else if (newObAmount >= 0.01m || hadPriorBalance)
                         {
                             _context.BranchLedgerOpeningBalances.Add(new BranchLedgerOpeningBalance
                             {

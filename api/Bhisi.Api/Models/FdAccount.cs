@@ -39,6 +39,9 @@ namespace Bhisi.Api.Models
         [StringLength(30)]
         public string AccountNo { get; set; } = string.Empty;
 
+        [StringLength(50)]
+        public string? ReceiptNo { get; set; }
+
         [Required]
         public DateTime OpeningDate { get; set; } = DateTime.Today;
 
@@ -129,6 +132,8 @@ namespace Bhisi.Api.Models
         public int MaxAutoRenewalCycles { get; set; } = 3;
         public int AutoRenewalCount { get; set; } = 0;
         public int? ParentFdAccountID { get; set; }
+        public int? RootFdAccountID { get; set; }
+        public int RenewalCycleNo { get; set; } = 0;
 
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;

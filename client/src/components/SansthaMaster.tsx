@@ -26,6 +26,8 @@ interface SansthaDetail {
   isMobileCompulsory?: boolean;
   isAadhaarCompulsory?: boolean;
   isPanCompulsory?: boolean;
+  fdRenewalReceiptPolicy?: 'NEW_RECEIPT' | 'RETAIN_ORIGINAL' | 'NEXT_LEGACY' | 'HYBRID_CHOICE';
+  allowManualReceiptNoOnRenewal?: boolean;
   shareFaceValue?: number | string;
   authorizedShareCapital?: number | string;
   dividendRate?: number | string;
@@ -35,7 +37,8 @@ export default function SansthaMaster() {
   const [sansthaDetails, setSansthaDetails] = useState<SansthaDetail[]>([]);
   const [formData, setFormData] = useState<Partial<SansthaDetail>>({
     sansthaName: '', address: '', village: '', taluka: '', district: '', state: '', pinCode: '', contactNo: '', email: '', registrationNo: '', registrationDate: '', gstNo: '', logoPath: '', autoPostVouchers: false, autoPostVoucherLimit: 0,
-    isMobileCompulsory: true, isAadhaarCompulsory: true, isPanCompulsory: false
+    isMobileCompulsory: true, isAadhaarCompulsory: true, isPanCompulsory: false,
+    fdRenewalReceiptPolicy: 'NEW_RECEIPT', allowManualReceiptNoOnRenewal: false
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -103,12 +106,18 @@ export default function SansthaMaster() {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const value = e.target.type === 'checkbox' 
       ? (e.target as HTMLInputElement).checked 
       : e.target.type === 'number'
       ? (e.target.value === '' ? '' : e.target.value)
       : e.target.value;
+
+    if (e.target.name === 'fdRenewalReceiptPolicy' && value === 'RETAIN_ORIGINAL') {
+      setFormData({ ...formData, fdRenewalReceiptPolicy: 'RETAIN_ORIGINAL', allowManualReceiptNoOnRenewal: false });
+      return;
+    }
+
     setFormData({ ...formData, [e.target.name]: value });
   };
 
@@ -172,6 +181,8 @@ export default function SansthaMaster() {
         isMobileCompulsory: formData.isMobileCompulsory ?? true,
         isAadhaarCompulsory: formData.isAadhaarCompulsory ?? true,
         isPanCompulsory: formData.isPanCompulsory ?? false,
+        fdRenewalReceiptPolicy: formData.fdRenewalReceiptPolicy || 'NEW_RECEIPT',
+        allowManualReceiptNoOnRenewal: formData.fdRenewalReceiptPolicy === 'RETAIN_ORIGINAL' ? false : Boolean(formData.allowManualReceiptNoOnRenewal),
       };
 
       let response;
@@ -513,6 +524,70 @@ export default function SansthaMaster() {
                 <span className="font-bold text-gray-900 block">💳 पॅन कार्ड अनिवार्य</span>
                 <span className="text-[10px] text-gray-500 font-normal leading-tight block mt-0.5">
                   १० अक्षरी पॅन नंबर भरणे बंधनकारक राहील.
+                </span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* Section 4: FD Renewal Receipt Number Policy */}
+        <div className="bg-white border border-gray-200 rounded-sm p-3.5 shadow-2xs space-y-2.5">
+          <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <FileBadge className="w-4 h-4 text-primary" />
+              <h2 className="text-xs font-bold text-primary">४. मुदत ठेव नूतनीकरण पावती क्रमांक धोरण (FD Renewal Receipt No Policy)</h2>
+            </div>
+            <span className="text-[10px] text-gray-500 font-medium">मॅन्युअल व स्वयंचलित (Auto-Renewal) दोन्हीवर लागू</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            <div>
+              <label className="text-[11px] font-bold text-slate-800 block mb-1">
+                नूतनीकरणावेळी पावती क्रमांक कसा द्यावा?
+              </label>
+              <select
+                name="fdRenewalReceiptPolicy"
+                value={formData.fdRenewalReceiptPolicy || 'NEW_RECEIPT'}
+                onChange={handleChange}
+                className="w-full h-9 px-2.5 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-300 rounded-sm focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer"
+              >
+                <option value="NEW_RECEIPT">१. नवीन १४-अंकी CBS पावती क्रमांक द्या (Issue New CBS Receipt No)</option>
+                <option value="RETAIN_ORIGINAL">२. पहिला मूळ पावती / जुना FD क्रमांक कायम ठेवा — Same (Retain Original)</option>
+                <option value="NEXT_LEGACY">३. आपोआप पुढील जुना FD क्रमांक तयार करा — Next (Next Legacy No)</option>
+                <option value="HYBRID_CHOICE">४. नूतनीकरणावेळी वापरकर्त्याला निवडू द्या (Allow Choice / Hybrid)</option>
+              </select>
+              <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                {formData.fdRenewalReceiptPolicy === 'RETAIN_ORIGINAL'
+                  ? 'अंतर्गत CBS खाते क्रमांक १४-अंकी युनिक राहील, मात्र ग्राहक पावती व जुना क्र. पहिल्या ठेवीचा कायम (Same) ठेवला जाईल.'
+                  : formData.fdRenewalReceiptPolicy === 'NEXT_LEGACY'
+                  ? 'मॅन्युअल व ऑटो-रिन्यू दोन्हीमध्ये १४-अंकी CBS खाते क्र. सोबतच जुना / पावती क्रमांक (Legacy No) आपोआप पुढील क्रमाने तयार होईल.'
+                  : formData.fdRenewalReceiptPolicy === 'HYBRID_CHOICE'
+                  ? 'नूतनीकरण स्क्रीनवर नवीन CBS क्र., मूळ क्र. कायम (Same), किंवा पुढील जुना क्र. (Next) निवडता येईल.'
+                  : 'प्रत्येक नूतनीकरणावेळी नवीन १४-अंकी CBS पावती क्रमांक तयार होईल.'}
+              </p>
+            </div>
+
+            <label
+              className={`flex items-start gap-2.5 p-2.5 rounded-sm border transition select-none self-start mt-1 ${
+                formData.fdRenewalReceiptPolicy === 'RETAIN_ORIGINAL'
+                  ? 'bg-slate-100 border-slate-200 opacity-70 cursor-not-allowed'
+                  : 'cursor-pointer bg-slate-50 hover:bg-blue-50/50 border-slate-200'
+              }`}
+            >
+              <input
+                type="checkbox"
+                name="allowManualReceiptNoOnRenewal"
+                disabled={formData.fdRenewalReceiptPolicy === 'RETAIN_ORIGINAL'}
+                checked={formData.fdRenewalReceiptPolicy === 'RETAIN_ORIGINAL' ? false : Boolean(formData.allowManualReceiptNoOnRenewal)}
+                onChange={handleChange}
+                className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded cursor-pointer mt-0.5 disabled:cursor-not-allowed"
+              />
+              <div className="text-[11px]">
+                <span className="font-bold text-gray-900 block">✍️ नूतनीकरणात मॅन्युअल / प्री-प्रिंटेड पावती क्र. मुभा</span>
+                <span className="text-[10px] text-gray-500 font-normal leading-tight block mt-0.5">
+                  {formData.fdRenewalReceiptPolicy === 'RETAIN_ORIGINAL'
+                    ? 'मूळ पावती क्र. कायम धोरण सक्रिय असल्याने मॅन्युअल कस्टम पावती क्र. पर्याय बंद ठेवला आहे.'
+                    : 'सुरू केल्यास नूतनीकरण करताना संस्थेचे प्री-प्रिंटेड पावती पुस्तक क्र. स्वतः टाकता येतील.'}
                 </span>
               </div>
             </label>

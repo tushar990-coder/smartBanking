@@ -854,10 +854,14 @@ namespace Bhisi.Api.Services
             if (voucherNos.Any())
             {
                 var vNoList = voucherNos.ToList();
-                var claimPigmyTxs = await _context.PigmyTransactions
+                var candidateClaimPigmyTxs = await _context.PigmyTransactions
                     .Where(pt => (pt.ReferenceId != null && vNoList.Contains(pt.ReferenceId)) ||
-                                 (pt.Narration != null && pt.Narration.Contains("Deceased") && vNoList.Any(vn => pt.Narration.Contains(vn))))
+                                 (pt.Narration != null && pt.Narration.Contains("Deceased")))
                     .ToListAsync();
+                var claimPigmyTxs = candidateClaimPigmyTxs
+                    .Where(pt => (pt.ReferenceId != null && voucherNos.Contains(pt.ReferenceId)) ||
+                                 (pt.Narration != null && pt.Narration.Contains("Deceased") && vNoList.Any(vn => pt.Narration.Contains(vn, StringComparison.OrdinalIgnoreCase))))
+                    .ToList();
 
                 foreach (var pt in claimPigmyTxs)
                 {
@@ -892,12 +896,14 @@ namespace Bhisi.Api.Services
             HashSet<int> rolledBackLoanCollectionIds,
             HashSet<string> extraDeletedVoucherNos)
         {
-            // 3A. FD Renewal (Manual Renewal & Auto-Renewal)
+            // 3A. FD Renewal (Manual Renewal & Auto-Renewal — Strict FK + Prefix check, zero Narration fallback)
             var renewalVoucher = voucherGroup.FirstOrDefault(FdRenewalRollbackHelper.IsFdRenewalVoucher);
             bool isAutoRenewalVoucher = voucherNos.Any(v => v.StartsWith("JV-FD-AUTOREN-", StringComparison.OrdinalIgnoreCase)) ||
                                         await _context.FdAutoRenewalLogs.AnyAsync(l => l.VoucherID.HasValue && voucherIds.Contains(l.VoucherID.Value));
+            bool hasRenewalTx = await _context.FdTransactions.AnyAsync(t =>
+                voucherIds.Contains(t.VoucherID) && t.TransactionType == "Renewal");
 
-            if (renewalVoucher != null || isAutoRenewalVoucher)
+            if (renewalVoucher != null || isAutoRenewalVoucher || hasRenewalTx)
             {
                 var targetRenV = renewalVoucher ?? primaryVoucher;
 
@@ -1667,12 +1673,14 @@ namespace Bhisi.Api.Services
                         affectedPigmyAccountIds.Add(pAcc.PigmyAccountID);
                     }
 
-                    var intTxs = await _context.PigmyTransactions
+                    var accountIntTxs = await _context.PigmyTransactions
                         .Where(pt => pt.PigmyAccountID == log.PigmyAccountId &&
-                                     pt.TransactionType == "INTEREST" &&
-                                     (vNoList.Any(vn => pt.Narration.Contains(vn)) ||
-                                      (Math.Abs(pt.CrAmount - log.InterestAmount) < 0.01m && pt.TransactionDate.Date == log.CalculationDate.Date)))
+                                     pt.TransactionType == "INTEREST")
                         .ToListAsync();
+                    var intTxs = accountIntTxs
+                        .Where(pt => (pt.Narration != null && vNoList.Any(vn => pt.Narration.Contains(vn, StringComparison.OrdinalIgnoreCase))) ||
+                                     (Math.Abs(pt.CrAmount - log.InterestAmount) < 0.01m && pt.TransactionDate.Date == log.CalculationDate.Date))
+                        .ToList();
 
                     if (intTxs.Any())
                     {
@@ -1756,11 +1764,12 @@ namespace Bhisi.Api.Services
                                  vNoList.Contains(pt.ReferenceId))
                     .ToListAsync();
 
-                var closurePigmyTxsByNarr = await _context.PigmyTransactions
-                    .Where(pt => pt.TransactionType == "WITHDRAWAL" &&
-                                 pt.Narration != null &&
-                                 vNoList.Any(vn => pt.Narration.Contains(vn)))
+                var candidateWithdrawalPigmyTxs = await _context.PigmyTransactions
+                    .Where(pt => pt.TransactionType == "WITHDRAWAL" && pt.Narration != null)
                     .ToListAsync();
+                var closurePigmyTxsByNarr = candidateWithdrawalPigmyTxs
+                    .Where(pt => vNoList.Any(vn => pt.Narration!.Contains(vn, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
 
                 var closurePigmyTxs = closurePigmyTxsByRef
                     .Concat(closurePigmyTxsByNarr)
@@ -2867,9 +2876,12 @@ namespace Bhisi.Api.Services
             }
 
             // Match SavingInterestPostings (handles both single VoucherNo and comma-separated multi-branch VoucherNo)
-            var candidatePostings = await _context.SavingInterestPostings
-                .Where(p => p.VoucherNo != null && vNoList.Any(vn => p.VoucherNo.Contains(vn)))
+            var allInterestPostings = await _context.SavingInterestPostings
+                .Where(p => p.VoucherNo != null)
                 .ToListAsync();
+            var candidatePostings = allInterestPostings
+                .Where(p => vNoList.Any(vn => p.VoucherNo!.Contains(vn, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
 
             foreach (var post in candidatePostings)
             {
@@ -2961,17 +2973,23 @@ namespace Bhisi.Api.Services
             if (!voucherNos.Any()) return;
             var vNoList = voucherNos.ToList();
 
-            var allocations = await _context.CashAllocations
-                .Where(ca => ca.Remarks != null && vNoList.Any(vn => ca.Remarks.Contains(vn)))
+            var candidateAllocations = await _context.CashAllocations
+                .Where(ca => ca.Remarks != null)
                 .ToListAsync();
+            var allocations = candidateAllocations
+                .Where(ca => vNoList.Any(vn => ca.Remarks!.Contains(vn, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
             if (allocations.Any())
             {
                 _context.CashAllocations.RemoveRange(allocations);
             }
 
-            var denominations = await _context.CashDenominations
-                .Where(cd => cd.Remarks != null && vNoList.Any(vn => cd.Remarks.Contains(vn)))
+            var candidateDenominations = await _context.CashDenominations
+                .Where(cd => cd.Remarks != null)
                 .ToListAsync();
+            var denominations = candidateDenominations
+                .Where(cd => vNoList.Any(vn => cd.Remarks!.Contains(vn, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
             if (denominations.Any())
             {
                 _context.CashDenominations.RemoveRange(denominations);

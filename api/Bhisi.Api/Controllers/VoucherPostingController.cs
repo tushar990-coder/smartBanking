@@ -68,6 +68,7 @@ namespace Bhisi.Api.Controllers
                             v.VoucherNo.StartsWith("JV-INV-OP-")
                         ) &&
                          !v.VoucherNo.StartsWith("JV-FD-REN-") &&
+                         !v.VoucherNo.StartsWith("JV-FD-AUTOREN-") &&
                          !v.VoucherNo.StartsWith("PAY-FD-INT-") &&
                          !v.VoucherNo.StartsWith("JV-FD-INT-") &&
                          !v.VoucherNo.StartsWith("JV-FD-CLOSE-") &&
@@ -232,12 +233,13 @@ namespace Bhisi.Api.Controllers
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var vouchers = await _context.Vouchers
+                var seedIds = request.VoucherIds.Where(id => id > 0).Distinct().ToList();
+                var seedVouchers = await _context.Vouchers
                     .Include(v => v.VoucherDetails)
-                    .Where(v => request.VoucherIds.Contains(v.VoucherID) && v.Status == "Pending")
+                    .Where(v => seedIds.Contains(v.VoucherID) && v.Status == "Pending")
                     .ToListAsync();
 
-                if (!vouchers.Any())
+                if (!seedVouchers.Any())
                 {
                     return NotFound("कोणतेही वैध प्रलंबित व्हाउचर्स सापडले नाहीत. (No valid pending vouchers found.)");
                 }
@@ -245,7 +247,8 @@ namespace Bhisi.Api.Controllers
                 int approverId = User.GetUserId();
                 bool isHoApprover = User.IsHeadOfficeAdmin();
 
-                if (!isHoApprover && vouchers.Any(v => !User.CanAccessBranch(v.BranchID)))
+                // Enforce branch access ONLY on explicitly requested seed vouchers; linked IBT siblings ride along atomically
+                if (!isHoApprover && seedVouchers.Any(v => !User.CanAccessBranch(v.BranchID)))
                 {
                     await dbTransaction.RollbackAsync();
                     return StatusCode(403, "आपल्याला इतर शाखेतील व्हाउचर मंजूर करण्याची परवानगी नाही.");
@@ -255,13 +258,20 @@ namespace Bhisi.Api.Controllers
                 {
                     DateTime dayStart = targetLoginDate.Value.Date;
                     DateTime dayEnd = dayStart.AddDays(1);
-                    var mismatchedVoucher = vouchers.FirstOrDefault(v => v.VoucherDate < dayStart || v.VoucherDate >= dayEnd);
+                    var mismatchedVoucher = seedVouchers.FirstOrDefault(v => v.VoucherDate < dayStart || v.VoucherDate >= dayEnd);
                     if (mismatchedVoucher != null)
                     {
                         await dbTransaction.RollbackAsync();
                         return BadRequest($"सुरक्षा नियम: फक्त चालू लॉगिन तारखेचेच ({targetLoginDate.Value:dd/MM/yyyy}) व्हाउचर मंजूर व पोस्ट करता येतात. व्हाउचर क्र. {mismatchedVoucher.VoucherNo} ची तारीख ({mismatchedVoucher.VoucherDate:dd/MM/yyyy}) वेगळी आहे.");
                     }
                 }
+
+                // Expand selection to include bidirectional RelatedVoucherID IBT siblings so pairs never stay half-approved
+                var expandedIds = await Helpers.IbtLedgerHelper.ExpandIbtSiblingIdsAsync(_context, seedVouchers.Select(v => v.VoucherID));
+                var vouchers = await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .Where(v => expandedIds.Contains(v.VoucherID) && v.Status == "Pending")
+                    .ToListAsync();
 
                 var postedVoucherDetails = new List<object>();
 
@@ -441,22 +451,27 @@ namespace Bhisi.Api.Controllers
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Expand selection to include paired IBT / dual-voucher siblings so pairs never end up half-approved
-                var expandedIds = new HashSet<int>(request.VoucherIds);
+                var seedIds = request.VoucherIds.Where(id => id > 0).Distinct().ToList();
                 var seedVouchers = await _context.Vouchers
-                    .Where(v => expandedIds.Contains(v.VoucherID))
-                    .Select(v => new { v.VoucherID, v.RelatedVoucherID })
+                    .AsNoTracking()
+                    .Where(v => seedIds.Contains(v.VoucherID) && v.Status == "Approved")
+                    .Select(v => new { v.VoucherID, v.BranchID })
                     .ToListAsync();
-                foreach (var sv in seedVouchers)
+
+                if (!seedVouchers.Any())
                 {
-                    if (sv.RelatedVoucherID.HasValue && sv.RelatedVoucherID.Value > 0)
-                        expandedIds.Add(sv.RelatedVoucherID.Value);
+                    return NotFound("निवडलेले कोणतेही मंजूर व्हाउचर्स सापडले नाहीत किंवा आधीच प्रलंबित आहेत. (No valid approved vouchers found to unpass.)");
                 }
-                var revRelated = await _context.Vouchers
-                    .Where(v => v.RelatedVoucherID.HasValue && expandedIds.Contains(v.RelatedVoucherID.Value))
-                    .Select(v => v.VoucherID)
-                    .ToListAsync();
-                foreach (var rid in revRelated) expandedIds.Add(rid);
+
+                // Check branch access ONLY on explicitly requested seed vouchers; linked IBT siblings revert atomically
+                if (!isHOUser && seedVouchers.Any(v => !User.CanAccessBranch(v.BranchID)))
+                {
+                    await dbTransaction.RollbackAsync();
+                    return StatusCode(403, "आपल्याला इतर शाखेतील व्हाउचर अन-पास करण्याची परवानगी नाही.");
+                }
+
+                // Expand selection to include paired IBT / dual-voucher siblings so pairs never end up half-approved
+                var expandedIds = await Helpers.IbtLedgerHelper.ExpandIbtSiblingIdsAsync(_context, seedVouchers.Select(v => v.VoucherID));
 
                 var vouchers = await _context.Vouchers
                     .Include(v => v.VoucherDetails)
@@ -466,12 +481,6 @@ namespace Bhisi.Api.Controllers
                 if (!vouchers.Any())
                 {
                     return NotFound("निवडलेले कोणतेही मंजूर व्हाउचर्स सापडले नाहीत किंवा आधीच प्रलंबित आहेत. (No valid approved vouchers found to unpass.)");
-                }
-
-                if (!isHOUser && vouchers.Any(v => !User.CanAccessBranch(v.BranchID)))
-                {
-                    await dbTransaction.RollbackAsync();
-                    return StatusCode(403, "आपल्याला इतर शाखेतील व्हाउचर अन-पास करण्याची परवानगी नाही.");
                 }
 
                 int unpassedCount = 0;

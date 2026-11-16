@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface AuditCategory {
   code: string;
@@ -25,6 +27,15 @@ interface LedgerOption {
 }
 
 export default function CoOpAuditComplianceMaster() {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+
+  const [branches, setBranches] = useState<Array<{ branchID: number; branchCode?: string; branchName: string }>>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    effectiveBranch === null || effectiveBranch === 'all' ? 'all' : String(effectiveBranch)
+  );
   const [activeSubTab, setActiveSubTab] = useState<'mapping' | 'scorecard' | 'owned-funds' | 'cd-ratio' | 'crr-slr' | 'crar' | 'print'>('mapping');
   const [loading, setLoading] = useState(true);
 
@@ -43,8 +54,29 @@ export default function CoOpAuditComplianceMaster() {
   const [scorecardData, setScorecardData] = useState<any>(null);
 
   useEffect(() => {
-    loadAllData();
+    axios.get('/api/Branches')
+      .then(res => setBranches(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setBranches([]));
   }, []);
+
+  useEffect(() => {
+    if (!isHOUser && lockedBranchId) {
+      setSelectedBranchId(String(lockedBranchId));
+    } else if (globalBranchId !== undefined && globalBranchId !== null && globalBranchId !== '') {
+      setSelectedBranchId(globalBranchId === 'all' ? 'all' : String(globalBranchId));
+    }
+  }, [globalBranchId, isHOUser, lockedBranchId]);
+
+  const branchRequestParams = useMemo(() => {
+    const resolved = !isHOUser && lockedBranchId
+      ? lockedBranchId
+      : (selectedBranchId && selectedBranchId !== 'all' ? Number(selectedBranchId) : undefined);
+    return resolved && resolved > 0 ? { branchId: resolved } : undefined;
+  }, [selectedBranchId, isHOUser, lockedBranchId]);
+
+  useEffect(() => {
+    loadAllData();
+  }, [branchRequestParams]);
 
   const loadAllData = async () => {
     setLoading(true);
@@ -82,7 +114,7 @@ export default function CoOpAuditComplianceMaster() {
 
   const fetchOwnedFunds = async () => {
     try {
-      const res = await axios.get('/api/AuditCompliance/OwnedFunds');
+      const res = await axios.get('/api/AuditCompliance/OwnedFunds', { params: branchRequestParams });
       setOwnedFundsData(res.data);
     } catch (err) {
       console.error('Error fetching owned funds:', err);
@@ -91,7 +123,7 @@ export default function CoOpAuditComplianceMaster() {
 
   const fetchCdRatio = async () => {
     try {
-      const res = await axios.get('/api/AuditCompliance/CdRatio');
+      const res = await axios.get('/api/AuditCompliance/CdRatio', { params: branchRequestParams });
       setCdRatioData(res.data);
     } catch (err) {
       console.error('Error fetching CD ratio:', err);
@@ -100,7 +132,7 @@ export default function CoOpAuditComplianceMaster() {
 
   const fetchCrrSlr = async () => {
     try {
-      const res = await axios.get('/api/AuditCompliance/CrrSlr');
+      const res = await axios.get('/api/AuditCompliance/CrrSlr', { params: branchRequestParams });
       setCrrSlrData(res.data);
     } catch (err) {
       console.error('Error fetching CRR SLR:', err);
@@ -109,7 +141,7 @@ export default function CoOpAuditComplianceMaster() {
 
   const fetchCrar = async () => {
     try {
-      const res = await axios.get('/api/AuditCompliance/Crar');
+      const res = await axios.get('/api/AuditCompliance/Crar', { params: branchRequestParams });
       setCrarData(res.data);
     } catch (err) {
       console.error('Error fetching CRAR:', err);
@@ -118,7 +150,7 @@ export default function CoOpAuditComplianceMaster() {
 
   const fetchScorecard = async () => {
     try {
-      const res = await axios.get('/api/AuditCompliance/AuditRatingScore');
+      const res = await axios.get('/api/AuditCompliance/AuditRatingScore', { params: branchRequestParams });
       setScorecardData(res.data);
     } catch (err) {
       console.error('Error fetching scorecard:', err);
@@ -223,6 +255,23 @@ export default function CoOpAuditComplianceMaster() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={selectedBranchId}
+              onChange={(e) => setSelectedBranchId(e.target.value)}
+              disabled={!isHOUser && !!lockedBranchId}
+              className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-slate-800 text-xs font-bold shadow-2xs disabled:bg-slate-100 disabled:cursor-not-allowed"
+            >
+              {isHOUser && <option value="all">सर्व शाखा (Consolidated)</option>}
+              {(isHOUser || !lockedBranchId
+                ? branches
+                : branches.filter(b => Number(b.branchID) === Number(lockedBranchId))
+              ).map(b => (
+                <option key={b.branchID} value={String(b.branchID)}>
+                  {b.branchCode ? `${b.branchCode} - ` : ''}{b.branchName}
+                </option>
+              ))}
+            </select>
+
             <button
               onClick={() => setActiveSubTab('print')}
               className="px-3.5 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"

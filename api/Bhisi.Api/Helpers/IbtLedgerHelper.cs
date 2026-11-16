@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,76 @@ namespace Bhisi.Api.Helpers
         public const string StandardIbtLedgerName = "आंतर-शाखा हस्तांतरण खाते (Inter-Branch Transfer Account)";
         public const string StandardIbtGroupCode = "2.9";
         public const string StandardIbtLedgerCode = "IBT-001";
+
+        /// <summary>
+        /// Resolves the directional pair of IBT Ledger IDs for a cross-branch transaction:
+        /// - CounterIbtLedgerId is posted on the counter/operating branch's voucher (branch A -> branch B)
+        /// - HomeIbtLedgerId is posted on the home/account branch's voucher (branch B -> branch A)
+        /// Ensures each branch books against its own configured IBT ledger so IbtPairStatement & Matrix reconcile.
+        /// </summary>
+        public static async Task<(int CounterIbtLedgerId, int HomeIbtLedgerId)> GetDirectionalPairIbtLedgerIdsAsync(
+            AppDbContext context,
+            int counterBranchId,
+            int homeBranchId)
+        {
+            int counterIbtLedgerId = await GetIbtLedgerIdAsync(context, counterBranchId, homeBranchId);
+            int homeIbtLedgerId = await GetIbtLedgerIdAsync(context, homeBranchId, counterBranchId);
+            return (counterIbtLedgerId, homeIbtLedgerId);
+        }
+
+        /// <summary>
+        /// Expands a set of seed voucher IDs to include any bidirectional RelatedVoucherID siblings
+        /// so linked cross-branch IBT voucher pairs are always approved or unpassed atomically together.
+        /// </summary>
+        public static async Task<HashSet<int>> ExpandIbtSiblingIdsAsync(
+            AppDbContext context,
+            IEnumerable<int> seedVoucherIds)
+        {
+            var expandedIds = new HashSet<int>(seedVoucherIds.Where(id => id > 0));
+            if (expandedIds.Count == 0)
+            {
+                return expandedIds;
+            }
+
+            // Bounded fixpoint loop (handles direct 1:1 pairs cleanly and guards against cycles)
+            for (int depth = 0; depth < 3; depth++)
+            {
+                int beforeCount = expandedIds.Count;
+                var currentList = expandedIds.ToList();
+
+                var forwardIds = await context.Vouchers
+                    .AsNoTracking()
+                    .Where(v => currentList.Contains(v.VoucherID) &&
+                                v.RelatedVoucherID.HasValue &&
+                                v.RelatedVoucherID.Value > 0)
+                    .Select(v => v.RelatedVoucherID!.Value)
+                    .ToListAsync();
+
+                foreach (int fid in forwardIds)
+                {
+                    expandedIds.Add(fid);
+                }
+
+                var reverseIds = await context.Vouchers
+                    .AsNoTracking()
+                    .Where(v => v.RelatedVoucherID.HasValue &&
+                                currentList.Contains(v.RelatedVoucherID.Value))
+                    .Select(v => v.VoucherID)
+                    .ToListAsync();
+
+                foreach (int rid in reverseIds)
+                {
+                    expandedIds.Add(rid);
+                }
+
+                if (expandedIds.Count == beforeCount)
+                {
+                    break;
+                }
+            }
+
+            return expandedIds;
+        }
 
         /// <summary>
         /// Gets or auto-creates the Inter-Branch Transfer (IBT) Ledger ID for a branch.
@@ -169,11 +240,11 @@ namespace Bhisi.Api.Helpers
                 int collectingBranch = col.BranchID;
                 int homeBranchId = col.HomeBranchID!.Value;
 
-                int ibtLedgerId = await GetIbtLedgerIdAsync(context, collectingBranch, homeBranchId);
+                var (counterIbtLedgerId, homeIbtLedgerId) = await GetDirectionalPairIbtLedgerIdsAsync(context, collectingBranch, homeBranchId);
 
                 // Identify non-cash details in counter voucher (Principal, Interest, etc.)
                 var detailsToMove = counterVoucher.VoucherDetails
-                    .Where(d => d.DrCr == "Cr" && d.LedgerID != ibtLedgerId)
+                    .Where(d => d.DrCr == "Cr" && d.LedgerID != counterIbtLedgerId)
                     .ToList();
 
                 if (!detailsToMove.Any()) continue;
@@ -185,7 +256,7 @@ namespace Bhisi.Api.Helpers
                 counterVoucher.VoucherDetails.Add(new VoucherDetail
                 {
                     VoucherID = counterVoucher.VoucherID,
-                    LedgerID = ibtLedgerId,
+                    LedgerID = counterIbtLedgerId,
                     DrCr = "Cr",
                     Amount = totalCreditToMove,
                     CustomerID = col.LoanAccount?.CustomerID,
@@ -221,7 +292,7 @@ namespace Bhisi.Api.Helpers
                 context.VoucherDetails.Add(new VoucherDetail
                 {
                     VoucherID = homeVoucher.VoucherID,
-                    LedgerID = ibtLedgerId,
+                    LedgerID = homeIbtLedgerId,
                     DrCr = "Dr",
                     Amount = totalCreditToMove,
                     CustomerID = col.LoanAccount?.CustomerID,
@@ -251,6 +322,91 @@ namespace Bhisi.Api.Helpers
 
             await context.SaveChangesAsync();
             return repairedCount;
+        }
+
+        /// <summary>
+        /// Idempotently synchronizes any historical half-approved IBT pairs where one sibling voucher
+        /// is already Approved while its linked RelatedVoucherID sibling remained Pending, provided the
+        /// Pending sibling is balanced (Dr == Cr), not in a closed financial year, and not in a closed EOD date.
+        /// </summary>
+        public static async Task<int> RepairHalfApprovedIbtPairsAsync(AppDbContext context)
+        {
+            var pendingIbtVouchers = await context.Vouchers
+                .Include(v => v.VoucherDetails)
+                .Where(v => v.IsIbtVoucher && v.Status == "Pending" && v.RelatedVoucherID.HasValue && v.RelatedVoucherID.Value > 0)
+                .ToListAsync();
+
+            if (!pendingIbtVouchers.Any())
+            {
+                return 0;
+            }
+
+            var siblingIds = pendingIbtVouchers.Select(v => v.RelatedVoucherID!.Value).Distinct().ToList();
+            var approvedSiblings = await context.Vouchers
+                .AsNoTracking()
+                .Where(v => siblingIds.Contains(v.VoucherID) && v.Status == "Approved")
+                .ToDictionaryAsync(v => v.VoucherID, v => v);
+
+            if (!approvedSiblings.Any())
+            {
+                return 0;
+            }
+
+            var closedFys = await context.FinancialYears
+                .AsNoTracking()
+                .Where(fy => fy.IsClosed)
+                .ToListAsync();
+
+            int syncedCount = 0;
+
+            foreach (var pending in pendingIbtVouchers)
+            {
+                if (!pending.RelatedVoucherID.HasValue || !approvedSiblings.TryGetValue(pending.RelatedVoucherID.Value, out var approvedSibling))
+                {
+                    continue;
+                }
+
+                if (closedFys.Any(fy => pending.VoucherDate.Date >= fy.StartDate.Date && pending.VoucherDate.Date <= fy.EndDate.Date))
+                {
+                    continue;
+                }
+
+                bool isDayClosed = await context.BranchDayEndStatuses
+                    .AsNoTracking()
+                    .AnyAsync(b => b.BranchID == pending.BranchID && b.BusinessDate.Date == pending.VoucherDate.Date && b.IsDayClosed);
+                if (isDayClosed)
+                {
+                    continue;
+                }
+
+                decimal dr = pending.VoucherDetails?.Where(d => d.DrCr == "Dr").Sum(d => d.Amount) ?? 0m;
+                decimal cr = pending.VoucherDetails?.Where(d => d.DrCr == "Cr").Sum(d => d.Amount) ?? 0m;
+                if (pending.VoucherDetails == null || pending.VoucherDetails.Count == 0 || Math.Abs(dr - cr) > 0.01m)
+                {
+                    continue;
+                }
+
+                if (!pending.ScrollNo.HasValue || pending.ScrollNo.Value <= 0)
+                {
+                    int maxScroll = await context.Vouchers
+                        .Where(v => v.BranchID == pending.BranchID && v.VoucherDate.Date == pending.VoucherDate.Date && v.ScrollNo != null)
+                        .Select(v => (int?)v.ScrollNo)
+                        .MaxAsync() ?? 0;
+                    pending.ScrollNo = maxScroll + 1;
+                }
+
+                pending.Status = "Approved";
+                pending.ApprovedBy = approvedSibling.ApprovedBy ?? pending.CreatedBy;
+                pending.ApprovedOn = approvedSibling.ApprovedOn ?? DateTime.Now;
+                syncedCount++;
+            }
+
+            if (syncedCount > 0)
+            {
+                await context.SaveChangesAsync();
+            }
+
+            return syncedCount;
         }
     }
 }

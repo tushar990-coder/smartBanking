@@ -35,6 +35,12 @@ namespace Bhisi.Api.Models
         [StringLength(30)]
         public string? NewAccountNo { get; set; }
 
+        [StringLength(50)]
+        public string? OldReceiptNo { get; set; }
+
+        [StringLength(50)]
+        public string? NewReceiptNo { get; set; }
+
         public int CustomerID { get; set; }
 
         [StringLength(150)]

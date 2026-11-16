@@ -31,7 +31,8 @@ namespace Bhisi.Api.Helpers
         public static async Task<FinancialYearBaselineResult> ResolveBaselineAsync(
             AppDbContext context,
             DateTime? referenceDate = null,
-            int? explicitFinancialYearId = null)
+            int? explicitFinancialYearId = null,
+            int? branchId = null)
         {
             var allYears = await context.FinancialYears
                 .AsNoTracking()
@@ -67,12 +68,18 @@ namespace Bhisi.Api.Helpers
                 f.StartDate.Date < targetFy.StartDate.Date &&
                 f.FinancialYearID != targetFy.FinancialYearID);
 
+            bool isSpecificBranch = branchId.HasValue && branchId.Value > 0;
+            var branchScopedObs = context.BranchLedgerOpeningBalances.AsNoTracking();
+            if (isSpecificBranch)
+            {
+                int bId = branchId!.Value;
+                branchScopedObs = branchScopedObs.Where(b => b.BranchID == bId);
+            }
+
             bool hasTargetFyOb = !hasPriorYears
-                ? await context.BranchLedgerOpeningBalances
-                    .AsNoTracking()
+                ? await branchScopedObs
                     .AnyAsync(b => b.FinancialYearID == targetFy.FinancialYearID)
-                : await context.BranchLedgerOpeningBalances
-                    .AsNoTracking()
+                : await branchScopedObs
                     .AnyAsync(b => b.FinancialYearID == targetFy.FinancialYearID &&
                                    (b.Remarks == null ||
                                     (!b.Remarks.Contains("डेडस्टॉक सुरुवातीची शिल्लक") &&
@@ -80,8 +87,7 @@ namespace Bhisi.Api.Helpers
 
             if (hasTargetFyOb)
             {
-                bool hasCarriedForwardRemarks = !hasPriorYears && await context.BranchLedgerOpeningBalances
-                    .AsNoTracking()
+                bool hasCarriedForwardRemarks = !hasPriorYears && await branchScopedObs
                     .AnyAsync(b => b.FinancialYearID == targetFy.FinancialYearID &&
                                    b.Remarks != null &&
                                    (b.Remarks.Contains("Carried forward") ||
@@ -101,8 +107,7 @@ namespace Bhisi.Api.Helpers
             }
 
             // Target FY does not have carried-forward BranchLedgerOpeningBalances yet (Case A: new FY opened on 1 April before running Carry Forward)
-            var fyIdsWithValidOb = (await context.BranchLedgerOpeningBalances
-                .AsNoTracking()
+            var fyIdsWithValidOb = (await branchScopedObs
                 .Where(b => b.Remarks == null ||
                             (!b.Remarks.Contains("डेडस्टॉक सुरुवातीची शिल्लक") &&
                              !b.Remarks.Contains("गुंतवणूक सुरुवातीची शिल्लक")))

@@ -615,7 +615,7 @@ namespace Bhisi.Api.Controllers
                 else
                 {
                     // CBS Dual-Voucher IBT Engine for Cross-Branch Pigmy Withdrawal
-                    int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, counterBranchId, homeBranchId);
+                    var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, counterBranchId, homeBranchId);
 
                     // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash
                     var counterVoucher = new Voucher
@@ -638,7 +638,7 @@ namespace Bhisi.Api.Controllers
                     _context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = counterVoucher.VoucherID,
-                        LedgerID = ibtLedgerId,
+                        LedgerID = counterIbtLedgerId,
                         CustomerID = account.CustomerID,
                         DrCr = "Dr",
                         Amount = netPaid
@@ -713,7 +713,7 @@ namespace Bhisi.Api.Controllers
                     _context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = homeVoucher.VoucherID,
-                        LedgerID = ibtLedgerId,
+                        LedgerID = homeIbtLedgerId,
                         CustomerID = account.CustomerID,
                         DrCr = "Cr",
                         Amount = netPaid
@@ -1102,7 +1102,7 @@ namespace Bhisi.Api.Controllers
                 else
                 {
                     // CBS Dual-Voucher IBT Engine for Cross-Branch Pigmy Closure
-                    int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, counterBranchId, homeBranchId);
+                    var (counterIbtLedgerId, homeIbtLedgerId) = await Helpers.IbtLedgerHelper.GetDirectionalPairIbtLedgerIdsAsync(_context, counterBranchId, homeBranchId);
 
                     // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash
                     var counterVoucher = new Voucher
@@ -1125,7 +1125,7 @@ namespace Bhisi.Api.Controllers
                     _context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = counterVoucher.VoucherID,
-                        LedgerID = ibtLedgerId,
+                        LedgerID = counterIbtLedgerId,
                         CustomerID = account.CustomerID,
                         DrCr = "Dr",
                         Amount = netPayable
@@ -1200,7 +1200,7 @@ namespace Bhisi.Api.Controllers
                     _context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = homeVoucher.VoucherID,
-                        LedgerID = ibtLedgerId,
+                        LedgerID = homeIbtLedgerId,
                         CustomerID = account.CustomerID,
                         DrCr = "Cr",
                         Amount = netPayable

@@ -45,6 +45,44 @@ namespace Bhisi.Api.Controllers
             return sansthaDetail;
         }
 
+        private static bool TryValidateFdRenewalReceiptPolicy(string? rawPolicy, out string normalizedPolicy, out string? errorMessage)
+        {
+            if (Helpers.FdRenewalPolicyHelper.TryNormalizePolicy(rawPolicy, out normalizedPolicy))
+            {
+                errorMessage = null;
+                return true;
+            }
+
+            errorMessage = $"अवैध मुदत ठेव नूतनीकरण पावती धोरण '{rawPolicy}'. वैध पर्याय: NEW_RECEIPT, RETAIN_ORIGINAL, NEXT_LEGACY, HYBRID_CHOICE.";
+            return false;
+        }
+
+        private static void ApplySansthaEditableFields(SansthaDetail target, SansthaDetail source, string normalizedPolicy)
+        {
+            target.SansthaName = source.SansthaName;
+            target.Address = source.Address;
+            target.Village = source.Village;
+            target.Taluka = source.Taluka;
+            target.District = source.District;
+            target.State = source.State;
+            target.PinCode = source.PinCode;
+            target.ContactNo = source.ContactNo;
+            target.Email = source.Email;
+            target.RegistrationNo = source.RegistrationNo;
+            target.RegistrationDate = source.RegistrationDate;
+            target.GSTNo = source.GSTNo;
+            target.LogoPath = source.LogoPath;
+            target.AutoPostVouchers = false;
+            target.AutoPostVoucherLimit = 0m;
+            target.IsMobileCompulsory = source.IsMobileCompulsory;
+            target.IsAadhaarCompulsory = source.IsAadhaarCompulsory;
+            target.IsPanCompulsory = source.IsPanCompulsory;
+            target.FdRenewalReceiptPolicy = normalizedPolicy;
+            target.AllowManualReceiptNoOnRenewal = normalizedPolicy == Helpers.FdRenewalPolicyHelper.PolicyRetainOriginal
+                ? false
+                : source.AllowManualReceiptNoOnRenewal;
+        }
+
         // PUT: api/SansthaDetails/5
         [HttpPut("{id}")]
         [AllowAnonymous]
@@ -52,36 +90,30 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                if (!TryValidateFdRenewalReceiptPolicy(sansthaDetail.FdRenewalReceiptPolicy, out string normalizedPolicy, out string? policyError))
+                {
+                    return BadRequest(new { message = policyError });
+                }
+
                 var existing = await _context.SansthaDetails.FindAsync(id);
                 if (existing == null)
                 {
                     existing = await _context.SansthaDetails.FirstOrDefaultAsync();
                     if (existing == null)
                     {
-                        sansthaDetail.AutoPostVouchers = false; sansthaDetail.AutoPostVoucherLimit = 0m; _context.SansthaDetails.Add(sansthaDetail);
+                        sansthaDetail.AutoPostVouchers = false;
+                        sansthaDetail.AutoPostVoucherLimit = 0m;
+                        sansthaDetail.FdRenewalReceiptPolicy = normalizedPolicy;
+                        sansthaDetail.AllowManualReceiptNoOnRenewal = normalizedPolicy == Helpers.FdRenewalPolicyHelper.PolicyRetainOriginal
+                            ? false
+                            : sansthaDetail.AllowManualReceiptNoOnRenewal;
+                        _context.SansthaDetails.Add(sansthaDetail);
                         await _context.SaveChangesAsync();
                         return Ok(sansthaDetail);
                     }
                 }
 
-                existing.SansthaName = sansthaDetail.SansthaName;
-                existing.Address = sansthaDetail.Address;
-                existing.Village = sansthaDetail.Village;
-                existing.Taluka = sansthaDetail.Taluka;
-                existing.District = sansthaDetail.District;
-                existing.State = sansthaDetail.State;
-                existing.PinCode = sansthaDetail.PinCode;
-                existing.ContactNo = sansthaDetail.ContactNo;
-                existing.Email = sansthaDetail.Email;
-                existing.RegistrationNo = sansthaDetail.RegistrationNo;
-                existing.RegistrationDate = sansthaDetail.RegistrationDate;
-                existing.GSTNo = sansthaDetail.GSTNo;
-                existing.LogoPath = sansthaDetail.LogoPath;
-                existing.AutoPostVouchers = false;
-                existing.AutoPostVoucherLimit = 0m;
-                existing.IsMobileCompulsory = sansthaDetail.IsMobileCompulsory;
-                existing.IsAadhaarCompulsory = sansthaDetail.IsAadhaarCompulsory;
-                existing.IsPanCompulsory = sansthaDetail.IsPanCompulsory;
+                ApplySansthaEditableFields(existing, sansthaDetail, normalizedPolicy);
 
                 await _context.SaveChangesAsync();
                 return Ok(existing);
@@ -99,33 +131,27 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                if (!TryValidateFdRenewalReceiptPolicy(sansthaDetail.FdRenewalReceiptPolicy, out string normalizedPolicy, out string? policyError))
+                {
+                    return BadRequest(new { message = policyError });
+                }
+
                 var existing = await _context.SansthaDetails.FirstOrDefaultAsync();
                 if (existing != null)
                 {
-                    existing.SansthaName = sansthaDetail.SansthaName;
-                    existing.Address = sansthaDetail.Address;
-                    existing.Village = sansthaDetail.Village;
-                    existing.Taluka = sansthaDetail.Taluka;
-                    existing.District = sansthaDetail.District;
-                    existing.State = sansthaDetail.State;
-                    existing.PinCode = sansthaDetail.PinCode;
-                    existing.ContactNo = sansthaDetail.ContactNo;
-                    existing.Email = sansthaDetail.Email;
-                    existing.RegistrationNo = sansthaDetail.RegistrationNo;
-                    existing.RegistrationDate = sansthaDetail.RegistrationDate;
-                    existing.GSTNo = sansthaDetail.GSTNo;
-                    existing.LogoPath = sansthaDetail.LogoPath;
-                    existing.AutoPostVouchers = false;
-                    existing.AutoPostVoucherLimit = 0m;
-                    existing.IsMobileCompulsory = sansthaDetail.IsMobileCompulsory;
-                    existing.IsAadhaarCompulsory = sansthaDetail.IsAadhaarCompulsory;
-                    existing.IsPanCompulsory = sansthaDetail.IsPanCompulsory;
+                    ApplySansthaEditableFields(existing, sansthaDetail, normalizedPolicy);
 
                     await _context.SaveChangesAsync();
                     return Ok(existing);
                 }
 
-                sansthaDetail.AutoPostVouchers = false; sansthaDetail.AutoPostVoucherLimit = 0m; _context.SansthaDetails.Add(sansthaDetail);
+                sansthaDetail.AutoPostVouchers = false;
+                sansthaDetail.AutoPostVoucherLimit = 0m;
+                sansthaDetail.FdRenewalReceiptPolicy = normalizedPolicy;
+                sansthaDetail.AllowManualReceiptNoOnRenewal = normalizedPolicy == Helpers.FdRenewalPolicyHelper.PolicyRetainOriginal
+                    ? false
+                    : sansthaDetail.AllowManualReceiptNoOnRenewal;
+                _context.SansthaDetails.Add(sansthaDetail);
                 await _context.SaveChangesAsync();
 
                 return CreatedAtAction("GetSansthaDetail", new { id = sansthaDetail.SansthaID }, sansthaDetail);

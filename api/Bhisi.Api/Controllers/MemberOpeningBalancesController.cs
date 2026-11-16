@@ -187,61 +187,24 @@ namespace Bhisi.Api.Controllers
 
         private async Task UpdateLedgerOpeningBalance(int ledgerId)
         {
-            var ledger = await _context.Ledgers.FindAsync(ledgerId);
-            if (ledger != null)
-            {
-                var totalDr = await _context.MemberOpeningBalances
-                    .Where(m => m.LedgerID == ledgerId && m.BalanceType == "Dr")
-                    .SumAsync(m => m.Amount);
-
-                var totalCr = await _context.MemberOpeningBalances
-                    .Where(m => m.LedgerID == ledgerId && m.BalanceType == "Cr")
-                    .SumAsync(m => m.Amount);
-
-                if (totalDr >= totalCr)
-                {
-                    ledger.OpeningBalance = totalDr - totalCr;
-                    ledger.OpeningBalanceType = "Dr";
-                }
-                else
-                {
-                    ledger.OpeningBalance = totalCr - totalDr;
-                    ledger.OpeningBalanceType = "Cr";
-                }
-                
-                await _context.SaveChangesAsync();
-            }
+            await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                _context, new[] { ledgerId }, "सभासद सुरुवातीची शिल्लक सिंक");
+            await _context.SaveChangesAsync();
         }
 
         [HttpGet("SyncAllLedgers")]
         public async Task<IActionResult> SyncAllLedgers()
         {
-            var ledgers = await _context.Ledgers.ToListAsync();
-            foreach (var ledger in ledgers)
-            {
-                var totalDr = await _context.MemberOpeningBalances
-                    .Where(m => m.LedgerID == ledger.LedgerID && m.BalanceType == "Dr")
-                    .SumAsync(m => m.Amount);
+            var distinctLedgerIds = await _context.MemberOpeningBalances
+                .AsNoTracking()
+                .Select(m => m.LedgerID)
+                .Distinct()
+                .ToListAsync();
 
-                var totalCr = await _context.MemberOpeningBalances
-                    .Where(m => m.LedgerID == ledger.LedgerID && m.BalanceType == "Cr")
-                    .SumAsync(m => m.Amount);
-
-                if (totalDr == 0 && totalCr == 0) continue; // Skip if no member balances
-
-                if (totalDr >= totalCr)
-                {
-                    ledger.OpeningBalance = totalDr - totalCr;
-                    ledger.OpeningBalanceType = "Dr";
-                }
-                else
-                {
-                    ledger.OpeningBalance = totalCr - totalDr;
-                    ledger.OpeningBalanceType = "Cr";
-                }
-            }
+            await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                _context, distinctLedgerIds, "सभासद सुरुवातीची शिल्लक एकत्रित सिंक");
             await _context.SaveChangesAsync();
-            return Ok(new { message = "All ledger opening balances synced with member opening balances." });
+            return Ok(new { message = "All branch ledger opening balances synced with member opening balances." });
         }
     }
 }

@@ -103,14 +103,18 @@ namespace Bhisi.Api.Controllers
                     .Select(g => new
                     {
                         TotalAccounts = g.Count(),
-                        ActiveAccounts = g.Count(f => f.Status == "Active"),
-                        TotalBalance = g.Sum(f => f.Status == "Active" ? (decimal?)f.DepositAmount : 0m) ?? 0m
+                        ActiveAccounts = g.Count(f => f.Status == "Active" || f.Status == "Matured" || string.IsNullOrEmpty(f.Status)),
+                        TotalBalance = g.Sum(f => (f.Status == "Active" || f.Status == "Matured" || string.IsNullOrEmpty(f.Status)) ? (decimal?)f.DepositAmount : 0m) ?? 0m,
+                        MaturedUnclosedAccounts = g.Count(f => f.Status == "Matured"),
+                        MaturedUnclosedBalance = g.Sum(f => f.Status == "Matured" ? (decimal?)f.DepositAmount : 0m) ?? 0m
                     })
                     .FirstOrDefaultAsync();
 
                 int totalFdAccounts = fdStats?.TotalAccounts ?? 0;
                 int activeFdAccounts = fdStats?.ActiveAccounts ?? 0;
                 decimal totalFdBalance = fdStats?.TotalBalance ?? 0m;
+                int maturedUnclosedFdAccounts = fdStats?.MaturedUnclosedAccounts ?? 0;
+                decimal maturedUnclosedFdBalance = fdStats?.MaturedUnclosedBalance ?? 0m;
 
                 // Recurring Deposit Module (Consolidated into 1 single SQL query)
                 var rdAccountsQuery = _context.RdAccounts.AsNoTracking();
@@ -121,8 +125,8 @@ namespace Bhisi.Api.Controllers
                     .Select(g => new
                     {
                         TotalAccounts = g.Count(),
-                        ActiveAccounts = g.Count(r => r.Status == "Active"),
-                        TotalBalance = g.Sum(r => r.Status == "Active" ? (decimal?)r.TotalDepositedAmount : 0m) ?? 0m
+                        ActiveAccounts = g.Count(r => r.Status == "Active" || r.Status == "Matured" || string.IsNullOrEmpty(r.Status)),
+                        TotalBalance = g.Sum(r => (r.Status == "Active" || r.Status == "Matured" || string.IsNullOrEmpty(r.Status)) ? (decimal?)r.TotalDepositedAmount : 0m) ?? 0m
                     })
                     .FirstOrDefaultAsync();
 
@@ -139,8 +143,8 @@ namespace Bhisi.Api.Controllers
                     .Select(g => new
                     {
                         TotalAccounts = g.Count(),
-                        ActiveAccounts = g.Count(p => p.Status == "Active"),
-                        TotalBalance = g.Sum(p => p.Status == "Active" ? (decimal?)p.TotalDepositedAmount : 0m) ?? 0m
+                        ActiveAccounts = g.Count(p => p.Status == "Active" || p.Status == "Matured" || string.IsNullOrEmpty(p.Status)),
+                        TotalBalance = g.Sum(p => (p.Status == "Active" || p.Status == "Matured" || string.IsNullOrEmpty(p.Status)) ? (decimal?)p.TotalDepositedAmount : 0m) ?? 0m
                     })
                     .FirstOrDefaultAsync();
 
@@ -201,7 +205,9 @@ namespace Bhisi.Api.Controllers
                         totalAccounts = totalFdAccounts,
                         activeAccounts = activeFdAccounts,
                         totalBalance = totalFdBalance,
-                        accountCount = activeFdAccounts
+                        accountCount = activeFdAccounts,
+                        maturedUnclosedAccounts = maturedUnclosedFdAccounts,
+                        maturedUnclosedBalance = maturedUnclosedFdBalance
                     },
                     recurringDeposit = new
                     {

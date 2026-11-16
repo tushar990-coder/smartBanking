@@ -1,10 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { getAmountInWordsMarathi } from '../utils/marathiWords';
+import { formatDateDDMMYYYY } from '../utils/dateFormat';
 
 interface FdAccountDetails {
   fdAccountID: number;
   accountNo: string;
+  receiptNo?: string;
+  legacyAccountNumber?: string | null;
+  renewalCycleNo?: number;
+  parentFdAccountID?: number | null;
+  oldReceiptNo?: string;
+  oldAccountNo?: string;
+  oldDepositAmount?: number;
+  effectivePolicy?: string;
+  durationText?: string;
   memberID?: number;
   memberName?: string;
   memberCode?: string;
@@ -34,13 +44,20 @@ interface FdAccountDetails {
 
 interface Props {
   account: FdAccountDetails;
+  initialSide?: 'front' | 'endorsement';
   onClose: () => void;
 }
 
-const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
+const FdReceiptPrintModal: React.FC<Props> = ({ account, initialSide = 'front', onClose }) => {
   const [sanstha, setSanstha] = useState<any>(null);
+  const [sansthaLoadError, setSansthaLoadError] = useState<string>('');
   const [printMode, setPrintMode] = useState<'blank' | 'preprinted'>('blank');
   const [copies, setCopies] = useState<'dual' | 'single'>('dual');
+  const [sheetSide, setSheetSide] = useState<'front' | 'endorsement'>(initialSide);
+
+  const displayReceiptNo = account.receiptNo || account.legacyAccountNumber || account.accountNo;
+  const renewalCycle = account.renewalCycleNo ?? 0;
+  const isRenewedAccount = renewalCycle > 0 || Boolean(account.parentFdAccountID);
   
   // Offset & Styling controls for pre-printed stationery
   const [topOffset, setTopOffset] = useState<number>(0);
@@ -67,12 +84,16 @@ const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
 
   const fetchSansthaDetails = async () => {
     try {
+      setSansthaLoadError('');
       const response = await axios.get(`${API_URL}/SansthaDetails`);
       if (response.data && response.data.length > 0) {
         setSanstha(response.data[0]);
+      } else {
+        setSansthaLoadError('संस्था मास्टर तपशील उपलब्ध नाही. कृपया संस्थेची माहिती सेव्ह करा.');
       }
     } catch (err) {
       console.error('Sanstha details fetch failed', err);
+      setSansthaLoadError('संस्थेचा तपशील लोड करण्यात अडचण आली. कृपया कनेक्शन तपासा.');
     }
   };
 
@@ -88,7 +109,7 @@ const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
   // High quality vector print & PDF export (preserves perfect Marathi Devanagari fonts)
   const handlePrintOrPdf = () => {
     const originalTitle = document.title;
-    document.title = `FD_Receipt_${account.accountNo}`;
+    document.title = `FD_Receipt_${displayReceiptNo || account.accountNo}`;
     window.print();
     setTimeout(() => {
       document.title = originalTitle;
@@ -97,7 +118,11 @@ const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
 
   // WhatsApp Direct Share Handler
   const handleWhatsAppShare = () => {
-    const sansthaName = sanstha?.sansthaName || 'स्मार्ट मल्टीस्टेट पतसंस्था लि.';
+    if (!sanstha?.sansthaName) {
+      alert('संस्थेचे नाव अद्याप लोड झालेले नाही. कृपया प्रतीक्षा करा किंवा संस्था मास्टर तपासा.');
+      return;
+    }
+    const sansthaName = sanstha.sansthaName;
     const depositWords = getAmountInWordsMarathi(account.depositAmount || 0);
 
     const message = 
@@ -106,9 +131,9 @@ const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
 *मुदत ठेव पावती (Fixed Deposit Receipt)*
 
 नमस्कार *${account.memberName || account.customerName}*,
-तुमचे नवीन मुदत ठेव खाते यशस्वीरित्या उघडले गेले आहे.
+तुमचे ${isRenewedAccount ? `नूतनीकृत (सायकल #${renewalCycle}) ` : 'नवीन '}मुदत ठेव खाते यशस्वीरित्या नोंदवले गेले आहे.
 
-📄 *पावती क्रमांक:* ${account.accountNo}
+📄 *पावती क्रमांक:* ${displayReceiptNo}${displayReceiptNo !== account.accountNo ? ` (CBS: ${account.accountNo})` : ''}
 👤 *ग्राहक क्र. (CIF):* ${account.cifNo || account.memberCode || '-'}
 💰 *ठेव रक्कम:* ₹ ${account.depositAmount?.toLocaleString('en-IN')} (${depositWords})
 📊 *मुदत ठेव योजना:* ${account.schemeName}
@@ -135,15 +160,7 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
     window.open(waUrl, '_blank');
   };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '-';
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
+  const formatDate = (dateStr: string) => formatDateDDMMYYYY(dateStr);
 
   const formatCurrency = (amount: number) =>
     `₹ ${amount?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -181,18 +198,20 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
               </span>
             </div>
             <h1 className="text-base font-black text-primary tracking-wide">
-              {sanstha?.sansthaName || 'स्मार्ट मल्टीस्टेट को-ऑपरेटिव्ह पतसंस्था लि.'}
+              {sanstha?.sansthaName || 'संस्था मास्टर माहिती लोड होत आहे...'}
             </h1>
-            <p className="text-[9px] font-medium text-slate-600">
-              {sanstha?.address ? `${sanstha.address}, ${sanstha.village || ''} ${sanstha.taluka ? 'ता. ' + sanstha.taluka : ''}` : 'मुख्य कार्यालय: लक्ष्मी रोड, पुणे - ४११०३०'}
-            </p>
+            {sanstha?.address && (
+              <p className="text-[9px] font-medium text-slate-600">
+                {`${sanstha.address}${sanstha.village ? ', ' + sanstha.village : ''}${sanstha.taluka ? ' ता. ' + sanstha.taluka : ''}`}
+              </p>
+            )}
             <div className="flex items-center justify-center gap-3 text-[9px] text-slate-500 font-medium pt-0.5">
-              <span>नोंदणी क्र: <strong>{sanstha?.registrationNo || 'REG/MS/1024/2020'}</strong></span>
-              <span>•</span>
-              <span>संपर्क: <strong>{sanstha?.contactNo || '9876543210'}</strong></span>
+              {sanstha?.registrationNo && <span>नोंदणी क्र: <strong>{sanstha.registrationNo}</strong></span>}
+              {sanstha?.registrationNo && sanstha?.contactNo && <span>•</span>}
+              {sanstha?.contactNo && <span>संपर्क: <strong>{sanstha.contactNo}</strong></span>}
               {account.branchName && (
                 <>
-                  <span>•</span>
+                  {(sanstha?.registrationNo || sanstha?.contactNo) && <span>•</span>}
                   <span>शाखा: <strong className="text-primary font-bold">{account.branchName}</strong></span>
                 </>
               )}
@@ -204,7 +223,12 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
         {printMode === 'blank' && (
           <div className="flex items-center justify-between border-y border-primary/20 py-1 my-1 text-[10px]">
             <div className="font-bold text-slate-700 font-mono">
-              पावती क्र: <strong className="text-primary font-black text-xs">{account.accountNo}</strong>
+              पावती क्र: <strong className="text-primary font-black text-xs">{displayReceiptNo}</strong>
+              {isRenewedAccount && (
+                <span className="ml-1.5 bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded text-[8.5px] font-black">
+                  नूतनीकरण क्र. #{renewalCycle || 1}
+                </span>
+              )}
             </div>
             <div className="bg-gradient-to-r from-primary via-[#004a75] to-primary text-white font-black px-4 py-0.5 rounded-full text-[10px] tracking-wider uppercase shadow-2xs">
               मुदत ठेव पावती (FIXED DEPOSIT RECEIPT)
@@ -225,8 +249,13 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
           <table className="w-full border-collapse">
             <tbody>
               <tr className="border-b border-slate-200 bg-slate-100/60">
-                <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200 w-1/4">पावती / खाते क्र.</td>
-                <td className="p-1.5 font-black text-primary font-mono text-xs w-1/4">{account.accountNo}</td>
+                <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200 w-1/4">पावती क्र. (Receipt No)</td>
+                <td className="p-1.5 font-black text-primary font-mono text-xs w-1/4">
+                  {displayReceiptNo}
+                  {displayReceiptNo !== account.accountNo && (
+                    <span className="block text-[8.5px] text-slate-500 font-normal">CBS क्र.: {account.accountNo}</span>
+                  )}
+                </td>
                 <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200 border-l w-1/4">ठेव दिनांक</td>
                 <td className="p-1.5 font-bold text-slate-900 w-1/4">{formatDate(account.openingDate)}</td>
               </tr>
@@ -355,8 +384,41 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
           </div>
         </div>
 
+        {sansthaLoadError && (
+          <div className="mb-2.5 px-3 py-1.5 bg-rose-50 border border-rose-200 rounded text-[11px] font-bold text-rose-800">
+            ⚠️ {sansthaLoadError}
+          </div>
+        )}
+
         {/* Configuration Controls Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200 items-stretch">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200 items-stretch">
+          {/* Endorsement vs Full Receipt Sheet Mode */}
+          <div className="flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label className="font-bold text-slate-700 text-[11px]">०. पावती प्रकार (Side)</label>
+            </div>
+            <div className="flex h-9 rounded-md border border-gray-300 overflow-hidden bg-white p-0.5 shadow-2xs items-center">
+              <button
+                type="button"
+                onClick={() => setSheetSide('front')}
+                className={`flex-1 h-full px-2 text-[10px] font-bold rounded flex items-center justify-center gap-1 transition-colors ${
+                  sheetSide === 'front' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span>📄</span> मुख्य पावती
+              </button>
+              <button
+                type="button"
+                onClick={() => setSheetSide('endorsement')}
+                className={`flex-1 h-full px-2 text-[10px] font-bold rounded flex items-center justify-center gap-1 transition-colors ${
+                  sheetSide === 'endorsement' ? 'bg-amber-600 text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                title="जुनी पावती कायम ठेवली असल्यास पावतीच्या मागील बाजूला नूतनीकरण शेरा प्रिंट करा"
+              >
+                <span>🔄</span> मागील शेरा
+              </button>
+            </div>
+          </div>
           {/* Copies Selection */}
           <div className="flex flex-col justify-between">
             <div className="flex items-center justify-between mb-1.5 h-4">
@@ -493,21 +555,117 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
             marginLeft: `${leftOffset}mm`,
           }}
         >
-          {/* Top Receipt Copy 1 */}
-          <RenderReceiptCard copyType="खातेदार प्रत (Member Copy)" />
+          {sheetSide === 'endorsement' ? (
+            <div
+              className={`${
+                printMode === 'blank'
+                  ? 'border-2 border-dashed border-amber-500 rounded-md bg-white'
+                  : 'border-transparent bg-transparent'
+              } p-5 space-y-3 text-xs`}
+            >
+              {!isRenewedAccount && (
+                <div className="no-print px-3 py-1.5 bg-amber-50 border border-amber-300 rounded text-[11px] font-bold text-amber-900">
+                  ℹ️ ही मूळ ठेव (सायकल #०) आहे. मागील बाजूचा नूतनीकरण शेरा प्रामुख्याने नूतनीकृत (Renewed) पावत्यांसाठी वापरला जातो.
+                </div>
+              )}
 
-          {/* Dashed Separator Line for Cut-out */}
-          {copies === 'dual' && (
-            <>
-              <div className="relative flex items-center justify-center my-2 no-print-line">
-                <div className="border-t-2 border-dashed border-slate-400 w-full"></div>
-                <span className="absolute bg-white px-3 text-[10px] font-bold text-slate-500 font-mono tracking-wider">
-                  ✂️ ------------------ इथून कापा (Cut Here) ------------------ ✂️
-                </span>
+              {showHeader && (
+                <div className="flex items-center justify-between border-b border-amber-200 pb-2">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      {sanstha?.sansthaName || 'संस्था मास्टर'} — मुदत ठेव नूतनीकरण शेरा (Back-Side Endorsement)
+                    </h3>
+                    <p className="text-[10px] text-slate-500">
+                      मूळ पावतीच्या मागील बाजूस नोंदविण्यासाठी अधिकृत नूतनीकरण प्रमाणपत्र
+                      {account.effectivePolicy && (
+                        <span className="ml-1.5 font-bold text-amber-800">
+                          • धोरण: {account.effectivePolicy === 'RETAIN_ORIGINAL' ? 'मूळ पावती क्र. कायम' : 'नवीन पावती क्र.'}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded font-black text-[10px]">
+                    नूतनीकरण फेरी क्र. #{renewalCycle || 1}
+                  </span>
+                </div>
+              )}
+
+              <table className="w-full border border-slate-300 text-[11px] border-collapse">
+                <tbody>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <td className="p-2 font-bold border-r border-slate-200 w-1/4">मूळ पावती क्र. (Original Receipt)</td>
+                    <td className="p-2 font-mono font-black text-slate-800 w-1/4">
+                      {account.oldReceiptNo || displayReceiptNo}
+                    </td>
+                    <td className="p-2 font-bold border-r border-slate-200 border-l w-1/4">चालू पावती / CBS क्र.</td>
+                    <td className="p-2 font-mono text-primary font-black w-1/4">
+                      {displayReceiptNo}
+                      {displayReceiptNo !== account.accountNo && (
+                        <span className="block text-[9px] text-slate-500 font-normal">CBS: {account.accountNo}</span>
+                      )}
+                    </td>
+                  </tr>
+                  <tr className="border-b border-slate-200">
+                    <td className="p-2 font-bold border-r border-slate-200">खातेदाराचे नाव</td>
+                    <td className="p-2 font-bold text-slate-900" colSpan={3}>
+                      {account.customerName || account.memberName} (CIF: {account.cifNo || account.memberCode || '-'})
+                    </td>
+                  </tr>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <td className="p-2 font-bold border-r border-slate-200">नूतनीकरण दिनांक</td>
+                    <td className="p-2 font-bold">{formatDate(account.openingDate)}</td>
+                    <td className="p-2 font-bold border-r border-slate-200 border-l">नवीन मुदतपूर्ती दिनांक</td>
+                    <td className="p-2 font-black text-emerald-800">{formatDate(account.maturityDate)}</td>
+                  </tr>
+                  <tr className="border-b border-slate-200">
+                    <td className="p-2 font-bold border-r border-slate-200">नवीन ठेव मुद्दल रक्कम</td>
+                    <td className="p-2 font-black text-primary">
+                      {formatCurrency(account.depositAmount)}
+                      {typeof account.oldDepositAmount === 'number' && account.oldDepositAmount > 0 && (
+                        <span className="block text-[9px] text-slate-500 font-normal">
+                          मूळ मुद्दल: {formatCurrency(account.oldDepositAmount)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-2 font-bold border-r border-slate-200 border-l">नवीन व्याजदर व कालावधी</td>
+                    <td className="p-2 font-black">
+                      {account.interestRate}% प्रतिवर्ष
+                      {account.durationText && <span className="block text-[9px] text-slate-600 font-semibold">{account.durationText}</span>}
+                    </td>
+                  </tr>
+                  <tr className="bg-emerald-50/60">
+                    <td className="p-2 font-bold border-r border-slate-200">मुदतपूर्ती देय रक्कम</td>
+                    <td className="p-2 font-black text-emerald-800" colSpan={3}>
+                      {formatCurrency(account.maturityAmount)} ({maturityInWords})
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="flex justify-between items-end pt-8 text-[10px] font-bold text-slate-700">
+                <span>लिपिक / कॅशिअर स्वाक्षरी</span>
+                <span>शाखा व्यवस्थापक / सचिव स्वाक्षरी व शिक्का</span>
               </div>
+            </div>
+          ) : (
+            <>
+              {/* Top Receipt Copy 1 */}
+              <RenderReceiptCard copyType="खातेदार प्रत (Member Copy)" />
 
-              {/* Bottom Receipt Copy 2 */}
-              <RenderReceiptCard copyType="दप्तर प्रत (Office Copy)" />
+              {/* Dashed Separator Line for Cut-out */}
+              {copies === 'dual' && (
+                <>
+                  <div className="relative flex items-center justify-center my-2 no-print-line">
+                    <div className="border-t-2 border-dashed border-slate-400 w-full"></div>
+                    <span className="absolute bg-white px-3 text-[10px] font-bold text-slate-500 font-mono tracking-wider">
+                      ✂️ ------------------ इथून कापा (Cut Here) ------------------ ✂️
+                    </span>
+                  </div>
+
+                  {/* Bottom Receipt Copy 2 */}
+                  <RenderReceiptCard copyType="दप्तर प्रत (Office Copy)" />
+                </>
+              )}
             </>
           )}
         </div>
@@ -539,8 +697,6 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
             box-shadow: none !important;
             width: 100% !important;
             max-width: 100% !important;
-            margin-top: 0 !important;
-            margin-left: 0 !important;
             padding: 2mm !important;
           }
           @page {

@@ -413,27 +413,16 @@ namespace Bhisi.Api.Controllers
             }
 
             _context.CustomerOpeningBalances.AddRange(custObs);
-
-            var ledger = await _context.Ledgers.FindAsync(defaultLedgerId);
-            if (ledger != null && totalOpeningBalance > 0)
-            {
-                if (ledger.OpeningBalanceType == "Cr")
-                {
-                    ledger.OpeningBalance += totalOpeningBalance;
-                }
-                else
-                {
-                    ledger.OpeningBalance -= totalOpeningBalance;
-                    if (ledger.OpeningBalance < 0)
-                    {
-                        ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
-                        ledger.OpeningBalanceType = "Cr";
-                    }
-                }
-                _context.Ledgers.Update(ledger);
-            }
-
             await _context.SaveChangesAsync();
+
+            if (totalOpeningBalance > 0)
+            {
+                await Helpers.BranchLedgerBalanceHelper.SyncCustomerOpeningBalancesToBranchAsync(
+                    _context,
+                    new[] { defaultLedgerId },
+                    "बचत आयात सुरुवातीची शिल्लक");
+                await _context.SaveChangesAsync();
+            }
 
             return Ok(new { successCount = newAccounts.Count });
         }
@@ -563,28 +552,21 @@ namespace Bhisi.Api.Controllers
                 }
 
                 _context.MemberOpeningBalances.AddRange(memberObs);
+                await _context.SaveChangesAsync();
 
-                var ledger = await _context.Ledgers.FindAsync(ledgerId.Value);
-                if (ledger != null && totalOpeningBalance > 0)
+                if (totalOpeningBalance > 0)
                 {
-                    if (ledger.OpeningBalanceType == "Cr")
-                    {
-                        ledger.OpeningBalance += totalOpeningBalance;
-                    }
-                    else
-                    {
-                        ledger.OpeningBalance -= totalOpeningBalance;
-                        if (ledger.OpeningBalance < 0)
-                        {
-                            ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
-                            ledger.OpeningBalanceType = "Cr";
-                        }
-                    }
-                    _context.Ledgers.Update(ledger);
+                    await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                        _context,
+                        new[] { ledgerId.Value },
+                        "शेअर्स आयात सुरुवातीची शिल्लक");
+                    await _context.SaveChangesAsync();
                 }
             }
-
-            await _context.SaveChangesAsync();
+            else
+            {
+                await _context.SaveChangesAsync();
+            }
 
             return Ok(new { successCount = newAccounts.Count });
         }

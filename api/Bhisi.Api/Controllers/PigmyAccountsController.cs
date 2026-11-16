@@ -1122,16 +1122,24 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                // Reset all Pigmy Liability Ledgers OpeningBalance to 0
-                var pigmyLedgers = await _context.Ledgers
+                // Reset all Pigmy Liability Ledgers in BranchLedgerOpeningBalances to 0
+                var pigmyLedgerIds = await _context.Ledgers
                     .Where(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"))
+                    .Select(l => l.LedgerID)
                     .ToListAsync();
-                foreach (var l in pigmyLedgers)
+                if (pigmyLedgerIds.Count > 0)
                 {
-                    l.OpeningBalance = 0;
-                    l.OpeningBalanceType = "Cr";
+                    var obRowsToReset = await _context.BranchLedgerOpeningBalances
+                        .Where(b => pigmyLedgerIds.Contains(b.LedgerID))
+                        .ToListAsync();
+                    foreach (var row in obRowsToReset)
+                    {
+                        row.OpeningBalance = 0m;
+                        row.OpeningBalanceType = "Cr";
+                        row.UpdatedOn = DateTime.UtcNow;
+                    }
+                    await _context.SaveChangesAsync();
                 }
-                await _context.SaveChangesAsync();
 
                 return Ok(new { message = "पिग्मी मॉड्युलमधील योजना, एजंट, खाती आणि सर्व व्यवहारांचा डेटा यशस्वीरीत्या डिलीट झाला आहे!" });
             }
@@ -1174,6 +1182,8 @@ namespace Bhisi.Api.Controllers
         {
             var schemes = await _context.PigmySchemes.ToListAsync();
             var response = new PigmyGlReconciliationResponseDto();
+            var obMap = await Helpers.BranchLedgerBalanceHelper.GetOpeningBalanceMapAsync(
+                _context, branchId > 0 ? branchId : null);
 
             decimal grandTotalGl = 0;
             decimal grandTotalSl = 0;
@@ -1206,8 +1216,17 @@ namespace Bhisi.Api.Controllers
                 {
                     item.PigmyLiabilityLedgerID = ledger.LedgerID;
                     item.PigmyLiabilityLedgerName = ledger.LedgerName;
-                    item.GlLiabilityOpeningBalance = ledger.OpeningBalance;
-                    item.GlOpeningBalanceType = ledger.OpeningBalanceType ?? "Cr";
+                    if (obMap.TryGetValue(ledger.LedgerID, out var glOb))
+                    {
+                        decimal netCr = glOb.Cr - glOb.Dr;
+                        item.GlLiabilityOpeningBalance = Math.Abs(netCr);
+                        item.GlOpeningBalanceType = netCr >= 0 ? "Cr" : "Dr";
+                    }
+                    else
+                    {
+                        item.GlLiabilityOpeningBalance = 0m;
+                        item.GlOpeningBalanceType = "Cr";
+                    }
                 }
                 else
                 {
@@ -1291,15 +1310,17 @@ namespace Bhisi.Api.Controllers
 
             if (uniqueLiabilityLedgerIds.Any())
             {
-                grandTotalGl = await _context.Ledgers
-                    .Where(l => uniqueLiabilityLedgerIds.Contains(l.LedgerID))
-                    .SumAsync(l => l.OpeningBalance);
+                grandTotalGl = uniqueLiabilityLedgerIds.Sum(id =>
+                    obMap.TryGetValue(id, out var glOb) ? Math.Max(0m, glOb.Cr - glOb.Dr) : 0m);
             }
             else
             {
-                grandTotalGl = await _context.Ledgers
+                var pigmyFallbackIds = await _context.Ledgers
                     .Where(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"))
-                    .SumAsync(l => l.OpeningBalance);
+                    .Select(l => l.LedgerID)
+                    .ToListAsync();
+                grandTotalGl = pigmyFallbackIds.Sum(id =>
+                    obMap.TryGetValue(id, out var glOb) ? Math.Max(0m, glOb.Cr - glOb.Dr) : 0m);
             }
 
             response.Summary = new PigmyGlReconciliationDto
@@ -1343,8 +1364,8 @@ namespace Bhisi.Api.Controllers
 
                 if (liabilityLedgerId <= 0) return;
 
-                var ledger = await _context.Ledgers.FindAsync(liabilityLedgerId);
-                if (ledger == null) return;
+                int initialFyId = await Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(_context);
+                if (initialFyId <= 0) return;
 
                 var mappedSchemeIds = await _context.PigmySchemes
                     .Where(s => s.PigmyLiabilityLedgerID == liabilityLedgerId)
@@ -1356,24 +1377,30 @@ namespace Bhisi.Api.Controllers
                     mappedSchemeIds.Add(schemeId);
                 }
 
-                var accounts = await _context.PigmyAccounts
-                    .Where(a => mappedSchemeIds.Contains(a.PigmySchemeID) && a.Status == "Active")
-                    .Select(a => a.PigmyAccountID)
-                    .ToListAsync();
+                var allBranchIds = await _context.Branches.AsNoTracking().Select(b => b.BranchID).ToListAsync();
+                if (allBranchIds.Count == 0) allBranchIds.Add(1);
 
-                decimal totalOpeningCr = 0;
-                if (accounts.Any())
+                foreach (int bId in allBranchIds)
                 {
-                    totalOpeningCr = await _context.PigmyOpeningBalances
-                        .Where(o => accounts.Contains(o.PigmyAccountID))
-                        .GroupBy(o => o.PigmyAccountID)
-                        .Select(g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).Select(x => x.MigratedBalanceAmount).FirstOrDefault())
-                        .SumAsync();
+                    var accounts = await _context.PigmyAccounts
+                        .Where(a => a.BranchID == bId && mappedSchemeIds.Contains(a.PigmySchemeID) && a.Status == "Active")
+                        .Select(a => a.PigmyAccountID)
+                        .ToListAsync();
+
+                    decimal totalOpeningCr = 0;
+                    if (accounts.Any())
+                    {
+                        totalOpeningCr = await _context.PigmyOpeningBalances
+                            .Where(o => accounts.Contains(o.PigmyAccountID))
+                            .GroupBy(o => o.PigmyAccountID)
+                            .Select(g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).Select(x => x.MigratedBalanceAmount).FirstOrDefault())
+                            .SumAsync();
+                    }
+
+                    await Helpers.BranchLedgerBalanceHelper.SetBranchLedgerOpeningBalanceAsync(
+                        _context, bId, liabilityLedgerId, totalOpeningCr, "Cr", "पिग्मी सुरुवातीची शिल्लक सिंक", initialFyId);
                 }
 
-                ledger.OpeningBalance = totalOpeningCr;
-                ledger.OpeningBalanceType = "Cr";
-                _context.Entry(ledger).State = EntityState.Modified;
                 await _context.SaveChangesAsync();
             }
             catch (Exception ex)

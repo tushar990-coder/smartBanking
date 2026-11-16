@@ -150,8 +150,15 @@ namespace Bhisi.Api.Controllers
             decimal overdueInterestReserve = 0;
             if (ledgerOverdueIntProv != null)
             {
-                // In our implementation, we sum the balance of the contra log
-                overdueInterestReserve = await _context.OverdueInterestLedgers.SumAsync(l => l.CreditAmount - l.DebitAmount);
+                // In our implementation, we sum the balance of the contra log scoped to branch if specified
+                var oirQ = _context.OverdueInterestLedgers.AsQueryable();
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    int bId = branchId.Value;
+                    var branchLoanIds = _context.LoanAccounts.Where(l => l.BranchID == bId).Select(l => l.LoanAccountID);
+                    oirQ = oirQ.Where(o => branchLoanIds.Contains(o.LoanAccountID));
+                }
+                overdueInterestReserve = await oirQ.SumAsync(l => l.CreditAmount - l.DebitAmount);
                 if (overdueInterestReserve < 0) overdueInterestReserve = 0;
                 
                 // Fallback: if ledger transactions are empty, sum interest balance from all active NPA accounts
@@ -204,6 +211,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet("breakup")]
         public async Task<IActionResult> GetCategoryBreakup([FromQuery] DateTime? asOfDate, [FromQuery] int? branchId = null)
         {
+            branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
             var date = asOfDate ?? DateTime.Today;
 
             var statuses = await _context.LoanAccountNpaStatuses
@@ -262,6 +270,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet("defaulters")]
         public async Task<IActionResult> GetDefaultersAndLargeBorrowers([FromQuery] DateTime? asOfDate, [FromQuery] int? branchId = null)
         {
+            branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
             var date = asOfDate ?? DateTime.Today;
 
             var statuses = await _context.LoanAccountNpaStatuses
@@ -347,6 +356,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet("register")]
         public async Task<IActionResult> GetNpaRegister([FromQuery] DateTime? asOfDate, [FromQuery] int? branchId = null)
         {
+            branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
             var date = asOfDate ?? DateTime.Today;
 
             var statuses = await _context.LoanAccountNpaStatuses

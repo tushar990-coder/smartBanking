@@ -197,7 +197,7 @@ namespace Bhisi.Api.Services
             bool transferTallyOk = Math.Abs(transferDr - transferCr) < 0.01m && Math.Abs(allTodayDr - allTodayCr) < 0.01m;
 
             // 4. Branch-Specific Cash Tally (Fast Aggregated Query scoped to the active date's Financial Year Baseline)
-            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, dayStart);
+            var fyBaseline = await Helpers.FinancialYearBaselineHelper.ResolveBaselineAsync(_context, dayStart, branchId: branchId);
             int baselineFyId = fyBaseline.BaselineFinancialYearId;
 
             var branchObs = await _context.BranchLedgerOpeningBalances
@@ -214,10 +214,6 @@ namespace Bhisi.Api.Services
                 if (obRecord != null)
                 {
                     baseLedgerOb += obRecord.OpeningBalanceType == "Dr" ? obRecord.OpeningBalance : -obRecord.OpeningBalance;
-                }
-                else if (!fyBaseline.IsCarriedForwardYear && (branchId == 1 || (branch != null && string.Equals(branch.BranchType, "HeadOffice", StringComparison.OrdinalIgnoreCase))))
-                {
-                    baseLedgerOb += cl.OpeningBalanceType == "Dr" ? cl.OpeningBalance : -cl.OpeningBalance;
                 }
             }
 

@@ -31,79 +31,22 @@ namespace Bhisi.Api.Controllers
         }
 
         // Helper: Calculate Ledger Balance up to a specific date
-        // For Debit-normal assets (Cash, Bank): OpeningBalance (Dr positive, Cr negative) + Sum(Dr) - Sum(Cr)
+        // Strictly uses BranchLedgerOpeningBalances + FY Baseline + Approved VoucherDetails (zero Ledgers.OpeningBalance fallback)
         private async Task<Dictionary<int, decimal>> GetAssetLedgerBalancesAsync(List<int> ledgerIds, DateTime targetDate, int? branchId = null)
         {
             if (ledgerIds == null || !ledgerIds.Any())
                 return new Dictionary<int, decimal>();
 
-            var ledgers = await _context.Ledgers.AsNoTracking()
-                .Where(l => ledgerIds.Contains(l.LedgerID))
-                .ToListAsync();
+            var netBalances = await BranchLedgerBalanceHelper.GetAsOfLedgerBalancesAsync(
+                _context,
+                ledgerIds,
+                targetDate,
+                branchId,
+                approvedOnly: true);
 
-            var branchOpenings = (branchId.HasValue && branchId.Value > 0)
-                ? await _context.BranchLedgerOpeningBalances.AsNoTracking()
-                    .Where(b => b.BranchID == branchId.Value && ledgerIds.Contains(b.LedgerID))
-                    .GroupBy(b => b.LedgerID)
-                    .Select(g => g.OrderByDescending(x => x.FinancialYearID).First())
-                    .ToDictionaryAsync(x => x.LedgerID, x => x)
-                : new Dictionary<int, BranchLedgerOpeningBalance>();
-
-            var voucherQuery = _context.VoucherDetails
-                .AsNoTracking()
-                .Where(vd => ledgerIds.Contains(vd.LedgerID) &&
-                             vd.Voucher != null &&
-                             vd.Voucher.Status == "Approved" &&
-                             vd.Voucher.VoucherDate.Date <= targetDate.Date);
-
-            if (branchId.HasValue && branchId.Value > 0)
-            {
-                voucherQuery = voucherQuery.Where(vd => vd.Voucher!.BranchID == branchId.Value);
-            }
-
-            var voucherTransactions = await voucherQuery
-                .GroupBy(vd => new { vd.LedgerID, vd.DrCr })
-                .Select(g => new
-                {
-                    g.Key.LedgerID,
-                    g.Key.DrCr,
-                    Total = g.Sum(x => x.Amount)
-                })
-                .ToListAsync();
-
-            var balanceMap = new Dictionary<int, decimal>();
-
-            foreach (var l in ledgers)
-            {
-                decimal opening = l.OpeningBalance;
-                string obType = l.OpeningBalanceType ?? "Dr";
-                if (branchId.HasValue && branchId.Value > 0)
-                {
-                    if (branchOpenings.TryGetValue(l.LedgerID, out var bob))
-                    {
-                        opening = bob.OpeningBalance;
-                        obType = bob.OpeningBalanceType ?? obType;
-                    }
-                    else if (branchId.Value != 1)
-                    {
-                        opening = 0m;
-                    }
-                }
-                if (obType == "Cr") opening = -opening;
-
-                decimal dr = voucherTransactions
-                    .Where(x => x.LedgerID == l.LedgerID && x.DrCr == "Dr")
-                    .Sum(x => x.Total);
-
-                decimal cr = voucherTransactions
-                    .Where(x => x.LedgerID == l.LedgerID && x.DrCr == "Cr")
-                    .Sum(x => x.Total);
-
-                decimal closing = opening + dr - cr;
-                balanceMap[l.LedgerID] = Math.Max(0, closing);
-            }
-
-            return balanceMap;
+            return ledgerIds.ToDictionary(
+                id => id,
+                id => Math.Max(0m, netBalances.TryGetValue(id, out var val) ? val : 0m));
         }
 
         // GET: api/CrrReport/Summary?asOnDate=2026-03-31&branchId=0&targetCrrPercent=3.0
@@ -126,16 +69,16 @@ namespace Bhisi.Api.Controllers
                     .Where(s => (s.Status == "Active" || string.IsNullOrEmpty(s.Status)) && (!scopedBranch.HasValue || s.BranchID == scopedBranch.Value))
                     .SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
 
-                var fdDeposits = await _context.FdAccounts.AsNoTracking()
-                    .Where(f => (f.Status == "Active" || string.IsNullOrEmpty(f.Status)) && (!scopedBranch.HasValue || f.BranchID == scopedBranch.Value))
-                    .SumAsync(f => (decimal?)f.DepositAmount) ?? 0m;
+                var fdDeposits = await FdDepositQueryHelper.GetLiveFdTotalAsOfAsync(_context, targetDate, scopedBranch);
 
                 var rdDeposits = await _context.RdAccounts.AsNoTracking()
-                    .Where(r => (r.Status == "Active" || string.IsNullOrEmpty(r.Status)) && (!scopedBranch.HasValue || r.BranchID == scopedBranch.Value))
+                    .Where(FdDepositQueryHelper.LiveRdPredicate)
+                    .Where(r => !scopedBranch.HasValue || r.BranchID == scopedBranch.Value)
                     .SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
 
                 var pigmyDeposits = await _context.PigmyAccounts.AsNoTracking()
-                    .Where(p => (p.Status == "Active" || string.IsNullOrEmpty(p.Status)) && (!scopedBranch.HasValue || p.BranchID == scopedBranch.Value))
+                    .Where(FdDepositQueryHelper.LivePigmyPredicate)
+                    .Where(p => !scopedBranch.HasValue || p.BranchID == scopedBranch.Value)
                     .SumAsync(p => (decimal?)p.TotalDepositedAmount) ?? 0m;
 
                 decimal totalDeposits = savingDeposits + fdDeposits + rdDeposits + pigmyDeposits;
@@ -156,7 +99,7 @@ namespace Bhisi.Api.Controllers
 
                 foreach (var cl in cashLedgers)
                 {
-                    decimal bal = cashBalances.ContainsKey(cl.LedgerID) ? cashBalances[cl.LedgerID] : cl.OpeningBalance;
+                    decimal bal = cashBalances.TryGetValue(cl.LedgerID, out var cb) ? cb : 0m;
                     totalCashInHand += bal;
                     cashDetails.Add(new
                     {
@@ -164,12 +107,6 @@ namespace Bhisi.Api.Controllers
                         ledgerName = cl.LedgerName,
                         balance = Math.Round(bal, 2)
                     });
-                }
-
-                // Fallback if cash ledgers had 0
-                if (totalCashInHand == 0 && cashLedgers.Any())
-                {
-                    totalCashInHand = cashLedgers.Sum(c => c.OpeningBalance);
                 }
 
                 // 3. Identify Bank Current Account Ledgers
@@ -194,7 +131,7 @@ namespace Bhisi.Api.Controllers
 
                 foreach (var bl in targetBankLedgers)
                 {
-                    decimal bal = bankBalances.ContainsKey(bl.LedgerID) ? bankBalances[bl.LedgerID] : bl.OpeningBalance;
+                    decimal bal = bankBalances.TryGetValue(bl.LedgerID, out var bb) ? bb : 0m;
                     totalBankCurrent += bal;
                     bankCurrentDetails.Add(new
                     {
@@ -311,14 +248,14 @@ namespace Bhisi.Api.Controllers
                 var savingDeposits = await _context.SavingAccountMasters.AsNoTracking()
                     .Where(s => (s.Status == "Active" || string.IsNullOrEmpty(s.Status)) && (!scopedBranch.HasValue || s.BranchID == scopedBranch.Value))
                     .SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
-                var fdDeposits = await _context.FdAccounts.AsNoTracking()
-                    .Where(f => (f.Status == "Active" || string.IsNullOrEmpty(f.Status)) && (!scopedBranch.HasValue || f.BranchID == scopedBranch.Value))
-                    .SumAsync(f => (decimal?)f.DepositAmount) ?? 0m;
+                var fdDeposits = await FdDepositQueryHelper.GetLiveFdTotalAsOfAsync(_context, end, scopedBranch);
                 var rdDeposits = await _context.RdAccounts.AsNoTracking()
-                    .Where(r => (r.Status == "Active" || string.IsNullOrEmpty(r.Status)) && (!scopedBranch.HasValue || r.BranchID == scopedBranch.Value))
+                    .Where(FdDepositQueryHelper.LiveRdPredicate)
+                    .Where(r => !scopedBranch.HasValue || r.BranchID == scopedBranch.Value)
                     .SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
                 var pigmyDeposits = await _context.PigmyAccounts.AsNoTracking()
-                    .Where(p => (p.Status == "Active" || string.IsNullOrEmpty(p.Status)) && (!scopedBranch.HasValue || p.BranchID == scopedBranch.Value))
+                    .Where(FdDepositQueryHelper.LivePigmyPredicate)
+                    .Where(p => !scopedBranch.HasValue || p.BranchID == scopedBranch.Value)
                     .SumAsync(p => (decimal?)p.TotalDepositedAmount) ?? 0m;
 
                 decimal baselineDeposits = savingDeposits + fdDeposits + rdDeposits + pigmyDeposits;
@@ -332,12 +269,23 @@ namespace Bhisi.Api.Controllers
 
                 var ledgerIds = liquidLedgers.Select(l => l.LedgerID).ToList();
 
-                var allApprovedVouchers = await _context.VoucherDetails.AsNoTracking()
+                var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, end, branchId: scopedBranch);
+                var obMap = await BranchLedgerBalanceHelper.GetOpeningBalanceMapAsync(_context, scopedBranch, preResolvedBaseline: fyBaseline);
+
+                var approvedQuery = _context.VoucherDetails.AsNoTracking()
                     .Where(vd => ledgerIds.Contains(vd.LedgerID) &&
                                  vd.Voucher != null &&
                                  vd.Voucher.Status == "Approved" &&
                                  (!scopedBranch.HasValue || vd.Voucher.BranchID == scopedBranch.Value) &&
-                                 vd.Voucher.VoucherDate.Date <= end.Date)
+                                 vd.Voucher.VoucherDate.Date <= end.Date);
+
+                if (fyBaseline.BaselineStartDate.HasValue)
+                {
+                    DateTime bStart = fyBaseline.BaselineStartDate.Value.Date;
+                    approvedQuery = approvedQuery.Where(vd => vd.Voucher!.VoucherDate >= bStart);
+                }
+
+                var allApprovedVouchers = await approvedQuery
                     .Select(vd => new
                     {
                         vd.LedgerID,
@@ -367,7 +315,9 @@ namespace Bhisi.Api.Controllers
                     foreach (var l in liquidLedgers)
                     {
                         bool isCash = l.AccountType?.ToLower() == "cash" || l.LedgerName.Contains("रोख");
-                        decimal opening = l.OpeningBalanceType == "Cr" ? -l.OpeningBalance : l.OpeningBalance;
+                        decimal opening = obMap.TryGetValue(l.LedgerID, out var obEntry)
+                            ? (obEntry.Dr - obEntry.Cr)
+                            : 0m;
 
                         decimal dr = allApprovedVouchers
                             .Where(x => x.LedgerID == l.LedgerID && x.DrCr == "Dr" && x.VoucherDate <= d)
@@ -380,11 +330,6 @@ namespace Bhisi.Api.Controllers
                         decimal bal = Math.Max(0, opening + dr - cr);
                         if (isCash) dayCash += bal;
                         else dayBank += bal;
-                    }
-
-                    if (dayCash == 0 && liquidLedgers.Any(l => l.AccountType?.ToLower() == "cash"))
-                    {
-                        dayCash = liquidLedgers.Where(l => l.AccountType?.ToLower() == "cash").Sum(l => l.OpeningBalance);
                     }
 
                     decimal dayLiquidTotal = dayCash + dayBank;
@@ -495,7 +440,7 @@ namespace Bhisi.Api.Controllers
                     {
                         var singleLedgerList = new List<int> { b.DefaultCashLedgerID!.Value };
                         var balMap = await GetAssetLedgerBalancesAsync(singleLedgerList, targetDate, b.BranchID);
-                        actualCash = balMap.ContainsKey(b.DefaultCashLedgerID.Value) ? balMap[b.DefaultCashLedgerID.Value] : b.DefaultCashLedger.OpeningBalance;
+                        actualCash = balMap.ContainsKey(b.DefaultCashLedgerID.Value) ? balMap[b.DefaultCashLedgerID.Value] : 0m;
                     }
                     else
                     {
@@ -505,7 +450,7 @@ namespace Bhisi.Api.Controllers
                         if (matchingLedger != null)
                         {
                             var balMap = await GetAssetLedgerBalancesAsync(new List<int> { matchingLedger.LedgerID }, targetDate, b.BranchID);
-                            actualCash = balMap.ContainsKey(matchingLedger.LedgerID) ? balMap[matchingLedger.LedgerID] : matchingLedger.OpeningBalance;
+                            actualCash = balMap.ContainsKey(matchingLedger.LedgerID) ? balMap[matchingLedger.LedgerID] : 0m;
                         }
                     }
 

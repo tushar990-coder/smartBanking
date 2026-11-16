@@ -146,28 +146,9 @@ namespace Bhisi.Api.Controllers
 
         private async Task UpdateLedgerOpeningBalance(int ledgerId)
         {
-            var balances = await _context.CustomerOpeningBalances
-                                         .Where(b => b.LedgerID == ledgerId)
-                                         .ToListAsync();
-
-            decimal totalDebit = balances.Where(b => b.BalanceType == "Dr").Sum(b => b.Amount);
-            decimal totalCredit = balances.Where(b => b.BalanceType == "Cr").Sum(b => b.Amount);
-
-            var ledger = await _context.Ledgers.FindAsync(ledgerId);
-            if (ledger != null)
-            {
-                if (totalDebit >= totalCredit)
-                {
-                    ledger.OpeningBalance = totalDebit - totalCredit;
-                    ledger.OpeningBalanceType = "Dr";
-                }
-                else
-                {
-                    ledger.OpeningBalance = totalCredit - totalDebit;
-                    ledger.OpeningBalanceType = "Cr";
-                }
-                await _context.SaveChangesAsync();
-            }
+            await Helpers.BranchLedgerBalanceHelper.SyncCustomerOpeningBalancesToBranchAsync(
+                _context, new[] { ledgerId }, "खातेदार सुरुवातीची शिल्लक सिंक");
+            await _context.SaveChangesAsync();
         }
     }
 }

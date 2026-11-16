@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { safeArray } from '../utils/apiCache';
+import { useAuth } from '../context/AuthContext';
+import { getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface Branch {
   branchID: number;
@@ -85,9 +87,13 @@ interface BranchLedgerOpeningMasterProps {
 }
 
 export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLedgerOpeningMasterProps) {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
+
   // Master states
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<number | ''>(initialBranchId || '');
+  const [selectedBranchId, setSelectedBranchId] = useState<number | ''>(!isHOUser && lockedBranchId ? lockedBranchId : (initialBranchId || ''));
   const [financialYears, setFinancialYears] = useState<FinancialYear[]>([]);
   const [selectedFyId, setSelectedFyId] = useState<number | ''>('');
   
@@ -112,6 +118,16 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
   const [loadingSplitSummary, setLoadingSplitSummary] = useState(false);
   const [splitSearchTerm, setSplitSearchTerm] = useState('');
 
+  // HO Legacy Migration & Strict Tally states
+  const [requireBalancedSave, setRequireBalancedSave] = useState(false);
+  const [legacyMigrationStatus, setLegacyMigrationStatus] = useState<{
+    hoBranchId: number;
+    unmigratedCount: number;
+    legacyTotalDr: number;
+    legacyTotalCr: number;
+  } | null>(null);
+  const [migratingLegacy, setMigratingLegacy] = useState(false);
+
   // 1. Initial Load: Fetch Branches & Financial Years
   useEffect(() => {
     fetchInitialData();
@@ -130,9 +146,15 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
       const fyList: FinancialYear[] = safeArray<FinancialYear>(fyRes.data);
       setFinancialYears(fyList);
 
-      // Default active branch: initialBranchId or Head Office or first branch
-      if (!selectedBranchId && branchList.length > 0) {
-        const ho = branchList.find(b => (b.branchType || '').toLowerCase() === 'headoffice') || branchList[0];
+      // Default active branch: Locked branch for non-HO users; else globalBranchId / initialBranchId / Head Office
+      if (!isHOUser && lockedBranchId) {
+        setSelectedBranchId(lockedBranchId);
+      } else if (!selectedBranchId && branchList.length > 0) {
+        const numericGlobal = typeof globalBranchId === 'number'
+          ? globalBranchId
+          : (globalBranchId && globalBranchId !== 'all' ? Number(globalBranchId) : 0);
+        const preferred = numericGlobal > 0 ? branchList.find(b => b.branchID === numericGlobal) : undefined;
+        const ho = preferred || branchList.find(b => (b.branchType || '').toLowerCase() === 'headoffice') || branchList[0];
         setSelectedBranchId(ho.branchID);
       }
 
@@ -161,10 +183,21 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
     try {
       const res = await axios.get('/api/BranchLedgerOpeningBalances/ledger-rows', {
         params: {
-          branchId: selectedBranchId,
+          branchId: !isHOUser && lockedBranchId ? lockedBranchId : selectedBranchId,
           financialYearId: selectedFyId
         }
       });
+
+      if (isHOUser) {
+        try {
+          const migRes = await axios.get('/api/BranchLedgerOpeningBalances/legacy-migration-status', {
+            params: { financialYearId: selectedFyId }
+          });
+          setLegacyMigrationStatus(migRes.data || null);
+        } catch {
+          setLegacyMigrationStatus(null);
+        }
+      }
 
       const data: LedgerRow[] = (Array.isArray(res.data) ? res.data : []).map((r: any) => ({
         ...r,
@@ -288,23 +321,47 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
     }));
 
     const payload = {
-      branchID: Number(selectedBranchId),
+      branchID: Number(!isHOUser && lockedBranchId ? lockedBranchId : selectedBranchId),
       financialYearID: Number(selectedFyId),
+      requireBalanced: requireBalancedSave,
       items: mappedItems,
       entries: mappedItems
     };
 
     try {
       const res = await axios.post('/api/BranchLedgerOpeningBalances/bulk', payload);
-      setSuccessMsg(`यशस्वी! ${modifiedRows.length} खात्यांची शाखानिहाय सुरुवातीची शिल्लक जतन केली गेली.`);
+      setSuccessMsg(res.data?.message || `यशस्वी! ${modifiedRows.length} खात्यांची शाखानिहाय सुरुवातीची शिल्लक जतन केली गेली.`);
       fetchLedgerRows();
-      setTimeout(() => setSuccessMsg(''), 4500);
+      setTimeout(() => setSuccessMsg(''), 6000);
     } catch (err: any) {
       console.error("Error saving branch opening balances", err);
       const msg = err.response?.data?.message || err.response?.data || "सुरुवातीची शिल्लक जतन करताना त्रुटी आली.";
       setErrorMsg(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleMigrateHoLegacy = async () => {
+    if (!isHOUser || migratingLegacy) return;
+    setMigratingLegacy(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const res = await axios.post('/api/BranchLedgerOpeningBalances/migrate-ho-legacy', {
+        financialYearID: selectedFyId ? Number(selectedFyId) : null,
+        overwriteExisting: false,
+        clearLegacyMasterBalances: true,
+        allowUnbalancedClear: false
+      });
+      setSuccessMsg(res.data?.message || 'HO जुनी ओपनिंग शिल्लक यशस्वीरित्या स्थलांतरित झाली.');
+      await fetchLedgerRows();
+      setTimeout(() => setSuccessMsg(''), 7000);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data || 'HO जुनी शिल्लक स्थलांतरित करताना त्रुटी आली.';
+      setErrorMsg(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setMigratingLegacy(false);
     }
   };
 
@@ -495,6 +552,16 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
             <span>रिफ्रेश</span>
           </button>
 
+          <label className="flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-300 px-2 py-1 rounded-sm cursor-pointer" title="संतुलित (Dr = Cr) असल्यासच सेव्ह होऊ द्या">
+            <input
+              type="checkbox"
+              checked={requireBalancedSave}
+              onChange={(e) => setRequireBalancedSave(e.target.checked)}
+              className="accent-primary"
+            />
+            <span>Dr=Cr सक्ती</span>
+          </label>
+
           <button
             type="button"
             onClick={handleBulkSave}
@@ -526,9 +593,15 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(Number(e.target.value))}
-                className="w-full text-[11px] font-bold border border-gray-300 rounded-sm px-2 py-1 bg-white text-gray-900 focus:ring-1 focus:ring-primary focus:border-primary h-[28px]"
+                disabled={!isHOUser && !!lockedBranchId}
+                className={`w-full text-[11px] font-bold border border-gray-300 rounded-sm px-2 py-1 text-gray-900 focus:ring-1 focus:ring-primary focus:border-primary h-[28px] ${
+                  !isHOUser && !!lockedBranchId ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                }`}
               >
-                {branches.map(b => (
+                {(!isHOUser && lockedBranchId
+                  ? branches.filter(b => Number(b.branchID) === Number(lockedBranchId))
+                  : branches
+                ).map(b => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchCode} - {b.branchName} {(b.branchType || '').toLowerCase() === 'headoffice' ? '(HO)' : ''}
                   </option>
@@ -646,6 +719,31 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
             <span>{errorMsg}</span>
           </div>
           <button onClick={() => setErrorMsg('')} className="text-red-700 font-bold cursor-pointer">✕</button>
+        </div>
+      )}
+
+      {/* HO Legacy Cutover Migration Banner */}
+      {isHOUser && legacyMigrationStatus && legacyMigrationStatus.unmigratedCount > 0 && (
+        <div className="mb-3 p-3 bg-amber-50 border border-amber-300 rounded-sm shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-amber-950">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <div className="text-xs font-extrabold">
+                जुनी मास्टर ओपनिंग शिल्लक (Legacy Ledgers.OpeningBalance) आढळली: {legacyMigrationStatus.unmigratedCount} खाती
+              </div>
+              <div className="text-[11px] text-amber-900 mt-0.5">
+                एकूण Dr: <strong>{fmtCurrency(legacyMigrationStatus.legacyTotalDr)}</strong> | एकूण Cr: <strong>{fmtCurrency(legacyMigrationStatus.legacyTotalCr)}</strong> — बहु-शाखा (Consolidated) आणि HO तेरीज तंतोतंत जुळण्यासाठी ही शिल्लक <strong>BranchLedgerOpeningBalances (HO)</strong> मध्ये स्थलांतरित करा.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleMigrateHoLegacy}
+            disabled={migratingLegacy}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-sm text-[11px] font-bold shrink-0 cursor-pointer shadow-2xs"
+          >
+            {migratingLegacy ? 'स्थलांतरित होत आहे...' : 'HO शाखेत स्थलांतरित करा (Migrate HO OB)'}
+          </button>
         </div>
       )}
 

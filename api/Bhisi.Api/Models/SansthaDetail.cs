@@ -57,6 +57,13 @@ namespace Bhisi.Api.Models
         public bool IsAadhaarCompulsory { get; set; } = true; // आधार कार्ड नंबर अनिवार्य
 
         public bool IsPanCompulsory { get; set; } = false; // पॅन कार्ड नंबर अनिवार्य
+
+        // मुदत ठेव नूतनीकरण पावती क्रमांक धोरण: "NEW_RECEIPT" | "RETAIN_ORIGINAL" | "NEXT_LEGACY" | "HYBRID_CHOICE"
+        [StringLength(30)]
+        public string FdRenewalReceiptPolicy { get; set; } = "NEW_RECEIPT";
+
+        // नूतनीकरणावेळी कस्टम / प्री-प्रिंटेड पावती क्र. टाकण्याची मुभा
+        public bool AllowManualReceiptNoOnRenewal { get; set; } = false;
     }
 }
 

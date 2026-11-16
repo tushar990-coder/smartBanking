@@ -1526,12 +1526,11 @@ namespace Bhisi.Api.Controllers
 
                     await _context.SaveChangesAsync();
 
-                    // Recalculate Share Capital Ledger Total
-                    var totalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == shareCapitalLedger.LedgerID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                    var totalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == shareCapitalLedger.LedgerID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                    shareCapitalLedger.OpeningBalance = Math.Abs(totalObCr - totalObDr);
-                    shareCapitalLedger.OpeningBalanceType = totalObCr >= totalObDr ? "Cr" : "Dr";
-                    _context.Ledgers.Update(shareCapitalLedger);
+                    // Sync Share Capital Ledger Opening Balance to BranchLedgerOpeningBalances
+                    await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                        _context,
+                        new[] { shareCapitalLedger.LedgerID },
+                        "शेअर्स सुरुवातीची शिल्लक सिंक");
                 }
 
                 // Reconcile Dividend Payable
@@ -1587,11 +1586,10 @@ namespace Bhisi.Api.Controllers
 
                     await _context.SaveChangesAsync();
 
-                    var divTotalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == dividendLedger.LedgerID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                    var divTotalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == dividendLedger.LedgerID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                    dividendLedger.OpeningBalance = Math.Abs(divTotalObCr - divTotalObDr);
-                    dividendLedger.OpeningBalanceType = divTotalObCr >= divTotalObDr ? "Cr" : "Dr";
-                    _context.Ledgers.Update(dividendLedger);
+                    await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                        _context,
+                        new[] { dividendLedger.LedgerID },
+                        "लाभांश देय सुरुवातीची शिल्लक सिंक");
                 }
 
                 await _context.SaveChangesAsync();
@@ -1879,14 +1877,13 @@ namespace Bhisi.Api.Controllers
 
                 await _context.SaveChangesAsync();
 
-                // Recalculate Share Capital Ledger Opening Balance
+                // Sync Share Capital Ledger Opening Balance to BranchLedgerOpeningBalances
                 if (shareCapitalLedger != null)
                 {
-                    var totalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == shareCapitalLedger.LedgerID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                    var totalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == shareCapitalLedger.LedgerID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                    shareCapitalLedger.OpeningBalance = Math.Abs(totalObCr - totalObDr);
-                    shareCapitalLedger.OpeningBalanceType = totalObCr >= totalObDr ? "Cr" : "Dr";
-                    _context.Ledgers.Update(shareCapitalLedger);
+                    await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                        _context.MemberOpeningBalances != null ? _context : _context,
+                        new[] { shareCapitalLedger.LedgerID },
+                        "शेअर्स सुरुवातीची शिल्लक सिंक");
                     await _context.SaveChangesAsync();
                 }
 
@@ -2087,11 +2084,10 @@ namespace Bhisi.Api.Controllers
 
                     await _context.SaveChangesAsync();
 
-                    var totalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == shareCapitalLedger.LedgerID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                    var totalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == shareCapitalLedger.LedgerID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                    shareCapitalLedger.OpeningBalance = Math.Abs(totalObCr - totalObDr);
-                    shareCapitalLedger.OpeningBalanceType = totalObCr >= totalObDr ? "Cr" : "Dr";
-                    _context.Ledgers.Update(shareCapitalLedger);
+                    await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                        _context,
+                        new[] { shareCapitalLedger.LedgerID },
+                        "शेअर्स सुरुवातीची शिल्लक सिंक");
                 }
 
                 // 2. Reconcile Dividend Payable Ledger and MemberOpeningBalances
@@ -2147,11 +2143,10 @@ namespace Bhisi.Api.Controllers
 
                     await _context.SaveChangesAsync();
 
-                    var divTotalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == dividendLedger.LedgerID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                    var divTotalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == dividendLedger.LedgerID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                    dividendLedger.OpeningBalance = Math.Abs(divTotalObCr - divTotalObDr);
-                    dividendLedger.OpeningBalanceType = divTotalObCr >= divTotalObDr ? "Cr" : "Dr";
-                    _context.Ledgers.Update(dividendLedger);
+                    await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                        _context,
+                        new[] { dividendLedger.LedgerID },
+                        "लाभांश देय सुरुवातीची शिल्लक सिंक");
                 }
 
                 await _context.SaveChangesAsync();
@@ -2233,24 +2228,23 @@ namespace Bhisi.Api.Controllers
                                      m.Ledger.LedgerName.ToLower().Contains("share")))
                         .ToListAsync();
 
+                    var certMobLedgerIds = mobs.Select(m => m.LedgerID).Distinct().ToList();
                     foreach (var mob in mobs)
                     {
                         mob.Amount = account.TotalShareAmount;
                         if (mob.Amount <= 0) _context.MemberOpeningBalances.Remove(mob);
                         else _context.MemberOpeningBalances.Update(mob);
-
-                        var ledger = mob.Ledger ?? await _context.Ledgers.FindAsync(mob.LedgerID);
-                        if (ledger != null)
-                        {
-                            var totalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == ledger.LedgerID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                            var totalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == ledger.LedgerID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                            ledger.OpeningBalance = Math.Abs(totalObCr - totalObDr);
-                            ledger.OpeningBalanceType = totalObCr >= totalObDr ? "Cr" : "Dr";
-                            _context.Ledgers.Update(ledger);
-                        }
                     }
 
                     await _context.SaveChangesAsync();
+                    if (certMobLedgerIds.Any())
+                    {
+                        await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                            _context,
+                            certMobLedgerIds,
+                            "शेअर्स प्रमाणपत्र डिलीट सिंक");
+                        await _context.SaveChangesAsync();
+                    }
                     await transaction.CommitAsync();
                     return Ok(new { message = "प्रमाणपत्र यशस्वीरित्या डिलीट केले! (Certificate deleted successfully.)" });
                 }
@@ -2266,18 +2260,11 @@ namespace Bhisi.Api.Controllers
                                  m.Ledger.LedgerName.ToLower().Contains("share")))
                     .ToListAsync();
 
+                var affectedShareLedgerIds = new HashSet<int>();
                 foreach (var mob in shareCapitalMobs)
                 {
-                    var ledger = mob.Ledger ?? await _context.Ledgers.FindAsync(mob.LedgerID);
+                    affectedShareLedgerIds.Add(mob.LedgerID);
                     _context.MemberOpeningBalances.Remove(mob);
-                    if (ledger != null)
-                    {
-                        var totalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == ledger.LedgerID && m.MemberOpeningBalanceID != mob.MemberOpeningBalanceID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                        var totalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == ledger.LedgerID && m.MemberOpeningBalanceID != mob.MemberOpeningBalanceID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                        ledger.OpeningBalance = Math.Abs(totalObCr - totalObDr);
-                        ledger.OpeningBalanceType = totalObCr >= totalObDr ? "Cr" : "Dr";
-                        _context.Ledgers.Update(ledger);
-                    }
                 }
 
                 // Clean linked Opening/Demo Vouchers if any exist for this account
@@ -2304,16 +2291,8 @@ namespace Bhisi.Api.Controllers
 
                 foreach (var divMob in divMobs)
                 {
-                    var ledger = divMob.Ledger ?? await _context.Ledgers.FindAsync(divMob.LedgerID);
+                    affectedShareLedgerIds.Add(divMob.LedgerID);
                     _context.MemberOpeningBalances.Remove(divMob);
-                    if (ledger != null)
-                    {
-                        var totalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == ledger.LedgerID && m.MemberOpeningBalanceID != divMob.MemberOpeningBalanceID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                        var totalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == ledger.LedgerID && m.MemberOpeningBalanceID != divMob.MemberOpeningBalanceID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                        ledger.OpeningBalance = Math.Abs(totalObCr - totalObDr);
-                        ledger.OpeningBalanceType = totalObCr >= totalObDr ? "Cr" : "Dr";
-                        _context.Ledgers.Update(ledger);
-                    }
                 }
 
                 if (account.Transactions != null && account.Transactions.Any())
@@ -2327,6 +2306,15 @@ namespace Bhisi.Api.Controllers
                 _context.ShareAccounts.Remove(account);
 
                 await _context.SaveChangesAsync();
+
+                if (affectedShareLedgerIds.Any())
+                {
+                    await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                        _context,
+                        affectedShareLedgerIds,
+                        "शेअर्स खाते डिलीट सिंक");
+                    await _context.SaveChangesAsync();
+                }
 
                 // Rollback / Cleanup of Member record & MemberCode so next code/ID decrements by -1
                 int targetMemberId = account.MemberId;
@@ -2528,16 +2516,11 @@ namespace Bhisi.Api.Controllers
 
                 await _context.SaveChangesAsync();
 
-                // Recalculate Share Capital Ledger Opening Balance
-                var ledger = await _context.Ledgers.FindAsync(request.LedgerId);
-                if (ledger != null)
-                {
-                    var totalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == request.LedgerId && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                    var totalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == request.LedgerId && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                    ledger.OpeningBalance = Math.Abs(totalObCr - totalObDr);
-                    ledger.OpeningBalanceType = totalObCr >= totalObDr ? "Cr" : "Dr";
-                    _context.Ledgers.Update(ledger);
-                }
+                // Sync Share Capital Ledger Opening Balance to BranchLedgerOpeningBalances
+                await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                    _context,
+                    new[] { request.LedgerId },
+                    "शेअर्स रिकन्सायलेशन सिंक");
 
                 // Reconcile Dividend Payable Ledger
                 Ledger? dividendLedger = await Helpers.ShareLedgerHelper.GetDividendPayableLedgerAsync(_context);
@@ -2584,11 +2567,10 @@ namespace Bhisi.Api.Controllers
 
                     await _context.SaveChangesAsync();
 
-                    var divTotalObDr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == dividendLedger.LedgerID && m.BalanceType == "Dr").SumAsync(m => m.Amount);
-                    var divTotalObCr = await _context.MemberOpeningBalances.Where(m => m.LedgerID == dividendLedger.LedgerID && m.BalanceType == "Cr").SumAsync(m => m.Amount);
-                    dividendLedger.OpeningBalance = Math.Abs(divTotalObCr - divTotalObDr);
-                    dividendLedger.OpeningBalanceType = divTotalObCr >= divTotalObDr ? "Cr" : "Dr";
-                    _context.Ledgers.Update(dividendLedger);
+                    await Helpers.BranchLedgerBalanceHelper.SyncMemberOpeningBalancesToBranchAsync(
+                        _context,
+                        new[] { dividendLedger.LedgerID },
+                        "लाभांश रिकन्सायलेशन सिंक");
                 }
 
                 await _context.SaveChangesAsync();

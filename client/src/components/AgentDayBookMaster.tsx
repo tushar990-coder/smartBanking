@@ -96,17 +96,18 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
   const [depositDate, setDepositDate] = useState<string>(todayStr);
 
   useEffect(() => {
-    if (!isPassingMode && user?.businessDate) {
-      const bStr = getBusinessDateStr(user.businessDate);
+    if (!isPassingMode) {
+      const bStr = getBusinessDateStr(user?.businessDate);
+      setDepositDate(bStr);
       setCollectionDateFrom(bStr);
       setCollectionDateTo(bStr);
-      setDepositDate(bStr);
     }
   }, [user?.businessDate, isPassingMode]);
 
   const [summary, setSummary] = useState<DayBookSummary | null>(null);
 
   const [depositAmount, setDepositAmount] = useState<number | ''>('');
+  const [autoFilledFromExcel, setAutoFilledFromExcel] = useState<boolean>(false);
   const [paymentMode, setPaymentMode] = useState<string>('CASH');
   const [bankLedgerId, setBankLedgerId] = useState<number>(0);
   const [narration, setNarration] = useState('');
@@ -312,8 +313,40 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
       .then((res) => res.json())
       .then((data) => {
         setAgents(data);
-        if (data.length > 0) {
-          setSelectedAgentId(data[0].pigmyAgentID);
+        // Check for remittance transfer bridge from Excel Import
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_agent_remittance_bridge');
+          const qp = new URLSearchParams(window.location.search);
+          const qpAgent = qp.get('agentId');
+          const qpFrom = qp.get('fromDate');
+          const qpTo = qp.get('toDate');
+          const qpAmount = qp.get('amount');
+
+          if (rawBridge) {
+            sessionStorage.removeItem('cbs_agent_remittance_bridge');
+            const b = JSON.parse(rawBridge);
+            if (b.agentId) setSelectedAgentId(Number(b.agentId));
+            if (b.fromDate) setCollectionDateFrom(b.fromDate);
+            if (b.toDate) setCollectionDateTo(b.toDate);
+            if (b.amount && Number(b.amount) > 0) {
+              setDepositAmount(Number(b.amount));
+              setAutoFilledFromExcel(true);
+            }
+          } else if (qpAgent) {
+            setSelectedAgentId(Number(qpAgent));
+            if (qpFrom) setCollectionDateFrom(qpFrom);
+            if (qpTo) setCollectionDateTo(qpTo);
+            if (qpAmount && Number(qpAmount) > 0) {
+              setDepositAmount(Number(qpAmount));
+              setAutoFilledFromExcel(true);
+            }
+          } else if (data.length > 0) {
+            setSelectedAgentId(data[0].pigmyAgentID);
+          }
+        } catch {
+          if (data.length > 0) {
+            setSelectedAgentId(data[0].pigmyAgentID);
+          }
         }
       })
       .catch((err) => console.error(err));
@@ -341,6 +374,15 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         const data = await res.json();
         setSummary(data);
         setMessage('');
+
+        // ⚡ AUTO-FILL: If depositAmount is empty, zero, or was previously auto-filled, set it to the unremitted collection amount from Excel
+        if (data.rangeCollectionAmount !== undefined && data.rangeCollectionAmount > 0) {
+          setDepositAmount(prev => (prev === '' || prev === 0 || autoFilledFromExcel ? data.rangeCollectionAmount : prev));
+          setAutoFilledFromExcel(true);
+        } else if (data.totalPendingCash !== undefined && data.totalPendingCash > 0) {
+          setDepositAmount(prev => (prev === '' || prev === 0 || autoFilledFromExcel ? data.totalPendingCash : prev));
+          setAutoFilledFromExcel(true);
+        }
       } else {
         setMessage('डे बुक माहिती लोड करताना त्रुटी आली.');
       }
@@ -352,13 +394,15 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
 
   const clearForm = () => {
     setDepositAmount('');
+    setAutoFilledFromExcel(false);
     setNarration('');
     setPaymentMode('CASH');
     setBankLedgerId(0);
     resetDenominations();
-    setCollectionDateFrom(todayStr);
-    setCollectionDateTo(todayStr);
-    setDepositDate(todayStr);
+    const bStr = getBusinessDateStr(user?.businessDate);
+    setCollectionDateFrom(bStr);
+    setCollectionDateTo(bStr);
+    setDepositDate(bStr);
   };
 
   const handleDeposit = async () => {
@@ -563,12 +607,22 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-blue-900 mb-0.5">🏦 शाखेत भरणा दिनांक (Deposit Date)</label>
+          <div className="flex items-center justify-between mb-0.5">
+            <label className="block text-[11px] font-bold text-blue-900">
+              🏦 शाखेत भरणा दिनांक (Deposit Date)
+            </label>
+            <span className="text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5" title="शाखेत भरणा दिनांक नेहमी युझरच्या लॉगिन बिझनेस डेटनुसार लॉक राहील.">
+              <span>🔒</span> लॉगिन दिनांक
+            </span>
+          </div>
           <input
             type="date"
-            className="border-2 border-primary/60 px-2 py-0.5 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-[11px] bg-blue-50/50 font-bold text-blue-900"
+            readOnly
+            disabled
+            tabIndex={-1}
+            title="शाखेत प्रत्यक्ष भरणा दिनांक नेहमी चालू लॉगिन तारखेनुसारच (Business Date) राहतो आणि बदलता येत नाही."
+            className="border-2 border-emerald-500/60 px-2 py-0.5 rounded-sm text-[11px] bg-slate-100 font-bold text-slate-800 cursor-not-allowed shadow-inner w-full select-none"
             value={depositDate}
-            onChange={(e) => setDepositDate(e.target.value)}
           />
         </div>
 
@@ -743,23 +797,51 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
 
           <div className="mb-2">
             <div className="flex justify-between items-center mb-0.5">
-              <label className="block text-[11px] font-bold text-gray-700">शाखेत जमा रक्कम (Remittance Amount ₹)</label>
-              {paymentMode === 'CASH' && totalDenominationAmount > 0 && (
-                <button
-                  type="button"
-                  onClick={applyDenomToDepositAmount}
-                  className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline"
-                >
-                  नोटांची रक्कम घ्या (₹{totalDenominationAmount.toLocaleString('en-IN')})
-                </button>
-              )}
+              <div className="flex items-center gap-1.5">
+                <label className="block text-[11px] font-bold text-gray-700">शाखेत जमा रक्कम (Remittance Amount ₹)</label>
+                {depositAmount && Number(depositAmount) > 0 && autoFilledFromExcel && (
+                  <span className="text-[9.5px] font-extrabold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 flex items-center gap-0.5" title="एक्सेल संकलनानुसार प्रलंबित रक्कम आपोआप भरली आहे. आवश्यक असल्यास आपण बदलू शकता.">
+                    <span>⚡</span> ऑटो-रक्कम (एक्सेल संकलन)
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {summary && (summary.rangeCollectionAmount || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      applyRangeAmountToDeposit();
+                      setAutoFilledFromExcel(true);
+                    }}
+                    className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                    title="कालावधीतील शिल्लक संकलन रक्कम भरा"
+                  >
+                    ⚡ शिल्लक संकलन घ्या (₹{(summary.rangeCollectionAmount || 0).toLocaleString('en-IN')})
+                  </button>
+                )}
+                {paymentMode === 'CASH' && totalDenominationAmount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      applyDenomToDepositAmount();
+                      setAutoFilledFromExcel(false);
+                    }}
+                    className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                  >
+                    नोटांची रक्कम घ्या (₹{totalDenominationAmount.toLocaleString('en-IN')})
+                  </button>
+                )}
+              </div>
             </div>
             <input
               type="number"
-              className="w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-xs font-bold bg-white"
+              className="w-full border-2 border-emerald-500/70 px-2 py-1 rounded-sm focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors text-xs font-mono font-black text-gray-950 bg-emerald-50/20"
               placeholder={summary?.rangeCollectionAmount ? `उदा. ₹ ${summary.rangeCollectionAmount}` : `Max: ₹ ${summary?.totalPendingCash ?? summary?.closingBalance ?? 0}`}
               value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => {
+                setDepositAmount(e.target.value ? Number(e.target.value) : '');
+                setAutoFilledFromExcel(false);
+              }}
             />
           </div>
 

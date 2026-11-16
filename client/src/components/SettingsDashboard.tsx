@@ -178,7 +178,9 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
-    setActiveSubTab(subTabs[tabId][0].id);
+    if (subTabs[tabId] && subTabs[tabId].length > 0) {
+      setActiveSubTab(subTabs[tabId][0].id);
+    }
   };
 
   return (

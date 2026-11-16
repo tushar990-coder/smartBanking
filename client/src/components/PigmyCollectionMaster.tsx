@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx';
@@ -114,7 +114,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
   const loadPassingCollection = async (vId: number) => {
     setPassingLoading(true);
     try {
-      const res = await axios.get(`/api/PigmyCollections/by-voucher/${vId}`);
+      const res = await api.get(`/api/PigmyCollections/by-voucher/${vId}`);
       const { collection, account, agent, voucher } = res.data;
       setPassingVoucherData(voucher);
       setActiveTab('manual');
@@ -151,7 +151,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     if (!window.confirm('आपण खात्रीपूर्वक हे पिग्मी कलेक्शन व्हाउचर मंजूर व पास करू इच्छिता?')) return;
     setPassingActionLoading(true);
     try {
-      await axios.post('/api/VoucherPosting/Post', [voucherId]);
+      await api.post('/api/VoucherPosting/Post', [voucherId]);
       toast.success('व्हाउचर यशस्वीरीत्या मंजूर व पास करण्यात आले!');
       if (onNavigate) {
         onNavigate('voucher-posting');
@@ -173,7 +173,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     }
     setPassingActionLoading(true);
     try {
-      await axios.delete(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
+      await api.delete(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
       toast.success('व्हाउचर यशस्वीरित्या नामंजूर / रद्द करण्यात आले!');
       setRejectModalOpen(false);
       if (onNavigate) {
@@ -220,6 +220,12 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
   const [selectedMonthlyAgentId, setSelectedMonthlyAgentId] = useState<number | ''>('');
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [monthlySuccessBanner, setMonthlySuccessBanner] = useState<string | null>(null);
+  const [lastImportedRemittanceInfo, setLastImportedRemittanceInfo] = useState<{
+    agentId: number;
+    fromDate?: string;
+    toDate?: string;
+    amount?: number;
+  } | null>(null);
   const [existingMonthlyWarning, setExistingMonthlyWarning] = useState<{
     count: number;
     totalAmount: number;
@@ -309,7 +315,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     setMobileQueueLoading(true);
     try {
       const url = agentId ? `/api/PigmyCollections/MobileSyncQueue?agentId=${agentId}` : '/api/PigmyCollections/MobileSyncQueue';
-      const res = await axios.get(url);
+      const res = await api.get(url);
       setMobileQueue(res.data);
     } catch (err) {
       console.error('Failed to fetch mobile sync queue', err);
@@ -320,7 +326,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
   const fetchAgents = async () => {
     try {
-      const res = await axios.get('/api/PigmyAgents');
+      const res = await api.get('/api/PigmyAgents');
       setAgents(res.data || []);
     } catch (err) {
       console.error('Failed to fetch agents', err);
@@ -369,7 +375,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       // ⚡ FAST-TRACK 1: Direct targeted account ID lookup (~15-20ms)
       if (targetAccId > 0) {
         try {
-          const singleRes = await axios.get(`/api/PigmyAccounts/${targetAccId}`);
+          const singleRes = await api.get(`/api/PigmyAccounts/${targetAccId}`);
           if (singleRes.data && singleRes.data.pigmyAccountID) {
             const acc = singleRes.data;
             setAccounts([acc]);
@@ -385,7 +391,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       // ⚡ FAST-TRACK 2: Direct targeted customer / member ID lookup (~20-30ms)
       else if (cId > 0) {
         try {
-          const custRes = await axios.get(`/api/PigmyAccounts?customerId=${cId}`);
+          const custRes = await api.get(`/api/PigmyAccounts?customerId=${cId}`);
           const active = (custRes.data || []).filter((a: any) => a.status === 'Active');
           if (active.length > 0) {
             setAccounts(active);
@@ -414,7 +420,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       }
 
       if (!fastTrackDone) {
-        const res = await axios.get('/api/PigmyAccounts');
+        const res = await api.get('/api/PigmyAccounts');
         const data: PigmyAccount[] = res.data || [];
         const activeData = data.filter((a: any) => a.status === 'Active');
         setAccounts(data);
@@ -493,7 +499,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
   const fetchHistory = async () => {
     try {
-      const res = await axios.get('/api/PigmyCollections?pageSize=0');
+      const res = await api.get('/api/PigmyCollections?pageSize=0');
       setHistory(res.data || []);
     } catch (err) {
       console.error(err);
@@ -524,6 +530,73 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       return `${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6, 13)}-${d.substring(13, 14)}`;
     }
     return accNo;
+  };
+
+  // Robust Pigmy account matcher handles:
+  // - Case insensitivity ('143-A' vs '143-a')
+  // - Spaces around hyphens ('143 - A' vs '143-A')
+  // - Unicode hyphens and dashes ('143–A' vs '143-A')
+  // - Both legacyAccountNumber and oldAccountNo
+  // - Clean alphanumeric fallback ('143a')
+  // - 14-digit CBS account and 4+ digit numeric suffix
+  const isPigmyAccountMatch = (acc: any, rawAcc: string): boolean => {
+    if (!acc || !rawAcc) return false;
+    const rawStr = String(rawAcc).trim();
+    if (!rawStr) return false;
+
+    const normalize = (val: string | undefined | null): string => {
+      if (!val) return '';
+      return String(val)
+        .replace(/[\u2010-\u2015\u2212]/g, '-') // normalize Unicode dashes to standard '-'
+        .replace(/\s*-\s*/g, '-')               // remove spaces around hyphen: '143 - A' -> '143-A'
+        .replace(/\s+/g, ' ')                   // collapse multiple spaces
+        .trim()
+        .toLowerCase();
+    };
+
+    const cleanAlpha = (val: string | undefined | null): string => {
+      if (!val) return '';
+      return String(val).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    };
+
+    const normRaw = normalize(rawStr);
+    const rawAlpha = cleanAlpha(rawStr);
+    const rawDigits = rawStr.replace(/\D/g, '');
+
+    const accNo = acc.accountNo || '';
+    const normAccNo = normalize(accNo);
+    const accDigits = accNo.replace(/\D/g, '');
+
+    // 1. Direct CBS account match (raw or formatted)
+    if (normAccNo && (normAccNo === normRaw || normalize(format14DigitDisplay(accNo)) === normRaw)) {
+      return true;
+    }
+
+    // 2. Legacy / Old Account Number matches (check all known casing variants)
+    const legacy1 = normalize(acc.legacyAccountNumber);
+    const legacy2 = normalize(acc.oldAccountNo);
+    const legacy3 = normalize(acc.OldAccountNo);
+    const legacy4 = normalize(acc.LegacyAccountNumber);
+
+    if (legacy1 && legacy1 === normRaw) return true;
+    if (legacy2 && legacy2 === normRaw) return true;
+    if (legacy3 && legacy3 === normRaw) return true;
+    if (legacy4 && legacy4 === normRaw) return true;
+
+    // 3. Clean alphanumeric match (ignoring dashes/spaces completely e.g. "143a" === "143-a")
+    if (rawAlpha) {
+      if (legacy1 && cleanAlpha(legacy1) === rawAlpha) return true;
+      if (legacy2 && cleanAlpha(legacy2) === rawAlpha) return true;
+      if (legacy3 && cleanAlpha(legacy3) === rawAlpha) return true;
+      if (legacy4 && cleanAlpha(legacy4) === rawAlpha) return true;
+    }
+
+    // 4. Numeric ending check for CBS accounts (4+ digits)
+    if (rawDigits.length >= 4 && accDigits.endsWith(rawDigits)) {
+      return true;
+    }
+
+    return false;
   };
 
   // Filter accounts belonging to the selected agent (only opened on or before collectionDate)
@@ -611,7 +684,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         items: items
       };
 
-      const res = await axios.post('/api/PigmyCollections/BulkManual', payload);
+      const res = await api.post('/api/PigmyCollections/BulkManual', payload);
       toast.success(res.data.message || 'कलेक्शन यशस्वीरीत्या जमा झाले!');
       
       // Reset sheet entries & refresh data
@@ -719,16 +792,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           if (!rawAcc || isNaN(rawAmt) || rawAmt <= 0) return;
           if (/^(एकूण|total)/i.test(rawAcc)) return;
 
-          const matchedAcc = agentAccounts.find(a => {
-            const accClean = a.accountNo.replace(/\D/g, '');
-            const rawClean = rawAcc.replace(/\D/g, '');
-            const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
-
-            return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
-                   format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
-                   (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                   legacyAcc === rawAcc;
-          });
+          const matchedAcc = agentAccounts.find(a => isPigmyAccountMatch(a, rawAcc));
 
           if (matchedAcc) {
             newAmounts[matchedAcc.pigmyAccountID] = rawAmt.toString();
@@ -739,15 +803,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             const thisAgentAcc = accounts.find(a => {
               const aId = a.pigmyAgentID || getAgentId(a.pigmyAgent) || getAgentId(a.agent);
               if (aId !== Number(selectedAgentId)) return false;
-
-              const accClean = a.accountNo.replace(/\D/g, '');
-              const rawClean = rawAcc.replace(/\D/g, '');
-              const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
-
-              return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
-                     format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
-                     (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                     legacyAcc === rawAcc;
+              return isPigmyAccountMatch(a, rawAcc);
             });
 
             if (thisAgentAcc) {
@@ -1060,31 +1116,14 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             continue;
           }
 
-          const matchedAcc = agentEligibleAccounts.find(a => {
-            const accClean = a.accountNo.replace(/\D/g, '');
-            const rawClean = rawAcc.replace(/\D/g, '');
-            const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
-
-            return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
-                   format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
-                   (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                   legacyAcc === rawAcc;
-          });
+          const matchedAcc = agentEligibleAccounts.find(a => isPigmyAccountMatch(a, rawAcc));
 
           if (!matchedAcc) {
             let failureReason = 'या एजंटकडे हे खाते सापडले नाही';
             const thisAgentAcc = accounts.find(a => {
               const aId = a.pigmyAgentID || getAgentId(a.pigmyAgent) || getAgentId(a.agent);
               if (aId !== Number(selectedMonthlyAgentId)) return false;
-
-              const accClean = a.accountNo.replace(/\D/g, '');
-              const rawClean = rawAcc.replace(/\D/g, '');
-              const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
-
-              return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
-                     format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
-                     (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                     legacyAcc === rawAcc;
+              return isPigmyAccountMatch(a, rawAcc);
             });
 
             if (thisAgentAcc) {
@@ -1122,6 +1161,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               rowTotal: rowSum,
               excelTotal,
               isValid: false,
+              hasDeposit: rowSum > 0,
               warning: failureReason,
               isInvalidAccount: true
             });
@@ -1154,14 +1194,15 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
           previewRows.push({
             accountNo: matchedAcc.accountNo,
-            legacyAccountNumber: (matchedAcc as any).legacyAccountNumber,
+            legacyAccountNumber: (matchedAcc as any).legacyAccountNumber || (matchedAcc as any).oldAccountNo,
             customerName: getCustomerFullName(matchedAcc.customer),
             pigmyAccountId: matchedAcc.pigmyAccountID,
             openingDate: matchedAcc.openingDate?.split('T')[0],
             dailyAmounts,
             rowTotal: rowSum,
             excelTotal,
-            isValid: rowSum > 0,
+            isValid: true,
+            hasDeposit: rowSum > 0,
             warning: warningMsg || (excelTotal !== undefined && excelTotal > 0 && Math.abs(excelTotal - rowSum) > 0.01 ? `एक्सेल Total (${excelTotal}) आणि बेरजेमध्ये (${rowSum}) फरक आहे.` : undefined)
           });
         }
@@ -1212,7 +1253,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
         // Check if collection already exists in database for this agent & month
         const checkMonthYear = `${effectiveYear}-${String(effectiveMonth).padStart(2, '0')}`;
-        axios.get(`/api/PigmyCollections/CheckMonthlyExists?agentId=${selectedMonthlyAgentId}&monthYear=${checkMonthYear}`)
+        api.get(`/api/PigmyCollections/CheckMonthlyExists?agentId=${selectedMonthlyAgentId}&monthYear=${checkMonthYear}`)
           .then(res => {
             if (res.data?.hasExisting) {
               setExistingMonthlyWarning({
@@ -1290,9 +1331,25 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         entries: flatEntries
       };
 
-      const res = await axios.post('/api/PigmyCollections/BulkMonthlyChart', payload);
+      const res = await api.post('/api/PigmyCollections/BulkMonthlyChart', payload);
       const successMsg = res.data?.message || 'मासिक कलेक्शन यशस्वीरीत्या जमा झाले!';
       toast.success(successMsg, { duration: 6000 });
+
+      // Save remittance bridge info for 1-click Agent Day Book transfer
+      const totalAmt = flatEntries.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      const [y, m] = (selectedMonth || '').split('-');
+      const lastDay = (y && m) ? new Date(Number(y), Number(m), 0).getDate() : 30;
+      const fDate = (y && m) ? `${y}-${m}-01` : undefined;
+      const tDate = (y && m) ? `${y}-${m}-${String(lastDay).padStart(2, '0')}` : undefined;
+      const bridgeInfo = {
+        agentId: Number(selectedMonthlyAgentId),
+        fromDate: fDate,
+        toDate: tDate,
+        amount: totalAmt
+      };
+      setLastImportedRemittanceInfo(bridgeInfo);
+      sessionStorage.setItem('cbs_agent_remittance_bridge', JSON.stringify(bridgeInfo));
+
       setMonthlySuccessBanner(successMsg);
       setMonthlyImportPreview(null);
       fetchHistory();
@@ -1331,7 +1388,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         bankLedgerId: manualPaymentMode === 'Bank' ? manualBankLedgerId : null
       };
 
-      const res = await axios.post('/api/PigmyCollections/Manual', payload);
+      const res = await api.post('/api/PigmyCollections/Manual', payload);
       toast.success(`कलेक्शन सेव्ह झाले! पावती क्र.: ${res.data.receiptNo}`);
       setManualForm({ ...manualForm, collectionAmount: '', pigmyAccountId: '' });
       fetchHistory();
@@ -1395,7 +1452,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       });
 
       setLoading(true);
-      const res = await axios.post('/api/PigmyCollections/AppSync', payload);
+      const res = await api.post('/api/PigmyCollections/AppSync', payload);
       toast.success(res.data.message || 'अ‍ॅप डेटा सिंक यशस्वी!');
       fetchHistory();
       fetchAccounts();
@@ -1423,7 +1480,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
     setLoading(true);
     try {
-      const res = await axios.post('/api/PigmyCollections/ApproveMobileSync', {
+      const res = await api.post('/api/PigmyCollections/ApproveMobileSync', {
         agentId: selectedQueueAgent ? Number(selectedQueueAgent) : null,
         collectionIds: pendingMobileQueueItems.map((it: any) => it.collectionId),
         paymentMode: appSyncPaymentMode,
@@ -1944,10 +2001,22 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onNavigate ? onNavigate('pigmy-daybook') : (window.location.href = '/?tab=pigmy-daybook')}
-                  className="text-[11px] bg-blue-700 hover:bg-blue-800 text-white px-2.5 py-1 rounded-sm font-bold cursor-pointer transition-colors flex items-center gap-1"
+                  onClick={() => {
+                    if (lastImportedRemittanceInfo) {
+                      sessionStorage.setItem('cbs_agent_remittance_bridge', JSON.stringify(lastImportedRemittanceInfo));
+                      if (onNavigate) {
+                        onNavigate('pigmy-daybook', lastImportedRemittanceInfo);
+                      } else {
+                        window.location.href = `/?tab=pigmy-daybook&agentId=${lastImportedRemittanceInfo.agentId}&fromDate=${lastImportedRemittanceInfo.fromDate || ''}&toDate=${lastImportedRemittanceInfo.toDate || ''}&amount=${lastImportedRemittanceInfo.amount || ''}`;
+                      }
+                    } else {
+                      if (onNavigate) onNavigate('pigmy-daybook');
+                      else window.location.href = '/?tab=pigmy-daybook';
+                    }
+                  }}
+                  className="text-[11px] bg-blue-700 hover:bg-blue-800 text-white px-2.5 py-1 rounded-sm font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-xs"
                 >
-                  📖 एजंट डे बुक (कॅश भरणा) वर जा
+                  📖 एजंट डे बुक (कॅश भरणा) वर जा ➔
                 </button>
                 <button
                   type="button"

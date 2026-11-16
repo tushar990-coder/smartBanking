@@ -782,8 +782,8 @@ namespace Bhisi.Api.Controllers
                             p.BranchID == existing.BranchID &&
                             p.PigmySchemeID == targetSchemeId &&
                             p.PigmyAccountID != id &&
-                            ((p.LegacyAccountNumber != null && p.LegacyAccountNumber.Trim() == trimmed) ||
-                             (p.OldAccountNo != null && p.OldAccountNo.Trim() == trimmed)));
+                            ((p.LegacyAccountNumber != null && (p.LegacyAccountNumber == trimmed || p.LegacyAccountNumber == dto.LegacyAccountNumber)) ||
+                             (p.OldAccountNo != null && (p.OldAccountNo == trimmed || p.OldAccountNo == dto.LegacyAccountNumber))));
                         if (legacyExists)
                         {
                             await transaction.RollbackAsync();

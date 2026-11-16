@@ -305,7 +305,8 @@ const FdSchemeMaster: React.FC = () => {
     setError('');
     try {
       const response = await axios.get(`${API_URL}/FdSchemes?includeAll=true`);
-      const data = response.data || [];
+      const raw = response.data;
+      const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.value) ? raw.value : []);
       setSchemes(data);
 
       if (!isEditMode) {
@@ -618,18 +619,19 @@ const FdSchemeMaster: React.FC = () => {
     }))
   ];
 
-  const filteredSchemes = schemes.filter((s) =>
-    s.schemeCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.schemeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const schemeList = Array.isArray(schemes) ? schemes : [];
+  const filteredSchemes = schemeList.filter((s) =>
+    (s.schemeCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (s.schemeName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (s.fdLiabilityLedger?.ledgerName || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // KPI Calculations
-  const activeCount = schemes.filter(s => s.isActive).length;
-  const avgInterestRate = schemes.length > 0 
-    ? (schemes.reduce((acc, s) => acc + (s.interestRate || 0), 0) / schemes.length).toFixed(2)
+  const activeCount = schemeList.filter(s => s.isActive).length;
+  const avgInterestRate = schemeList.length > 0 
+    ? (schemeList.reduce((acc, s) => acc + (s.interestRate || 0), 0) / schemeList.length).toFixed(2)
     : '0.00';
-  const mappedLedgersCount = schemes.filter(s => s.fdLiabilityLedgerID && s.fdLiabilityLedgerID > 0).length;
+  const mappedLedgersCount = schemeList.filter(s => s.fdLiabilityLedgerID && s.fdLiabilityLedgerID > 0).length;
 
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
   const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';

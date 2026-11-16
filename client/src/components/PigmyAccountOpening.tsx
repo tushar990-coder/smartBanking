@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
@@ -214,7 +214,7 @@ export default function PigmyAccountOpening() {
       // Fast-track single customer load (~20ms)
       if (customerIdStr) {
         const cId = parseInt(customerIdStr, 10);
-        axios.get(`/api/Customers/${cId}`).then(singleRes => {
+        api.get(`/api/Customers/${cId}`).then(singleRes => {
           if (singleRes.data) {
             const cust = singleRes.data;
             setCustomers(prev => {
@@ -228,9 +228,9 @@ export default function PigmyAccountOpening() {
       }
 
       const [branchesRes, schemesRes, agentsRes] = await Promise.all([
-        axios.get('/api/Branches'),
-        axios.get('/api/PigmySchemes'),
-        axios.get('/api/PigmyAgents')
+        api.get('/api/Branches'),
+        api.get('/api/PigmySchemes'),
+        api.get('/api/PigmyAgents')
       ]);
 
       if (branchesRes.data) setBranches(branchesRes.data);
@@ -239,7 +239,7 @@ export default function PigmyAccountOpening() {
 
       setTimeout(async () => {
         try {
-          const customersRes = await axios.get('/api/Customers');
+          const customersRes = await api.get('/api/Customers');
           if (customersRes.data) {
             setCustomers(customersRes.data);
             if (customerIdStr) {
@@ -264,7 +264,7 @@ export default function PigmyAccountOpening() {
   const fetchSavedAccounts = async () => {
     setLoadingAccounts(true);
     try {
-      const res = await axios.get('/api/PigmyAccounts');
+      const res = await api.get('/api/PigmyAccounts');
       if (res.data) {
         setSavedAccounts(res.data || []);
       }
@@ -298,7 +298,7 @@ export default function PigmyAccountOpening() {
   const fetchNextAccountNo = async (branchId: number, schemeId?: number) => {
     setLoadingAccountNo(true);
     try {
-      const res = await axios.get('/api/PigmyAccounts/next-account-no', {
+      const res = await api.get('/api/PigmyAccounts/next-account-no', {
         params: { branchId, schemeId: schemeId || 1 }
       });
       if (res.data) {
@@ -423,7 +423,7 @@ export default function PigmyAccountOpening() {
         bankLedgerId: openingBalNum > 0 && paymentMode === 'Bank' ? bankLedgerId : null
       };
 
-      const response = await axios.post('/api/PigmyAccounts/OpenAccount', payload);
+      const response = await api.post('/api/PigmyAccounts/OpenAccount', payload);
 
       if (response.data) {
         const data = response.data;
@@ -489,21 +489,22 @@ export default function PigmyAccountOpening() {
         status: modalEditForm.status
       };
 
-      const res = await axios.put(`/api/PigmyAccounts/${accId}`, payload);
+      const res = await api.put(`/api/PigmyAccounts/${accId}`, payload);
 
       if (res.data) {
         setModalMessage({ type: 'success', text: res.data.message || 'पिग्मी खाते माहिती यशस्वीरीत्या अपडेट झाली!' });
         toast.success(res.data.message || 'खाते माहिती अपडेट झाली.');
         setIsEditModalMode(false);
-        setSelectedAccountModal((prev: any) => prev ? {
-          ...prev,
+        const updatedAccObj = {
           legacyAccountNumber: modalEditForm.legacyAccountNumber ? modalEditForm.legacyAccountNumber.trim() : null,
           oldAccountNo: modalEditForm.legacyAccountNumber ? modalEditForm.legacyAccountNumber.trim() : null,
           pigmyAgentID: parseInt(modalEditForm.pigmyAgentID),
           pigmySchemeID: parseInt(modalEditForm.pigmySchemeID),
           totalDepositedAmount: parseFloat(modalEditForm.totalDepositedAmount) || 0,
           status: modalEditForm.status
-        } : null);
+        };
+        setSelectedAccountModal((prev: any) => prev ? { ...prev, ...updatedAccObj } : null);
+        setSavedAccounts((prev: any[]) => prev.map(a => getAccountId(a) === accId ? { ...a, ...updatedAccObj } : a));
         fetchSavedAccounts();
       }
     } catch (err: any) {
@@ -529,13 +530,14 @@ export default function PigmyAccountOpening() {
 
     try {
       const url = `/api/PigmyAccounts/${accId}${force ? '?force=true' : ''}`;
-      const res = await axios.delete(url);
+      const res = await api.delete(url);
 
       if (res.data) {
         toast.success(res.data.message || `पिग्मी खाते '${accNo}' डिलीट केले गेले.`);
         if (selectedAccountModal && getAccountId(selectedAccountModal) === accId) {
           setSelectedAccountModal(null);
         }
+        setSavedAccounts((prev: any[]) => prev.filter(a => getAccountId(a) !== accId));
         fetchSavedAccounts();
       }
     } catch (err: any) {

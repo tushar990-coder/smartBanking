@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { toast } from 'react-hot-toast';
 import {
   Coins,
@@ -83,7 +83,7 @@ export default function PigmyOpeningBalance() {
   const fetchGlReconciliation = async () => {
     try {
       setReconciling(true);
-      const res = await axios.get('/api/PigmyAccounts/GlReconciliation');
+      const res = await api.get('/api/PigmyAccounts/GlReconciliation');
       if (res.data) setGlRecon(res.data);
     } catch (error) {
       console.error('Failed to fetch Pigmy GL reconciliation', error);
@@ -95,7 +95,7 @@ export default function PigmyOpeningBalance() {
   const handleSyncAllGl = async () => {
     try {
       setReconciling(true);
-      const res = await axios.post('/api/PigmyAccounts/SyncAllGlOpeningBalances');
+      const res = await api.post('/api/PigmyAccounts/SyncAllGlOpeningBalances');
       toast.success(res.data?.message || 'पिग्मी खतावणी यशस्वीरीत्या सिंक झाली!');
       await Promise.all([fetchGlReconciliation(), fetchMigratedAccounts()]);
     } catch (error: any) {
@@ -123,9 +123,9 @@ export default function PigmyOpeningBalance() {
   const fetchMasters = async () => {
     try {
       const [schemesRes, agentsRes, yearsRes] = await Promise.all([
-        axios.get('/api/PigmySchemes'),
-        axios.get('/api/PigmyAgents'),
-        axios.get('/api/FinancialYears')
+        api.get('/api/PigmySchemes'),
+        api.get('/api/PigmyAgents'),
+        api.get('/api/FinancialYears')
       ]);
 
       setSchemes(safeArray(schemesRes.data));
@@ -149,7 +149,7 @@ export default function PigmyOpeningBalance() {
 
       setTimeout(async () => {
         try {
-          const customersRes = await axios.get('/api/Customers');
+          const customersRes = await api.get('/api/Customers');
           setCustomers(safeArray(customersRes.data));
         } catch (bgErr) {
           console.error('Failed to fetch customers in background', bgErr);
@@ -178,7 +178,7 @@ export default function PigmyOpeningBalance() {
 
   const fetchMigratedAccounts = async () => {
     try {
-      const res = await axios.get('/api/PigmyAccounts');
+      const res = await api.get('/api/PigmyAccounts');
       setMigratedAccounts(safeArray(res.data));
     } catch (error) {
       console.error('Failed to fetch migrated accounts', error);
@@ -236,13 +236,13 @@ export default function PigmyOpeningBalance() {
 
     try {
       setLoading(true);
-      await axios.delete(`/api/PigmyAccounts/${id}?force=true`);
+      await api.delete(`/api/PigmyAccounts/${id}?force=true`);
       toast.success(`पिग्मी खाते '${accNo}' यशस्वीरीत्या डिलीट झाले.`);
-      fetchMigratedAccounts();
-      fetchGlReconciliation();
+      setMigratedAccounts(prev => prev.filter(a => a.pigmyAccountID !== id));
       if (editingAccountId === id) {
         resetForm();
       }
+      Promise.all([fetchMigratedAccounts(), fetchGlReconciliation()]).catch(() => {});
     } catch (error: any) {
       console.error('Error deleting account', error);
       toast.error(error.response?.data?.message || 'खाते डिलीट करताना त्रुटी आली.');
@@ -291,7 +291,7 @@ export default function PigmyOpeningBalance() {
       const agentObj = safeArray(agents).find(a => String(a.pigmyAgentID || a.id) === String(formData.pigmyAgentID));
 
       if (editingAccountId) {
-        await axios.put(`/api/PigmyAccounts/${editingAccountId}`, {
+        await api.put(`/api/PigmyAccounts/${editingAccountId}`, {
           pigmyAccountID: editingAccountId,
           totalDepositedAmount: parseFloat(formData.openingBalance || '0'),
           ...payload
@@ -313,9 +313,24 @@ export default function PigmyOpeningBalance() {
           asOfDate: formData.asOfDate,
           openingDate: formData.openingDate
         });
+        const updatedLeg = formData.legacyAccountNumber.trim() || null;
+        setMigratedAccounts(prev => prev.map(a => a.pigmyAccountID === editingAccountId ? {
+          ...a,
+          legacyAccountNumber: updatedLeg,
+          oldAccountNo: updatedLeg,
+          pigmyAgentID: parseInt(formData.pigmyAgentID),
+          pigmySchemeID: parseInt(formData.pigmySchemeID),
+          openingDate: formData.openingDate || formData.asOfDate || a.openingDate,
+          totalDepositedAmount: parseFloat(formData.openingBalance || '0'),
+          openingBalance: parseFloat(formData.openingBalance || '0'),
+          financialYear: formData.financialYear || a.financialYear,
+          asOfDate: formData.asOfDate || a.asOfDate,
+          pigmyAgent: agentObj || a.pigmyAgent,
+          pigmyScheme: schemeObj || a.pigmyScheme
+        } : a));
         toast.success('पिग्मी खाते माहिती यशस्वीरीत्या अद्ययावत केली!');
       } else {
-        const response = await axios.post('/api/PigmyAccounts/Migrate', payload);
+        const response = await api.post('/api/PigmyAccounts/Migrate', payload);
         const rawAccountNo = response.data?.accountNo || '';
         const displayAccNo = response.data?.formattedAccountNo || format14DigitDisplay(rawAccountNo) || rawAccountNo || 'नोंदणीकृत';
         setSuccessModalData({
@@ -334,10 +349,10 @@ export default function PigmyOpeningBalance() {
           openingDate: formData.openingDate
         });
         toast.success(`पिग्मी खाते यशस्वीरीत्या स्थलांतरित झाले! खाते क्र.: ${displayAccNo}`);
+        fetchMigratedAccounts();
       }
 
       resetForm();
-      fetchMigratedAccounts();
       fetchGlReconciliation();
     } catch (error: any) {
       console.error('Error migrating account', error);

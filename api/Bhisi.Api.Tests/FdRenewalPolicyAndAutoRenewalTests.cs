@@ -1078,5 +1078,199 @@ namespace Bhisi.Api.Tests
             });
             Assert.IsType<BadRequestObjectResult>(mismatched);
         }
+
+        [Fact]
+        public async Task Renew_WithLongExistingRemarksAndManualOverride_ClampsRemarksSafelyWithoutOverflow()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 1);
+            var (_, custA, _) = await SeedBaseFdEnvironmentAsync(db, "RETAIN_ORIGINAL", allowManual: false, businessDate);
+
+            string longExistingRemarks = new string('A', 210);
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 980,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = custA.CustomerID,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000212-4",
+                ReceiptNo = "1455",
+                LegacyAccountNumber = "1455",
+                OpeningDate = new DateTime(2025, 3, 1),
+                MaturityDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 13,
+                DurationInDays = 396,
+                DepositAmount = 40000m,
+                MaturityAmount = 43906m,
+                InterestRate = 9m,
+                Status = "Matured",
+                Remarks = longExistingRemarks
+            });
+            await db.SaveChangesAsync();
+
+            var fdController = new FdAccountsController(db);
+            AttachUser(fdController, BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate));
+
+            string longOverrideReason = new string('B', 400);
+            var res = await fdController.Renew(980, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                IsManualAmountOverride = true,
+                CustomAccruedInterest = 3896m,
+                ManualOverrideReason = longOverrideReason
+            });
+
+            var json = ParseOkJson(res);
+            int newFdId = json.GetProperty("NewFdAccountId").GetInt32();
+            decimal newDep = json.GetProperty("NewDeposit").GetDecimal();
+            Assert.Equal(43896m, newDep);
+
+            var oldFd = await db.FdAccounts.FindAsync(980);
+            var newFd = await db.FdAccounts.FindAsync(newFdId);
+            Assert.NotNull(oldFd);
+            Assert.NotNull(newFd);
+            Assert.True((oldFd!.Remarks ?? "").Length <= 1000);
+            Assert.True((newFd!.Remarks ?? "").Length <= 1000);
+        }
+
+        [Fact]
+        public async Task Renew_AutoRateDefaultAndEditableCustomInterestRate_UpdatesMaturityAndLogsAudit()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 1);
+            var (_, custA, _) = await SeedBaseFdEnvironmentAsync(db, "NEW_RECEIPT", allowManual: false, businessDate);
+
+            db.FdAccounts.AddRange(
+                new FdAccount
+                {
+                    FdAccountID = 981,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0000213-2",
+                    ReceiptNo = "213",
+                    OpeningDate = new DateTime(2025, 4, 1),
+                    MaturityDate = businessDate,
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 100000m,
+                    MaturityAmount = 110000m,
+                    InterestRate = 10m,
+                    Status = "Matured"
+                },
+                new FdAccount
+                {
+                    FdAccountID = 982,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0000214-0",
+                    ReceiptNo = "214",
+                    OpeningDate = new DateTime(2025, 4, 1),
+                    MaturityDate = businessDate,
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 100000m,
+                    MaturityAmount = 110000m,
+                    InterestRate = 10m,
+                    Status = "Matured"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            var fdController = new FdAccountsController(db);
+            AttachUser(fdController, BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate));
+
+            // 1. Default Auto rate when CustomInterestRate is null (scheme = 10%)
+            var autoRes = ParseOkJson(await fdController.Renew(981, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                CustomInterestRate = null
+            }));
+            Assert.Equal(10m, autoRes.GetProperty("InterestRate").GetDecimal());
+            Assert.False(autoRes.GetProperty("IsCustomInterestRate").GetBoolean());
+
+            // 2. Edited custom rate (8.25% instead of scheme 10%)
+            var editedRes = ParseOkJson(await fdController.Renew(982, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                CustomInterestRate = 8.25m
+            }));
+            Assert.Equal(8.25m, editedRes.GetProperty("InterestRate").GetDecimal());
+            Assert.Equal(10m, editedRes.GetProperty("DefaultSchemeRate").GetDecimal());
+            Assert.True(editedRes.GetProperty("IsCustomInterestRate").GetBoolean());
+
+            // Maturity on 1,10,000 for 365 days @ 8.25% simple = 110000 * 1.0825 = 119075
+            Assert.Equal(119075m, editedRes.GetProperty("MaturityAmount").GetDecimal());
+
+            int editedNewFdId = editedRes.GetProperty("NewFdAccountId").GetInt32();
+            var editedFd = await db.FdAccounts.FindAsync(editedNewFdId);
+            Assert.Equal(8.25m, editedFd!.InterestRate);
+            Assert.True(await db.AuditLogs.AnyAsync(a =>
+                a.Action == "FD_RENEWAL_CUSTOM_INTEREST_RATE" &&
+                a.EntityID == editedFd.AccountNo));
+        }
+
+        [Fact]
+        public async Task Renew_InvalidCustomInterestRate_FailsFastWithoutPartialSave()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 1);
+            var (_, custA, _) = await SeedBaseFdEnvironmentAsync(db, "NEW_RECEIPT", allowManual: false, businessDate);
+
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 983,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = custA.CustomerID,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000215-9",
+                ReceiptNo = "215",
+                OpeningDate = new DateTime(2025, 4, 1),
+                MaturityDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                DurationInDays = 365,
+                DepositAmount = 50000m,
+                MaturityAmount = 55000m,
+                InterestRate = 10m,
+                Status = "Matured"
+            });
+            await db.SaveChangesAsync();
+
+            var fdController = new FdAccountsController(db);
+            AttachUser(fdController, BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate));
+
+            var zeroRate = await fdController.Renew(983, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                CustomInterestRate = 0m
+            });
+            Assert.IsType<BadRequestObjectResult>(zeroRate);
+            Assert.Equal("Matured", (await db.FdAccounts.FindAsync(983))!.Status);
+        }
     }
 }

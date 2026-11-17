@@ -576,6 +576,129 @@ namespace Bhisi.Api.Helpers
                 }
             }
         }
+
+        private static readonly System.Text.RegularExpressions.Regex FdAccInNarrationRegex =
+            new System.Text.RegularExpressions.Regex(@"([0-9][0-9\-]{8,25}[0-9])", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        public static bool IsFdOpeningSbDebitNarration(string? narration)
+        {
+            if (string.IsNullOrWhiteSpace(narration)) return false;
+            return narration.Contains("FD Opening SB Debit", StringComparison.OrdinalIgnoreCase) ||
+                   narration.Contains("बल्क मुदत ठेव खात्यासाठी वर्ग", StringComparison.OrdinalIgnoreCase) ||
+                   narration.Contains("Total SB Debit", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static string? ExtractFdAccountNoFromSbDebitNarration(string? narration)
+        {
+            if (string.IsNullOrWhiteSpace(narration)) return null;
+            var match = FdAccInNarrationRegex.Match(narration);
+            return match.Success ? match.Groups[1].Value.Trim() : null;
+        }
+
+        /// <summary>
+        /// Zero-Fallback idempotent heal: removes unvouchered FD Opening SB Debit withdrawals
+        /// ONLY when both the Voucher and the referenced FdAccount do not exist, restores
+        /// CurrentBalance, recalculates chronological BalanceAfterTxn, and logs AuditLogs.
+        /// </summary>
+        public static async Task<int> HealVerifiedOrphanFdSbDebitsAsync(AppDbContext context)
+        {
+            var candidates = await context.SavingTransactions
+                .Where(st => st.TransactionType == "Withdrawal" &&
+                             st.PaymentMode == "Transfer" &&
+                             st.Narration != null &&
+                             (st.Narration.Contains("FD Opening SB Debit") ||
+                              st.Narration.Contains("बल्क मुदत ठेव खात्यासाठी वर्ग") ||
+                              st.Narration.Contains("Total SB Debit")))
+                .ToListAsync();
+
+            if (!candidates.Any()) return 0;
+
+            var voucherNos = candidates
+                .Where(c => !string.IsNullOrWhiteSpace(c.VoucherNo))
+                .Select(c => c.VoucherNo!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var existingVoucherNos = voucherNos.Any()
+                ? (await context.Vouchers
+                    .AsNoTracking()
+                    .Where(v => v.VoucherNo != null && voucherNos.Contains(v.VoucherNo))
+                    .Select(v => v.VoucherNo!)
+                    .ToListAsync())
+                    .Select(v => v.Trim())
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var verifiedOrphans = new List<SavingTransaction>();
+            foreach (var st in candidates)
+            {
+                if (!string.IsNullOrWhiteSpace(st.VoucherNo) && existingVoucherNos.Contains(st.VoucherNo.Trim()))
+                {
+                    continue;
+                }
+
+                string? fdNo = ExtractFdAccountNoFromSbDebitNarration(st.Narration);
+                if (!string.IsNullOrWhiteSpace(fdNo))
+                {
+                    var liveFd = await FdRenewalRollbackHelper.FindFdAccountByAnyNumberAsync(context, fdNo);
+                    if (liveFd != null) continue;
+                }
+                else
+                {
+                    // Bulk FD narration without a single FD number: skip if any Transfer FD for this SavingAccount + Date still exists
+                    bool hasLiveBulkFd = await context.FdAccounts.AnyAsync(f =>
+                        f.SavingAccountID == st.SavingAccountID &&
+                        f.PaymentMode == "Transfer" &&
+                        f.OpeningDate.Date == st.TransactionDate.Date);
+                    if (hasLiveBulkFd) continue;
+                }
+
+                verifiedOrphans.Add(st);
+            }
+
+            if (!verifiedOrphans.Any()) return 0;
+
+            var orphanIds = verifiedOrphans.Select(o => o.TransactionID).ToList();
+            var passbooks = await context.SavingPassbooks
+                .Where(p => orphanIds.Contains(p.TransactionID))
+                .ToListAsync();
+            if (passbooks.Any())
+            {
+                context.SavingPassbooks.RemoveRange(passbooks);
+            }
+
+            var affectedSavingIds = new HashSet<int>();
+            foreach (var orphan in verifiedOrphans)
+            {
+                var savAcc = await context.SavingAccountMasters.FindAsync(orphan.SavingAccountID);
+                if (savAcc != null)
+                {
+                    savAcc.CurrentBalance = Math.Round(savAcc.CurrentBalance + orphan.Amount, 2, MidpointRounding.AwayFromZero);
+                    context.Entry(savAcc).State = EntityState.Modified;
+                    affectedSavingIds.Add(savAcc.SavingAccountID);
+                }
+
+                context.AuditLogs.Add(new AuditLog
+                {
+                    Action = "ORPHAN_FD_SB_DEBIT_HEALED",
+                    EntityName = "SavingTransaction",
+                    EntityID = orphan.TransactionID.ToString(),
+                    Details = $"Auto-healed verified orphan FD SB Debit on SavingAccountID={orphan.SavingAccountID} (Date: {orphan.TransactionDate:dd/MM/yyyy}, Amount: ₹{orphan.Amount:N2}) | {orphan.Narration}",
+                    Status = "Success",
+                    Timestamp = DateTime.Now
+                });
+            }
+
+            context.SavingTransactions.RemoveRange(verifiedOrphans);
+            await context.SaveChangesAsync();
+
+            if (affectedSavingIds.Any())
+            {
+                await RecalculateSavingRunningBalancesAsync(context, affectedSavingIds);
+            }
+
+            return verifiedOrphans.Count;
+        }
     }
 }
 

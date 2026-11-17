@@ -704,13 +704,11 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // Check if this is an FD Opening SB Debit whose FD account still exists in FdAccounts
-                if (!string.IsNullOrWhiteSpace(txn.Narration) &&
-                    txn.Narration.Contains("FD Opening SB Debit", StringComparison.OrdinalIgnoreCase))
+                if (Helpers.SavingLedgerHelper.IsFdOpeningSbDebitNarration(txn.Narration))
                 {
-                    var match = System.Text.RegularExpressions.Regex.Match(txn.Narration, @"([0-9][0-9\-]{8,25}[0-9])");
-                    if (match.Success)
+                    string? extractedFdNo = Helpers.SavingLedgerHelper.ExtractFdAccountNoFromSbDebitNarration(txn.Narration);
+                    if (!string.IsNullOrWhiteSpace(extractedFdNo))
                     {
-                        string extractedFdNo = match.Groups[1].Value.Trim();
                         var existingLinkedFd = await FdRenewalRollbackHelper.FindFdAccountByAnyNumberAsync(_context, extractedFdNo);
                         if (existingLinkedFd != null)
                         {

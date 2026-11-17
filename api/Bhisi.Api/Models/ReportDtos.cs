@@ -590,9 +590,14 @@ namespace Bhisi.Api.Models
 
     public class SavingKhatavaniTransactionDto
     {
+        public int? TransactionID { get; set; }
         public DateTime Date { get; set; }
         public string Particulars { get; set; } = string.Empty;
+        public string? VoucherNo { get; set; }
         public string? PassingStatus { get; set; }
+        public bool IsOrphanEntry { get; set; }
+        public bool HasLiveLinkedFd { get; set; }
+        public string? LinkedFdAccountNo { get; set; }
         public decimal Debit { get; set; }
         public decimal Credit { get; set; }
         public decimal Balance { get; set; }

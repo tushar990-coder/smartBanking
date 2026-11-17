@@ -5,12 +5,14 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Bhisi.Api.Controllers;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 using Bhisi.Api.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace Bhisi.Api.Tests
@@ -384,6 +386,247 @@ namespace Bhisi.Api.Tests
                 (allDatesRes.Result as OkObjectResult)?.Value ?? allDatesRes.Value).ToList();
             Assert.Single(list);
             Assert.Equal("JV-FD-00140100008436", list[0].VoucherNo);
+        }
+
+        [Fact]
+        public async Task HealVerifiedOrphanFdSbDebitsAsync_RemovesOnlyVerifiedOrphans_PreservesLiveFdAndLiveVoucher()
+        {
+            await using var db = CreateContext();
+            var dt = new DateTime(2026, 4, 1);
+            await SeedBaseAsync(db, dt);
+
+            // Live FD exists for 00140100008437 -> must NOT be touched even if VoucherNo is null
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 502,
+                BranchID = 1,
+                CustomerID = 1,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000843-7",
+                OpeningDate = dt,
+                MaturityDate = dt.AddYears(1),
+                DepositAmount = 25000m,
+                Status = "Active"
+            });
+
+            // Live Voucher exists for tx 402 -> must NOT be touched even if FD is missing
+            db.Vouchers.Add(new Voucher
+            {
+                VoucherID = 7101,
+                BranchID = 1,
+                VoucherNo = "JV-FD-001-401-0000843-8",
+                VoucherDate = dt,
+                VoucherType = "Journal",
+                TotalAmount = 10000m,
+                Status = "Approved"
+            });
+
+            db.SavingTransactions.AddRange(
+                // Tx 401: True Orphan (VoucherNo = null, FD 00140100008436 missing) -> MUST be healed
+                new SavingTransaction
+                {
+                    TransactionID = 401,
+                    SavingAccountID = 4164,
+                    CustomerID = 1,
+                    BranchID = 1,
+                    TransactionDate = dt,
+                    TransactionType = "Withdrawal",
+                    PaymentMode = "Transfer",
+                    Amount = 150000m,
+                    BalanceAfterTxn = 548m,
+                    VoucherNo = null,
+                    Narration = "मुदत ठेव खात्यासाठी वर्ग (FD Opening SB Debit): 00140100008436"
+                },
+                // Tx 402: Live FD exists -> MUST stay
+                new SavingTransaction
+                {
+                    TransactionID = 402,
+                    SavingAccountID = 4164,
+                    CustomerID = 1,
+                    BranchID = 1,
+                    TransactionDate = dt,
+                    TransactionType = "Withdrawal",
+                    PaymentMode = "Transfer",
+                    Amount = 25000m,
+                    BalanceAfterTxn = 548m,
+                    VoucherNo = null,
+                    Narration = "मुदत ठेव खात्यासाठी वर्ग (FD Opening SB Debit): 00140100008437"
+                },
+                // Tx 403: Live Voucher exists -> MUST stay
+                new SavingTransaction
+                {
+                    TransactionID = 403,
+                    SavingAccountID = 4164,
+                    CustomerID = 1,
+                    BranchID = 1,
+                    TransactionDate = dt,
+                    TransactionType = "Withdrawal",
+                    PaymentMode = "Transfer",
+                    Amount = 10000m,
+                    BalanceAfterTxn = 548m,
+                    VoucherNo = "JV-FD-001-401-0000843-8",
+                    Narration = "मुदत ठेव खात्यासाठी वर्ग (FD Opening SB Debit): 001-401-0000843-8"
+                }
+            );
+            db.SavingPassbooks.Add(new SavingPassbook { PassbookLogID = 901, SavingAccountID = 4164, TransactionID = 401 });
+            await db.SaveChangesAsync();
+
+            int healed = await SavingLedgerHelper.HealVerifiedOrphanFdSbDebitsAsync(db);
+            Assert.Equal(1, healed);
+
+            // Second run must be 100% idempotent
+            Assert.Equal(0, await SavingLedgerHelper.HealVerifiedOrphanFdSbDebitsAsync(db));
+
+            Assert.Null(await db.SavingTransactions.FindAsync(401));
+            Assert.Null(await db.SavingPassbooks.FindAsync(901));
+            Assert.NotNull(await db.SavingTransactions.FindAsync(402));
+            Assert.NotNull(await db.SavingTransactions.FindAsync(403));
+            Assert.Equal(150548m, (await db.SavingAccountMasters.FindAsync(4164))!.CurrentBalance);
+            Assert.True(await db.AuditLogs.AnyAsync(a => a.Action == "ORPHAN_FD_SB_DEBIT_HEALED" && a.EntityID == "401"));
+        }
+
+        [Fact]
+        public async Task ReportsController_SavingKhatavani_FlagsOrphanAndLiveLinkedFdAccurately()
+        {
+            await using var db = CreateContext();
+            var dt = new DateTime(2026, 4, 1);
+            await SeedBaseAsync(db, dt);
+
+            db.SavingAccountMasters.Add(new SavingAccountMaster
+            {
+                SavingAccountID = 4165,
+                BranchID = 1,
+                CustomerID = 1,
+                LedgerID = 102,
+                AccountNo = "00110100004165",
+                OpeningDate = new DateTime(2026, 3, 31),
+                OpeningBalance = 200000m,
+                CurrentBalance = 40000m,
+                Status = "Active"
+            });
+
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 510,
+                BranchID = 1,
+                CustomerID = 1,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000844-4",
+                OpeningDate = dt,
+                MaturityDate = dt.AddYears(1),
+                DepositAmount = 10000m,
+                Status = "Active"
+            });
+
+            db.SavingTransactions.AddRange(
+                new SavingTransaction
+                {
+                    TransactionID = 410,
+                    SavingAccountID = 4165,
+                    CustomerID = 1,
+                    BranchID = 1,
+                    TransactionDate = dt,
+                    TransactionType = "Withdrawal",
+                    PaymentMode = "Transfer",
+                    Amount = 150000m,
+                    VoucherNo = null,
+                    Narration = "मुदत ठेव खात्यासाठी वर्ग (FD Opening SB Debit): 00140100008436"
+                },
+                new SavingTransaction
+                {
+                    TransactionID = 411,
+                    SavingAccountID = 4165,
+                    CustomerID = 1,
+                    BranchID = 1,
+                    TransactionDate = dt,
+                    TransactionType = "Withdrawal",
+                    PaymentMode = "Transfer",
+                    Amount = 10000m,
+                    VoucherNo = null,
+                    Narration = "मुदत ठेव खात्यासाठी वर्ग (FD Opening SB Debit): 00140100008444"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            using var cache = new MemoryCache(new MemoryCacheOptions());
+            var repCtrl = new ReportsController(db, cache);
+            AttachUser(repCtrl, BuildAdminPrincipal(1, dt));
+
+            var res = await repCtrl.GetSavingKhatavani(4165, dt, dt.AddMonths(1));
+            var ok = Assert.IsType<OkObjectResult>(res.Result);
+            var dto = Assert.IsType<SavingKhatavaniReportDto>(ok.Value);
+
+            var rowOrphan = dto.Transactions.Single(t => t.TransactionID == 410);
+            Assert.True(rowOrphan.IsOrphanEntry);
+            Assert.False(rowOrphan.HasLiveLinkedFd);
+
+            var rowLiveFd = dto.Transactions.Single(t => t.TransactionID == 411);
+            Assert.True(rowLiveFd.IsOrphanEntry);
+            Assert.True(rowLiveFd.HasLiveLinkedFd);
+            Assert.Equal("001-401-0000844-4", rowLiveFd.LinkedFdAccountNo);
+        }
+
+        [Fact]
+        public async Task DeleteFdAccount_WithoutSavingAccountIdMetadata_StillReversesExactVariantSbDebit()
+        {
+            await using var db = CreateContext();
+            var dt = new DateTime(2026, 4, 1);
+            await SeedBaseAsync(db, dt);
+
+            db.SavingAccountMasters.Add(new SavingAccountMaster
+            {
+                SavingAccountID = 4166,
+                BranchID = 1,
+                CustomerID = 1,
+                LedgerID = 102,
+                AccountNo = "00110100004166",
+                OpeningDate = new DateTime(2026, 3, 31),
+                OpeningBalance = 150548m,
+                CurrentBalance = 548m,
+                Status = "Active"
+            });
+
+            // Simulate FD record missing SavingAccountID & PaymentMode metadata
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 520,
+                BranchID = 1,
+                CustomerID = 1,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000843-6",
+                OpeningDate = dt,
+                MaturityDate = dt.AddYears(1),
+                DepositAmount = 150000m,
+                Status = "Active",
+                PaymentMode = "Cash",
+                SavingAccountID = null
+            });
+
+            db.SavingTransactions.Add(new SavingTransaction
+            {
+                TransactionID = 420,
+                SavingAccountID = 4166,
+                CustomerID = 1,
+                BranchID = 1,
+                TransactionDate = dt,
+                TransactionType = "Withdrawal",
+                PaymentMode = "Transfer",
+                Amount = 150000m,
+                BalanceAfterTxn = 548m,
+                VoucherNo = null,
+                Narration = "मुदत ठेव खात्यासाठी वर्ग (FD Opening SB Debit): 00140100008436"
+            });
+            await db.SaveChangesAsync();
+
+            var fdCtrl = new FdAccountsController(db);
+            AttachUser(fdCtrl, BuildAdminPrincipal(1, dt));
+
+            var delRes = await fdCtrl.DeleteFdAccount(520);
+            Assert.IsType<OkObjectResult>(delRes);
+
+            Assert.Null(await db.FdAccounts.FindAsync(520));
+            Assert.Null(await db.SavingTransactions.FindAsync(420));
+            Assert.Equal(150548m, (await db.SavingAccountMasters.FindAsync(4166))!.CurrentBalance);
         }
     }
 }

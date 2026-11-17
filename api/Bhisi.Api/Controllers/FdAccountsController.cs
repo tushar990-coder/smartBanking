@@ -109,6 +109,19 @@ namespace Bhisi.Api.Controllers
             return DateTime.Today;
         }
 
+        private static string? TruncateMax(string? value, int maxLength)
+        {
+            if (value == null) return null;
+            return value.Length <= maxLength ? value : value.Substring(0, maxLength);
+        }
+
+        private static string GetDeepestErrorMessage(Exception ex)
+        {
+            var cur = ex;
+            while (cur.InnerException != null) cur = cur.InnerException;
+            return cur.Message;
+        }
+
         private async Task<int> ResolveMatchingFinancialYearIdAsync(DateTime targetDate)
         {
             var matchedFy = await _context.FinancialYears
@@ -1252,41 +1265,60 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // 4. Refund Savings Account if PaymentMode was Transfer (match both raw & formatted 14-digit variants + VoucherNo)
-                if (account.PaymentMode == "Transfer" && account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
+                // 4. Refund Savings Account Transfer debit (match both raw & formatted 14-digit variants + VoucherNo, even if PaymentMode/SavingAccountID wasn't preserved)
+                var accVariants = Helpers.FdRenewalRollbackHelper.BuildAccountNumberVariants(accountNo);
+                var expectedVoucherNos = accVariants.SelectMany(v => new[] { $"JV-FD-{v}", $"JV-FD-OP-{v}" }).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var sbTxnQuery = _context.SavingTransactions
+                    .Where(st => st.TransactionType == "Withdrawal" && st.PaymentMode == "Transfer");
+
+                if (account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
                 {
-                    var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
-                    if (sbAcc != null)
+                    int targetSbId = account.SavingAccountID.Value;
+                    sbTxnQuery = sbTxnQuery.Where(st => st.SavingAccountID == targetSbId);
+                }
+
+                var sbCandidateTxns = await sbTxnQuery.ToListAsync();
+                var matchedSbTxns = sbCandidateTxns.Where(st =>
+                    (!string.IsNullOrWhiteSpace(st.VoucherNo) && expectedVoucherNos.Contains(st.VoucherNo.Trim())) ||
+                    (!string.IsNullOrWhiteSpace(st.Narration) &&
+                     Helpers.SavingLedgerHelper.IsFdOpeningSbDebitNarration(st.Narration) &&
+                     accVariants.Any(av => st.Narration.Contains(av, StringComparison.OrdinalIgnoreCase)) &&
+                     Math.Abs(st.Amount - depositAmount) < 0.01m))
+                    .ToList();
+
+                // Zero-Fallback safety: if SavingAccountID wasn't recorded on FD, only auto-clean when a single unambiguous SB transaction matches both FD AccountNo and Amount
+                if ((!account.SavingAccountID.HasValue || account.SavingAccountID.Value <= 0) && matchedSbTxns.Count > 1)
+                {
+                    matchedSbTxns.Clear();
+                }
+
+                if (matchedSbTxns.Any())
+                {
+                    var affectedSbIds = new HashSet<int>();
+                    foreach (var sbTx in matchedSbTxns)
                     {
-                        sbAcc.CurrentBalance = Math.Round(sbAcc.CurrentBalance + depositAmount, 2, MidpointRounding.AwayFromZero);
-
-                        var accVariants = Helpers.FdRenewalRollbackHelper.BuildAccountNumberVariants(accountNo);
-                        var expectedVoucherNos = accVariants.SelectMany(v => new[] { $"JV-FD-{v}", $"JV-FD-OP-{v}" }).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                        var sbCandidateTxns = await _context.SavingTransactions
-                            .Where(st => st.SavingAccountID == sbAcc.SavingAccountID &&
-                                         st.TransactionType == "Withdrawal" &&
-                                         st.PaymentMode == "Transfer")
-                            .ToListAsync();
-
-                        var sbTx = sbCandidateTxns.FirstOrDefault(st =>
-                            (!string.IsNullOrWhiteSpace(st.VoucherNo) && expectedVoucherNos.Contains(st.VoucherNo.Trim())) ||
-                            (!string.IsNullOrWhiteSpace(st.Narration) && accVariants.Any(av => st.Narration.Contains(av, StringComparison.OrdinalIgnoreCase))));
-
-                        if (sbTx != null)
+                        var sbAcc = await _context.SavingAccountMasters.FindAsync(sbTx.SavingAccountID);
+                        if (sbAcc != null)
                         {
-                            var sbPbs = await _context.SavingPassbooks
-                                .Where(p => p.TransactionID == sbTx.TransactionID)
-                                .ToListAsync();
-                            if (sbPbs.Any())
-                            {
-                                _context.SavingPassbooks.RemoveRange(sbPbs);
-                            }
-                            _context.SavingTransactions.Remove(sbTx);
+                            sbAcc.CurrentBalance = Math.Round(sbAcc.CurrentBalance + sbTx.Amount, 2, MidpointRounding.AwayFromZero);
+                            affectedSbIds.Add(sbAcc.SavingAccountID);
                         }
 
-                        await _context.SaveChangesAsync();
-                        await Helpers.SavingLedgerHelper.RecalculateSavingRunningBalancesAsync(_context, new[] { sbAcc.SavingAccountID });
+                        var sbPbs = await _context.SavingPassbooks
+                            .Where(p => p.TransactionID == sbTx.TransactionID)
+                            .ToListAsync();
+                        if (sbPbs.Any())
+                        {
+                            _context.SavingPassbooks.RemoveRange(sbPbs);
+                        }
+                        _context.SavingTransactions.Remove(sbTx);
+                    }
+
+                    await _context.SaveChangesAsync();
+                    if (affectedSbIds.Any())
+                    {
+                        await Helpers.SavingLedgerHelper.RecalculateSavingRunningBalancesAsync(_context, affectedSbIds);
                     }
                 }
 
@@ -3318,7 +3350,7 @@ namespace Bhisi.Api.Controllers
                 catch (Exception ex)
                 {
                     await transaction.RollbackAsync();
-                    return BadRequest("Failed to mature close: " + ex.Message);
+                    return BadRequest("Failed to mature close: " + GetDeepestErrorMessage(ex));
                 }
             }
         }
@@ -4325,7 +4357,7 @@ namespace Bhisi.Api.Controllers
                 catch (Exception ex)
                 {
                     await transaction.RollbackAsync();
-                    return BadRequest("Failed to premature close: " + ex.Message);
+                    return BadRequest("Failed to premature close: " + GetDeepestErrorMessage(ex));
                 }
             }
         }
@@ -4373,6 +4405,15 @@ namespace Bhisi.Api.Controllers
             if (scheme == null)
             {
                 return BadRequest("Target Scheme not found.");
+            }
+
+            if (request.CustomInterestRate.HasValue)
+            {
+                decimal preCheckRate = Math.Round(request.CustomInterestRate.Value, 2, MidpointRounding.AwayFromZero);
+                if (preCheckRate <= 0m || preCheckRate > 30m)
+                {
+                    return BadRequest("नवीन मुदत ठेवीचा व्याजदर ०.०१% ते ३०% दरम्यान असणे आवश्यक आहे.");
+                }
             }
 
             int operatingBranchId = userBranchId > 0 ? userBranchId : (oldAccount.BranchID > 0 ? oldAccount.BranchID : 1);
@@ -4566,13 +4607,6 @@ namespace Bhisi.Api.Controllers
                         return BadRequest(resolvedReceipt.ValidationError);
                     }
 
-                    oldAccount.Status = "Renewed";
-                    oldAccount.Remarks = (oldAccount.Remarks ?? "")
-                        + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType}, नवीन CBS: {formattedNewAccountNo}, पावती क्र.: {resolvedReceipt.ReceiptNo}, सायकल #{nextCycleNo})"
-                        + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "")
-                        + manualAuditNote;
-                    await _context.SaveChangesAsync();
-
                     // Determine correct Financial Year corresponding to new deposit opening date (strict zero-fallback)
                     int targetFinancialYearId = await ResolveMatchingFinancialYearIdAsync(newOpeningDate);
 
@@ -4607,8 +4641,8 @@ namespace Bhisi.Api.Controllers
                     var customer = await _context.Customers.FindAsync(oldAccount.CustomerID);
                     bool isSenior = customer?.BirthDate.HasValue == true && (customer.BirthDate.Value.Date <= newOpeningDate.Date.AddYears(-60));
 
-                    // Resolve Interest Rate based on Slabs or Scheme fixed rate
-                    decimal appliedRate;
+                    // Resolve Interest Rate based on Slabs or Scheme fixed rate, with optional direct manual edit
+                    decimal schemeDefaultRate;
                     if (scheme.SchemeDurationModel == "Slab")
                     {
                         var matchedSlab = scheme.Slabs?.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
@@ -4617,12 +4651,37 @@ namespace Bhisi.Api.Controllers
                             await transaction.RollbackAsync();
                             return BadRequest($"निवडलेला नूतनीकरण कालावधी ({totalDays} दिवस) मुदत ठेव योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही (योजना मर्यादा: {scheme.MinDurationDays ?? 1} ते {scheme.MaxDurationDays ?? 0} दिवस).");
                         }
-                        appliedRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                        schemeDefaultRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
                     }
                     else
                     {
-                        appliedRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                        schemeDefaultRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
                     }
+
+                    decimal appliedRate = schemeDefaultRate;
+                    bool isCustomInterestRate = false;
+                    if (request.CustomInterestRate.HasValue)
+                    {
+                        decimal requestedRate = Math.Round(request.CustomInterestRate.Value, 2, MidpointRounding.AwayFromZero);
+                        if (requestedRate <= 0m || requestedRate > 30m)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest("नवीन मुदत ठेवीचा व्याजदर ०.०१% ते ३०% दरम्यान असणे आवश्यक आहे.");
+                        }
+                        appliedRate = requestedRate;
+                        isCustomInterestRate = Math.Abs(appliedRate - schemeDefaultRate) >= 0.01m;
+                    }
+
+                    oldAccount.Status = "Renewed";
+                    oldAccount.Remarks = TruncateMax((oldAccount.Remarks ?? "")
+                        + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType}, नवीन CBS: {formattedNewAccountNo}, पावती क्र.: {resolvedReceipt.ReceiptNo}, सायकल #{nextCycleNo})"
+                        + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "")
+                        + manualAuditNote, 1000);
+                    await _context.SaveChangesAsync();
+
+                    string customRateNote = isCustomInterestRate
+                        ? $" [✍️ मॅन्युअल व्याजदर: {appliedRate:F2}% (योजना दर: {schemeDefaultRate:F2}%){(!string.IsNullOrWhiteSpace(request.InterestRateOverrideReason) ? $" — {request.InterestRateOverrideReason.Trim()}" : "")}]"
+                        : "";
 
                     // Create New FD Account
                     var newAccount = new FdAccount
@@ -4648,11 +4707,12 @@ namespace Bhisi.Api.Controllers
                         Status = "Active",
                         NomineeName = oldAccount.NomineeName,
                         NomineeRelation = oldAccount.NomineeRelation,
-                        Remarks = $"नूतनीकरण खाते (Renewed from): {oldAccount.AccountNo} | पावती क्र.: {resolvedReceipt.ReceiptNo} (मूळ पावती: {oldEffectiveReceipt}, सायकल #{nextCycleNo})" 
+                        Remarks = TruncateMax($"नूतनीकरण खाते (Renewed from): {oldAccount.AccountNo} | पावती क्र.: {resolvedReceipt.ReceiptNo} (मूळ पावती: {oldEffectiveReceipt}, सायकल #{nextCycleNo})"
                             + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {appliedRate}%]" : "")
-                            + (newOpeningDate != closureDate ? $" [सुरुवात दिनांक: {newOpeningDate:dd/MM/yyyy}]" : "") 
+                            + customRateNote
+                            + (newOpeningDate != closureDate ? $" [सुरुवात दिनांक: {newOpeningDate:dd/MM/yyyy}]" : "")
                             + (overdueInterest > 0 ? $" [समाविष्ट Overdue व्याज: ₹{overdueInterest:F2}]" : "")
-                            + manualAuditNote
+                            + manualAuditNote, 1000)
                     };
 
                     // Maturity Calculations (Exact 365-Day Banking Basis)
@@ -4693,6 +4753,7 @@ namespace Bhisi.Api.Controllers
 
                     if (oldLiabilityLedger == null || targetLiabilityLedger == null)
                     {
+                        await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
@@ -4707,11 +4768,13 @@ namespace Bhisi.Api.Controllers
 
                     if (payableInterestAmount > 0 && payableLedger == null)
                     {
+                        await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेवीच्या देणे व्याजासाठी लेजर (FD Interest Payable Ledger) उपलब्ध नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
                     if (totalExpenseInterest > 0 && expenseLedger == null)
                     {
+                        await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेवीवरील व्याज खर्चासाठी लेजर (FD Interest Expense Ledger) उपलब्ध नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
@@ -4806,9 +4869,9 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = closureDate,
                             VoucherType = "Journal",
                             TotalAmount = oldAccount.DepositAmount,
-                            Narration = (string.IsNullOrWhiteSpace(request.Narration)
+                            Narration = TruncateMax((string.IsNullOrWhiteSpace(request.Narration)
                                 ? $"मुदत ठेव मुद्दल नूतनीकरण (FD Principal Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}"
-                                : request.Narration) + manualAuditNote,
+                                : request.Narration) + manualAuditNote, 500),
                             Status = "Pending",
                             CreatedBy = currentUserId,
                             CreatedOn = DateTime.Now
@@ -4837,7 +4900,7 @@ namespace Bhisi.Api.Controllers
                                 VoucherDate = closureDate,
                                 VoucherType = intVoucherType,
                                 TotalAmount = interestPayoutAmount,
-                                Narration = $"मुदत ठेव व्याज परतावा ({paymentMode}): खा. क्र. {oldAccount.AccountNo} (नवीन खा. क्र. {newAccount.AccountNo}){(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}" + manualAuditNote,
+                                Narration = TruncateMax($"मुदत ठेव व्याज परतावा ({paymentMode}): खा. क्र. {oldAccount.AccountNo} (नवीन खा. क्र. {newAccount.AccountNo}){(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}" + manualAuditNote, 500),
                                 Status = "Pending",
                                 CreatedBy = currentUserId,
                                 CreatedOn = DateTime.Now
@@ -4933,9 +4996,9 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = closureDate,
                             VoucherType = "Journal",
                             TotalAmount = totalMaturityAmount,
-                            Narration = (string.IsNullOrWhiteSpace(request.Narration)
+                            Narration = TruncateMax((string.IsNullOrWhiteSpace(request.Narration)
                                 ? $"मुदत ठेव नूतनीकरण (FD Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
-                                : request.Narration) + manualAuditNote,
+                                : request.Narration) + manualAuditNote, 500),
                             Status = "Pending",
                             CreatedBy = currentUserId,
                             CreatedOn = DateTime.Now
@@ -4999,6 +5062,20 @@ namespace Bhisi.Api.Controllers
                         });
                     }
 
+                    if (isCustomInterestRate)
+                    {
+                        _context.AuditLogs.Add(new AuditLog
+                        {
+                            UserID = currentUserId,
+                            Action = "FD_RENEWAL_CUSTOM_INTEREST_RATE",
+                            EntityName = "FdAccount",
+                            EntityID = newAccount.AccountNo,
+                            Details = $"FD Renewal {oldAccount.AccountNo} -> {newAccount.AccountNo}: Rate changed manually from {schemeDefaultRate:F2}% to {appliedRate:F2}%{(string.IsNullOrWhiteSpace(request.InterestRateOverrideReason) ? "" : $" | Reason: {request.InterestRateOverrideReason.Trim()}")}",
+                            Status = "Success",
+                            Timestamp = DateTime.Now
+                        });
+                    }
+
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
@@ -5017,6 +5094,8 @@ namespace Bhisi.Api.Controllers
                         MaturityDate = newAccount.MaturityDate,
                         OpeningDate = newAccount.OpeningDate,
                         InterestRate = newAccount.InterestRate,
+                        DefaultSchemeRate = schemeDefaultRate,
+                        IsCustomInterestRate = isCustomInterestRate,
                         DurationInDays = newAccount.DurationInDays,
                         DurationValue = newAccount.DurationValue,
                         DurationType = newAccount.DurationType,
@@ -5033,7 +5112,7 @@ namespace Bhisi.Api.Controllers
                 catch (Exception ex)
                 {
                     await transaction.RollbackAsync();
-                    return BadRequest("Failed to process renewal: " + ex.Message);
+                    return BadRequest("Failed to process renewal: " + GetDeepestErrorMessage(ex));
                 }
             }
         }
@@ -6660,8 +6739,8 @@ namespace Bhisi.Api.Controllers
                         ParentFdAccountID = parentFdId,
                         RootFdAccountID = rootFdId,
                         RenewalCycleNo = chainCycleNo,
-                        Remarks = $"स्वयंचलित नूतनीकरण (Auto-Renewed): मूळ खाते {oldAccount.AccountNo} | पावती क्र.: {resolvedReceipt.ReceiptNo} (मूळ पावती: {oldEffectiveReceipt}, सायकल {nextCycleCount}/{oldAccount.MaxAutoRenewalCycles})"
-                            + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {prevailingRate}%]" : "")
+                        Remarks = TruncateMax($"स्वयंचलित नूतनीकरण (Auto-Renewed): मूळ खाते {oldAccount.AccountNo} | पावती क्र.: {resolvedReceipt.ReceiptNo} (मूळ पावती: {oldEffectiveReceipt}, सायकल {nextCycleCount}/{oldAccount.MaxAutoRenewalCycles})"
+                            + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {prevailingRate}%]" : ""), 1000)
                     };
 
                     decimal p = newDepositAmount;
@@ -6691,7 +6770,7 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     oldAccount.Status = "Renewed";
-                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | स्वयंचलित नूतनीकरण: {newAccount.AccountNo} (पावती क्र.: {resolvedReceipt.ReceiptNo}, दि. {voucherPostingDate:dd/MM/yyyy})";
+                    oldAccount.Remarks = TruncateMax((oldAccount.Remarks ?? "") + $" | स्वयंचलित नूतनीकरण: {newAccount.AccountNo} (पावती क्र.: {resolvedReceipt.ReceiptNo}, दि. {voucherPostingDate:dd/MM/yyyy})", 1000);
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = await ResolveStrictSchemeLedgerByIdAsync(scheme.FdLiabilityLedgerID);
@@ -7636,6 +7715,10 @@ namespace Bhisi.Api.Controllers
         // पावती क्रमांक धोरण (Receipt Numbering Option)
         public string? ReceiptNoMode { get; set; } // "NEW_RECEIPT", "RETAIN_ORIGINAL", "CUSTOM"
         public string? CustomReceiptNo { get; set; }
+
+        // मॅन्युअल नूतनीकरण व्याजदर बदल (Auto-filled default, optional direct override)
+        public decimal? CustomInterestRate { get; set; }
+        public string? InterestRateOverrideReason { get; set; }
     }
 
     public class AutoRenewalCandidateDto

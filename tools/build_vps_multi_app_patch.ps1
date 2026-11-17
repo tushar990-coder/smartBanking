@@ -269,6 +269,14 @@ if (Test-Path $daybookOrphanHealSource) {
     Write-Host "  -> heal_orphan_loan_disbursements_and_collections.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
+# 3.1.10 Auto-Heal Verified Orphan FD Opening SB Debit Transactions (Zero-Fallback)
+$fdSbDebitHealSource = Join-Path $workspaceRoot "tools\heal_orphan_fd_sb_debit_transactions.sql"
+if (Test-Path $fdSbDebitHealSource) {
+    $fdSbDebitContent = [System.IO.File]::ReadAllText($fdSbDebitHealSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\heal_orphan_fd_sb_debit_transactions.sql"), $fdSbDebitContent, $utf8WithBom)
+    Write-Host "  -> heal_orphan_fd_sb_debit_transactions.sql included in database package (UTF-8 BOM)." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
@@ -374,6 +382,7 @@ $vouchersIbtSql = Join-Path $scriptDir "database\fix_vouchers_ibt_and_trial_bala
 $branchLedgerOpeningSql = Join-Path $scriptDir "database\create_branch_ledger_opening_balance_table.sql"
 $fdOrphanHealSql = Join-Path $scriptDir "database\heal_orphaned_closed_fd_accounts.sql"
 $daybookOrphanHealSql = Join-Path $scriptDir "database\heal_orphan_loan_disbursements_and_collections.sql"
+$fdSbDebitHealSql = Join-Path $scriptDir "database\heal_orphan_fd_sb_debit_transactions.sql"
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
 
@@ -825,6 +834,29 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
                 }
             } catch {
                 Write-Host "  -> Daybook Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            }
+        }
+
+        # 2.8 Auto-Heal Verified Orphan FD Opening SB Debit Transactions (Zero-Fallback)
+        if (Test-Path $fdSbDebitHealSql) {
+            Write-Host " [Step 2.8] Auto-Healing Verified Orphan FD SB Debit Transactions on $($target.TargetDatabase)..." -ForegroundColor Yellow
+            try {
+                $fdSbOk = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$fdSbDebitHealSql`"" -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $fdSbOk = $true }
+                    } catch {}
+                }
+                if (-not $fdSbOk) {
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$fdSbDebitHealSql`"" -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $fdSbOk = $true }
+                }
+                if ($fdSbOk) {
+                    Write-Host "  -> Verified Orphan FD SB Debit Transactions Auto-Healed Successfully!" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  -> FD SB Debit Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
             }
         }
 

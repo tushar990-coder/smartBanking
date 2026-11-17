@@ -200,6 +200,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showOrphansOnly, setShowOrphansOnly] = useState(false);
   const [showTxnModal, setShowTxnModal] = useState(false);
   const [txnPage, setTxnPage] = useState<number>(1);
   const [txnPageSize, setTxnPageSize] = useState<number>(100);
@@ -766,18 +767,25 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     };
   });
 
-  // Filter transactions by search query (Exclude Opening Balance migration entries)
-  const filteredTransactions = transactions.filter((t) => {
+  // Filter transactions by search query & orphan filter (Exclude Opening Balance migration entries)
+  const nonOpeningTransactions = transactions.filter((t) => {
     const isOpeningBal =
       t.narration && (t.narration.toLowerCase().includes('opening balance') || t.narration.includes('आरंभीची शिल्लक'));
-    if (isOpeningBal) return false;
+    return !isOpeningBal;
+  });
+
+  const orphanTransactionsCount = nonOpeningTransactions.filter((t) => !t.voucherNo).length;
+
+  const filteredTransactions = nonOpeningTransactions.filter((t) => {
+    if (showOrphansOnly && t.voucherNo) return false;
 
     const query = searchQuery.toLowerCase();
     return (
       (t.accountNo && t.accountNo.toLowerCase().includes(query)) ||
       (t.customerName && t.customerName.toLowerCase().includes(query)) ||
       (t.transactionType && t.transactionType.toLowerCase().includes(query)) ||
-      (t.voucherNo && t.voucherNo.toLowerCase().includes(query))
+      (t.voucherNo && t.voucherNo.toLowerCase().includes(query)) ||
+      (t.narration && t.narration.toLowerCase().includes(query))
     );
   });
 
@@ -1663,7 +1671,23 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowOrphansOnly((prev) => !prev);
+                      setTxnPage(1);
+                    }}
+                    className={`px-2.5 py-1 rounded-sm text-xs font-bold border h-[28px] inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      showOrphansOnly
+                        ? 'bg-rose-600 text-white border-rose-700'
+                        : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                    }`}
+                    title="फक्त व्हाउचर क्रमांक नसलेल्या अनाथ (Orphan) नोंदी दाखवा"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>फक्त अनाथ / व्हाउचर-विरहित ({orphanTransactionsCount})</span>
+                  </button>
                   <div className="flex items-center gap-1.5 text-xs">
                     <span className="font-bold text-gray-700">प्रति पान:</span>
                     <select

@@ -3,10 +3,12 @@ import axios from 'axios';
 import * as XLSX from 'xlsx';
 import Select from 'react-select';
 import CbsReportLayout, { formatDisplayDate } from './common/CbsReportLayout';
+import { useAuth } from '../context/AuthContext';
 import { 
   Search, 
   RefreshCw, 
-  PiggyBank
+  PiggyBank,
+  Trash2
 } from 'lucide-react';
 
 const fmtCurrency = (n: number | null | undefined) => {
@@ -17,6 +19,11 @@ const fmtCurrency = (n: number | null | undefined) => {
 };
 
 export default function SavingKhatavaniReport() {
+  const { user } = useAuth();
+  const canDeleteOrphanSavingTxn = ['admin', 'superadmin', 'manager', 'headoffice'].includes(
+    (user?.roleName || user?.role || '').trim().toLowerCase()
+  );
+
   const [accounts, setAccounts] = useState<any[]>([]);
   const [ledgers, setLedgers] = useState<any[]>([]);
   const [selectedLedger, setSelectedLedger] = useState<any>(null);
@@ -139,6 +146,31 @@ export default function SavingKhatavaniReport() {
       setReportData(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDeleteOrphanFromReport = async (row: any) => {
+    if (!row?.transactionID) return;
+    if (row.hasLiveLinkedFd) {
+      alert(`संलग्न मुदत ठेव खाते क्र. '${row.linkedFdAccountNo}' सिस्टीममध्ये अस्तित्वात आहे. प्रथम मुदत ठेव खाते किंवा तिचे व्हाउचर डिलीट करा.`);
+      return;
+    }
+    const amtFormatted = Number(row.debit || row.credit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const confirmMsg =
+      `व्हाउचर नसलेली अनाथ (Orphan) बचत नोंद खतावणीतून कायमची डिलीट करायची आहे का?\n\n` +
+      `दिनांक: ${formatDisplayDate(row.date)}\n` +
+      `रक्कम: ₹${amtFormatted}\n` +
+      `तपशील: ${row.particulars || '-'}\n\n` +
+      `टीप: ही नोंद काढून बचत खात्याची शिल्लक व पुढील व्यवहारांची शिल्लक अचूक पूर्ववत केली जाईल.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await axios.delete(`/api/SavingTransactions/${row.transactionID}`);
+      alert(res.data?.message || 'अनाथ बचत नोंद यशस्वीरीत्या डिलीट करून खात्याची शिल्लक पूर्ववत केली आहे.');
+      await Promise.all([handleViewReport(), fetchData()]);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data || err.message || 'नोंद डिलीट करताना त्रुटी आली.';
+      alert(typeof msg === 'string' ? msg : JSON.stringify(msg));
     }
   };
 
@@ -420,6 +452,30 @@ export default function SavingKhatavaniReport() {
                     }`}
                   >
                     {row.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'}
+                  </span>
+                )}
+                {row.isOrphanEntry && (
+                  <span className="inline-flex items-center gap-1 ml-1.5 print:hidden">
+                    {row.hasLiveLinkedFd ? (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-300"
+                        title={`संलग्न FD खाते क्र. ${row.linkedFdAccountNo} सिस्टीममध्ये अस्तित्वात आहे`}
+                      >
+                        संलग्न FD ({row.linkedFdAccountNo}) अस्तित्वात
+                      </span>
+                    ) : (
+                      canDeleteOrphanSavingTxn && row.transactionID && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteOrphanFromReport(row)}
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 inline-flex items-center gap-0.5 cursor-pointer"
+                          title="व्हाउचर व FD नसलेली अनाथ बचत नोंद डिलीट करा"
+                        >
+                          <Trash2 className="w-2.5 h-2.5" />
+                          <span>अनाथ नोंद डिलीट करा</span>
+                        </button>
+                      )
+                    )}
                   </span>
                 )}
               </td>

@@ -6897,6 +6897,37 @@ BEGIN
 END
 GO
 
+IF OBJECT_ID('dbo.FdAccounts', 'U') IS NOT NULL
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = 'FdAccounts' AND COLUMN_NAME = 'Remarks'
+          AND CHARACTER_MAXIMUM_LENGTH IS NOT NULL AND CHARACTER_MAXIMUM_LENGTH > 0 AND CHARACTER_MAXIMUM_LENGTH < 1000
+    )
+    BEGIN
+        ALTER TABLE [dbo].[FdAccounts] ALTER COLUMN [Remarks] nvarchar(1000) NULL;
+        PRINT '  -> Widened FdAccounts.Remarks to nvarchar(1000)';
+    END
+
+    -- Ensure no accidental UNIQUE index on LegacyAccountNumber / ReceiptNo blocks RETAIN_ORIGINAL renewals
+    DECLARE @dropUqFdIdxSql nvarchar(max) = N'';
+    SELECT @dropUqFdIdxSql = @dropUqFdIdxSql + N'DROP INDEX [' + i.name + N'] ON [dbo].[FdAccounts];'
+    FROM sys.indexes i
+    WHERE i.object_id = OBJECT_ID('dbo.FdAccounts')
+      AND i.is_unique = 1
+      AND i.is_primary_key = 0
+      AND i.is_unique_constraint = 0
+      AND EXISTS (
+          SELECT 1
+          FROM sys.index_columns ic
+          INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+          WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id
+            AND c.name IN ('LegacyAccountNumber', 'ReceiptNo')
+      );
+    IF LEN(@dropUqFdIdxSql) > 0 EXEC(@dropUqFdIdxSql);
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

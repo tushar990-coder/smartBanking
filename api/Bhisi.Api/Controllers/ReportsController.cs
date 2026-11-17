@@ -5930,13 +5930,40 @@ namespace Bhisi.Api.Controllers
                 if (!string.IsNullOrEmpty(t.Narration))
                     particulars += $" - {t.Narration}";
 
+                bool isOrphanEntry = string.IsNullOrWhiteSpace(t.VoucherNo) &&
+                    !(!string.IsNullOrWhiteSpace(t.Narration) &&
+                      (t.Narration.IndexOf("Opening Balance", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       t.Narration.Contains("आरंभीची शिल्लक") ||
+                       t.Narration.Contains("सुरुवातीची शिल्लक")));
+
+                bool hasLiveLinkedFd = false;
+                string? linkedFdAccountNo = null;
+                if (isOrphanEntry && SavingLedgerHelper.IsFdOpeningSbDebitNarration(t.Narration))
+                {
+                    string? extractedFdNo = SavingLedgerHelper.ExtractFdAccountNoFromSbDebitNarration(t.Narration);
+                    if (!string.IsNullOrWhiteSpace(extractedFdNo))
+                    {
+                        var liveFd = await FdRenewalRollbackHelper.FindFdAccountByAnyNumberAsync(_context, extractedFdNo);
+                        if (liveFd != null)
+                        {
+                            hasLiveLinkedFd = true;
+                            linkedFdAccountNo = liveFd.AccountNo;
+                        }
+                    }
+                }
+
                 responseTxns.Add(new SavingKhatavaniTransactionDto
                 {
+                    TransactionID = t.TransactionID,
                     Date = t.TransactionDate,
                     Particulars = particulars,
+                    VoucherNo = t.VoucherNo,
                     Debit = dr,
                     Credit = cr,
                     Balance = runningBalance,
+                    IsOrphanEntry = isOrphanEntry,
+                    HasLiveLinkedFd = hasLiveLinkedFd,
+                    LinkedFdAccountNo = linkedFdAccountNo,
                     PassingStatus = (!string.IsNullOrWhiteSpace(t.VoucherNo) && savingVoucherStatusMap.TryGetValue(t.VoucherNo, out var savVSt)) ? savVSt : null
                 });
             }

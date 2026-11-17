@@ -1,5 +1,23 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-17] - आवृत्ती v2.6.26 (Orphan FD SB Debit Auto-Heal & Cleanup, FD Renewal Remarks Widening & Auto+Editable Interest Rate, Vite Port 5173 Alignment)
+
+### 🧹 1. अनाथ FD Opening SB Debit ऑटो-हील, खतावणी क्लीनअप व डिलीट संरक्षण
+- **स्टार्टअप आणि VPS पॅच ऑटो-हील (`SavingLedgerHelper.cs`, `Program.cs`, `tools/build_vps_multi_app_patch.ps1`)**:
+  - `SavingLedgerHelper.IsFdOpeningSbDebitNarration`, `ExtractFdAccountNoFromSbDebitNarration`, आणि `HealVerifiedOrphanFdSbDebitsAsync` जोडून स्टार्टअपला आणि VPS पॅच Step `2.8` (`tools/heal_orphan_fd_sb_debit_transactions.sql`) मध्ये सुरक्षितपणे पोरक्या FD Opening SB Debit नोंदी रिव्हर्स केल्या जातात.
+- **डिलीट व रिपोर्ट सुधारणा (`FdAccountsController.cs`, `SavingTransactionsController.cs`, `ReportsController.cs`, `ReportDtos.cs`, `SavingKhatavaniReport.tsx`, `SavingTransactionEntry.tsx`)**:
+  - `DeleteFdAccount` Step 4 मध्ये `SavingAccountID`/`PaymentMode` नसतानाही अचूक व्हेरिएंट मॅचने SB डेबिट रिव्हर्सल.
+  - `SavingKhatavaniTransactionDto` / `GetSavingKhatavani` मध्ये `TransactionID`, `VoucherNo`, `IsOrphanEntry`, `HasLiveLinkedFd`, `LinkedFdAccountNo` जोडून `SavingKhatavaniReport` मध्ये `print:hidden` थेट डिलीट कृती/लाइव्ह FD इशारा व `SavingTransactionEntry` मध्ये `फक्त अनाथ / व्हाउचर-विरहित` फिल्टर दिला.
+
+### 🔄 2. मुदत ठेव नूतनीकरण (FD Renewal) सेव्ह त्रुटी दुरुस्ती व स्वयंचलित + संपादनयोग्य व्याजदर
+- **डेटाबेस व अपवाद हाताळणी (`FdAccount.cs`, `Program.cs`, `tools/master_vps_update_schema.sql`, `FdAccountsController.cs`)**:
+  - `FdAccounts.Remarks` `NVARCHAR(1000)` (`[StringLength(1000)]`) केले, `Voucher.Narration` 500 वर्णापर्यंत क्लॅम्प केले, `FdAccounts(LegacyAccountNumber / ReceiptNo)` वरील अनपेक्षित `UNIQUE` इंडेक्स आयडेम्पोटेंटली काढला आणि `GetDeepestErrorMessage` द्वारे नेमके `InnerException` कारण UI मध्ये दाखवले.
+- **ऑटो व मॅन्युअल नूतनीकरण व्याजदर (`FdAccountsController.cs`, `FdWithdrawalMaturity.tsx`)**:
+  - नवीन FD योजनेनुसार व्याजदर आपोआप भरला जातो व वापरकर्ता `नवीन ठेव व्याजदर (% p.a.)` (`CustomInterestRate`, `0.01–30%`) थेट बदलू शकतो (`↺ ऑटो दर` रीसेटसह); सर्व्हिसमध्ये मॅच्युरिटी रक्कम पुन्हा मोजून `FD_RENEWAL_CUSTOM_INTEREST_RATE` ऑडिट नोंद ठेवली जाते.
+
+### 🌐 3. लोकल Vite डेव्ह सर्व्हर पोर्ट 5173 संरेखन (`client/vite.config.ts`)
+- `client/vite.config.ts` मधील पोर्ट `5173` (`strictPort: true`) वर आणून `StartSmartBanking.bat`, `StartDevServers.bat`, `StopSmartBanking.bat` आणि `.vscode/launch.json` सोबत सुसंगत केले.
+
 ## 📅 [2026-11-17] - आवृत्ती v2.6.25 (FD Renewal Unpass Delete Fix, Orphan FD SB Debit Prevention & Cleanup, Active Login BusinessDate Preservation & InvestmentInterestReceipts Schema Sync)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

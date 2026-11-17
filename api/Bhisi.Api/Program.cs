@@ -716,6 +716,35 @@ try
             IF COL_LENGTH('FdAccounts', 'RenewalCycleNo') IS NULL
                 ALTER TABLE [dbo].[FdAccounts] ADD [RenewalCycleNo] int NOT NULL DEFAULT 0;
 
+            IF OBJECT_ID('FdAccounts', 'U') IS NOT NULL
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'FdAccounts' AND COLUMN_NAME = 'Remarks'
+                      AND CHARACTER_MAXIMUM_LENGTH IS NOT NULL AND CHARACTER_MAXIMUM_LENGTH > 0 AND CHARACTER_MAXIMUM_LENGTH < 1000
+                )
+                BEGIN
+                    ALTER TABLE [dbo].[FdAccounts] ALTER COLUMN [Remarks] nvarchar(1000) NULL;
+                END
+
+                -- Ensure no legacy accidental UNIQUE index on LegacyAccountNumber / ReceiptNo blocks RETAIN_ORIGINAL renewals
+                DECLARE @dropUqFdSql nvarchar(max) = N'';
+                SELECT @dropUqFdSql = @dropUqFdSql + N'DROP INDEX [' + i.name + N'] ON [dbo].[FdAccounts];'
+                FROM sys.indexes i
+                WHERE i.object_id = OBJECT_ID('dbo.FdAccounts')
+                  AND i.is_unique = 1
+                  AND i.is_primary_key = 0
+                  AND i.is_unique_constraint = 0
+                  AND EXISTS (
+                      SELECT 1
+                      FROM sys.index_columns ic
+                      INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                      WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id
+                        AND c.name IN ('LegacyAccountNumber', 'ReceiptNo')
+                  );
+                IF LEN(@dropUqFdSql) > 0 EXEC(@dropUqFdSql);
+            END
+
             IF OBJECT_ID('FdAccounts', 'U') IS NOT NULL AND COL_LENGTH('FdAccounts', 'ReceiptNo') IS NOT NULL
             BEGIN
                 EXEC(N'UPDATE [dbo].[FdAccounts] SET [ReceiptNo] = COALESCE(NULLIF(LTRIM(RTRIM([LegacyAccountNumber])), ''''), [AccountNo]) WHERE [ReceiptNo] IS NULL OR LTRIM(RTRIM([ReceiptNo])) = '''';');
@@ -3648,6 +3677,19 @@ try
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to clean up duplicate Pigmy per-customer import vouchers on startup");
+        }
+
+        try
+        {
+            int healedOrphanSbDebits = Bhisi.Api.Helpers.SavingLedgerHelper.HealVerifiedOrphanFdSbDebitsAsync(db).GetAwaiter().GetResult();
+            if (healedOrphanSbDebits > 0)
+            {
+                Log.Information("Healed {Count} verified orphan FD Opening SB Debit SavingTransactions on startup.", healedOrphanSbDebits);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to auto-heal orphan FD Opening SB Debit transactions on startup");
         }
     }
 

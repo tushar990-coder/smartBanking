@@ -274,6 +274,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [targetSchemeId, setTargetSchemeId] = useState<number>(0);
   const [renewalDurationValue, setRenewalDurationValue] = useState<number>(12);
   const [renewalDurationType, setRenewalDurationType] = useState<'Days' | 'Months' | 'Years'>('Months');
+  const [renewalInterestRateInput, setRenewalInterestRateInput] = useState<string>('');
+  const [isRenewalRateManuallyEdited, setIsRenewalRateManuallyEdited] = useState<boolean>(false);
   const [renewedSuccessData, setRenewedSuccessData] = useState<any | null>(null);
   const [showReceiptPrintModal, setShowReceiptPrintModal] = useState<boolean>(false);
   const [printInitialSide, setPrintInitialSide] = useState<'front' | 'endorsement'>('front');
@@ -380,6 +382,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
   const handleTargetSchemeChange = (nextSchemeId: number) => {
     setTargetSchemeId(nextSchemeId);
+    setIsRenewalRateManuallyEdited(false);
     const sch = schemes.find(s => s.fdSchemeID === nextSchemeId);
     if (sch) {
       const { durType, durVal } = resolveDefaultRenewalTenorForScheme(sch, selectedAccount);
@@ -390,6 +393,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
   // Automatically sync renewal scheme & valid tenor whenever selected FD account or schemes list loads/changes
   useEffect(() => {
+    setIsRenewalRateManuallyEdited(false);
     if (schemes.length === 0) return;
     if (selectedAccount) {
       const matchedSch =
@@ -1304,7 +1308,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     const isSenior = Boolean(selectedAccount.isSeniorCitizen);
 
     // Resolve rate (1-to-1 match with Backend FdAccountsController.Renew Slab check)
-    let appliedRate = targetScheme.interestRate;
+    let schemeDefaultRate = targetScheme.interestRate;
     let matchedSlab: FdSchemeInterestSlab | null = null;
     const activeSlabs = (targetScheme.slabs || []).filter(s => s.isActive !== false);
     const isSlabModel = targetScheme.schemeDurationModel === 'Slab' && activeSlabs.length > 0;
@@ -1313,13 +1317,22 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const matched = activeSlabs.find(s => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays));
       if (matched) {
         matchedSlab = matched;
-        appliedRate = isSenior && Number(matched.seniorCitizenRate) > 0 ? Number(matched.seniorCitizenRate) : Number(matched.interestRate);
+        schemeDefaultRate = isSenior && Number(matched.seniorCitizenRate) > 0 ? Number(matched.seniorCitizenRate) : Number(matched.interestRate);
       } else {
-        appliedRate = isSenior && Number(targetScheme.seniorCitizenInterestRate) > 0 ? Number(targetScheme.seniorCitizenInterestRate) : Number(targetScheme.interestRate);
+        schemeDefaultRate = isSenior && Number(targetScheme.seniorCitizenInterestRate) > 0 ? Number(targetScheme.seniorCitizenInterestRate) : Number(targetScheme.interestRate);
       }
     } else {
-      appliedRate = isSenior && Number(targetScheme.seniorCitizenInterestRate) > 0 ? Number(targetScheme.seniorCitizenInterestRate) : Number(targetScheme.interestRate);
+      schemeDefaultRate = isSenior && Number(targetScheme.seniorCitizenInterestRate) > 0 ? Number(targetScheme.seniorCitizenInterestRate) : Number(targetScheme.interestRate);
     }
+
+    const parsedManualRate = parseFloat(renewalInterestRateInput);
+    const hasValidManualRate =
+      isRenewalRateManuallyEdited &&
+      renewalInterestRateInput.trim() !== '' &&
+      Number.isFinite(parsedManualRate) &&
+      parsedManualRate > 0;
+    const appliedRate = hasValidManualRate ? Number(parsedManualRate.toFixed(2)) : schemeDefaultRate;
+    const isCustomInterestRate = Math.abs(appliedRate - schemeDefaultRate) >= 0.01;
 
     const isSlabValid = !isSlabModel || matchedSlab !== null;
     const validSlabsText = isSlabModel
@@ -1364,7 +1377,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       durVal,
       durType,
       totalDays,
+      schemeDefaultRate,
       appliedRate,
+      isCustomInterestRate,
       isSenior,
       matchedSlab,
       isSlabModel,
@@ -1388,7 +1403,23 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     customOverdueInterest,
     closureDate,
     renewalDurationValue,
-    renewalDurationType
+    renewalDurationType,
+    renewalInterestRateInput,
+    isRenewalRateManuallyEdited
+  ]);
+
+  // Auto-populate Renewal Interest Rate from scheme/slab/senior resolution unless operator manually edited it
+  useEffect(() => {
+    if (actionType !== 'Renewal' || !renewalSimulation) return;
+    if (!isRenewalRateManuallyEdited) {
+      setRenewalInterestRateInput(String(Number(renewalSimulation.schemeDefaultRate || 0)));
+    }
+  }, [
+    actionType,
+    renewalSimulation?.schemeDefaultRate,
+    isRenewalRateManuallyEdited,
+    selectedAccount?.fdAccountID,
+    targetSchemeId
   ]);
 
   // Helper to resolve mapped ledgers for selected account scheme
@@ -1661,6 +1692,14 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           return;
         }
 
+        const parsedEditedRate = parseFloat(renewalInterestRateInput);
+        if (renewalInterestRateInput.trim() !== '' && (!Number.isFinite(parsedEditedRate) || parsedEditedRate <= 0 || parsedEditedRate > 30)) {
+          setError('⚠️ नवीन मुदत ठेवीचा व्याजदर ०.०१% ते ३०% दरम्यान असणे आवश्यक आहे.');
+          setLoading(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+
         const targetScheme = schemes.find(s => s.fdSchemeID === targetSchemeId);
         const payload = {
           targetSchemeID: targetSchemeId,
@@ -1682,6 +1721,11 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           customAccruedInterest: isManualOverride && customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null,
           customOverdueInterest: isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
           manualOverrideReason: isManualOverride ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null,
+          // Auto-populated & Editable Renewal Interest Rate
+          customInterestRate:
+            isRenewalRateManuallyEdited && renewalInterestRateInput.trim() !== '' && Number.isFinite(parsedEditedRate) && parsedEditedRate > 0
+              ? Number(parsedEditedRate.toFixed(2))
+              : null,
           // पावती क्रमांक धोरण
           receiptNoMode: receiptNoMode,
           customReceiptNo: receiptNoMode === 'CUSTOM' && customReceiptNo.trim() ? customReceiptNo.trim() : null
@@ -2931,6 +2975,60 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                       </div>
                                     </div>
                                   )}
+                                </FormRow>
+
+                                {/* Auto-filled & Editable New FD Interest Rate */}
+                                <FormRow label="नवीन ठेव व्याजदर (% p.a.)" required>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="relative flex items-center">
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0.01"
+                                        max="30"
+                                        value={renewalInterestRateInput}
+                                        onChange={(e) => {
+                                          setIsRenewalRateManuallyEdited(true);
+                                          setRenewalInterestRateInput(e.target.value);
+                                          setError('');
+                                        }}
+                                        placeholder="उदा. 9.00"
+                                        className={`${ctrl} w-28 pr-6 font-bold font-mono text-center ${
+                                          renewalSimulation?.isCustomInterestRate
+                                            ? 'border-amber-500 bg-amber-50/70 text-amber-950'
+                                            : ''
+                                        }`}
+                                        required
+                                      />
+                                      <span className="absolute right-2 text-[11px] font-bold text-gray-500 pointer-events-none">%</span>
+                                    </div>
+                                    {renewalSimulation && (
+                                      <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-1 rounded">
+                                        योजना दर (Auto): <b className="font-mono text-slate-900">{renewalSimulation.schemeDefaultRate}%</b>
+                                      </span>
+                                    )}
+                                    {renewalSimulation?.isCustomInterestRate && (
+                                      <>
+                                        <span className="text-[10.5px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded">
+                                          ✍️ मॅन्युअल दर लागू
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setIsRenewalRateManuallyEdited(false);
+                                            if (renewalSimulation) {
+                                              setRenewalInterestRateInput(String(Number(renewalSimulation.schemeDefaultRate || 0)));
+                                            }
+                                            setError('');
+                                          }}
+                                          className="text-[11px] font-bold text-primary hover:underline bg-primary/5 border border-primary/25 px-2 py-0.5 rounded cursor-pointer"
+                                          title="योजनेचा मूळ ऑटो दर परत लागू करा"
+                                        >
+                                          ↺ ऑटो दर
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </FormRow>
 
                                 {isOverdue && (

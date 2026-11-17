@@ -73,9 +73,27 @@ namespace Bhisi.Api.Controllers
 
         private async Task<DateTime> ResolveActiveBusinessDateAsync(int branchId)
         {
-            int targetBranchId = branchId > 0 ? branchId : (User.GetOperatingBranchId() > 0 ? User.GetOperatingBranchId() : 1);
-            DateTime? dbBusinessDate = null;
+            if (Request?.Headers != null &&
+                Request.Headers.TryGetValue("X-Business-Date", out var headerVals))
+            {
+                var rawHeaderDate = headerVals.FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(rawHeaderDate) &&
+                    DateTime.TryParse(rawHeaderDate, out DateTime parsedHeaderDate) &&
+                    parsedHeaderDate.Year >= 2000)
+                {
+                    return parsedHeaderDate.Date;
+                }
+            }
 
+            var claimDate = User?.FindFirst("BusinessDate")?.Value;
+            if (!string.IsNullOrWhiteSpace(claimDate) &&
+                DateTime.TryParse(claimDate, out DateTime parsedClaimDate) &&
+                parsedClaimDate.Year >= 2000)
+            {
+                return parsedClaimDate.Date;
+            }
+
+            int targetBranchId = branchId > 0 ? branchId : (User.GetOperatingBranchId() > 0 ? User.GetOperatingBranchId() : 1);
             var activeRecord = await _context.BranchDayEndStatuses
                 .Where(b => b.BranchID == targetBranchId && b.BusinessDate.Year >= 2000)
                 .OrderByDescending(b => b.BusinessDate)
@@ -83,20 +101,9 @@ namespace Bhisi.Api.Controllers
 
             if (activeRecord != null)
             {
-                dbBusinessDate = activeRecord.IsDayClosed
+                return activeRecord.IsDayClosed
                     ? activeRecord.BusinessDate.Date.AddDays(1)
                     : activeRecord.BusinessDate.Date;
-            }
-
-            if (dbBusinessDate.HasValue)
-            {
-                return dbBusinessDate.Value;
-            }
-
-            var claimDate = User?.FindFirst("BusinessDate")?.Value;
-            if (!string.IsNullOrWhiteSpace(claimDate) && DateTime.TryParse(claimDate, out DateTime parsedClaimDate))
-            {
-                return parsedClaimDate.Date;
             }
 
             return DateTime.Today;
@@ -1245,19 +1252,26 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // 4. Refund Savings Account if PaymentMode was Transfer
+                // 4. Refund Savings Account if PaymentMode was Transfer (match both raw & formatted 14-digit variants + VoucherNo)
                 if (account.PaymentMode == "Transfer" && account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
                 {
                     var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
                     if (sbAcc != null)
                     {
-                        sbAcc.CurrentBalance += depositAmount;
+                        sbAcc.CurrentBalance = Math.Round(sbAcc.CurrentBalance + depositAmount, 2, MidpointRounding.AwayFromZero);
 
-                        var sbTx = !string.IsNullOrEmpty(accountNo)
-                            ? await _context.SavingTransactions
-                                .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && st.Narration != null && st.Narration.Contains(accountNo))
-                                .FirstOrDefaultAsync()
-                            : null;
+                        var accVariants = Helpers.FdRenewalRollbackHelper.BuildAccountNumberVariants(accountNo);
+                        var expectedVoucherNos = accVariants.SelectMany(v => new[] { $"JV-FD-{v}", $"JV-FD-OP-{v}" }).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        var sbCandidateTxns = await _context.SavingTransactions
+                            .Where(st => st.SavingAccountID == sbAcc.SavingAccountID &&
+                                         st.TransactionType == "Withdrawal" &&
+                                         st.PaymentMode == "Transfer")
+                            .ToListAsync();
+
+                        var sbTx = sbCandidateTxns.FirstOrDefault(st =>
+                            (!string.IsNullOrWhiteSpace(st.VoucherNo) && expectedVoucherNos.Contains(st.VoucherNo.Trim())) ||
+                            (!string.IsNullOrWhiteSpace(st.Narration) && accVariants.Any(av => st.Narration.Contains(av, StringComparison.OrdinalIgnoreCase))));
 
                         if (sbTx != null)
                         {
@@ -1270,6 +1284,9 @@ namespace Bhisi.Api.Controllers
                             }
                             _context.SavingTransactions.Remove(sbTx);
                         }
+
+                        await _context.SaveChangesAsync();
+                        await Helpers.SavingLedgerHelper.RecalculateSavingRunningBalancesAsync(_context, new[] { sbAcc.SavingAccountID });
                     }
                 }
 
@@ -1567,10 +1584,11 @@ namespace Bhisi.Api.Controllers
             try
             {
                 // If SB transfer, deduct total from SB account
+                SavingTransaction? bulkSbDebitTxn = null;
                 if (sbAcc != null)
                 {
                     sbAcc.CurrentBalance -= req.TotalAmount;
-                    _context.SavingTransactions.Add(new SavingTransaction
+                    bulkSbDebitTxn = new SavingTransaction
                     {
                         SavingAccountID = sbAcc.SavingAccountID,
                         CustomerID = sbAcc.CustomerID,
@@ -1583,7 +1601,8 @@ namespace Bhisi.Api.Controllers
                         Narration = $"बल्क मुदत ठेव खात्यांसाठी वर्ग ({receiptItems.Count} FD Receipts Total SB Debit)",
                         CreatedBy = currentOperatorId,
                         CreatedOn = DateTime.Now
-                    });
+                    };
+                    _context.SavingTransactions.Add(bulkSbDebitTxn);
                 }
 
                 var createdAccounts = new List<FdAccount>();
@@ -1802,9 +1821,15 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 voucher.VoucherType = isBulkTransfer ? "Journal" : "Receipt"; // Debit Leg: Cash / Bank / SB
+                if (bulkSbDebitTxn != null)
+                {
+                    bulkSbDebitTxn.VoucherNo = voucher.VoucherNo;
+                    _context.Entry(bulkSbDebitTxn).State = EntityState.Modified;
+                }
                 foreach (var st in _context.SavingTransactions.Local.Where(x => string.IsNullOrEmpty(x.VoucherNo)))
                 {
                     st.VoucherNo = voucher.VoucherNo;
+                    _context.Entry(st).State = EntityState.Modified;
                 }
                 bool isDebitCustomerPersonal = (req.PaymentMode == "Transfer" || req.PaymentMode == "Savings") 
                     && debitLedger.AccountType != "Cash In Hand" 

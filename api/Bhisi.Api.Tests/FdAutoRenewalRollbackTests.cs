@@ -517,5 +517,163 @@ namespace Bhisi.Api.Tests
             string okNo = await FdRenewalRollbackHelper.BuildCollisionSafeVoucherNoAsync(db, "JV-FD-AUTOREN-FD002");
             Assert.Equal("JV-FD-AUTOREN-FD002", okNo);
         }
+
+        [Fact]
+        public async Task RejectVoucher_AfterPassAndUnpassRenewal_IgnoresParentOpeningMigrationVoucher_AndRollsBackCleanly()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 1);
+            await SeedEnvironmentAsync(db, businessDate);
+
+            // Seed old migrated FD account with Approved JV-FD-OP-* voucher
+            var oldFd = new FdAccount
+            {
+                FdAccountID = 980,
+                BranchID = 1,
+                CustomerID = 1,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000206-6",
+                OpeningDate = new DateTime(2025, 4, 1),
+                MaturityDate = new DateTime(2026, 3, 31),
+                DepositAmount = 50000m,
+                Status = "Renewed",
+                IsLegacyAccount = true
+            };
+            var newFd = new FdAccount
+            {
+                FdAccountID = 981,
+                BranchID = 1,
+                CustomerID = 1,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000892-3",
+                OpeningDate = businessDate,
+                MaturityDate = businessDate.AddYears(1),
+                DepositAmount = 50000m,
+                Status = "Active",
+                ParentFdAccountID = 980,
+                RootFdAccountID = 980,
+                RenewalCycleNo = 1
+            };
+            db.FdAccounts.AddRange(oldFd, newFd);
+
+            var opVoucher = new Voucher
+            {
+                VoucherID = 8001,
+                BranchID = 1,
+                VoucherNo = "JV-FD-OP-001-401-0000206-6",
+                VoucherDate = new DateTime(2026, 3, 31),
+                VoucherType = "Journal",
+                TotalAmount = 50000m,
+                Status = "Approved",
+                ApprovedBy = 1,
+                ApprovedOn = new DateTime(2026, 3, 31)
+            };
+            var renVoucher = new Voucher
+            {
+                VoucherID = 8002,
+                BranchID = 1,
+                VoucherNo = "JV-FD-REN-001-401-0000892-3",
+                VoucherDate = businessDate,
+                VoucherType = "Journal",
+                TotalAmount = 50000m,
+                Status = "Pending",
+                CreatedBy = 2
+            };
+            renVoucher.VoucherDetails.Add(new VoucherDetail { VoucherDetailID = 9001, VoucherID = 8002, LedgerID = 101, DrCr = "Dr", Amount = 50000m, CustomerID = 1 });
+            renVoucher.VoucherDetails.Add(new VoucherDetail { VoucherDetailID = 9002, VoucherID = 8002, LedgerID = 101, DrCr = "Cr", Amount = 50000m, CustomerID = 1 });
+            db.Vouchers.AddRange(opVoucher, renVoucher);
+
+            db.FdTransactions.AddRange(
+                // Normal Opening row for old FD tied to JV-FD-OP-*
+                new FdTransaction { FdTransactionID = 810, BranchID = 1, FdAccountID = 980, VoucherID = 8001, TransactionDate = new DateTime(2025, 4, 1), TransactionType = "Opening", DebitCredit = "Cr", Amount = 50000m },
+                // Cross-linked rows matching the exact discovery paths that previously leaked JV-FD-OP-* into candidateSiblingIds
+                new FdTransaction { FdTransactionID = 811, BranchID = 1, FdAccountID = 980, VoucherID = 8001, TransactionDate = businessDate, TransactionType = "Interest Payout", DebitCredit = "Dr", Amount = 0m },
+                new FdTransaction { FdTransactionID = 812, BranchID = 1, FdAccountID = 981, VoucherID = 8001, TransactionDate = businessDate, TransactionType = "Opening", DebitCredit = "Cr", Amount = 50000m },
+                // Renewal cycle rows on JV-FD-REN-*
+                new FdTransaction { FdTransactionID = 813, BranchID = 1, FdAccountID = 980, VoucherID = 8002, TransactionDate = businessDate, TransactionType = "Renewal", DebitCredit = "Dr", Amount = 50000m },
+                new FdTransaction { FdTransactionID = 814, BranchID = 1, FdAccountID = 981, VoucherID = 8002, TransactionDate = businessDate, TransactionType = "Opening", DebitCredit = "Cr", Amount = 50000m }
+            );
+            await db.SaveChangesAsync();
+
+            var adminUser = BuildPrincipal(1, "admin", "Admin", 1, businessDate);
+            var postingCtrl = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(postingCtrl, adminUser);
+
+            // 1. Pass then Unpass the renewal voucher
+            var passRes = await postingCtrl.PostVouchers(new VoucherPostingController.PostVouchersRequest
+            {
+                VoucherIds = new List<int> { 8002 },
+                BusinessDate = businessDate
+            });
+            Assert.IsType<OkObjectResult>(passRes);
+
+            var unpassRes = await postingCtrl.UnpassVouchers(new VoucherPostingController.UnpassVouchersRequest
+            {
+                VoucherIds = new List<int> { 8002 },
+                Reason = "Test unpass before delete"
+            });
+            Assert.IsType<OkObjectResult>(unpassRes);
+
+            // 2. Delete the unpassed renewal voucher -> must NOT complain about Approved JV-FD-OP-001-401-0000206-6
+            var rejectRes = await postingCtrl.RejectVoucher(8002, new VoucherPostingController.VoucherRejectDto
+            {
+                Reason = "Rollback erroneous renewal after unpass"
+            });
+            Assert.IsType<OkObjectResult>(rejectRes);
+
+            Assert.Null(await db.Vouchers.FindAsync(8002));
+            Assert.Null(await db.FdAccounts.FindAsync(981));
+
+            var preservedOpVoucher = await db.Vouchers.FindAsync(8001);
+            Assert.NotNull(preservedOpVoucher);
+            Assert.Equal("Approved", preservedOpVoucher!.Status);
+
+            var restoredOldFd = await db.FdAccounts.FindAsync(980);
+            Assert.NotNull(restoredOldFd);
+            Assert.Equal("Matured", restoredOldFd!.Status);
+            Assert.NotNull(await db.FdTransactions.FindAsync(810));
+            Assert.Null(await db.FdTransactions.FindAsync(813));
+        }
+
+        [Fact]
+        public async Task RejectVoucher_PrincipalOnlyRenewal_StillStrictlyBlocksApprovedCycleInterestSibling()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 1);
+            await SeedEnvironmentAsync(db, businessDate);
+
+            db.FdAccounts.AddRange(
+                new FdAccount { FdAccountID = 985, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "001-401-0000207-4", OpeningDate = new DateTime(2025, 4, 1), MaturityDate = new DateTime(2026, 3, 31), DepositAmount = 50000m, Status = "Renewed" },
+                new FdAccount { FdAccountID = 986, BranchID = 1, CustomerID = 1, FdSchemeID = 1, AccountNo = "001-401-0000893-5", OpeningDate = businessDate, MaturityDate = businessDate.AddYears(1), DepositAmount = 50000m, Status = "Active", ParentFdAccountID = 985, RootFdAccountID = 985, RenewalCycleNo = 1 }
+            );
+
+            // Even without RelatedVoucherID, PAY-FD-INT-{newAcc} linked via Interest Payout on oldFd must block delete while Approved
+            db.Vouchers.AddRange(
+                new Voucher { VoucherID = 8010, BranchID = 1, VoucherNo = "JV-FD-REN-001-401-0000893-5", VoucherDate = businessDate, VoucherType = "Journal", TotalAmount = 50000m, Status = "Pending" },
+                new Voucher { VoucherID = 8011, BranchID = 1, VoucherNo = "PAY-FD-INT-001-401-0000893-5", VoucherDate = businessDate, VoucherType = "Payment", TotalAmount = 4500m, Status = "Approved", ApprovedBy = 1, ApprovedOn = businessDate }
+            );
+            db.FdTransactions.AddRange(
+                new FdTransaction { FdTransactionID = 820, BranchID = 1, FdAccountID = 985, VoucherID = 8010, TransactionDate = businessDate, TransactionType = "Renewal", DebitCredit = "Dr", Amount = 50000m },
+                new FdTransaction { FdTransactionID = 821, BranchID = 1, FdAccountID = 986, VoucherID = 8010, TransactionDate = businessDate, TransactionType = "Opening", DebitCredit = "Cr", Amount = 50000m },
+                new FdTransaction { FdTransactionID = 822, BranchID = 1, FdAccountID = 985, VoucherID = 8011, TransactionDate = businessDate, TransactionType = "Interest Payout", DebitCredit = "Dr", Amount = 4500m }
+            );
+            await db.SaveChangesAsync();
+
+            var adminUser = BuildPrincipal(1, "admin", "Admin", 1, businessDate);
+            var postingCtrl = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(postingCtrl, adminUser);
+
+            var rejectRes = await postingCtrl.RejectVoucher(8010, new VoucherPostingController.VoucherRejectDto
+            {
+                Reason = "Should block because PAY-FD-INT is still approved"
+            });
+            var objRes = Assert.IsAssignableFrom<ObjectResult>(rejectRes);
+            Assert.Equal(StatusCodes.Status400BadRequest, objRes.StatusCode);
+            Assert.Contains("PAY-FD-INT-001-401-0000893-5", objRes.Value?.ToString() ?? "");
+
+            Assert.NotNull(await db.Vouchers.FindAsync(8010));
+            Assert.NotNull(await db.Vouchers.FindAsync(8011));
+            Assert.NotNull(await db.FdAccounts.FindAsync(986));
+        }
     }
 }

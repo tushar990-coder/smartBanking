@@ -522,6 +522,60 @@ namespace Bhisi.Api.Helpers
 
             return protectedIds;
         }
+
+        /// <summary>
+        /// Chronologically recalculates BalanceAfterTxn for every transaction on each specified
+        /// saving account, anchored backward from its current CurrentBalance.
+        /// </summary>
+        public static async Task RecalculateSavingRunningBalancesAsync(
+            AppDbContext context,
+            IEnumerable<int> savingAccountIds)
+        {
+            foreach (int savAccId in savingAccountIds.Distinct().Where(id => id > 0))
+            {
+                var savAcc = await context.SavingAccountMasters.FindAsync(savAccId);
+                if (savAcc == null) continue;
+
+                var txns = await context.SavingTransactions
+                    .Where(t => t.SavingAccountID == savAccId)
+                    .OrderBy(t => t.TransactionDate)
+                    .ThenBy(t => t.TransactionID)
+                    .ToListAsync();
+
+                if (!txns.Any()) continue;
+
+                decimal netTxEffect = 0m;
+                foreach (var t in txns)
+                {
+                    if (t.TransactionType == "Deposit" || t.TransactionType == "Interest")
+                        netTxEffect += t.Amount;
+                    else if (t.TransactionType == "Withdrawal" || t.TransactionType == "Charges")
+                        netTxEffect -= t.Amount;
+                }
+
+                decimal running = Math.Round(savAcc.CurrentBalance - netTxEffect, 2, MidpointRounding.AwayFromZero);
+                bool changed = false;
+                foreach (var t in txns)
+                {
+                    if (t.TransactionType == "Deposit" || t.TransactionType == "Interest")
+                        running = Math.Round(running + t.Amount, 2, MidpointRounding.AwayFromZero);
+                    else if (t.TransactionType == "Withdrawal" || t.TransactionType == "Charges")
+                        running = Math.Round(running - t.Amount, 2, MidpointRounding.AwayFromZero);
+
+                    if (Math.Abs(t.BalanceAfterTxn - running) >= 0.01m)
+                    {
+                        t.BalanceAfterTxn = running;
+                        context.Entry(t).State = EntityState.Modified;
+                        changed = true;
+                    }
+                }
+
+                if (changed)
+                {
+                    await context.SaveChangesAsync();
+                }
+            }
+        }
     }
 }
 

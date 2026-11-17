@@ -3253,9 +3253,8 @@ try
                 IF COL_LENGTH('InvestmentInterestReceipts', 'Remarks') IS NULL
                     ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [Remarks] NVARCHAR(300) NULL;
 
-                UPDATE [dbo].[InvestmentInterestReceipts]
-                SET [GrossAmount] = [ReceivedAmount]
-                WHERE [GrossAmount] = 0 AND [ReceivedAmount] > 0;
+                IF COL_LENGTH('InvestmentInterestReceipts', 'GrossAmount') IS NOT NULL
+                    EXEC(N'UPDATE [dbo].[InvestmentInterestReceipts] SET [GrossAmount] = [ReceivedAmount] WHERE [GrossAmount] = 0 AND [ReceivedAmount] > 0;');
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentInterestAccruals')
@@ -3321,7 +3320,7 @@ try
                 IF COL_LENGTH('Vouchers', 'TargetBranchID') IS NULL
                     ALTER TABLE [dbo].[Vouchers] ADD [TargetBranchID] int NULL;
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Vouchers_IsIbtVoucher' AND object_id = OBJECT_ID('Vouchers'))
-                    CREATE NONCLUSTERED INDEX [IX_Vouchers_IsIbtVoucher] ON [dbo].[Vouchers] ([IsIbtVoucher], [BranchID]);
+                    EXEC(N'CREATE NONCLUSTERED INDEX [IX_Vouchers_IsIbtVoucher] ON [dbo].[Vouchers] ([IsIbtVoucher], [BranchID]);');
             END
 
             IF OBJECT_ID(N'[LoanCollections]', N'U') IS NOT NULL
@@ -3329,7 +3328,7 @@ try
                 IF COL_LENGTH('LoanCollections', 'HomeBranchVoucherID') IS NULL
                     ALTER TABLE [dbo].[LoanCollections] ADD [HomeBranchVoucherID] int NULL;
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_LoanCollections_HomeBranchVoucherID' AND object_id = OBJECT_ID('LoanCollections'))
-                    CREATE NONCLUSTERED INDEX [IX_LoanCollections_HomeBranchVoucherID] ON [dbo].[LoanCollections] ([HomeBranchVoucherID]);
+                    EXEC(N'CREATE NONCLUSTERED INDEX [IX_LoanCollections_HomeBranchVoucherID] ON [dbo].[LoanCollections] ([HomeBranchVoucherID]);');
             END
 
             IF OBJECT_ID(N'[Branches]', N'U') IS NOT NULL

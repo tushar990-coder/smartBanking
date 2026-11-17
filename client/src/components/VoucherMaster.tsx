@@ -180,7 +180,9 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
   const [editingVoucherId, setEditingVoucherId] = useState<number | null>(null);
   const [voucherNo, setVoucherNo] = useState('AUTO');
-  const [voucherDate, setVoucherDate] = useState(user?.businessDate || new Date().toISOString().split('T')[0]);
+  const [voucherDate, setVoucherDate] = useState(
+    user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0]
+  );
   const [voucherType, setVoucherType] = useState('Receipt');
   const [voucherPaymentMode, setVoucherPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
   const [narration, setNarration] = useState('');
@@ -194,9 +196,14 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const BRANCH_API = '/api/Branches';
 
   useEffect(() => {
+    if (user?.businessDate && !editingVoucherId && !isPassingMode) {
+      setVoucherDate(user.businessDate.split('T')[0]);
+    }
+  }, [user?.businessDate, editingVoucherId, isPassingMode]);
+
+  useEffect(() => {
     fetchNextVoucherNo('Receipt', selectedBranchId);
     fetchBranches();
-    fetchBranchBusinessDate(selectedBranchId);
     fetchLedgers();
     const timer = setTimeout(() => {
       fetchCustomers(selectedBranchId);
@@ -308,20 +315,6 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       alert('व्हाउचर नामंजूर करताना त्रुटी आली.');
     } finally {
       setPassingActionLoading(false);
-    }
-  };
-
-  const fetchBranchBusinessDate = async (bId: number) => {
-    try {
-      const res = await fetch(`/api/EodOperations/status/${bId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.businessDate) {
-          setVoucherDate(data.businessDate.split('T')[0]);
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching business date:', e);
     }
   };
 
@@ -501,7 +494,6 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newBranchId = parseInt(e.target.value);
     setSelectedBranchId(newBranchId);
-    fetchBranchBusinessDate(newBranchId);
     fetchNextVoucherNo(voucherType, newBranchId);
     fetchCustomers(newBranchId);
 

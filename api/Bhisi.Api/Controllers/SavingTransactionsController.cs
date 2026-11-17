@@ -666,6 +666,63 @@ namespace Bhisi.Api.Controllers
                     return NotFound(new { message = "खाते सापडले नाही." });
                 }
 
+                // 0. Zero-Fallback Guard: Protect live vouchers & live linked FD accounts from silent orphan deletion
+                Voucher? linkedVoucher = null;
+                if (!string.IsNullOrWhiteSpace(txn.VoucherNo))
+                {
+                    string cleanVNo = txn.VoucherNo.Trim();
+                    linkedVoucher = await _context.Vouchers
+                        .Include(v => v.VoucherDetails)
+                        .FirstOrDefaultAsync(v => v.VoucherNo == cleanVNo);
+
+                    if (linkedVoucher != null)
+                    {
+                        if (string.Equals(linkedVoucher.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+                        {
+                            await dbTransaction.RollbackAsync();
+                            return BadRequest(new
+                            {
+                                message = $"हा व्यवहार मंजूर व्हाउचर क्र. '{linkedVoucher.VoucherNo}' शी जोडलेला आहे. प्रथम व्हाउचर पासिंगमधून अन-पास (Unpass) करून डिलीट करा."
+                            });
+                        }
+
+                        bool isModuleVoucher =
+                            cleanVNo.StartsWith("JV-FD-", StringComparison.OrdinalIgnoreCase) ||
+                            cleanVNo.StartsWith("REC-FD-", StringComparison.OrdinalIgnoreCase) ||
+                            cleanVNo.StartsWith("JV-RD-", StringComparison.OrdinalIgnoreCase) ||
+                            cleanVNo.StartsWith("VCH-SAV-CLS-", StringComparison.OrdinalIgnoreCase);
+
+                        if (isModuleVoucher)
+                        {
+                            await dbTransaction.RollbackAsync();
+                            return BadRequest(new
+                            {
+                                message = $"हा व्यवहार मॉड्यूल व्हाउचर क्र. '{linkedVoucher.VoucherNo}' शी जोडलेला आहे. संबंधित खाते व व्हाउचर अचूक रोलबॅक करण्यासाठी Pass Voucher मधून डिलीट करा."
+                            });
+                        }
+                    }
+                }
+
+                // Check if this is an FD Opening SB Debit whose FD account still exists in FdAccounts
+                if (!string.IsNullOrWhiteSpace(txn.Narration) &&
+                    txn.Narration.Contains("FD Opening SB Debit", StringComparison.OrdinalIgnoreCase))
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(txn.Narration, @"([0-9][0-9\-]{8,25}[0-9])");
+                    if (match.Success)
+                    {
+                        string extractedFdNo = match.Groups[1].Value.Trim();
+                        var existingLinkedFd = await FdRenewalRollbackHelper.FindFdAccountByAnyNumberAsync(_context, extractedFdNo);
+                        if (existingLinkedFd != null)
+                        {
+                            await dbTransaction.RollbackAsync();
+                            return BadRequest(new
+                            {
+                                message = $"संलग्न मुदत ठेव खाते क्र. '{existingLinkedFd.AccountNo}' सिस्टीममध्ये अस्तित्वात आहे ({existingLinkedFd.Status}). ही बचत नोंद थेट डिलीट करण्यापूर्वी संबंधित मुदत ठेव खाते किंवा तिचे व्हाउचर डिलीट करा."
+                            });
+                        }
+                    }
+                }
+
                 // 1. Check Closed EOD Business Date
                 var dayStatus = await _context.BranchDayEndStatuses
                     .Where(b => b.BranchID == account.BranchID && b.BusinessDate.Date == txn.TransactionDate.Date)
@@ -679,15 +736,24 @@ namespace Bhisi.Api.Controllers
                 // 2. Reverse Current Account Balance
                 if (txn.TransactionType == "Deposit" || txn.TransactionType == "Interest")
                 {
-                    account.CurrentBalance -= txn.Amount;
+                    account.CurrentBalance = Math.Round(account.CurrentBalance - txn.Amount, 2, MidpointRounding.AwayFromZero);
                 }
                 else if (txn.TransactionType == "Withdrawal" || txn.TransactionType == "Charges")
                 {
-                    account.CurrentBalance += txn.Amount;
+                    account.CurrentBalance = Math.Round(account.CurrentBalance + txn.Amount, 2, MidpointRounding.AwayFromZero);
                 }
                 _context.Entry(account).State = EntityState.Modified;
 
+                var passbookEntries = await _context.SavingPassbooks
+                    .Where(p => p.TransactionID == txn.TransactionID)
+                    .ToListAsync();
+                if (passbookEntries.Any())
+                {
+                    _context.SavingPassbooks.RemoveRange(passbookEntries);
+                }
+
                 // 3. Handle Paired Transfer Transaction Reversal if exists
+                var affectedSavingIds = new HashSet<int> { account.SavingAccountID };
                 if (txn.PaymentMode == "Transfer" && txn.TargetSavingAccountID.HasValue)
                 {
                     var targetAccount = await _context.SavingAccountMasters.FindAsync(txn.TargetSavingAccountID.Value);
@@ -695,13 +761,14 @@ namespace Bhisi.Api.Controllers
                     {
                         if (txn.TransactionType == "Withdrawal")
                         {
-                            targetAccount.CurrentBalance -= txn.Amount;
+                            targetAccount.CurrentBalance = Math.Round(targetAccount.CurrentBalance - txn.Amount, 2, MidpointRounding.AwayFromZero);
                         }
                         else
                         {
-                            targetAccount.CurrentBalance += txn.Amount;
+                            targetAccount.CurrentBalance = Math.Round(targetAccount.CurrentBalance + txn.Amount, 2, MidpointRounding.AwayFromZero);
                         }
                         _context.Entry(targetAccount).State = EntityState.Modified;
+                        affectedSavingIds.Add(targetAccount.SavingAccountID);
                     }
 
                     var pairedTxn = await _context.SavingTransactions
@@ -712,22 +779,25 @@ namespace Bhisi.Api.Controllers
                                                   t.Amount == txn.Amount);
                     if (pairedTxn != null)
                     {
+                        var pairedPassbooks = await _context.SavingPassbooks
+                            .Where(p => p.TransactionID == pairedTxn.TransactionID)
+                            .ToListAsync();
+                        if (pairedPassbooks.Any())
+                        {
+                            _context.SavingPassbooks.RemoveRange(pairedPassbooks);
+                        }
                         _context.SavingTransactions.Remove(pairedTxn);
                     }
                 }
 
-                // 4. Remove Associated Voucher and Details
-                if (!string.IsNullOrEmpty(txn.VoucherNo))
+                // 4. Remove Associated Pending Direct Voucher and Details (if any)
+                if (linkedVoucher != null)
                 {
-                    var voucher = await _context.Vouchers
-                        .Include(v => v.VoucherDetails)
-                        .FirstOrDefaultAsync(v => v.VoucherNo == txn.VoucherNo);
-
-                    if (voucher != null)
+                    if (linkedVoucher.VoucherDetails != null && linkedVoucher.VoucherDetails.Any())
                     {
-                        _context.VoucherDetails.RemoveRange(voucher.VoucherDetails);
-                        _context.Vouchers.Remove(voucher);
+                        _context.VoucherDetails.RemoveRange(linkedVoucher.VoucherDetails);
                     }
+                    _context.Vouchers.Remove(linkedVoucher);
                 }
 
                 // 5. Immutable Security Audit Logging
@@ -736,15 +806,16 @@ namespace Bhisi.Api.Controllers
                     Action = "SAVING_TRANSACTION_DELETED",
                     EntityName = "SavingTransaction",
                     EntityID = txn.TransactionID.ToString(),
-                    Details = $"Deleted {txn.TransactionType} of ₹{txn.Amount:N2} on Saving Account #{account.AccountNo}. Linked Voucher: {txn.VoucherNo}",
+                    Details = $"Deleted {txn.TransactionType} of ₹{txn.Amount:N2} on Saving Account #{account.AccountNo}. Linked Voucher: {(string.IsNullOrWhiteSpace(txn.VoucherNo) ? "NONE (Orphan)" : txn.VoucherNo)}",
                     Timestamp = DateTime.Now
                 });
 
                 _context.SavingTransactions.Remove(txn);
                 await _context.SaveChangesAsync();
+                await SavingLedgerHelper.RecalculateSavingRunningBalancesAsync(_context, affectedSavingIds);
                 await dbTransaction.CommitAsync();
 
-                return Ok(new { message = "व्यवहार व संबंधित व्हाउचर यशस्वीरित्या डिलीट केले (Transaction & Voucher deleted successfully)." });
+                return Ok(new { message = "बचत व्यवहार यशस्वीरित्या डिलीट करून खात्याची शिल्लक व रनिंग बॅलन्स पूर्ववत केले आहेत." });
             }
             catch (Exception ex)
             {

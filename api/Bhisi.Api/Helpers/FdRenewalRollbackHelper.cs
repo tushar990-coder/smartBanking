@@ -45,9 +45,32 @@ namespace Bhisi.Api.Helpers
             return RenewalVoucherPrefixes.Any(p => vNo.StartsWith(p, StringComparison.OrdinalIgnoreCase));
         }
 
+        private static readonly string[] OpeningMigrationVoucherPrefixes =
+        {
+            "JV-FD-OP-",
+            "REC-FD-OP-",
+            "JV-RD-OP-",
+            "REC-RD-OP-",
+            "JV-SH-OP-",
+            "JV-INV-OP-"
+        };
+
         public static bool IsFdRenewalVoucher(Voucher? voucher)
         {
             return voucher != null && IsRenewalVoucherNo(voucher.VoucherNo);
+        }
+
+        public static bool IsOpeningOrMigrationVoucher(Voucher? voucher)
+        {
+            if (voucher == null) return false;
+            if (string.Equals(voucher.VoucherType, "Opening", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(voucher.VoucherNo)) return false;
+            string vNo = voucher.VoucherNo.Trim();
+            return OpeningMigrationVoucherPrefixes.Any(p => vNo.StartsWith(p, StringComparison.OrdinalIgnoreCase));
         }
 
         public static List<string> BuildAccountNumberVariants(string? rawAccNo)
@@ -270,6 +293,7 @@ namespace Bhisi.Api.Helpers
                 }
             }
 
+            var pairedOldIdSet = new HashSet<int>();
             if (newAccount != null)
             {
                 var newAccTxVoucherIds = await context.FdTransactions
@@ -293,7 +317,11 @@ namespace Bhisi.Api.Helpers
                         .Select(t => t.VoucherID)
                         .Distinct()
                         .ToListAsync();
-                    foreach (int vid in pairedOldIntVoucherIds) candidateSiblingIds.Add(vid);
+                    foreach (int vid in pairedOldIntVoucherIds)
+                    {
+                        candidateSiblingIds.Add(vid);
+                        pairedOldIdSet.Add(vid);
+                    }
                 }
             }
 
@@ -305,9 +333,33 @@ namespace Bhisi.Api.Helpers
                     .Where(v => candidateSiblingIds.Contains(v.VoucherID))
                     .ToListAsync();
 
+                var newAccVariants = newAccount != null
+                    ? BuildAccountNumberVariants(newAccount.AccountNo).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                 siblingVouchers.AddRange(fetchedSiblings.Where(sv =>
-                    IsFdRenewalVoucher(sv) ||
-                    candidateSiblingIds.Contains(sv.VoucherID)));
+                {
+                    // Strictly exclude parent opening/migration & non-renewal vouchers (Zero-Fallback)
+                    if (!IsFdRenewalVoucher(sv) || IsOpeningOrMigrationVoucher(sv))
+                    {
+                        return false;
+                    }
+
+                    bool isDirectRelated =
+                        (primaryVoucher.RelatedVoucherID.HasValue && primaryVoucher.RelatedVoucherID.Value == sv.VoucherID) ||
+                        sv.RelatedVoucherID == primaryVoucher.VoucherID;
+
+                    if (!isDirectRelated && pairedOldIdSet.Contains(sv.VoucherID) && newAccVariants.Any())
+                    {
+                        string suffix = ExtractAccountSuffixFromRenewalVoucherNo(sv.VoucherNo);
+                        if (!string.IsNullOrEmpty(suffix) && !newAccVariants.Contains(suffix))
+                        {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                }));
             }
 
             return (oldAccount, newAccount, siblingVouchers);
@@ -351,7 +403,9 @@ namespace Bhisi.Api.Helpers
             }
 
             bool hasSubsequentFdTx = await context.FdTransactions
-                .AnyAsync(t => t.FdAccountID == newAccount.FdAccountID && !allRenewalVoucherIds.Contains(t.VoucherID));
+                .AnyAsync(t => t.FdAccountID == newAccount.FdAccountID &&
+                               t.TransactionType != "Opening" &&
+                               !allRenewalVoucherIds.Contains(t.VoucherID));
             bool hasMisPayout = await context.FdMisPayouts
                 .AnyAsync(m => m.FdAccountID == newAccount.FdAccountID && (!m.VoucherID.HasValue || !allRenewalVoucherIds.Contains(m.VoucherID.Value)));
             bool hasInterestAccrual = await context.FdInterestAccruals
@@ -446,7 +500,8 @@ namespace Bhisi.Api.Helpers
 
             // Remove FdTransactions, FdInterestAccruals, FdMisPayouts strictly scoped to this renewal cycle
             var txsToRemove = await context.FdTransactions
-                .Where(t => allRenewalVoucherIds.Contains(t.VoucherID) || t.FdAccountID == newAccount.FdAccountID)
+                .Where(t => t.FdAccountID == newAccount.FdAccountID ||
+                            (t.FdAccountID == oldAccount.FdAccountID && allRenewalVoucherIds.Contains(t.VoucherID)))
                 .ToListAsync();
             if (txsToRemove.Any())
             {
@@ -622,7 +677,7 @@ namespace Bhisi.Api.Helpers
                     .Include(v => v.VoucherDetails)
                     .Where(v => allVoucherIds.Contains(v.VoucherID))
                     .ToListAsync())
-                    .Where(IsFdRenewalVoucher)
+                    .Where(v => IsFdRenewalVoucher(v) && !IsOpeningOrMigrationVoucher(v))
                     .ToList()
                 : new List<Voucher>();
 

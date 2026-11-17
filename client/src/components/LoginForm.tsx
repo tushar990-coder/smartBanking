@@ -226,7 +226,7 @@ export default function LoginForm() {
           password: formData.password,
           branchID: parseInt(formData.branchID || '1'),
           financialYearID: parseInt(formData.financialYearID || '1'),
-          businessDate: formData.businessDate ? new Date(formData.businessDate).toISOString() : null
+          businessDate: formData.businessDate ? formData.businessDate.split('T')[0] : null
         })
       });
 

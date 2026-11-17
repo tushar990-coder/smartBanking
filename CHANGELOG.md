@@ -1,5 +1,18 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-17] - आवृत्ती v2.6.25 (FD Renewal Unpass Delete Fix, Orphan FD SB Debit Prevention & Cleanup, Active Login BusinessDate Preservation & InvestmentInterestReceipts Schema Sync)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **१) मुदत ठेव नूतनीकरण अन-पास व्हाउचर डिलीट रोलबॅक दुरुस्ती (`FdRenewalRollbackHelper.cs` & `FdAutoRenewalRollbackTests.cs`):**
+  * `JV-FD-REN-*` / `JV-FD-AUTOREN-*` व्हाउचर अन-पास करून डिलीट करताना मूळ खात्याचे ओपनिंग/मायग्रेशन व्हाउचर (`JV-FD-OP-*`, `REC-FD-OP-*`, `VoucherType == "Opening"`) सिब्लिंग यादीत येऊन अडथळा आणू नये म्हणून कडक `IsOpeningOrMigrationVoucher` व सायकल-निहाय सिब्लिंग फिल्टर लागू केला.
+  * मूळ खात्याचे ओपनिंग व्हाउचर व व्यवहार अबाधित राहतात, तर खऱ्या रिन्यूअल-सायकल व्याज सिब्लिंगवर (`PAY-FD-INT-*` / `JV-FD-INT-*`) Unpass चा Zero-Fallback नियम कायम ठेवला.
+* **२) पोरके FD Opening SB डेबिट निवारण व UI डिलीट (`SavingLedgerHelper.cs`, `VoucherRollbackAndDeleteService.cs`, `FdAccountsController.cs`, `SavingTransactionsController.cs`, `VoucherPostingController.cs`, `VoucherPosting.tsx`, `SavingTransactionEntry.tsx`, `heal_orphan_fd_sb_debit_transactions.sql` & `FdSbDebitOrphanAndRollbackTests.cs`):**
+  * बचत खात्यातून वर्ग करून FD उघडताना अणु (Atomic) लिंक व पासबुक शिल्लक सुसंगती, तसेच पूर्वीचे अनाथ FD Opening SB डेबिट व्यवहार शोधणे व पासिंग/खतावणी स्क्रीनवरून सुरक्षितपणे डिलीट करणे.
+* **३) सक्रिय लॉगिन व्यवसाय दिनांक जतन व `InvestmentInterestReceipts` स्कीमा सिंक (`Program.cs`, `master_vps_update_schema.sql`, `AuthController.cs`, `VoucherMaster.tsx`, `DayEndDashboard.tsx`, `LoginForm.tsx` & `LoginDateAndVoucherSchemaFixTests.cs`):**
+  * युझरने लॉगिनला निवडलेला चालू व्यवसाय दिनांक (`BusinessDate`) व्यवहार सेव्ह करताना आपोआप `01/04/2026` ला न वळता अचूक जतन राहणे आणि व्हाउचर डिलीट करताना `InvestmentInterestReceipts` स्तंभांची SQL स्कीमा पूर्ण सिंक करून संपूर्ण xUnit चाचण्या (**९२/९२ उत्तीर्ण**) पार पाडल्या.
+
+---
+
 ## 📅 [2026-11-16] - आवृत्ती v2.6.24 (Multi-Branch IBT & HO Consolidated Reporting, Unified Active+Matured FD Status, Auto-Renewal Rollback & Full FD Renewal Receipt Numbering Policy Engine with NEXT_LEGACY)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

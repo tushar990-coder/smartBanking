@@ -644,9 +644,6 @@ const DayEndDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      if (activeBusinessDateStr) {
-                        updateBusinessDate(activeBusinessDateStr);
-                      }
                       window.history.pushState(null, '', '/voucher/passing');
                       window.dispatchEvent(new PopStateEvent('popstate'));
                     }}

@@ -870,6 +870,36 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     }
   };
 
+  const canDeleteOrphanSavingTxn = ['admin', 'superadmin', 'manager', 'headoffice'].includes(
+    (user?.roleName || user?.role || '').trim().toLowerCase()
+  );
+
+  const handleDeleteOrphanTransaction = async (txn: any) => {
+    if (!txn?.transactionID) return;
+    if (txn.voucherNo) {
+      alert(`या व्यवहाराशी व्हाउचर क्र. '${txn.voucherNo}' जोडलेला आहे. कृपया Pass Voucher मधून डिलीट करा.`);
+      return;
+    }
+    const amtFormatted = Number(txn.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const confirmMsg =
+      `व्हाउचर नसलेली अनाथ (Orphan) बचत नोंद डिलीट करायची आहे का?\n\n` +
+      `खाते क्र.: ${txn.accountNo}\n` +
+      `खातेदार: ${txn.customerName}\n` +
+      `रक्कम: ₹${amtFormatted}\n` +
+      `तपशील: ${txn.narration || '-'}\n\n` +
+      `टीप: या व्यवहाराशी जोडलेले कोणतेही सक्रिय FD खाते किंवा व्हाउचर असल्यास सिस्टीम डिलीट रोखेल.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await axios.delete(`${API_URL}/SavingTransactions/${txn.transactionID}`);
+      alert(res.data?.message || 'अनाथ बचत व्यवहार यशस्वीरीत्या डिलीट करून शिल्लक दुरुस्त केली आहे.');
+      await Promise.all([fetchTransactions(), fetchAccounts()]);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data || err.message || 'व्यवहार डिलीट करताना त्रुटी आली.';
+      alert(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+  };
+
   // Live Real-Time Projected Balance Calculations
   const txnAmountNum = parseFloat(formData.amount) || 0;
   const currentBalNum = Number(selectedAccount?.currentBalance ?? 0);
@@ -1670,13 +1700,14 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                       <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">रक्कम (₹)</th>
                       <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">शिल्लक (₹)</th>
                       <th className="px-2.5 py-2 border-r border-gray-200 text-left">तपशील</th>
-                      <th className="px-2.5 py-2 text-left w-32">व्हाउचर क्र.</th>
+                      <th className="px-2.5 py-2 border-r border-gray-200 text-left w-32">व्हाउचर क्र.</th>
+                      <th className="px-2 py-2 text-center w-20">कृती</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {paginatedTransactions.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="px-4 py-10 text-center text-gray-500 font-semibold">
+                        <td colSpan={11} className="px-4 py-10 text-center text-gray-500 font-semibold">
                           कोणतेही व्यवहार आढळले नाहीत.
                         </td>
                       </tr>
@@ -1726,8 +1757,25 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                         <td className="px-2.5 py-1.5 border-r border-gray-200 text-left text-gray-600 max-w-[200px] truncate" title={t.narration || ''}>
                           {t.narration || '-'}
                         </td>
-                        <td className="px-2.5 py-1.5 text-left font-bold text-primary whitespace-nowrap font-mono">
+                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-bold text-primary whitespace-nowrap font-mono">
                           {t.voucherNo || '-'}
+                        </td>
+                        <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                          {!t.voucherNo && canDeleteOrphanSavingTxn ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteOrphanTransaction(t)}
+                              className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-sm text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                              title="व्हाउचर नसलेली अनाथ बचत नोंद डिलीट करा"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>डिलीट</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-gray-400" title={t.voucherNo ? `व्हाउचर क्र. ${t.voucherNo} Pass Voucher मधून व्यवस्थापित करा` : ''}>
+                              {t.voucherNo ? 'Pass Voucher' : '-'}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))

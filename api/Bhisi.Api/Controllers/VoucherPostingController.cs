@@ -109,7 +109,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var targetLoginDate = ResolveActiveLoginDate(voucherDate);
-            if (targetLoginDate.HasValue)
+            if (!allDates && targetLoginDate.HasValue)
             {
                 DateTime dayStart = targetLoginDate.Value.Date;
                 DateTime dayEnd = dayStart.AddDays(1);
@@ -159,7 +159,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var targetLoginDate = ResolveActiveLoginDate(voucherDate);
-            if (targetLoginDate.HasValue)
+            if (!allDates && targetLoginDate.HasValue)
             {
                 DateTime dayStart = targetLoginDate.Value.Date;
                 DateTime dayEnd = dayStart.AddDays(1);

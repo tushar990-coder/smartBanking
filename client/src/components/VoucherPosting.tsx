@@ -140,7 +140,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const getOperatingBranchQuery = () => {
     const params = new URLSearchParams();
     params.set('voucherDate', activeBusinessDate);
-    params.set('allDates', 'false');
+    params.set('allDates', isAllDates ? 'true' : 'false');
 
     const globalBranchStr = localStorage.getItem('globalBranchId');
     const isHO = isHeadOfficeUser(user);
@@ -175,7 +175,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     };
     window.addEventListener('globalBranchChange', handleBranchChange);
     return () => window.removeEventListener('globalBranchChange', handleBranchChange);
-  }, [user?.branchID, user?.role, activeBusinessDate]);
+  }, [user?.branchID, user?.role, activeBusinessDate, isAllDates]);
 
   const isOpeningMigrationVoucher = (v: Voucher) => {
     const vNo = v.voucherNo || '';
@@ -207,7 +207,9 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       if (res.ok) {
         const data = await res.json();
         const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter(
-          (v: Voucher) => !isOpeningMigrationVoucher(v) && (v.voucherDate ? v.voucherDate.split('T')[0] : '') === activeBusinessDate
+          (v: Voucher) =>
+            !isOpeningMigrationVoucher(v) &&
+            (isAllDates || (v.voucherDate ? v.voucherDate.split('T')[0] : '') === activeBusinessDate)
         );
         setApprovedVouchers(safeList);
       } else {
@@ -234,7 +236,9 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       if (res.ok) {
         const data = await res.json();
         const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter(
-          (v: Voucher) => !isOpeningMigrationVoucher(v) && (v.voucherDate ? v.voucherDate.split('T')[0] : '') === activeBusinessDate
+          (v: Voucher) =>
+            !isOpeningMigrationVoucher(v) &&
+            (isAllDates || (v.voucherDate ? v.voucherDate.split('T')[0] : '') === activeBusinessDate)
         );
         setVouchers(safeList);
         setSelectedVouchers(new Set());
@@ -1113,7 +1117,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
           <div className="flex flex-wrap items-center gap-1.5">
             <div
               className="px-2.5 py-1 rounded-sm text-[11px] bg-primary/10 text-primary border border-primary/25 font-bold shadow-2xs h-[26px] flex items-center gap-1.5"
-              title="फक्त चालू लॉगिन तारखेचेच व्हाउचर्स दाखवले व पोस्ट केले जातात"
+              title="फक्त चालू लॉगिन तारखेचेच व्हाउचर्स डिफॉल्ट दिसतात व पोस्ट केले जातात"
             >
               <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
               <span>लॉगिन दिनांक:</span>
@@ -1121,6 +1125,18 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 {activeBusinessDate.split('-').reverse().join('/')}
               </span>
             </div>
+            <label
+              className="px-2 py-1 rounded-sm text-[11px] bg-white border border-gray-300 text-slate-700 font-bold shadow-2xs h-[26px] flex items-center gap-1.5 cursor-pointer hover:border-primary/50 select-none"
+              title="इतर तारखांवरील प्रलंबित किंवा मंजूर व्हाउचर्स तपासण्यासाठी सर्व तारखा पहा"
+            >
+              <input
+                type="checkbox"
+                checked={isAllDates}
+                onChange={(e) => setIsAllDates(e.target.checked)}
+                className="w-3.5 h-3.5 text-primary rounded cursor-pointer"
+              />
+              <span>सर्व तारखा पहा</span>
+            </label>
           </div>
 
           {/* Center: Interactive Type Filter Pills (Replaces 5 bulky KPI cards & dropdown) */}

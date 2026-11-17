@@ -693,54 +693,8 @@ namespace Bhisi.Api.Services
             }
         }
 
-        private async Task RecalculateSavingRunningBalancesAsync(HashSet<int> savingAccountIds)
-        {
-            foreach (int savAccId in savingAccountIds)
-            {
-                var savAcc = await _context.SavingAccountMasters.FindAsync(savAccId);
-                if (savAcc == null) continue;
-
-                var txns = await _context.SavingTransactions
-                    .Where(t => t.SavingAccountID == savAccId)
-                    .OrderBy(t => t.TransactionDate)
-                    .ThenBy(t => t.TransactionID)
-                    .ToListAsync();
-
-                if (!txns.Any()) continue;
-
-                decimal netTxEffect = 0m;
-                foreach (var t in txns)
-                {
-                    if (t.TransactionType == "Deposit" || t.TransactionType == "Interest")
-                        netTxEffect += t.Amount;
-                    else if (t.TransactionType == "Withdrawal" || t.TransactionType == "Charges")
-                        netTxEffect -= t.Amount;
-                }
-
-                // Anchor backward from savAcc.CurrentBalance so both legacy and fresh accounts stay 100% consistent
-                decimal running = Math.Round(savAcc.CurrentBalance - netTxEffect, 2, MidpointRounding.AwayFromZero);
-                bool changed = false;
-                foreach (var t in txns)
-                {
-                    if (t.TransactionType == "Deposit" || t.TransactionType == "Interest")
-                        running = Math.Round(running + t.Amount, 2, MidpointRounding.AwayFromZero);
-                    else if (t.TransactionType == "Withdrawal" || t.TransactionType == "Charges")
-                        running = Math.Round(running - t.Amount, 2, MidpointRounding.AwayFromZero);
-
-                    if (Math.Abs(t.BalanceAfterTxn - running) >= 0.01m)
-                    {
-                        t.BalanceAfterTxn = running;
-                        _context.Entry(t).State = EntityState.Modified;
-                        changed = true;
-                    }
-                }
-
-                if (changed)
-                {
-                    await _context.SaveChangesAsync();
-                }
-            }
-        }
+        private Task RecalculateSavingRunningBalancesAsync(HashSet<int> savingAccountIds)
+            => SavingLedgerHelper.RecalculateSavingRunningBalancesAsync(_context, savingAccountIds);
 
         private async Task RecalculatePigmyRunningBalancesAsync(HashSet<int> pigmyAccountIds)
         {
@@ -1244,6 +1198,53 @@ namespace Bhisi.Api.Services
 
                         var extraRenLogs = await _context.FdAutoRenewalLogs.Where(l => openedFdIds.Contains(l.OldFdAccountID) || (l.NewFdAccountID.HasValue && openedFdIds.Contains(l.NewFdAccountID.Value))).ToListAsync();
                         if (extraRenLogs.Any()) _context.FdAutoRenewalLogs.RemoveRange(extraRenLogs);
+
+                        // Reverse any Transfer SavingTransactions linked to these FD openings (even if legacy/older records had null/mismatched VoucherNo)
+                        var transferFds = nonLegacyFds
+                            .Where(f => string.Equals(f.PaymentMode, "Transfer", StringComparison.OrdinalIgnoreCase) &&
+                                        f.SavingAccountID.HasValue && f.SavingAccountID.Value > 0)
+                            .ToList();
+                        if (transferFds.Any())
+                        {
+                            var sbIds = transferFds.Select(f => f.SavingAccountID!.Value).Distinct().ToList();
+                            var candidateSbTxns = await _context.SavingTransactions
+                                .Where(st => sbIds.Contains(st.SavingAccountID) &&
+                                             st.TransactionType == "Withdrawal" &&
+                                             st.PaymentMode == "Transfer")
+                                .ToListAsync();
+
+                            foreach (var fd in transferFds)
+                            {
+                                var fdVariants = FdRenewalRollbackHelper.BuildAccountNumberVariants(fd.AccountNo);
+                                foreach (var st in candidateSbTxns.Where(x =>
+                                    x.SavingAccountID == fd.SavingAccountID!.Value &&
+                                    x.TransactionDate.Date == fd.OpeningDate.Date &&
+                                    Math.Abs(x.Amount - fd.DepositAmount) < 0.01m &&
+                                    (string.IsNullOrWhiteSpace(x.VoucherNo) || voucherNos.Contains(x.VoucherNo)) &&
+                                    !string.IsNullOrWhiteSpace(x.Narration) &&
+                                    fdVariants.Any(av => x.Narration.Contains(av, StringComparison.OrdinalIgnoreCase))))
+                                {
+                                    await ReverseAndHardDeleteSavingTxnOnceAsync(st, reversedSavingTxnIds, affectedSavingAccountIds);
+                                }
+                            }
+
+                            // Also catch consolidated Bulk FD Transfer debits where single SB txn equals sum of opened FDs
+                            foreach (var grp in transferFds.GroupBy(f => new { SbId = f.SavingAccountID!.Value, Dt = f.OpeningDate.Date }))
+                            {
+                                decimal groupTotal = grp.Sum(f => f.DepositAmount);
+                                foreach (var st in candidateSbTxns.Where(x =>
+                                    x.SavingAccountID == grp.Key.SbId &&
+                                    x.TransactionDate.Date == grp.Key.Dt &&
+                                    Math.Abs(x.Amount - groupTotal) < 0.01m &&
+                                    (string.IsNullOrWhiteSpace(x.VoucherNo) || voucherNos.Contains(x.VoucherNo)) &&
+                                    !string.IsNullOrWhiteSpace(x.Narration) &&
+                                    (x.Narration.Contains("बल्क मुदत ठेव", StringComparison.OrdinalIgnoreCase) ||
+                                     x.Narration.Contains("Total SB Debit", StringComparison.OrdinalIgnoreCase))))
+                                {
+                                    await ReverseAndHardDeleteSavingTxnOnceAsync(st, reversedSavingTxnIds, affectedSavingAccountIds);
+                                }
+                            }
+                        }
 
                         _context.FdAccounts.RemoveRange(nonLegacyFds);
                         await _context.SaveChangesAsync();

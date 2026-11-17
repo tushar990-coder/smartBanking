@@ -6778,7 +6778,11 @@ BEGIN
         ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [ReferenceNo] NVARCHAR(100) NULL;
     IF COL_LENGTH('InvestmentInterestReceipts', 'Remarks') IS NULL
         ALTER TABLE [dbo].[InvestmentInterestReceipts] ADD [Remarks] NVARCHAR(300) NULL;
+END
+GO
 
+IF OBJECT_ID('dbo.InvestmentInterestReceipts', 'U') IS NOT NULL AND COL_LENGTH('InvestmentInterestReceipts', 'GrossAmount') IS NOT NULL
+BEGIN
     UPDATE [dbo].[InvestmentInterestReceipts]
     SET [GrossAmount] = [ReceivedAmount]
     WHERE [GrossAmount] = 0 AND [ReceivedAmount] > 0;

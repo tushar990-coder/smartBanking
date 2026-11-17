@@ -596,6 +596,24 @@ namespace Bhisi.Api.Controllers
                 var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive) 
                                ?? await _context.FinancialYears.FirstOrDefaultAsync();
 
+                DateTime? sessionBusinessDate = null;
+                if (Request?.Headers != null && Request.Headers.TryGetValue("X-Business-Date", out var hdrDateVals))
+                {
+                    var rawHdr = hdrDateVals.FirstOrDefault();
+                    if (!string.IsNullOrWhiteSpace(rawHdr) && DateTime.TryParse(rawHdr, out var parsedHdr) && parsedHdr.Year >= 2000)
+                    {
+                        sessionBusinessDate = parsedHdr.Date;
+                    }
+                }
+                if (!sessionBusinessDate.HasValue)
+                {
+                    var claimVal = User?.FindFirst("BusinessDate")?.Value;
+                    if (!string.IsNullOrWhiteSpace(claimVal) && DateTime.TryParse(claimVal, out var parsedClaim) && parsedClaim.Year >= 2000)
+                    {
+                        sessionBusinessDate = parsedClaim.Date;
+                    }
+                }
+
                 var lastClosedRecord = await _context.BranchDayEndStatuses
                     .Where(b => b.BranchID == request.TargetBranchID && b.IsDayClosed && b.BusinessDate.Year >= 2000)
                     .OrderByDescending(b => b.BusinessDate)
@@ -608,7 +626,15 @@ namespace Bhisi.Api.Controllers
                     .FirstOrDefaultAsync();
 
                 DateTime businessDate;
-                if (oldestUnclosedRecord != null)
+                bool sessionDateClosedInTarget = sessionBusinessDate.HasValue && (
+                    (lastClosedRecord != null && sessionBusinessDate.Value <= lastClosedRecord.BusinessDate.Date) ||
+                    await _context.BranchDayEndStatuses.AnyAsync(b => b.BranchID == request.TargetBranchID && b.BusinessDate.Date == sessionBusinessDate.Value && b.IsDayClosed));
+
+                if (sessionBusinessDate.HasValue && !sessionDateClosedInTarget)
+                {
+                    businessDate = sessionBusinessDate.Value;
+                }
+                else if (oldestUnclosedRecord != null)
                 {
                     businessDate = oldestUnclosedRecord.BusinessDate;
                 }

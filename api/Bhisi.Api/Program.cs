@@ -3419,6 +3419,108 @@ try
 
         try
         {
+            // Ensure FdMisPayouts, SupportTickets & SupportTicketAttachments exist (missing from EF snapshot; required by VoucherRollbackAndDeleteService & controllers)
+            db.Database.ExecuteSqlRaw(@"
+            SET QUOTED_IDENTIFIER ON;
+            SET ANSI_NULLS ON;
+
+            IF OBJECT_ID(N'[dbo].[FdMisPayouts]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[FdMisPayouts] (
+                    [PayoutID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [InstitutionID] INT NOT NULL DEFAULT 1,
+                    [BranchID] INT NOT NULL DEFAULT 1,
+                    [FinancialYearID] INT NOT NULL DEFAULT 1,
+                    [FdAccountID] INT NOT NULL,
+                    [PayoutYear] INT NOT NULL,
+                    [PayoutMonth] INT NOT NULL,
+                    [PayoutDate] DATETIME2 NOT NULL,
+                    [PeriodFromDate] DATETIME2 NULL,
+                    [PeriodToDate] DATETIME2 NULL,
+                    [ElapsedDays] INT NOT NULL DEFAULT 0,
+                    [DepositPrincipal] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                    [InterestRate] DECIMAL(5,2) NOT NULL DEFAULT 0,
+                    [GrossInterest] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                    [TdsAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                    [LoanAdjustedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                    [NetDisbursedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                    [DisbursementMode] NVARCHAR(30) NOT NULL DEFAULT 'SavingTransfer',
+                    [TargetSavingAccountID] INT NULL,
+                    [TargetLoanAccountID] INT NULL,
+                    [VoucherID] INT NULL,
+                    [Status] NVARCHAR(20) NOT NULL DEFAULT 'Success',
+                    [CreatedBy] INT NOT NULL DEFAULT 1,
+                    [CreatedDate] DATETIME2 NOT NULL DEFAULT GETDATE(),
+                    [Remarks] NVARCHAR(250) NULL
+                );
+                IF OBJECT_ID(N'[dbo].[FdAccounts]', N'U') IS NOT NULL
+                    ALTER TABLE [dbo].[FdMisPayouts] WITH CHECK ADD CONSTRAINT [FK_FdMisPayouts_FdAccounts] FOREIGN KEY ([FdAccountID]) REFERENCES [dbo].[FdAccounts]([FdAccountID]) ON DELETE CASCADE;
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('FdMisPayouts', 'PeriodFromDate') IS NULL ALTER TABLE [dbo].[FdMisPayouts] ADD [PeriodFromDate] DATETIME2 NULL;
+                IF COL_LENGTH('FdMisPayouts', 'PeriodToDate') IS NULL ALTER TABLE [dbo].[FdMisPayouts] ADD [PeriodToDate] DATETIME2 NULL;
+                IF COL_LENGTH('FdMisPayouts', 'ElapsedDays') IS NULL ALTER TABLE [dbo].[FdMisPayouts] ADD [ElapsedDays] INT NOT NULL DEFAULT 0;
+                IF COL_LENGTH('FdMisPayouts', 'TdsAmount') IS NULL ALTER TABLE [dbo].[FdMisPayouts] ADD [TdsAmount] DECIMAL(18,2) NOT NULL DEFAULT 0;
+                IF COL_LENGTH('FdMisPayouts', 'LoanAdjustedAmount') IS NULL ALTER TABLE [dbo].[FdMisPayouts] ADD [LoanAdjustedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0;
+                IF COL_LENGTH('FdMisPayouts', 'TargetSavingAccountID') IS NULL ALTER TABLE [dbo].[FdMisPayouts] ADD [TargetSavingAccountID] INT NULL;
+                IF COL_LENGTH('FdMisPayouts', 'TargetLoanAccountID') IS NULL ALTER TABLE [dbo].[FdMisPayouts] ADD [TargetLoanAccountID] INT NULL;
+                IF COL_LENGTH('FdMisPayouts', 'VoucherID') IS NULL ALTER TABLE [dbo].[FdMisPayouts] ADD [VoucherID] INT NULL;
+            END
+
+            IF OBJECT_ID(N'[dbo].[FdMisPayouts]', N'U') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_FdMisPayouts_Account_Year_Month' AND object_id = OBJECT_ID(N'[dbo].[FdMisPayouts]'))
+            BEGIN
+                EXEC(N'CREATE UNIQUE INDEX [IX_FdMisPayouts_Account_Year_Month] ON [dbo].[FdMisPayouts] ([FdAccountID], [PayoutYear], [PayoutMonth]) WHERE [Status] = ''Success'';');
+            END
+
+            IF OBJECT_ID(N'[dbo].[SupportTickets]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[SupportTickets] (
+                    [TicketID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [TicketNo] NVARCHAR(50) NOT NULL,
+                    [BranchID] INT NOT NULL DEFAULT 1,
+                    [BranchName] NVARCHAR(100) NOT NULL DEFAULT '',
+                    [UserID] INT NOT NULL DEFAULT 1,
+                    [Username] NVARCHAR(100) NOT NULL DEFAULT '',
+                    [ContactNumber] NVARCHAR(30) NULL,
+                    [ModuleCategory] NVARCHAR(100) NOT NULL DEFAULT 'General',
+                    [Priority] NVARCHAR(20) NOT NULL DEFAULT 'MEDIUM',
+                    [Subject] NVARCHAR(250) NOT NULL DEFAULT '',
+                    [Description] NVARCHAR(MAX) NOT NULL DEFAULT '',
+                    [SystemInfoJson] NVARCHAR(MAX) NULL,
+                    [Status] NVARCHAR(30) NOT NULL DEFAULT 'OPEN',
+                    [ResolutionRemarks] NVARCHAR(MAX) NULL,
+                    [ResolvedByUserID] INT NULL,
+                    [ResolvedAt] DATETIME2 NULL,
+                    [CreatedOn] DATETIME2 NOT NULL DEFAULT GETDATE(),
+                    [UpdatedOn] DATETIME2 NULL
+                );
+            END
+
+            IF OBJECT_ID(N'[dbo].[SupportTicketAttachments]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[SupportTicketAttachments] (
+                    [AttachmentID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [TicketID] INT NOT NULL,
+                    [OriginalFileName] NVARCHAR(255) NOT NULL,
+                    [FilePath] NVARCHAR(500) NOT NULL,
+                    [FileType] NVARCHAR(100) NULL,
+                    [FileSize] BIGINT NULL,
+                    [CreatedOn] DATETIME2 NOT NULL DEFAULT GETDATE(),
+                    CONSTRAINT [FK_SupportTicketAttachments_SupportTickets] FOREIGN KEY ([TicketID]) REFERENCES [dbo].[SupportTickets]([TicketID]) ON DELETE CASCADE
+                );
+            END
+        ");
+            Log.Information("FdMisPayouts and SupportTickets runtime schema DDL verified successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to verify FdMisPayouts / SupportTickets runtime schema DDL");
+        }
+
+        try
+        {
             // Core Banking Inter-Branch Transfer (IBT) Startup Auto-Sync & Historical Self-Healing
             Bhisi.Api.Helpers.IbtLedgerHelper.EnsureIbtLedgerProvisionedAsync(db).GetAwaiter().GetResult();
             int repaired = Bhisi.Api.Helpers.IbtLedgerHelper.RepairHistoricalCrossBranchCollectionsAsync(db).GetAwaiter().GetResult();

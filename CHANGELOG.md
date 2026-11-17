@@ -1,5 +1,11 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-17] - आवृत्ती v2.6.28 (Voucher Delete & BulkReject `FdMisPayouts` Runtime Startup Schema Self-Heal)
+
+### 🛡️ 1. `FdMisPayouts` व `SupportTickets` स्टार्टअप स्कीमा सेल्फ-हील (`Program.cs`, `VoucherPostingLinkedAccountTests.cs`)
+- **`Program.cs`:** `VoucherRollbackAndDeleteService.RollbackFdModuleAsync` तसेच `FdAccountsController` / `FdRenewalRollbackHelper` कडून वापरले जाणारे `FdMisPayouts` टेबल (व `SupportTickets` / `SupportTicketAttachments`) EF Core Snapshot मधून सुटलेले असल्यामुळे स्टार्टअपमध्ये आयडेम्पोटंट `CREATE TABLE` + `COL_LENGTH` कॉलम तपासणी व `IX_FdMisPayouts_Account_Year_Month` (`WHERE [Status] = 'Success'`) युनिक इंडेक्स ब्लॉक जोडला.
+- **`VoucherPostingLinkedAccountTests.cs`:** `RejectVoucher` (सिंगल व्हाउचर डिलीट) आणि `BulkRejectVouchers` (saving withdrawal + FD MIS payout रोलबॅक) साठी regression चाचणी जोडून १०५/१०५ xUnit चाचण्या उत्तीर्ण.
+
 ## 📅 [2026-11-17] - आवृत्ती v2.6.27 (Voucher Passing Legacy Account Numbers, FD Ledger Scheme Filter/Search/Consolidated Mode & Multi-Entry FD Renewal Cash Interest Preservation)
 
 ### 🧾 1. व्हाउचर पासिंग व मंजुरी — जुना खाते व ग्राहक क्रमांक प्रदर्शन

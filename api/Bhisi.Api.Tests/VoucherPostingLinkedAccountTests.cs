@@ -359,5 +359,163 @@ namespace Bhisi.Api.Tests
             Assert.Equal("OLD-INV-88", invAcc.OldAccountNo);
             Assert.Equal("FDR-8899", invAcc.ReceiptNo);
         }
+
+        [Fact]
+        public async Task RejectVoucher_And_BulkRejectVouchers_SavingWithdrawalAndFdMisPayout_RollBackCleanly()
+        {
+            await using var db = CreateContext();
+            var dt = new DateTime(2026, 4, 2);
+
+            db.FinancialYears.Add(new FinancialYear
+            {
+                FinancialYearID = 1,
+                YearCode = "2026-2027",
+                StartDate = new DateTime(2026, 4, 1),
+                EndDate = new DateTime(2027, 3, 31),
+                IsActive = true,
+                IsClosed = false
+            });
+            db.Ledgers.Add(new Ledger
+            {
+                LedgerID = 101,
+                GroupID = 1,
+                LedgerCode = "SAV-GL",
+                LedgerName = "सेव्हिंग ठेव",
+                AccountType = "Liability",
+                IsActive = true
+            });
+            db.Customers.Add(new Customer
+            {
+                CustomerID = 1,
+                BranchID = 1,
+                CIFNo = "CIF001338",
+                FirstName = "पद्मश्री",
+                LastName = "संजय भागाटे"
+            });
+            db.SavingAccountMasters.Add(new SavingAccountMaster
+            {
+                SavingAccountID = 801,
+                BranchID = 1,
+                CustomerID = 1,
+                LedgerID = 101,
+                AccountNo = "00110100005781",
+                OpeningBalance = 10000m,
+                CurrentBalance = 8000m,
+                Status = "Active"
+            });
+            db.SavingTransactions.Add(new SavingTransaction
+            {
+                TransactionID = 901,
+                SavingAccountID = 801,
+                CustomerID = 1,
+                BranchID = 1,
+                TransactionDate = dt,
+                TransactionType = "Withdrawal",
+                PaymentMode = "Cash",
+                Amount = 2000m,
+                BalanceAfterTxn = 8000m,
+                VoucherNo = "001-PAY-26-27-00001",
+                Narration = "बचत नावे - 00110100005781 पद्मश्री भागाटे"
+            });
+
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 802,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = 1,
+                FdSchemeID = 1,
+                AccountNo = "00140200001588",
+                OpeningDate = new DateTime(2025, 10, 1),
+                MaturityDate = new DateTime(2026, 10, 1),
+                DepositAmount = 50000m,
+                InterestRate = 9m,
+                MaturityAmount = 50000m,
+                LastInterestPostingDate = new DateTime(2026, 4, 2),
+                Status = "Active"
+            });
+            db.Vouchers.AddRange(
+                new Voucher
+                {
+                    VoucherID = 187,
+                    BranchID = 1,
+                    VoucherNo = "001-PAY-26-27-00001",
+                    VoucherDate = dt,
+                    VoucherType = "Payment",
+                    TotalAmount = 2000m,
+                    Narration = "बचत नावे - 00110100005781 पद्मश्री भागाटे",
+                    Status = "Pending"
+                },
+                new Voucher
+                {
+                    VoucherID = 188,
+                    BranchID = 1,
+                    VoucherNo = "PAY-FDMIS-001",
+                    VoucherDate = dt,
+                    VoucherType = "Payment",
+                    TotalAmount = 375m,
+                    Narration = "FD MIS Payout",
+                    Status = "Pending"
+                }
+            );
+            db.VoucherDetails.AddRange(
+                new VoucherDetail { VoucherID = 187, LedgerID = 101, CustomerID = 1, DrCr = "Dr", Amount = 2000m },
+                new VoucherDetail { VoucherID = 188, LedgerID = 101, CustomerID = 1, DrCr = "Dr", Amount = 375m }
+            );
+            db.FdMisPayouts.Add(new FdMisPayout
+            {
+                PayoutID = 501,
+                BranchID = 1,
+                FinancialYearID = 1,
+                FdAccountID = 802,
+                PayoutYear = 2026,
+                PayoutMonth = 4,
+                PayoutDate = dt,
+                DepositPrincipal = 50000m,
+                InterestRate = 9m,
+                GrossInterest = 375m,
+                NetDisbursedAmount = 375m,
+                DisbursementMode = "Cash",
+                VoucherID = 188,
+                Status = "Success"
+            });
+            db.FdTransactions.Add(new FdTransaction
+            {
+                FdTransactionID = 502,
+                BranchID = 1,
+                FdAccountID = 802,
+                VoucherID = 188,
+                TransactionDate = dt,
+                TransactionType = "MIS_Payout",
+                DebitCredit = "Dr",
+                Amount = 375m
+            });
+            await db.SaveChangesAsync();
+
+            var postingCtrl = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(postingCtrl, BuildAdminPrincipal(1, dt));
+
+            // 1. Single delete via DELETE /api/VoucherPosting/187
+            var singleRes = await postingCtrl.RejectVoucher(187, new VoucherPostingController.VoucherRejectDto
+            {
+                Reason = "Delete pending saving withdrawal"
+            });
+            Assert.IsType<OkObjectResult>(singleRes);
+            Assert.Null(await db.Vouchers.FindAsync(187));
+            Assert.Null(await db.SavingTransactions.FindAsync(901));
+            Assert.Equal(10000m, (await db.SavingAccountMasters.FindAsync(801))!.CurrentBalance);
+
+            // 2. Bulk delete via POST /api/VoucherPosting/BulkReject (including FD MIS payout voucher 188)
+            var bulkRes = await postingCtrl.BulkRejectVouchers(new VoucherPostingController.BulkRejectVouchersRequest
+            {
+                VoucherIds = new List<int> { 188 },
+                Reason = "Bulk reject pending FD MIS payout"
+            });
+            Assert.IsType<OkObjectResult>(bulkRes);
+            Assert.Null(await db.Vouchers.FindAsync(188));
+            Assert.Null(await db.FdMisPayouts.FindAsync(501));
+            Assert.Null(await db.FdTransactions.FindAsync(502));
+            Assert.Null((await db.FdAccounts.FindAsync(802))!.LastInterestPostingDate);
+        }
     }
 }

@@ -66,5 +66,19 @@ namespace Bhisi.Api.Models
 
         // Navigation Property
         public virtual ICollection<VoucherDetail> VoucherDetails { get; set; } = new List<VoucherDetail>();
+
+        // Enriched non-persisted metadata for Voucher Passing & Approval display
+        [NotMapped]
+        public List<VoucherLinkedAccountDto> LinkedAccounts { get; set; } = new();
+    }
+
+    public class VoucherLinkedAccountDto
+    {
+        public string AccountType { get; set; } = string.Empty; // Loan, FD, RD, Saving, Pigmy, Share, Investment, Locker
+        public string AccountTypeLabel { get; set; } = string.Empty; // कर्ज, मुदत ठेव, आरडी, बचत, पिग्मी, शेअर्स, गुंतवणूक, लॉकर
+        public string AccountNo { get; set; } = string.Empty;
+        public string? OldAccountNo { get; set; }
+        public string? ReceiptNo { get; set; }
+        public string? RoleLabel { get; set; }
     }
 }

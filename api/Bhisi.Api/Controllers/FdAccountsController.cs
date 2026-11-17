@@ -4522,6 +4522,7 @@ namespace Bhisi.Api.Controllers
                     {
                         if (string.IsNullOrWhiteSpace(request.ManualOverrideReason))
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest("मॅन्युअल रक्कम बदल (Manual Override) करताना लेखापरीक्षणासाठी (Audit Trail) बदलाचे कारण देणे बंधनकारक आहे.");
                         }
                         if (request.CustomAccruedInterest.HasValue)
@@ -4567,6 +4568,7 @@ namespace Bhisi.Api.Controllers
                         if (activeLoans.Any())
                         {
                             decimal totalLoanDebt = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+                            await transaction.RollbackAsync();
                             return BadRequest(new {
                                 errorCode = "LOAN_OUTSTANDING_EXISTS",
                                 message = $"सदर खातेदाराकडे एकूण ₹{totalLoanDebt:N2} चे सक्रिय कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) थकीत कर्जदारास मुदत ठेवीचे व्याज (₹{interestPayoutAmount:N2}) थेट रोख/बँकेने देता येणार नाही. कृपया नूतनीकरणात संपूर्ण रक्कम (मुद्दल + व्याज) समाविष्ट करा किंवा आधी कर्ज फेडा."

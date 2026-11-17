@@ -116,7 +116,7 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(v => v.VoucherDate >= dayStart && v.VoucherDate < dayEnd);
             }
 
-            return await query
+            var result = await query
                 .AsSplitQuery()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
@@ -143,6 +143,9 @@ namespace Bhisi.Api.Controllers
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.VoucherID)
                 .ToListAsync();
+
+            await VoucherLinkedAccountHelper.EnrichVouchersAsync(_context, result);
+            return result;
         }
 
         // GET: api/VoucherPosting/Approved
@@ -166,7 +169,7 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(v => v.VoucherDate >= dayStart && v.VoucherDate < dayEnd);
             }
 
-            return await query
+            var result = await query
                 .AsSplitQuery()
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
@@ -193,6 +196,9 @@ namespace Bhisi.Api.Controllers
                 .ThenBy(v => v.ScrollNo ?? 0)
                 .ThenBy(v => v.VoucherID)
                 .ToListAsync();
+
+            await VoucherLinkedAccountHelper.EnrichVouchersAsync(_context, result);
+            return result;
         }
 
         private DateTime? ResolveActiveLoginDate(DateTime? explicitDate)

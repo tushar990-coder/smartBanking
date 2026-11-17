@@ -63,6 +63,21 @@ interface VoucherDetail {
   };
 }
 
+interface VoucherLinkedAccount {
+  accountType?: string;
+  AccountType?: string;
+  accountTypeLabel?: string;
+  AccountTypeLabel?: string;
+  accountNo?: string;
+  AccountNo?: string;
+  oldAccountNo?: string | null;
+  OldAccountNo?: string | null;
+  receiptNo?: string | null;
+  ReceiptNo?: string | null;
+  roleLabel?: string | null;
+  RoleLabel?: string | null;
+}
+
 interface Voucher {
   voucherID: number;
   branchID?: number;
@@ -74,6 +89,8 @@ interface Voucher {
   totalAmount: number;
   status: string;
   voucherDetails: VoucherDetail[];
+  linkedAccounts?: VoucherLinkedAccount[];
+  LinkedAccounts?: VoucherLinkedAccount[];
 }
 
 interface VoucherPostingProps {
@@ -880,21 +897,37 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     setSelectedVouchers(new Set());
   };
 
-  // Helper: Extract customer/party name, CIF & primary ledger summary for quick table scan
+  // Helper: Normalize linked account DTOs regardless of API JSON casing
+  const getNormalizedLinkedAccounts = (v: Voucher) => {
+    const raw = v.linkedAccounts || v.LinkedAccounts || [];
+    return raw.map((acc) => ({
+      accountType: acc.accountType || acc.AccountType || '',
+      accountTypeLabel: acc.accountTypeLabel || acc.AccountTypeLabel || acc.accountType || acc.AccountType || '',
+      accountNo: acc.accountNo || acc.AccountNo || '',
+      oldAccountNo: acc.oldAccountNo || acc.OldAccountNo || '',
+      receiptNo: acc.receiptNo || acc.ReceiptNo || '',
+      roleLabel: acc.roleLabel || acc.RoleLabel || '',
+    }));
+  };
+
+  // Helper: Extract customer/party name, CIF, old customer no, linked accounts & primary ledger summary
   const getVoucherPartySummary = (v: Voucher) => {
     const details = v.voucherDetails || [];
     let cif = '';
+    let legacyCustomerNo = '';
     let fullName = '';
 
     for (const vd of details) {
       const cust = vd.customer || vd.member?.customer;
       const cVal = cust?.CIFNo || cust?.cifNo || '';
+      const legCustVal = cust?.LegacyCustomerNo || cust?.legacyCustomerNo || '';
       const fName = cust?.FirstName || cust?.firstName || vd.member?.FirstName || vd.member?.firstName || '';
       const mName = cust?.MiddleName || cust?.middleName || '';
       const lName = cust?.LastName || cust?.lastName || vd.member?.LastName || vd.member?.lastName || '';
       const combined = [fName, mName, lName].filter(Boolean).join(' ').trim();
-      if (cVal || combined) {
+      if (cVal || legCustVal || combined) {
         cif = cVal;
+        legacyCustomerNo = legCustVal;
         fullName = combined;
         break;
       }
@@ -915,7 +948,9 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         ? primaryLedgers.join(' • ')
         : `${primaryLedgers[0]} (+${primaryLedgers.length - 1})`;
 
-    return { cif, fullName, ledgerSummary };
+    const linkedAccounts = getNormalizedLinkedAccounts(v);
+
+    return { cif, legacyCustomerNo, fullName, ledgerSummary, linkedAccounts };
   };
 
   const currentDataset = activeTab === 'PENDING' ? vouchers : approvedVouchers;
@@ -956,12 +991,17 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         const lName = (vd.ledger?.ledgerName || '').toLowerCase();
         const cust = vd.customer || vd.member?.customer;
         const cStr = cust
-          ? `${cust.CIFNo || cust.cifNo || ''} ${cust.FirstName || cust.firstName || ''} ${cust.MiddleName || cust.middleName || ''} ${cust.LastName || cust.lastName || ''}`.toLowerCase()
+          ? `${cust.CIFNo || cust.cifNo || ''} ${cust.LegacyCustomerNo || cust.legacyCustomerNo || ''} ${cust.FirstName || cust.firstName || ''} ${cust.MiddleName || cust.middleName || ''} ${cust.LastName || cust.lastName || ''}`.toLowerCase()
           : '';
         return lName.includes(query) || cStr.includes(query);
       });
+      const matchesLinkedAccounts = getNormalizedLinkedAccounts(v).some((acc) =>
+        `${acc.accountTypeLabel} ${acc.accountNo} ${acc.oldAccountNo} ${acc.receiptNo}`
+          .toLowerCase()
+          .includes(query)
+      );
 
-      return matchesType && (matchesNo || matchesScroll || matchesNarration || matchesAmount || Boolean(matchesDetails));
+      return matchesType && (matchesNo || matchesScroll || matchesNarration || matchesAmount || Boolean(matchesDetails) || matchesLinkedAccounts);
     });
   }, [dateFilteredVouchers, typeFilter, searchQuery]);
 
@@ -1204,13 +1244,13 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
           {/* Right: Compact Search + Total Amount Summary */}
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <div className="relative flex-1 sm:w-56 sm:flex-initial">
+            <div className="relative flex-1 sm:w-64 sm:flex-initial">
               <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 text-gray-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="व्हाउचर क्र., नाव, खाते, रक्कम शोधा..."
+                placeholder="व्हाउचर, नाव, खाते / जुना क्र., रक्कम शोधा..."
                 className="w-full h-[26px] pl-7 pr-6 text-[11px] border border-gray-300 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white text-gray-900"
               />
               {searchQuery && (
@@ -1361,7 +1401,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 filteredVouchers.map((v) => {
                   const isSelected = selectedVouchers.has(v.voucherID);
                   const isExpanded = expandedVoucherId === v.voucherID;
-                  const { cif, fullName, ledgerSummary } = getVoucherPartySummary(v);
+                  const { cif, legacyCustomerNo, fullName, ledgerSummary, linkedAccounts } = getVoucherPartySummary(v);
 
                   let typeBadgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
                   if (v.voucherType === 'Receipt') {
@@ -1441,12 +1481,57 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                 {cif}
                               </span>
                             )}
+                            {legacyCustomerNo && (
+                              <span
+                                className="px-1.5 py-0.2 rounded-sm bg-amber-50 text-amber-800 border border-amber-200 font-mono font-bold text-[9.5px]"
+                                title={`जुना खातेदार / खाते क्र.: ${legacyCustomerNo}`}
+                              >
+                                जुना खाते क्र.: {legacyCustomerNo}
+                              </span>
+                            )}
                             {ledgerSummary && (
                               <span className={`${fullName ? 'text-gray-600 font-semibold text-[11px]' : 'font-bold text-gray-900'}`}>
                                 {fullName ? `• ${ledgerSummary}` : ledgerSummary}
                               </span>
                             )}
                           </div>
+                          {linkedAccounts.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1 mt-1">
+                              {linkedAccounts.slice(0, 2).map((acc, idx) => (
+                                <span
+                                  key={`${acc.accountType}-${acc.accountNo}-${idx}`}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-sm bg-slate-100 text-slate-800 border border-slate-300 font-mono text-[9.5px]"
+                                >
+                                  <span className="font-sans font-bold text-slate-600">
+                                    {acc.accountTypeLabel}
+                                    {acc.roleLabel ? ` (${acc.roleLabel})` : ''}:
+                                  </span>
+                                  {acc.accountNo && <span className="font-bold text-slate-900">{acc.accountNo}</span>}
+                                  {acc.oldAccountNo && (
+                                    <span className="text-amber-800 font-bold">
+                                      | जुना: {acc.oldAccountNo}
+                                    </span>
+                                  )}
+                                  {acc.receiptNo && (
+                                    <span className="text-indigo-700 font-semibold">
+                                      | पावती: {acc.receiptNo}
+                                    </span>
+                                  )}
+                                </span>
+                              ))}
+                              {linkedAccounts.length > 2 && (
+                                <span
+                                  className="px-1.5 py-0.2 rounded-sm bg-slate-200 text-slate-700 font-bold text-[9.5px]"
+                                  title={linkedAccounts
+                                    .slice(2)
+                                    .map((a) => `${a.accountTypeLabel}: ${a.accountNo}${a.oldAccountNo ? ` (जुना: ${a.oldAccountNo})` : ''}`)
+                                    .join(', ')}
+                                >
+                                  +{linkedAccounts.length - 2} खाती
+                                </span>
+                              )}
+                            </div>
+                          )}
                           {v.narration && (
                             <div className="text-[10.5px] text-gray-500 truncate mt-0.5" title={v.narration}>
                               {v.narration}
@@ -1526,9 +1611,27 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                         <tr className="bg-slate-50/90">
                           <td colSpan={7} className="p-2.5 border-l-4 border-primary text-left">
                             <div className="flex items-center justify-between mb-1.5">
-                              <div className="text-[11px] font-bold text-primary flex items-center gap-1.5">
+                              <div className="text-[11px] font-bold text-primary flex flex-wrap items-center gap-1.5">
                                 <Layers className="w-3.5 h-3.5" />
                                 <span>खातावणी तपशील (Ledger Breakdown — {v.voucherNo})</span>
+                                {linkedAccounts.map((acc, idx) => (
+                                  <span
+                                    key={`exp-${acc.accountType}-${acc.accountNo}-${idx}`}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-white text-slate-800 border border-slate-300 font-mono text-[10px] font-normal"
+                                  >
+                                    <span className="font-sans font-bold text-slate-600">
+                                      {acc.accountTypeLabel}
+                                      {acc.roleLabel ? ` (${acc.roleLabel})` : ''}:
+                                    </span>
+                                    {acc.accountNo && <span className="font-bold text-slate-900">{acc.accountNo}</span>}
+                                    {acc.oldAccountNo && (
+                                      <span className="text-amber-800 font-bold">| जुना: {acc.oldAccountNo}</span>
+                                    )}
+                                    {acc.receiptNo && (
+                                      <span className="text-indigo-700 font-semibold">| पावती: {acc.receiptNo}</span>
+                                    )}
+                                  </span>
+                                ))}
                               </div>
                               <button
                                 type="button"
@@ -1576,25 +1679,29 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
                                           const cust = vd.customer || vd.member?.customer;
                                           const cifVal = cust?.CIFNo || cust?.cifNo;
+                                          const legCustVal = cust?.LegacyCustomerNo || cust?.legacyCustomerNo;
                                           const fName = cust?.FirstName || cust?.firstName || vd.member?.FirstName || vd.member?.firstName || '';
                                           const lName = cust?.LastName || cust?.lastName || vd.member?.LastName || vd.member?.lastName || '';
                                           const fFullName = `${fName} ${lName}`.trim();
 
-                                          if (cifVal) {
+                                          if (cifVal || legCustVal) {
                                             return (
-                                              <div className="flex items-center gap-1.5">
-                                                <span className="font-bold text-primary font-mono text-[11px]">{cifVal}</span>
+                                              <div className="flex flex-wrap items-center gap-1.5">
+                                                {cifVal && <span className="font-bold text-primary font-mono text-[11px]">{cifVal}</span>}
+                                                {legCustVal && (
+                                                  <span className="px-1 py-0.2 rounded-sm bg-amber-50 text-amber-800 border border-amber-200 font-mono font-bold text-[9.5px]">
+                                                    जुना: {legCustVal}
+                                                  </span>
+                                                )}
                                                 {fFullName ? <span className="text-gray-700">{fFullName}</span> : null}
                                               </div>
                                             );
                                           }
 
-                                          const memCode = vd.member?.MemberCode || vd.member?.memberCode;
-                                          if (memCode || fFullName) {
+                                          if (fFullName) {
                                             return (
                                               <div className="flex items-center gap-1.5">
-                                                {memCode && <span className="font-bold text-gray-800 font-mono">{memCode}</span>}
-                                                {fFullName && <span className="text-gray-700">{fFullName}</span>}
+                                                <span className="text-gray-700">{fFullName}</span>
                                               </div>
                                             );
                                           }

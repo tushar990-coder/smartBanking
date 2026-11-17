@@ -910,5 +910,164 @@ namespace Bhisi.Api.Models
         public string NetBalanceType { get; set; } = "Dr";
         public List<CustomerOpeningBalanceRowDto> Rows { get; set; } = new();
     }
+
+    public class FdLedgerCustomerOptionDto
+    {
+        public int CustomerID { get; set; }
+        public string CIFNo { get; set; } = string.Empty;
+        public string? LegacyCustomerNo { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string CustomerNameEng { get; set; } = string.Empty;
+        public string? NickName { get; set; }
+        public string MobileNo { get; set; } = string.Empty;
+        public int FdCount { get; set; }
+        public decimal TotalDepositAmount { get; set; }
+        public List<string> AccountNumbers { get; set; } = new();
+        public List<string> SchemeNames { get; set; } = new();
+    }
+
+    public class FdLedgerAccountOptionDto
+    {
+        public int FdAccountID { get; set; }
+        public int CustomerID { get; set; }
+        public int FdSchemeID { get; set; }
+        public string SchemeName { get; set; } = string.Empty;
+        public string AccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
+        public string? ReceiptNo { get; set; }
+        public decimal DepositAmount { get; set; }
+        public decimal MaturityAmount { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string OpeningDate { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public string CustomerNameEng { get; set; } = string.Empty;
+        public string? NickName { get; set; }
+        public string CIFNo { get; set; } = string.Empty;
+        public string? LegacyCustomerNo { get; set; }
+        public string MobileNo { get; set; } = string.Empty;
+    }
+
+    public class FdLedgerOptionsResponseDto
+    {
+        public int? BranchID { get; set; }
+        public int? FdSchemeID { get; set; }
+        public int TotalAccountsCount { get; set; }
+        public decimal TotalDepositAmount { get; set; }
+        public List<FdLedgerCustomerOptionDto> Customers { get; set; } = new();
+        public List<FdLedgerAccountOptionDto> Accounts { get; set; } = new();
+    }
+
+    public class FdLedgerTxDto
+    {
+        public int FdTransactionID { get; set; }
+        public int FdAccountID { get; set; }
+        public string AccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string CIFNo { get; set; } = string.Empty;
+        public string TransactionDate { get; set; } = string.Empty;
+        public string? TransactionType { get; set; }
+        public string DebitCredit { get; set; } = "Cr";
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+        public decimal Balance { get; set; }
+        public decimal Amount { get; set; }
+        public string? VoucherNo { get; set; }
+        public string? PassingStatus { get; set; }
+        public string Narration { get; set; } = string.Empty;
+    }
+
+    public class FdLedgerAccountDto
+    {
+        public int FdAccountID { get; set; }
+        public int FdSchemeID { get; set; }
+        public string SchemeCode { get; set; } = string.Empty;
+        public string SchemeName { get; set; } = string.Empty;
+        public int CustomerID { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string CIFNo { get; set; } = string.Empty;
+        public string? LegacyCustomerNo { get; set; }
+        public string AccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
+        public string OpeningDate { get; set; } = string.Empty;
+        public string MaturityDate { get; set; } = string.Empty;
+        public decimal DepositAmount { get; set; }
+        public decimal InterestRate { get; set; }
+        public decimal MaturityAmount { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? PaymentMode { get; set; }
+        public string? NomineeName { get; set; }
+        public string? NomineeRelation { get; set; }
+        public string DurationType { get; set; } = "Months";
+        public int DurationValue { get; set; }
+        public int DurationInDays { get; set; }
+        public bool IsLienMarked { get; set; }
+        public string LienLoanAccountNo { get; set; } = string.Empty;
+        public decimal LienAmount { get; set; }
+        public string? Remarks { get; set; }
+        public int DurationMonths { get; set; }
+        public decimal TotalAccruedInterest { get; set; }
+        public decimal OpeningBalance { get; set; }
+        public decimal PeriodTotalDebit { get; set; }
+        public decimal PeriodTotalCredit { get; set; }
+        public decimal ClosingBalance { get; set; }
+        public List<FdLedgerTxDto> Transactions { get; set; } = new();
+    }
+
+    public class FdConsolidatedLedgerDto
+    {
+        public int AccountsCount { get; set; }
+        public decimal TotalDepositAmount { get; set; }
+        public decimal TotalMaturityAmount { get; set; }
+        public decimal OpeningBalance { get; set; }
+        public decimal PeriodTotalDebit { get; set; }
+        public decimal PeriodTotalCredit { get; set; }
+        public decimal ClosingBalance { get; set; }
+        public List<FdLedgerTxDto> Transactions { get; set; } = new();
+    }
+
+    public class FdSchemeLedgerGroupDto
+    {
+        public int FdSchemeID { get; set; }
+        public string SchemeName { get; set; } = string.Empty;
+        public string SchemeCode { get; set; } = string.Empty;
+        public int AccountsCount { get; set; }
+        public decimal TotalDepositAmount { get; set; }
+        public decimal TotalMaturityAmount { get; set; }
+        public decimal OpeningBalance { get; set; }
+        public decimal PeriodTotalDebit { get; set; }
+        public decimal PeriodTotalCredit { get; set; }
+        public decimal ClosingBalance { get; set; }
+        public List<FdLedgerAccountDto> Accounts { get; set; } = new();
+        public FdConsolidatedLedgerDto Consolidated { get; set; } = new();
+    }
+
+    public class FdLedgerStatementResponseDto
+    {
+        public int CustomerID { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public int MemberID { get; set; }
+        public string MemberCode { get; set; } = string.Empty;
+        public string CIFNo { get; set; } = string.Empty;
+        public string? LegacyCustomerNo { get; set; }
+        public string MemberName { get; set; } = string.Empty;
+        public string MobileNo { get; set; } = string.Empty;
+        public string Address { get; set; } = string.Empty;
+        public string BranchName { get; set; } = string.Empty;
+        public bool IsAllCustomers { get; set; }
+        public int SelectedSchemeId { get; set; }
+        public string SelectedSchemeName { get; set; } = string.Empty;
+        public int TotalFDAccountsCount { get; set; }
+        public decimal TotalPrincipalInvested { get; set; }
+        public decimal TotalMaturityValue { get; set; }
+        public decimal TotalOpeningBalance { get; set; }
+        public decimal TotalPeriodDebit { get; set; }
+        public decimal TotalPeriodCredit { get; set; }
+        public decimal TotalClosingBalance { get; set; }
+        public string? FromDate { get; set; }
+        public string? ToDate { get; set; }
+        public List<FdLedgerAccountDto> Accounts { get; set; } = new();
+        public List<FdSchemeLedgerGroupDto> SchemeGroups { get; set; } = new();
+    }
 }
 

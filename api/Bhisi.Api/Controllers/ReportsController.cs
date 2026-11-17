@@ -8147,330 +8147,644 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        // GET: api/Reports/fd-member-ledger/5
-        [HttpGet("fd-member-ledger/{memberId}")]
-        public async Task<IActionResult> GetFdMemberLedgerReport(
-            int memberId, 
-            [FromQuery] DateTime? fromDate = null, 
-            [FromQuery] DateTime? toDate = null, 
-            [FromQuery] int? fdAccountId = null)
+        private static string FormatCustomerFullName(Customer? customer)
         {
-            try
+            if (customer == null) return string.Empty;
+            var marathi = $"{customer.FirstName} {customer.MiddleName} {customer.LastName}".Replace("  ", " ").Trim();
+            if (!string.IsNullOrWhiteSpace(marathi)) return marathi;
+            return $"{customer.FirstNameEng} {customer.MiddleNameEng} {customer.LastNameEng}".Replace("  ", " ").Trim();
+        }
+
+        private async Task<(List<FdLedgerAccountDto> Accounts, List<FdSchemeLedgerGroupDto> SchemeGroups)> BuildFdAccountLedgersAsync(
+            IQueryable<FdAccount> accountsQuery,
+            DateTime? fromDate,
+            DateTime? toDate)
+        {
+            var accounts = await accountsQuery
+                .AsNoTracking()
+                .Include(a => a.FdScheme)
+                .Include(a => a.Customer)
+                .OrderBy(a => a.FdScheme != null ? a.FdScheme.SchemeName : string.Empty)
+                .ThenBy(a => a.AccountNo)
+                .ThenBy(a => a.FdAccountID)
+                .ToListAsync();
+
+            if (accounts.Count == 0)
             {
-                Customer? customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == memberId);
-                Member? member = null;
+                return (new List<FdLedgerAccountDto>(), new List<FdSchemeLedgerGroupDto>());
+            }
 
-                if (customer != null)
+            var accountIds = accounts.Select(a => a.FdAccountID).ToList();
+            var allTransactions = await _context.FdTransactions
+                .AsNoTracking()
+                .Include(t => t.Voucher)
+                .Where(t => accountIds.Contains(t.FdAccountID))
+                .ToListAsync();
+
+            var txByAccountLookup = allTransactions.ToLookup(t => t.FdAccountID);
+            DateTime? filterFrom = fromDate?.Date;
+            DateTime? filterTo = toDate?.Date;
+
+            var accountLedgerList = new List<FdLedgerAccountDto>(accounts.Count);
+            var rawMergedTxByScheme = new Dictionary<int, List<(DateTime Date, string DebitCredit, decimal Amount, int TxId, FdLedgerTxDto Dto)>>();
+
+            foreach (var acc in accounts)
+            {
+                var rawTransactions = txByAccountLookup[acc.FdAccountID].ToList();
+                string custFullName = FormatCustomerFullName(acc.Customer);
+                string cifNo = acc.Customer?.CIFNo ?? string.Empty;
+
+                decimal txAccrualSum = rawTransactions
+                    .Where(t => t.TransactionType == "Accrual")
+                    .Sum(t => t.Amount);
+                decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
+
+                var fullTxList = rawTransactions.Select(t =>
                 {
-                    member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
-                }
-                else
+                    string drcr = t.DebitCredit?.Trim() ?? string.Empty;
+                    if (string.IsNullOrEmpty(drcr))
+                    {
+                        string tt = (t.TransactionType ?? string.Empty).ToLowerInvariant();
+                        drcr = (tt.Contains("opening") || tt.Contains("deposit") || tt.Contains("accrual") || tt.Contains("interest"))
+                            ? "Cr"
+                            : "Dr";
+                    }
+
+                    string rawNarration = t.Voucher?.Narration ?? string.Empty;
+                    string vnUpper = (t.Voucher?.VoucherNo ?? string.Empty).ToUpperInvariant();
+                    string ttLower = (t.TransactionType ?? string.Empty).ToLowerInvariant();
+                    string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : string.Empty;
+                    string narration;
+
+                    if (ttLower.Contains("premature") || vnUpper.Contains("PRECLOSE") || rawNarration.Contains("मुदतपूर्व बंद") || rawNarration.Contains("Premature Close"))
+                    {
+                        narration = "मुदतपूर्व बंद परतावा";
+                    }
+                    else if (ttLower.Contains("matur") || vnUpper.Contains("MAT") || vnUpper.Contains("CLOSE") || rawNarration.Contains("मुदतपूर्ती") || rawNarration.Contains("Maturity"))
+                    {
+                        narration = "मुदतपूर्ती परतावा";
+                    }
+                    else if (ttLower == "opening" || vnUpper.Contains("FD-OP") || rawNarration.Contains("खाते उघडले") || rawNarration.Contains("Account Opened") || rawNarration.Contains("आरंभिक") || rawNarration.Contains("Migration"))
+                    {
+                        narration = (!string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) || rawNarration.Contains("स्थलांतर") || rawNarration.Contains("Migration") || rawNarration.Contains("आरंभिक"))
+                            ? $"आरंभिक मुदत ठेव जमा{legPart}"
+                            : "नवीन मुदत ठेव जमा";
+                    }
+                    else if (ttLower.Contains("renew") || vnUpper.Contains("REN") || rawNarration.Contains("नूतनीकरण") || rawNarration.Contains("Renewal"))
+                    {
+                        narration = "मुदत ठेव नूतनीकरण";
+                    }
+                    else if (ttLower == "accrual" || vnUpper.Contains("INT") || vnUpper.Contains("PROV") || rawNarration.Contains("व्याज जमा") || rawNarration.Contains("व्याज तरतूद") || rawNarration.Contains("Accrued Interest"))
+                    {
+                        narration = rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
+                            ? "मुदतपूर्व व्याज जमा"
+                            : (rawNarration.Contains("मुदतपूर्ती") || vnUpper.Contains("MAT") ? "मुदतपूर्ती व्याज जमा" : "मुदत ठेव व्याज जमा");
+                    }
+                    else if (string.IsNullOrWhiteSpace(rawNarration) || rawNarration.Contains("???") || rawNarration.Contains("????"))
+                    {
+                        narration = "मुदत ठेव व्यवहार";
+                    }
+                    else
+                    {
+                        narration = rawNarration
+                            .Replace(" (FD Account Opened - Cash)", "")
+                            .Replace(" (Premature Close - Cash)", "")
+                            .Replace(" (Maturity Payout - Cash)", "")
+                            .Trim();
+                        if (string.IsNullOrWhiteSpace(narration)) narration = "मुदत ठेव व्यवहार";
+                    }
+
+                    return new
+                    {
+                        t.FdTransactionID,
+                        t.TransactionDate,
+                        TransactionType = (string?)t.TransactionType,
+                        DebitCredit = drcr,
+                        t.Amount,
+                        VoucherNo = (string?)(t.Voucher != null ? t.Voucher.VoucherNo : string.Empty),
+                        PassingStatus = (string?)(t.Voucher != null ? (string.IsNullOrWhiteSpace(t.Voucher.Status) ? "Approved" : t.Voucher.Status) : null),
+                        Narration = narration
+                    };
+                }).ToList();
+
+                if (acc.IsLegacyAccount && acc.LegacyAccruedInt > 0 && txAccrualSum < acc.LegacyAccruedInt)
                 {
-                    member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == memberId);
-                    if (member?.CustomerID != null)
+                    decimal missingLegacyInt = acc.LegacyAccruedInt - txAccrualSum;
+                    string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : string.Empty;
+                    fullTxList.Add(new
                     {
-                        customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
-                    }
-                }
-
-                if (member == null && customer == null) return NotFound("सभासद किंवा खातेदार सापडला नाही.");
-
-                int? targetCustId = customer?.CustomerID ?? member?.CustomerID;
-                int? targetMemId = member?.MemberID;
-
-                var accountsQuery = _context.FdAccounts
-                    .Include(a => a.FdScheme)
-                    .Where(a => targetCustId != null && a.CustomerID == targetCustId)
-                    .AsQueryable();
-
-                if (fdAccountId.HasValue && fdAccountId.Value > 0)
-                {
-                    accountsQuery = accountsQuery.Where(a => a.FdAccountID == fdAccountId.Value);
-                }
-
-                var accounts = await accountsQuery
-                    .OrderBy(a => a.AccountNo)
-                    .ThenBy(a => a.FdAccountID)
-                    .ToListAsync();
-
-                var accountLedgerList = new List<object>();
-
-                foreach (var acc in accounts)
-                {
-                    var rawTransactions = await _context.FdTransactions
-                        .Include(t => t.Voucher)
-                        .Where(t => t.FdAccountID == acc.FdAccountID)
-                        .ToListAsync();
-
-                    // Calculate total recorded accrual in FdTransactions
-                    decimal txAccrualSum = rawTransactions
-                        .Where(t => t.TransactionType == "Accrual")
-                        .Sum(t => t.Amount);
-                    decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
-
-                    // Structured transaction list with unified typing
-                    var fullTxList = rawTransactions.Select(t =>
-                    {
-                        string drcr = t.DebitCredit?.Trim() ?? "";
-                        if (string.IsNullOrEmpty(drcr))
-                        {
-                            string tt = (t.TransactionType ?? "").ToLowerInvariant();
-                            if (tt.Contains("opening") || tt.Contains("deposit") || tt.Contains("accrual") || tt.Contains("interest"))
-                                drcr = "Cr";
-                            else
-                                drcr = "Dr";
-                        }
-
-                        string rawNarration = t.Voucher?.Narration ?? "";
-                        string vnUpper = (t.Voucher?.VoucherNo ?? "").ToUpper();
-                        string ttLower = (t.TransactionType ?? "").ToLower();
-                        string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : "";
-                        string narration = "";
-
-                        if (ttLower.Contains("premature") || vnUpper.Contains("PRECLOSE") || rawNarration.Contains("मुदतपूर्व बंद") || rawNarration.Contains("Premature Close"))
-                        {
-                            narration = "मुदतपूर्व बंद परतावा";
-                        }
-                        else if (ttLower.Contains("matur") || vnUpper.Contains("MAT") || vnUpper.Contains("CLOSE") || rawNarration.Contains("मुदतपूर्ती") || rawNarration.Contains("Maturity"))
-                        {
-                            narration = "मुदतपूर्ती परतावा";
-                        }
-                        else if (ttLower == "opening" || vnUpper.Contains("FD-OP") || rawNarration.Contains("खाते उघडले") || rawNarration.Contains("Account Opened") || rawNarration.Contains("आरंभिक") || rawNarration.Contains("Migration"))
-                        {
-                            narration = (!string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) || rawNarration.Contains("स्थलांतर") || rawNarration.Contains("Migration") || rawNarration.Contains("आरंभिक"))
-                                ? $"आरंभिक मुदत ठेव जमा{legPart}"
-                                : "नवीन मुदत ठेव जमा";
-                        }
-                        else if (ttLower.Contains("renew") || vnUpper.Contains("REN") || rawNarration.Contains("नूतनीकरण") || rawNarration.Contains("Renewal"))
-                        {
-                            narration = "मुदत ठेव नूतनीकरण";
-                        }
-                        else if (ttLower == "accrual" || vnUpper.Contains("INT") || vnUpper.Contains("PROV") || rawNarration.Contains("व्याज जमा") || rawNarration.Contains("व्याज तरतूद") || rawNarration.Contains("Accrued Interest"))
-                        {
-                            narration = rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
-                                ? "मुदतपूर्व व्याज जमा"
-                                : (rawNarration.Contains("मुदतपूर्ती") || vnUpper.Contains("MAT") ? "मुदतपूर्ती व्याज जमा" : "मुदत ठेव व्याज जमा");
-                        }
-                        else if (string.IsNullOrWhiteSpace(rawNarration) || rawNarration.Contains("???") || rawNarration.Contains("????"))
-                        {
-                            narration = "मुदत ठेव व्यवहार";
-                        }
-                        else
-                        {
-                            // Clean verbose narration into concise Marathi
-                            narration = rawNarration
-                                .Replace(" (FD Account Opened - Cash)", "")
-                                .Replace(" (Premature Close - Cash)", "")
-                                .Replace(" (Maturity Payout - Cash)", "")
-                                .Trim();
-                            if (string.IsNullOrWhiteSpace(narration)) narration = "मुदत ठेव व्यवहार";
-                        }
-
-                        return new
-                        {
-                            t.FdTransactionID,
-                            t.TransactionDate,
-                            TransactionType = (string?)t.TransactionType,
-                            DebitCredit = drcr,
-                            t.Amount,
-                            VoucherNo = (string?)(t.Voucher != null ? t.Voucher.VoucherNo : ""),
-                            PassingStatus = (string?)(t.Voucher != null ? (string.IsNullOrWhiteSpace(t.Voucher.Status) ? "Approved" : t.Voucher.Status) : null),
-                            Narration = narration
-                        };
-                    }).ToList();
-
-                    // If legacy accrued interest exists but was missing from FdTransactions, synthesize virtual opening accrual entry
-                    if (acc.IsLegacyAccount && acc.LegacyAccruedInt > 0 && txAccrualSum < acc.LegacyAccruedInt)
-                    {
-                        decimal missingLegacyInt = acc.LegacyAccruedInt - txAccrualSum;
-                        string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : "";
-                        fullTxList.Add(new
-                        {
-                            FdTransactionID = -1,
-                            TransactionDate = acc.OpeningDate,
-                            TransactionType = (string?)"Accrual",
-                            DebitCredit = "Cr",
-                            Amount = missingLegacyInt,
-                            VoucherNo = (string?)"LEG-INT-MIG",
-                            PassingStatus = (string?)null,
-                            Narration = $"साचलेले जुने व्याज जमा{legPart}"
-                        });
-                    }
-
-                    // If FD was closed or renewed with total payout/transfer > principal/net liability, synthesize uncredited closure/renewal interest entry
-                    var closeTx = fullTxList.FirstOrDefault(t => t.DebitCredit == "Dr" && (
-                        t.TransactionType == "Premature_Close" ||
-                        t.TransactionType == "PrematureClose" ||
-                        t.TransactionType == "Maturity" ||
-                        t.TransactionType == "Closure" ||
-                        t.TransactionType == "Payout" ||
-                        t.TransactionType == "Renewal" ||
-                        (!string.IsNullOrEmpty(t.VoucherNo) && (t.VoucherNo.Contains("PRECLOSE") || t.VoucherNo.Contains("CLOSE") || t.VoucherNo.Contains("REN")))));
-                    if (closeTx != null)
-                    {
-                        decimal totalCrBeforeClosure = fullTxList.Where(t => t != closeTx && t.DebitCredit == "Cr").Sum(t => t.Amount);
-                        decimal otherDr = fullTxList.Where(t => t != closeTx && t.DebitCredit == "Dr").Sum(t => t.Amount);
-                        decimal netLiabilityBeforeClosure = totalCrBeforeClosure - otherDr;
-
-                        if (closeTx.Amount > netLiabilityBeforeClosure && (closeTx.Amount - netLiabilityBeforeClosure) >= 0.01m)
-                        {
-                            decimal closureInterest = Math.Round(closeTx.Amount - netLiabilityBeforeClosure, 2);
-                            bool alreadySynthesized = fullTxList.Any(t => t.FdTransactionID == -2);
-                            if (!alreadySynthesized)
-                            {
-                                bool isPremature = (closeTx.TransactionType ?? "").Contains("Premature") || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("PRECLOSE"));
-                                bool isRenewal = closeTx.TransactionType == "Renewal" || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("REN"));
-                                fullTxList.Add(new
-                                {
-                                    FdTransactionID = -2,
-                                    TransactionDate = closeTx.TransactionDate,
-                                    TransactionType = (string?)"Accrual",
-                                    DebitCredit = "Cr",
-                                    Amount = closureInterest,
-                                    VoucherNo = (string?)closeTx.VoucherNo,
-                                    PassingStatus = (string?)closeTx.PassingStatus,
-                                    Narration = isPremature ? "मुदतपूर्व व्याज जमा" : (isRenewal ? "नूतनीकरण मुदतपूर्ती व्याज जमा" : "मुदतपूर्ती व्याज जमा")
-                                });
-                            }
-                        }
-                    }
-
-                    // Sort chronologically: same-day Credit entries MUST be listed before Debit entries
-                    var sortedTxList = fullTxList
-                        .OrderBy(t => t.TransactionDate.Date)
-                        .ThenBy(t => t.DebitCredit == "Cr" ? 0 : 1)
-                        .ThenBy(t => t.FdTransactionID)
-                        .ToList();
-
-                    // Compute opening balance before fromDate (if filtered)
-                    decimal openingBal = 0m;
-                    DateTime? filterFrom = fromDate?.Date;
-                    DateTime? filterTo = toDate?.Date;
-
-                    if (filterFrom.HasValue)
-                    {
-                        var prePeriodTxs = sortedTxList.Where(t => t.TransactionDate.Date < filterFrom.Value).ToList();
-                        foreach (var p in prePeriodTxs)
-                        {
-                            if (p.DebitCredit == "Cr") openingBal += p.Amount;
-                            else if (p.DebitCredit == "Dr") openingBal -= p.Amount;
-                        }
-                    }
-
-                    // Filter transactions within selected period
-                    var periodTxs = sortedTxList.Where(t =>
-                    {
-                        if (filterFrom.HasValue && t.TransactionDate.Date < filterFrom.Value) return false;
-                        if (filterTo.HasValue && t.TransactionDate.Date > filterTo.Value) return false;
-                        return true;
-                    }).ToList();
-
-                    decimal runningBal = openingBal;
-                    decimal periodTotalDebit = 0m;
-                    decimal periodTotalCredit = 0m;
-
-                    var finalLedgerRows = new List<object>();
-
-                    foreach (var tx in periodTxs)
-                    {
-                        decimal drAmt = tx.DebitCredit == "Dr" ? tx.Amount : 0m;
-                        decimal crAmt = tx.DebitCredit == "Cr" ? tx.Amount : 0m;
-
-                        runningBal += (crAmt - drAmt);
-                        if (Math.Abs(runningBal) < 0.0001m) runningBal = 0m;
-                        periodTotalDebit += drAmt;
-                        periodTotalCredit += crAmt;
-
-                        finalLedgerRows.Add(new
-                        {
-                            tx.FdTransactionID,
-                            TransactionDate = tx.TransactionDate.ToString("yyyy-MM-dd"),
-                            tx.TransactionType,
-                            tx.DebitCredit,
-                            Debit = drAmt,
-                            Credit = crAmt,
-                            Balance = runningBal,
-                            tx.Amount,
-                            tx.VoucherNo,
-                            tx.PassingStatus,
-                            tx.Narration
-                        });
-                    }
-
-                    // Check if FD has an active loan lien
-                    bool isLien = acc.IsLienMarked;
-                    string lienLoanNo = acc.LienLoanAccountNo ?? "";
-                    if (!isLien && !string.IsNullOrWhiteSpace(acc.LienLoanAccountNo))
-                    {
-                        isLien = true;
-                    }
-
-                    accountLedgerList.Add(new
-                    {
-                        acc.FdAccountID,
-                        acc.AccountNo,
-                        acc.LegacyAccountNumber,
-                        OpeningDate = acc.OpeningDate.ToString("yyyy-MM-dd"),
-                        MaturityDate = acc.MaturityDate.ToString("yyyy-MM-dd"),
-                        acc.DepositAmount,
-                        acc.InterestRate,
-                        acc.MaturityAmount,
-                        acc.Status,
-                        acc.PaymentMode,
-                        acc.NomineeName,
-                        acc.NomineeRelation,
-                        DurationType = acc.DurationType ?? "Months",
-                        DurationValue = acc.DurationValue ?? (acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12),
-                        DurationInDays = acc.DurationInDays ?? 0,
-                        IsLienMarked = isLien,
-                        LienLoanAccountNo = lienLoanNo,
-                        LienAmount = acc.LienAmount ?? 0m,
-                        acc.Remarks,
-                        SchemeName = acc.FdScheme != null ? acc.FdScheme.SchemeName : "Standard Scheme",
-                        DurationMonths = acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12,
-                        TotalAccruedInterest = totalAccruedInt,
-                        OpeningBalance = openingBal,
-                        PeriodTotalDebit = periodTotalDebit,
-                        PeriodTotalCredit = periodTotalCredit,
-                        ClosingBalance = ((acc.Status == "Closed" || acc.Status == "Closed-Premature") && Math.Abs(runningBal) < 0.01m) ? 0m : runningBal,
-                        Transactions = finalLedgerRows
+                        FdTransactionID = -1,
+                        TransactionDate = acc.OpeningDate,
+                        TransactionType = (string?)"Accrual",
+                        DebitCredit = "Cr",
+                        Amount = missingLegacyInt,
+                        VoucherNo = (string?)"LEG-INT-MIG",
+                        PassingStatus = (string?)null,
+                        Narration = $"साचलेले जुने व्याज जमा{legPart}"
                     });
                 }
 
-                string fullName = customer != null
-                    ? $"{customer.FirstName} {customer.MiddleName} {customer.LastName}".Replace("  ", " ").Trim()
-                    : (member?.Customer != null ? $"{member.Customer.FirstName} {member.Customer.MiddleName} {member.Customer.LastName}".Replace("  ", " ").Trim() : "");
-
-                if (string.IsNullOrWhiteSpace(fullName))
+                var closeTx = fullTxList.FirstOrDefault(t => t.DebitCredit == "Dr" && (
+                    t.TransactionType == "Premature_Close" ||
+                    t.TransactionType == "PrematureClose" ||
+                    t.TransactionType == "Maturity" ||
+                    t.TransactionType == "Closure" ||
+                    t.TransactionType == "Payout" ||
+                    t.TransactionType == "Renewal" ||
+                    (!string.IsNullOrEmpty(t.VoucherNo) && (t.VoucherNo.Contains("PRECLOSE") || t.VoucherNo.Contains("CLOSE") || t.VoucherNo.Contains("REN")))));
+                if (closeTx != null)
                 {
-                    fullName = customer != null 
-                        ? $"{customer.FirstNameEng} {customer.MiddleNameEng} {customer.LastNameEng}".Replace("  ", " ").Trim()
-                        : (member?.Customer != null ? $"{member.Customer.FirstNameEng} {member.Customer.MiddleNameEng} {member.Customer.LastNameEng}".Replace("  ", " ").Trim() : "");
+                    decimal totalCrBeforeClosure = fullTxList.Where(t => t != closeTx && t.DebitCredit == "Cr").Sum(t => t.Amount);
+                    decimal otherDr = fullTxList.Where(t => t != closeTx && t.DebitCredit == "Dr").Sum(t => t.Amount);
+                    decimal netLiabilityBeforeClosure = totalCrBeforeClosure - otherDr;
+
+                    if (closeTx.Amount > netLiabilityBeforeClosure && (closeTx.Amount - netLiabilityBeforeClosure) >= 0.01m)
+                    {
+                        decimal closureInterest = Math.Round(closeTx.Amount - netLiabilityBeforeClosure, 2);
+                        if (!fullTxList.Any(t => t.FdTransactionID == -2))
+                        {
+                            bool isPremature = (closeTx.TransactionType ?? string.Empty).Contains("Premature") || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("PRECLOSE"));
+                            bool isRenewal = closeTx.TransactionType == "Renewal" || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("REN"));
+                            fullTxList.Add(new
+                            {
+                                FdTransactionID = -2,
+                                TransactionDate = closeTx.TransactionDate,
+                                TransactionType = (string?)"Accrual",
+                                DebitCredit = "Cr",
+                                Amount = closureInterest,
+                                VoucherNo = closeTx.VoucherNo,
+                                PassingStatus = closeTx.PassingStatus,
+                                Narration = isPremature ? "मुदतपूर्व व्याज जमा" : (isRenewal ? "नूतनीकरण मुदतपूर्ती व्याज जमा" : "मुदतपूर्ती व्याज जमा")
+                            });
+                        }
+                    }
                 }
 
-                return Ok(new
+                var sortedTxList = fullTxList
+                    .OrderBy(t => t.TransactionDate.Date)
+                    .ThenBy(t => t.DebitCredit == "Cr" ? 0 : 1)
+                    .ThenBy(t => t.FdTransactionID)
+                    .ToList();
+
+                decimal openingBal = 0m;
+                if (filterFrom.HasValue)
+                {
+                    foreach (var p in sortedTxList.Where(t => t.TransactionDate.Date < filterFrom.Value))
+                    {
+                        if (p.DebitCredit == "Cr") openingBal += p.Amount;
+                        else if (p.DebitCredit == "Dr") openingBal -= p.Amount;
+                    }
+                }
+
+                var periodTxs = sortedTxList.Where(t =>
+                {
+                    if (filterFrom.HasValue && t.TransactionDate.Date < filterFrom.Value) return false;
+                    if (filterTo.HasValue && t.TransactionDate.Date > filterTo.Value) return false;
+                    return true;
+                }).ToList();
+
+                decimal runningBal = openingBal;
+                decimal periodTotalDebit = 0m;
+                decimal periodTotalCredit = 0m;
+                var finalLedgerRows = new List<FdLedgerTxDto>();
+
+                if (!rawMergedTxByScheme.TryGetValue(acc.FdSchemeID, out var schemeMergedList))
+                {
+                    schemeMergedList = new List<(DateTime, string, decimal, int, FdLedgerTxDto)>();
+                    rawMergedTxByScheme[acc.FdSchemeID] = schemeMergedList;
+                }
+
+                foreach (var tx in periodTxs)
+                {
+                    decimal drAmt = tx.DebitCredit == "Dr" ? tx.Amount : 0m;
+                    decimal crAmt = tx.DebitCredit == "Cr" ? tx.Amount : 0m;
+
+                    runningBal += (crAmt - drAmt);
+                    if (Math.Abs(runningBal) < 0.0001m) runningBal = 0m;
+                    periodTotalDebit += drAmt;
+                    periodTotalCredit += crAmt;
+
+                    var rowDto = new FdLedgerTxDto
+                    {
+                        FdTransactionID = tx.FdTransactionID,
+                        FdAccountID = acc.FdAccountID,
+                        AccountNo = acc.AccountNo,
+                        LegacyAccountNumber = acc.LegacyAccountNumber,
+                        CustomerName = custFullName,
+                        CIFNo = cifNo,
+                        TransactionDate = tx.TransactionDate.ToString("yyyy-MM-dd"),
+                        TransactionType = tx.TransactionType,
+                        DebitCredit = tx.DebitCredit,
+                        Debit = drAmt,
+                        Credit = crAmt,
+                        Balance = runningBal,
+                        Amount = tx.Amount,
+                        VoucherNo = tx.VoucherNo,
+                        PassingStatus = tx.PassingStatus,
+                        Narration = tx.Narration
+                    };
+                    finalLedgerRows.Add(rowDto);
+
+                    schemeMergedList.Add((tx.TransactionDate, tx.DebitCredit, tx.Amount, tx.FdTransactionID, new FdLedgerTxDto
+                    {
+                        FdTransactionID = rowDto.FdTransactionID,
+                        FdAccountID = rowDto.FdAccountID,
+                        AccountNo = rowDto.AccountNo,
+                        LegacyAccountNumber = rowDto.LegacyAccountNumber,
+                        CustomerName = rowDto.CustomerName,
+                        CIFNo = rowDto.CIFNo,
+                        TransactionDate = rowDto.TransactionDate,
+                        TransactionType = rowDto.TransactionType,
+                        DebitCredit = rowDto.DebitCredit,
+                        Debit = rowDto.Debit,
+                        Credit = rowDto.Credit,
+                        Balance = 0m,
+                        Amount = rowDto.Amount,
+                        VoucherNo = rowDto.VoucherNo,
+                        PassingStatus = rowDto.PassingStatus,
+                        Narration = rowDto.Narration
+                    }));
+                }
+
+                bool isLien = acc.IsLienMarked || !string.IsNullOrWhiteSpace(acc.LienLoanAccountNo);
+                decimal closingBal = ((acc.Status == "Closed" || acc.Status == "Closed-Premature") && Math.Abs(runningBal) < 0.01m)
+                    ? 0m
+                    : runningBal;
+
+                accountLedgerList.Add(new FdLedgerAccountDto
+                {
+                    FdAccountID = acc.FdAccountID,
+                    FdSchemeID = acc.FdSchemeID,
+                    SchemeCode = acc.FdScheme?.SchemeCode ?? string.Empty,
+                    SchemeName = acc.FdScheme?.SchemeName ?? "Standard Scheme",
+                    CustomerID = acc.CustomerID,
+                    CustomerName = custFullName,
+                    CIFNo = cifNo,
+                    LegacyCustomerNo = acc.Customer?.LegacyCustomerNo,
+                    AccountNo = acc.AccountNo,
+                    LegacyAccountNumber = acc.LegacyAccountNumber,
+                    OpeningDate = acc.OpeningDate.ToString("yyyy-MM-dd"),
+                    MaturityDate = acc.MaturityDate.ToString("yyyy-MM-dd"),
+                    DepositAmount = acc.DepositAmount,
+                    InterestRate = acc.InterestRate,
+                    MaturityAmount = acc.MaturityAmount,
+                    Status = acc.Status,
+                    PaymentMode = acc.PaymentMode,
+                    NomineeName = acc.NomineeName,
+                    NomineeRelation = acc.NomineeRelation,
+                    DurationType = acc.DurationType ?? "Months",
+                    DurationValue = acc.DurationValue ?? (acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12),
+                    DurationInDays = acc.DurationInDays ?? 0,
+                    IsLienMarked = isLien,
+                    LienLoanAccountNo = acc.LienLoanAccountNo ?? string.Empty,
+                    LienAmount = acc.LienAmount ?? 0m,
+                    Remarks = acc.Remarks,
+                    DurationMonths = acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12,
+                    TotalAccruedInterest = totalAccruedInt,
+                    OpeningBalance = openingBal,
+                    PeriodTotalDebit = periodTotalDebit,
+                    PeriodTotalCredit = periodTotalCredit,
+                    ClosingBalance = closingBal,
+                    Transactions = finalLedgerRows
+                });
+            }
+
+            // Group scheme-wise and compute chronological consolidated ledger per scheme
+            var schemeGroups = accountLedgerList
+                .GroupBy(a => new { a.FdSchemeID, a.SchemeName, a.SchemeCode })
+                .OrderBy(g => g.Key.SchemeName)
+                .ThenBy(g => g.Key.FdSchemeID)
+                .Select(g =>
+                {
+                    var groupAccounts = g.OrderBy(a => a.CustomerName).ThenBy(a => a.AccountNo).ThenBy(a => a.FdAccountID).ToList();
+                    decimal grpOpening = groupAccounts.Sum(a => a.OpeningBalance);
+                    decimal grpDr = groupAccounts.Sum(a => a.PeriodTotalDebit);
+                    decimal grpCr = groupAccounts.Sum(a => a.PeriodTotalCredit);
+                    decimal grpClosing = groupAccounts.Sum(a => a.ClosingBalance);
+
+                    var rawMerged = rawMergedTxByScheme.TryGetValue(g.Key.FdSchemeID, out var list)
+                        ? list
+                        : new List<(DateTime Date, string DebitCredit, decimal Amount, int TxId, FdLedgerTxDto Dto)>();
+
+                    decimal consRunning = grpOpening;
+                    var mergedRows = rawMerged
+                        .OrderBy(x => x.Date.Date)
+                        .ThenBy(x => x.DebitCredit == "Cr" ? 0 : 1)
+                        .ThenBy(x => x.Dto.AccountNo)
+                        .ThenBy(x => x.TxId)
+                        .Select(x =>
+                        {
+                            consRunning += (x.Dto.Credit - x.Dto.Debit);
+                            if (Math.Abs(consRunning) < 0.0001m) consRunning = 0m;
+                            x.Dto.Balance = consRunning;
+                            return x.Dto;
+                        })
+                        .ToList();
+
+                    decimal consClosing = Math.Abs(consRunning) < 0.01m && grpClosing == 0m ? 0m : grpClosing;
+
+                    return new FdSchemeLedgerGroupDto
+                    {
+                        FdSchemeID = g.Key.FdSchemeID,
+                        SchemeName = g.Key.SchemeName,
+                        SchemeCode = g.Key.SchemeCode,
+                        AccountsCount = groupAccounts.Count,
+                        TotalDepositAmount = groupAccounts.Sum(a => a.DepositAmount),
+                        TotalMaturityAmount = groupAccounts.Sum(a => a.MaturityAmount),
+                        OpeningBalance = grpOpening,
+                        PeriodTotalDebit = grpDr,
+                        PeriodTotalCredit = grpCr,
+                        ClosingBalance = consClosing,
+                        Accounts = groupAccounts,
+                        Consolidated = new FdConsolidatedLedgerDto
+                        {
+                            AccountsCount = groupAccounts.Count,
+                            TotalDepositAmount = groupAccounts.Sum(a => a.DepositAmount),
+                            TotalMaturityAmount = groupAccounts.Sum(a => a.MaturityAmount),
+                            OpeningBalance = grpOpening,
+                            PeriodTotalDebit = grpDr,
+                            PeriodTotalCredit = grpCr,
+                            ClosingBalance = consClosing,
+                            Transactions = mergedRows
+                        }
+                    };
+                })
+                .ToList();
+
+            return (accountLedgerList, schemeGroups);
+        }
+
+        // GET: api/Reports/fd-ledger-options?branchID=&fdSchemeID=
+        [HttpGet("fd-ledger-options")]
+        public async Task<IActionResult> GetFdLedgerOptions(
+            [FromQuery] int? branchID = null,
+            [FromQuery] int? fdSchemeID = null)
+        {
+            try
+            {
+                int? effectiveBranchId = User?.ResolveOptionalBranchId(branchID.HasValue && branchID.Value > 0 ? branchID.Value : null);
+                var query = _context.FdAccounts.AsNoTracking().AsQueryable();
+
+                if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
+                    query = query.Where(f => f.BranchID == effectiveBranchId.Value || f.BranchID == 0);
+
+                if (fdSchemeID.HasValue && fdSchemeID.Value > 0)
+                    query = query.Where(f => f.FdSchemeID == fdSchemeID.Value);
+
+                var rawRows = await query
+                    .Select(f => new
+                    {
+                        f.FdAccountID,
+                        f.CustomerID,
+                        f.FdSchemeID,
+                        f.AccountNo,
+                        f.LegacyAccountNumber,
+                        f.ReceiptNo,
+                        f.DepositAmount,
+                        f.MaturityAmount,
+                        f.Status,
+                        f.OpeningDate,
+                        SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : string.Empty,
+                        CIFNo = f.Customer != null ? (f.Customer.CIFNo ?? string.Empty) : string.Empty,
+                        LegacyCustomerNo = f.Customer != null ? f.Customer.LegacyCustomerNo : null,
+                        FirstName = f.Customer != null ? f.Customer.FirstName : string.Empty,
+                        MiddleName = f.Customer != null ? f.Customer.MiddleName : null,
+                        LastName = f.Customer != null ? f.Customer.LastName : string.Empty,
+                        FirstNameEng = f.Customer != null ? f.Customer.FirstNameEng : null,
+                        MiddleNameEng = f.Customer != null ? f.Customer.MiddleNameEng : null,
+                        LastNameEng = f.Customer != null ? f.Customer.LastNameEng : null,
+                        NickName = f.Customer != null ? f.Customer.NickName : null,
+                        MobileNo = f.Customer != null ? (f.Customer.MobileNo ?? string.Empty) : string.Empty
+                    })
+                    .ToListAsync();
+
+                string BuildFullName(string? fName, string? mName, string? lName) =>
+                    $"{fName} {mName} {lName}".Replace("  ", " ").Trim();
+
+                var accountOptions = rawRows
+                    .Select(r =>
+                    {
+                        string engName = BuildFullName(r.FirstNameEng, r.MiddleNameEng, r.LastNameEng);
+                        string marName = BuildFullName(r.FirstName, r.MiddleName, r.LastName);
+                        string fullName = !string.IsNullOrWhiteSpace(marName) ? marName : engName;
+                        return new FdLedgerAccountOptionDto
+                        {
+                            FdAccountID = r.FdAccountID,
+                            CustomerID = r.CustomerID,
+                            FdSchemeID = r.FdSchemeID,
+                            SchemeName = r.SchemeName,
+                            AccountNo = r.AccountNo,
+                            LegacyAccountNumber = string.IsNullOrWhiteSpace(r.LegacyAccountNumber) ? null : r.LegacyAccountNumber.Trim(),
+                            ReceiptNo = string.IsNullOrWhiteSpace(r.ReceiptNo) ? null : r.ReceiptNo.Trim(),
+                            DepositAmount = r.DepositAmount,
+                            MaturityAmount = r.MaturityAmount,
+                            Status = r.Status,
+                            OpeningDate = r.OpeningDate.ToString("yyyy-MM-dd"),
+                            CustomerName = fullName,
+                            CustomerNameEng = engName,
+                            NickName = string.IsNullOrWhiteSpace(r.NickName) ? null : r.NickName.Trim(),
+                            CIFNo = r.CIFNo,
+                            LegacyCustomerNo = r.LegacyCustomerNo,
+                            MobileNo = r.MobileNo
+                        };
+                    })
+                    .OrderBy(a => a.LegacyAccountNumber ?? a.ReceiptNo ?? a.AccountNo)
+                    .ThenBy(a => a.AccountNo)
+                    .ThenBy(a => a.FdAccountID)
+                    .ToList();
+
+                var customerOptions = rawRows
+                    .GroupBy(r => r.CustomerID)
+                    .Select(g =>
+                    {
+                        var first = g.First();
+                        string engName = BuildFullName(first.FirstNameEng, first.MiddleNameEng, first.LastNameEng);
+                        string marName = BuildFullName(first.FirstName, first.MiddleName, first.LastName);
+                        string fullName = !string.IsNullOrWhiteSpace(marName) ? marName : engName;
+
+                        var accNos = g
+                            .SelectMany(x => new[] { x.LegacyAccountNumber, x.ReceiptNo, x.AccountNo })
+                            .Where(s => !string.IsNullOrWhiteSpace(s))
+                            .Select(s => s!.Trim())
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        var schemeNames = g
+                            .Select(x => x.SchemeName)
+                            .Where(s => !string.IsNullOrWhiteSpace(s))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        return new FdLedgerCustomerOptionDto
+                        {
+                            CustomerID = g.Key,
+                            CIFNo = first.CIFNo,
+                            LegacyCustomerNo = first.LegacyCustomerNo,
+                            CustomerName = fullName,
+                            CustomerNameEng = engName,
+                            NickName = string.IsNullOrWhiteSpace(first.NickName) ? null : first.NickName.Trim(),
+                            MobileNo = first.MobileNo,
+                            FdCount = g.Count(),
+                            TotalDepositAmount = g.Sum(x => x.DepositAmount),
+                            AccountNumbers = accNos,
+                            SchemeNames = schemeNames
+                        };
+                    })
+                    .OrderBy(c => c.CustomerName)
+                    .ThenBy(c => c.CIFNo)
+                    .ToList();
+
+                return Ok(new FdLedgerOptionsResponseDto
+                {
+                    BranchID = effectiveBranchId,
+                    FdSchemeID = fdSchemeID,
+                    TotalAccountsCount = rawRows.Count,
+                    TotalDepositAmount = rawRows.Sum(r => r.DepositAmount),
+                    Customers = customerOptions,
+                    Accounts = accountOptions
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "मुदत ठेव खातेदार यादी लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/fd-ledger-statement?branchID=&fdSchemeID=&customerID=&fdAccountId=&fromDate=&toDate=
+        [HttpGet("fd-ledger-statement")]
+        public async Task<IActionResult> GetFdLedgerStatement(
+            [FromQuery] int? branchID = null,
+            [FromQuery] int? fdSchemeID = null,
+            [FromQuery] int? customerID = null,
+            [FromQuery] int? fdAccountId = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null)
+        {
+            try
+            {
+                int? effectiveBranchId = User?.ResolveOptionalBranchId(branchID.HasValue && branchID.Value > 0 ? branchID.Value : null);
+                bool isAllCustomers = !customerID.HasValue || customerID.Value <= 0;
+
+                Customer? customer = null;
+                Member? member = null;
+                int? targetCustId = null;
+
+                if (!isAllCustomers)
+                {
+                    customer = await _context.Customers.AsNoTracking().Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == customerID!.Value);
+                    if (customer != null)
+                    {
+                        member = await _context.Members.AsNoTracking().Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                    }
+                    else
+                    {
+                        member = await _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == customerID!.Value);
+                        if (member?.CustomerID != null)
+                        {
+                            customer = member.Customer ?? await _context.Customers.AsNoTracking().Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
+                        }
+                    }
+
+                    if (customer == null && member == null)
+                        return NotFound("सभासद किंवा खातेदार सापडला नाही.");
+
+                    targetCustId = customer?.CustomerID ?? member?.CustomerID;
+                }
+
+                var accountsQuery = _context.FdAccounts.AsQueryable();
+                if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
+                    accountsQuery = accountsQuery.Where(a => a.BranchID == effectiveBranchId.Value || a.BranchID == 0);
+
+                if (fdSchemeID.HasValue && fdSchemeID.Value > 0)
+                    accountsQuery = accountsQuery.Where(a => a.FdSchemeID == fdSchemeID.Value);
+
+                if (targetCustId.HasValue)
+                    accountsQuery = accountsQuery.Where(a => a.CustomerID == targetCustId.Value);
+
+                if (fdAccountId.HasValue && fdAccountId.Value > 0)
+                    accountsQuery = accountsQuery.Where(a => a.FdAccountID == fdAccountId.Value);
+
+                var (accountLedgers, schemeGroups) = await BuildFdAccountLedgersAsync(accountsQuery, fromDate, toDate);
+
+                string selectedSchemeName = "सर्व ठेव प्रकार";
+                if (fdSchemeID.HasValue && fdSchemeID.Value > 0)
+                {
+                    selectedSchemeName = await _context.FdSchemes
+                        .AsNoTracking()
+                        .Where(s => s.FdSchemeID == fdSchemeID.Value)
+                        .Select(s => s.SchemeName)
+                        .FirstOrDefaultAsync() ?? "निवडलेली ठेव योजना";
+                }
+
+                string branchName = "सर्व शाखा";
+                if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
+                {
+                    branchName = await _context.Branches
+                        .AsNoTracking()
+                        .Where(b => b.BranchID == effectiveBranchId.Value)
+                        .Select(b => b.BranchName)
+                        .FirstOrDefaultAsync() ?? "मुख्य शाखा";
+                }
+                else if (customer?.Branch?.BranchName != null)
+                {
+                    branchName = customer.Branch.BranchName;
+                }
+
+                string fullName = isAllCustomers
+                    ? $"सर्व खातेदार ({selectedSchemeName})"
+                    : FormatCustomerFullName(customer);
+
+                return Ok(new FdLedgerStatementResponseDto
                 {
                     CustomerID = targetCustId ?? 0,
                     CustomerName = fullName,
-                    MemberID = targetMemId ?? (customer?.CustomerID ?? 0),
-                    MemberCode = member?.MemberCode ?? (customer?.CIFNo ?? ""),
-                    CIFNo = customer?.CIFNo ?? member?.Customer?.CIFNo ?? "",
+                    MemberID = member?.MemberID ?? (customer?.CustomerID ?? 0),
+                    MemberCode = member?.MemberCode ?? (customer?.CIFNo ?? string.Empty),
+                    CIFNo = customer?.CIFNo ?? (isAllCustomers ? "ALL" : string.Empty),
+                    LegacyCustomerNo = customer?.LegacyCustomerNo,
                     MemberName = fullName,
-                    MobileNo = customer?.MobileNo ?? member?.Customer?.MobileNo ?? "",
-                    Address = customer?.Address ?? member?.Customer?.Address ?? "",
-                    BranchName = customer?.Branch?.BranchName ?? member?.Branch?.BranchName ?? "मुख्य शाखा",
-                    TotalFDAccountsCount = accounts.Count,
-                    TotalPrincipalInvested = accounts.Sum(a => a.DepositAmount),
-                    TotalMaturityValue = accounts.Sum(a => a.MaturityAmount),
+                    MobileNo = customer?.MobileNo ?? string.Empty,
+                    Address = customer?.Address ?? string.Empty,
+                    BranchName = branchName,
+                    IsAllCustomers = isAllCustomers,
+                    SelectedSchemeId = fdSchemeID ?? 0,
+                    SelectedSchemeName = selectedSchemeName,
+                    TotalFDAccountsCount = accountLedgers.Count,
+                    TotalPrincipalInvested = accountLedgers.Sum(a => a.DepositAmount),
+                    TotalMaturityValue = accountLedgers.Sum(a => a.MaturityAmount),
+                    TotalOpeningBalance = schemeGroups.Sum(g => g.OpeningBalance),
+                    TotalPeriodDebit = schemeGroups.Sum(g => g.PeriodTotalDebit),
+                    TotalPeriodCredit = schemeGroups.Sum(g => g.PeriodTotalCredit),
+                    TotalClosingBalance = schemeGroups.Sum(g => g.ClosingBalance),
                     FromDate = fromDate?.ToString("yyyy-MM-dd"),
                     ToDate = toDate?.ToString("yyyy-MM-dd"),
-                    Accounts = accountLedgerList
+                    Accounts = accountLedgers,
+                    SchemeGroups = schemeGroups
                 });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "मुदत ठेव खातावणी लोड करताना त्रुटी आली.", error = ex.Message });
             }
+        }
+
+        // GET: api/Reports/fd-member-ledger/5
+        [HttpGet("fd-member-ledger/{memberId}")]
+        public Task<IActionResult> GetFdMemberLedgerReport(
+            int memberId,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] int? fdAccountId = null,
+            [FromQuery] int? branchID = null,
+            [FromQuery] int? fdSchemeID = null)
+        {
+            return GetFdLedgerStatement(
+                branchID: branchID,
+                fdSchemeID: fdSchemeID,
+                customerID: memberId > 0 ? memberId : null,
+                fdAccountId: fdAccountId,
+                fromDate: fromDate,
+                toDate: toDate);
         }
 
         // GET: api/Reports/fd-voucher-passing

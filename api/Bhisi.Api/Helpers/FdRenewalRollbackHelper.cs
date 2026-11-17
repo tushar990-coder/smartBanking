@@ -765,21 +765,58 @@ namespace Bhisi.Api.Helpers
         {
             try
             {
-                if (!force && (DateTime.UtcNow - _lastFullHealUtc).TotalSeconds < 60) return;
-                _lastFullHealUtc = DateTime.UtcNow;
+                bool isScopedHeal = targetFdAccountId.HasValue && targetFdAccountId.Value > 0;
+                if (!isScopedHeal)
+                {
+                    if (!force && (DateTime.UtcNow - _lastFullHealUtc).TotalSeconds < 60) return;
+                    _lastFullHealUtc = DateTime.UtcNow;
+                }
                 var branchesToSync = new HashSet<int>();
                 bool modified = false;
 
                 // === PASS 1: Pending Orphaned Renewal Vouchers (Manual + Auto-Renewal) ===
-                var renewalVouchers = await context.Vouchers
+                var renewalVouchersQuery = context.Vouchers
                     .Include(v => v.VoucherDetails)
                     .Where(v => v.VoucherNo != null &&
                                 v.Status != "Approved" &&
                                 (v.VoucherNo.StartsWith("JV-FD-AUTOREN-") ||
                                  v.VoucherNo.StartsWith("JV-FD-REN-") ||
                                  v.VoucherNo.StartsWith("PAY-FD-INT-") ||
-                                 v.VoucherNo.StartsWith("JV-FD-INT-")))
-                    .ToListAsync();
+                                 v.VoucherNo.StartsWith("JV-FD-INT-")));
+
+                if (isScopedHeal)
+                {
+                    int targetId = targetFdAccountId!.Value;
+                    var scopedVoucherIds = await context.FdTransactions
+                        .Where(t => t.FdAccountID == targetId ||
+                                    context.FdAccounts.Any(c => c.FdAccountID == t.FdAccountID && c.ParentFdAccountID == targetId))
+                        .Select(t => t.VoucherID)
+                        .Union(context.FdAutoRenewalLogs
+                            .Where(l => l.VoucherID.HasValue && (l.OldFdAccountID == targetId || l.NewFdAccountID == targetId))
+                            .Select(l => l.VoucherID!.Value))
+                        .Distinct()
+                        .ToListAsync();
+
+                    var directRelIds = scopedVoucherIds.Any()
+                        ? await context.Vouchers
+                            .Where(v => scopedVoucherIds.Contains(v.VoucherID) && v.RelatedVoucherID.HasValue)
+                            .Select(v => v.RelatedVoucherID!.Value)
+                            .ToListAsync()
+                        : new List<int>();
+                    foreach (var rid in directRelIds) scopedVoucherIds.Add(rid);
+
+                    if (!scopedVoucherIds.Any())
+                    {
+                        renewalVouchersQuery = renewalVouchersQuery.Where(_ => false);
+                    }
+                    else
+                    {
+                        var scopedSet = scopedVoucherIds.Distinct().ToList();
+                        renewalVouchersQuery = renewalVouchersQuery.Where(v => scopedSet.Contains(v.VoucherID));
+                    }
+                }
+
+                var renewalVouchers = await renewalVouchersQuery.ToListAsync();
 
                 foreach (var rv in renewalVouchers)
                 {
@@ -795,10 +832,64 @@ namespace Bhisi.Api.Helpers
                                        context.FdAccounts.Any(f => f.FdAccountID == l.NewFdAccountID.Value));
                     if (hasActiveAutoLogChild) continue;
 
+                    // Decoupled PrincipalOnly interest vouchers (PAY-FD-INT-* / JV-FD-INT-*) attach their
+                    // Interest Payout transaction to the parent FD while the child Opening transaction
+                    // lives on the paired JV-FD-REN-* / JV-FD-AUTOREN-* voucher. Verify paired FK linkage
+                    // before ever treating rv as orphaned.
+                    var pairedVoucherIds = new HashSet<int>();
+                    if (rv.RelatedVoucherID.HasValue && rv.RelatedVoucherID.Value > 0 && rv.RelatedVoucherID.Value != rv.VoucherID)
+                    {
+                        pairedVoucherIds.Add(rv.RelatedVoucherID.Value);
+                    }
+                    var reversePairedIds = await context.Vouchers
+                        .Where(v => v.RelatedVoucherID == rv.VoucherID && v.VoucherID != rv.VoucherID)
+                        .Select(v => v.VoucherID)
+                        .ToListAsync();
+                    foreach (var rpid in reversePairedIds) pairedVoucherIds.Add(rpid);
+
+                    if (pairedVoucherIds.Any())
+                    {
+                        bool hasActivePairedOpening = await context.FdTransactions
+                            .AnyAsync(t => pairedVoucherIds.Contains(t.VoucherID) &&
+                                           t.TransactionType == "Opening" &&
+                                           context.FdAccounts.Any(f => f.FdAccountID == t.FdAccountID));
+                        bool hasActivePairedAutoLog = await context.FdAutoRenewalLogs
+                            .AnyAsync(l => l.VoucherID.HasValue &&
+                                           pairedVoucherIds.Contains(l.VoucherID.Value) &&
+                                           l.NewFdAccountID.HasValue &&
+                                           context.FdAccounts.Any(f => f.FdAccountID == l.NewFdAccountID.Value));
+                        if (hasActivePairedOpening || hasActivePairedAutoLog) continue;
+                    }
+
                     var orphanTxs = await context.FdTransactions
                         .Include(t => t.FdAccount)
                         .Where(t => t.VoucherID == rv.VoucherID)
                         .ToListAsync();
+
+                    var txAccountIds = orphanTxs.Select(t => t.FdAccountID).Distinct().ToList();
+                    if (txAccountIds.Any())
+                    {
+                        bool hasLiveSiblingRenewalOnParent = await context.FdTransactions
+                            .AnyAsync(t => txAccountIds.Contains(t.FdAccountID) &&
+                                           t.TransactionType == "Renewal" &&
+                                           t.VoucherID > 0 &&
+                                           t.VoucherID != rv.VoucherID &&
+                                           t.TransactionDate.Date == rv.VoucherDate.Date &&
+                                           context.FdTransactions.Any(ot =>
+                                               ot.VoucherID == t.VoucherID &&
+                                               ot.TransactionType == "Opening" &&
+                                               context.FdAccounts.Any(f => f.FdAccountID == ot.FdAccountID)));
+
+                        bool hasLiveChildAccountForDate = await context.FdAccounts
+                            .AnyAsync(c => c.ParentFdAccountID.HasValue &&
+                                           txAccountIds.Contains(c.ParentFdAccountID.Value) &&
+                                           context.FdTransactions.Any(ot =>
+                                               ot.FdAccountID == c.FdAccountID &&
+                                               ot.TransactionType == "Opening" &&
+                                               ot.TransactionDate.Date == rv.VoucherDate.Date));
+
+                        if (hasLiveSiblingRenewalOnParent || hasLiveChildAccountForDate) continue;
+                    }
 
                     var orphanLogs = await context.FdAutoRenewalLogs
                         .Where(l => l.VoucherID == rv.VoucherID)
@@ -817,7 +908,16 @@ namespace Bhisi.Api.Helpers
                         {
                             oldAcc.AutoRenewalCount = Math.Max(0, oldAcc.AutoRenewalCount - orphanLogs.Count(l => l.OldFdAccountID == oldAcc.FdAccountID && !l.IsReverted));
                         }
-                        RestoreOldAccountFromRenewal(oldAcc, rv.VoucherDate);
+                        bool oldAccStillHasChild = await HasExistingRenewedChildByFkAsync(context, oldAcc.FdAccountID);
+                        bool oldAccStillHasRenewalTx = await context.FdTransactions
+                            .AnyAsync(t => t.FdAccountID == oldAcc.FdAccountID &&
+                                           t.VoucherID != rv.VoucherID &&
+                                           t.TransactionType == "Renewal" &&
+                                           context.Vouchers.Any(v => v.VoucherID == t.VoucherID));
+                        if (!oldAccStillHasChild && !oldAccStillHasRenewalTx)
+                        {
+                            RestoreOldAccountFromRenewal(oldAcc, rv.VoucherDate);
+                        }
                         branchesToSync.Add(oldAcc.BranchID);
                     }
 

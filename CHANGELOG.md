@@ -1,5 +1,22 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-17] - आवृत्ती v2.6.27 (Voucher Passing Legacy Account Numbers, FD Ledger Scheme Filter/Search/Consolidated Mode & Multi-Entry FD Renewal Cash Interest Preservation)
+
+### 🧾 1. व्हाउचर पासिंग व मंजुरी — जुना खाते व ग्राहक क्रमांक प्रदर्शन
+- **`VoucherLinkedAccountHelper.cs`, `VoucherPostingController.cs`, `Voucher.cs`, `VoucherPosting.tsx` व `VoucherPostingLinkedAccountTests.cs`:**
+  - `GetUnpostedVouchers`, `GetApprovedVouchers` आणि `VoucherPosting.tsx` मधील `खाते / खातेदार व तपशील` येथे कर्ज, मुदत ठेव, आवर्ती ठेव, पिग्मी, बचत व गुंतवणूक खात्यांचे **जुने खाते/पावती क्रमांक (`LegacyAccountNumber` / `OldLoanNo` / `OldReceiptNo`)** तसेच **जुना ग्राहक क्रमांक (`LegacyCustomerNo`)** दाखवले (वापरकर्त्याच्या विनंतीनुसार `सभासद खाते क्रमांक` वगळला).
+
+### 📊 2. मुदत ठेव खातावणी विवरणपत्र (`MemberLedger`) — ठेव प्रकार फिल्टर, शोध व एकेरी/एकत्रित मोड
+- **`FdReports.tsx`, `ReportsController.cs`, `ReportDtos.cs` व `FdLedgerSchemeFilterTests.cs`:**
+  - प्रथम **ठेव प्रकार (FD Scheme)** निवडून त्या योजनेखालील खाती/खातेदार फिल्टर करणे व `सर्व खाती (प्रकारानुसार संपूर्ण अहवाल)` निवडता येणे.
+  - ठेव प्रकार निवडल्यानंतर सर्च बॉक्समध्ये **ठेवीदार नाव** व **जुना ठेव / पावती क्रमांक (`LegacyAccountNumber` / `ReceiptNo`)** द्वारे त्वरित शोध.
+  - एकाच ठेव प्रकाराखाली एकापेक्षा जास्त खाती असल्यास **एकेरी (Single)** आणि **एकत्रित (Consolidated)** अहवाल पाहण्याचा पर्याय.
+
+### 💵 3. मल्टी-एंट्री मुद्दल नूतनीकरण (`PrincipalOnly`) रोख व्याज व्हाउचर संरक्षण
+- **`FdRenewalRollbackHelper.cs`, `FdAccountsController.cs` व `FdAutoRenewalRollbackTests.cs`:**
+  - `HealOrphanedRenewalsAsync` Pass 1 मध्ये `PAY-FD-INT-*` व `JV-FD-INT-*` व्हाउचर्सना पेअर केलेले `Opening` (`RelatedVoucherID` व मूळ खात्यावरील `Renewal`/`FdAccount`) तपासून संरक्षण दिले व `RestoreOldAccountFromRenewal` साठी चाइल्ड FD सुरक्षा गार्ड जोडला.
+  - एकाच दिवशी एकापेक्षा जास्त `PrincipalOnly + Cash` नूतनीकरण एंट्री केल्यानंतरही सर्व `PAY-FD-INT-*` व्हाउचर्स कच्ची रोजकीर्द आणि व्हाउचर पासिंगमध्ये कायम राहण्याची १०४/१०४ xUnit चाचण्यांद्वारे पडताळणी.
+
 ## 📅 [2026-11-17] - आवृत्ती v2.6.26 (Orphan FD SB Debit Auto-Heal & Cleanup, FD Renewal Remarks Widening & Auto+Editable Interest Rate, Vite Port 5173 Alignment)
 
 ### 🧹 1. अनाथ FD Opening SB Debit ऑटो-हील, खतावणी क्लीनअप व डिलीट संरक्षण

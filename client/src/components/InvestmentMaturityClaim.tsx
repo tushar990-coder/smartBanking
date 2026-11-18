@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -10,21 +10,75 @@ import {
   RotateCcw,
   TrendingUp,
   AlertTriangle,
-  RefreshCw,
   Search,
-  Building,
-  Percent,
   Calendar,
-  FileSpreadsheet,
-  Layers,
-  X,
   Lock,
   Unlock,
-  AlertCircle
+  Scale,
+  BookOpen,
+  Info,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
+
+interface InvestmentAccountItem {
+  investmentAccountID: number;
+  branchID: number;
+  branchName?: string;
+  investmentInstitutionID: number;
+  institutionName: string;
+  schemeID: number;
+  schemeName: string;
+  schemeCode?: string;
+  investmentType: string;
+  durationType?: string;
+  durationMonths: number;
+  durationDays?: number | null;
+  prematureWithdrawalRate?: number;
+  interestCalculationMethod?: string;
+  investmentAssetLedgerID?: number | null;
+  interestIncomeLedgerID?: number | null;
+  interestReceivableLedgerID?: number | null;
+  tdsLedgerID?: number | null;
+  investmentNo: string;
+  oldInvestmentNo?: string | null;
+  depositReceiptNo?: string | null;
+  investmentDate: string;
+  principalAmount: number;
+  interestRate: number;
+  maturityDate: string;
+  expectedMaturityAmount: number;
+  accruedInterestTillMigration?: number;
+  accruedInterest?: number;
+  receivedInterest?: number;
+  interestReceivable?: number;
+  lastAccrualDate?: string | null;
+  bookValue: number;
+  status: string;
+}
+
+interface FormRowProps {
+  label: string;
+  required?: boolean;
+  align?: 'center' | 'start';
+  hint?: string;
+  children: React.ReactNode;
+}
+
+const FormRow: React.FC<FormRowProps> = ({ label, required, align = 'center', hint, children }) => (
+  <div className={`grid grid-cols-1 sm:grid-cols-12 gap-1 sm:gap-2.5 ${align === 'start' ? 'items-start' : 'items-center'}`}>
+    <label className={`sm:col-span-4 text-[11.5px] font-semibold text-slate-700 ${align === 'start' ? 'sm:pt-1.5' : ''}`}>
+      {label}
+      {required && <span className="text-red-500 ml-0.5">*</span>}
+      {hint && <span className="block text-[9.5px] font-normal text-slate-400 leading-tight">{hint}</span>}
+    </label>
+    <div className="sm:col-span-8 min-w-0">{children}</div>
+  </div>
+);
+
+const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
 const InvestmentMaturityClaim: React.FC = () => {
   const { user } = useAuth();
@@ -32,97 +86,88 @@ const InvestmentMaturityClaim: React.FC = () => {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
   };
-  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : getLocalTodayStr();
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
-  const [allowDateOverride, setAllowDateOverride] = useState(false);
+  const todayStr = getLocalTodayStr();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : todayStr;
+  const isHOUser =
+    user?.role === 'Admin' ||
+    user?.role === 'SuperAdmin' ||
+    user?.role === 'HeadOffice' ||
+    user?.role === 'HO_Manager';
 
-  const [accounts, setAccounts] = useState<any[]>([]);
+  const [allowDateOverride, setAllowDateOverride] = useState(false);
+  const [txnDate, setTxnDate] = useState<string>(activeBusinessDate);
+
+  const [accounts, setAccounts] = useState<InvestmentAccountItem[]>([]);
   const [schemes, setSchemes] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
   const [ledgers, setLedgers] = useState<any[]>([]);
+  const [voucherMappings, setVoucherMappings] = useState<any[]>([]);
+
   const [selectedAccountId, setSelectedAccountId] = useState<number>(0);
+  const [activeMode, setActiveMode] = useState<'maturity' | 'premature' | 'renewal'>('maturity');
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [activeMode, setActiveMode] = useState<'maturity' | 'premature' | 'renewal'>('maturity');
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [showVoucherPreview, setShowVoucherPreview] = useState(true);
+
+  // Mode 1: Maturity state
+  const [matPrincipal, setMatPrincipal] = useState<number>(0);
+  const [matInterest, setMatInterest] = useState<number>(0);
+  const [matTds, setMatTds] = useState<number>(0);
+
+  // Mode 2: Premature state
+  const [prePrincipalPaid, setPrePrincipalPaid] = useState<number>(0);
+  const [preRevisedRate, setPreRevisedRate] = useState<number>(0);
+  const [preInterestPaid, setPreInterestPaid] = useState<number>(0);
+  const [isPreInterestManual, setIsPreInterestManual] = useState<boolean>(false);
+  const [prePenalty, setPrePenalty] = useState<number>(0);
+  const [preTds, setPreTds] = useState<number>(0);
+
+  // Mode 3: Renewal state
+  const [renewalType, setRenewalType] = useState<'PrincipalOnly' | 'PrincipalAndInterest'>('PrincipalOnly');
+  const [newSchemeID, setNewSchemeID] = useState<number>(0);
+  const [renewalDurationType, setRenewalDurationType] = useState<'Months' | 'Days'>('Months');
+  const [renewalDurationValue, setRenewalDurationValue] = useState<number>(12);
+  const [newInterestRate, setNewInterestRate] = useState<number>(0);
+  const [newDepositReceiptNo, setNewDepositReceiptNo] = useState<string>('');
+  const [renewalAmount, setRenewalAmount] = useState<number>(0);
+  const [isRenewalAmtManual, setIsRenewalAmtManual] = useState<boolean>(false);
+  const [renInterestPayout, setRenInterestPayout] = useState<number>(0);
+  const [renTds, setRenTds] = useState<number>(0);
+
+  // Shared settlement & TDS controls
+  const [tdsLedgerID, setTdsLedgerID] = useState<number>(0);
+  const [paymentMode, setPaymentMode] = useState<'Bank' | 'Cash'>('Bank');
+  const [bankLedgerID, setBankLedgerID] = useState<number>(0);
+  const [referenceNo, setReferenceNo] = useState<string>('');
+  const [narration, setNarration] = useState<string>('');
 
   const API_URL = '/api';
 
-  const [maturityForm, setMaturityForm] = useState({
-    maturityDate: activeBusinessDate,
-    principalReceived: 0,
-    interestReceived: 0,
-    tdsAmount: 0,
-    tdsLedgerID: 0,
-    paymentMode: 'Bank',
-    bankLedgerID: 0,
-    referenceNo: '',
-  });
-
-  const [prematureForm, setPrematureForm] = useState({
-    withdrawalDate: activeBusinessDate,
-    principalPaid: 0,
-    revisedInterestRate: 0,
-    interestPaid: 0,
-    penaltyAmount: 0,
-    tdsAmount: 0,
-    tdsLedgerID: 0,
-    paymentMode: 'Bank',
-    bankLedgerID: 0,
-    referenceNo: '',
-  });
-
-  const [renewalForm, setRenewalForm] = useState({
-    renewalDate: activeBusinessDate,
-    renewalType: 'PrincipalOnly',
-    renewalAmount: 0,
-    newSchemeID: 0,
-    newInterestRate: 0,
-    interestPayoutAmount: 0,
-    tdsAmount: 0,
-    tdsLedgerID: 0,
-    paymentMode: 'Bank',
-    bankLedgerID: 0,
-    referenceNo: '',
-  });
-
-  // Sync CBS Business Date if changed
   useEffect(() => {
     if (user?.businessDate) {
-      const bDate = user.businessDate.split('T')[0];
-      setMaturityForm(prev => ({ ...prev, maturityDate: bDate }));
-      setPrematureForm(prev => ({ ...prev, withdrawalDate: bDate }));
-      setRenewalForm(prev => ({ ...prev, renewalDate: bDate }));
+      setTxnDate(user.businessDate.split('T')[0]);
     }
   }, [user?.businessDate]);
 
   useEffect(() => {
     fetchAccounts();
     fetchSchemes();
-    fetchBranches();
     fetchLedgers();
+    fetchVoucherMappings();
   }, []);
-
-  const fetchLedgers = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/Ledgers`);
-      setLedgers(res.data || []);
-    } catch {}
-  };
 
   const fetchAccounts = async () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/InvestmentAccounts?status=Active`);
-      const allAccs = res.data || [];
-      // Only Term Deposits can be matured or renewed (Exclude Shares)
-      const depositAccs = allAccs.filter((a: any) => a.investmentType !== 'Share' && a.durationMonths !== 0);
+      const allAccs: InvestmentAccountItem[] = Array.isArray(res.data) ? res.data : [];
+      const depositAccs = allAccs.filter((a) => a.investmentType !== 'Share' && a.durationMonths !== 0);
       setAccounts(depositAccs);
-    } catch {}
-    finally {
+    } catch {
+      // handled gracefully
+    } finally {
       setLoading(false);
     }
   };
@@ -130,1081 +175,1608 @@ const InvestmentMaturityClaim: React.FC = () => {
   const fetchSchemes = async () => {
     try {
       const res = await axios.get(`${API_URL}/InvestmentSchemes`);
-      const list = (res.data || []).filter((s: any) => s.investmentType !== 'Share');
+      const list = (Array.isArray(res.data) ? res.data : []).filter((s: any) => s.investmentType !== 'Share');
       setSchemes(list);
     } catch {}
   };
 
-  const fetchBranches = async () => {
+  const fetchLedgers = async () => {
     try {
-      const res = await axios.get(`${API_URL}/Branches`);
-      setBranches(res.data || []);
+      const res = await axios.get(`${API_URL}/Ledgers`);
+      setLedgers(Array.isArray(res.data) ? res.data : []);
     } catch {}
   };
 
-  const selectedAccount = accounts.find(a => a.investmentAccountID === Number(selectedAccountId));
+  const fetchVoucherMappings = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/InvestmentAccounts/VoucherMappings`);
+      setVoucherMappings(Array.isArray(res.data) ? res.data : []);
+    } catch {}
+  };
 
-  const ledgerOptions = [
-    { value: 0, label: '-- डायनॅमिक TDS / कपात जी.एल. लेजर निवडा --' },
-    ...ledgers.map((l: any) => {
-      const id = Number(l.ledgerID || l.LedgerID || 0);
-      const code = l.ledgerCode || l.LedgerCode || id;
-      const name = l.ledgerName || l.LedgerName || '';
-      const grp = l.accountGroup?.groupName || (typeof l.accountGroup === 'string' ? l.accountGroup : '');
-      return {
-        value: id,
-        label: `${code} - ${name}${grp ? ` (${grp})` : ''}`
-      };
-    })
-  ];
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.investmentAccountID === Number(selectedAccountId)) || null,
+    [accounts, selectedAccountId]
+  );
+
+  const calcElapsedDays = (invDateStr?: string, closeDateStr?: string) => {
+    if (!invDateStr || !closeDateStr) return 0;
+    const d1 = new Date(invDateStr.split('T')[0]);
+    const d2 = new Date(closeDateStr.split('T')[0]);
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
+    return Math.max(0, Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+  };
+
+  const computeAutoPrematureInterest = (principal: number, rate: number, days: number) => {
+    if (principal <= 0 || rate <= 0 || days <= 0) return 0;
+    return round2((principal * rate * days) / 36500);
+  };
+
+  const initializeAccountDefaults = (acc: InvestmentAccountItem, effectiveDate: string) => {
+    const principal = Number(acc.principalAmount || 0);
+    const expectedTotal = Number(acc.expectedMaturityAmount || principal);
+    const expectedInt = round2(Math.max(0, expectedTotal - principal));
+
+    const matchedScheme = schemes.find((s) => Number(s.schemeID) === Number(acc.schemeID));
+    const defaultTdsLedger = Number(acc.tdsLedgerID || matchedScheme?.tdsLedgerID || 0);
+
+    const matDateClean = acc.maturityDate ? acc.maturityDate.split('T')[0] : '';
+    const isBeforeMaturity = Boolean(matDateClean && effectiveDate < matDateClean);
+    setActiveMode(isBeforeMaturity ? 'premature' : 'maturity');
+
+    // Maturity defaults
+    setMatPrincipal(principal);
+    setMatInterest(expectedInt);
+    setMatTds(0);
+
+    // Premature defaults
+    const schemePremRate = Number(acc.prematureWithdrawalRate ?? matchedScheme?.prematureWithdrawalRate ?? 0);
+    const defaultPremRate = schemePremRate > 0 ? schemePremRate : Math.max(0, round2((acc.interestRate || 0) - 1));
+    const daysHeld = calcElapsedDays(acc.investmentDate, effectiveDate);
+    setPrePrincipalPaid(principal);
+    setPreRevisedRate(defaultPremRate);
+    setPreInterestPaid(computeAutoPrematureInterest(principal, defaultPremRate, daysHeld));
+    setIsPreInterestManual(false);
+    setPrePenalty(0);
+    setPreTds(0);
+
+    // Renewal defaults
+    const targetScheme = matchedScheme || schemes[0] || null;
+    const durType: 'Months' | 'Days' =
+      (targetScheme?.durationType || acc.durationType || 'Months').toLowerCase() === 'days' ? 'Days' : 'Months';
+    const durVal =
+      durType === 'Days'
+        ? Number(targetScheme?.durationDays || acc.durationDays || 365)
+        : Number(targetScheme?.durationMonths || acc.durationMonths || 12);
+
+    setRenewalType('PrincipalOnly');
+    setNewSchemeID(Number(acc.schemeID || targetScheme?.schemeID || 0));
+    setRenewalDurationType(durType);
+    setRenewalDurationValue(durVal > 0 ? durVal : 12);
+    setNewInterestRate(Number(targetScheme?.interestRate ?? acc.interestRate ?? 0));
+    setNewDepositReceiptNo(acc.depositReceiptNo || '');
+    setRenewalAmount(principal);
+    setIsRenewalAmtManual(false);
+    setRenInterestPayout(expectedInt);
+    setRenTds(0);
+
+    setTdsLedgerID(defaultTdsLedger);
+    setReferenceNo('');
+    setNarration('');
+  };
 
   const handleSelectAccount = (accountId: number) => {
+    setError('');
+    setSuccess('');
     setSelectedAccountId(accountId);
-    const acc = accounts.find(a => a.investmentAccountID === accountId);
+    const acc = accounts.find((a) => a.investmentAccountID === accountId);
     if (acc) {
-      const principal = acc.principalAmount || 0;
-      const expectedTotal = acc.expectedMaturityAmount || principal;
-      const interest = Math.max(0, expectedTotal - principal);
-      const matchedScheme = schemes.find(s => Number(s.schemeID) === Number(acc.schemeID));
-      const defaultTdsLedgerId = Number(acc.tdsLedgerID || matchedScheme?.tdsLedgerID || 0);
-
-      setMaturityForm(prev => ({
-        maturityDate: activeBusinessDate,
-        principalReceived: principal,
-        interestReceived: Math.round(interest * 100) / 100,
-        tdsAmount: 0,
-        tdsLedgerID: defaultTdsLedgerId,
-        paymentMode: prev.paymentMode || 'Bank',
-        bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
-        referenceNo: '',
-      }));
-
-      setPrematureForm(prev => ({
-        withdrawalDate: activeBusinessDate,
-        principalPaid: principal,
-        revisedInterestRate: Math.max(0, (acc.interestRate || 0) - 1.0), // default 1% penalty reduction
-        interestPaid: 0,
-        penaltyAmount: 0,
-        tdsAmount: 0,
-        tdsLedgerID: defaultTdsLedgerId,
-        paymentMode: prev.paymentMode || 'Bank',
-        bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
-        referenceNo: '',
-      }));
-
-      setRenewalForm(prev => ({
-        renewalDate: activeBusinessDate,
-        renewalType: 'PrincipalOnly',
-        renewalAmount: principal,
-        newSchemeID: acc.schemeID || (schemes[0]?.schemeID || 0),
-        newInterestRate: acc.interestRate || 0,
-        interestPayoutAmount: 0,
-        tdsAmount: 0,
-        tdsLedgerID: defaultTdsLedgerId,
-        paymentMode: prev.paymentMode || 'Bank',
-        bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
-        referenceNo: '',
-      }));
+      initializeAccountDefaults(acc, txnDate);
     }
   };
 
-  const handleMaturity = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
+  // Recalculate auto premature interest when txnDate or preRevisedRate changes (unless manually edited)
+  useEffect(() => {
+    if (!selectedAccount || isPreInterestManual) return;
+    const days = calcElapsedDays(selectedAccount.investmentDate, txnDate);
+    setPreInterestPaid(computeAutoPrematureInterest(selectedAccount.principalAmount || 0, preRevisedRate, days));
+  }, [selectedAccount, txnDate, preRevisedRate, isPreInterestManual]);
+
+  // Recalculate renewal amount when renewalType or renTds changes (unless manually edited)
+  useEffect(() => {
+    if (!selectedAccount || isRenewalAmtManual) return;
+    const principal = Number(selectedAccount.principalAmount || 0);
+    const expectedInt = Math.max(0, Number(selectedAccount.expectedMaturityAmount || principal) - principal);
+    if (renewalType === 'PrincipalAndInterest') {
+      setRenewalAmount(round2(Math.max(0, principal + expectedInt - (renTds || 0))));
+    } else {
+      setRenewalAmount(principal);
+    }
+  }, [selectedAccount, renewalType, renTds, isRenewalAmtManual]);
+
+  const elapsedDays = useMemo(
+    () => (selectedAccount ? calcElapsedDays(selectedAccount.investmentDate, txnDate) : 0),
+    [selectedAccount, txnDate]
+  );
+
+  const isBeforeInvestmentDate = useMemo(() => {
+    if (!selectedAccount?.investmentDate || !txnDate) return false;
+    return txnDate < selectedAccount.investmentDate.split('T')[0];
+  }, [selectedAccount, txnDate]);
+
+  const isFutureDate = useMemo(() => Boolean(txnDate && txnDate > todayStr), [txnDate, todayStr]);
+
+  const isPrematureByDate = useMemo(() => {
+    if (!selectedAccount?.maturityDate || !txnDate) return false;
+    return txnDate < selectedAccount.maturityDate.split('T')[0];
+  }, [selectedAccount, txnDate]);
+
+  // Ledger helper lookup
+  const getLedgerDisplayName = (ledgerId?: number | null, fallbackName = 'संबंधित जी.एल. लेजर') => {
+    if (!ledgerId || ledgerId <= 0) return fallbackName;
+    const found = ledgers.find((l: any) => Number(l.ledgerID || l.LedgerID) === Number(ledgerId));
+    if (!found) return `GL #${ledgerId} (${fallbackName})`;
+    const code = found.ledgerCode || found.LedgerCode || ledgerId;
+    const name = found.ledgerName || found.LedgerName || fallbackName;
+    return `${code} - ${name}`;
+  };
+
+  const resolvedOldGlIds = useMemo(() => {
     if (!selectedAccount) {
-      setError('कृपया मुदत ठेव खाते निवडा.');
-      return;
+      return { assetId: 0, incomeId: 0, receivableId: 0 };
     }
-    if ((maturityForm.tdsAmount || 0) > 0 && (!maturityForm.tdsLedgerID || Number(maturityForm.tdsLedgerID) <= 0)) {
-      setError('TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.');
-      return;
-    }
-    if (maturityForm.paymentMode === 'Bank' && (!maturityForm.bankLedgerID || Number(maturityForm.bankLedgerID) <= 0)) {
-      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
-      return;
+    const branchMap = voucherMappings.find(
+      (m: any) =>
+        Number(m.branchID || m.BranchID) === Number(selectedAccount.branchID) &&
+        (!m.investmentType || m.investmentType === selectedAccount.investmentType)
+    );
+    return {
+      assetId: Number(selectedAccount.investmentAssetLedgerID || branchMap?.investmentLedgerID || 0),
+      incomeId: Number(selectedAccount.interestIncomeLedgerID || branchMap?.interestIncomeLedgerID || 0),
+      receivableId: Number(selectedAccount.interestReceivableLedgerID || branchMap?.interestReceivableLedgerID || 0)
+    };
+  }, [selectedAccount, voucherMappings]);
+
+  // Renewal live maturity preview
+  const renewalPreview = useMemo(() => {
+    if (!selectedAccount) return null;
+    const targetScheme = schemes.find((s) => Number(s.schemeID) === Number(newSchemeID));
+    const calcMethod = targetScheme?.interestCalculationMethod || selectedAccount.interestCalculationMethod || 'Simple';
+    const p = Number(renewalAmount || 0);
+    const r = Number(newInterestRate || 0);
+    const durVal = Math.max(1, Number(renewalDurationValue || 1));
+
+    const startDt = new Date(txnDate);
+    const matDt = new Date(txnDate);
+    if (!isNaN(startDt.getTime())) {
+      if (renewalDurationType === 'Days') {
+        matDt.setDate(matDt.getDate() + durVal);
+      } else {
+        matDt.setMonth(matDt.getMonth() + durVal);
+      }
     }
 
-    setSaving(true);
-    try {
-      const response = await axios.post(`${API_URL}/InvestmentAccounts/Maturity`, {
-        investmentAccountID: selectedAccount.investmentAccountID,
-        maturityDate: maturityForm.maturityDate,
-        principalReceived: maturityForm.principalReceived,
-        interestReceived: maturityForm.interestReceived,
-        tdsAmount: maturityForm.tdsAmount || 0,
-        tdsLedgerID: (maturityForm.tdsAmount || 0) > 0 ? Number(maturityForm.tdsLedgerID) : null,
-        totalReceived: Math.max(0, (maturityForm.principalReceived || 0) + (maturityForm.interestReceived || 0) - (maturityForm.tdsAmount || 0)),
-        paymentMode: maturityForm.paymentMode || 'Bank',
-        bankLedgerID: maturityForm.paymentMode === 'Bank' ? Number(maturityForm.bankLedgerID) : null,
-        referenceNo: maturityForm.referenceNo?.trim() || null,
+    let expectedMat = p;
+    if (p > 0 && r > 0) {
+      if (calcMethod.toLowerCase() === 'cumulative') {
+        const tYears = renewalDurationType === 'Days' ? durVal / 365.0 : durVal / 12.0;
+        expectedMat = round2(p * Math.pow(1 + r / 400.0, 4 * tYears));
+      } else {
+        const interest = renewalDurationType === 'Days' ? (p * r * durVal) / 36500.0 : (p * r * durVal) / 1200.0;
+        expectedMat = round2(p + interest);
+      }
+    }
+
+    const matIso = !isNaN(matDt.getTime())
+      ? `${matDt.getFullYear()}-${String(matDt.getMonth() + 1).padStart(2, '0')}-${String(matDt.getDate()).padStart(2, '0')}`
+      : '';
+
+    return {
+      schemeName: targetScheme?.schemeName || selectedAccount.schemeName,
+      calcMethod,
+      newMaturityIso: matIso,
+      expectedMaturityAmount: expectedMat,
+      expectedInterest: round2(Math.max(0, expectedMat - p))
+    };
+  }, [selectedAccount, schemes, newSchemeID, renewalAmount, newInterestRate, renewalDurationType, renewalDurationValue, txnDate]);
+
+  // Core live settlement & double-entry voucher simulation
+  const settlement = useMemo(() => {
+    if (!selectedAccount) return null;
+
+    const originalPrincipal = round2(selectedAccount.principalAmount || 0);
+    const standingReceivable = round2(selectedAccount.interestReceivable || 0);
+    const paymentLedgerLabel =
+      paymentMode === 'Bank'
+        ? bankLedgerID > 0
+          ? getLedgerDisplayName(bankLedgerID, 'बँक खाते')
+          : 'बँक खाते (Bank GL निवडा)'
+        : 'शाखा मुख्य रोख खाते (Cash GL)';
+
+    if (activeMode === 'maturity') {
+      const principalIn = round2(matPrincipal || 0);
+      const grossInterest = round2(Math.max(0, matInterest || 0));
+      const tds = round2(Math.max(0, matTds || 0));
+      const netReceipt = round2(principalIn + grossInterest - tds);
+
+      const receivableCleared = Math.min(grossInterest, standingReceivable);
+      const accruedReversed = round2(Math.max(0, standingReceivable - receivableCleared));
+      const totalReceivableCr = round2(receivableCleared + accruedReversed);
+      const freshIncome = round2(Math.max(0, grossInterest - receivableCleared));
+
+      const voucherLines: { drCr: 'Dr' | 'Cr'; ledger: string; note: string; amount: number; isReversal?: boolean }[] = [];
+      if (netReceipt > 0) {
+        voucherLines.push({ drCr: 'Dr', ledger: paymentLedgerLabel, note: 'मुदतपूर्ती निव्वळ जमा', amount: netReceipt });
+      }
+      if (tds > 0) {
+        voucherLines.push({
+          drCr: 'Dr',
+          ledger: getLedgerDisplayName(tdsLedgerID, 'TDS कपात जी.एल.'),
+          note: 'बँक TDS कपात',
+          amount: tds
+        });
+      }
+      if (accruedReversed > 0) {
+        voucherLines.push({
+          drCr: 'Dr',
+          ledger: getLedgerDisplayName(resolvedOldGlIds.incomeId, 'गुंतवणूक व्याज उत्पन्न'),
+          note: 'जादा येणे व्याज रिव्हर्सल (Reverse Entry)',
+          amount: accruedReversed,
+          isReversal: true
+        });
+      }
+      if (principalIn > 0) {
+        voucherLines.push({
+          drCr: 'Cr',
+          ledger: getLedgerDisplayName(resolvedOldGlIds.assetId, 'गुंतवणूक मुद्दल (Asset)'),
+          note: 'मुदत ठेव मुद्दल निरंक',
+          amount: principalIn
+        });
+      }
+      if (totalReceivableCr > 0) {
+        voucherLines.push({
+          drCr: 'Cr',
+          ledger: getLedgerDisplayName(resolvedOldGlIds.receivableId, 'येणे व्याज गुंतवणुकीवरील'),
+          note: accruedReversed > 0 ? `प्राप्त ₹${receivableCleared.toFixed(2)} + रिव्हर्स ₹${accruedReversed.toFixed(2)}` : 'येणे व्याज समायोजन',
+          amount: totalReceivableCr
+        });
+      }
+      if (freshIncome > 0) {
+        voucherLines.push({
+          drCr: 'Cr',
+          ledger: getLedgerDisplayName(resolvedOldGlIds.incomeId, 'गुंतवणूक व्याज उत्पन्न'),
+          note: 'चालू व्याज उत्पन्न जमा',
+          amount: freshIncome
+        });
+      }
+
+      return {
+        originalPrincipal,
+        principalReturned: principalIn,
+        standingReceivable,
+        grossInterest,
+        receivableCleared,
+        accruedReversed,
+        interestClawback: 0,
+        totalReversalDr: accruedReversed,
+        freshIncome,
+        penalty: 0,
+        tds,
+        netCashOrBankReceipt: netReceipt,
+        newRenewalDeposit: 0,
+        voucherLines
+      };
+    }
+
+    if (activeMode === 'premature') {
+      const principalIn = round2(Math.max(0, prePrincipalPaid || 0));
+      const grossInterest = round2(Math.max(0, preInterestPaid || 0));
+      const penalty = round2(Math.max(0, prePenalty || 0));
+      const tds = round2(Math.max(0, preTds || 0));
+      const netReceipt = round2(principalIn + grossInterest - penalty - tds);
+
+      const receivableCleared = Math.min(grossInterest, standingReceivable);
+      const accruedReversed = round2(Math.max(0, standingReceivable - receivableCleared));
+      const totalReceivableCr = round2(receivableCleared + accruedReversed);
+      const freshIncome = round2(Math.max(0, grossInterest - receivableCleared));
+      const interestClawback = round2(Math.max(0, originalPrincipal - principalIn));
+      const totalReversalDr = round2(accruedReversed + interestClawback);
+
+      const voucherLines: { drCr: 'Dr' | 'Cr'; ledger: string; note: string; amount: number; isReversal?: boolean }[] = [];
+      if (netReceipt > 0) {
+        voucherLines.push({ drCr: 'Dr', ledger: paymentLedgerLabel, note: 'मुदतपूर्व निव्वळ जमा रक्कम', amount: netReceipt });
+      }
+      if (tds > 0) {
+        voucherLines.push({
+          drCr: 'Dr',
+          ledger: getLedgerDisplayName(tdsLedgerID, 'TDS कपात जी.एल.'),
+          note: 'मुदतपूर्व TDS कपात',
+          amount: tds
+        });
+      }
+      if (totalReversalDr > 0) {
+        voucherLines.push({
+          drCr: 'Dr',
+          ledger: getLedgerDisplayName(resolvedOldGlIds.incomeId, 'गुंतवणूक व्याज उत्पन्न (Reverse)'),
+          note:
+            accruedReversed > 0 && interestClawback > 0
+              ? `येणे व्याज रिव्हर्सल ₹${accruedReversed.toFixed(2)} + मुद्दल व्याज कपात ₹${interestClawback.toFixed(2)}`
+              : accruedReversed > 0
+              ? 'मुदतपूर्व येणे व्याज रिव्हर्सल एंट्री'
+              : 'पूर्वी मिळालेल्या व्याजाची मुद्दल कपात रिव्हर्सल',
+          amount: totalReversalDr,
+          isReversal: true
+        });
+      }
+      if (penalty > 0) {
+        voucherLines.push({
+          drCr: 'Dr',
+          ledger: 'गुंतवणूक मुदतपूर्व दंड खर्च / व्याज उत्पन्न',
+          note: 'मुदतपूर्व मोडणी दंड',
+          amount: penalty
+        });
+      }
+      if (originalPrincipal > 0) {
+        voucherLines.push({
+          drCr: 'Cr',
+          ledger: getLedgerDisplayName(resolvedOldGlIds.assetId, 'गुंतवणूक मुद्दल (Asset)'),
+          note: 'संपूर्ण मूळ मुद्दल निरंक (Asset Zero)',
+          amount: originalPrincipal
+        });
+      }
+      if (totalReceivableCr > 0) {
+        voucherLines.push({
+          drCr: 'Cr',
+          ledger: getLedgerDisplayName(resolvedOldGlIds.receivableId, 'येणे व्याज गुंतवणुकीवरील'),
+          note: `संपूर्ण येणे व्याज शून्य (प्राप्त ₹${receivableCleared.toFixed(2)} + रिव्हर्स ₹${accruedReversed.toFixed(2)})`,
+          amount: totalReceivableCr
+        });
+      }
+      if (freshIncome > 0) {
+        voucherLines.push({
+          drCr: 'Cr',
+          ledger: getLedgerDisplayName(resolvedOldGlIds.incomeId, 'गुंतवणूक व्याज उत्पन्न'),
+          note: 'येणे व्याजावरील अतिरिक्त व्याज उत्पन्न',
+          amount: freshIncome
+        });
+      }
+
+      return {
+        originalPrincipal,
+        principalReturned: principalIn,
+        standingReceivable,
+        grossInterest,
+        receivableCleared,
+        accruedReversed,
+        interestClawback,
+        totalReversalDr,
+        freshIncome,
+        penalty,
+        tds,
+        netCashOrBankReceipt: netReceipt,
+        newRenewalDeposit: 0,
+        voucherLines
+      };
+    }
+
+    // Mode 3: Renewal
+    const newPrincipal = round2(Math.max(0, renewalAmount || 0));
+    const tds = round2(Math.max(0, renTds || 0));
+    const payoutGross = renewalType === 'PrincipalOnly' ? round2(Math.max(0, renInterestPayout || 0)) : 0;
+    const netPayoutInterest = renewalType === 'PrincipalOnly' ? round2(Math.max(0, payoutGross - tds)) : 0;
+    const principalIncrease = round2(Math.max(0, newPrincipal - originalPrincipal));
+    const principalRefund = round2(Math.max(0, originalPrincipal - newPrincipal));
+    const totalCashOrBankReceived = round2(principalRefund + netPayoutInterest);
+    const totalInterestRecognized = round2(principalIncrease + netPayoutInterest + tds);
+
+    const receivableCleared = Math.min(totalInterestRecognized, standingReceivable);
+    const accruedReversed = round2(Math.max(0, standingReceivable - receivableCleared));
+    const totalReceivableCr = round2(receivableCleared + accruedReversed);
+    const freshIncome = round2(Math.max(0, totalInterestRecognized - receivableCleared));
+
+    const targetSchemeObj = schemes.find((s) => Number(s.schemeID) === Number(newSchemeID));
+    const newAssetLedgerId = Number(targetSchemeObj?.investmentAssetLedgerID || resolvedOldGlIds.assetId || 0);
+
+    const voucherLines: { drCr: 'Dr' | 'Cr'; ledger: string; note: string; amount: number; isReversal?: boolean }[] = [];
+    if (newPrincipal > 0) {
+      voucherLines.push({
+        drCr: 'Dr',
+        ledger: getLedgerDisplayName(newAssetLedgerId, 'नवीन गुंतवणूक मुद्दल (New Asset)'),
+        note: 'नूतनीकृत नवीन ठेव मुद्दल',
+        amount: newPrincipal
       });
-      setSuccess(`${response.data.message || 'मुदत ठेव खात्याची मुदतपूर्ती यशस्वीरीत्या झाली!'}`);
-      setSelectedAccountId(0);
-      fetchAccounts();
-    } catch (err: any) {
-      setError(
-        typeof err.response?.data === 'string'
-          ? err.response.data
-          : err.response?.data?.message || 'मुदतपूर्ती करताना त्रुटी आली.'
-      );
-    } finally {
-      setSaving(false);
     }
-  };
-
-  const handlePremature = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-    if (!selectedAccount) {
-      setError('कृपया मुदत ठेव खाते निवडा.');
-      return;
-    }
-    if ((prematureForm.tdsAmount || 0) > 0 && (!prematureForm.tdsLedgerID || Number(prematureForm.tdsLedgerID) <= 0)) {
-      setError('TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.');
-      return;
-    }
-    if (prematureForm.paymentMode === 'Bank' && (!prematureForm.bankLedgerID || Number(prematureForm.bankLedgerID) <= 0)) {
-      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const response = await axios.post(`${API_URL}/InvestmentAccounts/PrematureWithdraw`, {
-        investmentAccountID: selectedAccount.investmentAccountID,
-        withdrawalDate: prematureForm.withdrawalDate,
-        principalPaid: prematureForm.principalPaid,
-        revisedInterestRate: prematureForm.revisedInterestRate,
-        interestPaid: prematureForm.interestPaid,
-        penaltyAmount: prematureForm.penaltyAmount,
-        tdsAmount: prematureForm.tdsAmount || 0,
-        tdsLedgerID: (prematureForm.tdsAmount || 0) > 0 ? Number(prematureForm.tdsLedgerID) : null,
-        netPayout: (prematureForm.principalPaid || 0) + (prematureForm.interestPaid || 0) - (prematureForm.penaltyAmount || 0) - (prematureForm.tdsAmount || 0),
-        paymentMode: prematureForm.paymentMode || 'Bank',
-        bankLedgerID: prematureForm.paymentMode === 'Bank' ? Number(prematureForm.bankLedgerID) : null,
-        referenceNo: prematureForm.referenceNo?.trim() || null,
+    if (totalCashOrBankReceived > 0) {
+      voucherLines.push({
+        drCr: 'Dr',
+        ledger: paymentLedgerLabel,
+        note: 'नूतनीकरण व्याज / आंशिक मुद्दल परतावा',
+        amount: totalCashOrBankReceived
       });
-      setSuccess(`${response.data.message || 'मुदत ठेव मुदतपूर्व यशस्वीरीत्या काढली!'}`);
-      setSelectedAccountId(0);
-      fetchAccounts();
-    } catch (err: any) {
-      setError(
-        typeof err.response?.data === 'string'
-          ? err.response.data
-          : err.response?.data?.message || 'मुदतपूर्व काढताना त्रुटी आली.'
-      );
-    } finally {
-      setSaving(false);
     }
-  };
-
-  const handleRenewal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-    if (!selectedAccount) {
-      setError('कृपया मुदत ठेव खाते निवडा.');
-      return;
-    }
-    if ((renewalForm.tdsAmount || 0) > 0 && (!renewalForm.tdsLedgerID || Number(renewalForm.tdsLedgerID) <= 0)) {
-      setError('TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक जी.एल. लेजर (TDS GL Ledger) निवडा.');
-      return;
-    }
-
-    const principalRefund = Math.max(0, (selectedAccount.principalAmount || 0) - (renewalForm.renewalAmount || 0));
-    const netInterestInflow = renewalForm.renewalType === 'PrincipalOnly'
-      ? Math.max(0, (renewalForm.interestPayoutAmount || 0) - (renewalForm.tdsAmount || 0))
-      : 0;
-    const totalInflow = principalRefund + netInterestInflow;
-    if (totalInflow > 0 && renewalForm.paymentMode === 'Bank' && (!renewalForm.bankLedgerID || Number(renewalForm.bankLedgerID) <= 0)) {
-      setError('नूतनीकरणावेळी व्याज किंवा आंशिक मुद्दल बँकेत जमा घेताना बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const response = await axios.post(`${API_URL}/InvestmentAccounts/Renew`, {
-        oldInvestmentAccountID: selectedAccount.investmentAccountID,
-        ...renewalForm,
-        tdsAmount: renewalForm.tdsAmount || 0,
-        tdsLedgerID: (renewalForm.tdsAmount || 0) > 0 ? Number(renewalForm.tdsLedgerID) : null,
-        bankLedgerID: renewalForm.paymentMode === 'Bank' ? renewalForm.bankLedgerID : null,
+    if (tds > 0) {
+      voucherLines.push({
+        drCr: 'Dr',
+        ledger: getLedgerDisplayName(tdsLedgerID, 'TDS कपात जी.एल.'),
+        note: 'नूतनीकरण TDS कपात',
+        amount: tds
       });
-      setSuccess(`${response.data.message || 'मुदत ठेवीचे नूतनीकरण यशस्वीरीत्या झाले!'} ${response.data.newAccountNo ? `(नवीन खाते: ${response.data.newAccountNo})` : ''}`);
-      setSelectedAccountId(0);
-      fetchAccounts();
-    } catch (err: any) {
-      setError(
-        typeof err.response?.data === 'string'
-          ? err.response.data
-          : err.response?.data?.message || 'नूतनीकरण करताना त्रुटी आली.'
-      );
-    } finally {
-      setSaving(false);
     }
+    if (accruedReversed > 0) {
+      voucherLines.push({
+        drCr: 'Dr',
+        ledger: getLedgerDisplayName(resolvedOldGlIds.incomeId, 'गुंतवणूक व्याज उत्पन्न (Reverse)'),
+        note: 'अतिरिक्त येणे व्याज रिव्हर्सल',
+        amount: accruedReversed,
+        isReversal: true
+      });
+    }
+    if (originalPrincipal > 0) {
+      voucherLines.push({
+        drCr: 'Cr',
+        ledger: getLedgerDisplayName(resolvedOldGlIds.assetId, 'जुनी गुंतवणूक मुद्दल (Old Asset)'),
+        note: 'जुनी मुदत ठेव निरंक',
+        amount: originalPrincipal
+      });
+    }
+    if (totalReceivableCr > 0) {
+      voucherLines.push({
+        drCr: 'Cr',
+        ledger: getLedgerDisplayName(resolvedOldGlIds.receivableId, 'येणे व्याज गुंतवणुकीवरील'),
+        note: 'जुने येणे व्याज समायोजन',
+        amount: totalReceivableCr
+      });
+    }
+    if (freshIncome > 0) {
+      voucherLines.push({
+        drCr: 'Cr',
+        ledger: getLedgerDisplayName(resolvedOldGlIds.incomeId, 'गुंतवणूक व्याज उत्पन्न'),
+        note: 'नूतनीकरण व्याज उत्पन्न',
+        amount: freshIncome
+      });
+    }
+
+    return {
+      originalPrincipal,
+      principalReturned: principalRefund,
+      standingReceivable,
+      grossInterest: totalInterestRecognized,
+      receivableCleared,
+      accruedReversed,
+      interestClawback: 0,
+      totalReversalDr: accruedReversed,
+      freshIncome,
+      penalty: 0,
+      tds,
+      netCashOrBankReceipt: totalCashOrBankReceived,
+      newRenewalDeposit: newPrincipal,
+      voucherLines
+    };
+  }, [
+    selectedAccount,
+    activeMode,
+    matPrincipal,
+    matInterest,
+    matTds,
+    prePrincipalPaid,
+    preInterestPaid,
+    prePenalty,
+    preTds,
+    renewalType,
+    renewalAmount,
+    renInterestPayout,
+    renTds,
+    newSchemeID,
+    schemes,
+    paymentMode,
+    bankLedgerID,
+    tdsLedgerID,
+    resolvedOldGlIds,
+    ledgers
+  ]);
+
+  const activeTdsAmount =
+    activeMode === 'maturity' ? matTds : activeMode === 'premature' ? preTds : renTds;
+
+  const setActiveTdsAmount = (val: number) => {
+    const clean = Math.max(0, val || 0);
+    if (activeMode === 'maturity') setMatTds(clean);
+    else if (activeMode === 'premature') setPreTds(clean);
+    else setRenTds(clean);
   };
 
-  const handleRenewalTypeChange = (type: string) => {
-    if (!selectedAccount) return;
-    const principal = selectedAccount.principalAmount || 0;
-    const interest = Math.max(0, (selectedAccount.expectedMaturityAmount || 0) - principal);
-    const tds = renewalForm.tdsAmount || 0;
-    const newAmt = type === 'PrincipalAndInterest' ? Math.max(0, principal + interest - tds) : principal;
+  const ledgerOptions = useMemo(
+    () => [
+      { value: 0, label: '-- डायनॅमिक TDS / कपात जी.एल. लेजर निवडा --' },
+      ...ledgers.map((l: any) => {
+        const id = Number(l.ledgerID || l.LedgerID || 0);
+        const code = l.ledgerCode || l.LedgerCode || id;
+        const name = l.ledgerName || l.LedgerName || '';
+        const grp = l.accountGroup?.groupName || (typeof l.accountGroup === 'string' ? l.accountGroup : '');
+        return {
+          value: id,
+          label: `${code} - ${name}${grp ? ` (${grp})` : ''}`
+        };
+      })
+    ],
+    [ledgers]
+  );
 
-    setRenewalForm(prev => ({
-      ...prev,
-      renewalType: type,
-      renewalAmount: Math.round(newAmt * 100) / 100,
-      ...(type === 'PrincipalAndInterest' ? { interestPayoutAmount: 0 } : {})
-    }));
-  };
+  const accountOptions = useMemo(
+    () => [
+      { value: 0, label: '-- मुदत ठेव खाते, जुना क्र. किंवा पावती क्र. निवडा --' },
+      ...accounts.map((a) => {
+        const oldPart = a.oldInvestmentNo ? ` [जुना: ${a.oldInvestmentNo}]` : '';
+        const recPart = a.depositReceiptNo ? ` | पावती: ${a.depositReceiptNo}` : '';
+        return {
+          value: a.investmentAccountID,
+          label: `${a.investmentNo}${oldPart}${recPart} | ${a.institutionName} (${a.schemeName}) | ₹${(a.principalAmount || 0).toLocaleString('en-IN')} @ ${a.interestRate}% | मुदत: ${formatDate(a.maturityDate)}`
+        };
+      })
+    ],
+    [accounts]
+  );
 
-  const formatDate = (dateStr: any) => {
+  function formatDate(dateStr?: string | null) {
     if (!dateStr) return '-';
+    const clean = dateStr.split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     const d = new Date(dateStr);
-    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-GB');
+  }
+
+  const fmt = (n: number) =>
+    (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!selectedAccount || !settlement) {
+      setError('कृपया प्रथम गुंतवणूक मुदत ठेव खाते निवडा.');
+      return;
+    }
+    if (isBeforeInvestmentDate) {
+      setError(`व्यवहार तारीख (${formatDate(txnDate)}) ही ठेव तारखेपेक्षा (${formatDate(selectedAccount.investmentDate)}) आधीची असू शकत नाही.`);
+      return;
+    }
+    if (isFutureDate) {
+      setError('भविष्यातील व्यवहार तारीख अनुज्ञेय नाही.');
+      return;
+    }
+    if (activeTdsAmount > 0 && (!tdsLedgerID || Number(tdsLedgerID) <= 0)) {
+      setError('TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक TDS जी.एल. लेजर निवडा.');
+      return;
+    }
+    if (settlement.netCashOrBankReceipt < 0) {
+      setError('दंड व TDS कपात रक्कम ही एकूण मुद्दल व व्याजापेक्षा जास्त असू शकत नाही.');
+      return;
+    }
+    if (
+      settlement.netCashOrBankReceipt > 0 &&
+      paymentMode === 'Bank' &&
+      (!bankLedgerID || Number(bankLedgerID) <= 0)
+    ) {
+      setError('बँक जमा व्यवहारासाठी कृपया बँक जी.एल. खाते (Bank GL) निवडा.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (activeMode === 'maturity') {
+        const res = await axios.post(`${API_URL}/InvestmentAccounts/Maturity`, {
+          investmentAccountID: selectedAccount.investmentAccountID,
+          maturityDate: txnDate,
+          principalReceived: matPrincipal,
+          interestReceived: matInterest,
+          tdsAmount: matTds || 0,
+          tdsLedgerID: (matTds || 0) > 0 ? Number(tdsLedgerID) : null,
+          totalReceived: settlement.netCashOrBankReceipt,
+          paymentMode,
+          bankLedgerID: paymentMode === 'Bank' ? Number(bankLedgerID) : null,
+          referenceNo: referenceNo.trim() || null,
+          narration: narration.trim() || null
+        });
+        setSuccess(
+          `✅ ${res.data?.message || 'मुदतपूर्ती यशस्वी!'} ${res.data?.voucherNo ? `(व्हाउचर क्र.: ${res.data.voucherNo})` : ''}`
+        );
+      } else if (activeMode === 'premature') {
+        if (prePrincipalPaid > selectedAccount.principalAmount) {
+          setError('परत मिळालेले मुद्दल हे मूळ गुंतवलेल्या मुद्दलापेक्षा जास्त असू शकत नाही.');
+          setSaving(false);
+          return;
+        }
+        const res = await axios.post(`${API_URL}/InvestmentAccounts/PrematureWithdraw`, {
+          investmentAccountID: selectedAccount.investmentAccountID,
+          withdrawalDate: txnDate,
+          principalPaid: prePrincipalPaid,
+          revisedInterestRate: preRevisedRate,
+          interestPaid: preInterestPaid,
+          penaltyAmount: prePenalty || 0,
+          tdsAmount: preTds || 0,
+          tdsLedgerID: (preTds || 0) > 0 ? Number(tdsLedgerID) : null,
+          netPayout: settlement.netCashOrBankReceipt,
+          paymentMode,
+          bankLedgerID: paymentMode === 'Bank' ? Number(bankLedgerID) : null,
+          referenceNo: referenceNo.trim() || null,
+          narration: narration.trim() || null
+        });
+        setSuccess(
+          `✅ ${res.data?.message || 'मुदतपूर्व मोडणी यशस्वी!'} ${res.data?.voucherNo ? `(व्हाउचर क्र.: ${res.data.voucherNo})` : ''}`
+        );
+      } else {
+        if (renewalType === 'PrincipalOnly' && (renTds || 0) > (renInterestPayout || 0)) {
+          setError('फक्त मुद्दल नूतनीकरणामध्ये TDS रक्कम ही प्राप्त व्याज परताव्यापेक्षा जास्त असू शकत नाही.');
+          setSaving(false);
+          return;
+        }
+        const res = await axios.post(`${API_URL}/InvestmentAccounts/Renew`, {
+          oldInvestmentAccountID: selectedAccount.investmentAccountID,
+          renewalDate: txnDate,
+          renewalType,
+          renewalAmount,
+          newSchemeID,
+          newInterestRate,
+          durationType: renewalDurationType,
+          durationValue: renewalDurationValue,
+          newDepositReceiptNo: newDepositReceiptNo.trim() || null,
+          interestPayoutAmount: renewalType === 'PrincipalOnly' ? renInterestPayout || 0 : 0,
+          tdsAmount: renTds || 0,
+          tdsLedgerID: (renTds || 0) > 0 ? Number(tdsLedgerID) : null,
+          paymentMode,
+          bankLedgerID:
+            settlement.netCashOrBankReceipt > 0 && paymentMode === 'Bank' ? Number(bankLedgerID) : null,
+          referenceNo: referenceNo.trim() || null,
+          narration: narration.trim() || null
+        });
+        setSuccess(
+          `✅ ${res.data?.message || 'नूतनीकरण यशस्वी!'} ${
+            res.data?.newAccountNo ? `| नवीन खाते: ${res.data.newAccountNo}` : ''
+          } ${res.data?.voucherNo ? `| व्हाउचर: ${res.data.voucherNo}` : ''}`
+        );
+      }
+
+      setSelectedAccountId(0);
+      fetchAccounts();
+    } catch (err: any) {
+      const resp = err?.response?.data;
+      setError(typeof resp === 'string' ? resp : resp?.message || 'व्यवहार सेव्ह करताना त्रुटी आली.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const formatCurrency = (n: number) => n?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00';
+  // Compact top KPI stats
+  const totalPrincipal = useMemo(
+    () => accounts.reduce((s, a) => s + (a.principalAmount || 0), 0),
+    [accounts]
+  );
+  const dueSoonCount = useMemo(() => {
+    const now = new Date(txnDate || todayStr);
+    const limit = new Date(now);
+    limit.setDate(now.getDate() + 90);
+    return accounts.filter((a) => {
+      if (!a.maturityDate) return false;
+      const m = new Date(a.maturityDate);
+      return m >= now && m <= limit;
+    }).length;
+  }, [accounts, txnDate, todayStr]);
 
-  // KPI calculations
-  const totalPrincipal = accounts.reduce((acc, a) => acc + (a.principalAmount || 0), 0);
-  const totalMaturityExpected = accounts.reduce((acc, a) => acc + (a.expectedMaturityAmount || a.principalAmount || 0), 0);
-  
-  // Accounts due in 90 days
-  const now = new Date();
-  const ninetyDaysLater = new Date();
-  ninetyDaysLater.setDate(now.getDate() + 90);
-  const dueSoonCount = accounts.filter(a => {
-    if (!a.maturityDate) return false;
-    const mDate = new Date(a.maturityDate);
-    return mDate >= now && mDate <= ninetyDaysLater;
-  }).length;
+  const ctrl =
+    'w-full h-8 text-xs border border-slate-300 rounded-sm px-2 bg-white text-slate-900 font-medium focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 disabled:bg-slate-100 disabled:text-slate-600';
+  const segBase =
+    'flex-1 h-8 px-2.5 text-xs font-bold border-y border-r first:border-l first:rounded-l-sm last:rounded-r-sm flex items-center justify-center gap-1.5 cursor-pointer transition-colors select-none';
 
-  const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
-  const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
+  const totalDr = settlement
+    ? round2(settlement.voucherLines.filter((l) => l.drCr === 'Dr').reduce((s, l) => s + l.amount, 0))
+    : 0;
+  const totalCr = settlement
+    ? round2(settlement.voucherLines.filter((l) => l.drCr === 'Cr').reduce((s, l) => s + l.amount, 0))
+    : 0;
+  const isVoucherBalanced = Math.abs(totalDr - totalCr) < 0.01;
 
   return (
-    <div className="p-2 sm:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
-      
-      {/* Top Sleek CBS Header Banner */}
-      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
+    <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen bg-slate-50 text-xs font-sans space-y-2.5">
+      {/* Compact CBS Header Bar with Inline Portfolio Chips */}
+      <div className="bg-white px-3.5 py-2 rounded-sm shadow-2xs border border-slate-200 border-b-2 border-primary flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
-            <Coins size={18} className="stroke-[2.5]" />
+          <div className="w-7 h-7 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+            <Coins size={16} className="stroke-[2.5]" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
+            <h1 className="text-sm font-bold text-slate-900 leading-tight flex items-center gap-1.5">
               <span>गुंतवणूक मुदतपूर्ती, मोडणी व नूतनीकरण</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Investment Maturity, Premature & Renewal)</span>
+              <span className="text-[10px] font-semibold text-primary font-mono hidden md:inline">
+                (Investment Closure &amp; Renewal)
+              </span>
             </h1>
-            <p className="text-[11px] text-gray-500 font-medium">
-              बँकांमधील मुदत ठेवींची नियमित मुदतपूर्ती जमा, मुदतपूर्व मोडणी आणि मुदत ठेव नूतनीकरण प्रक्रिया
+            <p className="text-[10.5px] text-slate-500">
+              बँक गुंतवणूक मुदतपूर्ती जमा, मुदतपूर्व मोडणी (व्याज रिव्हर्सलसह) व मुदत ठेव नूतनीकरण
             </p>
           </div>
         </div>
 
-        {/* Action Mode Toggle Pills */}
-        <div className="flex items-center bg-slate-100 p-0.5 border border-slate-200 rounded-sm gap-1">
-          <button
-            type="button"
-            onClick={() => setActiveMode('maturity')}
-            className={`px-3 py-1 text-xs font-bold rounded-xs transition-all cursor-pointer flex items-center gap-1 ${
-              activeMode === 'maturity'
-                ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <CheckCircle className="w-3.5 h-3.5" />
-            <span>१. नियमित मुदतपूर्ती</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveMode('premature')}
-            className={`px-3 py-1 text-xs font-bold rounded-xs transition-all cursor-pointer flex items-center gap-1 ${
-              activeMode === 'premature'
-                ? 'bg-amber-600 text-white shadow-2xs'
-                : 'text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>२. मुदतपूर्व मोडणी</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveMode('renewal')}
-            className={`px-3 py-1 text-xs font-bold rounded-xs transition-all cursor-pointer flex items-center gap-1 ${
-              activeMode === 'renewal'
-                ? 'bg-primary text-white shadow-2xs'
-                : 'text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>३. ठेव नूतनीकरण</span>
-          </button>
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="px-2.5 py-1 rounded-sm bg-slate-100 border border-slate-200 text-slate-800 font-semibold flex items-center gap-1">
+            <Landmark className="w-3.5 h-3.5 text-primary" />
+            सक्रिय ठेवी: <strong className="font-mono text-slate-950">{accounts.length}</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-sm bg-indigo-50 border border-indigo-200 text-indigo-900 font-semibold flex items-center gap-1">
+            <TrendingUp className="w-3.5 h-3.5 text-indigo-700" />
+            एकूण मुद्दल: <strong className="font-mono">₹{fmt(totalPrincipal)}</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-sm bg-amber-50 border border-amber-200 text-amber-900 font-semibold flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-amber-700" />
+            ९० दिवसांत देय: <strong className="font-mono">{dueSoonCount}</strong>
+          </span>
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded">
-            <Landmark className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण सक्रिय मुदत ठेवी</div>
-            <div className="text-sm font-black text-gray-900">{accounts.length} खाती</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
-            <Coins className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण गुंतवलेली मुद्दल</div>
-            <div className="text-sm font-black text-indigo-900">₹{formatCurrency(totalPrincipal)}</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
-            <TrendingUp className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">अपेक्षित मुदतपूर्ती रक्कम</div>
-            <div className="text-sm font-black text-emerald-900">₹{formatCurrency(totalMaturityExpected)}</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-amber-50 text-amber-700 border border-amber-200 rounded">
-            <Clock className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">पुढील ९० दिवसात मुदतपूर्ण</div>
-            <div className="text-sm font-black text-amber-800">{dueSoonCount} खाती</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Alert Messages */}
+      {/* Error / Success Banners */}
       {error && (
-        <div className="mb-3 p-2 bg-rose-50 border border-rose-300 text-rose-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs">
-          <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span className="flex-1">{error}</span>
-          <button onClick={() => setError('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
+        <div className="bg-red-50 border border-red-200 border-l-4 border-l-red-500 text-red-800 text-xs px-3 py-2 rounded-sm font-semibold flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <XCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button type="button" onClick={() => setError('')} className="text-red-500 hover:text-red-800 font-bold cursor-pointer">
+            ×
+          </button>
         </div>
       )}
 
       {success && (
-        <div className="mb-3 p-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs">
-          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span className="flex-1">{success}</span>
-          <button onClick={() => setSuccess('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
+        <div className="bg-emerald-50 border border-emerald-200 border-l-4 border-l-emerald-500 text-emerald-900 text-xs px-3 py-2 rounded-sm font-semibold flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{success}</span>
+          </div>
+          <button type="button" onClick={() => setSuccess('')} className="text-emerald-600 hover:text-emerald-900 font-bold cursor-pointer">
+            ×
+          </button>
         </div>
       )}
 
-      {/* MAIN UNIFIED CONTAINER */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border border-gray-200 space-y-3">
-        
-        {/* Section 1: Account Selection */}
-        <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
-          <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
-            <div className="flex items-center gap-1.5">
-              <Search className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">१. मुदत ठेव खाते निवडा (Select Term Deposit Account)</h2>
-            </div>
-            <span className="text-[10px] text-gray-500 font-mono">फक्त सक्रिय मुदत ठेवी</span>
-          </div>
+      {/* 2-COLUMN FD-STYLE CBS FORM */}
+      <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+          {/* ================= LEFT COLUMN: ENTRY FIELDSETS ================= */}
+          <div className={`${selectedAccount ? 'lg:col-span-7' : 'lg:col-span-12'} space-y-3`}>
+            {/* Group Box 1: Account & Transaction Date Selection */}
+            <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+              <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span>१. गुंतवणूक मुदत ठेव व व्यवहार तारीख निवड (Account &amp; Date)</span>
+              </legend>
 
-          <div>
-            <label className={labelClass}>
-              मुदत ठेव खाते / पावती क्रमांक <span className="text-red-500">*</span>
-            </label>
-            <SearchableSelect
-              name="investmentAccountID"
-              value={selectedAccountId}
-              onChange={(e) => handleSelectAccount(Number(e.target.value))}
-              options={[
-                { value: 0, label: '-- मुदत ठेव खाते निवडा --' },
-                ...accounts.map((a: any) => {
-                  const oldPart = a.oldInvestmentNo ? ` [जुना क्र: ${a.oldInvestmentNo}]` : '';
-                  return {
-                    value: a.investmentAccountID,
-                    label: `${a.investmentNo}${oldPart} | पावती क्र: ${a.depositReceiptNo || '-'} | ${a.institutionName} | ₹${formatCurrency(a.principalAmount)} (${a.interestRate}%) | मुदतपूर्ती: ${formatDate(a.maturityDate)}`
-                  };
-                })
-              ]}
-              placeholder="-- खाते, जुना क्र. किंवा पावती क्र. ने शोधा --"
-            />
-          </div>
+              <div className="space-y-2 mt-1">
+                <FormRow label="मुदत ठेव खाते (FD Investment)" required>
+                  <SearchableSelect
+                    name="investmentAccountID"
+                    value={selectedAccountId}
+                    onChange={(e) => handleSelectAccount(Number(e.target.value))}
+                    options={accountOptions}
+                    placeholder={loading ? 'खाती लोड होत आहेत...' : '-- खाते क्र., जुना क्र., पावती क्र. किंवा बँक नावाने शोधा --'}
+                  />
+                </FormRow>
 
-          {/* Selected Account Info Card */}
-          {selectedAccount && (
-            <div className="bg-slate-50 border border-slate-200 rounded-sm p-3 mt-2 animate-in fade-in duration-150">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-2">
-                <span className="font-bold text-gray-800 text-xs flex flex-wrap items-center gap-1.5">
-                  <Landmark className="w-4 h-4 text-primary" />
-                  <span>खाते तपशील: <span className="font-mono text-primary">{selectedAccount.investmentNo}</span></span>
-                  {selectedAccount.oldInvestmentNo && (
-                    <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded text-[10.5px] font-mono font-bold">
-                      🏷️ जुना गुंतवणूक क्र.: {selectedAccount.oldInvestmentNo}
-                    </span>
-                  )}
-                </span>
-                <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded border border-primary/20">
-                  पावती क्र: {selectedAccount.depositReceiptNo || '-'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 text-xs">
-                <div>
-                  <span className="text-gray-500 text-[10px] block">बँक / संस्था:</span>
-                  <span className="font-bold text-gray-900">{selectedAccount.institutionName}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500 text-[10px] block">योजना:</span>
-                  <span className="font-medium text-gray-800">{selectedAccount.schemeName}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500 text-[10px] block">गुंतवलेली मुद्दल:</span>
-                  <span className="font-bold text-emerald-700 font-mono">₹{formatCurrency(selectedAccount.principalAmount)}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500 text-[10px] block">व्याजदर (% p.a.):</span>
-                  <span className="font-bold text-emerald-800 font-mono">{selectedAccount.interestRate}%</span>
-                </div>
-                <div>
-                  <span className="text-gray-500 text-[10px] block">ठेव तारीख:</span>
-                  <span className="font-medium text-gray-700 font-mono">{formatDate(selectedAccount.investmentDate)}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500 text-[10px] block">मुदतपूर्ती तारीख:</span>
-                  <span className="font-bold text-orange-700 font-mono">{formatDate(selectedAccount.maturityDate)}</span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Section 2: PROCESS FORMS (Based on activeMode) */}
-        {selectedAccount ? (
-          <div>
-            {/* MODE 1: MATURITY PAYOUT */}
-            {activeMode === 'maturity' && (
-              <form onSubmit={handleMaturity} className="bg-emerald-50/40 p-3.5 rounded-sm border border-emerald-200 border-t-2 border-emerald-600 space-y-3 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle className="w-4 h-4 text-emerald-700" />
-                    <h3 className="text-xs font-bold text-emerald-900">२. नियमित मुदतपूर्ती प्रक्रिया (Regular Maturity Claim)</h3>
-                  </div>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded border border-emerald-300">
-                    मुदतपूर्ती पावती जमा
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
-                  <div>
-                    <div className="flex items-center justify-between !mb-0.5">
-                      <label className={labelClass}>मुदतपूर्ती तारीख *</label>
-                      {!allowDateOverride && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                          <Lock size={9} /> लॉक
-                        </span>
-                      )}
-                    </div>
+                <FormRow label="व्यवहार तारीख (Txn Date)" required>
+                  <div className="flex flex-wrap items-center gap-2">
                     <input
                       type="date"
-                      value={maturityForm.maturityDate || activeBusinessDate}
-                      onChange={(e) => setMaturityForm(prev => ({ ...prev, maturityDate: e.target.value }))}
-                      required
+                      value={txnDate}
+                      max={todayStr}
+                      onChange={(e) => setTxnDate(e.target.value)}
                       disabled={!allowDateOverride}
                       readOnly={!allowDateOverride}
-                      className={`${inputClass} ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800 font-bold' : 'bg-white border-amber-400 font-bold'}`}
+                      className={`${ctrl} !w-[165px] font-mono font-bold ${
+                        isBeforeInvestmentDate || isFutureDate ? '!border-red-500 !bg-red-50' : ''
+                      } ${!allowDateOverride ? '!bg-slate-100 cursor-not-allowed' : 'border-amber-400'}`}
+                      required
                     />
+                    {!allowDateOverride && (
+                      <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <Lock size={9} /> लॉक
+                      </span>
+                    )}
                     {isHOUser && (
-                      <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
+                      <label className="text-[10.5px] text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer select-none">
                         <input
                           type="checkbox"
                           checked={allowDateOverride}
                           onChange={(e) => {
                             const checked = e.target.checked;
                             setAllowDateOverride(checked);
-                            if (!checked) {
-                              setMaturityForm(p => ({ ...p, maturityDate: activeBusinessDate }));
-                              setPrematureForm(p => ({ ...p, withdrawalDate: activeBusinessDate }));
-                              setRenewalForm(p => ({ ...p, renewalDate: activeBusinessDate }));
-                            }
+                            if (!checked) setTxnDate(activeBusinessDate);
                           }}
                           className="w-3 h-3 text-primary rounded"
                         />
                         <span className="flex items-center gap-0.5">
-                          {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
+                          {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-slate-400" />}
                           तारीख बदला (Override)
                         </span>
                       </label>
                     )}
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>परत मिळालेले मुद्दल ₹ *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={maturityForm.principalReceived || ''}
-                      onChange={(e) => setMaturityForm(prev => ({ ...prev, principalReceived: parseFloat(e.target.value) || 0 }))}
-                      required
-                      className={`${inputClass} font-mono font-bold text-emerald-800`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>मिळालेले एकूण व्याज ₹ (Gross) *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={maturityForm.interestReceived || ''}
-                      onChange={(e) => setMaturityForm(prev => ({ ...prev, interestReceived: parseFloat(e.target.value) || 0 }))}
-                      required
-                      className={`${inputClass} font-mono font-bold text-emerald-800`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>वजा: TDS कपात ₹ (TDS Deducted)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={maturityForm.tdsAmount || ''}
-                      onChange={(e) => setMaturityForm(prev => ({ ...prev, tdsAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
-                      placeholder="0.00"
-                      className={`${inputClass} font-mono font-bold text-rose-700 border-rose-300`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>एकूण निव्वळ प्राप्त रक्कम ₹ (Net Payout)</label>
-                    <div className="px-2 py-1 bg-white border border-emerald-300 rounded-sm h-[28px] flex items-center font-mono font-bold text-emerald-950 text-xs">
-                      ₹{formatCurrency(Math.max(0, (maturityForm.principalReceived || 0) + (maturityForm.interestReceived || 0) - (maturityForm.tdsAmount || 0)))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dynamic TDS GL Ledger Selector */}
-                <div className={`grid grid-cols-1 md:grid-cols-2 gap-2.5 items-center p-2.5 rounded-sm border ${(maturityForm.tdsAmount || 0) > 0 ? 'bg-rose-50/70 border-rose-300' : 'bg-white/80 border-emerald-200'}`}>
-                  <div>
-                    <label className={labelClass}>
-                      TDS / कर कपात डायनॅमिक जी.एल. लेजर निवडा (Dynamic TDS GL Ledger) {(maturityForm.tdsAmount || 0) > 0 && <span className="text-red-600">*</span>}
-                    </label>
-                    <SearchableSelect
-                      name="tdsLedgerID"
-                      value={maturityForm.tdsLedgerID}
-                      onChange={(e) => setMaturityForm(prev => ({ ...prev, tdsLedgerID: Number(e.target.value) }))}
-                      options={ledgerOptions}
-                      placeholder="-- डायनॅमिक TDS / कपात जी.एल. लेजर शोधा व निवडा --"
-                    />
-                  </div>
-                  <div className="text-[10.5px] text-gray-600 font-medium pt-3">
-                    {(maturityForm.tdsAmount || 0) > 0 ? (
-                      <span className="text-rose-800 font-bold">
-                        📌 TDS रक्कम ₹{formatCurrency(maturityForm.tdsAmount)} निवडलेल्या जी.एल. खात्याला नावे (Dr) टाकली जाईल व निव्वळ ₹{formatCurrency(Math.max(0, (maturityForm.principalReceived || 0) + (maturityForm.interestReceived || 0) - (maturityForm.tdsAmount || 0)))} बँक/रोख खात्याला नावे (Dr) होईल.
+                    {selectedAccount && (
+                      <span
+                        className={`text-[10.5px] font-bold px-2 py-0.5 rounded border ${
+                          isPrematureByDate
+                            ? 'bg-amber-50 text-amber-900 border-amber-300'
+                            : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                        }`}
+                      >
+                        {isPrematureByDate ? '⏳ मुदतपूर्व कालावधी' : '✅ मुदत पूर्ण (Matured)'}
                       </span>
-                    ) : (
-                      <span>जर बँकेने मुदतपूर्ती व्याजावर TDS कपात केली असल्यास TDS रक्कम टाका आणि इथून योग्य जी.एल. लेजर डायनॅमिकली निवडा.</span>
                     )}
                   </div>
-                </div>
-
-                {/* Maturity Receipt Mode & Bank GL Selection */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start bg-white/80 p-2.5 rounded-sm border border-emerald-200">
-                  <div>
-                    <label className={labelClass}>जमा पद्धत (Receipt Mode) *</label>
-                    <select
-                      value={maturityForm.paymentMode}
-                      onChange={(e) => {
-                        const mode = e.target.value;
-                        setMaturityForm(prev => ({
-                          ...prev,
-                          paymentMode: mode,
-                          ...(mode !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
-                        }));
-                      }}
-                      className={`${inputClass} font-bold text-blue-950 border-blue-300`}
-                    >
-                      <option value="Bank">🏦 बँक खाते (Bank Account)</option>
-                      <option value="Cash">💵 रोख (Cash)</option>
-                    </select>
-                  </div>
-
-                  {maturityForm.paymentMode === 'Bank' ? (
-                    <>
-                      <div className="sm:col-span-2">
-                        <BankLedgerSelect
-                          value={maturityForm.bankLedgerID}
-                          onChange={(id) => setMaturityForm(prev => ({ ...prev, bankLedgerID: id }))}
-                          showCountBadge
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClass}>UTR / धनादेश / संदर्भ क्र. (UTR / Ref No.)</label>
-                        <input
-                          type="text"
-                          value={maturityForm.referenceNo}
-                          onChange={(e) => setMaturityForm(prev => ({ ...prev, referenceNo: e.target.value }))}
-                          placeholder="उदा. UTR / NEFT / CHQ क्र."
-                          className={`${inputClass} font-mono`}
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    <div className="sm:col-span-3 flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-sm text-[11px] font-bold text-emerald-900 mt-4">
-                      <CheckCircle className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                      <span>मुदतपूर्ती रक्कम शाखेच्या मुख्य रोख खात्यात (Branch Cash GL Account) जमा (Debit) केली जाईल.</span>
-                    </div>
+                  {isBeforeInvestmentDate && selectedAccount && (
+                    <p className="mt-1 text-[10.5px] text-red-700 font-semibold">
+                      व्यवहार तारीख ठेव तारखेपेक्षा ({formatDate(selectedAccount.investmentDate)}) आधीची असू शकत नाही.
+                    </p>
                   )}
-                </div>
+                </FormRow>
+              </div>
+            </fieldset>
 
-                <div className="pt-2 flex justify-end gap-2 border-t border-emerald-200">
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    <span>{saving ? 'मुदतपूर्ती होत आहे...' : 'मुदतपूर्ती पूर्ण करा (Process Maturity)'}</span>
-                  </button>
-                </div>
-              </form>
-            )}
+            {!selectedAccount ? (
+              <div className="p-8 text-center space-y-1.5 border border-dashed border-slate-300 rounded-sm bg-white">
+                <Search className="w-6 h-6 text-slate-400 mx-auto" />
+                <h3 className="text-xs font-bold text-slate-700">कोणतेही गुंतवणूक मुदत ठेव खाते निवडलेले नाही</h3>
+                <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                  कृपया वरील ड्रॉपडाउनमधून गुंतवणूक खाते क्र., जुना क्रमांक, पावती क्रमांक किंवा बँकेच्या नावाने खाते निवडा.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Group Box 2: Compact Read-Only Deposit & Accrual Details Table */}
+                <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+                  <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span>२. गुंतवणूक व येणे व्याज तपशील (Deposit &amp; Accrual Details)</span>
+                  </legend>
 
-            {/* MODE 2: PREMATURE WITHDRAWAL */}
-            {activeMode === 'premature' && (
-              <form onSubmit={handlePremature} className="bg-amber-50/40 p-3.5 rounded-sm border border-amber-200 border-t-2 border-amber-600 space-y-3 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-700" />
-                    <h3 className="text-xs font-bold text-amber-900">२. मुदतपूर्व मोडणी प्रक्रिया (Premature Encashment)</h3>
+                  <div className="overflow-x-auto mt-1 border border-slate-200 rounded-sm">
+                    <table className="w-full border-collapse text-[11px] bg-white">
+                      <tbody>
+                        <tr className="border-b border-slate-200">
+                          <th className="w-28 bg-slate-50 px-2.5 py-1.5 text-left font-semibold text-slate-600 border-r border-slate-200">
+                            बँक / संस्था
+                          </th>
+                          <td className="px-2.5 py-1.5 font-bold text-slate-900 border-r border-slate-200">
+                            {selectedAccount.institutionName}
+                          </td>
+                          <th className="w-28 bg-slate-50 px-2.5 py-1.5 text-left font-semibold text-slate-600 border-r border-slate-200">
+                            योजना
+                          </th>
+                          <td className="px-2.5 py-1.5 font-semibold text-slate-800">
+                            {selectedAccount.schemeName}
+                          </td>
+                        </tr>
+                        <tr className="border-b border-slate-200">
+                          <th className="bg-slate-50 px-2.5 py-1.5 text-left font-semibold text-slate-600 border-r border-slate-200">
+                            खाते / पावती क्र.
+                          </th>
+                          <td className="px-2.5 py-1.5 font-mono border-r border-slate-200">
+                            <span className="font-bold text-primary">{selectedAccount.investmentNo}</span>
+                            {selectedAccount.oldInvestmentNo && (
+                              <span className="ml-1.5 px-1.5 py-0.2 bg-amber-50 text-amber-900 border border-amber-300 rounded text-[10px] font-bold">
+                                जुना: {selectedAccount.oldInvestmentNo}
+                              </span>
+                            )}
+                            {selectedAccount.depositReceiptNo && (
+                              <span className="ml-1.5 px-1.5 py-0.2 bg-sky-50 text-sky-900 border border-sky-200 rounded text-[10px] font-bold">
+                                पावती: {selectedAccount.depositReceiptNo}
+                              </span>
+                            )}
+                          </td>
+                          <th className="bg-slate-50 px-2.5 py-1.5 text-left font-semibold text-slate-600 border-r border-slate-200">
+                            ठेव ते मुदतपूर्ती
+                          </th>
+                          <td className="px-2.5 py-1.5 font-mono font-semibold text-slate-800">
+                            {formatDate(selectedAccount.investmentDate)} →{' '}
+                            <span className="text-orange-700 font-bold">{formatDate(selectedAccount.maturityDate)}</span>
+                            <span className="ml-1.5 text-[10px] bg-slate-100 px-1.5 py-0.2 rounded border border-slate-300">
+                              {elapsedDays} दिवस पूर्ण
+                            </span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <th className="bg-slate-50 px-2.5 py-1.5 text-left font-semibold text-slate-600 border-r border-slate-200">
+                            मूळ मुद्दल व दर
+                          </th>
+                          <td className="px-2.5 py-1.5 font-mono border-r border-slate-200">
+                            <strong className="text-emerald-800">₹{fmt(selectedAccount.principalAmount)}</strong>
+                            <span className="ml-1.5 text-slate-600 font-bold">@ {selectedAccount.interestRate}%</span>
+                          </td>
+                          <th className="bg-slate-50 px-2.5 py-1.5 text-left font-semibold text-slate-600 border-r border-slate-200">
+                            येणे व्याज शिल्लक
+                          </th>
+                          <td className="px-2.5 py-1.5 font-mono">
+                            <strong className={(selectedAccount.interestReceivable || 0) > 0 ? 'text-indigo-800' : 'text-slate-600'}>
+                              ₹{fmt(selectedAccount.interestReceivable || 0)}
+                            </strong>
+                            {(selectedAccount.receivedInterest || 0) > 0 && (
+                              <span className="ml-1.5 text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                पूर्वी प्राप्त: ₹{fmt(selectedAccount.receivedInterest || 0)}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-                  <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded border border-amber-300">
-                    मुदतपूर्व दंड व कपात
-                  </span>
-                </div>
+                </fieldset>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5">
-                  <div>
-                    <div className="flex items-center justify-between !mb-0.5">
-                      <label className={labelClass}>मोडणी / काढणे तारीख *</label>
-                      {!allowDateOverride && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                          <Lock size={9} /> लॉक
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="date"
-                      value={prematureForm.withdrawalDate || activeBusinessDate}
-                      onChange={(e) => setPrematureForm(prev => ({ ...prev, withdrawalDate: e.target.value }))}
-                      required
-                      disabled={!allowDateOverride}
-                      readOnly={!allowDateOverride}
-                      className={`${inputClass} ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800 font-bold' : 'bg-white border-amber-400 font-bold'}`}
-                    />
-                  </div>
+                {/* Group Box 3: Action Parameters */}
+                <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3.5 bg-white shadow-2xs">
+                  <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                    <Coins className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span>३. व्यवहार प्रकार व रक्कम तपशील (Settlement / Renewal Parameters)</span>
+                  </legend>
 
-                  <div>
-                    <label className={labelClass}>परत मुद्दल रक्कम ₹ *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={prematureForm.principalPaid || ''}
-                      onChange={(e) => setPrematureForm(prev => ({ ...prev, principalPaid: parseFloat(e.target.value) || 0 }))}
-                      required
-                      className={`${inputClass} font-mono font-bold`}
-                    />
-                  </div>
+                  <div className="space-y-2.5 mt-1">
+                    {/* Segmented Action Selector */}
+                    <FormRow label="व्यवहार प्रकार (Action)" required>
+                      <div className="flex w-full">
+                        <button
+                          type="button"
+                          onClick={() => setActiveMode('maturity')}
+                          className={`${segBase} ${
+                            activeMode === 'maturity'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>१. नियमित मुदतपूर्ती</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveMode('premature')}
+                          className={`${segBase} ${
+                            activeMode === 'premature'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>२. मुदतपूर्व मोडणी</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveMode('renewal')}
+                          className={`${segBase} ${
+                            activeMode === 'renewal'
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>३. ठेव नूतनीकरण</span>
+                        </button>
+                      </div>
+                    </FormRow>
 
-                  <div>
-                    <label className={labelClass}>सुधारित व्याजदर (% p.a.)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={prematureForm.revisedInterestRate || ''}
-                      onChange={(e) => setPrematureForm(prev => ({ ...prev, revisedInterestRate: parseFloat(e.target.value) || 0 }))}
-                      className={`${inputClass} font-mono font-bold text-amber-800`}
-                    />
-                  </div>
+                    {/* ---- MODE 1: REGULAR MATURITY ---- */}
+                    {activeMode === 'maturity' && (
+                      <>
+                        {isPrematureByDate && (
+                          <div className="bg-amber-50 border border-amber-300 rounded-sm px-2.5 py-1.5 text-[11px] text-amber-900 flex items-center justify-between gap-2">
+                            <span>
+                              ⚠️ या ठेवीची मुदतपूर्ती <b>{formatDate(selectedAccount.maturityDate)}</b> रोजी आहे. मुदतपूर्व मोडण्यासाठी कृपया &ldquo;२. मुदतपूर्व मोडणी&rdquo; निवडा.
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setActiveMode('premature')}
+                              className="px-2 py-0.5 bg-amber-600 text-white rounded-xs font-bold text-[10.5px] shrink-0 cursor-pointer"
+                            >
+                              मुदतपूर्व निवडा
+                            </button>
+                          </div>
+                        )}
 
-                  <div>
-                    <label className={labelClass}>प्राप्त एकूण व्याज ₹ (Gross)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={prematureForm.interestPaid || ''}
-                      onChange={(e) => setPrematureForm(prev => ({ ...prev, interestPaid: parseFloat(e.target.value) || 0 }))}
-                      className={`${inputClass} font-mono font-bold text-emerald-700`}
-                    />
-                  </div>
+                        <FormRow label="परत मिळालेले मुद्दल (₹)" required>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={matPrincipal || ''}
+                            onChange={(e) => setMatPrincipal(parseFloat(e.target.value) || 0)}
+                            className={`${ctrl} font-mono font-bold text-slate-900`}
+                            required
+                          />
+                        </FormRow>
 
-                  <div>
-                    <label className={labelClass}>दंड रक्कम ₹ (Penalty)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={prematureForm.penaltyAmount || ''}
-                      onChange={(e) => setPrematureForm(prev => ({ ...prev, penaltyAmount: parseFloat(e.target.value) || 0 }))}
-                      className={`${inputClass} font-mono font-bold text-rose-700`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>वजा: TDS कपात ₹</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={prematureForm.tdsAmount || ''}
-                      onChange={(e) => setPrematureForm(prev => ({ ...prev, tdsAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
-                      placeholder="0.00"
-                      className={`${inputClass} font-mono font-bold text-rose-700 border-rose-300`}
-                    />
-                  </div>
-                </div>
-
-                {/* Dynamic TDS GL Ledger Selector for Premature */}
-                <div className={`grid grid-cols-1 md:grid-cols-2 gap-2.5 items-center p-2.5 rounded-sm border ${(prematureForm.tdsAmount || 0) > 0 ? 'bg-rose-50/70 border-rose-300' : 'bg-white/80 border-amber-200'}`}>
-                  <div>
-                    <label className={labelClass}>
-                      TDS / कर कपात डायनॅमिक जी.एल. लेजर निवडा (Dynamic TDS GL Ledger) {(prematureForm.tdsAmount || 0) > 0 && <span className="text-red-600">*</span>}
-                    </label>
-                    <SearchableSelect
-                      name="tdsLedgerID"
-                      value={prematureForm.tdsLedgerID}
-                      onChange={(e) => setPrematureForm(prev => ({ ...prev, tdsLedgerID: Number(e.target.value) }))}
-                      options={ledgerOptions}
-                      placeholder="-- डायनॅमिक TDS / कपात जी.एल. लेजर शोधा व निवडा --"
-                    />
-                  </div>
-                  <div className="text-[10.5px] text-gray-600 font-medium pt-3">
-                    {(prematureForm.tdsAmount || 0) > 0 ? (
-                      <span className="text-rose-800 font-bold">
-                        📌 TDS रक्कम ₹{formatCurrency(prematureForm.tdsAmount)} निवडलेल्या जी.एल. खात्याला नावे (Dr) टाकली जाईल.
-                      </span>
-                    ) : (
-                      <span>मुदतपूर्व मोडणीवेळी व्याजातून TDS कपात झाली असल्यास रक्कम टाका व इथून योग्य जी.एल. लेजर डायनॅमिकली निवडा.</span>
+                        <FormRow label="मिळालेले एकूण व्याज (Gross ₹)" required>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={matInterest === 0 ? 0 : matInterest || ''}
+                              onChange={(e) => setMatInterest(Math.max(0, parseFloat(e.target.value) || 0))}
+                              className={`${ctrl} font-mono font-bold text-emerald-800`}
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMatInterest(
+                                  round2(
+                                    Math.max(
+                                      0,
+                                      (selectedAccount.expectedMaturityAmount || selectedAccount.principalAmount) -
+                                        selectedAccount.principalAmount
+                                    )
+                                  )
+                                )
+                              }
+                              className="h-8 px-2.5 text-[10.5px] font-bold bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-sm shrink-0 cursor-pointer"
+                              title="अपेक्षित मुदतपूर्ती व्याज लागू करा"
+                            >
+                              ↺ अपेक्षित व्याज
+                            </button>
+                          </div>
+                        </FormRow>
+                      </>
                     )}
-                  </div>
-                </div>
 
-                {/* Premature Receipt Mode & Bank GL Selection */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start bg-white/80 p-2.5 rounded-sm border border-amber-200">
-                  <div>
-                    <label className={labelClass}>जमा पद्धत (Receipt Mode) *</label>
-                    <select
-                      value={prematureForm.paymentMode}
-                      onChange={(e) => {
-                        const mode = e.target.value;
-                        setPrematureForm(prev => ({
-                          ...prev,
-                          paymentMode: mode,
-                          ...(mode !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
-                        }));
-                      }}
-                      className={`${inputClass} font-bold text-blue-950 border-blue-300`}
-                    >
-                      <option value="Bank">🏦 बँक खाते (Bank Account)</option>
-                      <option value="Cash">💵 रोख (Cash)</option>
-                    </select>
-                  </div>
+                    {/* ---- MODE 2: PREMATURE ENCASHMENT ---- */}
+                    {activeMode === 'premature' && (
+                      <>
+                        <FormRow label="सुधारित व्याजदर (% p.a.)" hint="कमी झालेला लागू मुदतपूर्व दर">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={preRevisedRate === 0 ? 0 : preRevisedRate || ''}
+                              onChange={(e) => {
+                                setIsPreInterestManual(false);
+                                setPreRevisedRate(Math.max(0, parseFloat(e.target.value) || 0));
+                              }}
+                              className={`${ctrl} font-mono font-bold text-amber-900`}
+                            />
+                            <span className="px-2 py-1 bg-amber-50 border border-amber-200 rounded-sm text-[10.5px] font-mono font-bold text-amber-900 shrink-0">
+                              {elapsedDays} दिवस
+                            </span>
+                          </div>
+                        </FormRow>
 
-                  {prematureForm.paymentMode === 'Bank' ? (
-                    <>
-                      <div className="sm:col-span-2">
-                        <BankLedgerSelect
-                          value={prematureForm.bankLedgerID}
-                          onChange={(id) => setPrematureForm(prev => ({ ...prev, bankLedgerID: id }))}
-                          showCountBadge
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClass}>UTR / धनादेश / संदर्भ क्र. (UTR / Ref No.)</label>
-                        <input
-                          type="text"
-                          value={prematureForm.referenceNo}
-                          onChange={(e) => setPrematureForm(prev => ({ ...prev, referenceNo: e.target.value }))}
-                          placeholder="उदा. UTR / NEFT / CHQ क्र."
-                          className={`${inputClass} font-mono`}
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    <div className="sm:col-span-3 flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-sm text-[11px] font-bold text-amber-900 mt-4">
-                      <CheckCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                      <span>मुदतपूर्व निव्वळ रक्कम शाखेच्या मुख्य रोख खात्यात (Branch Cash GL Account) जमा (Debit) केली जाईल.</span>
-                    </div>
-                  )}
-                </div>
+                        <FormRow label="प्राप्त एकूण व्याज (Gross ₹)" hint="बँकेने दिलेले मुदतपूर्व व्याज">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={preInterestPaid === 0 ? 0 : preInterestPaid || ''}
+                              onChange={(e) => {
+                                setIsPreInterestManual(true);
+                                setPreInterestPaid(Math.max(0, parseFloat(e.target.value) || 0));
+                              }}
+                              className={`${ctrl} font-mono font-bold text-emerald-800`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsPreInterestManual(false);
+                                setPreInterestPaid(
+                                  computeAutoPrematureInterest(
+                                    selectedAccount.principalAmount || 0,
+                                    preRevisedRate,
+                                    elapsedDays
+                                  )
+                                );
+                              }}
+                              className="h-8 px-2.5 text-[10.5px] font-bold bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-sm shrink-0 cursor-pointer"
+                              title="प्रत्यक्ष दिवस व दरावरून पुन्हा मोजा"
+                            >
+                              ↺ ऑटो गणना
+                            </button>
+                          </div>
+                        </FormRow>
 
-                <div className="flex items-center justify-between pt-1 border-t border-amber-200">
-                  <div className="text-xs">
-                    <span className="text-gray-600 font-medium">निव्वळ हाती मिळणारी रक्कम (Net Payout):</span>
-                    <span className="font-bold text-amber-900 font-mono text-sm ml-2">
-                      ₹{formatCurrency((prematureForm.principalPaid || 0) + (prematureForm.interestPaid || 0) - (prematureForm.penaltyAmount || 0) - (prematureForm.tdsAmount || 0))}
-                    </span>
-                  </div>
+                        <FormRow label="परत मिळालेले मुद्दल (₹)" hint="पूर्वीच्या व्याजाची मुद्दलातून कपात झाल्यास बदला" required>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={selectedAccount.principalAmount}
+                              value={prePrincipalPaid === 0 ? 0 : prePrincipalPaid || ''}
+                              onChange={(e) => setPrePrincipalPaid(Math.max(0, parseFloat(e.target.value) || 0))}
+                              className={`${ctrl} font-mono font-bold`}
+                              required
+                            />
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] text-slate-600 font-semibold whitespace-nowrap">दंड (Penalty ₹):</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={prePenalty || ''}
+                                onChange={(e) => setPrePenalty(Math.max(0, parseFloat(e.target.value) || 0))}
+                                placeholder="0.00"
+                                className={`${ctrl} font-mono font-bold text-rose-700`}
+                              />
+                            </div>
+                          </div>
+                        </FormRow>
 
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
-                  >
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>{saving ? 'मोडणी होत आहे...' : 'मुदतपूर्व मोडणी करा (Premature Withdrawal)'}</span>
-                  </button>
-                </div>
-              </form>
-            )}
+                        {settlement && settlement.totalReversalDr > 0 && (
+                          <div className="bg-rose-50 border border-rose-300 border-l-4 border-l-rose-600 rounded-sm p-2.5 text-[11px] text-rose-950 space-y-0.5">
+                            <div className="font-bold flex items-center justify-between">
+                              <span>🔄 स्वयंचलित मुदतपूर्व व्याज रिव्हर्सल एंट्री (Interest Reversal Active)</span>
+                              <span className="font-mono font-black text-rose-800">₹{fmt(settlement.totalReversalDr)} Dr</span>
+                            </div>
+                            <p className="text-[10.5px] text-rose-800">
+                              {settlement.accruedReversed > 0 && (
+                                <>
+                                  पूर्वी तरतूद केलेले येणे व्याज (₹{fmt(settlement.standingReceivable)}) प्रत्यक्ष व्याजापेक्षा (₹{fmt(settlement.grossInterest)}) जास्त असल्याने{' '}
+                                  <b>₹{fmt(settlement.accruedReversed)}</b> ची <b>Dr व्याज उत्पन्न / Cr येणे व्याज</b> रिव्हर्सल नोंद पडेल.{' '}
+                                </>
+                              )}
+                              {settlement.interestClawback > 0 && (
+                                <>
+                                  मूळ मुद्दलातून कपात केलेले <b>₹{fmt(settlement.interestClawback)}</b> व्याज उत्पन्नाला रिव्हर्स (Dr) करून संपूर्ण मुद्दल निरंक केले जाईल.
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
 
-            {/* MODE 3: RENEWAL */}
-            {activeMode === 'renewal' && (
-              <form onSubmit={handleRenewal} className="bg-primary/5 p-3.5 rounded-sm border border-primary/20 border-t-2 border-primary space-y-3 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between border-b border-primary/20 pb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <RotateCcw className="w-4 h-4 text-primary" />
-                    <h3 className="text-xs font-bold text-primary">२. मुदत ठेव नूतनीकरण प्रक्रिया (Term Deposit Renewal)</h3>
-                  </div>
-                  <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded border border-primary/20">
-                    नवीन मुदत पावती तयार होईल
-                  </span>
-                </div>
+                    {/* ---- MODE 3: RENEWAL ---- */}
+                    {activeMode === 'renewal' && (
+                      <>
+                        <FormRow label="नूतनीकरण प्रकार (Type)" required>
+                          <div className="flex w-full">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsRenewalAmtManual(false);
+                                setRenewalType('PrincipalOnly');
+                              }}
+                              className={`${segBase} ${
+                                renewalType === 'PrincipalOnly'
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              फक्त मुद्दल (Principal Only)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsRenewalAmtManual(false);
+                                setRenewalType('PrincipalAndInterest');
+                              }}
+                              className={`${segBase} ${
+                                renewalType === 'PrincipalAndInterest'
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              मुद्दल + व्याज (Principal + Interest)
+                            </button>
+                          </div>
+                        </FormRow>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5">
-                  <div>
-                    <div className="flex items-center justify-between !mb-0.5">
-                      <label className={labelClass}>नूतनीकरण तारीख *</label>
-                      {!allowDateOverride && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                          <Lock size={9} /> लॉक
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="date"
-                      value={renewalForm.renewalDate || activeBusinessDate}
-                      onChange={(e) => setRenewalForm(prev => ({ ...prev, renewalDate: e.target.value }))}
-                      required
-                      disabled={!allowDateOverride}
-                      readOnly={!allowDateOverride}
-                      className={`${inputClass} ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800 font-bold' : 'bg-white border-amber-400 font-bold'}`}
-                    />
-                  </div>
+                        <FormRow label="नवीन गुंतवणूक योजना" required>
+                          <select
+                            value={newSchemeID}
+                            onChange={(e) => {
+                              const sid = parseInt(e.target.value, 10);
+                              setNewSchemeID(sid);
+                              const sc = schemes.find((s) => Number(s.schemeID) === sid);
+                              if (sc) {
+                                setNewInterestRate(Number(sc.interestRate || 0));
+                                const dType: 'Months' | 'Days' =
+                                  (sc.durationType || 'Months').toLowerCase() === 'days' ? 'Days' : 'Months';
+                                setRenewalDurationType(dType);
+                                setRenewalDurationValue(
+                                  dType === 'Days' ? Number(sc.durationDays || 365) : Number(sc.durationMonths || 12)
+                                );
+                              }
+                            }}
+                            className={`${ctrl} font-semibold`}
+                          >
+                            {schemes.map((s: any) => (
+                              <option key={s.schemeID} value={s.schemeID}>
+                                {s.schemeName} ({s.interestRate}%)
+                              </option>
+                            ))}
+                          </select>
+                        </FormRow>
 
-                  <div>
-                    <label className={labelClass}>नूतनीकरण प्रकार *</label>
-                    <select
-                      value={renewalForm.renewalType}
-                      onChange={(e) => handleRenewalTypeChange(e.target.value)}
-                      className={inputClass}
-                    >
-                      <option value="PrincipalOnly">फक्त मुद्दल रक्कम</option>
-                      <option value="PrincipalAndInterest">मुद्दल + मिळणारे व्याज</option>
-                    </select>
-                  </div>
+                        <FormRow label="नूतनीकरण कालावधी व दर" required>
+                          <div className="grid grid-cols-3 gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={renewalDurationValue || ''}
+                              onChange={(e) => setRenewalDurationValue(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                              className={`${ctrl} font-mono font-bold`}
+                              required
+                            />
+                            <select
+                              value={renewalDurationType}
+                              onChange={(e) => setRenewalDurationType(e.target.value as 'Months' | 'Days')}
+                              className={`${ctrl} font-semibold`}
+                            >
+                              <option value="Months">महिने (Months)</option>
+                              <option value="Days">दिवस (Days)</option>
+                            </select>
+                            <div className="relative flex items-center">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={newInterestRate || ''}
+                                onChange={(e) => setNewInterestRate(Math.max(0, parseFloat(e.target.value) || 0))}
+                                className={`${ctrl} font-mono font-bold text-primary pr-6`}
+                                title="नवीन व्याजदर (% p.a.)"
+                                required
+                              />
+                              <span className="absolute right-2 text-[11px] font-bold text-slate-500">%</span>
+                            </div>
+                          </div>
+                        </FormRow>
 
-                  <div>
-                    <label className={labelClass}>वजा: TDS कपात ₹ (TDS Deducted)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={renewalForm.tdsAmount || ''}
-                      onChange={(e) => {
-                        const tdsVal = Math.max(0, parseFloat(e.target.value) || 0);
-                        setRenewalForm(prev => {
-                          let nextRenewalAmt = prev.renewalAmount;
-                          if (prev.renewalType === 'PrincipalAndInterest' && selectedAccount) {
-                            const principal = selectedAccount.principalAmount || 0;
-                            const interest = Math.max(0, (selectedAccount.expectedMaturityAmount || 0) - principal);
-                            nextRenewalAmt = Math.round(Math.max(0, principal + interest - tdsVal) * 100) / 100;
-                          }
-                          return {
-                            ...prev,
-                            tdsAmount: tdsVal,
-                            renewalAmount: nextRenewalAmt
-                          };
-                        });
-                      }}
-                      placeholder="0.00"
-                      className={`${inputClass} font-mono font-bold text-rose-700 border-rose-300`}
-                    />
-                  </div>
+                        <FormRow label="नवीन ठेव मुद्दल व पावती क्र." required>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="1"
+                              value={renewalAmount || ''}
+                              onChange={(e) => {
+                                setIsRenewalAmtManual(true);
+                                setRenewalAmount(Math.max(0, parseFloat(e.target.value) || 0));
+                              }}
+                              className={`${ctrl} font-mono font-bold text-emerald-800`}
+                              required
+                            />
+                            <input
+                              type="text"
+                              value={newDepositReceiptNo}
+                              onChange={(e) => setNewDepositReceiptNo(e.target.value)}
+                              placeholder="बँक पावती / FDR क्र. (ऐच्छिक)"
+                              className={`${ctrl} font-mono`}
+                            />
+                          </div>
+                        </FormRow>
 
-                  <div>
-                    <label className={labelClass}>नवीन ठेव रक्कम ₹ *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={renewalForm.renewalAmount || ''}
-                      onChange={(e) => setRenewalForm(prev => ({ ...prev, renewalAmount: parseFloat(e.target.value) || 0 }))}
-                      required
-                      className={`${inputClass} font-mono font-bold text-emerald-800`}
-                    />
-                  </div>
+                        {renewalType === 'PrincipalOnly' && (
+                          <FormRow label="प्राप्त व्याज परतावा (Gross ₹)" hint="बँकेत/रोख मिळणारे व्याज">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={renInterestPayout === 0 ? 0 : renInterestPayout || ''}
+                              onChange={(e) => setRenInterestPayout(Math.max(0, parseFloat(e.target.value) || 0))}
+                              placeholder="0.00"
+                              className={`${ctrl} font-mono font-bold text-emerald-700`}
+                            />
+                          </FormRow>
+                        )}
 
-                  <div>
-                    <label className={labelClass}>नवीन योजना *</label>
-                    <select
-                      value={renewalForm.newSchemeID}
-                      onChange={(e) => {
-                        const sid = parseInt(e.target.value, 10);
-                        const sc = schemes.find(s => s.schemeID === sid);
-                        setRenewalForm(prev => ({
-                          ...prev,
-                          newSchemeID: sid,
-                          newInterestRate: sc ? sc.interestRate : prev.newInterestRate
-                        }));
-                      }}
-                      className={inputClass}
-                    >
-                      {schemes.map((s: any) => (
-                        <option key={s.schemeID} value={s.schemeID}>
-                          {s.schemeName} ({s.interestRate}%)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                        {/* Live Renewal Preview Strip */}
+                        {renewalPreview && (
+                          <div className="bg-indigo-50/70 border border-indigo-200 rounded-sm p-2.5 grid grid-cols-3 gap-2 text-[11px]">
+                            <div>
+                              <span className="text-slate-500 block text-[10px]">नवीन मुदतपूर्ती दिनांक:</span>
+                              <strong className="font-mono text-indigo-950">{formatDate(renewalPreview.newMaturityIso)}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[10px]">अपेक्षित नवीन व्याज:</span>
+                              <strong className="font-mono text-emerald-800">₹{fmt(renewalPreview.expectedInterest)}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[10px]">नवीन मुदतपूर्ती रक्कम:</span>
+                              <strong className="font-mono text-blue-900">₹{fmt(renewalPreview.expectedMaturityAmount)}</strong>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
 
-                  <div>
-                    <label className={labelClass}>नवीन व्याजदर (% p.a.) *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={renewalForm.newInterestRate || ''}
-                      onChange={(e) => setRenewalForm(prev => ({ ...prev, newInterestRate: parseFloat(e.target.value) || 0 }))}
-                      required
-                      className={`${inputClass} font-mono font-bold text-primary`}
-                    />
-                  </div>
-
-                  {renewalForm.renewalType === 'PrincipalOnly' && (
-                    <div className="sm:col-span-2">
-                      <label className={labelClass}>प्राप्त एकूण व्याज परतावा ₹ (Gross Interest Payout - ऐच्छिक)</label>
+                    {/* Shared TDS Input + Conditional Dynamic TDS GL Selector */}
+                    <FormRow label="वजा: TDS कर कपात (₹)" hint="कपात असल्यासच रक्कम टाका">
                       <input
                         type="number"
                         step="0.01"
                         min="0"
-                        value={renewalForm.interestPayoutAmount || ''}
-                        onChange={(e) => setRenewalForm(prev => ({ ...prev, interestPayoutAmount: parseFloat(e.target.value) || 0 }))}
-                        placeholder="0.00"
-                        className={`${inputClass} font-mono font-bold text-emerald-700`}
+                        value={activeTdsAmount || ''}
+                        onChange={(e) => setActiveTdsAmount(parseFloat(e.target.value) || 0)}
+                        placeholder="0.00 (TDS नसल्यास रिकामे ठेवा)"
+                        className={`${ctrl} font-mono font-bold ${activeTdsAmount > 0 ? 'border-rose-400 text-rose-800 bg-rose-50/30' : ''}`}
                       />
-                    </div>
-                  )}
-                </div>
+                    </FormRow>
 
-                {/* Dynamic TDS GL Ledger Selector for Renewal */}
-                <div className={`grid grid-cols-1 md:grid-cols-2 gap-2.5 items-center p-2.5 rounded-sm border ${(renewalForm.tdsAmount || 0) > 0 ? 'bg-rose-50/70 border-rose-300' : 'bg-white/80 border-primary/20'}`}>
-                  <div>
-                    <label className={labelClass}>
-                      TDS / कर कपात डायनॅमिक जी.एल. लेजर निवडा (Dynamic TDS GL Ledger) {(renewalForm.tdsAmount || 0) > 0 && <span className="text-red-600">*</span>}
-                    </label>
-                    <SearchableSelect
-                      name="tdsLedgerID"
-                      value={renewalForm.tdsLedgerID}
-                      onChange={(e) => setRenewalForm(prev => ({ ...prev, tdsLedgerID: Number(e.target.value) }))}
-                      options={ledgerOptions}
-                      placeholder="-- डायनॅमिक TDS / कपात जी.एल. लेजर शोधा व निवडा --"
-                    />
-                  </div>
-                  <div className="text-[10.5px] text-gray-600 font-medium pt-3">
-                    {(renewalForm.tdsAmount || 0) > 0 ? (
-                      <span className="text-rose-800 font-bold">
-                        📌 TDS रक्कम ₹{formatCurrency(renewalForm.tdsAmount)} निवडलेल्या जी.एल. खात्याला नावे (Dr) टाकली जाईल.
-                      </span>
-                    ) : (
-                      <span>नूतनीकरणावेळी व्याजातून TDS कपात झाली असल्यास रक्कम टाका व इथून योग्य जी.एल. लेजर डायनॅमिकली निवडा.</span>
+                    {activeTdsAmount > 0 && (
+                      <FormRow label="TDS जी.एल. लेजर (TDS GL)" required align="start">
+                        <SearchableSelect
+                          name="tdsLedgerID"
+                          value={tdsLedgerID}
+                          onChange={(e) => setTdsLedgerID(Number(e.target.value))}
+                          options={ledgerOptions}
+                          placeholder="-- डायनॅमिक TDS जी.एल. लेजर शोधा व निवडा --"
+                        />
+                      </FormRow>
                     )}
+
+                    {/* Conditional Receipt Mode & Bank GL (only when cash/bank inflow > 0) */}
+                    {settlement && settlement.netCashOrBankReceipt > 0 && (
+                      <>
+                        <FormRow label="जमा पद्धत (Receipt Mode)" required>
+                          <select
+                            value={paymentMode}
+                            onChange={(e) => {
+                              const mode = e.target.value as 'Bank' | 'Cash';
+                              setPaymentMode(mode);
+                              if (mode !== 'Bank') {
+                                setBankLedgerID(0);
+                                setReferenceNo('');
+                              }
+                            }}
+                            className={`${ctrl} font-bold text-blue-950`}
+                          >
+                            <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                            <option value="Cash">💵 रोख खाते (Branch Cash)</option>
+                          </select>
+                        </FormRow>
+
+                        {paymentMode === 'Bank' && (
+                          <>
+                            <FormRow label="बँक जी.एल. खाते (Bank GL)" required align="start">
+                              <BankLedgerSelect
+                                value={bankLedgerID}
+                                onChange={(id) => setBankLedgerID(id)}
+                                showCountBadge
+                              />
+                            </FormRow>
+                            <FormRow label="UTR / धनादेश / संदर्भ क्र.">
+                              <input
+                                type="text"
+                                value={referenceNo}
+                                onChange={(e) => setReferenceNo(e.target.value)}
+                                placeholder="उदा. UTR / NEFT / Cheque क्र."
+                                className={`${ctrl} font-mono`}
+                              />
+                            </FormRow>
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    <FormRow label="तपशील / शेरा (Narration)">
+                      <input
+                        type="text"
+                        value={narration}
+                        onChange={(e) => setNarration(e.target.value)}
+                        placeholder="ऐच्छिक शेरा / बँक पावती संदर्भ..."
+                        className={ctrl}
+                      />
+                    </FormRow>
                   </div>
+                </fieldset>
+              </>
+            )}
+          </div>
+
+          {/* ================= RIGHT STICKY COLUMN: SETTLEMENT & VOUCHER PREVIEW ================= */}
+          {selectedAccount && settlement && (
+            <div className="lg:col-span-5 space-y-3 lg:sticky lg:top-2">
+              {/* Card 1: Live Settlement Summary */}
+              <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3.5 bg-white shadow-xs">
+                <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                  <Scale className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span>थेट सेटलमेंट सारांश (Live Settlement Summary)</span>
+                </legend>
+
+                <div className="flex items-center justify-end gap-1.5 -mt-5 mb-2">
+                  <span className="text-[10px] font-mono font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-sm">
+                    {elapsedDays} दिवस
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-sm">
+                    {activeMode === 'maturity'
+                      ? 'नियमित मुदतपूर्ती'
+                      : activeMode === 'premature'
+                      ? 'मुदतपूर्व मोडणी'
+                      : 'ठेव नूतनीकरण'}
+                  </span>
                 </div>
 
-                {((selectedAccount && Math.max(0, (selectedAccount.principalAmount || 0) - (renewalForm.renewalAmount || 0)) > 0) || Math.max(0, (renewalForm.interestPayoutAmount || 0) - (renewalForm.tdsAmount || 0)) > 0) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start bg-white/80 p-2.5 rounded-sm border border-blue-200">
-                    <div>
-                      <label className={labelClass}>परतावा जमा पद्धत (Receipt Mode) *</label>
-                      <select
-                        value={renewalForm.paymentMode}
-                        onChange={(e) => {
-                          const mode = e.target.value;
-                          setRenewalForm(prev => ({
-                            ...prev,
-                            paymentMode: mode,
-                            ...(mode !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
-                          }));
-                        }}
-                        className={`${inputClass} font-bold text-blue-950 border-blue-300`}
-                      >
-                        <option value="Bank">🏦 बँक खाते (Bank Account)</option>
-                        <option value="Cash">💵 रोख (Cash)</option>
-                      </select>
-                    </div>
+                <dl className="text-xs divide-y divide-slate-100">
+                  <div className="flex justify-between items-center py-1.5">
+                    <dt className="text-slate-600">मूळ गुंतवलेली मुद्दल (Principal)</dt>
+                    <dd className="font-mono font-bold text-slate-900">₹{fmt(settlement.originalPrincipal)}</dd>
+                  </div>
 
-                    {renewalForm.paymentMode === 'Bank' ? (
-                      <>
-                        <div className="sm:col-span-2">
-                          <BankLedgerSelect
-                            value={renewalForm.bankLedgerID}
-                            onChange={(id) => setRenewalForm(prev => ({ ...prev, bankLedgerID: id }))}
-                            showCountBadge
-                          />
-                        </div>
-                        <div>
-                          <label className={labelClass}>UTR / धनादेश / संदर्भ क्र.</label>
-                          <input
-                            type="text"
-                            value={renewalForm.referenceNo}
-                            onChange={(e) => setRenewalForm(prev => ({ ...prev, referenceNo: e.target.value }))}
-                            placeholder="उदा. UTR / NEFT / CHQ क्र."
-                            className={`${inputClass} font-mono`}
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="sm:col-span-3 flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-sm text-[11px] font-bold text-emerald-900 mt-4">
-                        <CheckCircle className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                        <span>नूतनीकरणातील व्याज/आंशिक मुद्दल शाखेच्या मुख्य रोख खात्यात (Branch Cash GL Account) जमा केली जाईल.</span>
+                  <div className="flex justify-between items-center py-1.5">
+                    <dt className="text-slate-600">आधीचे येणे व्याज शिल्लक (Receivable)</dt>
+                    <dd className="font-mono font-semibold text-indigo-800">₹{fmt(settlement.standingReceivable)}</dd>
+                  </div>
+
+                  <div className="py-1.5">
+                    <div className="flex justify-between items-center">
+                      <dt className="text-slate-700 font-semibold">चालू मंजूर एकूण व्याज (Gross)</dt>
+                      <dd className="font-mono font-bold text-emerald-700">+ ₹{fmt(settlement.grossInterest)}</dd>
+                    </div>
+                    {(settlement.receivableCleared > 0 || settlement.freshIncome > 0) && (
+                      <div className="text-[10px] text-slate-500 font-mono mt-0.5 flex justify-end gap-2">
+                        <span>येणे समायोजन: ₹{fmt(settlement.receivableCleared)}</span>
+                        <span>|</span>
+                        <span>नवीन उत्पन्न: ₹{fmt(settlement.freshIncome)}</span>
                       </div>
                     )}
                   </div>
-                )}
 
-                <div className="pt-2 flex justify-end gap-2 border-t border-primary/20">
+                  {settlement.totalReversalDr > 0 && (
+                    <div className="flex justify-between items-center py-1.5 bg-rose-50/70 px-2 -mx-2 rounded-xs">
+                      <dt className="text-rose-800 font-bold">
+                        व्याज रिव्हर्सल एंट्री (Dr व्याज उत्पन्न)
+                      </dt>
+                      <dd className="font-mono font-black text-rose-800">₹{fmt(settlement.totalReversalDr)}</dd>
+                    </div>
+                  )}
+
+                  {settlement.penalty > 0 && (
+                    <div className="flex justify-between items-center py-1.5">
+                      <dt className="text-rose-700">वजा: मुदतपूर्व दंड (Penalty)</dt>
+                      <dd className="font-mono font-bold text-rose-700">- ₹{fmt(settlement.penalty)}</dd>
+                    </div>
+                  )}
+
+                  {settlement.tds > 0 && (
+                    <div className="flex justify-between items-center py-1.5">
+                      <dt className="text-rose-700">वजा: TDS कर कपात</dt>
+                      <dd className="font-mono font-bold text-rose-700">- ₹{fmt(settlement.tds)}</dd>
+                    </div>
+                  )}
+
+                  {activeMode === 'renewal' && (
+                    <div className="flex justify-between items-center py-2 bg-primary/5 px-2 -mx-2 rounded-xs mt-1">
+                      <dt className="text-primary font-bold">नवीन गुंतवणूक मुद्दल (New Deposit)</dt>
+                      <dd className="font-mono font-black text-primary text-sm">₹{fmt(settlement.newRenewalDeposit)}</dd>
+                    </div>
+                  )}
+                </dl>
+
+                {/* Highlight Net Payout Box */}
+                <div className="mt-2.5 p-2.5 rounded-sm bg-slate-900 text-white flex items-center justify-between">
+                  <div>
+                    <div className="text-[10.5px] text-slate-300 font-medium">
+                      {activeMode === 'renewal'
+                        ? 'निव्वळ बँक/रोख परतावा जमा (Net Inflow)'
+                        : 'निव्वळ बँक/रोख जमा रक्कम (Net Receipt)'}
+                    </div>
+                    <div className="text-[10px] text-emerald-300 font-mono">
+                      {settlement.netCashOrBankReceipt > 0
+                        ? paymentMode === 'Bank'
+                          ? 'बँक खात्यात नावे (Debit)'
+                          : 'रोख खात्यात नावे (Debit)'
+                        : 'पुस्तकी नूतनीकरण हस्तांतरण (Journal)'}
+                    </div>
+                  </div>
+                  <div className="text-base font-mono font-black text-emerald-300">
+                    ₹{fmt(settlement.netCashOrBankReceipt)}
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="mt-3 pt-2.5 border-t border-slate-200 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => initializeAccountDefaults(selectedAccount, txnDate)}
+                    className="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>पूर्ववत (Reset)</span>
+                  </button>
+
                   <button
                     type="submit"
-                    disabled={saving}
-                    className="px-6 py-2 bg-primary hover:opacity-90 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+                    disabled={saving || isBeforeInvestmentDate || isFutureDate || !isVoucherBalanced}
+                    className={`flex-1 h-8 px-4 text-white font-bold rounded-sm text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all ${
+                      activeMode === 'maturity'
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : activeMode === 'premature'
+                        ? 'bg-amber-600 hover:bg-amber-700'
+                        : 'bg-primary hover:opacity-95'
+                    }`}
                   >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>{saving ? 'नूतनीकरण होत आहे...' : 'ठेव नूतनीकरण करा (Renew Deposit)'}</span>
+                    {activeMode === 'maturity' ? (
+                      <CheckCircle className="w-4 h-4" />
+                    ) : activeMode === 'premature' ? (
+                      <AlertTriangle className="w-4 h-4" />
+                    ) : (
+                      <RotateCcw className="w-4 h-4" />
+                    )}
+                    <span>
+                      {saving
+                        ? 'प्रक्रिया सुरू आहे...'
+                        : activeMode === 'maturity'
+                        ? 'मुदतपूर्ती जतन करा'
+                        : activeMode === 'premature'
+                        ? 'मुदतपूर्व मोडणी जतन करा'
+                        : 'नूतनीकरण जतन करा'}
+                    </span>
                   </button>
                 </div>
-              </form>
-            )}
-          </div>
-        ) : (
-          <div className="p-8 text-center bg-slate-50 border border-dashed border-gray-300 rounded-sm text-gray-400">
-            <Landmark className="w-8 h-8 mx-auto mb-2 opacity-40" />
-            <p className="text-xs font-bold text-gray-600">कृपया वरील ड्रॉपडाउनमधून मुदत ठेव खाते निवडा.</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">निवडलेल्या खात्याची माहिती आणि क्लेम पर्याय येथे आपोआप उघडतील.</p>
-          </div>
-        )}
+              </fieldset>
 
-      </div>
+              {/* Card 2: Live Accounting Voucher Preview */}
+              <div className="bg-white border border-slate-300 rounded-sm shadow-2xs overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowVoucherPreview((p) => !p)}
+                  className="w-full px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-800 cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-primary" />
+                    <span>लेखा व्हाउचर नोंदी (Accounting Voucher Preview)</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded border font-bold ${
+                        isVoucherBalanced
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : 'bg-red-50 text-red-800 border-red-300'
+                      }`}
+                    >
+                      {isVoucherBalanced ? 'संतुलित' : 'असंतुलित'}
+                    </span>
+                    {showVoucherPreview ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </span>
+                </button>
 
+                {showVoucherPreview && (
+                  <div className="p-2.5 overflow-x-auto">
+                    <table className="w-full border-collapse text-[11px]">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 border-b border-slate-300">
+                          <th className="py-1 px-2 text-left">जी.एल. खाते व तपशील</th>
+                          <th className="py-1 px-2 text-right text-rose-800 w-24">नावे Dr (₹)</th>
+                          <th className="py-1 px-2 text-right text-emerald-800 w-24">जमा Cr (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {settlement.voucherLines.map((line, idx) => (
+                          <tr key={idx} className={line.isReversal ? 'bg-rose-50/60 font-semibold' : ''}>
+                            <td className="py-1.5 px-2">
+                              <div className={`font-semibold ${line.isReversal ? 'text-rose-900' : 'text-slate-900'}`}>
+                                {line.ledger}
+                              </div>
+                              <div className="text-[10px] text-slate-500">{line.note}</div>
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono font-bold text-rose-800">
+                              {line.drCr === 'Dr' ? fmt(line.amount) : '-'}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
+                              {line.drCr === 'Cr' ? fmt(line.amount) : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 border-t-2 border-slate-400 font-bold text-slate-950">
+                          <td className="py-1.5 px-2 text-right">एकूण ताळमेळ:</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-rose-900">₹{fmt(totalDr)}</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-emerald-900">₹{fmt(totalCr)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </form>
     </div>
   );
 };

@@ -697,8 +697,14 @@ namespace Bhisi.Api.Controllers
                     SchemeName = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeName : "",
                     SchemeCode = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeCode : "",
                     InvestmentType = a.InvestmentScheme != null ? a.InvestmentScheme.InvestmentType : "Deposit",
+                    DurationType = a.InvestmentScheme != null && !string.IsNullOrWhiteSpace(a.InvestmentScheme.DurationType) ? a.InvestmentScheme.DurationType : "Months",
                     DurationMonths = a.InvestmentScheme != null ? a.InvestmentScheme.DurationMonths : 0,
+                    DurationDays = a.InvestmentScheme != null ? a.InvestmentScheme.DurationDays : null,
+                    PrematureWithdrawalRate = a.InvestmentScheme != null ? a.InvestmentScheme.PrematureWithdrawalRate : 0m,
                     InterestCalculationMethod = a.InvestmentScheme != null ? a.InvestmentScheme.InterestCalculationMethod : "Simple",
+                    InvestmentAssetLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.InvestmentAssetLedgerID : null,
+                    InterestIncomeLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.InterestIncomeLedgerID : null,
+                    InterestReceivableLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.InterestReceivableLedgerID : null,
                     TdsLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.TdsLedgerID : null,
                     a.InvestmentNo,
                     a.OldInvestmentNo,
@@ -757,8 +763,14 @@ namespace Bhisi.Api.Controllers
                 a.SchemeID,
                 SchemeName = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeName : "",
                 InvestmentType = a.InvestmentScheme != null ? a.InvestmentScheme.InvestmentType : "Deposit",
+                DurationType = a.InvestmentScheme != null && !string.IsNullOrWhiteSpace(a.InvestmentScheme.DurationType) ? a.InvestmentScheme.DurationType : "Months",
                 DurationMonths = a.InvestmentScheme != null ? a.InvestmentScheme.DurationMonths : 0,
+                DurationDays = a.InvestmentScheme != null ? a.InvestmentScheme.DurationDays : null,
+                PrematureWithdrawalRate = a.InvestmentScheme != null ? a.InvestmentScheme.PrematureWithdrawalRate : 0m,
                 InterestCalculationMethod = a.InvestmentScheme != null ? a.InvestmentScheme.InterestCalculationMethod : "Simple",
+                InvestmentAssetLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.InvestmentAssetLedgerID : null,
+                InterestIncomeLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.InterestIncomeLedgerID : null,
+                InterestReceivableLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.InterestReceivableLedgerID : null,
                 TdsLedgerID = a.InvestmentScheme != null ? a.InvestmentScheme.TdsLedgerID : null,
                 a.InvestmentNo,
                 a.OldInvestmentNo,
@@ -1330,15 +1342,18 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var (_, _, outstandingReceivable, _) = await GetAccountInterestSummaryAsync(account.InvestmentAccountID, account);
-                decimal receivableCleared = Math.Min(Math.Max(0m, request.InterestReceived), outstandingReceivable);
-                decimal freshInterestIncome = Math.Max(0m, request.InterestReceived - receivableCleared);
+                decimal grossInterestReceived = Math.Max(0m, Math.Round(request.InterestReceived, 2, MidpointRounding.AwayFromZero));
+                decimal receivableCleared = Math.Min(grossInterestReceived, outstandingReceivable);
+                decimal accruedInterestReversed = Math.Max(0m, Math.Round(outstandingReceivable - receivableCleared, 2, MidpointRounding.AwayFromZero));
+                decimal totalReceivableCr = Math.Round(receivableCleared + accruedInterestReversed, 2, MidpointRounding.AwayFromZero);
+                decimal freshInterestIncome = Math.Max(0m, Math.Round(grossInterestReceived - receivableCleared, 2, MidpointRounding.AwayFromZero));
 
                 var mapCheck = await ResolveStrictVoucherMappingAsync(
                     account.BranchID,
                     account.SchemeID,
                     requireInvestmentAsset: request.PrincipalReceived > 0m,
-                    requireInterestIncome: freshInterestIncome > 0m,
-                    requireInterestReceivable: receivableCleared > 0m);
+                    requireInterestIncome: (freshInterestIncome > 0m || accruedInterestReversed > 0m),
+                    requireInterestReceivable: totalReceivableCr > 0m);
                 if (!mapCheck.IsValid || mapCheck.Mapping == null)
                 {
                     await transaction.RollbackAsync();
@@ -1387,6 +1402,12 @@ namespace Bhisi.Api.Controllers
                 string tdsSuffix = tdsAmount > 0m
                     ? $" [TDS कपात: ₹{tdsAmount:N2}]"
                     : string.Empty;
+                string revSuffix = accruedInterestReversed > 0m
+                    ? $" [येणे व्याज रिव्हर्सल: ₹{accruedInterestReversed:N2}]"
+                    : string.Empty;
+                string noteSuffix = !string.IsNullOrWhiteSpace(request.Narration)
+                    ? $" ({request.Narration.Trim()})"
+                    : string.Empty;
 
                 var voucher = new Voucher
                 {
@@ -1397,8 +1418,8 @@ namespace Bhisi.Api.Controllers
                     Status = approvalStatus.Status,
                     ApprovedBy = approvalStatus.ApprovedBy,
                     ApprovedOn = approvalStatus.ApprovedOn,
-                    Narration = $"गुंतवणूक मुदतपूर्ती - {account.InvestmentNo}{tdsSuffix}{refSuffix}",
-                    TotalAmount = maturity.PrincipalReceived + maturity.InterestReceived,
+                    Narration = $"गुंतवणूक मुदतपूर्ती - {account.InvestmentNo}{revSuffix}{tdsSuffix}{refSuffix}{noteSuffix}",
+                    TotalAmount = maturity.PrincipalReceived + grossInterestReceived + accruedInterestReversed,
                     CreatedBy = currentUserId,
                     CreatedOn = DateTime.Now
                 };
@@ -1428,6 +1449,17 @@ namespace Bhisi.Api.Controllers
                     });
                 }
 
+                if (accruedInterestReversed > 0m)
+                {
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = voucher.VoucherID,
+                        LedgerID = mapping.InterestIncomeLedgerID,
+                        DrCr = "Dr",
+                        Amount = accruedInterestReversed
+                    });
+                }
+
                 if (maturity.PrincipalReceived > 0m)
                 {
                     _context.VoucherDetails.Add(new VoucherDetail
@@ -1439,14 +1471,14 @@ namespace Bhisi.Api.Controllers
                     });
                 }
 
-                if (receivableCleared > 0m)
+                if (totalReceivableCr > 0m)
                 {
                     _context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
                         LedgerID = mapping.InterestReceivableLedgerID,
                         DrCr = "Cr",
-                        Amount = receivableCleared
+                        Amount = totalReceivableCr
                     });
                 }
 
@@ -1503,31 +1535,50 @@ namespace Bhisi.Api.Controllers
                     return BadRequest(dateCheck.ErrorMessage);
                 }
 
+                decimal originalPrincipal = Math.Max(0m, Math.Round(account.PrincipalAmount, 2, MidpointRounding.AwayFromZero));
+                decimal principalReceived = Math.Max(0m, Math.Round(request.PrincipalPaid, 2, MidpointRounding.AwayFromZero));
+                if (principalReceived > originalPrincipal)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest("परत मिळालेले मुद्दल हे मूळ गुंतवलेल्या मुद्दलापेक्षा जास्त असू शकत नाही; अतिरिक्त रक्कम व्याजात नोंदवा.");
+                }
+
+                decimal interestPaid = Math.Max(0m, Math.Round(request.InterestPaid, 2, MidpointRounding.AwayFromZero));
+                decimal penaltyAmount = Math.Max(0m, Math.Round(request.PenaltyAmount, 2, MidpointRounding.AwayFromZero));
                 decimal tdsAmount = Math.Max(0m, Math.Round(request.TdsAmount, 2, MidpointRounding.AwayFromZero));
-                decimal netPayout = request.PrincipalPaid + request.InterestPaid - request.PenaltyAmount - tdsAmount;
+                decimal netPayout = Math.Round(principalReceived + interestPaid - penaltyAmount - tdsAmount, 2, MidpointRounding.AwayFromZero);
                 if (netPayout < 0m)
                 {
                     await transaction.RollbackAsync();
                     return BadRequest("मुदतपूर्व दंड व TDS कपात रक्कम ही एकूण मुद्दल व व्याजापेक्षा जास्त असू शकत नाही.");
                 }
 
-                var paymentCheck = await ResolveInvestmentPaymentLedgerAsync(account.BranchID, request.PaymentMode, request.BankLedgerID);
-                if (!paymentCheck.IsValid)
+                int paymentLedgerId = 0;
+                if (netPayout > 0m)
                 {
-                    await transaction.RollbackAsync();
-                    return BadRequest(paymentCheck.ErrorMessage);
+                    var paymentCheck = await ResolveInvestmentPaymentLedgerAsync(account.BranchID, request.PaymentMode, request.BankLedgerID);
+                    if (!paymentCheck.IsValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(paymentCheck.ErrorMessage);
+                    }
+                    paymentLedgerId = paymentCheck.LedgerId;
                 }
 
                 var (_, _, outstandingReceivable, _) = await GetAccountInterestSummaryAsync(account.InvestmentAccountID, account);
-                decimal receivableCleared = Math.Min(Math.Max(0m, request.InterestPaid), outstandingReceivable);
-                decimal freshInterestIncome = Math.Max(0m, request.InterestPaid - receivableCleared);
+                decimal receivableCleared = Math.Min(interestPaid, outstandingReceivable);
+                decimal accruedInterestReversed = Math.Max(0m, Math.Round(outstandingReceivable - receivableCleared, 2, MidpointRounding.AwayFromZero));
+                decimal totalReceivableCr = Math.Round(receivableCleared + accruedInterestReversed, 2, MidpointRounding.AwayFromZero);
+                decimal freshInterestIncome = Math.Max(0m, Math.Round(interestPaid - receivableCleared, 2, MidpointRounding.AwayFromZero));
+                decimal interestClawback = Math.Max(0m, Math.Round(originalPrincipal - principalReceived, 2, MidpointRounding.AwayFromZero));
+                decimal totalInterestIncomeReversalDr = Math.Round(accruedInterestReversed + interestClawback, 2, MidpointRounding.AwayFromZero);
 
                 var mapCheck = await ResolveStrictVoucherMappingAsync(
                     account.BranchID,
                     account.SchemeID,
-                    requireInvestmentAsset: request.PrincipalPaid > 0m,
-                    requireInterestIncome: freshInterestIncome > 0m,
-                    requireInterestReceivable: receivableCleared > 0m);
+                    requireInvestmentAsset: originalPrincipal > 0m,
+                    requireInterestIncome: (freshInterestIncome > 0m || totalInterestIncomeReversalDr > 0m),
+                    requireInterestReceivable: totalReceivableCr > 0m);
                 if (!mapCheck.IsValid || mapCheck.Mapping == null)
                 {
                     await transaction.RollbackAsync();
@@ -1549,11 +1600,14 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
+                decimal totalVoucherAmount = Math.Round(originalPrincipal + interestPaid + accruedInterestReversed, 2, MidpointRounding.AwayFromZero);
                 int currentUserId = User.GetUserId() > 0 ? User.GetUserId() : 1;
-                var approvalStatus = await ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, request.PrincipalPaid + request.InterestPaid, currentUserId);
+                var approvalStatus = await ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, totalVoucherAmount, currentUserId);
                 var branchEntity = await _context.Branches.AsNoTracking().FirstOrDefaultAsync(b => b.BranchID == account.BranchID);
                 string branchCode = !string.IsNullOrWhiteSpace(branchEntity?.BranchCode) ? branchEntity!.BranchCode! : account.BranchID.ToString("D3");
-                string voucherNo = await VoucherNumberHelper.NextVoucherNoAsync(_context, $"REC-INV-PRE-{branchCode}-{request.WithdrawalDate:yyyyMMdd}-", 4);
+                string voucherPrefix = netPayout > 0m ? $"REC-INV-PRE-{branchCode}-{request.WithdrawalDate:yyyyMMdd}-" : $"JV-INV-PRE-{branchCode}-{request.WithdrawalDate:yyyyMMdd}-";
+                string voucherType = netPayout > 0m ? "Receipt" : "Journal";
+                string voucherNo = await VoucherNumberHelper.NextVoucherNoAsync(_context, voucherPrefix, 4);
 
                 var withdrawal = new InvestmentPrematureWithdrawal
                 {
@@ -1562,10 +1616,12 @@ namespace Bhisi.Api.Controllers
                     FinancialYearID = dateCheck.FinancialYearId,
                     InvestmentAccountID = request.InvestmentAccountID,
                     WithdrawalDate = request.WithdrawalDate,
-                    PrincipalPaid = request.PrincipalPaid,
+                    PrincipalPaid = principalReceived,
                     RevisedInterestRate = request.RevisedInterestRate,
-                    InterestPaid = request.InterestPaid,
-                    PenaltyAmount = request.PenaltyAmount,
+                    InterestPaid = interestPaid,
+                    PenaltyAmount = penaltyAmount,
+                    AccruedInterestReversed = accruedInterestReversed,
+                    InterestClawbackAmount = interestClawback,
                     TdsAmount = tdsAmount,
                     TdsLedgerID = tdsAmount > 0m ? tdsLedgerId : null,
                     NetPayout = netPayout,
@@ -1575,8 +1631,20 @@ namespace Bhisi.Api.Controllers
                 string refSuffix = !string.IsNullOrWhiteSpace(request.ReferenceNo)
                     ? $" [संदर्भ/UTR: {request.ReferenceNo.Trim()}]"
                     : string.Empty;
+                string revSuffix = accruedInterestReversed > 0m
+                    ? $" [येणे व्याज रिव्हर्सल: ₹{accruedInterestReversed:N2}]"
+                    : string.Empty;
+                string clawSuffix = interestClawback > 0m
+                    ? $" [मुद्दल व्याज कपात रिव्हर्सल: ₹{interestClawback:N2}]"
+                    : string.Empty;
+                string penSuffix = penaltyAmount > 0m
+                    ? $" [दंड: ₹{penaltyAmount:N2}]"
+                    : string.Empty;
                 string tdsSuffix = tdsAmount > 0m
                     ? $" [TDS कपात: ₹{tdsAmount:N2}]"
+                    : string.Empty;
+                string noteSuffix = !string.IsNullOrWhiteSpace(request.Narration)
+                    ? $" ({request.Narration.Trim()})"
                     : string.Empty;
 
                 var voucher = new Voucher
@@ -1584,12 +1652,12 @@ namespace Bhisi.Api.Controllers
                     BranchID = account.BranchID,
                     VoucherNo = voucherNo,
                     VoucherDate = withdrawal.WithdrawalDate,
-                    VoucherType = "Receipt",
+                    VoucherType = voucherType,
                     Status = approvalStatus.Status,
                     ApprovedBy = approvalStatus.ApprovedBy,
                     ApprovedOn = approvalStatus.ApprovedOn,
-                    Narration = $"गुंतवणूक मुदतपूर्व बंद - {account.InvestmentNo}{tdsSuffix}{refSuffix}",
-                    TotalAmount = withdrawal.PrincipalPaid + withdrawal.InterestPaid,
+                    Narration = $"गुंतवणूक मुदतपूर्व बंद - {account.InvestmentNo}{revSuffix}{clawSuffix}{penSuffix}{tdsSuffix}{refSuffix}{noteSuffix}",
+                    TotalAmount = totalVoucherAmount,
                     CreatedBy = currentUserId,
                     CreatedOn = DateTime.Now
                 };
@@ -1597,17 +1665,19 @@ namespace Bhisi.Api.Controllers
                 _context.Vouchers.Add(voucher);
                 await _context.SaveChangesAsync();
 
-                if (withdrawal.NetPayout > 0m)
+                // 1. Dr Bank / Cash GL (Net Payout actually received)
+                if (withdrawal.NetPayout > 0m && paymentLedgerId > 0)
                 {
                     _context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
-                        LedgerID = paymentCheck.LedgerId,
+                        LedgerID = paymentLedgerId,
                         DrCr = "Dr",
                         Amount = withdrawal.NetPayout
                     });
                 }
 
+                // 2. Dr Dynamic TDS GL
                 if (tdsAmount > 0m && tdsLedgerId > 0)
                 {
                     _context.VoucherDetails.Add(new VoucherDetail
@@ -1619,28 +1689,56 @@ namespace Bhisi.Api.Controllers
                     });
                 }
 
-                if (withdrawal.PrincipalPaid > 0m)
+                // 3. Dr Interest Income GL (Reverse Entry for excess Accrued Interest Receivable & Principal Clawback)
+                if (totalInterestIncomeReversalDr > 0m)
+                {
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = voucher.VoucherID,
+                        LedgerID = mapping.InterestIncomeLedgerID,
+                        DrCr = "Dr",
+                        Amount = totalInterestIncomeReversalDr
+                    });
+                }
+
+                // 4. Dr Penalty Expense / Income Contra GL (if separate explicit penalty entered)
+                if (withdrawal.PenaltyAmount > 0m)
+                {
+                    int penaltyLedgerId = await Helpers.Step4AccountingHelper.ResolveInvestmentPenaltyLedgerIdAsync(_context, mapping);
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = voucher.VoucherID,
+                        LedgerID = penaltyLedgerId,
+                        DrCr = "Dr",
+                        Amount = withdrawal.PenaltyAmount
+                    });
+                }
+
+                // 5. Cr Investment Asset GL (Full original principal cleared so Asset GL reaches 0)
+                if (originalPrincipal > 0m)
                 {
                     _context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
                         LedgerID = mapping.InvestmentLedgerID,
                         DrCr = "Cr",
-                        Amount = withdrawal.PrincipalPaid
+                        Amount = originalPrincipal
                     });
                 }
 
-                if (receivableCleared > 0m)
+                // 6. Cr Interest Receivable GL (Full standing accrued receivable cleared to 0)
+                if (totalReceivableCr > 0m)
                 {
                     _context.VoucherDetails.Add(new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
                         LedgerID = mapping.InterestReceivableLedgerID,
                         DrCr = "Cr",
-                        Amount = receivableCleared
+                        Amount = totalReceivableCr
                     });
                 }
 
+                // 7. Cr Interest Income GL (Fresh interest earned above previously accrued receivable)
                 if (freshInterestIncome > 0m)
                 {
                     _context.VoucherDetails.Add(new VoucherDetail
@@ -1653,12 +1751,6 @@ namespace Bhisi.Api.Controllers
                 }
 
                 await _context.SaveChangesAsync();
-                if (withdrawal.PenaltyAmount > 0m)
-                {
-                    int penaltyLedgerId = await Helpers.Step4AccountingHelper.ResolveInvestmentPenaltyLedgerIdAsync(_context, mapping);
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = penaltyLedgerId, DrCr = "Dr", Amount = withdrawal.PenaltyAmount });
-                    await _context.SaveChangesAsync();
-                }
                 await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
                 withdrawal.VoucherID = voucher.VoucherID;
 
@@ -1668,7 +1760,17 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 await transaction.CommitAsync();
-                return Ok(new { message = "मुदतपूर्व काढणे यशस्वी!", voucherId = voucher.VoucherID, voucherNo = voucher.VoucherNo });
+                return Ok(new
+                {
+                    message = accruedInterestReversed > 0m || interestClawback > 0m
+                        ? $"मुदतपूर्व मोडणी व व्याज रिव्हर्सल (₹{totalInterestIncomeReversalDr:N2}) यशस्वी!"
+                        : "मुदतपूर्व काढणे यशस्वी!",
+                    voucherId = voucher.VoucherID,
+                    voucherNo = voucher.VoucherNo,
+                    accruedInterestReversed,
+                    interestClawback,
+                    netPayout
+                });
             }
             catch (Exception ex)
             {
@@ -1728,56 +1830,72 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // Create new account
+                // Create new account (14-digit CBS standard + Days/Months duration + ReceiptNo propagation)
+                var scheme = await _context.InvestmentSchemes.FindAsync(targetSchemeId);
+                string effDurType = !string.IsNullOrWhiteSpace(request.DurationType)
+                    ? request.DurationType.Trim()
+                    : (!string.IsNullOrWhiteSpace(scheme?.DurationType) ? scheme!.DurationType : "Months");
+
+                int effDurVal = (request.DurationValue.HasValue && request.DurationValue.Value > 0)
+                    ? request.DurationValue.Value
+                    : (string.Equals(effDurType, "Days", StringComparison.OrdinalIgnoreCase)
+                        ? (scheme?.DurationDays ?? 365)
+                        : (scheme != null && scheme.DurationMonths > 0 ? scheme.DurationMonths : 12));
+
+                DateTime newMaturityDate = string.Equals(effDurType, "Days", StringComparison.OrdinalIgnoreCase)
+                    ? request.RenewalDate.Date.AddDays(effDurVal)
+                    : request.RenewalDate.Date.AddMonths(effDurVal);
+
+                decimal appliedRate = request.NewInterestRate > 0 ? request.NewInterestRate : (scheme?.InterestRate ?? oldAccount.InterestRate);
+                decimal expectedMaturityAmt = request.RenewalAmount;
+                string calcMethod = scheme?.InterestCalculationMethod ?? "Simple";
+                if (string.Equals(calcMethod, "Cumulative", StringComparison.OrdinalIgnoreCase))
+                {
+                    double P = (double)request.RenewalAmount;
+                    double r = (double)appliedRate / 100.0;
+                    double tYears = string.Equals(effDurType, "Days", StringComparison.OrdinalIgnoreCase)
+                        ? (effDurVal / 365.0)
+                        : (effDurVal / 12.0);
+                    expectedMaturityAmt = Math.Round((decimal)(P * Math.Pow(1.0 + r / 4.0, 4.0 * tYears)), 2, MidpointRounding.AwayFromZero);
+                }
+                else
+                {
+                    decimal interest = string.Equals(effDurType, "Days", StringComparison.OrdinalIgnoreCase)
+                        ? (request.RenewalAmount * appliedRate * effDurVal / 36500m)
+                        : (request.RenewalAmount * appliedRate * effDurVal / 1200m);
+                    expectedMaturityAmt = Math.Round(request.RenewalAmount + interest, 2, MidpointRounding.AwayFromZero);
+                }
+
+                string newCbsAccountNo = await GenerateNextInvestmentAccountNo(oldAccount.BranchID, targetSchemeId, incrementSequence: true);
+                string resolvedReceiptNo = !string.IsNullOrWhiteSpace(request.NewDepositReceiptNo)
+                    ? request.NewDepositReceiptNo.Trim()
+                    : (oldAccount.DepositReceiptNo ?? string.Empty);
+                string? resolvedOldInvNo = !string.IsNullOrWhiteSpace(request.NewOldInvestmentNo)
+                    ? request.NewOldInvestmentNo.Trim()
+                    : oldAccount.OldInvestmentNo;
+                string noteSuffix = !string.IsNullOrWhiteSpace(request.Narration) ? $" | {request.Narration.Trim()}" : string.Empty;
+
                 var newAccount = new InvestmentAccount
                 {
+                    InstitutionID = oldAccount.InstitutionID,
                     BranchID = oldAccount.BranchID,
+                    FinancialYearID = dateCheck.FinancialYearId,
                     InvestmentInstitutionID = oldAccount.InvestmentInstitutionID,
                     SchemeID = targetSchemeId,
-                    InvestmentDate = request.RenewalDate,
+                    InvestmentNo = newCbsAccountNo,
+                    OldInvestmentNo = resolvedOldInvNo,
+                    DepositReceiptNo = string.IsNullOrWhiteSpace(resolvedReceiptNo) ? null : resolvedReceiptNo,
+                    InvestmentDate = request.RenewalDate.Date,
                     PrincipalAmount = request.RenewalAmount,
-                    InterestRate = request.NewInterestRate > 0 ? request.NewInterestRate : oldAccount.InterestRate,
+                    InterestRate = appliedRate,
+                    MaturityDate = newMaturityDate,
+                    ExpectedMaturityAmount = expectedMaturityAmt,
+                    BookValue = request.RenewalAmount,
+                    NomineeName = oldAccount.NomineeName,
+                    NomineeRelation = oldAccount.NomineeRelation,
                     Status = "Active",
-                    Remarks = $"नूतनीकरण - जुने खाते: {oldAccount.InvestmentNo}"
+                    Remarks = $"नूतनीकरण - जुने खाते: {oldAccount.InvestmentNo}{noteSuffix}"
                 };
-
-                // Calculate maturity
-                var scheme = await _context.InvestmentSchemes.FindAsync(newAccount.SchemeID);
-                if (scheme != null)
-                {
-                    newAccount.MaturityDate = request.RenewalDate.AddMonths(scheme.DurationMonths);
-                    if (scheme.InterestCalculationMethod == "Simple")
-                    {
-                        decimal interest = newAccount.PrincipalAmount * newAccount.InterestRate * scheme.DurationMonths / (12 * 100);
-                        newAccount.ExpectedMaturityAmount = Math.Round(newAccount.PrincipalAmount + interest, MidpointRounding.AwayFromZero);
-                    }
-                    else
-                    {
-                        double P = (double)newAccount.PrincipalAmount;
-                        double r = (double)newAccount.InterestRate / 100;
-                        double t = scheme.DurationMonths / 12.0;
-                        newAccount.ExpectedMaturityAmount = Math.Round((decimal)(P * Math.Pow(1 + r / 4, 4 * t)), MidpointRounding.AwayFromZero);
-                    }
-                }
-
-                newAccount.BookValue = newAccount.PrincipalAmount;
-
-                // Generate account number
-                var seq = await _context.InvestmentAccountSequences
-                    .FirstOrDefaultAsync(s => s.BranchID == oldAccount.BranchID && s.ProductType == "INV");
-                if (seq == null)
-                {
-                    seq = new InvestmentAccountSequence { BranchID = oldAccount.BranchID, ProductType = "INV", CurrentValue = 0 };
-                    _context.InvestmentAccountSequences.Add(seq);
-                    await _context.SaveChangesAsync();
-                }
-                seq.CurrentValue += 1;
-                Bhisi.Api.Models.Branch? branchEntity = await _context.Branches.FindAsync(oldAccount.BranchID);
-                string branchCode = branchEntity?.BranchCode ?? "001";
-                newAccount.InvestmentNo = $"{branchCode}-INV-{seq.CurrentValue:D6}";
-
-                var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
-                if (fy != null) newAccount.FinancialYearID = fy.FinancialYearID;
 
                 _context.InvestmentAccounts.Add(newAccount);
                 await _context.SaveChangesAsync();
@@ -1809,13 +1927,24 @@ namespace Bhisi.Api.Controllers
                     request.ReferenceNo,
                     request.InterestPayoutAmount,
                     tdsAmount,
-                    tdsAmount > 0m ? tdsLedgerId : null);
+                    tdsAmount > 0m ? tdsLedgerId : null,
+                    request.Narration);
                 await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, renewalVoucher.VoucherID, renewalVoucher.VoucherNo);
                 oldAccount.Status = "Renewed";
+                oldAccount.BookValue = 0m;
                 await _context.SaveChangesAsync();
 
                 await transaction.CommitAsync();
-                return Ok(new { message = "गुंतवणूक नूतनीकरण यशस्वी!", newAccountNo = newAccount.InvestmentNo });
+                return Ok(new
+                {
+                    message = "गुंतवणूक नूतनीकरण यशस्वी!",
+                    newAccountNo = newAccount.InvestmentNo,
+                    newDepositReceiptNo = newAccount.DepositReceiptNo,
+                    maturityDate = newAccount.MaturityDate,
+                    expectedMaturityAmount = newAccount.ExpectedMaturityAmount,
+                    voucherId = renewalVoucher.VoucherID,
+                    voucherNo = renewalVoucher.VoucherNo
+                });
             }
             catch (Exception ex)
             {
@@ -2618,6 +2747,7 @@ namespace Bhisi.Api.Controllers
         public string? PaymentMode { get; set; } = "Bank";
         public int? BankLedgerID { get; set; }
         public string? ReferenceNo { get; set; }
+        public string? Narration { get; set; }
     }
 
     public class PrematureWithdrawRequest
@@ -2639,6 +2769,7 @@ namespace Bhisi.Api.Controllers
         public string? PaymentMode { get; set; } = "Bank";
         public int? BankLedgerID { get; set; }
         public string? ReferenceNo { get; set; }
+        public string? Narration { get; set; }
     }
 
     public class InterestReceiptRequest
@@ -2669,12 +2800,17 @@ namespace Bhisi.Api.Controllers
         public decimal RenewalAmount { get; set; }
         public DateTime RenewalDate { get; set; }
         public decimal NewInterestRate { get; set; }
+        public string? DurationType { get; set; }
+        public int? DurationValue { get; set; }
+        public string? NewDepositReceiptNo { get; set; }
+        public string? NewOldInvestmentNo { get; set; }
         public decimal InterestPayoutAmount { get; set; } = 0;
         public decimal TdsAmount { get; set; } = 0;
         public int? TdsLedgerID { get; set; }
         public string? PaymentMode { get; set; } = "Bank";
         public int? BankLedgerID { get; set; }
         public string? ReferenceNo { get; set; }
+        public string? Narration { get; set; }
     }
 
     public class AccrualPostingRequest

@@ -3374,6 +3374,10 @@ try
                     ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [TdsAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentPrematureWithdrawals_TdsAmount DEFAULT 0.00;
                 IF COL_LENGTH('InvestmentPrematureWithdrawals', 'TdsLedgerID') IS NULL
                     ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [TdsLedgerID] INT NULL;
+                IF COL_LENGTH('InvestmentPrematureWithdrawals', 'AccruedInterestReversed') IS NULL
+                    ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [AccruedInterestReversed] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentPrematureWithdrawals_AccruedIntReversed DEFAULT 0.00;
+                IF COL_LENGTH('InvestmentPrematureWithdrawals', 'InterestClawbackAmount') IS NULL
+                    ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [InterestClawbackAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentPrematureWithdrawals_InterestClawback DEFAULT 0.00;
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentRenewals')

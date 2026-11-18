@@ -1,0 +1,421 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Bhisi.Api.Controllers;
+using Bhisi.Api.Data;
+using Bhisi.Api.Models;
+using Bhisi.Api.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Xunit;
+
+namespace Bhisi.Api.Tests
+{
+    public class InvestmentPrematureReversalAndRenewalTests
+    {
+        private static AppDbContext CreateContext()
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(databaseName: $"BhisiInvPremRev_{Guid.NewGuid()}")
+                .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+                .Options;
+            return new AppDbContext(options);
+        }
+
+        private static ClaimsPrincipal BuildAdminPrincipal(int branchId = 1, DateTime? businessDate = null)
+        {
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, "1"),
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(ClaimTypes.Role, "Admin"),
+                new Claim("BranchID", branchId.ToString()),
+                new Claim("DefaultBranchID", branchId.ToString())
+            };
+            if (businessDate.HasValue)
+            {
+                claims.Add(new Claim("BusinessDate", businessDate.Value.ToString("yyyy-MM-dd")));
+            }
+            return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestJwt"));
+        }
+
+        private static void AttachUser(ControllerBase controller, ClaimsPrincipal principal)
+        {
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = principal }
+            };
+        }
+
+        private static JsonElement ParseOkJson(ActionResult actionResult)
+        {
+            var ok = Assert.IsType<OkObjectResult>(actionResult);
+            var json = JsonSerializer.Serialize(ok.Value);
+            return JsonDocument.Parse(json).RootElement;
+        }
+
+        private static async Task SeedBaseInvestmentEnvironmentAsync(AppDbContext db, DateTime businessDate)
+        {
+            db.Branches.Add(new Branch
+            {
+                BranchID = 1,
+                BranchCode = "001",
+                BranchName = "मुख्य शाखा",
+                IsActive = true
+            });
+
+            db.FinancialYears.Add(new FinancialYear
+            {
+                FinancialYearID = 1,
+                YearCode = "2026-2027",
+                StartDate = new DateTime(2026, 4, 1),
+                EndDate = new DateTime(2027, 3, 31),
+                IsActive = true,
+                IsClosed = false
+            });
+
+            db.BranchDayEndStatuses.Add(new BranchDayEndStatus
+            {
+                BranchID = 1,
+                BusinessDate = businessDate.Date,
+                IsDayClosed = false
+            });
+
+            db.AccountGroups.AddRange(
+                new AccountGroup { GroupID = 1, GroupName = "गुंतवणूक मालमत्ता", NatureOfGroup = "Assets", IsActive = true },
+                new AccountGroup { GroupID = 2, GroupName = "बँक खाती", NatureOfGroup = "Assets", IsActive = true },
+                new AccountGroup { GroupID = 3, GroupName = "व्याज उत्पन्न", NatureOfGroup = "Income", IsActive = true },
+                new AccountGroup { GroupID = 4, GroupName = "खर्च", NatureOfGroup = "Expenses", IsActive = true }
+            );
+
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 701, GroupID = 1, LedgerCode = "INV-ASSET", LedgerName = "बँक मुदत ठेव गुंतवणूक", AccountType = "Asset", IsActive = true },
+                new Ledger { LedgerID = 702, GroupID = 1, LedgerCode = "INV-REC", LedgerName = "येणे व्याज गुंतवणुकीवरील", AccountType = "Asset", IsActive = true },
+                new Ledger { LedgerID = 703, GroupID = 3, LedgerCode = "INV-INC", LedgerName = "गुंतवणूक व्याज उत्पन्न", AccountType = "Income", IsActive = true },
+                new Ledger { LedgerID = 704, GroupID = 1, LedgerCode = "INV-TDS", LedgerName = "येणे टी.डी.एस कपात", AccountType = "Asset", IsActive = true },
+                new Ledger { LedgerID = 705, GroupID = 2, LedgerCode = "BANK-DCC", LedgerName = "सांगली जिल्हा मध्यवर्ती बँक चालू खाते", AccountType = "Bank", IsActive = true },
+                new Ledger { LedgerID = 706, GroupID = 4, LedgerCode = "INV-PEN", LedgerName = "गुंतवणूक मुदतपूर्व दंड खर्च", AccountType = "Expenses", IsActive = true }
+            );
+
+            db.InvestmentInstitutions.Add(new InvestmentInstitution
+            {
+                InstitutionID = 1,
+                BranchID = 1,
+                InstitutionName = "यड्राव बँक गुंतवणूक",
+                InstitutionType = "CoopBank",
+                IsActive = true
+            });
+
+            db.InvestmentSchemes.Add(new InvestmentScheme
+            {
+                SchemeID = 1,
+                BranchID = 1,
+                InvestmentInstitutionID = 1,
+                SchemeCode = "INV01",
+                SchemeName = "१२ महिने मुदत ठेव",
+                InterestRate = 7.50m,
+                PrematureWithdrawalRate = 6.00m,
+                DurationType = "Months",
+                DurationMonths = 12,
+                InterestCalculationMethod = "Simple",
+                InvestmentType = "Deposit",
+                InvestmentAssetLedgerID = 701,
+                InterestReceivableLedgerID = 702,
+                InterestIncomeLedgerID = 703,
+                TdsLedgerID = 704,
+                IsActive = true
+            });
+
+            await db.SaveChangesAsync();
+        }
+
+        [Fact]
+        public async Task PrematureWithdraw_WhenAccruedReceivableExceedsInterestPaid_PostsExactIncomeReversalAndZeroesReceivable()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 2);
+            await SeedBaseInvestmentEnvironmentAsync(db, businessDate);
+
+            // Case A: Principal 3,50,000 + Standing Receivable 20,000; Premature InterestPaid = 8,000 -> Reversal = 12,000
+            // Case B: Principal 1,00,000 + Standing Receivable 5,000; Premature InterestPaid = 0 -> Reversal = 5,000
+            db.InvestmentAccounts.AddRange(
+                new InvestmentAccount
+                {
+                    InvestmentAccountID = 101,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    InvestmentInstitutionID = 1,
+                    SchemeID = 1,
+                    InvestmentNo = "001-701-0000101-7",
+                    DepositReceiptNo = "0186",
+                    InvestmentDate = new DateTime(2025, 8, 1),
+                    MaturityDate = new DateTime(2026, 8, 1),
+                    PrincipalAmount = 350000m,
+                    InterestRate = 7.50m,
+                    ExpectedMaturityAmount = 376250m,
+                    AccruedInterestTillMigration = 20000m,
+                    BookValue = 370000m,
+                    Status = "Active"
+                },
+                new InvestmentAccount
+                {
+                    InvestmentAccountID = 102,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    InvestmentInstitutionID = 1,
+                    SchemeID = 1,
+                    InvestmentNo = "001-701-0000102-5",
+                    DepositReceiptNo = "0187",
+                    InvestmentDate = new DateTime(2026, 3, 30),
+                    MaturityDate = new DateTime(2026, 5, 30),
+                    PrincipalAmount = 100000m,
+                    InterestRate = 6.00m,
+                    ExpectedMaturityAmount = 101000m,
+                    AccruedInterestTillMigration = 5000m,
+                    BookValue = 105000m,
+                    Status = "Active"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            var controller = new InvestmentAccountsController(db);
+            AttachUser(controller, BuildAdminPrincipal(1, businessDate));
+
+            // Execute Case A (InterestPaid = 8000, TDS = 800)
+            var resA = ParseOkJson(await controller.PrematureWithdraw(new PrematureWithdrawRequest
+            {
+                InvestmentAccountID = 101,
+                WithdrawalDate = businessDate,
+                PrincipalPaid = 350000m,
+                RevisedInterestRate = 5.50m,
+                InterestPaid = 8000m,
+                PenaltyAmount = 0m,
+                TdsAmount = 800m,
+                TdsLedgerID = 704,
+                PaymentMode = "Bank",
+                BankLedgerID = 705,
+                ReferenceNo = "UTR-PRE-101"
+            }));
+
+            Assert.Equal(12000m, resA.GetProperty("accruedInterestReversed").GetDecimal());
+            Assert.Equal(357200m, resA.GetProperty("netPayout").GetDecimal());
+
+            int voucherIdA = resA.GetProperty("voucherId").GetInt32();
+            var detailsA = await db.VoucherDetails.Where(d => d.VoucherID == voucherIdA).ToListAsync();
+            Assert.Equal(
+                detailsA.Where(d => d.DrCr == "Dr").Sum(d => d.Amount),
+                detailsA.Where(d => d.DrCr == "Cr").Sum(d => d.Amount));
+
+            // Bank Dr = 3,57,200; TDS Dr = 800; Interest Income Reversal Dr = 12,000 (Total Dr = 3,70,000)
+            Assert.Contains(detailsA, d => d.LedgerID == 705 && d.DrCr == "Dr" && d.Amount == 357200m);
+            Assert.Contains(detailsA, d => d.LedgerID == 704 && d.DrCr == "Dr" && d.Amount == 800m);
+            Assert.Contains(detailsA, d => d.LedgerID == 703 && d.DrCr == "Dr" && d.Amount == 12000m);
+            // Asset Cr = 3,50,000; Receivable Cr = FULL 20,000 (Total Cr = 3,70,000)
+            Assert.Contains(detailsA, d => d.LedgerID == 701 && d.DrCr == "Cr" && d.Amount == 350000m);
+            Assert.Contains(detailsA, d => d.LedgerID == 702 && d.DrCr == "Cr" && d.Amount == 20000m);
+
+            // Execute Case B (InterestPaid = 0 -> full 5,000 receivable reversed!)
+            var resB = ParseOkJson(await controller.PrematureWithdraw(new PrematureWithdrawRequest
+            {
+                InvestmentAccountID = 102,
+                WithdrawalDate = businessDate,
+                PrincipalPaid = 100000m,
+                RevisedInterestRate = 0m,
+                InterestPaid = 0m,
+                PenaltyAmount = 0m,
+                TdsAmount = 0m,
+                PaymentMode = "Bank",
+                BankLedgerID = 705
+            }));
+
+            Assert.Equal(5000m, resB.GetProperty("accruedInterestReversed").GetDecimal());
+            int voucherIdB = resB.GetProperty("voucherId").GetInt32();
+            var detailsB = await db.VoucherDetails.Where(d => d.VoucherID == voucherIdB).ToListAsync();
+            Assert.Contains(detailsB, d => d.LedgerID == 703 && d.DrCr == "Dr" && d.Amount == 5000m);
+            Assert.Contains(detailsB, d => d.LedgerID == 702 && d.DrCr == "Cr" && d.Amount == 5000m);
+            Assert.Contains(detailsB, d => d.LedgerID == 701 && d.DrCr == "Cr" && d.Amount == 100000m);
+        }
+
+        [Fact]
+        public async Task PrematureWithdraw_WhenPrincipalReducedDueToPriorInterestClawback_ClearsFullAssetAndReversesIncome()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 2);
+            await SeedBaseInvestmentEnvironmentAsync(db, businessDate);
+
+            db.InvestmentAccounts.Add(new InvestmentAccount
+            {
+                InvestmentAccountID = 201,
+                BranchID = 1,
+                FinancialYearID = 1,
+                InvestmentInstitutionID = 1,
+                SchemeID = 1,
+                InvestmentNo = "001-701-0000201-5",
+                InvestmentDate = new DateTime(2025, 6, 1),
+                MaturityDate = new DateTime(2026, 6, 1),
+                PrincipalAmount = 350000m,
+                InterestRate = 7.50m,
+                ExpectedMaturityAmount = 376250m,
+                BookValue = 350000m,
+                Status = "Active"
+            });
+            await db.SaveChangesAsync();
+
+            var controller = new InvestmentAccountsController(db);
+            AttachUser(controller, BuildAdminPrincipal(1, businessDate));
+
+            // Bank deducts 6,000 excess periodic interest from principal -> PrincipalPaid = 3,44,000
+            var res = ParseOkJson(await controller.PrematureWithdraw(new PrematureWithdrawRequest
+            {
+                InvestmentAccountID = 201,
+                WithdrawalDate = businessDate,
+                PrincipalPaid = 344000m,
+                RevisedInterestRate = 5.0m,
+                InterestPaid = 0m,
+                PaymentMode = "Bank",
+                BankLedgerID = 705
+            }));
+
+            Assert.Equal(6000m, res.GetProperty("interestClawback").GetDecimal());
+            Assert.Equal(344000m, res.GetProperty("netPayout").GetDecimal());
+
+            int voucherId = res.GetProperty("voucherId").GetInt32();
+            var details = await db.VoucherDetails.Where(d => d.VoucherID == voucherId).ToListAsync();
+            Assert.Contains(details, d => d.LedgerID == 705 && d.DrCr == "Dr" && d.Amount == 344000m);
+            Assert.Contains(details, d => d.LedgerID == 703 && d.DrCr == "Dr" && d.Amount == 6000m);
+            Assert.Contains(details, d => d.LedgerID == 701 && d.DrCr == "Cr" && d.Amount == 350000m);
+        }
+
+        [Fact]
+        public async Task PrematureWithdraw_Rollback_RestoresActiveStatusAndExactBookValue()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 2);
+            await SeedBaseInvestmentEnvironmentAsync(db, businessDate);
+
+            db.InvestmentAccounts.Add(new InvestmentAccount
+            {
+                InvestmentAccountID = 301,
+                BranchID = 1,
+                FinancialYearID = 1,
+                InvestmentInstitutionID = 1,
+                SchemeID = 1,
+                InvestmentNo = "001-701-0000301-3",
+                InvestmentDate = new DateTime(2025, 10, 1),
+                MaturityDate = new DateTime(2026, 10, 1),
+                PrincipalAmount = 200000m,
+                InterestRate = 7.50m,
+                ExpectedMaturityAmount = 215000m,
+                AccruedInterestTillMigration = 7500m,
+                BookValue = 207500m,
+                Status = "Active"
+            });
+            await db.SaveChangesAsync();
+
+            var controller = new InvestmentAccountsController(db);
+            AttachUser(controller, BuildAdminPrincipal(1, businessDate));
+
+            var res = ParseOkJson(await controller.PrematureWithdraw(new PrematureWithdrawRequest
+            {
+                InvestmentAccountID = 301,
+                WithdrawalDate = businessDate,
+                PrincipalPaid = 200000m,
+                RevisedInterestRate = 5.0m,
+                InterestPaid = 3000m,
+                PaymentMode = "Bank",
+                BankLedgerID = 705
+            }));
+
+            int voucherId = res.GetProperty("voucherId").GetInt32();
+            var closedAcc = await db.InvestmentAccounts.FindAsync(301);
+            Assert.Equal("Closed", closedAcc!.Status);
+            Assert.Equal(0m, closedAcc.BookValue);
+
+            // Rollback premature voucher -> must restore Status = "Active" AND BookValue = 2,07,500
+            var rollbackSvc = new VoucherRollbackAndDeleteService(db);
+            var delRes = await rollbackSvc.DeleteVoucherWithRollbackAsync(voucherId, new VoucherDeleteRequestContext
+            {
+                UserId = 1,
+                Username = "admin",
+                UserRole = "Admin",
+                UserBranchId = 1,
+                IsHeadOfficeAdmin = true,
+                Reason = "चुकून मुदतपूर्व मोडणी एन्ट्री पडल्याने रद्द केले"
+            });
+            Assert.True(delRes.Success, delRes.Message);
+
+            var restoredAcc = await db.InvestmentAccounts.FindAsync(301);
+            Assert.Equal("Active", restoredAcc!.Status);
+            Assert.Equal(207500m, restoredAcc.BookValue);
+            Assert.False(await db.InvestmentPrematureWithdrawals.AnyAsync(p => p.InvestmentAccountID == 301));
+        }
+
+        [Fact]
+        public async Task RenewInvestment_Generates14DigitCbsAccountNo_SupportsDaysDuration_AndReversesExcessReceivable()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 2);
+            await SeedBaseInvestmentEnvironmentAsync(db, businessDate);
+
+            db.InvestmentAccounts.Add(new InvestmentAccount
+            {
+                InvestmentAccountID = 401,
+                BranchID = 1,
+                FinancialYearID = 1,
+                InvestmentInstitutionID = 1,
+                SchemeID = 1,
+                InvestmentNo = "001-701-0000005-2",
+                OldInvestmentNo = "88",
+                DepositReceiptNo = "FDR-7788",
+                InvestmentDate = new DateTime(2025, 4, 2),
+                MaturityDate = businessDate,
+                PrincipalAmount = 100000m,
+                InterestRate = 7.50m,
+                ExpectedMaturityAmount = 107500m,
+                AccruedInterestTillMigration = 8000m, // Higher than actual 7,500 recognized at renewal -> 500 reversal!
+                BookValue = 108000m,
+                Status = "Active"
+            });
+            await db.SaveChangesAsync();
+
+            var controller = new InvestmentAccountsController(db);
+            AttachUser(controller, BuildAdminPrincipal(1, businessDate));
+
+            var res = ParseOkJson(await controller.RenewInvestment(new RenewalRequest
+            {
+                OldInvestmentAccountID = 401,
+                RenewalDate = businessDate,
+                RenewalType = "PrincipalAndInterest",
+                RenewalAmount = 107500m,
+                NewSchemeID = 1,
+                NewInterestRate = 8.00m,
+                DurationType = "Days",
+                DurationValue = 400,
+                NewDepositReceiptNo = "FDR-9900"
+            }));
+
+            string newAccNo = res.GetProperty("newAccountNo").GetString()!;
+            Assert.StartsWith("001-701-", newAccNo);
+            Assert.Equal(17, newAccNo.Length); // "001-701-0000001-X" formatted 14-digit CBS
+
+            var newAcc = await db.InvestmentAccounts.FirstAsync(a => a.InvestmentNo == newAccNo);
+            Assert.Equal("FDR-9900", newAcc.DepositReceiptNo);
+            Assert.Equal("88", newAcc.OldInvestmentNo);
+            Assert.Equal(businessDate.AddDays(400), newAcc.MaturityDate);
+
+            int voucherId = res.GetProperty("voucherId").GetInt32();
+            var details = await db.VoucherDetails.Where(d => d.VoucherID == voucherId).ToListAsync();
+            Assert.Equal(
+                details.Where(d => d.DrCr == "Dr").Sum(d => d.Amount),
+                details.Where(d => d.DrCr == "Cr").Sum(d => d.Amount));
+            // 500 excess receivable reversed via Dr InterestIncome (703) and full 8000 Receivable credited (702)
+            Assert.Contains(details, d => d.LedgerID == 703 && d.DrCr == "Dr" && d.Amount == 500m);
+            Assert.Contains(details, d => d.LedgerID == 702 && d.DrCr == "Cr" && d.Amount == 8000m);
+        }
+    }
+}

@@ -1,5 +1,21 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-18] - आवृत्ती v2.6.31 (Scheme-Scoped FD Renewal Receipt Check, FD Ledger Single/Consolidated Isolation & 2-Col Investment Closure UI with Premature Interest Reversal)
+
+### 🧾 1. मुदत ठेव नूतनीकरण व ओपनिंग — योजनानिहाय पावती क्र. पडताळणी
+- **`FdRenewalPolicyHelper.cs`, `FdAccountsController.cs` व `FdRenewalPolicyAndAutoRenewalTests.cs`:**
+  - `FindUnrelatedActiveReceiptConflictAsync` मध्ये `schemeId` जोडून `ReceiptNo` व `LegacyAccountNumber` तपासणी लक्ष्य योजनेपुरती (`BranchID + FdSchemeID`) मर्यादित केली, तर १४-अंकी CBS `AccountNo` संपूर्ण शाखेसाठी अद्वितीय ठेवला (दुसऱ्या स्कीममधील समान जुन्या पावती क्रमांकामुळे येणारा `400 Bad Request` कायमचा दूर).
+
+### 📊 2. मुदत ठेव खातावणी विवरणपत्र (`MemberLedger`) — `एकत्रित` ते `सिंगल` व्ह्यू निवारण
+- **`FdReports.tsx`:**
+  - `एकत्रित` व्ह्यूमधून पुन्हा `सिंगल (खातेनिहाय)` निवडल्यावर आधीची सिंगल पावती (`savedSingleFdAccountId`) जतन व पुनर्संचयित करणे, `पावती:` ड्रॉपडाउन अदृश्य न होणे, `ledgerRequestSeqRef` रेस-गार्ड व दुहेरी एकत्रित गोषवारा हेडर काढून `ledgerViewData` स्वतंत्र गणना लागू केली.
+
+### 🏦 3. संस्था गुंतवणूक मुदतपूर्ती, मोडणी व नूतनीकरण — २-कॉलम CBS UI व मुदतपूर्व येणे व्याज रिव्हर्सल
+- **`InvestmentMaturityClaim.tsx`, `InvestmentAccountsController.cs`, `Step4AccountingHelper.cs`, `VoucherRollbackAndDeleteService.cs`, `InvestmentPrematureWithdrawal.cs`, `Program.cs`, `tools/master_vps_update_schema.sql` व `InvestmentPrematureReversalAndRenewalTests.cs`:**
+  - मुदतपूर्व मोडणीत (`PrematureWithdraw`) आधी तरतूद केलेले `येणे व्याज` (`InterestReceivable`) प्रत्यक्ष मिळालेल्या व्याजापेक्षा जास्त असल्यास किंवा मूळ मुद्दलातून पूर्वीच्या व्याजाची कपात झाल्यास संपूर्ण `येणे व्याज` व `गुंतवणूक मालमत्ता` शून्य करून फरकाची अचूक **`Dr गुंतवणूक व्याज उत्पन्न`** रिव्हर्सल नोंद (`AccruedInterestReversed`, `InterestClawbackAmount`).
+  - नूतनीकरणात १४-अंकी CBS खाते क्र. (`001-701-...`), `Days`/`Months` कालावधी व `DepositReceiptNo` सपोर्ट आणि व्हाउचर रोलबॅकमध्ये `BookValue` पूर्ववत करणे.
+  - FD नूतनीकरण धर्तीवर स्वच्छ २-कॉलम CBS फॉर्म, फक्त `TDS > 0` असताना उघडणारा TDS लेजर ड्रॉपडाउन, ऑटो मुदतपूर्व व्याज गणना आणि उजव्या स्टिकी भागात **थेट सेटलमेंट सारांश + संतुलित Dr/Cr लेखा व्हाउचर प्रिव्ह्यू** (११८/११८ xUnit चाचण्या उत्तीर्ण).
+
 ## 📅 [2026-11-18] - आवृत्ती v2.6.30 (VPS Multi-App Patch Config Update - Vidyasagar Kavathesar Target)
 
 ### 🛠️ 1. VPS मल्टी-ॲप मास्टर पॅच कॉन्फिगरेशन अद्यतन

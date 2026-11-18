@@ -199,7 +199,7 @@ namespace Bhisi.Api.Helpers
                 if (!existingSchemeLegacySet.Contains(candidate))
                 {
                     var conflict = await FindUnrelatedActiveReceiptConflictAsync(
-                        context, branchId, chainRootId: 0, currentParentId: 0, candidate);
+                        context, branchId, chainRootId: 0, currentParentId: 0, candidate, schemeId: schemeId);
                     if (conflict == null)
                     {
                         return candidate;
@@ -209,11 +209,22 @@ namespace Bhisi.Api.Helpers
             }
         }
 
+        private static string FormatConflictScopeText(FdAccount conflict, int targetSchemeId)
+        {
+            string schemeLabel = !string.IsNullOrWhiteSpace(conflict.FdScheme?.SchemeName)
+                ? $" ({conflict.FdScheme!.SchemeName})"
+                : string.Empty;
+            return conflict.FdSchemeID == targetSchemeId
+                ? $"त्याच योजनेतील{schemeLabel} "
+                : $"वेगळ्या योजनेतील{schemeLabel} CBS खाते ";
+        }
+
         /// <summary>
         /// Strict Zero-Fallback policy engine for FD renewal ReceiptNo & LegacyAccountNumber.
         /// Validates requested mode against Sanstha policy and AllowManualReceiptNoOnRenewal,
-        /// permits same-chain propagation across RootFdAccountID, and blocks collisions with any
-        /// unrelated live (Active/Matured) FD ReceiptNo, AccountNo, or LegacyAccountNumber.
+        /// permits same-chain propagation across RootFdAccountID, keeps 14-digit CBS AccountNo
+        /// unique branch-wide, and scopes ReceiptNo/LegacyAccountNumber conflict detection to
+        /// the target scheme (BranchID + FdSchemeID).
         /// </summary>
         public static async Task<ResolvedRenewalReceiptResult> ResolveRenewalReceiptNumbersAsync(
             AppDbContext context,
@@ -261,14 +272,14 @@ namespace Bhisi.Api.Helpers
                     : null;
 
                 var conflict = await FindUnrelatedActiveReceiptConflictAsync(
-                    context, oldAccount.BranchID, rootId, oldAccount.FdAccountID, retainedReceipt);
+                    context, oldAccount.BranchID, rootId, oldAccount.FdAccountID, retainedReceipt, schemeId: targetSchemeId);
                 if (conflict != null)
                 {
                     return new ResolvedRenewalReceiptResult(
                         retainedReceipt,
                         retainedLegacy,
                         effectiveMode,
-                        $"मूळ पावती क्र. '{retainedReceipt}' आधीच दुसऱ्या सक्रिय ठेव खात्यावर ({conflict.AccountNo}) वापरला जात आहे.");
+                        $"मूळ पावती क्र. '{retainedReceipt}' आधीच {FormatConflictScopeText(conflict, targetSchemeId)}दुसऱ्या सक्रिय ठेव खात्यावर ({conflict.AccountNo}) वापरला जात आहे.");
                 }
 
                 return new ResolvedRenewalReceiptResult(retainedReceipt, retainedLegacy, effectiveMode, null);
@@ -277,14 +288,14 @@ namespace Bhisi.Api.Helpers
             if (effectiveMode == ModeCustom)
             {
                 var conflict = await FindUnrelatedActiveReceiptConflictAsync(
-                    context, oldAccount.BranchID, rootId, oldAccount.FdAccountID, trimmedCustom);
+                    context, oldAccount.BranchID, rootId, oldAccount.FdAccountID, trimmedCustom, schemeId: targetSchemeId);
                 if (conflict != null)
                 {
                     return new ResolvedRenewalReceiptResult(
                         trimmedCustom,
                         trimmedCustom,
                         effectiveMode,
-                        $"पावती क्रमांक '{trimmedCustom}' आधीच सक्रिय ठेव खाते क्र. '{conflict.AccountNo}' साठी नोंदवला आहे. कृपया वेगळा पावती क्रमांक द्या.");
+                        $"पावती क्रमांक '{trimmedCustom}' आधीच {FormatConflictScopeText(conflict, targetSchemeId)}सक्रिय ठेव खाते क्र. '{conflict.AccountNo}' साठी नोंदवला आहे. कृपया वेगळा पावती क्रमांक द्या.");
                 }
 
                 return new ResolvedRenewalReceiptResult(trimmedCustom, trimmedCustom, effectiveMode, null);
@@ -302,14 +313,14 @@ namespace Bhisi.Api.Helpers
                 : newCbsAccountNo.Trim();
 
             var newNoConflict = await FindUnrelatedActiveReceiptConflictAsync(
-                context, oldAccount.BranchID, rootId, oldAccount.FdAccountID, displayNewNo);
+                context, oldAccount.BranchID, rootId, oldAccount.FdAccountID, displayNewNo, schemeId: targetSchemeId);
             if (newNoConflict != null)
             {
                 return new ResolvedRenewalReceiptResult(
                     displayNewNo,
                     null,
                     PolicyNewReceipt,
-                    $"नवीन पावती क्र. '{displayNewNo}' आधीच सक्रिय ठेव खाते क्र. '{newNoConflict.AccountNo}' साठी वापरला जात आहे.");
+                    $"नवीन पावती क्र. '{displayNewNo}' आधीच {FormatConflictScopeText(newNoConflict, targetSchemeId)}सक्रिय ठेव खाते क्र. '{newNoConflict.AccountNo}' साठी वापरला जात आहे.");
             }
 
             return new ResolvedRenewalReceiptResult(displayNewNo, null, PolicyNewReceipt, null);
@@ -320,12 +331,17 @@ namespace Bhisi.Api.Helpers
             int branchId,
             int chainRootId,
             int currentParentId,
-            string receiptNo)
+            string receiptNo,
+            int? schemeId = null)
         {
             var variants = FdRenewalRollbackHelper.BuildAccountNumberVariants(receiptNo);
             if (!variants.Any()) return null;
 
+            bool filterByScheme = schemeId.HasValue && schemeId.Value > 0;
+            int targetSchemeId = schemeId ?? 0;
+
             return await context.FdAccounts
+                .Include(a => a.FdScheme)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(a =>
                     a.BranchID == branchId &&
@@ -334,9 +350,14 @@ namespace Bhisi.Api.Helpers
                     a.Status != "Closed" &&
                     a.Status != "Renewed" &&
                     (
-                        (a.ReceiptNo != null && variants.Contains(a.ReceiptNo.Trim())) ||
                         (a.AccountNo != null && variants.Contains(a.AccountNo.Trim())) ||
-                        (a.LegacyAccountNumber != null && variants.Contains(a.LegacyAccountNumber.Trim()))
+                        (
+                            (!filterByScheme || a.FdSchemeID == targetSchemeId) &&
+                            (
+                                (a.ReceiptNo != null && variants.Contains(a.ReceiptNo.Trim())) ||
+                                (a.LegacyAccountNumber != null && variants.Contains(a.LegacyAccountNumber.Trim()))
+                            )
+                        )
                     ));
         }
     }

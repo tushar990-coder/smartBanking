@@ -49,6 +49,12 @@ namespace Bhisi.Api.Models
         public decimal PenaltyAmount { get; set; } = 0;
 
         [Column(TypeName = "decimal(18,2)")]
+        public decimal AccruedInterestReversed { get; set; } = 0;
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal InterestClawbackAmount { get; set; } = 0;
+
+        [Column(TypeName = "decimal(18,2)")]
         public decimal TdsAmount { get; set; } = 0;
 
         public int? TdsLedgerID { get; set; }

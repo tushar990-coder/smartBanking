@@ -2520,12 +2520,15 @@ namespace Bhisi.Api.Services
             HashSet<int> voucherIds,
             HashSet<string> voucherNos)
         {
+            var affectedInvIds = new HashSet<int>();
+
             // 8A. Investment Maturity
             var maturities = await _context.InvestmentMaturities
                 .Where(m => m.VoucherID.HasValue && voucherIds.Contains(m.VoucherID.Value))
                 .ToListAsync();
             foreach (var mat in maturities)
             {
+                affectedInvIds.Add(mat.InvestmentAccountID);
                 var inv = await _context.InvestmentAccounts.FindAsync(mat.InvestmentAccountID);
                 if (inv != null)
                 {
@@ -2541,6 +2544,7 @@ namespace Bhisi.Api.Services
                 .ToListAsync();
             foreach (var pre in prematures)
             {
+                affectedInvIds.Add(pre.InvestmentAccountID);
                 var inv = await _context.InvestmentAccounts.FindAsync(pre.InvestmentAccountID);
                 if (inv != null)
                 {
@@ -2551,7 +2555,6 @@ namespace Bhisi.Api.Services
             if (prematures.Any()) _context.InvestmentPrematureWithdrawals.RemoveRange(prematures);
 
             // 8C. Investment Interest Receipts & Accruals
-            var affectedInvIds = new HashSet<int>();
             var intReceipts = await _context.InvestmentInterestReceipts
                 .Where(r => r.VoucherID.HasValue && voucherIds.Contains(r.VoucherID.Value))
                 .ToListAsync();
@@ -2613,6 +2616,14 @@ namespace Bhisi.Api.Services
                     if (oldInv != null)
                     {
                         oldInv.Status = "Active";
+                        decimal accruedOnOld = await _context.InvestmentInterestAccruals
+                            .Where(a => a.InvestmentAccountID == oldInv.InvestmentAccountID)
+                            .SumAsync(a => (decimal?)a.InterestAmount) ?? 0m;
+                        decimal receivedOnOld = await _context.InvestmentInterestReceipts
+                            .Where(r => r.InvestmentAccountID == oldInv.InvestmentAccountID)
+                            .SumAsync(r => (decimal?)(r.GrossAmount > 0m ? r.GrossAmount : r.ReceivedAmount)) ?? 0m;
+                        decimal outReceivable = Math.Max(0m, oldInv.AccruedInterestTillMigration + accruedOnOld - receivedOnOld);
+                        oldInv.BookValue = Math.Round(oldInv.PrincipalAmount + outReceivable, 2, MidpointRounding.AwayFromZero);
                         _context.Entry(oldInv).State = EntityState.Modified;
                     }
 

@@ -394,7 +394,9 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
 
   const [customerLedger, setCustomerLedger] = useState<CustomerLedgerData | null>(null);
   const [selectedLedgerFdAccountId, setSelectedLedgerFdAccountId] = useState<number>(0);
+  const [savedSingleFdAccountId, setSavedSingleFdAccountId] = useState<number>(0);
   const [ledgerViewMode, setLedgerViewMode] = useState<'single' | 'consolidated'>('single');
+  const ledgerRequestSeqRef = useRef<number>(0);
   const [ledgerCustomerOptions, setLedgerCustomerOptions] = useState<FdLedgerCustomerOption[]>([]);
   const [ledgerAccountOptions, setLedgerAccountOptions] = useState<FdLedgerAccountOption[]>([]);
   const [ledgerOptionsError, setLedgerOptionsError] = useState<string>('');
@@ -487,6 +489,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       if (selectedCustomerID > 0 && !list.some((c) => c.customerID === selectedCustomerID)) {
         setSelectedCustomerID(0);
         setSelectedLedgerFdAccountId(0);
+        setSavedSingleFdAccountId(0);
         setCustomerLedger(null);
       }
     } catch (err: any) {
@@ -522,14 +525,14 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
   useEffect(() => {
     if (reportType === 'MemberLedger') {
       if (selectedCustomerID === -1 || selectedCustomerID > 0) {
-        fetchCustomerLedgerData(selectedCustomerID, selectedLedgerFdAccountId);
+        fetchCustomerLedgerData(selectedCustomerID);
       } else {
         setCustomerLedger(null);
       }
     } else if (reportType !== 'AccrualProvision') {
       fetchReportData();
     }
-  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, selectedLedgerFdAccountId, fromDate, toDate, asOfDate, voucherPassingStatus]);
+  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, fromDate, toDate, asOfDate, voucherPassingStatus]);
 
   const fetchReportData = async () => {
     setLoading(true);
@@ -584,21 +587,21 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     }
   };
 
-  const fetchCustomerLedgerData = async (customerId: number, fdAccId?: number) => {
+  const fetchCustomerLedgerData = async (customerId: number) => {
+    const reqSeq = ++ledgerRequestSeqRef.current;
     setLoading(true);
     try {
-      const activeFdAccId = fdAccId !== undefined ? fdAccId : selectedLedgerFdAccountId;
       const isAllMode = customerId === -1;
       const res = await axios.get('/api/Reports/fd-ledger-statement', {
         params: {
           branchID: branchID > 0 ? branchID : undefined,
           fdSchemeID: selectedSchemeId > 0 ? selectedSchemeId : undefined,
           customerID: !isAllMode && customerId > 0 ? customerId : undefined,
-          fdAccountId: !isAllMode && activeFdAccId > 0 ? activeFdAccId : undefined,
           fromDate: fromDate || undefined,
           toDate: toDate || undefined
         }
       });
+      if (reqSeq !== ledgerRequestSeqRef.current) return;
       const d = res.data;
       if (d) {
         const accounts: FdLedgerAccountItem[] = Array.isArray(d.accounts) ? d.accounts : [];
@@ -630,12 +633,115 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
         setCustomerLedger(null);
       }
     } catch (err) {
+      if (reqSeq !== ledgerRequestSeqRef.current) return;
       console.error('Error fetching FD customer ledger', err);
       setCustomerLedger(null);
     } finally {
-      setLoading(false);
+      if (reqSeq === ledgerRequestSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
+
+  const ledgerViewData = useMemo(() => {
+    if (!customerLedger) return null;
+
+    const baseGroups: FdSchemeLedgerGroup[] =
+      customerLedger.schemeGroups && customerLedger.schemeGroups.length > 0
+        ? customerLedger.schemeGroups
+        : [{
+            fdSchemeID: 0,
+            schemeName: customerLedger.selectedSchemeName || 'मुदत ठेव',
+            accountsCount: customerLedger.accounts.length,
+            totalDepositAmount: customerLedger.totalPrincipalInvested,
+            totalMaturityAmount: customerLedger.totalMaturityValue,
+            openingBalance: customerLedger.totalOpeningBalance ?? 0,
+            periodTotalDebit: customerLedger.totalPeriodDebit ?? 0,
+            periodTotalCredit: customerLedger.totalPeriodCredit ?? 0,
+            closingBalance: customerLedger.totalClosingBalance ?? 0,
+            accounts: customerLedger.accounts,
+            consolidated: {
+              accountsCount: customerLedger.accounts.length,
+              totalDepositAmount: customerLedger.totalPrincipalInvested,
+              totalMaturityAmount: customerLedger.totalMaturityValue,
+              openingBalance: customerLedger.totalOpeningBalance ?? 0,
+              periodTotalDebit: customerLedger.totalPeriodDebit ?? 0,
+              periodTotalCredit: customerLedger.totalPeriodCredit ?? 0,
+              closingBalance: customerLedger.totalClosingBalance ?? 0,
+              transactions: []
+            }
+          }];
+
+    const hasValidReceiptFilter =
+      ledgerViewMode === 'single' &&
+      selectedLedgerFdAccountId > 0 &&
+      customerLedger.accounts.some((a) => a.fdAccountID === selectedLedgerFdAccountId);
+
+    const visibleGroups = baseGroups
+      .map((grp) => {
+        const visibleAccounts = hasValidReceiptFilter
+          ? grp.accounts.filter((a) => a.fdAccountID === selectedLedgerFdAccountId)
+          : grp.accounts;
+
+        if (visibleAccounts.length === 0) return null;
+
+        const isSingle = ledgerViewMode === 'single';
+        const displayCount = isSingle
+          ? visibleAccounts.length
+          : (grp.consolidated?.accountsCount ?? grp.accountsCount);
+        const displayDeposit = isSingle
+          ? visibleAccounts.reduce((s, a) => s + Number(a.depositAmount || 0), 0)
+          : (grp.consolidated?.totalDepositAmount ?? grp.totalDepositAmount);
+        const displayOpening = isSingle
+          ? visibleAccounts.reduce((s, a) => s + Number(a.openingBalance ?? 0), 0)
+          : (grp.consolidated?.openingBalance ?? grp.openingBalance);
+        const displayDebit = isSingle
+          ? visibleAccounts.reduce((s, a) => s + Number(a.periodTotalDebit ?? 0), 0)
+          : (grp.consolidated?.periodTotalDebit ?? grp.periodTotalDebit);
+        const displayCredit = isSingle
+          ? visibleAccounts.reduce((s, a) => s + Number(a.periodTotalCredit ?? 0), 0)
+          : (grp.consolidated?.periodTotalCredit ?? grp.periodTotalCredit);
+        const displayClosing = isSingle
+          ? visibleAccounts.reduce((s, a) => s + Number(a.closingBalance ?? a.depositAmount ?? 0), 0)
+          : (grp.consolidated?.closingBalance ?? grp.closingBalance);
+
+        return {
+          ...grp,
+          visibleAccounts,
+          displayCount,
+          displayDeposit,
+          displayOpening,
+          displayDebit,
+          displayCredit,
+          displayClosing
+        };
+      })
+      .filter((g): g is NonNullable<typeof g> => g !== null);
+
+    const accountsCount = visibleGroups.reduce((s, g) => s + g.displayCount, 0);
+    const totalPrincipal = visibleGroups.reduce((s, g) => s + g.displayDeposit, 0);
+    const totalOpening = visibleGroups.reduce((s, g) => s + g.displayOpening, 0);
+    const totalDebit = visibleGroups.reduce((s, g) => s + g.displayDebit, 0);
+    const totalCredit = visibleGroups.reduce((s, g) => s + g.displayCredit, 0);
+    const totalClosing = visibleGroups.reduce((s, g) => s + g.displayClosing, 0);
+    const activeSingleAccount =
+      hasValidReceiptFilter && visibleGroups.length === 1 && visibleGroups[0].visibleAccounts.length === 1
+        ? visibleGroups[0].visibleAccounts[0]
+        : null;
+
+    return {
+      visibleGroups,
+      summary: {
+        accountsCount,
+        totalPrincipal,
+        totalOpening,
+        totalDebit,
+        totalCredit,
+        totalClosing
+      },
+      activeSingleAccount
+    };
+  }, [customerLedger, ledgerViewMode, selectedLedgerFdAccountId]);
 
   const filteredData = data
     .filter((row) => {
@@ -867,38 +973,16 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     }
 
     if (reportType === 'MemberLedger') {
-      if (!customerLedger || customerLedger.accounts.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
+      if (!customerLedger || !ledgerViewData || customerLedger.accounts.length === 0) {
+        return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
+      }
       const rows: any[] = [];
-      const groupsToExport: FdSchemeLedgerGroup[] =
-        customerLedger.schemeGroups && customerLedger.schemeGroups.length > 0
-          ? customerLedger.schemeGroups
-          : [{
-              fdSchemeID: 0,
-              schemeName: customerLedger.selectedSchemeName || 'मुदत ठेव',
-              accountsCount: customerLedger.accounts.length,
-              totalDepositAmount: customerLedger.totalPrincipalInvested,
-              totalMaturityAmount: customerLedger.totalMaturityValue,
-              openingBalance: customerLedger.totalOpeningBalance ?? 0,
-              periodTotalDebit: customerLedger.totalPeriodDebit ?? 0,
-              periodTotalCredit: customerLedger.totalPeriodCredit ?? 0,
-              closingBalance: customerLedger.totalClosingBalance ?? 0,
-              accounts: customerLedger.accounts,
-              consolidated: {
-                accountsCount: customerLedger.accounts.length,
-                totalDepositAmount: customerLedger.totalPrincipalInvested,
-                totalMaturityAmount: customerLedger.totalMaturityValue,
-                openingBalance: customerLedger.totalOpeningBalance ?? 0,
-                periodTotalDebit: customerLedger.totalPeriodDebit ?? 0,
-                periodTotalCredit: customerLedger.totalPeriodCredit ?? 0,
-                closingBalance: customerLedger.totalClosingBalance ?? 0,
-                transactions: []
-              }
-            }];
+      const groupsToExport = ledgerViewData.visibleGroups;
 
       if (ledgerViewMode === 'consolidated') {
         groupsToExport.forEach(grp => {
           rows.push({
-            'ठेव प्रकार': `=== ${grp.schemeName} (एकत्रित: ${grp.accountsCount} खाती) ===`,
+            'ठेव प्रकार': `=== ${grp.schemeName} (एकत्रित: ${grp.displayCount} खाती) ===`,
             'FD पावती क्र.': '',
             'जुनी पावती क्र.': '',
             'खातेदाराचे नाव': '',
@@ -929,7 +1013,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
 
           rows.push({
             'ठेव प्रकार': `${grp.schemeName} एकत्रित बेरीज:`,
-            'FD पावती क्र.': `${grp.accountsCount} खाती`,
+            'FD पावती क्र.': `${grp.displayCount} खाती`,
             'जुनी पावती क्र.': '',
             'खातेदाराचे नाव': '',
             'CIF क्र.': '',
@@ -943,9 +1027,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
         });
       } else {
         groupsToExport.forEach(grp => {
-          const accountsToExport = selectedLedgerFdAccountId > 0
-            ? grp.accounts.filter(a => a.fdAccountID === selectedLedgerFdAccountId)
-            : grp.accounts;
+          const accountsToExport = grp.visibleAccounts;
 
           accountsToExport.forEach(acc => {
             const custDisplay = acc.customerName || customerLedger.customerName;
@@ -1270,7 +1352,9 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       );
     }
 
-    if (reportType === 'MemberLedger' && customerLedger) {
+    if (reportType === 'MemberLedger' && customerLedger && ledgerViewData) {
+      const { summary, activeSingleAccount } = ledgerViewData;
+      const isSingleMode = ledgerViewMode === 'single';
       return (
         <div className="border border-slate-900 bg-white p-2 my-1 text-xs">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
@@ -1282,22 +1366,38 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             </div>
             <div className="border-r border-slate-300 pr-2">
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">
-                {customerLedger.isAllCustomers ? 'ठेव प्रकार / सादर पद्धत' : 'CIF क्र. / मोबाईल'}
+                {customerLedger.isAllCustomers ? 'ठेव प्रकार / प्रदर्शन पद्धत' : 'CIF क्र. / मोबाईल'}
               </span>
               <strong className="text-primary font-mono text-xs">
                 {customerLedger.isAllCustomers
-                  ? `${customerLedger.selectedSchemeName || 'सर्व प्रकार'} (${ledgerViewMode === 'consolidated' ? 'एकत्रित' : 'वेगवेगळी'})`
+                  ? `${customerLedger.selectedSchemeName || 'सर्व प्रकार'} (${isSingleMode ? 'सिंगल खातेनिहाय' : 'एकत्रित'})`
                   : `${customerLedger.cifNo || '-'}${customerLedger.legacyCustomerNo ? ` (जुना: ${customerLedger.legacyCustomerNo})` : ''} | ${customerLedger.mobileNo || '-'}`}
               </strong>
             </div>
             <div className="border-r border-slate-300 pr-2">
-              <span className="text-slate-500 block text-[9.5px] uppercase font-bold">एकूण FD खाती</span>
-              <strong className="text-blue-700 font-mono text-xs">{customerLedger.totalFDAccountsCount} खाती</strong>
+              <span className="text-slate-500 block text-[9.5px] uppercase font-bold">
+                {activeSingleAccount
+                  ? 'निवडलेली FD पावती (सिंगल)'
+                  : isSingleMode
+                  ? 'सिंगल (खातेनिहाय) खाती'
+                  : 'एकत्रित समाविष्ट खाती'}
+              </span>
+              <strong className="text-blue-700 font-mono text-xs">
+                {activeSingleAccount
+                  ? `${activeSingleAccount.accountNo}${activeSingleAccount.legacyAccountNumber ? ` (जुनी: ${activeSingleAccount.legacyAccountNumber})` : ''}`
+                  : `${summary.accountsCount} खाती`}
+              </strong>
             </div>
             <div>
-              <span className="text-slate-500 block text-[9.5px] uppercase font-bold">एकूण ठेव मुद्दल / शिल्लक</span>
+              <span className="text-slate-500 block text-[9.5px] uppercase font-bold">
+                {activeSingleAccount
+                  ? 'पावती मुद्दल / अखेर शिल्लक'
+                  : isSingleMode
+                  ? 'सिंगल खाती मुद्दल / शिल्लक'
+                  : 'एकत्रित ठेव मुद्दल / शिल्लक'}
+              </span>
               <strong className="text-emerald-700 font-mono text-xs">
-                ₹ {fmtCurrency(customerLedger.totalPrincipalInvested)} / ₹ {fmtCurrency(customerLedger.totalClosingBalance ?? customerLedger.totalPrincipalInvested)}
+                ₹ {fmtCurrency(summary.totalPrincipal)} / ₹ {fmtCurrency(summary.totalClosing)}
               </strong>
             </div>
           </div>
@@ -1524,7 +1624,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
 
   const selectedLedgerOption = useMemo(() => {
     if (selectedCustomerID === -1) return ledgerAllOptions[0] || null;
-    if (selectedCustomerID > 0 && selectedLedgerFdAccountId > 0) {
+    if (selectedCustomerID > 0 && ledgerViewMode === 'single' && selectedLedgerFdAccountId > 0) {
       const matchedAcc = ledgerAllOptions.find(
         (o) => o.kind === 'account' && o.account?.fdAccountID === selectedLedgerFdAccountId
       );
@@ -1534,7 +1634,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       return ledgerAllOptions.find((o) => o.kind === 'customer' && o.customer?.customerID === selectedCustomerID) || null;
     }
     return null;
-  }, [ledgerAllOptions, selectedCustomerID, selectedLedgerFdAccountId]);
+  }, [ledgerAllOptions, selectedCustomerID, selectedLedgerFdAccountId, ledgerViewMode]);
 
   const extraToolbarControls = (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -1588,6 +1688,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
               const nextSchemeId = parseInt(e.target.value, 10);
               setSelectedSchemeId(nextSchemeId);
               setSelectedLedgerFdAccountId(0);
+              setSavedSingleFdAccountId(0);
             }}
             className="h-5 text-[10.5px] font-bold border-none bg-transparent focus:ring-0 p-0 text-slate-900 cursor-pointer max-w-[160px]"
           >
@@ -1620,22 +1721,26 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                 if (!opt) {
                   setSelectedCustomerID(0);
                   setSelectedLedgerFdAccountId(0);
+                  setSavedSingleFdAccountId(0);
                   return;
                 }
                 if (opt.kind === 'all') {
                   setSelectedCustomerID(-1);
                   setSelectedLedgerFdAccountId(0);
+                  setSavedSingleFdAccountId(0);
                   return;
                 }
                 if (opt.kind === 'account' && opt.account) {
                   setLedgerViewMode('single');
                   setSelectedCustomerID(opt.account.customerID);
                   setSelectedLedgerFdAccountId(opt.account.fdAccountID);
+                  setSavedSingleFdAccountId(opt.account.fdAccountID);
                   return;
                 }
                 if (opt.kind === 'customer' && opt.customer) {
                   setSelectedCustomerID(opt.customer.customerID);
                   setSelectedLedgerFdAccountId(0);
+                  setSavedSingleFdAccountId(0);
                 }
               }}
               options={ledgerFilteredSortedOptions}
@@ -1770,7 +1875,16 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           >
             <button
               type="button"
-              onClick={() => setLedgerViewMode('single')}
+              onClick={() => {
+                setLedgerViewMode('single');
+                if (
+                  selectedLedgerFdAccountId === 0 &&
+                  savedSingleFdAccountId > 0 &&
+                  customerLedger?.accounts.some((a) => a.fdAccountID === savedSingleFdAccountId)
+                ) {
+                  setSelectedLedgerFdAccountId(savedSingleFdAccountId);
+                }
+              }}
               className={`px-2 py-0.5 rounded-xs font-bold text-[10.5px] cursor-pointer transition-colors ${
                 ledgerViewMode === 'single'
                   ? 'bg-primary text-white shadow-2xs'
@@ -1782,6 +1896,9 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             <button
               type="button"
               onClick={() => {
+                if (selectedLedgerFdAccountId > 0) {
+                  setSavedSingleFdAccountId(selectedLedgerFdAccountId);
+                }
                 setLedgerViewMode('consolidated');
                 setSelectedLedgerFdAccountId(0);
               }}
@@ -1801,7 +1918,11 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
               <label className="text-[10px] text-slate-600 font-semibold whitespace-nowrap">पावती:</label>
               <select
                 value={selectedLedgerFdAccountId}
-                onChange={(e) => setSelectedLedgerFdAccountId(Number(e.target.value))}
+                onChange={(e) => {
+                  const nextAccId = Number(e.target.value);
+                  setSelectedLedgerFdAccountId(nextAccId);
+                  setSavedSingleFdAccountId(nextAccId);
+                }}
                 className="h-5 text-[10.5px] font-bold border-none bg-transparent focus:ring-0 p-0 text-slate-900 cursor-pointer max-w-[170px]"
               >
                 <option value={0}>सर्व पावत्या ({customerLedger.accounts.length})</option>
@@ -1931,7 +2052,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             if (reportType === 'MemberLedger') {
               fetchLedgerCustomerOptions(branchID, selectedSchemeId);
               if (selectedCustomerID === -1 || selectedCustomerID > 0) {
-                fetchCustomerLedgerData(selectedCustomerID, selectedLedgerFdAccountId);
+                fetchCustomerLedgerData(selectedCustomerID);
               }
             } else {
               fetchReportData();
@@ -2274,131 +2395,72 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       {/* ============================================================
           VIEW 2: MEMBER LEDGER (४. मुदत ठेव खातावणी विवरणपत्र)
           ============================================================ */}
-      {reportType === 'MemberLedger' && customerLedger && (
-        <div className="space-y-4">
-          {/* Member / All-Accounts Details CBS Header */}
-          <div className="border border-slate-900 p-2.5 my-2 bg-slate-50/70 rounded-xs text-[11px]">
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-              <div>
-                <span className="text-slate-500 block text-[10px]">
-                  {customerLedger.isAllCustomers ? 'खातेदार व्याप्ती:' : 'खातेदाराचे नाव:'}
+      {reportType === 'MemberLedger' && customerLedger && ledgerViewData && (
+        <div
+          key={`fd-ledger-${ledgerViewMode}-${selectedCustomerID}-${selectedLedgerFdAccountId}`}
+          className="space-y-3"
+        >
+          {/* Compact View Mode, Address & Period Strip (non-duplicating) */}
+          <div className="border border-slate-300 px-2.5 py-1.5 bg-slate-50/70 rounded-xs text-[10.5px] flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-slate-700">
+              <span
+                className={`px-2 py-0.5 rounded font-bold border ${
+                  ledgerViewMode === 'consolidated'
+                    ? 'bg-indigo-50 text-indigo-900 border-indigo-300'
+                    : 'bg-primary/10 text-primary border-primary/30'
+                }`}
+              >
+                {ledgerViewMode === 'consolidated'
+                  ? 'प्रदर्शन: एकत्रित खातावणी (Consolidated)'
+                  : ledgerViewData.activeSingleAccount
+                  ? `प्रदर्शन: सिंगल पावती (${ledgerViewData.activeSingleAccount.accountNo})`
+                  : 'प्रदर्शन: सिंगल (खातेनिहाय)'}
+              </span>
+              {customerLedger.address && !customerLedger.isAllCustomers && (
+                <span>
+                  <strong className="text-slate-800">पत्ता:</strong> {customerLedger.address}
                 </span>
-                <strong className="text-slate-950 text-xs">{customerLedger.customerName}</strong>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[10px]">
-                  {customerLedger.isAllCustomers ? 'निवडलेला ठेव प्रकार:' : 'ग्राहक क्र. (CIF):'}
-                </span>
-                <strong className="text-primary font-mono">
-                  {customerLedger.isAllCustomers
-                    ? (customerLedger.selectedSchemeName || 'सर्व ठेव प्रकार')
-                    : `${customerLedger.cifNo || '-'}${customerLedger.legacyCustomerNo ? ` (जुना: ${customerLedger.legacyCustomerNo})` : ''}`}
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[10px]">
-                  {customerLedger.isAllCustomers ? 'प्रदर्शन पद्धत:' : 'मोबाईल क्र.:'}
-                </span>
-                <strong className="text-slate-800 font-mono">
-                  {customerLedger.isAllCustomers
-                    ? (ledgerViewMode === 'consolidated' ? 'एकत्रित (Consolidated)' : 'सिंगल (खातेनिहाय)')
-                    : (customerLedger.mobileNo || '-')}
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[10px]">एकूण FD खाती:</span>
-                <strong className="text-slate-900 font-mono">{customerLedger.totalFDAccountsCount}</strong>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[10px]">एकूण ठेव मुद्दल / शिल्लक:</span>
-                <strong className="text-emerald-800 font-mono">
-                  ₹ {fmtCurrency(customerLedger.totalPrincipalInvested)} / ₹ {fmtCurrency(customerLedger.totalClosingBalance ?? customerLedger.totalPrincipalInvested)}
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[10px]">कालावधी / तारीख:</span>
-                <strong className="text-slate-700 font-mono text-[10px]">
-                  {customerLedger.fromDate || customerLedger.toDate
-                    ? `${customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : 'आरंभ'} ते ${customerLedger.toDate ? formatDisplayDate(customerLedger.toDate) : 'आज'}`
-                    : 'संपूर्ण खातावणी'}
-                </strong>
-              </div>
+              )}
             </div>
-            {customerLedger.address && !customerLedger.isAllCustomers && (
-              <div className="mt-1.5 pt-1.5 border-t border-slate-300 text-[10px] text-slate-600 flex items-center gap-1">
-                <span className="font-semibold text-slate-700">पत्ता:</span>
-                <span>{customerLedger.address}</span>
-              </div>
-            )}
+            <div className="font-mono text-slate-700">
+              <strong className="font-sans text-slate-800">कालावधी: </strong>
+              {customerLedger.fromDate || customerLedger.toDate
+                ? `${customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : 'आरंभ'} ते ${customerLedger.toDate ? formatDisplayDate(customerLedger.toDate) : 'आज'}`
+                : 'संपूर्ण खातावणी'}
+            </div>
           </div>
 
           {/* Scheme-grouped Ledger Content */}
-          {(() => {
-            const schemeGroups: FdSchemeLedgerGroup[] =
-              customerLedger.schemeGroups && customerLedger.schemeGroups.length > 0
-                ? customerLedger.schemeGroups
-                : [{
-                    fdSchemeID: 0,
-                    schemeName: customerLedger.selectedSchemeName || 'मुदत ठेव',
-                    accountsCount: customerLedger.accounts.length,
-                    totalDepositAmount: customerLedger.totalPrincipalInvested,
-                    totalMaturityAmount: customerLedger.totalMaturityValue,
-                    openingBalance: customerLedger.totalOpeningBalance ?? 0,
-                    periodTotalDebit: customerLedger.totalPeriodDebit ?? 0,
-                    periodTotalCredit: customerLedger.totalPeriodCredit ?? 0,
-                    closingBalance: customerLedger.totalClosingBalance ?? 0,
-                    accounts: customerLedger.accounts,
-                    consolidated: {
-                      accountsCount: customerLedger.accounts.length,
-                      totalDepositAmount: customerLedger.totalPrincipalInvested,
-                      totalMaturityAmount: customerLedger.totalMaturityValue,
-                      openingBalance: customerLedger.totalOpeningBalance ?? 0,
-                      periodTotalDebit: customerLedger.totalPeriodDebit ?? 0,
-                      periodTotalCredit: customerLedger.totalPeriodCredit ?? 0,
-                      closingBalance: customerLedger.totalClosingBalance ?? 0,
-                      transactions: []
-                    }
-                  }];
+          {ledgerViewData.visibleGroups.length === 0 ? (
+            <div className="p-4 text-center text-slate-500 border border-slate-300 rounded bg-white">
+              निवडलेल्या ठेव प्रकारानुसार कोणतीही मुदत ठेव खाती आढळली नाहीत.
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {ledgerViewData.visibleGroups.map((grp, gIdx) => {
+                const visibleAccounts = grp.visibleAccounts;
 
-            if (customerLedger.accounts.length === 0) {
-              return (
-                <div className="p-4 text-center text-slate-500 border border-slate-300 rounded bg-white">
-                  निवडलेल्या ठेव प्रकारानुसार कोणतीही मुदत ठेव खाती आढळली नाहीत.
-                </div>
-              );
-            }
-
-            return (
-              <div className="space-y-5">
-                {schemeGroups.map((grp, gIdx) => {
-                  const visibleAccounts =
-                    ledgerViewMode === 'single' && selectedLedgerFdAccountId > 0
-                      ? grp.accounts.filter((a) => a.fdAccountID === selectedLedgerFdAccountId)
-                      : grp.accounts;
-
-                  if (visibleAccounts.length === 0) return null;
-
-                  return (
-                    <div key={grp.fdSchemeID || gIdx} className="space-y-2.5">
-                      {/* Scheme Section Header (shown when multiple schemes, All Accounts, or Consolidated view) */}
-                      {(schemeGroups.length > 1 || customerLedger.isAllCustomers || ledgerViewMode === 'consolidated') && (
-                        <div className="flex flex-wrap items-center justify-between gap-2 bg-primary/10 border border-primary/40 border-l-4 border-l-primary px-3 py-1.5 rounded-xs text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-primary">
-                              ठेव प्रकार: {grp.schemeName} {grp.schemeCode ? `(${grp.schemeCode})` : ''}
-                            </span>
-                            <span className="px-1.5 py-0.2 bg-white text-slate-800 border border-slate-300 rounded font-mono font-bold text-[10px]">
-                              {grp.accountsCount} खाती
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono font-bold">
-                            <span className="text-slate-700">मुद्दल: ₹ {fmtCurrency(grp.totalDepositAmount)}</span>
-                            <span className="text-rose-800">नावे: ₹ {fmtCurrency(grp.periodTotalDebit)}</span>
-                            <span className="text-emerald-800">जमा: ₹ {fmtCurrency(grp.periodTotalCredit)}</span>
-                            <span className="text-blue-950">अखेर शिल्लक: ₹ {fmtCurrency(grp.closingBalance)}</span>
-                          </div>
+                return (
+                  <div key={`${ledgerViewMode}-${grp.fdSchemeID || gIdx}`} className="space-y-2.5">
+                    {/* Scheme Section Header (shown when multiple visible schemes, All Accounts, or Consolidated view) */}
+                    {(ledgerViewData.visibleGroups.length > 1 || customerLedger.isAllCustomers || ledgerViewMode === 'consolidated') && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-primary/10 border border-primary/40 border-l-4 border-l-primary px-3 py-1.5 rounded-xs text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-primary">
+                            ठेव प्रकार: {grp.schemeName} {grp.schemeCode ? `(${grp.schemeCode})` : ''}
+                          </span>
+                          <span className="px-1.5 py-0.2 bg-white text-slate-800 border border-slate-300 rounded font-mono font-bold text-[10px]">
+                            {grp.displayCount} खाती
+                          </span>
                         </div>
-                      )}
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono font-bold">
+                          <span className="text-slate-700">मुद्दल: ₹ {fmtCurrency(grp.displayDeposit)}</span>
+                          <span className="text-rose-800">नावे: ₹ {fmtCurrency(grp.displayDebit)}</span>
+                          <span className="text-emerald-800">जमा: ₹ {fmtCurrency(grp.displayCredit)}</span>
+                          <span className="text-blue-950">अखेर शिल्लक: ₹ {fmtCurrency(grp.displayClosing)}</span>
+                        </div>
+                      </div>
+                    )}
 
                       {ledgerViewMode === 'consolidated' ? (
                         <div className="border border-slate-900 rounded-xs overflow-hidden bg-white shadow-xs">
@@ -2834,28 +2896,27 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                           ))}
                         </>
                       )}
-                    </div>
-                  );
-                })}
-
-                {/* Grand Total Banner when multiple schemes are rendered */}
-                {schemeGroups.length > 1 && (
-                  <div className="border-2 border-slate-900 bg-slate-100 px-3 py-2 rounded-xs text-xs flex flex-wrap items-center justify-between gap-2 font-bold">
-                    <span className="text-slate-950">
-                      संपूर्ण ठेव प्रकार महाबेरीज ({schemeGroups.length} ठेव प्रकार | {customerLedger.totalFDAccountsCount} खाती):
-                    </span>
-                    <div className="flex flex-wrap items-center gap-4 font-mono">
-                      <span>मुद्दल: ₹ {fmtCurrency(customerLedger.totalPrincipalInvested)}</span>
-                      <span>आरंभी: ₹ {fmtCurrency(customerLedger.totalOpeningBalance ?? 0)}</span>
-                      <span className="text-rose-800">नावे: ₹ {fmtCurrency(customerLedger.totalPeriodDebit ?? 0)}</span>
-                      <span className="text-emerald-800">जमा: ₹ {fmtCurrency(customerLedger.totalPeriodCredit ?? 0)}</span>
-                      <span className="text-blue-950 text-sm">अखेर शिल्लक: ₹ {fmtCurrency(customerLedger.totalClosingBalance ?? 0)}</span>
-                    </div>
                   </div>
-                )}
-              </div>
-            );
-          })()}
+                );
+              })}
+
+              {/* Grand Total Banner when multiple visible schemes are rendered */}
+              {ledgerViewData.visibleGroups.length > 1 && (
+                <div className="border-2 border-slate-900 bg-slate-100 px-3 py-2 rounded-xs text-xs flex flex-wrap items-center justify-between gap-2 font-bold">
+                  <span className="text-slate-950">
+                    संपूर्ण ठेव प्रकार महाबेरीज ({ledgerViewData.visibleGroups.length} ठेव प्रकार | {ledgerViewData.summary.accountsCount} खाती):
+                  </span>
+                  <div className="flex flex-wrap items-center gap-4 font-mono">
+                    <span>मुद्दल: ₹ {fmtCurrency(ledgerViewData.summary.totalPrincipal)}</span>
+                    <span>आरंभी: ₹ {fmtCurrency(ledgerViewData.summary.totalOpening)}</span>
+                    <span className="text-rose-800">नावे: ₹ {fmtCurrency(ledgerViewData.summary.totalDebit)}</span>
+                    <span className="text-emerald-800">जमा: ₹ {fmtCurrency(ledgerViewData.summary.totalCredit)}</span>
+                    <span className="text-blue-950 text-sm">अखेर शिल्लक: ₹ {fmtCurrency(ledgerViewData.summary.totalClosing)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -1272,5 +1272,313 @@ namespace Bhisi.Api.Tests
             Assert.IsType<BadRequestObjectResult>(zeroRate);
             Assert.Equal("Matured", (await db.FdAccounts.FindAsync(983))!.Status);
         }
+
+        [Fact]
+        public async Task RetainOriginal_And_Custom_AllowSameReceiptNoAcrossDifferentFdSchemes_ButBlockSameSchemeConflict()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 27);
+            var (_, custA, custB) = await SeedBaseFdEnvironmentAsync(db, "RETAIN_ORIGINAL", allowManual: true, businessDate);
+
+            db.FdSchemes.Add(new FdScheme
+            {
+                FdSchemeID = 3,
+                SchemeCode = "FD403",
+                SchemeName = "मासिक ठेव योजना",
+                DurationMonths = 13,
+                DurationType = "Months",
+                SchemeDurationModel = "Fixed",
+                InterestRate = 9.00m,
+                SeniorCitizenInterestRate = 9.50m,
+                InterestType = "Simple",
+                PrematureInterestRate = 7.00m,
+                FdLiabilityLedgerID = 101,
+                InterestPayableLedgerID = 102,
+                InterestExpenseLedgerID = 103,
+                IsActive = true
+            });
+
+            // Scheme 1 Matured FD (#182) with legacy/receipt "1471" AND Scheme 3 active FD ("001-403-0000768-3") ALSO with "1471"
+            db.FdAccounts.AddRange(
+                new FdAccount
+                {
+                    FdAccountID = 182,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0000182-1",
+                    ReceiptNo = "1471",
+                    LegacyAccountNumber = "1471",
+                    OpeningDate = new DateTime(2025, 3, 22),
+                    MaturityDate = new DateTime(2026, 4, 22),
+                    DurationType = "Months",
+                    DurationValue = 13,
+                    DurationInDays = 396,
+                    DepositAmount = 54870m,
+                    MaturityAmount = 60214m,
+                    InterestRate = 9m,
+                    Status = "Matured"
+                },
+                new FdAccount
+                {
+                    FdAccountID = 768,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custB.CustomerID,
+                    FdSchemeID = 3,
+                    AccountNo = "001-403-0000768-3",
+                    ReceiptNo = "1471",
+                    LegacyAccountNumber = "1471",
+                    OpeningDate = new DateTime(2026, 1, 1),
+                    MaturityDate = new DateTime(2027, 2, 1),
+                    DurationType = "Months",
+                    DurationValue = 13,
+                    DurationInDays = 396,
+                    DepositAmount = 50000m,
+                    MaturityAmount = 54500m,
+                    InterestRate = 9m,
+                    Status = "Active"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            var controller = new FdAccountsController(db);
+            AttachUser(controller, BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate));
+
+            // 1. Renewing #182 into TargetSchemeID = 1 under RETAIN_ORIGINAL MUST SUCCEED despite Scheme 3 holding active "1471"
+            var retainRes = await controller.Renew(182, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 13,
+                ReceiptNoMode = "RETAIN_ORIGINAL"
+            });
+            var retainJson = ParseOkJson(retainRes);
+            Assert.Equal("1471", retainJson.GetProperty("NewReceiptNo").GetString());
+            int newFdId = retainJson.GetProperty("NewFdAccountId").GetInt32();
+            var newFd = await db.FdAccounts.FindAsync(newFdId);
+            Assert.Equal("1471", newFd!.ReceiptNo);
+            Assert.Equal("1471", newFd.LegacyAccountNumber);
+
+            // 2. Trying to renew ANOTHER Scheme 1 FD (#183) with ReceiptNo "1471" (RETAIN_ORIGINAL) MUST BE BLOCKED because Scheme 1 now has active #newFdId
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 183,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = custB.CustomerID,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000183-9",
+                ReceiptNo = "1471",
+                LegacyAccountNumber = "1471",
+                OpeningDate = new DateTime(2025, 4, 1),
+                MaturityDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                DurationInDays = 365,
+                DepositAmount = 20000m,
+                MaturityAmount = 22000m,
+                InterestRate = 9m,
+                Status = "Matured"
+            });
+            await db.SaveChangesAsync();
+
+            var sameSchemeBlocked = await controller.Renew(183, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                ReceiptNoMode = "RETAIN_ORIGINAL"
+            });
+            Assert.IsType<BadRequestObjectResult>(sameSchemeBlocked);
+
+            // 3. Cross-scheme target switch: Renewing Scheme 1 FD (#184) with "1471" INTO TargetSchemeID = 3 MUST BE BLOCKED because Scheme 3 already has active "1471"
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 184,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = custA.CustomerID,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000184-7",
+                ReceiptNo = "1471",
+                LegacyAccountNumber = "1471",
+                OpeningDate = new DateTime(2025, 4, 1),
+                MaturityDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                DurationInDays = 365,
+                DepositAmount = 25000m,
+                MaturityAmount = 27500m,
+                InterestRate = 9m,
+                Status = "Matured"
+            });
+            await db.SaveChangesAsync();
+
+            var crossTargetBlocked = await controller.Renew(184, new FdRenewalRequest
+            {
+                TargetSchemeID = 3,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 13,
+                ReceiptNoMode = "RETAIN_ORIGINAL"
+            });
+            Assert.IsType<BadRequestObjectResult>(crossTargetBlocked);
+
+            // 4. HYBRID_CHOICE + CUSTOM reusing another scheme's receipt ("9901" exists only in Scheme 3) in Scheme 1 MUST SUCCEED
+            var sanstha = await db.SansthaDetails.FirstAsync();
+            sanstha.FdRenewalReceiptPolicy = "HYBRID_CHOICE";
+            sanstha.AllowManualReceiptNoOnRenewal = true;
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 1769,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = custB.CustomerID,
+                FdSchemeID = 3,
+                AccountNo = "001-403-0000769-1",
+                ReceiptNo = "9901",
+                LegacyAccountNumber = "9901",
+                OpeningDate = new DateTime(2026, 2, 1),
+                MaturityDate = new DateTime(2027, 2, 1),
+                DepositAmount = 15000m,
+                InterestRate = 9m,
+                Status = "Active"
+            });
+            await db.SaveChangesAsync();
+
+            var customCrossSchemeOk = await controller.Renew(184, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                ReceiptNoMode = "CUSTOM",
+                CustomReceiptNo = "9901"
+            });
+            var customJson = ParseOkJson(customCrossSchemeOk);
+            Assert.Equal("9901", customJson.GetProperty("NewReceiptNo").GetString());
+        }
+
+        [Fact]
+        public async Task NextLegacy_And_PostFdAccount_ScopeReceiptConflictsToTargetScheme_WhileKeeping14DigitCbsBranchUnique()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 27);
+            var (_, custA, custB) = await SeedBaseFdEnvironmentAsync(db, "NEXT_LEGACY", allowManual: true, businessDate);
+
+            db.FdSchemes.Add(new FdScheme
+            {
+                FdSchemeID = 3,
+                SchemeCode = "FD403",
+                SchemeName = "मासिक ठेव योजना",
+                DurationMonths = 12,
+                DurationType = "Months",
+                SchemeDurationModel = "Fixed",
+                InterestRate = 9.00m,
+                SeniorCitizenInterestRate = 9.50m,
+                InterestType = "Simple",
+                PrematureInterestRate = 7.00m,
+                FdLiabilityLedgerID = 101,
+                InterestPayableLedgerID = 102,
+                InterestExpenseLedgerID = 103,
+                IsActive = true
+            });
+
+            db.FdAccounts.AddRange(
+                new FdAccount
+                {
+                    FdAccountID = 801,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0000801-1",
+                    ReceiptNo = "10",
+                    LegacyAccountNumber = "10",
+                    OpeningDate = new DateTime(2025, 4, 27),
+                    MaturityDate = businessDate,
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 20000m,
+                    MaturityAmount = 22000m,
+                    InterestRate = 10m,
+                    Status = "Active"
+                },
+                // ReceiptNo "11" is ONLY occupied in Scheme 3, NOT in Scheme 1
+                new FdAccount
+                {
+                    FdAccountID = 802,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custB.CustomerID,
+                    FdSchemeID = 3,
+                    AccountNo = "001-403-0000802-9",
+                    ReceiptNo = "11",
+                    LegacyAccountNumber = "11",
+                    OpeningDate = new DateTime(2026, 1, 1),
+                    MaturityDate = new DateTime(2027, 1, 1),
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 30000m,
+                    MaturityAmount = 32700m,
+                    InterestRate = 9m,
+                    Status = "Active"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            // 1. Next legacy generation for Scheme 1 should yield "11" (not skip because of Scheme 3)
+            string nextScheme1Legacy = await FdRenewalPolicyHelper.GenerateNextLegacyAccountNoAsync(db, branchId: 1, schemeId: 1);
+            Assert.Equal("11", nextScheme1Legacy);
+
+            // 2. PostFdAccount for Scheme 1 reusing ReceiptNo "11" (used only in Scheme 3) MUST SUCCEED
+            var controller = new FdAccountsController(db);
+            AttachUser(controller, BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate));
+
+            var newOpenCrossSchemeOk = await controller.PostFdAccount(new FdAccount
+            {
+                BranchID = 1,
+                CustomerID = custA.CustomerID,
+                FdSchemeID = 1,
+                ReceiptNo = "11",
+                DepositAmount = 15000m,
+                OpeningDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                PaymentMode = "Cash"
+            });
+            Assert.IsType<CreatedAtActionResult>(newOpenCrossSchemeOk.Result);
+
+            // 3. PostFdAccount for Scheme 1 trying to reuse ReceiptNo "10" (same scheme) MUST BE BLOCKED
+            var newOpenSameSchemeBlocked = await controller.PostFdAccount(new FdAccount
+            {
+                BranchID = 1,
+                CustomerID = custB.CustomerID,
+                FdSchemeID = 1,
+                ReceiptNo = "10",
+                DepositAmount = 15000m,
+                OpeningDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                PaymentMode = "Cash"
+            });
+            Assert.IsType<BadRequestObjectResult>(newOpenSameSchemeBlocked.Result);
+
+            // 4. Attempting CUSTOM renewal in Scheme 1 using Scheme 3's 14-digit CBS AccountNo MUST STILL BE BLOCKED branch-wide
+            var cbsConflict = await FdRenewalPolicyHelper.FindUnrelatedActiveReceiptConflictAsync(
+                db, branchId: 1, chainRootId: 0, currentParentId: 801, receiptNo: "00140300008029", schemeId: 1);
+            Assert.NotNull(cbsConflict);
+            Assert.Equal(802, cbsConflict!.FdAccountID);
+        }
     }
 }

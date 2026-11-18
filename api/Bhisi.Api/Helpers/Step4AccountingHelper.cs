@@ -984,7 +984,8 @@ namespace Bhisi.Api.Helpers
             string? referenceNo,
             decimal interestPayoutAmount,
             decimal tdsAmount = 0m,
-            int? tdsLedgerId = null)
+            int? tdsLedgerId = null,
+            string? narration = null)
         {
             if (oldMapping == null || oldMapping.InvestmentLedgerID <= 0)
             {
@@ -1058,16 +1059,20 @@ namespace Bhisi.Api.Helpers
             decimal totalReceiptsOnOld = await context.InvestmentInterestReceipts
                 .Where(r => r.InvestmentAccountID == oldAccount.InvestmentAccountID)
                 .SumAsync(r => (decimal?)(r.GrossAmount > 0m ? r.GrossAmount : r.ReceivedAmount)) ?? 0m;
-            decimal outstandingReceivable = Math.Max(0m, oldAccount.AccruedInterestTillMigration + totalAccruedOnOld - totalReceiptsOnOld);
+            decimal outstandingReceivable = Math.Max(0m, Math.Round(oldAccount.AccruedInterestTillMigration + totalAccruedOnOld - totalReceiptsOnOld, 2, MidpointRounding.AwayFromZero));
 
             decimal receivableCleared = (totalInterestRecognized > 0m && oldMapping.InterestReceivableLedgerID > 0)
                 ? Math.Min(totalInterestRecognized, outstandingReceivable)
                 : 0m;
-            decimal freshInterestIncome = totalInterestRecognized - receivableCleared;
+            decimal accruedInterestReversed = (outstandingReceivable > receivableCleared && oldMapping.InterestReceivableLedgerID > 0)
+                ? Math.Max(0m, Math.Round(outstandingReceivable - receivableCleared, 2, MidpointRounding.AwayFromZero))
+                : 0m;
+            decimal totalReceivableCr = Math.Round(receivableCleared + accruedInterestReversed, 2, MidpointRounding.AwayFromZero);
+            decimal freshInterestIncome = Math.Max(0m, Math.Round(totalInterestRecognized - receivableCleared, 2, MidpointRounding.AwayFromZero));
 
-            if (freshInterestIncome > 0m && oldMapping.InterestIncomeLedgerID <= 0)
+            if ((freshInterestIncome > 0m || accruedInterestReversed > 0m) && oldMapping.InterestIncomeLedgerID <= 0)
             {
-                throw new InvalidOperationException($"गुंतवणूक व्याजाचे भांडवलीकरण/जमा करण्यासाठी योजनेला 'Interest Income Ledger' जोडलेले नाही.");
+                throw new InvalidOperationException($"गुंतवणूक व्याजाचे भांडवलीकरण/जमा किंवा रिव्हर्सल करण्यासाठी योजनेला 'Interest Income Ledger' जोडलेले नाही.");
             }
 
             bool hasCashOrBankLeg = totalCashOrBankReceived > 0m;
@@ -1075,8 +1080,10 @@ namespace Bhisi.Api.Helpers
             string prefix = hasCashOrBankLeg ? "REC-INV-REN-" : "JV-INV-REN-";
             string refSuffix = !string.IsNullOrWhiteSpace(referenceNo) ? $" [संदर्भ/UTR: {referenceNo.Trim()}]" : "";
             string tdsSuffix = tds > 0m ? $" [TDS कपात: ₹{tds:N2}]" : "";
+            string revSuffix = accruedInterestReversed > 0m ? $" [येणे व्याज रिव्हर्सल: ₹{accruedInterestReversed:N2}]" : "";
+            string noteSuffix = !string.IsNullOrWhiteSpace(narration) ? $" ({narration.Trim()})" : "";
 
-            decimal totalVoucherDr = newPrincipal + totalCashOrBankReceived + tds;
+            decimal totalVoucherDr = Math.Round(newPrincipal + totalCashOrBankReceived + tds + accruedInterestReversed, 2, MidpointRounding.AwayFromZero);
 
             var voucher = new Voucher
             {
@@ -1086,7 +1093,7 @@ namespace Bhisi.Api.Helpers
                 VoucherType = voucherType,
                 Status = "Pending",
                 TotalAmount = totalVoucherDr,
-                Narration = $"गुंतवणूक नूतनीकरण ({renewal.RenewalType}): जुने खाते {oldAccount.InvestmentNo} -> नवीन खाते {newAccount.InvestmentNo}{tdsSuffix}{refSuffix}",
+                Narration = $"गुंतवणूक नूतनीकरण ({renewal.RenewalType}): जुने खाते {oldAccount.InvestmentNo} -> नवीन खाते {newAccount.InvestmentNo}{revSuffix}{tdsSuffix}{refSuffix}{noteSuffix}",
                 CreatedBy = 1,
                 CreatedOn = DateTime.Now,
                 VoucherDetails = new List<VoucherDetail>()
@@ -1125,6 +1132,17 @@ namespace Bhisi.Api.Helpers
                 });
             }
 
+            // Dr Interest Income GL (Reverse Entry if prior Accrued Receivable > recognized interest)
+            if (accruedInterestReversed > 0m)
+            {
+                voucher.VoucherDetails.Add(new VoucherDetail
+                {
+                    LedgerID = oldMapping.InterestIncomeLedgerID,
+                    DrCr = "Dr",
+                    Amount = accruedInterestReversed
+                });
+            }
+
             // Cr Old Investment Asset GL
             if (oldPrincipal > 0m)
             {
@@ -1136,14 +1154,14 @@ namespace Bhisi.Api.Helpers
                 });
             }
 
-            // Cr Accrued Interest Receivable GL (clearing prior accruals)
-            if (receivableCleared > 0m)
+            // Cr Accrued Interest Receivable GL (clearing full prior accruals to zero)
+            if (totalReceivableCr > 0m)
             {
                 voucher.VoucherDetails.Add(new VoucherDetail
                 {
                     LedgerID = oldMapping.InterestReceivableLedgerID,
                     DrCr = "Cr",
-                    Amount = receivableCleared
+                    Amount = totalReceivableCr
                 });
             }
 

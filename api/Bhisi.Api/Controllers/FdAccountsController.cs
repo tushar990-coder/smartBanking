@@ -683,7 +683,7 @@ namespace Bhisi.Api.Controllers
             if (!string.IsNullOrWhiteSpace(account.ReceiptNo))
             {
                 var receiptConflict = await Helpers.FdRenewalPolicyHelper.FindUnrelatedActiveReceiptConflictAsync(
-                    _context, account.BranchID, chainRootId: 0, currentParentId: 0, account.ReceiptNo);
+                    _context, account.BranchID, chainRootId: 0, currentParentId: 0, account.ReceiptNo, schemeId: account.FdSchemeID);
                 if (receiptConflict != null)
                 {
                     return BadRequest($"पावती क्रमांक '{account.ReceiptNo.Trim()}' आधीच सक्रिय मुदत ठेव खाते क्र. '{receiptConflict.AccountNo}' साठी नोंदवला आहे. कृपया अद्वितीय पावती क्रमांक द्या.");

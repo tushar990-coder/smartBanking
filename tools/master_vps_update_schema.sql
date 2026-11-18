@@ -6821,6 +6821,16 @@ BEGIN
         ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [TdsLedgerID] INT NULL;
         PRINT 'Added TdsLedgerID to InvestmentPrematureWithdrawals';
     END
+    IF COL_LENGTH('InvestmentPrematureWithdrawals', 'AccruedInterestReversed') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [AccruedInterestReversed] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_InvestmentPrematureWithdrawals_AccruedIntReversed] DEFAULT 0.00;
+        PRINT 'Added AccruedInterestReversed to InvestmentPrematureWithdrawals';
+    END
+    IF COL_LENGTH('InvestmentPrematureWithdrawals', 'InterestClawbackAmount') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [InterestClawbackAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_InvestmentPrematureWithdrawals_InterestClawback] DEFAULT 0.00;
+        PRINT 'Added InterestClawbackAmount to InvestmentPrematureWithdrawals';
+    END
 END
 GO
 

@@ -644,19 +644,51 @@ export default function Sidebar({
           {isSidebarOpen && <span className="truncate">एन.पी.ए. विभाग</span>}
         </button>
 
-        {/* Legal Recovery 101 */}
+        {/* Legal Recovery 101 / 91 Expandable Module */}
         <button 
           onClick={() => handleNavigate('legal-recovery')}
-          title="कलम १०१ कायदेशीर वसुली"
-          className={`w-full flex items-center ${isSidebarOpen ? 'px-2.5 justify-start' : 'px-0 justify-center'} py-1 rounded-lg text-[11.5px] leading-snug transition-all duration-150 cursor-pointer group ${
-            isLegalActive 
-              ? 'bg-amber-500/20 text-amber-950 font-bold border border-amber-500/40 shadow-sm relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-amber-600' 
-              : 'text-slate-700 hover:text-slate-950 hover:bg-amber-50/80 font-semibold'
-          }`}
+          title="कलम १०१ वसुली"
+          className={getModuleBtnClass(isLegalActive)}
         >
-          <Gavel size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isLegalActive ? 'text-amber-600' : 'text-slate-500 group-hover:text-amber-600'}`} />
-          {isSidebarOpen && <span className="truncate">कलम १०१ वसुली</span>}
+          <div className="flex items-center truncate">
+            <Gavel size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isLegalActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            {isSidebarOpen && <span className="truncate">कलम १०१ वसुली</span>}
+          </div>
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isLegalActive ? 'rotate-180 text-emerald-600' : ''}`} />}
         </button>
+
+        {isSidebarOpen && isLegalActive && (
+          <ul className={subMenuContainerClass}>
+            <li className={getSubItemClass(activeTab === 'legal-recovery')} onClick={() => handleNavigate('legal-recovery')}>
+              {renderSubDot(activeTab === 'legal-recovery')}
+              <span className="truncate">मुख्य डॅशबोर्ड</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'sec101-tracker')} onClick={() => handleNavigate('sec101-tracker')}>
+              {renderSubDot(activeTab === 'sec101-tracker')}
+              <span className="truncate">ग्राहक १०१/९१ ट्रॅकर</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'sec101-notices')} onClick={() => handleNavigate('sec101-notices')}>
+              {renderSubDot(activeTab === 'sec101-notices')}
+              <span className="truncate">३-टप्प्यांच्या नोटिसा</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'sec101-filing')} onClick={() => handleNavigate('sec101-filing')}>
+              {renderSubDot(activeTab === 'sec101-filing')}
+              <span className="truncate">दावा अर्ज व Form M</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'sec101-hearings')} onClick={() => handleNavigate('sec101-hearings')}>
+              {renderSubDot(activeTab === 'sec101-hearings')}
+              <span className="truncate">सुनावणी व दाखला</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'sec101-executions')} onClick={() => handleNavigate('sec101-executions')}>
+              {renderSubDot(activeTab === 'sec101-executions')}
+              <span className="truncate">जप्ती, कपात व लिलाव</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'sec101-mapping')} onClick={() => handleNavigate('sec101-mapping')}>
+              {renderSubDot(activeTab === 'sec101-mapping')}
+              <span className="truncate">लेजर मॅपिंग</span>
+            </li>
+          </ul>
+        )}
 
         {/* Committee Master */}
         <button 

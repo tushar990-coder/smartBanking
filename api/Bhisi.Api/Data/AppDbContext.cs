@@ -454,6 +454,28 @@ namespace Bhisi.Api.Data
                       .HasDatabaseName("UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY");
             });
 
+            modelBuilder.Entity<Sec101CaseMaster>(entity =>
+            {
+                entity.HasIndex(c => new { c.BranchId, c.CaseNumber })
+                      .IsUnique()
+                      .HasDatabaseName("UQ_Sec101CaseMasters_Branch_CaseNumber");
+                entity.HasIndex(c => c.CustomerId);
+            });
+
+            modelBuilder.Entity<Sec101NoticeHistory>(entity =>
+            {
+                entity.HasIndex(n => new { n.BranchId, n.NoticeNumber })
+                      .IsUnique()
+                      .HasDatabaseName("UQ_Sec101NoticeHistories_Branch_NoticeNumber");
+                entity.HasIndex(n => n.CustomerId);
+            });
+
+            modelBuilder.Entity<Sec101LegalExpense>(entity =>
+            {
+                entity.HasIndex(e => e.CustomerId);
+                entity.HasIndex(e => e.NoticeId);
+            });
+
             // Disable cascade deletes globally to prevent SQL Server multiple cascade paths error
             foreach (var relationship in modelBuilder.Model.GetEntityTypes().SelectMany(e => e.GetForeignKeys()))
             {

@@ -1247,7 +1247,9 @@ namespace Bhisi.Api.Controllers
             bool hasActiveShares = await _context.ShareAccounts.AnyAsync(s => s.MemberId == id && s.TotalShareCount > 0);
             bool hasActiveLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == id && l.Status == "Allotted");
             bool isCommitteeMember = await _context.CommitteeMembers.AnyAsync(c => c.MemberID == id && c.Status == "Active");
-            bool hasActiveLegalCases = await _context.Sec101CaseMasters.AnyAsync(c => c.MemberId == id && c.Status != "CLOSED_RECOVERED" && c.Status != "DISMISSED");
+            bool hasActiveLegalCases = await _context.Sec101CaseMasters.AnyAsync(c =>
+                (c.MemberId == id || (mCustId != null && c.CustomerId == mCustId)) &&
+                c.Status != "CLOSED_RECOVERED" && c.Status != "DISMISSED" && c.Status != "WITHDRAWN");
             bool hasPendingLoanApps = await _context.LoanApplications.AnyAsync(a => mCustId != null && (a.CustomerID == mCustId || a.CoCustomerID == mCustId || a.CoCustomer2ID == mCustId || a.Guarantor1CustomerID == mCustId || a.Guarantor2CustomerID == mCustId) && !_context.LoanAccounts.Any(l => l.LoanAccountNo == a.LoanAccountNo));
             bool hasActiveJointMembers = await _context.JointMembers.AnyAsync(j => j.PrimaryMemberID == id && j.Status == "Active");
 
@@ -1267,6 +1269,12 @@ namespace Bhisi.Api.Controllers
                 {
                     _context.ShareAccounts.RemoveRange(emptyShares);
                 }
+
+                // Preserve Customer-First Sec101 audit trail by detaching legacy MemberId FK
+                var linkedCases = await _context.Sec101CaseMasters.Where(c => c.MemberId == id).ToListAsync();
+                foreach (var lc in linkedCases) lc.MemberId = null;
+                var linkedNotices = await _context.Sec101NoticeHistories.Where(n => n.MemberId == id).ToListAsync();
+                foreach (var ln in linkedNotices) ln.MemberId = null;
 
                 _context.Members.Remove(member);
                 await _context.SaveChangesAsync();

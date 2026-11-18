@@ -2385,15 +2385,15 @@ namespace Bhisi.Api.Controllers
                         }
 
                         var linkedScm = await _context.Sec101CaseMasters.Where(s => s.MemberId == targetMemberId).ToListAsync();
-                        if (linkedScm.Any())
+                        foreach (var scm in linkedScm)
                         {
-                            _context.Sec101CaseMasters.RemoveRange(linkedScm);
+                            scm.MemberId = null;
                         }
 
                         var linkedSnh = await _context.Sec101NoticeHistories.Where(s => s.MemberId == targetMemberId).ToListAsync();
-                        if (linkedSnh.Any())
+                        foreach (var snh in linkedSnh)
                         {
-                            _context.Sec101NoticeHistories.RemoveRange(linkedSnh);
+                            snh.MemberId = null;
                         }
 
                         var remainingEmptyShares = await _context.ShareAccounts.Where(s => s.MemberId == targetMemberId && s.ShareAccountId != account.ShareAccountId).ToListAsync();

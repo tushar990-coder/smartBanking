@@ -395,6 +395,35 @@ namespace Bhisi.Api.Controllers
                             }
                         }
 
+                        // 🌟 Activate OverdueRecoveryLedgers debit ONLY upon LEG-* Voucher Approval
+                        var approvedLegalExpenses = await _context.Sec101LegalExpenses
+                            .Where(e => e.VoucherId == voucher.VoucherID && e.IsDebitedToLoan && e.LoanAccountId > 0)
+                            .ToListAsync();
+
+                        if (approvedLegalExpenses.Any())
+                        {
+                            bool alreadyHasDebits = await _context.OverdueRecoveryLedgers
+                                .AnyAsync(o => o.VoucherID == voucher.VoucherID && o.DebitAmount > 0);
+                            if (!alreadyHasDebits)
+                            {
+                                foreach (var exp in approvedLegalExpenses)
+                                {
+                                    string part = string.IsNullOrWhiteSpace(exp.Remarks)
+                                        ? $"कायदेशीर खर्च ({exp.ExpenseType})"
+                                        : exp.Remarks!;
+                                    _context.OverdueRecoveryLedgers.Add(new OverdueRecoveryLedger
+                                    {
+                                        LoanAccountID = exp.LoanAccountId,
+                                        TransactionDate = exp.ExpenseDate,
+                                        DebitAmount = exp.Amount,
+                                        CreditAmount = 0m,
+                                        VoucherID = voucher.VoucherID,
+                                        Particulars = part.Length > 250 ? part.Substring(0, 250) : part
+                                    });
+                                }
+                            }
+                        }
+
                         postedVoucherDetails.Add(new
                         {
                             voucherId = voucher.VoucherID,
@@ -565,6 +594,37 @@ namespace Bhisi.Api.Controllers
                     if (isLoanDisbursementVoucher)
                     {
                         await LoanDisbursementReversalHelper.ReverseSavingTransferCreditForVoucherAsync(_context, voucher.VoucherNo);
+                    }
+
+                    // 🌟 Revert LEG-* OverdueRecoveryLedgers debit on Unpass (block if already recovered by a borrower collection)
+                    var unpassLegalExpenses = await _context.Sec101LegalExpenses
+                        .Where(e => e.VoucherId == voucher.VoucherID && e.IsDebitedToLoan && e.LoanAccountId > 0)
+                        .ToListAsync();
+                    if (unpassLegalExpenses.Any())
+                    {
+                        var ledgerRows = await _context.OverdueRecoveryLedgers
+                            .Where(o => o.VoucherID == voucher.VoucherID && o.DebitAmount > 0)
+                            .ToListAsync();
+                        if (ledgerRows.Any())
+                        {
+                            var affectedLoanIds = ledgerRows.Select(r => r.LoanAccountID).Distinct().ToList();
+                            foreach (int lid in affectedLoanIds)
+                            {
+                                decimal totalDebits = await _context.OverdueRecoveryLedgers
+                                    .Where(o => o.LoanAccountID == lid)
+                                    .SumAsync(o => (decimal?)o.DebitAmount) ?? 0m;
+                                decimal totalCredits = await _context.OverdueRecoveryLedgers
+                                    .Where(o => o.LoanAccountID == lid)
+                                    .SumAsync(o => (decimal?)o.CreditAmount) ?? 0m;
+                                decimal thisVoucherDebit = ledgerRows.Where(r => r.LoanAccountID == lid).Sum(r => r.DebitAmount);
+                                if (totalCredits > (totalDebits - thisVoucherDebit + 0.01m))
+                                {
+                                    throw new InvalidOperationException(
+                                        $"व्हाउचर क्र. {voucher.VoucherNo} मधील कायदेशीर खर्च कर्ज खात्यावरून आधीच वसूल झालेला असल्याने हे व्हाउचर अन-पास करता येत नाही.");
+                                }
+                            }
+                            _context.OverdueRecoveryLedgers.RemoveRange(ledgerRows);
+                        }
                     }
 
                     // 3. Record in AuditLogs

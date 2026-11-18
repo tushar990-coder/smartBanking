@@ -26,6 +26,15 @@ namespace Bhisi.Api.Models
         [StringLength(500)]
         public string? PropertyDetails { get; set; } // गट क्र., घर नं., वाहन क्र., मालकाचे नाव
 
+        [StringLength(200)]
+        public string? EmployerName { get; set; }
+
+        [StringLength(500)]
+        public string? EmployerAddress { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? MonthlyDeductionAmount { get; set; }
+
         [Column(TypeName = "decimal(18,2)")]
         public decimal ValuationAmount { get; set; } = 0;
 
@@ -43,6 +52,16 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal HighestBidAmount { get; set; } = 0;
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? SpotDepositAmount { get; set; }
+
+        public DateTime? BalancePaymentDueDate { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? SurplusAmount { get; set; }
+
+        public int? SettlementVoucherId { get; set; }
+
         [StringLength(150)]
         public string? BuyerName { get; set; }
 
@@ -51,7 +70,7 @@ namespace Bhisi.Api.Models
 
         public DateTime? SaleCertificateDate { get; set; }
 
-        [StringLength(50)]
+        [StringLength(100)]
         public string? SaleCertificateNo { get; set; }
 
         [Required]

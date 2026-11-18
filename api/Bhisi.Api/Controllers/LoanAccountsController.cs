@@ -2134,10 +2134,12 @@ namespace Bhisi.Api.Controllers
         {
             int id = loanAccount.LoanAccountID;
 
-            bool hasLegalCase = await _context.Sec101CaseMasters.AnyAsync(c => c.LoanAccountId == id);
+            bool hasLegalCase = await _context.Sec101CaseMasters.AnyAsync(c => c.LoanAccountId == id) ||
+                                await _context.Sec101NoticeHistories.AnyAsync(n => n.LoanAccountId == id) ||
+                                await _context.Sec101LegalExpenses.AnyAsync(e => e.LoanAccountId == id);
             if (hasLegalCase)
             {
-                throw new InvalidOperationException("या कर्ज खात्यावर कलम १०१/९१ कायदेशीर खटला नोंदवलेला आहे. खाते डिलीट करण्यापूर्वी कायदेशीर नोंदी निकाली काढा.");
+                throw new InvalidOperationException("या कर्ज खात्यावर कलम १०१/९१ कायदेशीर नोटीस, खर्च किंवा खटला नोंदवलेला आहे. खाते डिलीट करण्यापूर्वी कायदेशीर नोंदी निकाली काढा.");
             }
 
             var disbVIds = await _context.LoanDisbursements

@@ -530,6 +530,21 @@ namespace Bhisi.Api.Controllers
                     if (loanAccount.PrincipalBalance <= 0)
                     {
                         loanAccount.Status = "Closed";
+                        if (loanAccount.InterestBalance <= 0 && loanAccount.OverdueInterestBalance <= 0)
+                        {
+                            var openSec101Cases = await _context.Sec101CaseMasters
+                                .Where(c => c.LoanAccountId == loanAccount.LoanAccountID &&
+                                            c.Status != "CLOSED_RECOVERED" &&
+                                            c.Status != "DISMISSED" &&
+                                            c.Status != "WITHDRAWN")
+                                .ToListAsync();
+                            foreach (var openCase in openSec101Cases)
+                            {
+                                openCase.Status = "CLOSED_RECOVERED";
+                                openCase.ClosedDate = collection.CollectionDate;
+                                openCase.ClosedReason = $"कर्ज पूर्ण वसुली पावती क्र. {collection.ReceiptNo}";
+                            }
+                        }
                     }
                 }
 

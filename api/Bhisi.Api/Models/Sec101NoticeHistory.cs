@@ -21,18 +21,38 @@ namespace Bhisi.Api.Models
         [ForeignKey("LoanAccountId")]
         public virtual LoanAccount? LoanAccount { get; set; }
 
-        [Required]
-        public int MemberId { get; set; }
+        public int? CustomerId { get; set; }
+
+        [ForeignKey("CustomerId")]
+        public virtual Customer? Customer { get; set; }
+
+        public int? MemberId { get; set; }
 
         [ForeignKey("MemberId")]
         public virtual Member? Member { get; set; }
+
+        [Required]
+        [StringLength(20)]
+        public string CaseType { get; set; } = "SEC_101"; // SEC_101, SEC_91
+
+        [Required]
+        [StringLength(30)]
+        public string RecipientType { get; set; } = "BORROWER"; // BORROWER, GUARANTOR_1, GUARANTOR_2, CO_BORROWER
+
+        public int? RecipientCustomerId { get; set; }
+
+        [StringLength(200)]
+        public string? RecipientName { get; set; }
+
+        [StringLength(500)]
+        public string? RecipientAddress { get; set; }
 
         [Required]
         [StringLength(50)]
         public string NoticeType { get; set; } = "NOTICE_1"; // NOTICE_1, NOTICE_2, FINAL_NOTICE, SRO_DEMAND
 
         [Required]
-        [StringLength(50)]
+        [StringLength(100)]
         public string NoticeNumber { get; set; } = string.Empty;
 
         public DateTime NoticeDate { get; set; } = DateTime.Today;

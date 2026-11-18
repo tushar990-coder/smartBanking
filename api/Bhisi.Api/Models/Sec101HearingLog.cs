@@ -20,6 +20,9 @@ namespace Bhisi.Api.Models
 
         public DateTime? NextHearingDate { get; set; }
 
+        [StringLength(250)]
+        public string? NextHearingPurpose { get; set; }
+
         [Required]
         [StringLength(100)]
         public string Stage { get; set; } = "समन्स / नोटीस पूर्तता"; 

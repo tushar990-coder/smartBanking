@@ -1062,6 +1062,10 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                             <span className="truncate group-hover/btn:text-rose-900">कर्ज हप्ता तक्ता</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
+                                                        <button onClick={() => onNavigate('sec101-tracker', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-bold text-[10.5px] text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 hover:border-amber-300 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate">कलम १०१/९१ स्थिती व ट्रॅकर</span>
+                                                            <ChevronRight size={12} className="text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                        </button>
                                                     </>
                                                 )}
                                             </div>

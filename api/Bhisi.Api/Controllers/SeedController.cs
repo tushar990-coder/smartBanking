@@ -801,6 +801,14 @@ namespace Bhisi.Api.Controllers
                 await _context.Database.ExecuteSqlRawAsync("DELETE FROM AssetDisposals;");
                 await _context.Database.ExecuteSqlRawAsync("DELETE FROM Assets;");
 
+                // Clear Sec101/91 Legal Recovery module
+                await _context.Database.ExecuteSqlRawAsync("DELETE FROM Sec101LegalExpenses;");
+                await _context.Database.ExecuteSqlRawAsync("DELETE FROM Sec101AttachmentAuctions;");
+                await _context.Database.ExecuteSqlRawAsync("DELETE FROM Sec101HearingLogs;");
+                await _context.Database.ExecuteSqlRawAsync("DELETE FROM Sec101CaseMasters;");
+                await _context.Database.ExecuteSqlRawAsync("DELETE FROM Sec101NoticeHistories;");
+                await _context.Database.ExecuteSqlRawAsync("DELETE FROM LegalRecoveryLedgerMappings;");
+
                 // Clear Demand & Recovery module
                 await _context.Database.ExecuteSqlRawAsync("DELETE FROM DemandMemberDetails;");
                 await _context.Database.ExecuteSqlRawAsync("DELETE FROM DemandRecoveries;");

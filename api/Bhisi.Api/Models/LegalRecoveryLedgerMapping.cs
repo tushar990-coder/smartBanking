@@ -9,8 +9,7 @@ namespace Bhisi.Api.Models
         [Key]
         public int MappingId { get; set; }
 
-        [Required]
-        public int BranchId { get; set; } = 1; // 0 for Global Default
+        public int? BranchId { get; set; } // null = Global Default (0 normalized to null)
         
         [ForeignKey("BranchId")]
         public virtual Branch? Branch { get; set; }

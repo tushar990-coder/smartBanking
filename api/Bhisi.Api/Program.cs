@@ -2442,31 +2442,45 @@ try
                   AND [LedgerID] NOT IN (SELECT [LedgerID] FROM [SwanidhiLedgerMappings]);
             END
 
-            -- Section 101/91 Legal Recovery Tables Safety Creation
+            -- Section 101/91 Legal Recovery Tables & Customer-First Column Sync
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LegalRecoveryLedgerMappings')
             BEGIN
-                CREATE TABLE [LegalRecoveryLedgerMappings] (
+                CREATE TABLE [dbo].[LegalRecoveryLedgerMappings] (
                     [MappingId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
-                    [BranchId] int NOT NULL DEFAULT 0,
+                    [BranchId] int NULL,
                     [TransactionType] nvarchar(50) NOT NULL,
-                    [DebitLedgerId] int NOT NULL DEFAULT 0,
-                    [CreditLedgerId] int NOT NULL DEFAULT 0,
+                    [DebitLedgerId] int NOT NULL,
+                    [CreditLedgerId] int NOT NULL,
                     [IsActive] bit NOT NULL DEFAULT 1,
-                    [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE(),
-                    [UpdatedDate] datetime2 NULL
+                    [UpdatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    CONSTRAINT [FK_LegalRecoveryLedgerMappings_Branches_BranchId] FOREIGN KEY ([BranchId]) REFERENCES [dbo].[Branches]([BranchID]),
+                    CONSTRAINT [FK_LegalRecoveryLedgerMappings_Ledgers_DebitLedgerId] FOREIGN KEY ([DebitLedgerId]) REFERENCES [dbo].[Ledgers]([LedgerID]),
+                    CONSTRAINT [FK_LegalRecoveryLedgerMappings_Ledgers_CreditLedgerId] FOREIGN KEY ([CreditLedgerId]) REFERENCES [dbo].[Ledgers]([LedgerID])
                 );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('LegalRecoveryLedgerMappings', 'UpdatedAt') IS NULL
+                    ALTER TABLE [dbo].[LegalRecoveryLedgerMappings] ADD [UpdatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE();
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'LegalRecoveryLedgerMappings' AND COLUMN_NAME = 'BranchId' AND IS_NULLABLE = 'NO')
+                BEGIN
+                    ALTER TABLE [dbo].[LegalRecoveryLedgerMappings] ALTER COLUMN [BranchId] int NULL;
+                    UPDATE [dbo].[LegalRecoveryLedgerMappings] SET [BranchId] = NULL WHERE [BranchId] = 0;
+                END
             END
 
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Sec101CaseMasters')
             BEGIN
-                CREATE TABLE [Sec101CaseMasters] (
+                CREATE TABLE [dbo].[Sec101CaseMasters] (
                     [CaseId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
                     [BranchId] int NOT NULL DEFAULT 1,
                     [LoanAccountId] int NOT NULL,
-                    [MemberId] int NOT NULL,
+                    [CustomerId] int NULL,
+                    [MemberId] int NULL,
+                    [CaseType] nvarchar(20) NOT NULL DEFAULT 'SEC_101',
                     [CaseNumber] nvarchar(100) NOT NULL,
-                    [CourtName] nvarchar(200) NOT NULL,
-                    [AdvocateName] nvarchar(150) NULL,
+                    [CourtName] nvarchar(200) NOT NULL DEFAULT N'मा. सहाय्यक निबंधक, सहकारी संस्था',
+                    [AdvocateName] nvarchar(100) NULL,
                     [FilingDate] datetime2 NOT NULL DEFAULT GETDATE(),
                     [PrincipalClaim] decimal(18,2) NOT NULL DEFAULT 0,
                     [InterestClaim] decimal(18,2) NOT NULL DEFAULT 0,
@@ -2474,28 +2488,69 @@ try
                     [OtherChargesClaim] decimal(18,2) NOT NULL DEFAULT 0,
                     [TotalClaimAmount] decimal(18,2) NOT NULL DEFAULT 0,
                     [CourtFeeAmount] decimal(18,2) NOT NULL DEFAULT 0,
-                    [CourtFeeChallanNo] nvarchar(100) NULL,
-                    [CaseStatus] nvarchar(50) NOT NULL DEFAULT 'FILED',
-                    [CertificateNumber] nvarchar(100) NULL,
+                    [CourtFeeChallanNo] nvarchar(50) NULL,
+                    [CertificateNo] nvarchar(50) NULL,
                     [CertificateDate] datetime2 NULL,
-                    [GrantedAmount] decimal(18,2) NULL,
-                    [GrantedInterestRate] decimal(5,2) NULL,
-                    [Remarks] nvarchar(500) NULL,
-                    [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE()
+                    [SanctionedAmount] decimal(18,2) NULL,
+                    [FutureInterestRate] decimal(18,2) NULL,
+                    [AwardNumber] nvarchar(100) NULL,
+                    [AwardDate] datetime2 NULL,
+                    [TransferCertificateNo] nvarchar(100) NULL,
+                    [StayOrderNo] nvarchar(100) NULL,
+                    [StayOrderDate] datetime2 NULL,
+                    [ClosedReason] nvarchar(500) NULL,
+                    [ClosedDate] datetime2 NULL,
+                    [Status] nvarchar(50) NOT NULL DEFAULT 'FILED',
+                    [Remarks] nvarchar(max) NULL,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [CreatedBy] int NOT NULL DEFAULT 1
                 );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('Sec101CaseMasters', 'CustomerId') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [CustomerId] int NULL;
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101CaseMasters' AND COLUMN_NAME = 'MemberId' AND IS_NULLABLE = 'NO')
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ALTER COLUMN [MemberId] int NULL;
+                IF COL_LENGTH('Sec101CaseMasters', 'CaseType') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [CaseType] nvarchar(20) NOT NULL CONSTRAINT [DF_Sec101CaseMasters_CaseType] DEFAULT 'SEC_101';
+                IF COL_LENGTH('Sec101CaseMasters', 'AwardNumber') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [AwardNumber] nvarchar(100) NULL;
+                IF COL_LENGTH('Sec101CaseMasters', 'AwardDate') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [AwardDate] datetime2 NULL;
+                IF COL_LENGTH('Sec101CaseMasters', 'TransferCertificateNo') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [TransferCertificateNo] nvarchar(100) NULL;
+                IF COL_LENGTH('Sec101CaseMasters', 'StayOrderNo') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [StayOrderNo] nvarchar(100) NULL;
+                IF COL_LENGTH('Sec101CaseMasters', 'StayOrderDate') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [StayOrderDate] datetime2 NULL;
+                IF COL_LENGTH('Sec101CaseMasters', 'ClosedReason') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [ClosedReason] nvarchar(500) NULL;
+                IF COL_LENGTH('Sec101CaseMasters', 'ClosedDate') IS NULL
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [ClosedDate] datetime2 NULL;
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101CaseMasters' AND COLUMN_NAME = 'CaseNumber' AND CHARACTER_MAXIMUM_LENGTH < 100)
+                    ALTER TABLE [dbo].[Sec101CaseMasters] ALTER COLUMN [CaseNumber] nvarchar(100) NOT NULL;
+                IF COL_LENGTH('Sec101CaseMasters', 'CustomerId') IS NOT NULL
+                    EXEC(N'UPDATE cm SET cm.[CustomerId] = COALESCE(la.[CustomerID], m.[CustomerID]) FROM [dbo].[Sec101CaseMasters] cm LEFT JOIN [dbo].[LoanAccounts] la ON cm.[LoanAccountId] = la.[LoanAccountID] LEFT JOIN [dbo].[Members] m ON cm.[MemberId] = m.[MemberID] WHERE cm.[CustomerId] IS NULL;');
             END
 
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Sec101NoticeHistories')
             BEGIN
-                CREATE TABLE [Sec101NoticeHistories] (
+                CREATE TABLE [dbo].[Sec101NoticeHistories] (
                     [NoticeId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
                     [BranchId] int NOT NULL DEFAULT 1,
                     [LoanAccountId] int NOT NULL,
-                    [MemberId] int NOT NULL,
-                    [NoticeType] nvarchar(50) NOT NULL,
+                    [CustomerId] int NULL,
+                    [MemberId] int NULL,
+                    [CaseType] nvarchar(20) NOT NULL DEFAULT 'SEC_101',
+                    [RecipientType] nvarchar(30) NOT NULL DEFAULT 'BORROWER',
+                    [RecipientCustomerId] int NULL,
+                    [RecipientName] nvarchar(200) NULL,
+                    [RecipientAddress] nvarchar(500) NULL,
+                    [NoticeType] nvarchar(50) NOT NULL DEFAULT 'NOTICE_1',
                     [NoticeNumber] nvarchar(100) NOT NULL,
                     [NoticeDate] datetime2 NOT NULL DEFAULT GETDATE(),
-                    [DueDate] datetime2 NOT NULL,
+                    [DueDate] datetime2 NOT NULL DEFAULT DATEADD(day, 15, GETDATE()),
                     [PrincipalDue] decimal(18,2) NOT NULL DEFAULT 0,
                     [InterestDue] decimal(18,2) NOT NULL DEFAULT 0,
                     [PenalInterestDue] decimal(18,2) NOT NULL DEFAULT 0,
@@ -2504,70 +2559,136 @@ try
                     [PostalTrackingNo] nvarchar(100) NULL,
                     [PostalStatus] nvarchar(50) NOT NULL DEFAULT 'DISPATCHED',
                     [DeliveredDate] datetime2 NULL,
-                    [Remarks] nvarchar(500) NULL,
-                    [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE()
+                    [Remarks] nvarchar(max) NULL,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [CreatedBy] int NOT NULL DEFAULT 1
                 );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('Sec101NoticeHistories', 'CustomerId') IS NULL
+                    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [CustomerId] int NULL;
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101NoticeHistories' AND COLUMN_NAME = 'MemberId' AND IS_NULLABLE = 'NO')
+                    ALTER TABLE [dbo].[Sec101NoticeHistories] ALTER COLUMN [MemberId] int NULL;
+                IF COL_LENGTH('Sec101NoticeHistories', 'CaseType') IS NULL
+                    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [CaseType] nvarchar(20) NOT NULL CONSTRAINT [DF_Sec101NoticeHistories_CaseType] DEFAULT 'SEC_101';
+                IF COL_LENGTH('Sec101NoticeHistories', 'RecipientType') IS NULL
+                    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [RecipientType] nvarchar(30) NOT NULL CONSTRAINT [DF_Sec101NoticeHistories_RecipientType] DEFAULT 'BORROWER';
+                IF COL_LENGTH('Sec101NoticeHistories', 'RecipientCustomerId') IS NULL
+                    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [RecipientCustomerId] int NULL;
+                IF COL_LENGTH('Sec101NoticeHistories', 'RecipientName') IS NULL
+                    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [RecipientName] nvarchar(200) NULL;
+                IF COL_LENGTH('Sec101NoticeHistories', 'RecipientAddress') IS NULL
+                    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [RecipientAddress] nvarchar(500) NULL;
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101NoticeHistories' AND COLUMN_NAME = 'NoticeNumber' AND CHARACTER_MAXIMUM_LENGTH < 100)
+                    ALTER TABLE [dbo].[Sec101NoticeHistories] ALTER COLUMN [NoticeNumber] nvarchar(100) NOT NULL;
+                IF COL_LENGTH('Sec101NoticeHistories', 'CustomerId') IS NOT NULL
+                    EXEC(N'UPDATE nh SET nh.[CustomerId] = COALESCE(la.[CustomerID], m.[CustomerID]) FROM [dbo].[Sec101NoticeHistories] nh LEFT JOIN [dbo].[LoanAccounts] la ON nh.[LoanAccountId] = la.[LoanAccountID] LEFT JOIN [dbo].[Members] m ON nh.[MemberId] = m.[MemberID] WHERE nh.[CustomerId] IS NULL;');
             END
 
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Sec101HearingLogs')
             BEGIN
-                CREATE TABLE [Sec101HearingLogs] (
-                    [HearingLogId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                CREATE TABLE [dbo].[Sec101HearingLogs] (
+                    [HearingId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
                     [CaseId] int NOT NULL,
-                    [HearingDate] datetime2 NOT NULL,
-                    [HearingStage] nvarchar(50) NOT NULL,
-                    [PresenceType] nvarchar(100) NOT NULL DEFAULT 'Present',
-                    [CourtOrderSummary] nvarchar(1000) NULL,
+                    [HearingDate] datetime2 NOT NULL DEFAULT GETDATE(),
                     [NextHearingDate] datetime2 NULL,
                     [NextHearingPurpose] nvarchar(250) NULL,
-                    [AdvocateNotes] nvarchar(1000) NULL,
-                    [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE()
+                    [Stage] nvarchar(100) NOT NULL DEFAULT N'समन्स / नोटीस पूर्तता',
+                    [BorrowerPresence] nvarchar(20) NOT NULL DEFAULT 'ABSENT',
+                    [GuarantorPresence] nvarchar(20) NOT NULL DEFAULT 'ABSENT',
+                    [CourtOrderSummary] nvarchar(max) NULL,
+                    [AdvocateNotes] nvarchar(max) NULL,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [CreatedBy] int NOT NULL DEFAULT 1
                 );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('Sec101HearingLogs', 'NextHearingPurpose') IS NULL
+                    ALTER TABLE [dbo].[Sec101HearingLogs] ADD [NextHearingPurpose] nvarchar(250) NULL;
             END
 
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Sec101AttachmentAuctions')
             BEGIN
-                CREATE TABLE [Sec101AttachmentAuctions] (
+                CREATE TABLE [dbo].[Sec101AttachmentAuctions] (
                     [ExecutionId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
                     [CaseId] int NOT NULL,
-                    [ExecutionType] nvarchar(50) NOT NULL,
-                    [ExecutionOrderNo] nvarchar(100) NOT NULL,
-                    [OrderDate] datetime2 NOT NULL DEFAULT GETDATE(),
-                    [SroName] nvarchar(150) NULL,
+                    [SroName] nvarchar(100) NOT NULL DEFAULT N'विशेष वसुली अधिकारी',
+                    [ExecutionType] nvarchar(50) NOT NULL DEFAULT 'IMMOVABLE_PROPERTY',
+                    [PropertyDetails] nvarchar(500) NULL,
                     [EmployerName] nvarchar(200) NULL,
                     [EmployerAddress] nvarchar(500) NULL,
                     [MonthlyDeductionAmount] decimal(18,2) NULL,
-                    [PropertyDetails] nvarchar(1000) NULL,
-                    [EstimatedValue] decimal(18,2) NULL,
-                    [ReservePrice] decimal(18,2) NULL,
+                    [ValuationAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [WarrantIssueDate] datetime2 NULL,
+                    [PanchanamaDate] datetime2 NULL,
+                    [AuctionNoticeDate] datetime2 NULL,
                     [AuctionDate] datetime2 NULL,
-                    [ExecutionStatus] nvarchar(50) NOT NULL DEFAULT 'ISSUED',
-                    [RecoveredAmount] decimal(18,2) NOT NULL DEFAULT 0,
-                    [Remarks] nvarchar(500) NULL,
-                    [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE()
+                    [ReservePrice] decimal(18,2) NOT NULL DEFAULT 0,
+                    [HighestBidAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [SpotDepositAmount] decimal(18,2) NULL,
+                    [BalancePaymentDueDate] datetime2 NULL,
+                    [SurplusAmount] decimal(18,2) NULL,
+                    [SettlementVoucherId] int NULL,
+                    [BuyerName] nvarchar(150) NULL,
+                    [BuyerContact] nvarchar(100) NULL,
+                    [SaleCertificateDate] datetime2 NULL,
+                    [SaleCertificateNo] nvarchar(100) NULL,
+                    [Status] nvarchar(50) NOT NULL DEFAULT 'WARRANT_ISSUED',
+                    [Remarks] nvarchar(max) NULL,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [CreatedBy] int NOT NULL DEFAULT 1
                 );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('Sec101AttachmentAuctions', 'EmployerName') IS NULL
+                    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [EmployerName] nvarchar(200) NULL;
+                IF COL_LENGTH('Sec101AttachmentAuctions', 'EmployerAddress') IS NULL
+                    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [EmployerAddress] nvarchar(500) NULL;
+                IF COL_LENGTH('Sec101AttachmentAuctions', 'MonthlyDeductionAmount') IS NULL
+                    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [MonthlyDeductionAmount] decimal(18,2) NULL;
+                IF COL_LENGTH('Sec101AttachmentAuctions', 'SpotDepositAmount') IS NULL
+                    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [SpotDepositAmount] decimal(18,2) NULL;
+                IF COL_LENGTH('Sec101AttachmentAuctions', 'BalancePaymentDueDate') IS NULL
+                    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [BalancePaymentDueDate] datetime2 NULL;
+                IF COL_LENGTH('Sec101AttachmentAuctions', 'SurplusAmount') IS NULL
+                    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [SurplusAmount] decimal(18,2) NULL;
+                IF COL_LENGTH('Sec101AttachmentAuctions', 'SettlementVoucherId') IS NULL
+                    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [SettlementVoucherId] int NULL;
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101AttachmentAuctions' AND COLUMN_NAME = 'SaleCertificateNo' AND CHARACTER_MAXIMUM_LENGTH < 100)
+                    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ALTER COLUMN [SaleCertificateNo] nvarchar(100) NULL;
             END
 
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Sec101LegalExpenses')
             BEGIN
-                CREATE TABLE [Sec101LegalExpenses] (
-                    [LegalExpenseId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                CREATE TABLE [dbo].[Sec101LegalExpenses] (
+                    [ExpenseId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
                     [BranchId] int NOT NULL DEFAULT 1,
                     [CaseId] int NULL,
+                    [NoticeId] int NULL,
                     [LoanAccountId] int NOT NULL,
-                    [ExpenseType] nvarchar(50) NOT NULL,
-                    [ExpenseDate] datetime2 NOT NULL DEFAULT GETDATE(),
+                    [CustomerId] int NULL,
+                    [ExpenseType] nvarchar(50) NOT NULL DEFAULT 'COURT_FEE',
                     [Amount] decimal(18,2) NOT NULL DEFAULT 0,
-                    [PayeeName] nvarchar(150) NULL,
-                    [VoucherNumber] nvarchar(100) NULL,
+                    [ExpenseDate] datetime2 NOT NULL DEFAULT GETDATE(),
+                    [PaidTo] nvarchar(150) NULL,
                     [VoucherId] int NULL,
-                    [PaymentMode] nvarchar(50) NOT NULL DEFAULT 'CASH',
-                    [IsDebitedToBorrower] bit NOT NULL DEFAULT 1,
-                    [DebitLedgerId] int NULL,
-                    [CreditLedgerId] int NULL,
-                    [Remarks] nvarchar(500) NULL,
-                    [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE()
+                    [IsDebitedToLoan] bit NOT NULL DEFAULT 1,
+                    [Remarks] nvarchar(max) NULL,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [CreatedBy] int NOT NULL DEFAULT 1
                 );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('Sec101LegalExpenses', 'NoticeId') IS NULL
+                    ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [NoticeId] int NULL;
+                IF COL_LENGTH('Sec101LegalExpenses', 'CustomerId') IS NULL
+                    ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [CustomerId] int NULL;
+                IF COL_LENGTH('Sec101LegalExpenses', 'CustomerId') IS NOT NULL
+                    EXEC(N'UPDATE le SET le.[CustomerId] = COALESCE(la.[CustomerID], cm.[CustomerId]) FROM [dbo].[Sec101LegalExpenses] le LEFT JOIN [dbo].[LoanAccounts] la ON le.[LoanAccountId] = la.[LoanAccountID] LEFT JOIN [dbo].[Sec101CaseMasters] cm ON le.[CaseId] = cm.[CaseId] WHERE le.[CustomerId] IS NULL;');
             END
 
             -- ==========================================

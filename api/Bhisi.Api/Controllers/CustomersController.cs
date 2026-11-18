@@ -906,8 +906,11 @@ namespace Bhisi.Api.Controllers
             bool hasLockers = await _context.LockerAllotments.AnyAsync(l => (l.CustomerID == id || (linkedMemberId > 0 && l.MemberID == linkedMemberId)));
             bool hasCustomerOpeningBalances = await _context.CustomerOpeningBalances.AnyAsync(o => o.CustomerID == id);
             bool hasMemberOpeningBalances = linkedMemberId > 0 && await _context.MemberOpeningBalances.AnyAsync(o => o.MemberID == linkedMemberId);
+            bool hasSec101Records = await _context.Sec101CaseMasters.AnyAsync(c => c.CustomerId == id) ||
+                                    await _context.Sec101NoticeHistories.AnyAsync(n => n.CustomerId == id || n.RecipientCustomerId == id) ||
+                                    await _context.Sec101LegalExpenses.AnyAsync(e => e.CustomerId == id);
 
-            if (hasSavings || hasLoans || hasFds || hasRds || hasPigmies || hasShares || hasLockers || hasCustomerOpeningBalances || hasMemberOpeningBalances)
+            if (hasSavings || hasLoans || hasFds || hasRds || hasPigmies || hasShares || hasLockers || hasCustomerOpeningBalances || hasMemberOpeningBalances || hasSec101Records)
             {
                 return BadRequest(new
                 {

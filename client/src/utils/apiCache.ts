@@ -314,7 +314,8 @@ export function invalidateApiCache(urlOrGroup?: string): void {
     target.includes('ledger') ||
     target.includes('disbursement') ||
     target.includes('collection') ||
-    target.includes('transaction')
+    target.includes('transaction') ||
+    target.includes('legalrecovery')
   ) {
     for (const key of Array.from(memoryCache.keys())) {
       if (
@@ -323,7 +324,8 @@ export function invalidateApiCache(urlOrGroup?: string): void {
         key.includes('/api/savingaccounts') ||
         key.includes('/api/rdaccounts') ||
         key.includes('/api/pigmyaccounts') ||
-        key.includes('/api/fdaccounts')
+        key.includes('/api/fdaccounts') ||
+        key.includes('/api/legalrecovery')
       ) {
         memoryCache.delete(key);
       }

@@ -587,6 +587,20 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       v.narration?.includes('मालमत्ता खरेदी') ||
       narr.includes('asset purchase');
 
+    // 12. Legal Recovery (Sec 101 / 91 / Rule 107)
+    const isRule107Settlement =
+      vNo.startsWith('RULE107-') ||
+      v.narration?.includes('नियम १०७') ||
+      narr.includes('rule 107');
+
+    const isLegalExpense =
+      !isRule107Settlement &&
+      (vNo.startsWith('LEG-') ||
+        vNo.startsWith('EX-101-') ||
+        v.narration?.includes('कलम १०१') ||
+        v.narration?.includes('कलम ९१') ||
+        v.narration?.includes('कायदेशीर खर्च'));
+
     // Navigation execution
     if (isLoanCollection) {
       if (onNavigate) {
@@ -707,6 +721,18 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         onNavigate('asset-purchase', { voucherId: v.voucherID, passingMode: 'true' });
       } else {
         window.location.href = `/?tab=asset-purchase&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isRule107Settlement) {
+      if (onNavigate) {
+        onNavigate('sec101-executions', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=sec101-executions&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isLegalExpense) {
+      if (onNavigate) {
+        onNavigate('sec101-tracker', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=sec101-tracker&voucherId=${v.voucherID}&passingMode=true`;
       }
     } else {
       if (onNavigate) {

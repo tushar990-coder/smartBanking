@@ -22,15 +22,23 @@ namespace Bhisi.Api.Models
         [ForeignKey("LoanAccountId")]
         public virtual LoanAccount? LoanAccount { get; set; }
 
-        [Required]
-        public int MemberId { get; set; }
+        public int? CustomerId { get; set; }
+
+        [ForeignKey("CustomerId")]
+        public virtual Customer? Customer { get; set; }
+
+        public int? MemberId { get; set; }
 
         [ForeignKey("MemberId")]
         public virtual Member? Member { get; set; }
 
         [Required]
-        [StringLength(50)]
-        public string CaseNumber { get; set; } = string.Empty; // e.g. 101/2026/PUNE
+        [StringLength(20)]
+        public string CaseType { get; set; } = "SEC_101"; // SEC_101 (Registrar), SEC_91 (Co-operative Court)
+
+        [Required]
+        [StringLength(100)]
+        public string CaseNumber { get; set; } = string.Empty; // e.g. 101/2026/001 or 91/2026/001
 
         [Required]
         [StringLength(200)]
@@ -73,10 +81,28 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal? FutureInterestRate { get; set; }
 
+        [StringLength(100)]
+        public string? AwardNumber { get; set; }
+
+        public DateTime? AwardDate { get; set; }
+
+        [StringLength(100)]
+        public string? TransferCertificateNo { get; set; }
+
+        [StringLength(100)]
+        public string? StayOrderNo { get; set; }
+
+        public DateTime? StayOrderDate { get; set; }
+
+        [StringLength(500)]
+        public string? ClosedReason { get; set; }
+
+        public DateTime? ClosedDate { get; set; }
+
         [Required]
         [StringLength(50)]
         public string Status { get; set; } = "FILED"; 
-        // NOTICE_STAGE, FILED, HEARING, CERTIFICATE_ISSUED, EXECUTION_RULE107, CLOSED_RECOVERED, DISMISSED
+        // NOTICE_STAGE, FILED, HEARING, CERTIFICATE_ISSUED, EXECUTION_RULE107, STAYED, CLOSED_RECOVERED, DISMISSED, WITHDRAWN
 
         public string? Remarks { get; set; }
 

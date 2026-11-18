@@ -2074,7 +2074,25 @@ namespace Bhisi.Api.Services
                     rolledBackLoanCollectionIds);
             }
 
-            // 7C. Section 101 / 91 Legal Expenses (LEG-* / Sec101LegalExpenses)
+            // 7C. Section 101 / 91 Legal Expenses (LEG-* / Sec101LegalExpenses) & Rule 107 Settlement Vouchers
+            var settledExecutions = await _context.Sec101AttachmentAuctions
+                .Include(e => e.Case)
+                .Where(e => e.SettlementVoucherId.HasValue && voucherIds.Contains(e.SettlementVoucherId.Value))
+                .ToListAsync();
+
+            foreach (var settled in settledExecutions)
+            {
+                settled.SettlementVoucherId = null;
+                settled.SurplusAmount = null;
+                settled.Status = "AUCTION_COMPLETED";
+                if (settled.Case != null && settled.Case.Status == "CLOSED_RECOVERED")
+                {
+                    settled.Case.Status = "EXECUTION_RULE107";
+                    settled.Case.ClosedDate = null;
+                    settled.Case.ClosedReason = null;
+                }
+            }
+
             var legalExpenses = await _context.Sec101LegalExpenses
                 .Where(e => e.VoucherId.HasValue && voucherIds.Contains(e.VoucherId.Value))
                 .ToListAsync();
@@ -2082,11 +2100,59 @@ namespace Bhisi.Api.Services
             if (legalExpenses.Any())
             {
                 var legalOverdueRows = await _context.OverdueRecoveryLedgers
-                    .Where(o => o.VoucherID.HasValue && voucherIds.Contains(o.VoucherID.Value))
+                    .Where(o => o.VoucherID.HasValue && voucherIds.Contains(o.VoucherID.Value) && o.DebitAmount > 0)
                     .ToListAsync();
+
                 if (legalOverdueRows.Any())
                 {
+                    var affectedLoanIds = legalOverdueRows.Select(r => r.LoanAccountID).Distinct().ToList();
+                    foreach (int lid in affectedLoanIds)
+                    {
+                        decimal totalDebits = await _context.OverdueRecoveryLedgers
+                            .Where(o => o.LoanAccountID == lid)
+                            .SumAsync(o => (decimal?)o.DebitAmount) ?? 0m;
+                        decimal totalCredits = await _context.OverdueRecoveryLedgers
+                            .Where(o => o.LoanAccountID == lid)
+                            .SumAsync(o => (decimal?)o.CreditAmount) ?? 0m;
+                        decimal removingDebit = legalOverdueRows.Where(r => r.LoanAccountID == lid).Sum(r => r.DebitAmount);
+                        if (totalCredits > (totalDebits - removingDebit + 0.01m))
+                        {
+                            throw new VoucherRollbackDomainException(
+                                StatusCodes.Status400BadRequest,
+                                "या कायदेशीर खर्च व्हाउचरची रक्कम कर्ज वसुलीतून आधीच वसूल झालेली असल्याने हे व्हाउचर डिलीट करता येत नाही.");
+                        }
+                    }
                     _context.OverdueRecoveryLedgers.RemoveRange(legalOverdueRows);
+                }
+
+                // Sync fee totals back onto Sec101NoticeHistory and Sec101CaseMaster
+                var noticeIdsToSync = legalExpenses.Where(e => e.NoticeId.HasValue && e.NoticeId.Value > 0).Select(e => e.NoticeId!.Value).Distinct().ToList();
+                if (noticeIdsToSync.Any())
+                {
+                    var notices = await _context.Sec101NoticeHistories.Where(n => noticeIdsToSync.Contains(n.NoticeId)).ToListAsync();
+                    foreach (var n in notices)
+                    {
+                        decimal removedFee = legalExpenses.Where(e => e.NoticeId == n.NoticeId).Sum(e => e.Amount);
+                        n.NoticeFee = Math.Max(0m, n.NoticeFee - removedFee);
+                        n.TotalDemandAmount = Math.Max(0m, n.PrincipalDue + n.InterestDue + n.PenalInterestDue + n.NoticeFee);
+                    }
+                }
+
+                var courtCaseIds = legalExpenses
+                    .Where(e => e.CaseId.HasValue && e.CaseId.Value > 0 && string.Equals(e.ExpenseType, "COURT_FEE", StringComparison.OrdinalIgnoreCase))
+                    .Select(e => e.CaseId!.Value)
+                    .Distinct()
+                    .ToList();
+                if (courtCaseIds.Any())
+                {
+                    var cases = await _context.Sec101CaseMasters.Where(c => courtCaseIds.Contains(c.CaseId)).ToListAsync();
+                    foreach (var c in cases)
+                    {
+                        decimal removedCourtFee = legalExpenses
+                            .Where(e => e.CaseId == c.CaseId && string.Equals(e.ExpenseType, "COURT_FEE", StringComparison.OrdinalIgnoreCase))
+                            .Sum(e => e.Amount);
+                        c.CourtFeeAmount = Math.Max(0m, c.CourtFeeAmount - removedCourtFee);
+                    }
                 }
 
                 _context.Sec101LegalExpenses.RemoveRange(legalExpenses);
@@ -2160,6 +2226,25 @@ namespace Bhisi.Api.Services
                     (loanAccount.PrincipalBalance > 0.009m || loanAccount.InterestBalance > 0.009m || loanAccount.OverdueInterestBalance > 0.009m))
                 {
                     loanAccount.Status = "Active";
+                    if (!string.IsNullOrWhiteSpace(collection.ReceiptNo))
+                    {
+                        var autoClosedCases = await _context.Sec101CaseMasters
+                            .Include(c => c.Executions)
+                            .Include(c => c.HearingLogs)
+                            .Where(c => c.LoanAccountId == loanAccount.LoanAccountID &&
+                                        c.Status == "CLOSED_RECOVERED" &&
+                                        c.ClosedReason != null &&
+                                        c.ClosedReason.Contains(collection.ReceiptNo))
+                            .ToListAsync();
+                        foreach (var ac in autoClosedCases)
+                        {
+                            ac.Status = ac.Executions.Any() ? "EXECUTION_RULE107"
+                                : ((ac.CertificateDate.HasValue || ac.AwardDate.HasValue) ? "CERTIFICATE_ISSUED"
+                                : (ac.HearingLogs.Any() ? "HEARING" : "FILED"));
+                            ac.ClosedDate = null;
+                            ac.ClosedReason = null;
+                        }
+                    }
                 }
             }
 

@@ -937,6 +937,103 @@ BEGIN
 END
 GO
 
+-- Sync Customer-First / Sec 101-91 / Rule 107 Legal Recovery Schema Upgrades
+IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'LegalRecoveryLedgerMappings' AND COLUMN_NAME = 'BranchId' AND IS_NULLABLE = 'NO')
+BEGIN
+    ALTER TABLE [dbo].[LegalRecoveryLedgerMappings] ALTER COLUMN [BranchId] INT NULL;
+    UPDATE [dbo].[LegalRecoveryLedgerMappings] SET [BranchId] = NULL WHERE [BranchId] = 0;
+END
+GO
+IF COL_LENGTH('Sec101CaseMasters', 'CustomerId') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [CustomerId] INT NULL;
+IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101CaseMasters' AND COLUMN_NAME = 'MemberId' AND IS_NULLABLE = 'NO')
+    ALTER TABLE [dbo].[Sec101CaseMasters] ALTER COLUMN [MemberId] INT NULL;
+IF COL_LENGTH('Sec101CaseMasters', 'CaseType') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [CaseType] NVARCHAR(20) NOT NULL CONSTRAINT [DF_Sec101CaseMasters_CaseType_Vps] DEFAULT 'SEC_101';
+IF COL_LENGTH('Sec101CaseMasters', 'AwardNumber') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [AwardNumber] NVARCHAR(100) NULL;
+IF COL_LENGTH('Sec101CaseMasters', 'AwardDate') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [AwardDate] DATETIME2 NULL;
+IF COL_LENGTH('Sec101CaseMasters', 'TransferCertificateNo') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [TransferCertificateNo] NVARCHAR(100) NULL;
+IF COL_LENGTH('Sec101CaseMasters', 'StayOrderNo') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [StayOrderNo] NVARCHAR(100) NULL;
+IF COL_LENGTH('Sec101CaseMasters', 'StayOrderDate') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [StayOrderDate] DATETIME2 NULL;
+IF COL_LENGTH('Sec101CaseMasters', 'ClosedReason') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [ClosedReason] NVARCHAR(500) NULL;
+IF COL_LENGTH('Sec101CaseMasters', 'ClosedDate') IS NULL
+    ALTER TABLE [dbo].[Sec101CaseMasters] ADD [ClosedDate] DATETIME2 NULL;
+IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101CaseMasters' AND COLUMN_NAME = 'CaseNumber' AND CHARACTER_MAXIMUM_LENGTH < 100)
+    ALTER TABLE [dbo].[Sec101CaseMasters] ALTER COLUMN [CaseNumber] NVARCHAR(100) NOT NULL;
+GO
+IF COL_LENGTH('Sec101CaseMasters', 'CustomerId') IS NOT NULL
+    UPDATE cm SET cm.[CustomerId] = COALESCE(la.[CustomerID], m.[CustomerID])
+    FROM [dbo].[Sec101CaseMasters] cm
+    LEFT JOIN [dbo].[LoanAccounts] la ON cm.[LoanAccountId] = la.[LoanAccountID]
+    LEFT JOIN [dbo].[Members] m ON cm.[MemberId] = m.[MemberID]
+    WHERE cm.[CustomerId] IS NULL;
+GO
+
+IF COL_LENGTH('Sec101NoticeHistories', 'CustomerId') IS NULL
+    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [CustomerId] INT NULL;
+IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101NoticeHistories' AND COLUMN_NAME = 'MemberId' AND IS_NULLABLE = 'NO')
+    ALTER TABLE [dbo].[Sec101NoticeHistories] ALTER COLUMN [MemberId] INT NULL;
+IF COL_LENGTH('Sec101NoticeHistories', 'CaseType') IS NULL
+    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [CaseType] NVARCHAR(20) NOT NULL CONSTRAINT [DF_Sec101NoticeHistories_CaseType_Vps] DEFAULT 'SEC_101';
+IF COL_LENGTH('Sec101NoticeHistories', 'RecipientType') IS NULL
+    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [RecipientType] NVARCHAR(30) NOT NULL CONSTRAINT [DF_Sec101NoticeHistories_RecipientType_Vps] DEFAULT 'BORROWER';
+IF COL_LENGTH('Sec101NoticeHistories', 'RecipientCustomerId') IS NULL
+    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [RecipientCustomerId] INT NULL;
+IF COL_LENGTH('Sec101NoticeHistories', 'RecipientName') IS NULL
+    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [RecipientName] NVARCHAR(200) NULL;
+IF COL_LENGTH('Sec101NoticeHistories', 'RecipientAddress') IS NULL
+    ALTER TABLE [dbo].[Sec101NoticeHistories] ADD [RecipientAddress] NVARCHAR(500) NULL;
+IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101NoticeHistories' AND COLUMN_NAME = 'NoticeNumber' AND CHARACTER_MAXIMUM_LENGTH < 100)
+    ALTER TABLE [dbo].[Sec101NoticeHistories] ALTER COLUMN [NoticeNumber] NVARCHAR(100) NOT NULL;
+GO
+IF COL_LENGTH('Sec101NoticeHistories', 'CustomerId') IS NOT NULL
+    UPDATE nh SET nh.[CustomerId] = COALESCE(la.[CustomerID], m.[CustomerID])
+    FROM [dbo].[Sec101NoticeHistories] nh
+    LEFT JOIN [dbo].[LoanAccounts] la ON nh.[LoanAccountId] = la.[LoanAccountID]
+    LEFT JOIN [dbo].[Members] m ON nh.[MemberId] = m.[MemberID]
+    WHERE nh.[CustomerId] IS NULL;
+GO
+
+IF COL_LENGTH('Sec101HearingLogs', 'NextHearingPurpose') IS NULL
+    ALTER TABLE [dbo].[Sec101HearingLogs] ADD [NextHearingPurpose] NVARCHAR(250) NULL;
+GO
+
+IF COL_LENGTH('Sec101AttachmentAuctions', 'EmployerName') IS NULL
+    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [EmployerName] NVARCHAR(200) NULL;
+IF COL_LENGTH('Sec101AttachmentAuctions', 'EmployerAddress') IS NULL
+    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [EmployerAddress] NVARCHAR(500) NULL;
+IF COL_LENGTH('Sec101AttachmentAuctions', 'MonthlyDeductionAmount') IS NULL
+    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [MonthlyDeductionAmount] DECIMAL(18,2) NULL;
+IF COL_LENGTH('Sec101AttachmentAuctions', 'SpotDepositAmount') IS NULL
+    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [SpotDepositAmount] DECIMAL(18,2) NULL;
+IF COL_LENGTH('Sec101AttachmentAuctions', 'BalancePaymentDueDate') IS NULL
+    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [BalancePaymentDueDate] DATETIME2 NULL;
+IF COL_LENGTH('Sec101AttachmentAuctions', 'SurplusAmount') IS NULL
+    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [SurplusAmount] DECIMAL(18,2) NULL;
+IF COL_LENGTH('Sec101AttachmentAuctions', 'SettlementVoucherId') IS NULL
+    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ADD [SettlementVoucherId] INT NULL;
+IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'Sec101AttachmentAuctions' AND COLUMN_NAME = 'SaleCertificateNo' AND CHARACTER_MAXIMUM_LENGTH < 100)
+    ALTER TABLE [dbo].[Sec101AttachmentAuctions] ALTER COLUMN [SaleCertificateNo] NVARCHAR(100) NULL;
+GO
+
+IF COL_LENGTH('Sec101LegalExpenses', 'NoticeId') IS NULL
+    ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [NoticeId] INT NULL;
+IF COL_LENGTH('Sec101LegalExpenses', 'CustomerId') IS NULL
+    ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [CustomerId] INT NULL;
+GO
+IF COL_LENGTH('Sec101LegalExpenses', 'CustomerId') IS NOT NULL
+    UPDATE le SET le.[CustomerId] = la.[CustomerID]
+    FROM [dbo].[Sec101LegalExpenses] le
+    INNER JOIN [dbo].[LoanAccounts] la ON le.[LoanAccountId] = la.[LoanAccountID]
+    WHERE le.[CustomerId] IS NULL;
+GO
+
 -- -----------------------------------------------------------------------------------------
 -- 8. LOCKER MANAGEMENT MODULE TABLES
 -- -----------------------------------------------------------------------------------------

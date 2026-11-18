@@ -792,9 +792,12 @@ namespace Bhisi.Api.Helpers
             AppDbContext context,
             AddLegalExpenseDto dto,
             int effectiveBranchId,
-            int effectiveLoanAccountId)
+            int effectiveLoanAccountId,
+            int createdByUserId = 1,
+            int? noticeId = null)
         {
             int branchId = effectiveBranchId > 0 ? effectiveBranchId : 1;
+            int actorUserId = createdByUserId > 0 ? createdByUserId : 1;
             string payee = dto.PaidTo ?? dto.PayeeName ?? "कायदेशीर सल्लागार / अधिकारी";
             string rawNarration = !string.IsNullOrWhiteSpace(dto.Remarks)
                 ? dto.Remarks!.Trim()
@@ -804,22 +807,14 @@ namespace Bhisi.Api.Helpers
                 : rawNarration;
 
             var mapping = await context.LegalRecoveryLedgerMappings
-                .Where(m => (m.BranchId == branchId || m.BranchId == 0) && m.TransactionType == dto.ExpenseType && m.IsActive)
-                .OrderByDescending(m => m.BranchId)
+                .Where(m => (m.BranchId == branchId || m.BranchId == null || m.BranchId == 0) && m.TransactionType == dto.ExpenseType && m.IsActive)
+                .OrderByDescending(m => m.BranchId.HasValue && m.BranchId.Value > 0 ? 1 : 0)
                 .FirstOrDefaultAsync();
 
             int debitLedgerId = mapping?.DebitLedgerId ?? 0;
             if (debitLedgerId <= 0)
             {
-                var dynDr = await context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && (l.LedgerName.Contains("कायदेशीर") || l.LedgerName.Contains("Legal") || l.LedgerName.Contains("Court")))
-                    ?? await context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && (l.LedgerName.Contains("नोटीस") || l.LedgerName.Contains("वसुली खर्च")))
-                    ?? await context.Ledgers.Include(l => l.AccountGroup).FirstOrDefaultAsync(l => l.IsActive && (l.AccountType == "Expenses" || l.AccountType == "Expense" || (l.AccountGroup != null && l.AccountGroup.NatureOfGroup == "Expenses")));
-                debitLedgerId = dynDr?.LedgerID ?? 0;
-            }
-
-            if (debitLedgerId <= 0)
-            {
-                throw new InvalidOperationException($"कायदेशीर खर्चाच्या प्रकारासाठी ('{dto.ExpenseType}') कोणतेही वैध खर्च लेजर (Debit Ledger) सापडले नाही. कृपया कायदेशीर लेजर मॅपिंग पूर्ण करा.");
+                throw new InvalidOperationException($"कायदेशीर खर्चाच्या प्रकारासाठी ('{dto.ExpenseType}') कोणतेही वैध खर्च लेजर (Debit Ledger) मॅप केलेले नाही. कृपया कायदेशीर लेजर मॅपिंग पूर्ण करा.");
             }
 
             string mode = (dto.PaymentMode ?? "CASH").Trim();
@@ -854,11 +849,13 @@ namespace Bhisi.Api.Helpers
             }
 
             LoanAccount? loan = effectiveLoanAccountId > 0
-                ? await context.LoanAccounts.AsNoTracking().FirstOrDefaultAsync(l => l.LoanAccountID == effectiveLoanAccountId)
+                ? await context.LoanAccounts.Include(l => l.Member).AsNoTracking().FirstOrDefaultAsync(l => l.LoanAccountID == effectiveLoanAccountId)
                 : null;
 
+            int? customerId = (loan != null && loan.CustomerID.HasValue && loan.CustomerID.Value > 0)
+                ? loan.CustomerID.Value
+                : (loan?.Member != null && loan.Member.CustomerID > 0 ? loan.Member.CustomerID : (int?)null);
             int? memberId = (loan != null && loan.MemberID.HasValue && loan.MemberID.Value > 0) ? loan.MemberID.Value : null;
-            int? customerId = (loan != null && loan.CustomerID.HasValue && loan.CustomerID.Value > 0) ? loan.CustomerID.Value : null;
 
             var ownTx = context.Database.CurrentTransaction == null
                 ? await context.Database.BeginTransactionAsync()
@@ -876,7 +873,7 @@ namespace Bhisi.Api.Helpers
                     Status = "Pending",
                     Narration = finalNarration,
                     TotalAmount = dto.Amount,
-                    CreatedBy = 1,
+                    CreatedBy = actorUserId,
                     CreatedOn = DateTime.UtcNow,
                     VoucherDetails = new List<VoucherDetail>
                     {
@@ -891,6 +888,7 @@ namespace Bhisi.Api.Helpers
                         new VoucherDetail
                         {
                             LedgerID = creditLedgerId,
+                            CustomerID = isJournalMode ? customerId : null,
                             MemberID = null,
                             DrCr = "Cr",
                             Amount = dto.Amount
@@ -906,7 +904,9 @@ namespace Bhisi.Api.Helpers
                 {
                     BranchId = branchId,
                     CaseId = dto.CaseId,
+                    NoticeId = noticeId,
                     LoanAccountId = effectiveLoanAccountId,
+                    CustomerId = customerId,
                     ExpenseType = dto.ExpenseType,
                     Amount = dto.Amount,
                     ExpenseDate = dto.ExpenseDate,
@@ -914,23 +914,13 @@ namespace Bhisi.Api.Helpers
                     VoucherId = voucher.VoucherID,
                     IsDebitedToLoan = dto.IsDebitedToBorrower,
                     Remarks = finalNarration,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = actorUserId
                 };
                 context.Sec101LegalExpenses.Add(expense);
 
-                if (dto.IsDebitedToBorrower && effectiveLoanAccountId > 0 && loan != null)
-                {
-                    context.OverdueRecoveryLedgers.Add(new OverdueRecoveryLedger
-                    {
-                        LoanAccountID = effectiveLoanAccountId,
-                        TransactionDate = dto.ExpenseDate,
-                        DebitAmount = dto.Amount,
-                        CreditAmount = 0m,
-                        VoucherID = voucher.VoucherID,
-                        Particulars = finalNarration.Length > 250 ? finalNarration.Substring(0, 250) : finalNarration
-                    });
-                }
-
+                // NOTE: OverdueRecoveryLedgers debit is posted strictly upon Voucher Approval
+                // (VoucherPostingController.PostVouchers) so unapproved Pending vouchers never inflate borrower dues.
                 await context.SaveChangesAsync();
                 if (ownTx != null)
                 {

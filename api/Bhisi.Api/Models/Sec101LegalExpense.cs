@@ -20,11 +20,21 @@ namespace Bhisi.Api.Models
         [ForeignKey("CaseId")]
         public virtual Sec101CaseMaster? Case { get; set; }
 
+        public int? NoticeId { get; set; }
+
+        [ForeignKey("NoticeId")]
+        public virtual Sec101NoticeHistory? Notice { get; set; }
+
         [Required]
         public int LoanAccountId { get; set; }
 
         [ForeignKey("LoanAccountId")]
         public virtual LoanAccount? LoanAccount { get; set; }
+
+        public int? CustomerId { get; set; }
+
+        [ForeignKey("CustomerId")]
+        public virtual Customer? Customer { get; set; }
 
         [Required]
         [StringLength(50)]

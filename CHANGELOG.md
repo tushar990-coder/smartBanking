@@ -1,5 +1,22 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-18] - आवृत्ती v2.6.29 (Customer-First Sec 101/91 Legal Recovery Hub, Customer 101/91 Tracker, Accrued Interest & Metadata Resolution, Sidebar Nesting & CBS Theme Alignment)
+
+### ⚖️ 1. कलम १०१ / ९१ कायदेशीर वसुली केंद्र Customer-ID-First एकात्मिकरण व ग्राहक ट्रॅकर
+- **`LegalRecoveryController.cs`, `LegalRecoveryMappingController.cs`, `LegalRecoveryTrackerHelper.cs`, `VoucherPostingController.cs`, `VoucherRollbackAndDeleteService.cs`, `Program.cs`, `tools/master_vps_update_schema.sql` व `CustomerLegalTracker.tsx`:**
+  - नोटीस फी, कोर्ट फी व कायदेशीर खर्च व्हाउचर्ससाठी डायनॅमिक लेजर मॅपिंगसह अणु (Atomic) Auto-Voucher व पासिंग/रोलबॅक सिंक.
+  - **`ग्राहक १०१/९१ ट्रॅकर` (`CustomerLegalTracker.tsx`):** एका ग्राहकाच्या (CIF क्र.) सर्व थकीत कर्जांची ८-टप्पे कायदेशीर प्रगती, घटनाक्रम टाइमलाइन, पुढील आवश्यक कार्यवाही व A4 प्रिंट फाईल.
+
+### 💰 2. नियमित व दंडव्याज गणना व कर्ज तपशील फॉलॅक इंजिन
+- **`LegalRecoveryTrackerHelper.ResolveLoanMetadata` / `ComputeLoanDuesSnapshot`, `GET /api/LegalRecovery/loan-dues-preview/{loanAccountId}`, `Sec101NoticeMaster.tsx`, `Sec101CaseFilingMaster.tsx` व `Sec101LegalRecoveryTests.cs`:**
+  - जुन्या/Opening Balance (`31/03/2026`) खात्यांवर `SanctionedAmount`, `InterestRate`, `DurationMonths`, `InstallmentAmount`, आणि `MaturityDate` साठी योजनेचे (`LoanRate`), अर्ज व वितरणाचे फॉलॅक रेझोल्यूशन (`AddMonths(0)` बग दूर) व प्रलंबित नियमित/दंडव्याज मोजणी.
+  - API लोडिंग अपयश किंवा जुना सर्व्हर चालू असल्यास स्पष्ट लाल चेतावणी (`apiError`) व तात्पुरता अचूक दिवस-फरक गणना (११२/११२ xUnit चाचण्या उत्तीर्ण).
+
+### 🎨 3. Sidebar उप-मेनू नेस्टिंग व ERP CBS Form Theme एकसूत्रीकरण
+- **`Sidebar.tsx`, `LegalRecoveryDashboard.tsx` व सर्व ८ कलम १०१/९१ स्क्रीन (`Sec101*`, `CustomerLegalTracker`, `LegalRecoveryMappingMaster`):**
+  - `कलम १०१ वसुली` पॅरेंट मॉड्यूल अंतर्गत `ग्राहक १०१/९१ ट्रॅकर` सह सर्व ७ उप-पर्याय नेस्ट केले.
+  - दुहेरी डार्क ग्रेडियंट बॅनर व हार्डकोडेड रंग काढून `--color-primary` व `:root[data-bg-theme]` आधारित मानक CBS फॉर्म स्टाईल व `embedded` मोड लागू केला.
+
 ## 📅 [2026-11-17] - आवृत्ती v2.6.28 (Voucher Delete & BulkReject `FdMisPayouts` Runtime Startup Schema Self-Heal)
 
 ### 🛡️ 1. `FdMisPayouts` व `SupportTickets` स्टार्टअप स्कीमा सेल्फ-हील (`Program.cs`, `VoucherPostingLinkedAccountTests.cs`)

@@ -381,6 +381,7 @@ function App() {
 
     // Legal Recovery Section 101/91 (सहकार कायदा कलम १०१/९१ कायदेशीर वसुली)
     'legal-recovery': '/legal-recovery',
+    'sec101-tracker': '/legal-recovery/customer-tracker',
     'sec101-notices': '/legal-recovery/notices',
     'sec101-filing': '/legal-recovery/filing',
     'sec101-hearings': '/legal-recovery/hearings',
@@ -911,7 +912,19 @@ function App() {
 
         {/* Legal Recovery (Sec 101 / 91) Module */}
         {activeTab === 'sec101-reports' && <Sec101LegalReports />}
-        {(activeTab === 'legal-recovery' || (activeTab.startsWith('sec101-') && activeTab !== 'sec101-reports')) && <LegalRecoveryDashboard />}
+        {(activeTab === 'legal-recovery' || (activeTab.startsWith('sec101-') && activeTab !== 'sec101-reports')) && (
+          <LegalRecoveryDashboard
+            initialSubTab={
+              activeTab === 'sec101-tracker' ? 'tracker' :
+              activeTab === 'sec101-notices' ? 'notices' :
+              activeTab === 'sec101-filing' ? 'filing' :
+              activeTab === 'sec101-hearings' ? 'hearings' :
+              activeTab === 'sec101-executions' ? 'executions' :
+              activeTab === 'sec101-mapping' ? 'mapping' :
+              'overview'
+            }
+          />
+        )}
 
         {/* Reports */}
         {activeTab === 'reports' && <ReportDashboard setActiveTab={handleNavigate} />}

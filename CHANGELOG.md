@@ -1,5 +1,12 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-18] - आवृत्ती v2.6.30 (VPS Multi-App Patch Config Update - Vidyasagar Kavathesar Target)
+
+### 🛠️ 1. VPS मल्टी-ॲप मास्टर पॅच कॉन्फिगरेशन अद्यतन
+- **`tools/vps_multi_app_config.json`:**
+  - नवीन संस्था टार्गेट **`Vidyasagar Kavathesar`** (`SmartBanking_kavathesarvidyasagar`, `kavathesarvidyasagar-backend`, `D:\WebApps\kavathesarvidyasagar\backend`, `D:\WebApps\kavathesarvidyasagar\frontend`) जोडले (एकूण १० टार्गेट्स).
+  - सर्व अद्ययावत कलम १०१/९१ कायदेशीर वसुली कोड व अद्ययावत १०-टार्गेट कॉन्फिगरेशनसह `SmartBanking_VPS_Multi_App_Master_Patch` पॅकेज अद्ययावत केले.
+
 ## 📅 [2026-11-18] - आवृत्ती v2.6.29 (Customer-First Sec 101/91 Legal Recovery Hub, Customer 101/91 Tracker, Accrued Interest & Metadata Resolution, Sidebar Nesting & CBS Theme Alignment)
 
 ### ⚖️ 1. कलम १०१ / ९१ कायदेशीर वसुली केंद्र Customer-ID-First एकात्मिकरण व ग्राहक ट्रॅकर

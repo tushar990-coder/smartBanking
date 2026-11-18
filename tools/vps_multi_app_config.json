@@ -67,6 +67,13 @@
       "IISAppPoolName": "sahyadrikarmachari-backend",
       "BackendFolderPath": "D:\\WebApps\\sahyadrikarmachari\\backend",
       "FrontendFolderPath": "D:\\WebApps\\sahyadrikarmachari\\frontend"
+    },
+    {
+      "SansthaName": "Vidyasagar Kavathesar",
+      "TargetDatabase": "SmartBanking_kavathesarvidyasagar",
+      "IISAppPoolName": "kavathesarvidyasagar-backend",
+      "BackendFolderPath": "D:\\WebApps\\kavathesarvidyasagar\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\kavathesarvidyasagar\\frontend"
     }
   ],
   "_CommentedOtherTargets": []

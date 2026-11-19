@@ -1580,5 +1580,357 @@ namespace Bhisi.Api.Tests
             Assert.NotNull(cbsConflict);
             Assert.Equal(802, cbsConflict!.FdAccountID);
         }
+
+        [Fact]
+        public async Task Renew_WhenCustomerHasOverdueOrActiveLoan_AllowsBothPrincipalOnlyCashAndFullRoll()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 30);
+            var (_, custA, _) = await SeedBaseFdEnvironmentAsync(db, "RETAIN_ORIGINAL", allowManual: false, businessDate);
+
+            // Seed ₹2,81,224 active/overdue loan on custA (exact screenshot scenario)
+            db.LoanAccounts.Add(new LoanAccount
+            {
+                LoanAccountID = 501,
+                BranchID = 1,
+                CustomerID = custA.CustomerID,
+                LoanAccountNo = "001-601-0000501-1",
+                SanctionedAmount = 300000m,
+                PrincipalBalance = 250000m,
+                InterestBalance = 25000m,
+                OverdueInterestBalance = 6224m,
+                InterestRate = 14m,
+                OpeningDate = new DateTime(2025, 1, 1),
+                LastInterestPostingDate = businessDate,
+                Status = "Active"
+            });
+
+            db.FdAccounts.AddRange(
+                new FdAccount
+                {
+                    FdAccountID = 941,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0000263-7",
+                    ReceiptNo = "1177",
+                    LegacyAccountNumber = "1177",
+                    OpeningDate = new DateTime(2025, 3, 29),
+                    MaturityDate = new DateTime(2026, 4, 29),
+                    DurationType = "Days",
+                    DurationValue = 396,
+                    DurationInDays = 396,
+                    DepositAmount = 50000m,
+                    MaturityAmount = 54870m,
+                    InterestRate = 9m,
+                    Status = "Active"
+                },
+                new FdAccount
+                {
+                    FdAccountID = 942,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0000264-5",
+                    ReceiptNo = "1178",
+                    LegacyAccountNumber = "1178",
+                    OpeningDate = new DateTime(2025, 3, 29),
+                    MaturityDate = new DateTime(2026, 4, 29),
+                    DurationType = "Days",
+                    DurationValue = 396,
+                    DurationInDays = 396,
+                    DepositAmount = 50000m,
+                    MaturityAmount = 54870m,
+                    InterestRate = 9m,
+                    Status = "Active"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            var controller = new FdAccountsController(db);
+            AttachUser(controller, BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate));
+
+            // 1. PrincipalOnly renewal (₹50,000 renewed + ₹4,870 Cash interest payout) MUST SUCCEED despite ₹2,81,224 overdue loan
+            var prinOnlyRes = ParseOkJson(await controller.Renew(941, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalOnly",
+                PaymentMode = "Cash",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 13
+            }));
+            Assert.Equal(50000m, prinOnlyRes.GetProperty("NewDeposit").GetDecimal());
+            string intVoucherNo = prinOnlyRes.GetProperty("InterestVoucherNo").GetString()!;
+            Assert.False(string.IsNullOrWhiteSpace(intVoucherNo));
+            var intVoucher = await db.Vouchers.FirstAsync(v => v.VoucherNo == intVoucherNo);
+            Assert.Equal(4870m, intVoucher.TotalAmount);
+            Assert.Equal("1177", prinOnlyRes.GetProperty("NewReceiptNo").GetString());
+
+            // 2. PrincipalPlusInterest renewal MUST ALSO SUCCEED
+            var fullRollRes = ParseOkJson(await controller.Renew(942, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 13
+            }));
+            Assert.Equal(54870m, fullRollRes.GetProperty("NewDeposit").GetDecimal());
+            Assert.Equal("1178", fullRollRes.GetProperty("NewReceiptNo").GetString());
+        }
+
+        [Fact]
+        public async Task Renew_WhenFdIsLienMarked_AllowsRenewalAndCarriesForwardLienAndCollateral_AndRestoresOnRollback()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 30);
+            var (_, custA, _) = await SeedBaseFdEnvironmentAsync(db, "RETAIN_ORIGINAL", allowManual: false, businessDate);
+
+            db.LoanAccounts.Add(new LoanAccount
+            {
+                LoanAccountID = 502,
+                BranchID = 1,
+                CustomerID = custA.CustomerID,
+                LoanAccountNo = "LN-FD-502",
+                SanctionedAmount = 40000m,
+                PrincipalBalance = 35000m,
+                InterestBalance = 1200m,
+                OverdueInterestBalance = 0m,
+                InterestRate = 12m,
+                OpeningDate = new DateTime(2025, 5, 1),
+                LastInterestPostingDate = businessDate,
+                SecurityDetails = "FD Pledge: 001-401-0000950-1",
+                Status = "Active"
+            });
+
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 950,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = custA.CustomerID,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000950-1",
+                ReceiptNo = "1250",
+                LegacyAccountNumber = "1250",
+                OpeningDate = new DateTime(2025, 4, 29),
+                MaturityDate = new DateTime(2026, 4, 29),
+                DurationType = "Months",
+                DurationValue = 12,
+                DurationInDays = 365,
+                DepositAmount = 50000m,
+                MaturityAmount = 55000m,
+                InterestRate = 10m,
+                IsLienMarked = true,
+                LienLoanAccountNo = "LN-FD-502",
+                LienAmount = 40000m,
+                Status = "Active"
+            });
+
+            db.LoanDepositCollaterals.Add(new LoanDepositCollateral
+            {
+                CollateralID = 701,
+                LoanAccountID = 502,
+                CustomerID = custA.CustomerID,
+                CollateralType = "FixedDeposit",
+                DepositAccountID = 950,
+                DepositAccountNo = "001-401-0000950-1",
+                DepositAmount = 50000m,
+                CurrentDepositBalance = 50000m,
+                LienAmount = 40000m,
+                LienStatus = "LienMarked"
+            });
+            await db.SaveChangesAsync();
+
+            var adminUser = BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate);
+            var fdController = new FdAccountsController(db);
+            AttachUser(fdController, adminUser);
+
+            var renewRes = ParseOkJson(await fdController.Renew(950, new FdRenewalRequest
+            {
+                TargetSchemeID = 1,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12
+            }));
+
+            string newAccNo = renewRes.GetProperty("NewAccountNo").GetString()!;
+            string voucherNo = renewRes.GetProperty("VoucherNo").GetString()!;
+
+            var newFd = await db.FdAccounts.FirstAsync(a => a.AccountNo == newAccNo);
+            Assert.True(newFd.IsLienMarked);
+            Assert.Equal("LN-FD-502", newFd.LienLoanAccountNo);
+            Assert.Equal(40000m, newFd.LienAmount);
+
+            var colAfterRenew = await db.LoanDepositCollaterals.FindAsync(701);
+            Assert.Equal(newFd.FdAccountID, colAfterRenew!.DepositAccountID);
+            Assert.Equal(newAccNo, colAfterRenew.DepositAccountNo);
+
+            var loanAfterRenew = await db.LoanAccounts.FindAsync(502);
+            Assert.Contains(newAccNo, loanAfterRenew!.SecurityDetails);
+
+            // Rollback the pending renewal voucher and verify lien + collateral restore cleanly onto old FD 950
+            var renVoucher = await db.Vouchers.FirstAsync(v => v.VoucherNo == voucherNo);
+            var postingController = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(postingController, adminUser);
+
+            var rejectRes = await postingController.RejectVoucher(renVoucher.VoucherID, new VoucherPostingController.VoucherRejectDto
+            {
+                Reason = "Rollback inherited lien test"
+            });
+            Assert.IsType<OkObjectResult>(rejectRes);
+
+            var restoredOld = await db.FdAccounts.FindAsync(950);
+            Assert.Equal("Matured", restoredOld!.Status);
+            Assert.True(restoredOld.IsLienMarked);
+
+            var colRestored = await db.LoanDepositCollaterals.FindAsync(701);
+            Assert.Equal(950, colRestored!.DepositAccountID);
+            Assert.Equal("001-401-0000950-1", colRestored.DepositAccountNo);
+
+            var loanRestored = await db.LoanAccounts.FindAsync(502);
+            Assert.Contains("001-401-0000950-1", loanRestored!.SecurityDetails);
+        }
+
+        [Fact]
+        public async Task CloseAndPrematureClose_WhenActiveOrOverdueLoanExists_BlocksDirectCashBreak_ButAllowsFullLoanAdjustment()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 30);
+            var (_, custA, _) = await SeedBaseFdEnvironmentAsync(db, "RETAIN_ORIGINAL", allowManual: false, businessDate);
+
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 105, GroupID = 3, LedgerCode = "LN-PRIN", LedgerName = "कर्ज मुद्दल येणे", AccountType = "Loan", IsActive = true },
+                new Ledger { LedgerID = 106, GroupID = 2, LedgerCode = "LN-INT", LedgerName = "कर्ज व्याज उत्पन्न", AccountType = "Income", IsActive = true },
+                new Ledger { LedgerID = 107, GroupID = 2, LedgerCode = "LN-PEN", LedgerName = "थकीत दंड व्याज", AccountType = "Income", IsActive = true }
+            );
+            db.LoanRates.Add(new LoanRate
+            {
+                LoanRateID = 1,
+                LoanType = "वैयक्तिक कर्ज",
+                LoanCode = "LN601",
+                LoanLedgerID = 105,
+                InterestLedgerID = 106,
+                OverdueInterestLedgerID = 107,
+                InterestRate = 14m,
+                OverdueInterestRate = 2m
+            });
+            db.LoanAccounts.Add(new LoanAccount
+            {
+                LoanAccountID = 503,
+                BranchID = 1,
+                CustomerID = custA.CustomerID,
+                LoanRateID = 1,
+                LoanAccountNo = "001-601-0000503-8",
+                SanctionedAmount = 100000m,
+                PrincipalBalance = 80000m,
+                InterestBalance = 5000m,
+                OverdueInterestBalance = 2000m,
+                InterestRate = 14m,
+                OpeningDate = new DateTime(2025, 1, 1),
+                LastInterestPostingDate = businessDate,
+                Status = "Active"
+            });
+
+            db.FdAccounts.AddRange(
+                new FdAccount
+                {
+                    FdAccountID = 961,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0000961-1",
+                    ReceiptNo = "1301",
+                    LegacyAccountNumber = "1301",
+                    OpeningDate = new DateTime(2025, 4, 20),
+                    MaturityDate = new DateTime(2026, 4, 20),
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 50000m,
+                    MaturityAmount = 55000m,
+                    InterestRate = 10m,
+                    Status = "Active"
+                },
+                new FdAccount
+                {
+                    FdAccountID = 962,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0000962-9",
+                    ReceiptNo = "1302",
+                    LegacyAccountNumber = "1302",
+                    OpeningDate = new DateTime(2026, 1, 1),
+                    MaturityDate = new DateTime(2027, 1, 1),
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 40000m,
+                    MaturityAmount = 44000m,
+                    InterestRate = 10m,
+                    Status = "Active"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            var controller = new FdAccountsController(db);
+            AttachUser(controller, BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate));
+
+            // 1. MaturedClose with AdjustInLoan = false MUST BE BLOCKED when active/overdue loan exists
+            var directMaturedBreak = await controller.MaturedClose(961, new FdClosureRequest
+            {
+                ClosureDate = businessDate,
+                PaymentMode = "Cash",
+                AdjustInLoan = false
+            });
+            Assert.IsType<BadRequestObjectResult>(directMaturedBreak);
+            Assert.Equal("Active", (await db.FdAccounts.FindAsync(961))!.Status);
+
+            // 2. PrematureClose with AdjustInLoan = false MUST ALSO BE BLOCKED when active/overdue loan exists
+            var directPrematureBreak = await controller.PrematureClose(962, businessDate, new FdClosureRequest
+            {
+                ClosureDate = businessDate,
+                PaymentMode = "Cash",
+                AdjustInLoan = false
+            });
+            Assert.IsType<BadRequestObjectResult>(directPrematureBreak);
+            Assert.Equal("Active", (await db.FdAccounts.FindAsync(962))!.Status);
+
+            // 3. Partial LoanAdjustmentAmount (< maxAdjustable) MUST BE BLOCKED (no cash leak loophole)
+            var partialLoanAdj = await controller.MaturedClose(961, new FdClosureRequest
+            {
+                ClosureDate = businessDate,
+                PaymentMode = "Cash",
+                AdjustInLoan = true,
+                TargetLoanAccountID = 503,
+                LoanAdjustmentAmount = 1000m
+            });
+            Assert.IsType<BadRequestObjectResult>(partialLoanAdj);
+
+            // 4. Full AdjustInLoan (entire ₹55,000 maturity payout applied to loan 503) MUST SUCCEED
+            var fullLoanAdj = await controller.MaturedClose(961, new FdClosureRequest
+            {
+                ClosureDate = businessDate,
+                PaymentMode = "Cash",
+                AdjustInLoan = true,
+                TargetLoanAccountID = 503
+            });
+            Assert.IsType<OkObjectResult>(fullLoanAdj);
+
+            var closedFd = await db.FdAccounts.FindAsync(961);
+            Assert.Equal("Closed", closedFd!.Status);
+
+            var updatedLoan = await db.LoanAccounts.FindAsync(503);
+            Assert.Equal(0m, updatedLoan!.OverdueInterestBalance);
+            Assert.Equal(0m, updatedLoan.InterestBalance);
+            Assert.Equal(32000m, updatedLoan.PrincipalBalance); // 80,000 - (55,000 - 2,000 - 5,000) = 32,000
+        }
     }
 }

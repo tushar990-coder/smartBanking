@@ -436,6 +436,9 @@ namespace Bhisi.Api.Controllers
                     f.LegacyAccruedInt,
                     f.LastInterestPostingDate,
                     f.Status,
+                    f.IsLienMarked,
+                    f.LienLoanAccountNo,
+                    f.LienAmount,
                     f.NomineeName,
                     f.NomineeRelation,
                     f.Remarks,
@@ -500,6 +503,9 @@ namespace Bhisi.Api.Controllers
                     f.PaymentMode,
                     f.LastInterestPostingDate,
                     f.Status,
+                    f.IsLienMarked,
+                    f.LienLoanAccountNo,
+                    f.LienAmount,
                     f.NomineeName,
                     f.NomineeRelation,
                     f.Remarks,
@@ -571,6 +577,9 @@ namespace Bhisi.Api.Controllers
                 AlreadyPostedInterest = alreadyPosted,
                 f.LastInterestPostingDate,
                 f.Status,
+                f.IsLienMarked,
+                f.LienLoanAccountNo,
+                f.LienAmount,
                 f.NomineeName,
                 f.NomineeRelation,
                 f.Remarks,
@@ -1048,7 +1057,11 @@ namespace Bhisi.Api.Controllers
 
                 // 2. Specific Lien / Loan Security Guard:
                 // तपासा: ही विशिष्ट मुदत ठेव पावती एखाद्या सक्रिय कर्जासाठी थेट तारण (Lien/Security) म्हणून नोंदवलेली आहे का?
-                if (account.CustomerID > 0)
+                bool isInheritedRenewalLien = account.ParentFdAccountID.HasValue &&
+                    account.ParentFdAccountID.Value > 0 &&
+                    await _context.FdAccounts.AnyAsync(p => p.FdAccountID == account.ParentFdAccountID.Value && p.IsLienMarked);
+
+                if (account.CustomerID > 0 && !isInheritedRenewalLien)
                 {
                     string accNo = account.AccountNo ?? "";
                     string legNo = account.LegacyAccountNumber ?? "";
@@ -1058,10 +1071,16 @@ namespace Bhisi.Api.Controllers
                             ((!string.IsNullOrEmpty(accNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(accNo)) ||
                              (!string.IsNullOrEmpty(legNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(legNo))));
 
-                    if (pledgedLoan != null)
+                    bool hasActiveCollateralRow = await _context.LoanDepositCollaterals.AnyAsync(c =>
+                        c.CollateralType == "FixedDeposit" &&
+                        c.DepositAccountID == account.FdAccountID &&
+                        c.LienStatus != "Released");
+
+                    if (account.IsLienMarked || pledgedLoan != null || hasActiveCollateralRow)
                     {
+                        string refLoanNo = pledgedLoan?.LoanAccountNo ?? account.LienLoanAccountNo ?? "सक्रिय कर्ज";
                         return BadRequest(new { 
-                            message = $"सदर मुदत ठेव पावती '{account.AccountNo}' कर्ज खाते क्र. {pledgedLoan.LoanAccountNo} साठी तारण (Lien/Security) म्हणून नोंदवलेली आहे. त्यामुळे हे खाते नष्ट करता येणार नाही." 
+                            message = $"सदर मुदत ठेव पावती '{account.AccountNo}' कर्ज खाते क्र. {refLoanNo} साठी तारण (Lien/Security) म्हणून नोंदवलेली आहे. त्यामुळे हे खाते नष्ट करता येणार नाही." 
                         });
                     }
 
@@ -2493,6 +2512,67 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        private async Task<(bool HasDirectLien, string? DirectLienLoanNo, List<LoanAccount> ActiveLoans, decimal TotalActiveLoanDebt, int? LinkedMemberId)> GetFdActiveLoansAndLienContextAsync(
+            FdAccount account,
+            DateTime effectiveDate)
+        {
+            int custId = account.CustomerID;
+            int? memberId = null;
+            if (custId > 0)
+            {
+                var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
+                if (mem != null) memberId = mem.MemberID;
+            }
+
+            var activeCollaterals = await _context.LoanDepositCollaterals
+                .Where(c => c.CollateralType == "FixedDeposit" &&
+                            c.DepositAccountID == account.FdAccountID &&
+                            c.LienStatus != "Released")
+                .ToListAsync();
+
+            var collateralLoanIds = activeCollaterals
+                .Where(c => c.LoanAccountID.HasValue && c.LoanAccountID.Value > 0)
+                .Select(c => c.LoanAccountID!.Value)
+                .Distinct()
+                .ToList();
+
+            string accNo = account.AccountNo ?? string.Empty;
+            string lienLoanNo = account.LienLoanAccountNo?.Trim() ?? string.Empty;
+
+            var activeLoans = await _context.LoanAccounts
+                .Include(l => l.LoanRate)
+                .Where(l => l.Status == "Active" &&
+                            (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0) &&
+                            ((custId > 0 && l.CustomerID == custId) ||
+                             (memberId.HasValue && memberId.Value > 0 && l.MemberID == memberId.Value) ||
+                             collateralLoanIds.Contains(l.LoanAccountID) ||
+                             (!string.IsNullOrEmpty(lienLoanNo) && l.LoanAccountNo == lienLoanNo) ||
+                             (!string.IsNullOrEmpty(accNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(accNo))))
+                .OrderBy(l => l.LoanAccountNo)
+                .ToListAsync();
+
+            decimal totalOutstanding = 0m;
+            foreach (var l in activeLoans)
+            {
+                var (accruedInt, _, _) = await CalculatePendingLoanInterestAsync(l, effectiveDate);
+                totalOutstanding += l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance + accruedInt;
+            }
+
+            bool hasSecurityLoan = !string.IsNullOrEmpty(accNo) &&
+                                   activeLoans.Any(l => l.SecurityDetails != null && l.SecurityDetails.Contains(accNo));
+            bool hasLinkedLienLoan = !string.IsNullOrEmpty(lienLoanNo) &&
+                                     activeLoans.Any(l => string.Equals(l.LoanAccountNo, lienLoanNo, StringComparison.OrdinalIgnoreCase));
+
+            bool hasDirectLien = account.IsLienMarked || activeCollaterals.Any() || hasSecurityLoan || hasLinkedLienLoan;
+            string? resolvedDirectLienLoanNo = !string.IsNullOrEmpty(lienLoanNo)
+                ? lienLoanNo
+                : activeLoans.FirstOrDefault(l =>
+                    collateralLoanIds.Contains(l.LoanAccountID) ||
+                    (!string.IsNullOrEmpty(accNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(accNo)))?.LoanAccountNo;
+
+            return (hasDirectLien, resolvedDirectLienLoanNo, activeLoans, totalOutstanding, memberId);
+        }
+
         // GET: api/FdAccounts/5/ActiveLoans
         [HttpGet("{id}/ActiveLoans")]
         public async Task<IActionResult> GetActiveLoansForFd(int id, [FromQuery] DateTime? asOfDate = null)
@@ -2507,32 +2587,7 @@ namespace Bhisi.Api.Controllers
             }
 
             DateTime effectiveDate = asOfDate?.Date ?? DateTime.Today;
-
-            int custId = account.CustomerID;
-            int? memberId = null;
-            if (custId > 0)
-            {
-                var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
-                if (mem != null) memberId = mem.MemberID;
-            }
-
-            var loansQuery = _context.LoanAccounts
-                .Include(l => l.LoanRate)
-                .Where(l => l.Status == "Active");
-
-            if (memberId.HasValue && memberId.Value > 0)
-            {
-                loansQuery = loansQuery.Where(l => l.CustomerID == custId || l.MemberID == memberId.Value);
-            }
-            else
-            {
-                loansQuery = loansQuery.Where(l => l.CustomerID == custId);
-            }
-
-            var activeLoans = await loansQuery
-                .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
-                .OrderBy(l => l.LoanAccountNo)
-                .ToListAsync();
+            var (hasDirectLien, directLienLoanNo, activeLoans, _, _) = await GetFdActiveLoansAndLienContextAsync(account, effectiveDate);
 
             var loanList = new List<object>();
             decimal totalOutstanding = 0m;
@@ -2579,6 +2634,8 @@ namespace Bhisi.Api.Controllers
             return Ok(new
             {
                 hasActiveLoan = loanList.Count > 0,
+                hasDirectLien = hasDirectLien,
+                directLienLoanNo = directLienLoanNo,
                 totalOutstandingLiability = totalOutstanding,
                 asOfDate = effectiveDate,
                 loans = loanList
@@ -2702,11 +2759,6 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("मुदत ठेव खाते सक्रिय (Active) किंवा मुदतपूर्ण (Matured) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
-            if (account.IsLienMarked)
-            {
-                return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय ही ठेव बंद करता येत नाही.");
-            }
-
             // Multi-branch CBS: Support Cross-Branch Matured Closure with IBT Dual-Voucher
             int userBranchId = User.GetOperatingBranchId();
             bool isHO = User.IsHeadOfficeAdmin();
@@ -2796,40 +2848,28 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // 🛡️ Lien & Active Loan Check: खातेदाराचे थकीत कर्ज तपासणी
-            int custId = account.CustomerID;
-            int? linkedMemberId = null;
-            if (custId > 0)
+            // 🛡️ Lien & Active Loan Check: खातेदाराचे थकीत/सक्रिय कर्ज व तारण बोजा तपासणी
+            var (hasDirectLien, directLienLoanNo, activeLoans, totalActiveLoanDebt, linkedMemberId) =
+                await GetFdActiveLoansAndLienContextAsync(account, closureDate);
+
+            // नियम: कर्ज थकीत/बाकी असल्यास किंवा तारण बोजा असल्यास कर्जात समायोजित (AdjustInLoan) केल्याशिवाय ठेव मोडता येणार नाही (नूतनीकरण करता येईल).
+            if ((hasDirectLien || (activeLoans.Any() && totalActiveLoanDebt > 0.01m)) && req?.AdjustInLoan != true)
             {
-                var linkedMem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
-                if (linkedMem != null) linkedMemberId = linkedMem.MemberID;
+                if (hasDirectLien)
+                {
+                    return BadRequest(new
+                    {
+                        errorCode = "FD_LIEN_BREAK_BLOCKED",
+                        message = $"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{directLienLoanNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज बाकी असताना ठेव मोडून परतावा घेता येत नाही; कृपया ठेव 'नूतनीकरण (FD Renewal)' करा किंवा 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' निवडा."
+                    });
+                }
+
+                return BadRequest(new
+                {
+                    errorCode = "FD_BREAK_BLOCKED_BY_ACTIVE_LOAN",
+                    message = $"सदर खातेदाराकडे एकूण ₹{totalActiveLoanDebt:N2} चे सक्रिय/थकीत कर्ज बाकी आहे. पतसंस्थेच्या नियमांनुसार कर्ज बाकी असताना मुदत ठेव मोडून परतावा घेता येत नाही. कृपया ठेव 'नूतनीकरण (FD Renewal)' करा किंवा परतावा रक्कम 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' करा."
+                });
             }
-
-            var loansQuery = _context.LoanAccounts
-                .Include(l => l.LoanRate)
-                .Where(l => l.Status == "Active");
-
-            if (linkedMemberId.HasValue && linkedMemberId.Value > 0)
-            {
-                loansQuery = loansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemberId.Value);
-            }
-            else
-            {
-                loansQuery = loansQuery.Where(l => l.CustomerID == custId);
-            }
-
-            var activeLoans = await loansQuery
-                .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
-                .ToListAsync();
-
-            decimal totalActiveLoanDebt = 0m;
-            foreach (var l in activeLoans)
-            {
-                var (pInt, _, _) = await CalculatePendingLoanInterestAsync(l, closureDate);
-                totalActiveLoanDebt += l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance + pInt;
-            }
-
-
 
             // Overdue post-maturity interest calculation (Strictly Governed by FdScheme Policy)
             decimal overdueInterest = 0m;
@@ -2882,14 +2922,23 @@ namespace Bhisi.Api.Controllers
 
             if (req?.AdjustInLoan == true)
             {
-                int targetLoanId = req.TargetLoanAccountID ?? (activeLoans.FirstOrDefault()?.LoanAccountID ?? 0);
+                LoanAccount? pledgedActiveLoan = !string.IsNullOrWhiteSpace(directLienLoanNo)
+                    ? activeLoans.FirstOrDefault(l => string.Equals(l.LoanAccountNo, directLienLoanNo, StringComparison.OrdinalIgnoreCase))
+                    : null;
+
+                if (pledgedActiveLoan != null && req.TargetLoanAccountID.HasValue && req.TargetLoanAccountID.Value > 0 && req.TargetLoanAccountID.Value != pledgedActiveLoan.LoanAccountID)
+                {
+                    return BadRequest(new { message = $"सदर मुदत ठेव पावती कर्ज खाते क्र. '{directLienLoanNo}' साठी तारण असल्याने परतावा प्रथम त्याच कर्ज खात्यात समायोजित करणे बंधनकारक आहे." });
+                }
+
+                int targetLoanId = req.TargetLoanAccountID ?? (pledgedActiveLoan?.LoanAccountID ?? activeLoans.FirstOrDefault()?.LoanAccountID ?? 0);
                 if (targetLoanId == 0)
                 {
                     return BadRequest(new { message = "कृपया मुदत ठेवीची रक्कम वर्ग करण्यासाठी कर्ज खाते निवडा." });
                 }
 
                 targetLoan = activeLoans.FirstOrDefault(l => l.LoanAccountID == targetLoanId) 
-                    ?? await _context.LoanAccounts.Include(l => l.LoanRate).FirstOrDefaultAsync(l => l.LoanAccountID == targetLoanId);
+                    ?? await _context.LoanAccounts.Include(l => l.LoanRate).FirstOrDefaultAsync(l => l.LoanAccountID == targetLoanId && l.Status == "Active");
 
                 if (targetLoan == null)
                 {
@@ -2899,6 +2948,18 @@ namespace Bhisi.Api.Controllers
                 var (pendingInterest, _, _) = await CalculatePendingLoanInterestAsync(targetLoan, closureDate);
                 decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance + pendingInterest;
                 decimal maxAdjustable = Math.Min(totalMaturityPayout, targetLoanTotalDue);
+
+                if ((hasDirectLien || totalActiveLoanDebt > 0.01m) &&
+                    req.LoanAdjustmentAmount.HasValue &&
+                    req.LoanAdjustmentAmount.Value + 0.01m < maxAdjustable)
+                {
+                    return BadRequest(new
+                    {
+                        errorCode = "PARTIAL_LOAN_ADJUST_NOT_ALLOWED",
+                        message = $"खातेदाराकडे सक्रिय/थकीत कर्ज बाकी असल्यामुळे ठेव मोडताना किमान ₹{maxAdjustable:N2} रक्कम कर्जात समायोजित करणे बंधनकारक आहे. कमी रक्कम कर्जात टाकून उर्वरित रक्कम रोख/बँकेत काढता येत नाही (ठेव कायम ठेवायची असल्यास 'नूतनीकरण' निवडा)."
+                    });
+                }
+
                 loanAdjustAmount = req.LoanAdjustmentAmount.HasValue && req.LoanAdjustmentAmount.Value > 0
                     ? Math.Min(req.LoanAdjustmentAmount.Value, maxAdjustable)
                     : maxAdjustable;
@@ -2950,6 +3011,23 @@ namespace Bhisi.Api.Controllers
                             closureDate, 
                             account.AccountNo, 
                             account.BranchID);
+
+                        var linkedFdCollaterals = await _context.LoanDepositCollaterals
+                            .Where(c => c.CollateralType == "FixedDeposit" &&
+                                        c.DepositAccountID == account.FdAccountID &&
+                                        c.LienStatus != "Released")
+                            .ToListAsync();
+                        foreach (var col in linkedFdCollaterals)
+                        {
+                            col.LienStatus = settledLoan.Status == "Closed" ? "Released" : "Invoked";
+                            col.LienReleasedDate = closureDate;
+                            col.CurrentDepositBalance = 0m;
+                        }
+                        if (account.IsLienMarked)
+                        {
+                            account.IsLienMarked = false;
+                        }
+                        if (linkedFdCollaterals.Any()) await _context.SaveChangesAsync();
 
                         // 2. Resolve Surplus Payout Ledger (if surplus > 0)
                         string surplusMode = !string.IsNullOrWhiteSpace(req.SurplusPaymentMode) ? req.SurplusPaymentMode : "Cash";
@@ -3606,11 +3684,6 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("मुदत ठेव खाते सक्रिय (Active) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
-            if (account.IsLienMarked)
-            {
-                return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय ही ठेव बंद करता येत नाही.");
-            }
-
             // Multi-branch CBS: Support Cross-Branch Premature Closure with IBT Dual-Voucher
             int userBranchId = User.GetOperatingBranchId();
             bool isHO = User.IsHeadOfficeAdmin();
@@ -3686,40 +3759,27 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // 🛡️ Lien & Active Loan Check: खातेदाराचे थकीत कर्ज तपासणी
-            int custId = account.CustomerID;
-            int? linkedMemberId = null;
-            if (custId > 0)
+            // 🛡️ Lien & Active Loan Check: खातेदाराचे थकीत/सक्रिय कर्ज व तारण बोजा तपासणी
+            var (hasDirectLien, directLienLoanNo, activeLoans, totalActiveLoanDebt, linkedMemberId) =
+                await GetFdActiveLoansAndLienContextAsync(account, effectiveClosureDate);
+
+            if ((hasDirectLien || (activeLoans.Any() && totalActiveLoanDebt > 0.01m)) && req?.AdjustInLoan != true)
             {
-                var linkedMem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
-                if (linkedMem != null) linkedMemberId = linkedMem.MemberID;
+                if (hasDirectLien)
+                {
+                    return BadRequest(new
+                    {
+                        errorCode = "FD_LIEN_BREAK_BLOCKED",
+                        message = $"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{directLienLoanNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज बाकी असताना मुदतपूर्व ठेव मोडून परतावा घेता येत नाही; कृपया मुदतीनंतर 'नूतनीकरण (FD Renewal)' करा किंवा 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' निवडा."
+                    });
+                }
+
+                return BadRequest(new
+                {
+                    errorCode = "FD_BREAK_BLOCKED_BY_ACTIVE_LOAN",
+                    message = $"सदर खातेदाराकडे एकूण ₹{totalActiveLoanDebt:N2} चे सक्रिय/थकीत कर्ज बाकी आहे. पतसंस्थेच्या नियमांनुसार कर्ज बाकी असताना मुदतपूर्व ठेव मोडून परतावा घेता येत नाही. कृपया परतावा रक्कम 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' करा."
+                });
             }
-
-            var loansQuery = _context.LoanAccounts
-                .Include(l => l.LoanRate)
-                .Where(l => l.Status == "Active");
-
-            if (linkedMemberId.HasValue && linkedMemberId.Value > 0)
-            {
-                loansQuery = loansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemberId.Value);
-            }
-            else
-            {
-                loansQuery = loansQuery.Where(l => l.CustomerID == custId);
-            }
-
-            var activeLoans = await loansQuery
-                .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
-                .ToListAsync();
-
-            decimal totalActiveLoanDebt = 0m;
-            foreach (var l in activeLoans)
-            {
-                var (pInt, _, _) = await CalculatePendingLoanInterestAsync(l, effectiveClosureDate);
-                totalActiveLoanDebt += l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance + pInt;
-            }
-
-
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
@@ -3799,23 +3859,48 @@ namespace Bhisi.Api.Controllers
 
                     if (req?.AdjustInLoan == true)
                     {
-                        int targetLoanId = req.TargetLoanAccountID ?? (activeLoans.FirstOrDefault()?.LoanAccountID ?? 0);
+                        LoanAccount? pledgedActiveLoan = !string.IsNullOrWhiteSpace(directLienLoanNo)
+                            ? activeLoans.FirstOrDefault(l => string.Equals(l.LoanAccountNo, directLienLoanNo, StringComparison.OrdinalIgnoreCase))
+                            : null;
+
+                        if (pledgedActiveLoan != null && req.TargetLoanAccountID.HasValue && req.TargetLoanAccountID.Value > 0 && req.TargetLoanAccountID.Value != pledgedActiveLoan.LoanAccountID)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = $"सदर मुदत ठेव पावती कर्ज खाते क्र. '{directLienLoanNo}' साठी तारण असल्याने परतावा प्रथम त्याच कर्ज खात्यात समायोजित करणे बंधनकारक आहे." });
+                        }
+
+                        int targetLoanId = req.TargetLoanAccountID ?? (pledgedActiveLoan?.LoanAccountID ?? activeLoans.FirstOrDefault()?.LoanAccountID ?? 0);
                         if (targetLoanId == 0)
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest(new { message = "कृपया मुदत ठेवीची रक्कम वर्ग करण्यासाठी कर्ज खाते निवडा." });
                         }
 
                         targetLoan = activeLoans.FirstOrDefault(l => l.LoanAccountID == targetLoanId) 
-                            ?? await _context.LoanAccounts.Include(l => l.LoanRate).FirstOrDefaultAsync(l => l.LoanAccountID == targetLoanId);
+                            ?? await _context.LoanAccounts.Include(l => l.LoanRate).FirstOrDefaultAsync(l => l.LoanAccountID == targetLoanId && l.Status == "Active");
 
                         if (targetLoan == null)
                         {
+                            await transaction.RollbackAsync();
                             return BadRequest(new { message = "निवडलेले कर्ज खाते सापडले नाही किंवा ते सक्रिय नाही." });
                         }
 
                         var (pendingInterest, _, _) = await CalculatePendingLoanInterestAsync(targetLoan, effectiveClosureDate);
                         decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance + pendingInterest;
                         decimal maxAdjustable = Math.Min(netPayoutAmount, targetLoanTotalDue);
+
+                        if ((hasDirectLien || totalActiveLoanDebt > 0.01m) &&
+                            req.LoanAdjustmentAmount.HasValue &&
+                            req.LoanAdjustmentAmount.Value + 0.01m < maxAdjustable)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new
+                            {
+                                errorCode = "PARTIAL_LOAN_ADJUST_NOT_ALLOWED",
+                                message = $"खातेदाराकडे सक्रिय/थकीत कर्ज बाकी असल्यामुळे ठेव मोडताना किमान ₹{maxAdjustable:N2} रक्कम कर्जात समायोजित करणे बंधनकारक आहे. कमी रक्कम कर्जात टाकून उर्वरित रक्कम रोख/बँकेत काढता येत नाही."
+                            });
+                        }
+
                         loanAdjustAmount = req.LoanAdjustmentAmount.HasValue && req.LoanAdjustmentAmount.Value > 0
                             ? Math.Min(req.LoanAdjustmentAmount.Value, maxAdjustable)
                             : maxAdjustable;
@@ -3869,6 +3954,23 @@ namespace Bhisi.Api.Controllers
                             effectiveClosureDate, 
                             account.AccountNo, 
                             account.BranchID);
+
+                        var linkedFdCollaterals = await _context.LoanDepositCollaterals
+                            .Where(c => c.CollateralType == "FixedDeposit" &&
+                                        c.DepositAccountID == account.FdAccountID &&
+                                        c.LienStatus != "Released")
+                            .ToListAsync();
+                        foreach (var col in linkedFdCollaterals)
+                        {
+                            col.LienStatus = settledLoan.Status == "Closed" ? "Released" : "Invoked";
+                            col.LienReleasedDate = effectiveClosureDate;
+                            col.CurrentDepositBalance = 0m;
+                        }
+                        if (account.IsLienMarked)
+                        {
+                            account.IsLienMarked = false;
+                        }
+                        if (linkedFdCollaterals.Any()) await _context.SaveChangesAsync();
 
                         // 2. Resolve Surplus Payout Ledger (if surplus > 0)
                         string surplusMode = !string.IsNullOrWhiteSpace(req.SurplusPaymentMode) ? req.SurplusPaymentMode : "Cash";
@@ -4383,11 +4485,6 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("जुने मुदत ठेव खाते सक्रिय (Active) किंवा मुदतपूर्ण (Matured) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
-            if (oldAccount.IsLienMarked)
-            {
-                return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{oldAccount.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{oldAccount.LienAmount ?? oldAccount.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय किंवा तारण बदलल्याशिवाय ठेव नूतनीकरण करता येत नाही.");
-            }
-
             // Multi-branch Security: Restrict renewal to Account's Home Branch or Head Office
             int userBranchId = User.GetOperatingBranchId();
             bool isHO = User.IsHeadOfficeAdmin();
@@ -4544,36 +4641,41 @@ namespace Bhisi.Api.Controllers
                     decimal interestPayoutAmount = request.RenewalType == "PrincipalOnly" ? (accruedInt + overdueInterest) : 0m;
                     string paymentMode = string.IsNullOrWhiteSpace(request.PaymentMode) ? "Cash" : request.PaymentMode;
 
-                    // 🛡️ Lien & Active Loan Check: जर खातेदाराकडे सक्रिय कर्ज असेल तर नूतनीकरणात रोख/बँकेने व्याज देण्यास मज्जाव
-                    if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0)
+                    // नियम: खातेदाराकडे सक्रिय/थकीत कर्ज किंवा पावतीवर तारण बोजा असला तरी नूतनीकरण (मुद्दल + व्याज किंवा फक्त मुद्दल) नेहमी अनुज्ञेय राहील.
+                    // पावतीवर तारण बोजा (Lien / Collateral) असल्यास तो नवीन पावतीवर स्वयंचलित पुढे नेला जाईल (Lien Carry-Forward).
+                    var activeCollateralsToCarry = await _context.LoanDepositCollaterals
+                        .Where(c => c.CollateralType == "FixedDeposit" &&
+                                    c.DepositAccountID == oldAccount.FdAccountID &&
+                                    c.LienStatus != "Released")
+                        .ToListAsync();
+
+                    string oldAccNoForLien = oldAccount.AccountNo ?? string.Empty;
+                    var securityLoansToCarry = !string.IsNullOrWhiteSpace(oldAccNoForLien)
+                        ? await _context.LoanAccounts
+                            .Where(l => l.Status == "Active" && l.SecurityDetails != null && l.SecurityDetails.Contains(oldAccNoForLien))
+                            .ToListAsync()
+                        : new List<LoanAccount>();
+
+                    bool carryForwardLien = oldAccount.IsLienMarked || activeCollateralsToCarry.Any() || securityLoansToCarry.Any();
+                    string? resolvedCarryLoanNo = oldAccount.LienLoanAccountNo;
+                    if (string.IsNullOrWhiteSpace(resolvedCarryLoanNo))
                     {
-                        int custId = oldAccount.CustomerID;
-                        int? linkedMemId = null;
-                        var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
-                        if (mem != null) linkedMemId = mem.MemberID;
+                        resolvedCarryLoanNo = securityLoansToCarry.FirstOrDefault()?.LoanAccountNo;
+                    }
+                    if (string.IsNullOrWhiteSpace(resolvedCarryLoanNo) && activeCollateralsToCarry.Any(c => c.LoanAccountID.HasValue && c.LoanAccountID.Value > 0))
+                    {
+                        int firstColLoanId = activeCollateralsToCarry.First(c => c.LoanAccountID.HasValue && c.LoanAccountID.Value > 0).LoanAccountID!.Value;
+                        resolvedCarryLoanNo = await _context.LoanAccounts
+                            .Where(l => l.LoanAccountID == firstColLoanId)
+                            .Select(l => l.LoanAccountNo)
+                            .FirstOrDefaultAsync();
+                    }
 
-                        var activeLoansQuery = _context.LoanAccounts
-                            .Where(l => l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0));
-
-                        if (linkedMemId.HasValue && linkedMemId.Value > 0)
-                        {
-                            activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemId.Value);
-                        }
-                        else
-                        {
-                            activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId);
-                        }
-
-                        var activeLoans = await activeLoansQuery.ToListAsync();
-                        if (activeLoans.Any())
-                        {
-                            decimal totalLoanDebt = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
-                            await transaction.RollbackAsync();
-                            return BadRequest(new {
-                                errorCode = "LOAN_OUTSTANDING_EXISTS",
-                                message = $"सदर खातेदाराकडे एकूण ₹{totalLoanDebt:N2} चे सक्रिय कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) थकीत कर्जदारास मुदत ठेवीचे व्याज (₹{interestPayoutAmount:N2}) थेट रोख/बँकेने देता येणार नाही. कृपया नूतनीकरणात संपूर्ण रक्कम (मुद्दल + व्याज) समाविष्ट करा किंवा आधी कर्ज फेडा."
-                            });
-                        }
+                    decimal? resolvedCarryLienAmt = oldAccount.LienAmount;
+                    if ((!resolvedCarryLienAmt.HasValue || resolvedCarryLienAmt.Value <= 0m) && carryForwardLien)
+                    {
+                        decimal colMax = activeCollateralsToCarry.Any() ? activeCollateralsToCarry.Max(c => c.LienAmount) : 0m;
+                        resolvedCarryLienAmt = colMax > 0m ? colMax : oldAccount.DepositAmount;
                     }
 
                     // Mark Old Account as Renewed (retains distinct audit status vs cash/maturity Closed)
@@ -4674,9 +4776,17 @@ namespace Bhisi.Api.Controllers
                         isCustomInterestRate = Math.Abs(appliedRate - schemeDefaultRate) >= 0.01m;
                     }
 
+                    if (carryForwardLien)
+                    {
+                        oldAccount.IsLienMarked = true;
+                        oldAccount.LienLoanAccountNo ??= resolvedCarryLoanNo;
+                        oldAccount.LienAmount ??= resolvedCarryLienAmt;
+                    }
+
                     oldAccount.Status = "Renewed";
                     oldAccount.Remarks = TruncateMax((oldAccount.Remarks ?? "")
                         + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType}, नवीन CBS: {formattedNewAccountNo}, पावती क्र.: {resolvedReceipt.ReceiptNo}, सायकल #{nextCycleNo})"
+                        + (carryForwardLien ? $" [तारण बोजा पुढे नेला: कर्ज क्र. {resolvedCarryLoanNo ?? "सक्रिय कर्ज"}]" : "")
                         + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "")
                         + manualAuditNote, 1000);
                     await _context.SaveChangesAsync();
@@ -4707,9 +4817,13 @@ namespace Bhisi.Api.Controllers
                         DurationInDays = totalDays,
                         MaturityDate = maturityDate,
                         Status = "Active",
+                        IsLienMarked = carryForwardLien,
+                        LienLoanAccountNo = carryForwardLien ? resolvedCarryLoanNo : null,
+                        LienAmount = carryForwardLien ? resolvedCarryLienAmt : null,
                         NomineeName = oldAccount.NomineeName,
                         NomineeRelation = oldAccount.NomineeRelation,
                         Remarks = TruncateMax($"नूतनीकरण खाते (Renewed from): {oldAccount.AccountNo} | पावती क्र.: {resolvedReceipt.ReceiptNo} (मूळ पावती: {oldEffectiveReceipt}, सायकल #{nextCycleNo})"
+                            + (carryForwardLien ? $" [तारण बोजा कायम: कर्ज क्र. {resolvedCarryLoanNo ?? "सक्रिय कर्ज"}]" : "")
                             + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {appliedRate}%]" : "")
                             + customRateNote
                             + (newOpeningDate != closureDate ? $" [सुरुवात दिनांक: {newOpeningDate:dd/MM/yyyy}]" : "")
@@ -4744,6 +4858,31 @@ namespace Bhisi.Api.Controllers
 
                     _context.FdAccounts.Add(newAccount);
                     await _context.SaveChangesAsync();
+
+                    if (activeCollateralsToCarry.Any() || securityLoansToCarry.Any())
+                    {
+                        foreach (var col in activeCollateralsToCarry)
+                        {
+                            col.DepositAccountID = newAccount.FdAccountID;
+                            col.DepositAccountNo = newAccount.AccountNo;
+                            col.DepositAmount = newAccount.DepositAmount;
+                            col.CurrentDepositBalance = newAccount.DepositAmount;
+                            col.MaturityDate = newAccount.MaturityDate;
+                            col.Remarks = TruncateMax(
+                                $"{(string.IsNullOrWhiteSpace(col.Remarks) ? "" : col.Remarks.Trim() + " | ")}FD नूतनीकरण तारण वर्ग: {oldAccount.AccountNo} -> {newAccount.AccountNo}",
+                                250);
+                        }
+
+                        foreach (var ln in securityLoansToCarry)
+                        {
+                            if (!string.IsNullOrEmpty(ln.SecurityDetails) && !string.IsNullOrEmpty(oldAccNoForLien))
+                            {
+                                ln.SecurityDetails = ln.SecurityDetails.Replace(oldAccNoForLien, newAccount.AccountNo);
+                            }
+                        }
+
+                        await _context.SaveChangesAsync();
+                    }
 
                     // 3. Post Renewal Vouchers (Strict Scheme Ledger Mapping - zero cross-scheme fallback)
                     var ledgerSourceScheme = oldAccount.FdScheme;
@@ -6597,20 +6736,6 @@ namespace Bhisi.Api.Controllers
                     decimal totalMaturityAmount = oldAccount.DepositAmount + accruedInt;
                     decimal newDepositAmount = (oldAccount.AutoRenewalOption == "PrincipalOnly") ? oldAccount.DepositAmount : totalMaturityAmount;
                     decimal interestPayoutAmount = (oldAccount.AutoRenewalOption == "PrincipalOnly") ? accruedInt : 0m;
-
-                    // 🛡️ Active Delinquent Loan Guard
-                    if (oldAccount.AutoRenewalOption == "PrincipalOnly" && interestPayoutAmount > 0)
-                    {
-                        var activeLoans = await _context.LoanAccounts
-                            .Where(l => l.CustomerID == oldAccount.CustomerID && l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0))
-                            .ToListAsync();
-
-                        if (activeLoans.Any())
-                        {
-                            decimal loanBal = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
-                            throw new InvalidOperationException($"सदर खातेदाराकडे एकूण ₹{loanBal:N2} चे सक्रिय कर्ज थकीत असल्याने सुरक्षा नियमांनुसार केवळ मुद्दल नूतनीकरण करून व्याज देणे प्रतिबंधित आहे.");
-                        }
-                    }
 
                     // Strict Saving account requirement for PrincipalOnly interest payout (zero Cash / random-account fallback)
                     SavingAccountMaster? targetSaving = null;

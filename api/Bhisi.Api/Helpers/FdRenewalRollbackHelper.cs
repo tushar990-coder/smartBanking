@@ -367,6 +367,7 @@ namespace Bhisi.Api.Helpers
 
         private static async Task ValidateRenewalRollbackGuardsAsync(
             AppDbContext context,
+            FdAccount oldAccount,
             FdAccount newAccount,
             List<Voucher> siblingVouchers,
             HashSet<int> allRenewalVoucherIds)
@@ -383,9 +384,14 @@ namespace Bhisi.Api.Helpers
             bool pledgedInLoanSecurity = !string.IsNullOrEmpty(newAccNo) && await context.LoanAccounts
                 .AnyAsync(l => l.Status == "Active" && l.SecurityDetails != null && l.SecurityDetails.Contains(newAccNo));
             bool pledgedInCollaterals = await context.LoanDepositCollaterals
-                .AnyAsync(c => c.CollateralType == "FixedDeposit" && c.DepositAccountID == newAccount.FdAccountID);
+                .AnyAsync(c => c.CollateralType == "FixedDeposit" && c.DepositAccountID == newAccount.FdAccountID && c.LienStatus != "Released");
 
-            if (newAccount.IsLienMarked || pledgedInLoanSecurity || pledgedInCollaterals)
+            bool isInheritedFromParent = oldAccount.IsLienMarked &&
+                (string.IsNullOrWhiteSpace(newAccount.LienLoanAccountNo) ||
+                 string.IsNullOrWhiteSpace(oldAccount.LienLoanAccountNo) ||
+                 string.Equals(newAccount.LienLoanAccountNo, oldAccount.LienLoanAccountNo, StringComparison.OrdinalIgnoreCase));
+
+            if ((newAccount.IsLienMarked || pledgedInLoanSecurity || pledgedInCollaterals) && !isInheritedFromParent)
             {
                 throw new InvalidOperationException(
                     $"नवीन मुदत ठेव खाते क्र. {newAccount.AccountNo} वर कर्जाचा तारण बोजा (Lien/Collateral) असल्यामुळे रिन्यूअल व्हाउचर डिलीट करता येत नाही.");
@@ -415,6 +421,48 @@ namespace Bhisi.Api.Helpers
             {
                 throw new InvalidOperationException(
                     $"नवीन मुदत ठेव खाते क्र. {newAccount.AccountNo} वर पुढील व्याज जमा (Accrual), MIS किंवा इतर व्यवहार झालेले असल्यामुळे रिन्यूअल व्हाउचर डिलीट करता येत नाही.");
+            }
+        }
+
+        private static async Task RestoreInheritedLienToOldAccountAsync(
+            AppDbContext context,
+            FdAccount oldAccount,
+            FdAccount newAccount)
+        {
+            if (!oldAccount.IsLienMarked) return;
+
+            var childCollaterals = await context.LoanDepositCollaterals
+                .Where(c => c.CollateralType == "FixedDeposit" && c.DepositAccountID == newAccount.FdAccountID)
+                .ToListAsync();
+
+            foreach (var col in childCollaterals)
+            {
+                col.DepositAccountID = oldAccount.FdAccountID;
+                col.DepositAccountNo = oldAccount.AccountNo ?? string.Empty;
+                col.DepositAmount = oldAccount.DepositAmount;
+                col.CurrentDepositBalance = oldAccount.DepositAmount;
+                col.MaturityDate = oldAccount.MaturityDate;
+                if (!string.IsNullOrEmpty(col.Remarks))
+                {
+                    col.Remarks = Regex.Replace(
+                        col.Remarks,
+                        @"(?:\s*\|\s*)?FD नूतनीकरण तारण वर्ग:[^|]*",
+                        "").Trim();
+                }
+            }
+
+            string newAccNo = newAccount.AccountNo ?? string.Empty;
+            string oldAccNo = oldAccount.AccountNo ?? string.Empty;
+            if (!string.IsNullOrEmpty(newAccNo) && !string.IsNullOrEmpty(oldAccNo))
+            {
+                var secLoans = await context.LoanAccounts
+                    .Where(l => l.SecurityDetails != null && l.SecurityDetails.Contains(newAccNo))
+                    .ToListAsync();
+
+                foreach (var ln in secLoans)
+                {
+                    ln.SecurityDetails = ln.SecurityDetails!.Replace(newAccNo, oldAccNo);
+                }
             }
         }
 
@@ -493,10 +541,13 @@ namespace Bhisi.Api.Helpers
                 if (!string.IsNullOrWhiteSpace(sv.VoucherNo)) allRenewalVoucherNos.Add(sv.VoucherNo);
             }
 
-            await ValidateRenewalRollbackGuardsAsync(context, newAccount, siblingVouchers, allRenewalVoucherIds);
+            await ValidateRenewalRollbackGuardsAsync(context, oldAccount, newAccount, siblingVouchers, allRenewalVoucherIds);
 
             // Reverse any SavingAccount interest payout transfer strictly by exact VoucherNo
             await ReverseSavingInterestTransfersAsync(context, allRenewalVoucherNos);
+
+            // Restore any inherited loan lien / deposit collateral back onto oldAccount before removing newAccount
+            await RestoreInheritedLienToOldAccountAsync(context, oldAccount, newAccount);
 
             // Remove FdTransactions, FdInterestAccruals, FdMisPayouts strictly scoped to this renewal cycle
             var txsToRemove = await context.FdTransactions
@@ -721,6 +772,7 @@ namespace Bhisi.Api.Helpers
 
             if (oldAccount != null)
             {
+                await RestoreInheritedLienToOldAccountAsync(context, oldAccount, childNewAccount);
                 result.OldAccountNo = oldAccount.AccountNo;
                 result.OldFdAccountId = oldAccount.FdAccountID;
                 RestoreOldAccountFromRenewal(oldAccount, childNewAccount.OpeningDate);

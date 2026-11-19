@@ -1,5 +1,17 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-19] - आवृत्ती v2.6.32 (Allow FD Renewal on Overdue Loan with Automatic Lien Carry-Forward & Strict Break Guard)
+
+### 🔄 1. थकीत/सक्रिय कर्ज व तारण असताना मुदत ठेव नूतनीकरण (FD Renewal) नेहमी अनुज्ञेय
+- **`FdAccountsController.cs`, `FdRenewalRollbackHelper.cs` व `FdRenewalPolicyAndAutoRenewalTests.cs`:**
+  - `Renew` व `RunAutoRenewalBatch` मधून `LOAN_OUTSTANDING_EXISTS` आणि `IsLienMarked` अडथळे काढून खातेदाराकडे थकीत/सक्रिय कर्ज असले तरी **`मुद्दल + व्याज (PrincipalPlusInterest)`** व **`केवळ मूळ मुद्दल (PrincipalOnly)`** दोन्ही प्रकारचे नूतनीकरण अनुज्ञेय केले.
+  - मूळ पावतीवर कर्जाचा तारण बोजा (`IsLienMarked`, `LoanDepositCollaterals`, `LoanAccounts.SecurityDetails`) असल्यास तो नवीन पावतीवर स्वयंचलित पुढे नेला जातो (**Lien Carry-Forward**), तसेच अन-अप्रूव्ह्ड नूतनीकरण रोलबॅकमध्ये तो पुन्हा मूळ पावतीवर पूर्ववत होतो.
+
+### 🛡️ 2. कर्ज बाकी असताना ठेव मोडण्यास कडक प्रतिबंध व फ्रंटएंड स्मार्ट डिफॉल्ट
+- **`FdAccountsController.cs` व `FdWithdrawalMaturity.tsx`:**
+  - `MaturedClose` व `PrematureClose` मध्ये सक्रिय/थकीत कर्ज किंवा तारण असताना `AdjustInLoan = true` शिवाय रोख/बँक/बचत परताव्यावर `HTTP 400` कडक बंदी व अर्धवट कर्ज समायोजनाची पळवाट बंद केली.
+  - फ्रंटएंडवर मुदतपूर्ण खात्यावर सक्रिय कर्ज/तारण असल्यास आपोआप **`नूतनीकरण (FD Renewal)`** निवडला जातो व ठेव मोडणीत `AdjustInLoan` ऑटो-टिकसह एक-क्लिक मार्गदर्शन उपलब्ध केले (**१२१/१२१ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-18] - आवृत्ती v2.6.31 (Scheme-Scoped FD Renewal Receipt Check, FD Ledger Single/Consolidated Isolation & 2-Col Investment Closure UI with Premature Interest Reversal)
 
 ### 🧾 1. मुदत ठेव नूतनीकरण व ओपनिंग — योजनानिहाय पावती क्र. पडताळणी

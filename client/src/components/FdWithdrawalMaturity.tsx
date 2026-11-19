@@ -72,6 +72,8 @@ interface ActiveLoanItem {
 
 interface ActiveLoansResponse {
   hasActiveLoan: boolean;
+  hasDirectLien?: boolean;
+  directLienLoanNo?: string | null;
   totalOutstandingLiability: number;
   loans: ActiveLoanItem[];
 }
@@ -99,6 +101,9 @@ interface FdAccount {
   legacyAccruedInt: number;
   lastInterestPostingDate?: string | null;
   status: string;
+  isLienMarked?: boolean;
+  lienLoanAccountNo?: string | null;
+  lienAmount?: number | null;
   fdLiabilityLedgerID?: number | null;
   fdLiabilityLedgerName?: string;
   interestExpenseLedgerID?: number | null;
@@ -269,6 +274,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [allClosedAccounts, setAllClosedAccounts] = useState<FdAccount[]>([]);
 
   const [actionType, setActionType] = useState<string>('MaturityClose'); // MaturityClose, PrematureClose, Renewal
+  const manualActionChoiceAccIdRef = React.useRef<number>(0);
   const [closureDate, setClosureDate] = useState<string>(activeBusinessDate);
   const [renewalType, setRenewalType] = useState<string>('PrincipalPlusInterest'); // PrincipalOnly, PrincipalPlusInterest
   const [targetSchemeId, setTargetSchemeId] = useState<number>(0);
@@ -785,9 +791,27 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const data: ActiveLoansResponse = res.data;
       setActiveLoansData(data);
       if (data?.hasActiveLoan && Array.isArray(data.loans) && data.loans.length > 0) {
+        const directMatch = data.directLienLoanNo
+          ? data.loans.find(l => l.loanAccountNo === data.directLienLoanNo)
+          : undefined;
         setTargetLoanAccountId(prev =>
-          prev > 0 && data.loans.some(l => l.loanAccountId === prev) ? prev : data.loans[0].loanAccountId
+          directMatch
+            ? directMatch.loanAccountId
+            : (prev > 0 && data.loans.some(l => l.loanAccountId === prev) ? prev : data.loans[0].loanAccountId)
         );
+        if (!isPassingMode) {
+          setAdjustInLoan(true);
+          const matchedAcc =
+            (selectedAccount && selectedAccount.fdAccountID === fdAccountId ? selectedAccount : null) ||
+            accounts.find(a => a.fdAccountID === fdAccountId);
+          if (matchedAcc && manualActionChoiceAccIdRef.current !== fdAccountId) {
+            const cDt = new Date((asOfDateStr || closureDate || activeBusinessDate) + 'T00:00:00');
+            const mDt = new Date(matchedAcc.maturityDate.split('T')[0] + 'T00:00:00');
+            if (!isNaN(cDt.getTime()) && !isNaN(mDt.getTime()) && cDt.getTime() >= mDt.getTime()) {
+              setActionType('Renewal');
+            }
+          }
+        }
       } else {
         setTargetLoanAccountId(0);
         setAdjustInLoan(false);
@@ -871,6 +895,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.cif ?? '').trim().toUpperCase();
 
       const applySelectedFd = (acc: FdAccount) => {
+        manualActionChoiceAccIdRef.current = 0;
         setSelectedAccId(acc.fdAccountID);
         setSelectedAccount(acc);
         if (paymentMode === 'Transfer' || surplusPaymentMode === 'Transfer') {
@@ -1010,6 +1035,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
   const handleAccountSelect = (val: any) => {
     const accId = typeof val === 'object' && val?.target ? parseInt(val.target.value) : parseInt(String(val || 0));
+    manualActionChoiceAccIdRef.current = 0;
     setSelectedAccId(accId);
     const selected = accounts.find((a) => a.fdAccountID === accId) || null;
     setSelectedAccount(selected);
@@ -1124,7 +1150,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         setActionType('PrematureClose');
       }
     } else {
-      if (actionType === 'PrematureClose') {
+      if (
+        !isPassingMode &&
+        selectedAccount.isLienMarked &&
+        manualActionChoiceAccIdRef.current !== selectedAccount.fdAccountID
+      ) {
+        setActionType('Renewal');
+      } else if (actionType === 'PrematureClose') {
         setActionType('MaturityClose');
       }
     }
@@ -1539,7 +1571,23 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
     const isClosureAction = actionType === 'MaturityClose' || actionType === 'PrematureClose';
     const hasActiveLoanForAdjust = Boolean(activeLoansData?.hasActiveLoan && Array.isArray(activeLoansData?.loans) && activeLoansData.loans.length > 0);
+    const hasDirectOrActiveLoanBlock = Boolean(
+      selectedAccount.isLienMarked ||
+      activeLoansData?.hasDirectLien ||
+      (activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0.01)
+    );
     const isLoanAdjustActive = Boolean(isClosureAction && adjustInLoan && hasActiveLoanForAdjust);
+
+    if (isClosureAction && hasDirectOrActiveLoanBlock && !isLoanAdjustActive) {
+      if (selectedAccount.isLienMarked || activeLoansData?.hasDirectLien) {
+        const lNo = activeLoansData?.directLienLoanNo || selectedAccount.lienLoanAccountNo || 'सक्रिय कर्ज';
+        setError(`🚫 सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '${lNo}' चा तारण बोजा नोंदवला आहे. कर्ज बाकी असताना ठेव मोडून परतावा घेता येत नाही — कृपया ठेव 'नूतनीकरण (FD Renewal)' करा किंवा 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' निवडा.`);
+      } else {
+        const dueFmt = (activeLoansData?.totalOutstandingLiability || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        setError(`🚫 सदर खातेदाराकडे एकूण ₹${dueFmt} चे सक्रिय/थकीत कर्ज बाकी आहे. नियमांनुसार कर्ज बाकी असताना मुदत ठेव मोडून परतावा घेता येत नाही — कृपया ठेव 'नूतनीकरण (FD Renewal)' करा किंवा परतावा रक्कम 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' करा.`);
+      }
+      return;
+    }
 
     let effectiveTargetLoanId = 0;
     let effectiveLoanAdjustVal = 0;
@@ -1561,6 +1609,10 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           : maxAdj;
       if (effectiveLoanAdjustVal <= 0) {
         setError('कर्जात समायोजित करावयाची रक्कम शून्यापेक्षा जास्त असणे आवश्यक आहे.');
+        return;
+      }
+      if (hasDirectOrActiveLoanBlock && effectiveLoanAdjustVal + 0.01 < maxAdj) {
+        setError(`🚫 खातेदाराकडे सक्रिय/थकीत कर्ज बाकी असल्यामुळे ठेव मोडताना किमान ₹${maxAdj.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} रक्कम कर्जात समायोजित करणे बंधनकारक आहे (ठेव कायम ठेवायची असल्यास 'नूतनीकरण' निवडा).`);
         return;
       }
       surplusVal = Math.max(0, Number((totalPayoutForAdjust - effectiveLoanAdjustVal).toFixed(2)));
@@ -2366,7 +2418,11 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           }
 
           const isBalanced = Math.abs(totalDr - totalCr) < 0.01;
-          const hasLien = Boolean(activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0);
+          const hasLien = Boolean(
+            acc?.isLienMarked ||
+            activeLoansData?.hasDirectLien ||
+            (activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0)
+          );
           const isFullRoll = actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest';
           const finalAmount = isFullRoll ? (principal + interestPayable + effOverdue) : (actionType === 'Renewal' ? principal : netPayout);
           const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -2718,7 +2774,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                       name="actionType"
                                       value="MaturityClose"
                                       checked={actionType === 'MaturityClose'}
-                                      onChange={(e) => setActionType(e.target.value)}
+                                      onChange={(e) => {
+                                        manualActionChoiceAccIdRef.current = acc.fdAccountID;
+                                        setActionType(e.target.value);
+                                        if (hasLien && activeLoansData?.loans?.length) {
+                                          setAdjustInLoan(true);
+                                        }
+                                      }}
                                       className="sr-only"
                                     />
                                     <CheckCircle className="w-3.5 h-3.5" />
@@ -2731,7 +2793,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                       value="Renewal"
                                       checked={actionType === 'Renewal'}
                                       onChange={(e) => {
+                                        manualActionChoiceAccIdRef.current = acc.fdAccountID;
                                         setActionType(e.target.value);
+                                        setError('');
                                         if (!targetSchemeId && schemes.length > 0) {
                                           setTargetSchemeId(acc.fdSchemeID || schemes[0].fdSchemeID);
                                         }
@@ -3218,6 +3282,62 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               </div>
                             ) : (
                               <>
+                                {(actionType === 'MaturityClose' || actionType === 'PrematureClose') &&
+                                  hasLien &&
+                                  !adjustInLoan && (
+                                    <div className="bg-red-50 border border-red-300 border-l-4 border-l-red-600 rounded-sm p-2.5 space-y-2 mb-1.5 text-xs text-red-950">
+                                      <div className="flex items-start gap-2 font-semibold">
+                                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                                        <span>
+                                          {acc.isLienMarked || activeLoansData?.hasDirectLien ? (
+                                            <>
+                                              सदर मुदत ठेव पावतीवर कर्ज खाते क्र. <b>{activeLoansData?.directLienLoanNo || acc.lienLoanAccountNo || 'सक्रिय कर्ज'}</b> चा तारण बोजा आहे. नियम: कर्ज बाकी असताना ठेव मोडून परतावा घेता येत नाही.
+                                            </>
+                                          ) : (
+                                            <>
+                                              खातेदाराकडे एकूण <b>₹{fmt(activeLoansData?.totalOutstandingLiability || 0)}</b> चे सक्रिय/थकीत कर्ज बाकी आहे. नियम: कर्ज बाकी असताना ठेव मोडून रोख/बँक/बचत परतावा घेता येत नाही.
+                                            </>
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2 pl-6">
+                                        {isMatured && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              manualActionChoiceAccIdRef.current = acc.fdAccountID;
+                                              setActionType('Renewal');
+                                              setError('');
+                                            }}
+                                            className="h-7 px-2.5 text-[11px] font-bold bg-primary text-white rounded-sm hover:opacity-90 flex items-center gap-1 cursor-pointer"
+                                          >
+                                            <RefreshCw className="w-3 h-3" />
+                                            नूतनीकरण करा (FD Renewal)
+                                          </button>
+                                        )}
+                                        {activeLoansData?.loans && activeLoansData.loans.length > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const firstLn =
+                                                activeLoansData.loans.find(l => l.loanAccountId === targetLoanAccountId) ||
+                                                activeLoansData.loans[0];
+                                              setAdjustInLoan(true);
+                                              if (firstLn) {
+                                                setTargetLoanAccountId(firstLn.loanAccountId);
+                                                setLoanAdjustmentAmount(String(Math.min(netPayout, firstLn.totalDue)));
+                                              }
+                                              setError('');
+                                            }}
+                                            className="h-7 px-2.5 text-[11px] font-bold bg-amber-600 text-white rounded-sm hover:bg-amber-700 flex items-center gap-1 cursor-pointer"
+                                          >
+                                            🛡️ कर्जात समायोजित करा (Adjust in Loan)
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
                                 {(actionType === 'MaturityClose' || actionType === 'PrematureClose') &&
                                   hasLien &&
                                   activeLoansData &&
@@ -3854,10 +3974,30 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-[11px] min-w-0">
                     {hasLien ? (
-                      <span className="flex items-center gap-1.5 text-amber-900 bg-amber-50 border border-amber-200 rounded-sm px-2 py-1 font-medium">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        सक्रिय कर्ज बाकी: <b>₹{fmt(activeLoansData?.totalOutstandingLiability || 0)}</b> – परतावा बचत खात्यात वर्ग करून कर्ज वसुली करावी.
-                      </span>
+                      actionType === 'Renewal' ? (
+                        <span className="flex items-center gap-1.5 text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-sm px-2 py-1 font-medium">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          {acc.isLienMarked || activeLoansData?.hasDirectLien ? (
+                            <>
+                              पावतीवर कर्ज तारण ({activeLoansData?.directLienLoanNo || acc.lienLoanAccountNo || 'सक्रिय कर्ज'}) — <b>नूतनीकरण अनुज्ञेय</b> (तारण बोजा नवीन पावतीवर पुढे जाईल).
+                            </>
+                          ) : (
+                            <>
+                              सक्रिय कर्ज बाकी: <b>₹{fmt(activeLoansData?.totalOutstandingLiability || 0)}</b> — <b>मुदत ठेव नूतनीकरण</b> (मुद्दल + व्याज / फक्त मुद्दल) करण्यास पूर्ण परवानगी आहे.
+                            </>
+                          )}
+                        </span>
+                      ) : !adjustInLoan ? (
+                        <span className="flex items-center gap-1.5 text-red-900 bg-red-50 border border-red-300 rounded-sm px-2 py-1 font-semibold">
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                          सक्रिय कर्ज बाकी: <b>₹{fmt(activeLoansData?.totalOutstandingLiability || 0)}</b> – कर्जात समायोजित केल्याशिवाय ठेव मोडता येणार नाही (नूतनीकरण करा).
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-amber-900 bg-amber-50 border border-amber-200 rounded-sm px-2 py-1 font-medium">
+                          <CheckCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          सक्रिय कर्ज बाकी: <b>₹{fmt(activeLoansData?.totalOutstandingLiability || 0)}</b> – परतावा प्रथम सक्रिय कर्ज खात्यात जमा केला जाईल.
+                        </span>
+                      )
                     ) : hasDateError ? (
                       <span className="flex items-center gap-1.5 text-red-700 font-medium">
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />

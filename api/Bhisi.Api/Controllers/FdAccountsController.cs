@@ -109,6 +109,190 @@ namespace Bhisi.Api.Controllers
             return DateTime.Today;
         }
 
+        private static bool IsClosureOrRenewalVoucherNo(string? voucherNo)
+        {
+            if (string.IsNullOrWhiteSpace(voucherNo)) return false;
+            string v = voucherNo.Trim();
+            return v.Contains("-FD-CLOSE-", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("-FD-PRECLOSE-", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("-FD-REN-", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("-FD-AUTOREN-", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Returns ONLY genuinely verified Interest Payable Provisions currently standing in
+        /// the scheme's InterestPayableLedger (excludes orphaned deleted-voucher Accrual rows,
+        /// Closure_Interest rows, Capitalized-to-Principal rows, and un-provisioned LegacyAccruedInt).
+        /// </summary>
+        private async Task<decimal> ResolveVerifiedProvisionedInterestAsync(int fdAccountId, int? interestPayableLedgerId = null)
+        {
+            var accrualVoucherIds = await _context.FdInterestAccruals
+                .AsNoTracking()
+                .Where(a => a.FdAccountID == fdAccountId &&
+                            a.IsPosted &&
+                            a.PostingTarget != "Principal" &&
+                            a.VoucherID > 0)
+                .Select(a => new { a.VoucherID, a.InterestAmount })
+                .ToListAsync();
+
+            decimal accrualTableProvision = 0m;
+            var validAccrualVoucherIdSet = new HashSet<int>();
+            if (accrualVoucherIds.Any())
+            {
+                var ids = accrualVoucherIds.Select(x => x.VoucherID).Distinct().ToList();
+                var existingIds = await _context.Vouchers
+                    .AsNoTracking()
+                    .Where(v => ids.Contains(v.VoucherID))
+                    .Select(v => v.VoucherID)
+                    .ToListAsync();
+                foreach (var eid in existingIds) validAccrualVoucherIdSet.Add(eid);
+                accrualTableProvision = accrualVoucherIds
+                    .Where(x => validAccrualVoucherIdSet.Contains(x.VoucherID))
+                    .Sum(x => x.InterestAmount);
+            }
+
+            var rawAccrualTxs = await _context.FdTransactions
+                .AsNoTracking()
+                .Where(t => t.FdAccountID == fdAccountId &&
+                            t.TransactionType == "Accrual" &&
+                            t.VoucherID > 0)
+                .Select(t => new { t.VoucherID, t.Amount })
+                .ToListAsync();
+
+            decimal txProvision = 0m;
+            if (rawAccrualTxs.Any())
+            {
+                var txVoucherIds = rawAccrualTxs.Select(x => x.VoucherID).Distinct().ToList();
+                var liveVouchers = await _context.Vouchers
+                    .AsNoTracking()
+                    .Where(v => txVoucherIds.Contains(v.VoucherID))
+                    .Select(v => new { v.VoucherID, v.VoucherNo })
+                    .ToListAsync();
+
+                var nonClosureVoucherIds = liveVouchers
+                    .Where(v => !IsClosureOrRenewalVoucherNo(v.VoucherNo))
+                    .Select(v => v.VoucherID)
+                    .ToHashSet();
+
+                if (nonClosureVoucherIds.Any())
+                {
+                    HashSet<int> verifiedVoucherIds;
+                    if (interestPayableLedgerId.HasValue && interestPayableLedgerId.Value > 0)
+                    {
+                        var creditedPayableIds = await _context.VoucherDetails
+                            .AsNoTracking()
+                            .Where(d => nonClosureVoucherIds.Contains(d.VoucherID) &&
+                                        d.DrCr == "Cr" &&
+                                        d.LedgerID == interestPayableLedgerId.Value)
+                            .Select(d => d.VoucherID)
+                            .Distinct()
+                            .ToListAsync();
+                        verifiedVoucherIds = creditedPayableIds.ToHashSet();
+                        foreach (var aid in validAccrualVoucherIdSet) verifiedVoucherIds.Add(aid);
+                    }
+                    else
+                    {
+                        verifiedVoucherIds = nonClosureVoucherIds;
+                    }
+
+                    txProvision = rawAccrualTxs
+                        .Where(t => verifiedVoucherIds.Contains(t.VoucherID))
+                        .Sum(t => t.Amount);
+                }
+            }
+
+            return Math.Round(Math.Max(accrualTableProvision, txProvision), 2, MidpointRounding.AwayFromZero);
+        }
+
+        private async Task<Dictionary<int, decimal>> ResolveVerifiedProvisionedInterestMapAsync(List<int> fdAccountIds)
+        {
+            var result = new Dictionary<int, decimal>();
+            if (fdAccountIds == null || fdAccountIds.Count == 0) return result;
+
+            var accruals = await _context.FdInterestAccruals
+                .AsNoTracking()
+                .Where(a => fdAccountIds.Contains(a.FdAccountID) &&
+                            a.IsPosted &&
+                            a.PostingTarget != "Principal" &&
+                            a.VoucherID > 0)
+                .Select(a => new { a.FdAccountID, a.VoucherID, a.InterestAmount })
+                .ToListAsync();
+
+            var txs = await _context.FdTransactions
+                .AsNoTracking()
+                .Where(t => fdAccountIds.Contains(t.FdAccountID) &&
+                            t.TransactionType == "Accrual" &&
+                            t.VoucherID > 0)
+                .Select(t => new { t.FdAccountID, t.VoucherID, t.Amount })
+                .ToListAsync();
+
+            var allVoucherIds = accruals.Select(a => a.VoucherID)
+                .Concat(txs.Select(t => t.VoucherID))
+                .Distinct()
+                .ToList();
+
+            if (!allVoucherIds.Any()) return result;
+
+            var liveVouchers = await _context.Vouchers
+                .AsNoTracking()
+                .Where(v => allVoucherIds.Contains(v.VoucherID))
+                .Select(v => new { v.VoucherID, v.VoucherNo })
+                .ToListAsync();
+
+            var liveVoucherIds = liveVouchers.Select(v => v.VoucherID).ToHashSet();
+            var nonClosureVoucherIds = liveVouchers
+                .Where(v => !IsClosureOrRenewalVoucherNo(v.VoucherNo))
+                .Select(v => v.VoucherID)
+                .ToHashSet();
+
+            var accrualSums = accruals
+                .Where(a => liveVoucherIds.Contains(a.VoucherID))
+                .GroupBy(a => a.FdAccountID)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.InterestAmount));
+
+            var accrualVchIds = accruals
+                .Where(a => liveVoucherIds.Contains(a.VoucherID))
+                .Select(a => a.VoucherID)
+                .ToHashSet();
+
+            // Check which non-closure vouchers actually credited any scheme's InterestPayableLedger
+            var payableLedgerIds = await _context.FdSchemes
+                .AsNoTracking()
+                .Where(s => s.InterestPayableLedgerID.HasValue && s.InterestPayableLedgerID.Value > 0)
+                .Select(s => s.InterestPayableLedgerID!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            var payableCreditedVchIds = new HashSet<int>(accrualVchIds);
+            if (nonClosureVoucherIds.Any() && payableLedgerIds.Any())
+            {
+                var matchedVch = await _context.VoucherDetails
+                    .AsNoTracking()
+                    .Where(d => nonClosureVoucherIds.Contains(d.VoucherID) &&
+                                d.DrCr == "Cr" &&
+                                payableLedgerIds.Contains(d.LedgerID))
+                    .Select(d => d.VoucherID)
+                    .Distinct()
+                    .ToListAsync();
+                foreach (var vid in matchedVch) payableCreditedVchIds.Add(vid);
+            }
+
+            var txSums = txs
+                .Where(t => nonClosureVoucherIds.Contains(t.VoucherID) && payableCreditedVchIds.Contains(t.VoucherID))
+                .GroupBy(t => t.FdAccountID)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+
+            foreach (int id in fdAccountIds)
+            {
+                decimal aSum = accrualSums.TryGetValue(id, out var av) ? av : 0m;
+                decimal tSum = txSums.TryGetValue(id, out var tv) ? tv : 0m;
+                decimal finalProv = Math.Round(Math.Max(aSum, tSum), 2, MidpointRounding.AwayFromZero);
+                if (finalProv > 0m) result[id] = finalProv;
+            }
+
+            return result;
+        }
+
         private static string? TruncateMax(string? value, int maxLength)
         {
             if (value == null) return null;
@@ -449,15 +633,10 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var accIds = accountsList.Select(x => x.FdAccountID).ToList();
-            var txAccruals = await _context.FdTransactions
-                .Where(t => accIds.Contains(t.FdAccountID) && t.TransactionType == "Accrual")
-                .GroupBy(t => t.FdAccountID)
-                .Select(g => new { FdAccountID = g.Key, Total = g.Sum(x => x.Amount) })
-                .ToDictionaryAsync(x => x.FdAccountID, x => x.Total);
+            var verifiedProvisions = await ResolveVerifiedProvisionedInterestMapAsync(accIds);
 
             var accounts = accountsList.Select(f => {
-                decimal tx = txAccruals.TryGetValue(f.FdAccountID, out var val) ? val : 0m;
-                decimal posted = Math.Max(tx, f.LegacyAccruedInt);
+                decimal posted = verifiedProvisions.TryGetValue(f.FdAccountID, out var val) ? val : 0m;
                 return new {
                     f.FdAccountID,
                     f.BranchID,
@@ -536,10 +715,7 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
-            var dbAccruals = await _context.FdTransactions
-                .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
-                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
-            decimal alreadyPosted = Math.Max(dbAccruals, f.LegacyAccruedInt);
+            decimal alreadyPosted = await ResolveVerifiedProvisionedInterestAsync(id, f.FdScheme?.InterestPayableLedgerID);
 
             return Ok(new {
                 f.FdAccountID,
@@ -2948,16 +3124,19 @@ namespace Bhisi.Api.Controllers
 
             decimal totalMaturityPayout = account.DepositAmount + totalInterest + overdueInterest;
 
-            // CBS Rule: Split contracted interest between Capitalized Deposit Liability, Interest Payable (clearing provision), and Interest Expense (current period P&L)
+            // CBS Rule: Split contracted interest between Capitalized Deposit Liability, verified Interest Payable (clearing provision), and Interest Expense (current period P&L)
             decimal dbCapitalized = await _context.FdTransactions
                 .Where(t => t.FdAccountID == id && t.TransactionType == "Interest_Capitalized")
                 .SumAsync(t => (decimal?)t.Amount) ?? 0m;
-            decimal dbAccruals = await _context.FdTransactions
-                .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
-                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            decimal verifiedProvision = await ResolveVerifiedProvisionedInterestAsync(id, account.FdScheme?.InterestPayableLedgerID);
+            string debitMode = (req?.InterestDebitMode ?? "Auto").Trim();
             decimal clearedCapitalizedInterest = Math.Min(totalInterest, dbCapitalized);
             decimal fdLiabilityDebitAmount = account.DepositAmount + clearedCapitalizedInterest;
-            decimal alreadyPosted = Math.Max(dbAccruals, account.LegacyAccruedInt);
+            decimal alreadyPosted = string.Equals(debitMode, "Expense", StringComparison.OrdinalIgnoreCase)
+                ? 0m
+                : (string.Equals(debitMode, "Provision", StringComparison.OrdinalIgnoreCase)
+                    ? Math.Max(verifiedProvision, account.LegacyAccruedInt)
+                    : verifiedProvision);
             decimal payableInterestAmount = Math.Min(Math.Max(0m, totalInterest - clearedCapitalizedInterest), alreadyPosted);
             decimal expenseInterestAmount = Math.Max(0m, totalInterest - clearedCapitalizedInterest - payableInterestAmount);
             decimal totalExpenseInterest = expenseInterestAmount + overdueInterest;
@@ -3234,7 +3413,7 @@ namespace Bhisi.Api.Controllers
                                 FdAccountID = account.FdAccountID,
                                 VoucherID = voucher.VoucherID,
                                 TransactionDate = closureDate,
-                                TransactionType = "Accrual",
+                                TransactionType = "Closure_Interest",
                                 DebitCredit = "Cr",
                                 Amount = overdueInterest
                             });
@@ -3460,7 +3639,7 @@ namespace Bhisi.Api.Controllers
                                 FdAccountID = account.FdAccountID,
                                 VoucherID = finalVoucherId,
                                 TransactionDate = closureDate,
-                                TransactionType = "Accrual",
+                                TransactionType = "Closure_Interest",
                                 DebitCredit = "Cr",
                                 Amount = overdueInterest
                             });
@@ -3646,21 +3825,26 @@ namespace Bhisi.Api.Controllers
 
             decimal recalculatedInterest = Math.Round((account.DepositAmount * prematureRate * actualDays) / 36500.0m, 2);
 
-            decimal dbAccrued = await _context.FdTransactions
-                .Where(t => t.FdAccountID == id && (t.TransactionType == "Accrual" || t.TransactionType == "MIS_Payout"))
-                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
-            decimal misPayoutSum = 0m;
-            try
-            {
-                misPayoutSum = await _context.FdMisPayouts
-                    .Where(p => p.FdAccountID == id && p.Status == "Success")
-                    .SumAsync(p => (decimal?)p.GrossInterest) ?? 0m;
-            }
-            catch { /* table might be fresh */ }
-            decimal alreadyAccruedInt = Math.Max(Math.Max(dbAccrued, misPayoutSum), account.LegacyAccruedInt);
-
             bool isPeriodicPayout = account.FdScheme != null &&
                 (account.FdScheme.InterestType == "MIS" || account.FdScheme.InterestType == "Monthly Interest");
+
+            decimal verifiedProvision = await ResolveVerifiedProvisionedInterestAsync(id, account.FdScheme?.InterestPayableLedgerID);
+            decimal misPayoutSum = 0m;
+            if (isPeriodicPayout)
+            {
+                try
+                {
+                    misPayoutSum = await _context.FdMisPayouts
+                        .Where(p => p.FdAccountID == id && p.Status == "Success")
+                        .SumAsync(p => (decimal?)p.GrossInterest) ?? 0m;
+                }
+                catch { /* table might be fresh */ }
+                decimal misTxSum = await _context.FdTransactions
+                    .Where(t => t.FdAccountID == id && t.TransactionType == "MIS_Payout")
+                    .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                misPayoutSum = Math.Max(misPayoutSum, misTxSum);
+            }
+            decimal alreadyAccruedInt = isPeriodicPayout ? misPayoutSum : verifiedProvision;
 
             decimal penaltyClawback = 0m;
             decimal netPayoutAmount = account.DepositAmount + recalculatedInterest;
@@ -3854,26 +4038,58 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    // 4. Determine already provisioned/capitalized/paid interest
-                    decimal dbProvisionedAccrued = await _context.FdTransactions
-                        .Where(t => t.FdAccountID == id && (t.TransactionType == "Accrual" || t.TransactionType == "MIS_Payout"))
-                        .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                    // 4. Determine ONLY genuinely verified provisioned / capitalized / MIS-paid interest
+                    bool isPeriodicPayout = account.FdScheme != null &&
+                        (account.FdScheme.InterestType == "MIS" || account.FdScheme.InterestType == "Monthly Interest");
+
                     decimal dbCapitalizedInt = await _context.FdTransactions
                         .Where(t => t.FdAccountID == id && t.TransactionType == "Interest_Capitalized")
                         .SumAsync(t => (decimal?)t.Amount) ?? 0m;
                     decimal misPayoutSum = 0m;
-                    try
+                    if (isPeriodicPayout)
                     {
-                        misPayoutSum = await _context.FdMisPayouts
-                            .Where(p => p.FdAccountID == id && p.Status == "Success")
-                            .SumAsync(p => (decimal?)p.GrossInterest) ?? 0m;
+                        try
+                        {
+                            misPayoutSum = await _context.FdMisPayouts
+                                .Where(p => p.FdAccountID == id && p.Status == "Success")
+                                .SumAsync(p => (decimal?)p.GrossInterest) ?? 0m;
+                        }
+                        catch { /* table might be fresh */ }
+                        decimal misTxSum = await _context.FdTransactions
+                            .Where(t => t.FdAccountID == id && t.TransactionType == "MIS_Payout")
+                            .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                        misPayoutSum = Math.Max(misPayoutSum, misTxSum);
                     }
-                    catch { /* table might be fresh */ }
-                    decimal provisionedToClear = Math.Max(Math.Max(dbProvisionedAccrued, misPayoutSum), account.LegacyAccruedInt);
-                    decimal alreadyAccruedInt = provisionedToClear + dbCapitalizedInt;
 
-                    bool isPeriodicPayout = account.FdScheme != null && 
-                        (account.FdScheme.InterestType == "MIS" || account.FdScheme.InterestType == "Monthly Interest");
+                    decimal verifiedProvision = isPeriodicPayout
+                        ? 0m
+                        : await ResolveVerifiedProvisionedInterestAsync(id, account.FdScheme?.InterestPayableLedgerID);
+
+                    string debitMode = (req?.InterestDebitMode ?? "Auto").Trim();
+                    decimal provisionedToClear;
+                    if (isPeriodicPayout)
+                    {
+                        provisionedToClear = misPayoutSum;
+                    }
+                    else if (string.Equals(debitMode, "Expense", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Explicit Interest Expense mode: debit exact entered/calculated interest to मुदतठेवीवरील व्याज (zero Interest Payable / zero Clawback)
+                        provisionedToClear = 0m;
+                    }
+                    else if (string.Equals(debitMode, "Provision", StringComparison.OrdinalIgnoreCase))
+                    {
+                        decimal rawProv = Math.Max(verifiedProvision, account.LegacyAccruedInt);
+                        provisionedToClear = req?.IsManualAmountOverride == true
+                            ? Math.Min(rawProv, Math.Max(0m, recalculatedInterest - dbCapitalizedInt))
+                            : rawProv;
+                    }
+                    else
+                    {
+                        // Auto mode: ONLY clear genuinely verified Interest Payable provisions (never orphaned Accrual rows or un-provisioned LegacyAccruedInt)
+                        provisionedToClear = verifiedProvision;
+                    }
+
+                    decimal alreadyAccruedInt = provisionedToClear + dbCapitalizedInt;
                     decimal fdLiabilityDebitAmtPremature = isPeriodicPayout
                         ? account.DepositAmount
                         : account.DepositAmount + dbCapitalizedInt;
@@ -4458,7 +4674,7 @@ namespace Bhisi.Api.Controllers
                         {
                             await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, targetMisExpenseVoucherId);
                         }
-                        // Log Closure Interest (Cr) if recalculated interest > 0 so FD sub-ledger stays balanced to 0.00
+                        // Log Closure Interest (Cr) with distinct TransactionType = "Closure_Interest" (never "Accrual" provision)
                         if (recalculatedInterest > 0)
                         {
                             var intTx = new FdTransaction
@@ -4467,7 +4683,7 @@ namespace Bhisi.Api.Controllers
                                 FdAccountID = account.FdAccountID,
                                 VoucherID = finalVoucherId,
                                 TransactionDate = effectiveClosureDate,
-                                TransactionType = "Accrual",
+                                TransactionType = "Closure_Interest",
                                 DebitCredit = "Cr",
                                 Amount = recalculatedInterest
                             };
@@ -4951,15 +5167,18 @@ namespace Bhisi.Api.Controllers
                         return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
-                    // CBS Rule: Split contracted interest between Capitalized Deposit Liability, Interest Payable (clearing provision), and Interest Expense (current period P&L)
+                    // CBS Rule: Split contracted interest between Capitalized Deposit Liability, verified Interest Payable (clearing provision), and Interest Expense (current period P&L)
                     decimal dbCapitalized = await _context.FdTransactions
                         .Where(t => t.FdAccountID == id && t.TransactionType == "Interest_Capitalized")
                         .SumAsync(t => (decimal?)t.Amount) ?? 0m;
-                    decimal dbAccruals = await _context.FdTransactions
-                        .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
-                        .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                    decimal verifiedProvision = await ResolveVerifiedProvisionedInterestAsync(id, (ledgerSourceScheme ?? targetLedgerScheme)?.InterestPayableLedgerID);
+                    string renDebitMode = (request.InterestDebitMode ?? "Auto").Trim();
                     decimal clearedCapitalizedInterest = Math.Min(accruedInt, dbCapitalized);
-                    decimal alreadyPosted = Math.Max(dbAccruals, oldAccount.LegacyAccruedInt);
+                    decimal alreadyPosted = string.Equals(renDebitMode, "Expense", StringComparison.OrdinalIgnoreCase)
+                        ? 0m
+                        : (string.Equals(renDebitMode, "Provision", StringComparison.OrdinalIgnoreCase)
+                            ? Math.Max(verifiedProvision, oldAccount.LegacyAccruedInt)
+                            : verifiedProvision);
                     decimal payableInterestAmount = Math.Min(Math.Max(0m, accruedInt - clearedCapitalizedInterest), alreadyPosted);
                     decimal expenseInterestAmount = Math.Max(0m, accruedInt - clearedCapitalizedInterest - payableInterestAmount);
                     decimal totalExpenseInterest = expenseInterestAmount + overdueInterest;
@@ -5170,7 +5389,7 @@ namespace Bhisi.Api.Controllers
                                 FdAccountID = oldAccount.FdAccountID,
                                 VoucherID = voucher2 != null ? voucher2.VoucherID : voucher1.VoucherID,
                                 TransactionDate = closureDate,
-                                TransactionType = "Accrual",
+                                TransactionType = "Closure_Interest",
                                 DebitCredit = "Cr",
                                 Amount = overdueInterest
                             });
@@ -5248,7 +5467,7 @@ namespace Bhisi.Api.Controllers
                                 FdAccountID = oldAccount.FdAccountID,
                                 VoucherID = singleVoucher.VoucherID,
                                 TransactionDate = closureDate,
-                                TransactionType = "Accrual",
+                                TransactionType = "Closure_Interest",
                                 DebitCredit = "Cr",
                                 Amount = overdueInterest
                             });
@@ -6809,10 +7028,8 @@ namespace Bhisi.Api.Controllers
                         throw new InvalidOperationException($"खात्याशी संबंधित ठेव योजना (Scheme ID: {oldAccount.FdSchemeID}) सापडली नाही.");
                     }
 
-                    // Accrued interest on old account
-                    var accruedFromTx = await _context.FdTransactions
-                        .Where(t => t.FdAccountID == oldAccount.FdAccountID && t.TransactionType == "Accrual")
-                        .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                    // Verified Interest Payable Provision on old account
+                    var accruedFromTx = await ResolveVerifiedProvisionedInterestAsync(oldAccount.FdAccountID, scheme.InterestPayableLedgerID);
 
                     bool isOldPeriodicScheme = scheme.InterestType == "MIS" || scheme.InterestType == "Monthly Interest";
                     decimal accruedInt = isOldPeriodicScheme
@@ -6996,7 +7213,7 @@ namespace Bhisi.Api.Controllers
                         .Where(t => t.FdAccountID == oldAccount.FdAccountID && t.TransactionType == "Interest_Capitalized")
                         .SumAsync(t => (decimal?)t.Amount) ?? 0m;
                     decimal clearedAutoCapitalized = Math.Min(accruedInt, dbAutoCapitalized);
-                    decimal alreadyPosted = Math.Max(accruedFromTx, oldAccount.LegacyAccruedInt);
+                    decimal alreadyPosted = accruedFromTx;
                     decimal payableInterestAmount = Math.Min(Math.Max(0m, accruedInt - clearedAutoCapitalized), alreadyPosted);
                     decimal expenseInterestAmount = Math.Max(0m, accruedInt - clearedAutoCapitalized - payableInterestAmount);
 
@@ -7903,6 +8120,9 @@ namespace Bhisi.Api.Controllers
         public decimal? CustomOverdueInterest { get; set; }
         public decimal? CustomTotalPayout { get; set; }
         public string? ManualOverrideReason { get; set; }
+
+        // 🧾 Interest Debit Head Control: "Auto" (Verified Provision first, else Expense) | "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज)
+        public string? InterestDebitMode { get; set; } = "Auto";
     }
 
     public class FdRenewalRequest
@@ -7940,6 +8160,9 @@ namespace Bhisi.Api.Controllers
         // मॅन्युअल नूतनीकरण व्याजदर बदल (Auto-filled default, optional direct override)
         public decimal? CustomInterestRate { get; set; }
         public string? InterestRateOverrideReason { get; set; }
+
+        // 🧾 Interest Debit Head Control: "Auto" (Verified Provision first, else Expense) | "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज)
+        public string? InterestDebitMode { get; set; } = "Auto";
     }
 
     public class AutoRenewalCandidateDto

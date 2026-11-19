@@ -1257,6 +1257,48 @@ try
                 END
             END
 
+            IF OBJECT_ID('dbo.FdTransactions', 'U') IS NOT NULL AND OBJECT_ID('dbo.Vouchers', 'U') IS NOT NULL
+            BEGIN
+                -- 1. Clean orphaned pre-v2.6.33 Accrual rows left behind when a closure voucher was deleted
+                IF OBJECT_ID('dbo.FdInterestAccruals', 'U') IS NOT NULL
+                BEGIN
+                    DELETE t
+                    FROM [dbo].[FdTransactions] t
+                    WHERE t.TransactionType = 'Accrual'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM [dbo].[FdInterestAccruals] a
+                          WHERE a.FdAccountID = t.FdAccountID AND a.VoucherID = t.VoucherID
+                      )
+                      AND (
+                          t.VoucherID IS NULL
+                          OR NOT EXISTS (SELECT 1 FROM [dbo].[Vouchers] v WHERE v.VoucherID = t.VoucherID)
+                      );
+                END
+                ELSE
+                BEGIN
+                    DELETE t
+                    FROM [dbo].[FdTransactions] t
+                    WHERE t.TransactionType = 'Accrual'
+                      AND (
+                          t.VoucherID IS NULL
+                          OR NOT EXISTS (SELECT 1 FROM [dbo].[Vouchers] v WHERE v.VoucherID = t.VoucherID)
+                      );
+                END
+
+                -- 2. Relabel live Closure/Renewal voucher Accrual rows as Closure_Interest
+                UPDATE t
+                SET t.TransactionType = 'Closure_Interest'
+                FROM [dbo].[FdTransactions] t
+                INNER JOIN [dbo].[Vouchers] v ON v.VoucherID = t.VoucherID
+                WHERE t.TransactionType = 'Accrual'
+                  AND (
+                      v.VoucherNo LIKE '%-FD-CLOSE-%'
+                      OR v.VoucherNo LIKE '%-FD-PRECLOSE-%'
+                      OR v.VoucherNo LIKE '%-FD-REN-%'
+                      OR v.VoucherNo LIKE '%-FD-AUTOREN-%'
+                  );
+            END
+
             -- -----------------------------------------------------------------------------------------
             -- CUSTOMER BULK & CIF SEQUENCE MODULE SELF-HEALING
             -- -----------------------------------------------------------------------------------------

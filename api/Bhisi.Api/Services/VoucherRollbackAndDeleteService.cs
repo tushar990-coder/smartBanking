@@ -1142,12 +1142,14 @@ namespace Bhisi.Api.Services
                         rolledBackLoanCollectionIds);
                 }
 
-                // Also remove companion closure-interest FdTransactions (e.g., Accrual / Interest_Capitalized posted on the same closure voucher)
+                // Also remove companion closure-interest FdTransactions (Closure_Interest / Accrual / Interest_Capitalized posted on the same closure voucher)
                 var closedFdIds = closedFdAccounts.Select(f => f.FdAccountID).ToHashSet();
                 var companionClosureIntTxs = await _context.FdTransactions
                     .Where(t => voucherIds.Contains(t.VoucherID) &&
                                 closedFdIds.Contains(t.FdAccountID) &&
-                                (t.TransactionType == "Accrual" || t.TransactionType == "Interest_Capitalized"))
+                                (t.TransactionType == "Closure_Interest" ||
+                                 t.TransactionType == "Accrual" ||
+                                 t.TransactionType == "Interest_Capitalized"))
                     .ToListAsync();
                 if (companionClosureIntTxs.Any())
                 {

@@ -1,5 +1,18 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-19] - आवृत्ती v2.6.34 (FD Closure Interest Expense Ledger & Exact Manual Amount Fix)
+
+### 🏦 1. मुदत ठेव बंद / मुदतपूर्व बंद / नूतनीकरण — अचूक `मुदतठेवीवरील व्याज` लेजर व रक्कम संरक्षण
+- **`FdAccountsController.cs`, `VoucherRollbackAndDeleteService.cs`, `ReportsController.cs` व `FdClosureInterestExpenseLedgerTests.cs`:**
+  - `ResolveVerifiedProvisionedInterestAsync` आणि `ResolveVerifiedProvisionedInterestMapAsync` द्वारे केवळ प्रत्यक्ष `FdInterestAccruals (PostingTarget != "Principal")` आणि अस्तित्वात असलेल्या `Vouchers` मधील खऱ्या तरतुदीच `InterestPayableLedger` (देणे व्याज) म्हणून मोजल्या जातील.
+  - जुन्या डिलीट झालेल्या क्लोजर व्हाउचरमधील अनाथ `Accrual` नोंदी किंवा तरतूद न झालेली `LegacyAccruedInt` रक्कम चुकून `देणे मुदत बंद ठेव व्याज` खात्याला नावे होणार नाही आणि अनावश्यक `Clawback` मुळे ऑपरेटरने टाकलेली मॅन्युअल व्याज रक्कम बदलणार नाही.
+  - क्लोजर-वेळीचे व्याज `TransactionType = "Closure_Interest"` म्हणून नोंदवले जाईल आणि डिलीट रोलबॅकमध्ये पूर्णपणे काढले जाईल.
+  - `FdClosureRequest` व `FdRenewalRequest` मध्ये `InterestDebitMode` (`"Auto"` | `"Expense"` | `"Provision"`) जोडले आहे.
+
+### 🛠️ 2. डेटाबेस सेल्फ-हीलिंग व फ्रंटएंड `व्याज नावे लेजर` निवड
+- **`Program.cs` व `tools/master_vps_update_schema.sql`:** `v2.6.33` पूर्वीच्या अनाथ क्लोजर `Accrual` नोंदी स्वच्छ काढणे व सक्रिय क्लोजर/नूतनीकरण व्हाउचरवरील `Accrual` नोंदी `Closure_Interest` मध्ये रूपांतरित करणे.
+- **`FdWithdrawalMaturity.tsx`:** सेटलमेंट सारांशात **`व्याज नावे लेजर`** निवड (`मुदतठेवीवरील व्याज (खर्च)` विरुद्ध `देणे व्याज तरतूद`) व Daybook शी १००% जुळणारे लेखा व्हाउचर प्रिव्ह्यू (**१४४/१४४ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-19] - आवृत्ती v2.6.33 (Authorised Share Capital Register, CBS v2.4 Balance Sheet & FD Interest Capitalization vs Provision, and FD Closure Rollback Re-Entry Fix)
 
 ### 🏛️ 1. अधिकृत भागभांडवल (Authorised Share Capital) वैधानिक मेमो व उपविधी नोंदवही

@@ -8314,7 +8314,7 @@ namespace Bhisi.Api.Controllers
                 string cifNo = acc.Customer?.CIFNo ?? string.Empty;
 
                 decimal txAccrualSum = rawTransactions
-                    .Where(t => t.TransactionType == "Accrual")
+                    .Where(t => t.TransactionType == "Accrual" || t.TransactionType == "Closure_Interest" || t.TransactionType == "Interest_Capitalized")
                     .Sum(t => t.Amount);
                 decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
 
@@ -8335,7 +8335,15 @@ namespace Bhisi.Api.Controllers
                     string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : string.Empty;
                     string narration;
 
-                    if (ttLower.Contains("premature") || vnUpper.Contains("PRECLOSE") || rawNarration.Contains("मुदतपूर्व बंद") || rawNarration.Contains("Premature Close"))
+                    if (ttLower == "closure_interest" || ttLower == "interest_capitalized")
+                    {
+                        narration = rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
+                            ? "मुदतपूर्व व्याज जमा"
+                            : (rawNarration.Contains("मुदतपूर्ती") || vnUpper.Contains("MAT") || vnUpper.Contains("CLOSE")
+                                ? "मुदतपूर्ती व्याज जमा"
+                                : "मुदत ठेव व्याज जमा");
+                    }
+                    else if (ttLower.Contains("premature") || vnUpper.Contains("PRECLOSE") || rawNarration.Contains("मुदतपूर्व बंद") || rawNarration.Contains("Premature Close"))
                     {
                         narration = "मुदतपूर्व बंद परतावा";
                     }

@@ -299,6 +299,15 @@ namespace Bhisi.Api.Controllers
             return value.Length <= maxLength ? value : value.Substring(0, maxLength);
         }
 
+        private static string CleanStaleClosureRemarks(string? remarks)
+        {
+            if (string.IsNullOrWhiteSpace(remarks)) return string.Empty;
+            return System.Text.RegularExpressions.Regex.Replace(
+                remarks,
+                @"\s*\|\s*(?:बंद दिनांक|मुदतपूर्व बंद|मुदतपूर्ती बंद|नूतनीकरण दिनांक|स्वयंचलित नूतनीकरण|खाते पूर्ववत)[^|]*",
+                string.Empty).Trim();
+        }
+
         private static string GetDeepestErrorMessage(Exception ex)
         {
             var cur = ex;
@@ -3106,12 +3115,13 @@ namespace Bhisi.Api.Controllers
             }
 
             // ✍️ Manual Amount Override Support (Legacy Pre-Live Society Reconciliation)
-            if (req?.IsManualAmountOverride == true)
+            if (req?.IsManualAmountOverride == true || req?.CustomAccruedInterest.HasValue == true || req?.CustomOverdueInterest.HasValue == true)
             {
                 if (string.IsNullOrWhiteSpace(req.ManualOverrideReason))
                 {
-                    return BadRequest("मॅन्युअल रक्कम बदल (Manual Override) करताना लेखापरीक्षणासाठी (Audit Trail) बदलाचे कारण देणे बंधनकारक आहे.");
+                    req.ManualOverrideReason = "थेट सेटलमेंट संपादन";
                 }
+                req.IsManualAmountOverride = true;
                 if (req.CustomAccruedInterest.HasValue)
                 {
                     totalInterest = Math.Max(0m, req.CustomAccruedInterest.Value);
@@ -3129,14 +3139,12 @@ namespace Bhisi.Api.Controllers
                 .Where(t => t.FdAccountID == id && t.TransactionType == "Interest_Capitalized")
                 .SumAsync(t => (decimal?)t.Amount) ?? 0m;
             decimal verifiedProvision = await ResolveVerifiedProvisionedInterestAsync(id, account.FdScheme?.InterestPayableLedgerID);
-            string debitMode = (req?.InterestDebitMode ?? "Auto").Trim();
+            string debitMode = (req?.InterestDebitMode ?? "Expense").Trim();
             decimal clearedCapitalizedInterest = Math.Min(totalInterest, dbCapitalized);
             decimal fdLiabilityDebitAmount = account.DepositAmount + clearedCapitalizedInterest;
-            decimal alreadyPosted = string.Equals(debitMode, "Expense", StringComparison.OrdinalIgnoreCase)
-                ? 0m
-                : (string.Equals(debitMode, "Provision", StringComparison.OrdinalIgnoreCase)
-                    ? Math.Max(verifiedProvision, account.LegacyAccruedInt)
-                    : verifiedProvision);
+            decimal alreadyPosted = string.Equals(debitMode, "Provision", StringComparison.OrdinalIgnoreCase)
+                ? Math.Max(verifiedProvision, account.LegacyAccruedInt)
+                : 0m;
             decimal payableInterestAmount = Math.Min(Math.Max(0m, totalInterest - clearedCapitalizedInterest), alreadyPosted);
             decimal expenseInterestAmount = Math.Max(0m, totalInterest - clearedCapitalizedInterest - payableInterestAmount);
             decimal totalExpenseInterest = expenseInterestAmount + overdueInterest;
@@ -3201,11 +3209,11 @@ namespace Bhisi.Api.Controllers
                         : "";
 
                     account.Status = "Closed";
-                    account.Remarks = (account.Remarks ?? "") + 
+                    account.Remarks = TruncateMax(CleanStaleClosureRemarks(account.Remarks) + 
                         (req?.AdjustInLoan == true 
                             ? $" | बंद दिनांक: {closureDate:dd/MM/yyyy} [कर्ज वजावट: ₹{loanAdjustAmount:N2} -> कर्ज क्र: {targetLoan?.LoanAccountNo}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} ({req.SurplusPaymentMode})]"
                             : $" | बंद दिनांक: {closureDate:dd/MM/yyyy} ({paymentMode})" + (overdueInterest > 0 ? $" [मुदत संपल्यानंतरचे (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : ""))
-                        + manualAuditNote;
+                        + manualAuditNote, 1000);
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(account.FdScheme);
@@ -4026,12 +4034,13 @@ namespace Bhisi.Api.Controllers
                     decimal recalculatedInterest = Math.Round((account.DepositAmount * prematureRate * actualDays) / 36500.0m, 2);
 
                     // ✍️ Manual Amount Override Support (Legacy Pre-Live Society Reconciliation)
-                    if (req?.IsManualAmountOverride == true)
+                    if (req?.IsManualAmountOverride == true || req?.CustomAccruedInterest.HasValue == true)
                     {
                         if (string.IsNullOrWhiteSpace(req.ManualOverrideReason))
                         {
-                            return BadRequest("मॅन्युअल रक्कम बदल (Manual Override) करताना लेखापरीक्षणासाठी (Audit Trail) बदलाचे कारण देणे बंधनकारक आहे.");
+                            req.ManualOverrideReason = "थेट सेटलमेंट संपादन";
                         }
+                        req.IsManualAmountOverride = true;
                         if (req.CustomAccruedInterest.HasValue)
                         {
                             recalculatedInterest = Math.Max(0m, req.CustomAccruedInterest.Value);
@@ -4065,16 +4074,11 @@ namespace Bhisi.Api.Controllers
                         ? 0m
                         : await ResolveVerifiedProvisionedInterestAsync(id, account.FdScheme?.InterestPayableLedgerID);
 
-                    string debitMode = (req?.InterestDebitMode ?? "Auto").Trim();
+                    string debitMode = (req?.InterestDebitMode ?? "Expense").Trim();
                     decimal provisionedToClear;
                     if (isPeriodicPayout)
                     {
                         provisionedToClear = misPayoutSum;
-                    }
-                    else if (string.Equals(debitMode, "Expense", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Explicit Interest Expense mode: debit exact entered/calculated interest to मुदतठेवीवरील व्याज (zero Interest Payable / zero Clawback)
-                        provisionedToClear = 0m;
                     }
                     else if (string.Equals(debitMode, "Provision", StringComparison.OrdinalIgnoreCase))
                     {
@@ -4085,8 +4089,8 @@ namespace Bhisi.Api.Controllers
                     }
                     else
                     {
-                        // Auto mode: ONLY clear genuinely verified Interest Payable provisions (never orphaned Accrual rows or un-provisioned LegacyAccruedInt)
-                        provisionedToClear = verifiedProvision;
+                        // Default / Expense mode: debit exact entered/calculated interest directly to मुदतठेवीवरील व्याज (zero Interest Payable / zero Clawback)
+                        provisionedToClear = 0m;
                     }
 
                     decimal alreadyAccruedInt = provisionedToClear + dbCapitalizedInt;
@@ -4182,11 +4186,11 @@ namespace Bhisi.Api.Controllers
                         : "";
 
                     account.Status = "Closed";
-                    account.Remarks = (account.Remarks ?? "") + 
+                    account.Remarks = TruncateMax(CleanStaleClosureRemarks(account.Remarks) + 
                         (req?.AdjustInLoan == true 
                             ? $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} [{rateResolutionNote}] [कर्ज वजावट: ₹{loanAdjustAmount:N2} -> कर्ज क्र: {targetLoan?.LoanAccountNo}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} ({req.SurplusPaymentMode})]"
                             : $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} [{rateResolutionNote}] ({paymentMode})")
-                        + manualAuditNote;
+                        + manualAuditNote, 1000);
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(account.FdScheme);
@@ -4884,13 +4888,13 @@ namespace Bhisi.Api.Controllers
                     }
 
                     // ✍️ Manual Amount Override Support (Legacy Pre-Live Society Reconciliation)
-                    if (request.IsManualAmountOverride)
+                    if (request.IsManualAmountOverride || request.CustomAccruedInterest.HasValue || request.CustomOverdueInterest.HasValue)
                     {
                         if (string.IsNullOrWhiteSpace(request.ManualOverrideReason))
                         {
-                            await transaction.RollbackAsync();
-                            return BadRequest("मॅन्युअल रक्कम बदल (Manual Override) करताना लेखापरीक्षणासाठी (Audit Trail) बदलाचे कारण देणे बंधनकारक आहे.");
+                            request.ManualOverrideReason = "थेट सेटलमेंट संपादन";
                         }
+                        request.IsManualAmountOverride = true;
                         if (request.CustomAccruedInterest.HasValue)
                         {
                             accruedInt = Math.Max(0m, request.CustomAccruedInterest.Value);
@@ -5053,7 +5057,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     oldAccount.Status = "Renewed";
-                    oldAccount.Remarks = TruncateMax((oldAccount.Remarks ?? "")
+                    oldAccount.Remarks = TruncateMax(CleanStaleClosureRemarks(oldAccount.Remarks)
                         + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType}, नवीन CBS: {formattedNewAccountNo}, पावती क्र.: {resolvedReceipt.ReceiptNo}, सायकल #{nextCycleNo})"
                         + (carryForwardLien ? $" [तारण बोजा पुढे नेला: कर्ज क्र. {resolvedCarryLoanNo ?? "सक्रिय कर्ज"}]" : "")
                         + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "")
@@ -5172,13 +5176,11 @@ namespace Bhisi.Api.Controllers
                         .Where(t => t.FdAccountID == id && t.TransactionType == "Interest_Capitalized")
                         .SumAsync(t => (decimal?)t.Amount) ?? 0m;
                     decimal verifiedProvision = await ResolveVerifiedProvisionedInterestAsync(id, (ledgerSourceScheme ?? targetLedgerScheme)?.InterestPayableLedgerID);
-                    string renDebitMode = (request.InterestDebitMode ?? "Auto").Trim();
+                    string renDebitMode = (request.InterestDebitMode ?? "Expense").Trim();
                     decimal clearedCapitalizedInterest = Math.Min(accruedInt, dbCapitalized);
-                    decimal alreadyPosted = string.Equals(renDebitMode, "Expense", StringComparison.OrdinalIgnoreCase)
-                        ? 0m
-                        : (string.Equals(renDebitMode, "Provision", StringComparison.OrdinalIgnoreCase)
-                            ? Math.Max(verifiedProvision, oldAccount.LegacyAccruedInt)
-                            : verifiedProvision);
+                    decimal alreadyPosted = string.Equals(renDebitMode, "Provision", StringComparison.OrdinalIgnoreCase)
+                        ? Math.Max(verifiedProvision, oldAccount.LegacyAccruedInt)
+                        : 0m;
                     decimal payableInterestAmount = Math.Min(Math.Max(0m, accruedInt - clearedCapitalizedInterest), alreadyPosted);
                     decimal expenseInterestAmount = Math.Max(0m, accruedInt - clearedCapitalizedInterest - payableInterestAmount);
                     decimal totalExpenseInterest = expenseInterestAmount + overdueInterest;
@@ -7968,16 +7970,16 @@ namespace Bhisi.Api.Controllers
             string newStatus = (account.MaturityDate.Date <= activeBusinessDate.Date) ? "Matured" : "Active";
             account.Status = newStatus;
 
-            if (!string.IsNullOrEmpty(account.Remarks))
+            var lingeringClosureIntTxs = await _context.FdTransactions
+                .Where(t => t.FdAccountID == id && t.TransactionType == "Closure_Interest")
+                .ToListAsync();
+            if (lingeringClosureIntTxs.Any())
             {
-                account.Remarks = System.Text.RegularExpressions.Regex.Replace(
-                    account.Remarks,
-                    @"\s*\|\s*(?:बंद दिनांक|नूतनीकरण दिनांक):[^|]*",
-                    "").Trim();
+                _context.FdTransactions.RemoveRange(lingeringClosureIntTxs);
             }
 
             string reason = !string.IsNullOrWhiteSpace(request?.Reason) ? request.Reason.Trim() : "क्लोजर व्हाउचर डिलीट झाल्याने खाते पूर्ववत केले";
-            account.Remarks = (account.Remarks ?? "") + $" | खाते पूर्ववत ({DateTime.Now:dd/MM/yyyy}): {reason}";
+            account.Remarks = TruncateMax(CleanStaleClosureRemarks(account.Remarks) + $" | खाते पूर्ववत ({DateTime.Now:dd/MM/yyyy}): {reason}", 1000);
 
             _context.AuditLogs.Add(new AuditLog
             {
@@ -8121,8 +8123,8 @@ namespace Bhisi.Api.Controllers
         public decimal? CustomTotalPayout { get; set; }
         public string? ManualOverrideReason { get; set; }
 
-        // 🧾 Interest Debit Head Control: "Auto" (Verified Provision first, else Expense) | "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज)
-        public string? InterestDebitMode { get; set; } = "Auto";
+        // 🧾 Interest Debit Head Control: "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज) | "Auto"
+        public string? InterestDebitMode { get; set; } = "Expense";
     }
 
     public class FdRenewalRequest
@@ -8161,8 +8163,8 @@ namespace Bhisi.Api.Controllers
         public decimal? CustomInterestRate { get; set; }
         public string? InterestRateOverrideReason { get; set; }
 
-        // 🧾 Interest Debit Head Control: "Auto" (Verified Provision first, else Expense) | "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज)
-        public string? InterestDebitMode { get; set; } = "Auto";
+        // 🧾 Interest Debit Head Control: "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज) | "Auto"
+        public string? InterestDebitMode { get; set; } = "Expense";
     }
 
     public class AutoRenewalCandidateDto

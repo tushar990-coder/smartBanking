@@ -1142,14 +1142,14 @@ namespace Bhisi.Api.Services
                         rolledBackLoanCollectionIds);
                 }
 
-                // Also remove companion closure-interest FdTransactions (Closure_Interest / Accrual / Interest_Capitalized posted on the same closure voucher)
+                // Also remove companion closure-interest FdTransactions (Closure_Interest / Accrual / Interest_Capitalized posted on the same closure voucher or any stale Closure_Interest on the reopened account)
                 var closedFdIds = closedFdAccounts.Select(f => f.FdAccountID).ToHashSet();
                 var companionClosureIntTxs = await _context.FdTransactions
-                    .Where(t => voucherIds.Contains(t.VoucherID) &&
-                                closedFdIds.Contains(t.FdAccountID) &&
+                    .Where(t => closedFdIds.Contains(t.FdAccountID) &&
                                 (t.TransactionType == "Closure_Interest" ||
-                                 t.TransactionType == "Accrual" ||
-                                 t.TransactionType == "Interest_Capitalized"))
+                                 (voucherIds.Contains(t.VoucherID) &&
+                                  (t.TransactionType == "Accrual" ||
+                                   t.TransactionType == "Interest_Capitalized"))))
                     .ToListAsync();
                 if (companionClosureIntTxs.Any())
                 {
@@ -1168,7 +1168,10 @@ namespace Bhisi.Api.Services
                     fd.Status = fd.MaturityDate.Date <= effectiveBizDate ? "Matured" : "Active";
                     if (!string.IsNullOrEmpty(fd.Remarks))
                     {
-                        fd.Remarks = Regex.Replace(fd.Remarks, @"\s*\|\s*बंद दिनांक:[^|]*", string.Empty).Trim();
+                        fd.Remarks = Regex.Replace(
+                            fd.Remarks,
+                            @"\s*\|\s*(?:बंद दिनांक|मुदतपूर्व बंद|मुदतपूर्ती बंद|नूतनीकरण दिनांक|स्वयंचलित नूतनीकरण|खाते पूर्ववत)[^|]*",
+                            string.Empty).Trim();
                     }
                     _context.Entry(fd).State = EntityState.Modified;
                 }

@@ -102,7 +102,7 @@ namespace Bhisi.Api.Models
         [StringLength(50)]
         public string? NomineeRelation { get; set; }
 
-        [StringLength(1000)]
+        [StringLength(2000)]
         public string? Remarks { get; set; }
 
         [StringLength(20)]

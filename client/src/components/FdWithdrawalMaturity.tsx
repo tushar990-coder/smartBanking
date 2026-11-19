@@ -473,7 +473,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [customAccruedInterest, setCustomAccruedInterest] = useState<string>('');
   const [customOverdueInterest, setCustomOverdueInterest] = useState<string>('');
   const [customPrematureInterest, setCustomPrematureInterest] = useState<string>('');
-  const [interestDebitMode, setInterestDebitMode] = useState<'Auto' | 'Expense' | 'Provision'>('Auto');
+  const [interestDebitMode, setInterestDebitMode] = useState<'Auto' | 'Expense' | 'Provision'>('Expense');
 
   const handleResetManualOverride = () => {
     setIsManualOverride(false);
@@ -481,7 +481,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     setCustomAccruedInterest('');
     setCustomOverdueInterest('');
     setCustomPrematureInterest('');
-    setInterestDebitMode('Auto');
+    setInterestDebitMode('Expense');
   };
 
   useEffect(() => {
@@ -1529,15 +1529,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const prematureRate = prematurePreview?.prematureRate ?? resolution.prematureRate;
       const systemRecalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
 
-      const effRecalcInt = isManualOverride && customPrematureInterest !== ''
+      const effRecalcInt = (isManualOverride || customPrematureInterest !== '') && customPrematureInterest !== ''
         ? Math.max(0, parseFloat(customPrematureInterest) || 0)
         : systemRecalcInt;
 
-      const alreadyAccrued = interestDebitMode === 'Expense'
-        ? 0
-        : (interestDebitMode === 'Provision'
-            ? Math.max(Number(prematurePreview?.alreadyAccruedInterest ?? selectedAccount.alreadyPostedInterest ?? 0), Number(selectedAccount.legacyAccruedInt ?? 0))
-            : Number(prematurePreview?.alreadyAccruedInterest ?? selectedAccount.alreadyPostedInterest ?? 0));
+      const alreadyAccrued = interestDebitMode === 'Provision'
+        ? Math.max(Number(prematurePreview?.alreadyAccruedInterest ?? selectedAccount.alreadyPostedInterest ?? 0), Number(selectedAccount.legacyAccruedInt ?? 0))
+        : 0;
       const isPeriodic = ledgers?.scheme?.interestType === 'MIS' || ledgers?.scheme?.interestType === 'Monthly Interest';
       if (isPeriodic && alreadyAccrued > effRecalcInt) {
         return Math.max(0, principal - (alreadyAccrued - effRecalcInt));
@@ -1559,7 +1557,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       : Number(acc.alreadyPostedInterest ?? 0);
     const legacyProvisionFallback = Math.max(verifiedProvision, Number(acc.legacyAccruedInt ?? 0));
 
-    if (interestDebitMode === 'Expense') {
+    if (interestDebitMode !== 'Provision') {
       return {
         verifiedProvision,
         legacyProvisionFallback,
@@ -1570,7 +1568,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       };
     }
 
-    const baseProvision = interestDebitMode === 'Provision' ? legacyProvisionFallback : verifiedProvision;
+    const baseProvision = legacyProvisionFallback;
 
     if (isPremature) {
       const isPeriodic = accountScheme?.interestType === 'MIS' || accountScheme?.interestType === 'Monthly Interest';
@@ -1763,15 +1761,15 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         surplusChequeNo: isLoanAdjustActive && surplusVal > 0 && surplusPaymentMode === 'Bank' ? (surplusChequeNo.trim() || null) : null,
         surplusChequeDate: isLoanAdjustActive && surplusVal > 0 && surplusPaymentMode === 'Bank' ? chequeDate : null,
         // ✍️ Manual Amount Override (Legacy Reconciliation)
-        isManualAmountOverride: isManualOverride,
-        customAccruedInterest: isManualOverride 
+        isManualAmountOverride: Boolean(isManualOverride || customPrematureInterest !== '' || customAccruedInterest !== '' || customOverdueInterest !== ''),
+        customAccruedInterest: (isManualOverride || customPrematureInterest !== '' || customAccruedInterest !== '')
           ? (actionType === 'PrematureClose' 
-              ? (customPrematureInterest !== '' ? parseFloat(customPrematureInterest) : null) 
-              : (customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null)) 
+              ? (customPrematureInterest !== '' ? parseFloat(customPrematureInterest) : (customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null)) 
+              : (customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : (customPrematureInterest !== '' ? parseFloat(customPrematureInterest) : null))) 
           : null,
-        customOverdueInterest: isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
-        manualOverrideReason: isManualOverride ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null,
-        interestDebitMode: interestDebitMode
+        customOverdueInterest: (isManualOverride || customOverdueInterest !== '') && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
+        manualOverrideReason: (isManualOverride || customPrematureInterest !== '' || customAccruedInterest !== '' || customOverdueInterest !== '') ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null,
+        interestDebitMode: interestDebitMode === 'Provision' ? 'Provision' : 'Expense'
       };
 
       if (actionType === 'MaturityClose') {
@@ -1858,11 +1856,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           applyOverdueInterest: isOverdue && isAllowedByScheme && renewalEffectiveFrom === 'ClosureDate' ? applyOverdueInterest : false,
           overdueInterestRate: isOverdue && isAllowedByScheme && renewalEffectiveFrom === 'ClosureDate' && applyOverdueInterest ? effectiveOverdueRate : null,
           // ✍️ Manual Amount Override (Legacy Reconciliation)
-          isManualAmountOverride: isManualOverride,
-          customAccruedInterest: isManualOverride && customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null,
-          customOverdueInterest: isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
-          manualOverrideReason: isManualOverride ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null,
-          interestDebitMode: interestDebitMode,
+          isManualAmountOverride: Boolean(isManualOverride || customAccruedInterest !== '' || customPrematureInterest !== '' || customOverdueInterest !== ''),
+          customAccruedInterest: (isManualOverride || customAccruedInterest !== '' || customPrematureInterest !== '')
+            ? (customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : (customPrematureInterest !== '' ? parseFloat(customPrematureInterest) : null))
+            : null,
+          customOverdueInterest: (isManualOverride || customOverdueInterest !== '') && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
+          manualOverrideReason: (isManualOverride || customAccruedInterest !== '' || customPrematureInterest !== '' || customOverdueInterest !== '') ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null,
+          interestDebitMode: interestDebitMode === 'Provision' ? 'Provision' : 'Expense',
           // Auto-populated & Editable Renewal Interest Rate
           customInterestRate:
             isRenewalRateManuallyEdited && renewalInterestRateInput.trim() !== '' && Number.isFinite(parsedEditedRate) && parsedEditedRate > 0
@@ -3797,35 +3797,26 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                       min="0"
                                       value={
                                         actionType === 'PrematureClose'
-                                          ? (customPrematureInterest !== '' ? customPrematureInterest : systemRecalcInt)
-                                          : (customAccruedInterest !== '' ? customAccruedInterest : systemAccruedInt)
+                                          ? (customPrematureInterest !== '' ? customPrematureInterest : (customAccruedInterest !== '' ? customAccruedInterest : systemRecalcInt))
+                                          : (customAccruedInterest !== '' ? customAccruedInterest : (customPrematureInterest !== '' ? customPrematureInterest : systemAccruedInt))
                                       }
                                       onChange={(e) => {
                                         const val = e.target.value;
                                         setIsManualOverride(true);
                                         setManualOverrideReason('थेट सेटलमेंट संपादन');
-                                        if (actionType === 'PrematureClose') {
-                                          setCustomPrematureInterest(val);
-                                        } else {
-                                          setCustomAccruedInterest(val);
-                                        }
+                                        setCustomPrematureInterest(val);
+                                        setCustomAccruedInterest(val);
                                       }}
                                       className="w-28 h-7 text-right font-mono font-bold text-xs bg-amber-50/70 border border-amber-300 rounded-sm px-2 text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white focus:ring-1 focus:ring-amber-400"
                                       title="व्याज रक्कम थेट येथे बदला"
                                     />
-                                    {(actionType === 'PrematureClose' ? customPrematureInterest !== '' : customAccruedInterest !== '') && (
+                                    {(customPrematureInterest !== '' || customAccruedInterest !== '') && (
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          if (actionType === 'PrematureClose') {
-                                            setCustomPrematureInterest('');
-                                          } else {
-                                            setCustomAccruedInterest('');
-                                          }
-                                          if (
-                                            (actionType === 'PrematureClose' || customAccruedInterest === '') &&
-                                            customOverdueInterest === ''
-                                          ) {
+                                          setCustomPrematureInterest('');
+                                          setCustomAccruedInterest('');
+                                          if (customOverdueInterest === '') {
                                             setIsManualOverride(false);
                                             setManualOverrideReason('');
                                           }
@@ -4326,6 +4317,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                     <div
                       key={acc.fdAccountID}
                       onClick={() => {
+                        if (selectedAccId !== acc.fdAccountID) {
+                          handleResetManualOverride();
+                        }
                         setSelectedAccId(acc.fdAccountID);
                         setSelectedAccount(acc);
                         fetchCustomerSavingsAccounts(acc.customerID, acc.memberID);
@@ -4402,6 +4396,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            if (selectedAccId !== acc.fdAccountID) {
+                              handleResetManualOverride();
+                            }
                             setSelectedAccId(acc.fdAccountID);
                             setSelectedAccount(acc);
                             fetchCustomerSavingsAccounts(acc.customerID, acc.memberID);

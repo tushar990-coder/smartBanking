@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
-import { 
-  Printer, 
-  FileSpreadsheet, 
-  Search, 
-  RefreshCw, 
-  Scale, 
-  Building2,
-  Calendar,
+import CbsReportLayout, { CbsPaperSize, formatDisplayDate } from './common/CbsReportLayout';
+import {
+  Search,
+  RefreshCw,
+  Scale,
   CheckCircle2,
   AlertTriangle
 } from 'lucide-react';
@@ -27,73 +24,93 @@ interface ReportNode {
 }
 
 const fmtCurrency = (n: number | null | undefined) => {
-  return (n || 0).toLocaleString('en-IN', {
+  const num = Number(n || 0);
+  const absStr = Math.abs(num).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
+  return num < -0.004 ? `-${absStr}` : absStr;
 };
 
-const formatDisplayDate = (dStr?: string | null) => {
-  if (!dStr) return '-';
-  try {
-    const clean = dStr.split('T')[0];
-    const parts = clean.split('-');
-    if (parts.length === 3) {
-      const [y, m, d] = parts;
-      return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
-    }
-    const d = new Date(dStr);
-    if (isNaN(d.getTime())) return dStr;
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  } catch {
-    return dStr;
-  }
-};
-
-const TreeNode: React.FC<{ node: ReportNode, level: number }> = ({ node, level }) => {
+const TreeNode: React.FC<{ node: ReportNode; level: number }> = ({ node, level }) => {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
   const isHead = level === 0 || node.isGroup;
-  
+  const isCurrentNegative = Number(node.amount || 0) < -0.004;
+  const isPrevNegative = Number(node.previousYearAmount || 0) < -0.004;
+
   return (
     <React.Fragment>
-      <tr className={`border-b transition-colors ${
-        isHead 
-          ? 'bg-blue-50/75 hover:bg-blue-100/60 font-bold text-gray-950 border-gray-400 print:bg-slate-100/90' 
-          : 'bg-white hover:bg-slate-50 font-normal text-gray-800 border-gray-200'
-      }`}>
-        <td className={`py-1 px-1.5 text-right border-r border-gray-900 w-[24%] align-top font-mono ${
-          isHead ? 'font-bold text-gray-900 text-[11px]' : 'font-normal text-gray-500 text-[10.5px]'
-        }`}>
-          {node.previousYearAmount ? fmtCurrency(Math.abs(node.previousYearAmount)) : '-'}
+      <tr
+        className={`transition-colors ${
+          isHead
+            ? 'bg-slate-50/90 hover:bg-slate-100/80 font-bold text-slate-950'
+            : 'bg-white hover:bg-slate-50 font-normal text-slate-900'
+        }`}
+      >
+        <td
+          className={`border border-slate-900 py-1 px-1.5 w-[23%] align-top cbs-num-cell ${
+            isPrevNegative
+              ? 'font-bold text-red-700 text-[10.5px]'
+              : isHead
+              ? 'font-bold text-slate-900 text-[11px]'
+              : 'font-normal text-slate-700 text-[10.5px]'
+          }`}
+        >
+          {Math.abs(Number(node.previousYearAmount || 0)) >= 0.005 ? fmtCurrency(node.previousYearAmount) : '-'}
         </td>
-        <td className="py-1 px-1.5 border-r border-gray-900 w-[52%] align-top text-[11px]" style={{ paddingLeft: `${(level * 0.8) + 0.3}rem` }}>
+        <td
+          className="border border-slate-900 py-1 px-2 w-[54%] align-top text-[11px]"
+          style={{ paddingLeft: `${level * 0.8 + 0.35}rem` }}
+        >
           {hasChildren ? (
-            <button 
-              onClick={() => setExpanded(!expanded)} 
-              className="mr-1 w-3.5 h-3.5 inline-flex items-center justify-center rounded bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold text-[9px] cursor-pointer print:hidden select-none"
+            <button
+              type="button"
+              onClick={() => setExpanded(!expanded)}
+              className="mr-1 w-3.5 h-3.5 inline-flex items-center justify-center rounded bg-primary/15 hover:bg-primary/25 text-primary font-bold text-[9px] cursor-pointer print:hidden select-none"
             >
               {expanded ? '-' : '+'}
             </button>
           ) : (
             <span className="mr-1 w-3.5 inline-block print:hidden"></span>
           )}
-          <span className={`font-mono mr-1.5 ${isHead ? 'text-blue-900 font-bold' : 'text-gray-500 font-normal'}`}>
-            {node.isGroup 
-              ? (node.displayOrder && node.displayOrder > 0 ? `${node.displayOrder} -` : (node.code ? `${node.code} -` : '')) 
+          <span
+            className={`font-mono mr-1.5 ${
+              isHead ? 'text-primary font-bold print:text-slate-950' : 'text-slate-500 font-normal'
+            }`}
+          >
+            {node.isGroup
+              ? node.displayOrder && node.displayOrder > 0
+                ? `${node.displayOrder} -`
+                : node.code
+                ? `${node.code} -`
+                : ''
               : `${node.code || node.id} -`}
           </span>
-          <span className={isHead ? 'text-gray-950 font-extrabold tracking-tight' : 'text-gray-800 font-normal'}>{node.name}</span>
+          <span className={isHead ? 'text-slate-950 font-extrabold tracking-tight' : 'text-slate-900 font-normal'}>
+            {node.name}
+          </span>
+          {!isHead && isCurrentNegative && (
+            <span className="ml-1 text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1 rounded print:border-0">
+              विपरीत
+            </span>
+          )}
         </td>
-        <td className={`py-1 px-1.5 text-right w-[24%] align-top font-mono ${
-          isHead ? 'font-bold text-gray-950 text-[11.5px]' : 'font-normal text-gray-700 text-[11px]'
-        }`}>
-          {fmtCurrency(Math.abs(node.amount))}
+        <td
+          className={`border border-slate-900 py-1 px-1.5 w-[23%] align-top cbs-num-cell ${
+            isCurrentNegative
+              ? 'font-bold text-red-700 text-[11px]'
+              : isHead
+              ? 'font-bold text-slate-950 text-[11px]'
+              : 'font-normal text-slate-800 text-[10.5px]'
+          }`}
+        >
+          {fmtCurrency(node.amount)}
         </td>
       </tr>
-      {expanded && hasChildren && node.children.map((child, idx) => (
-        <TreeNode key={`${child.id}-${idx}`} node={child} level={level + 1} />
-      ))}
+      {expanded &&
+        hasChildren &&
+        node.children.map((child, idx) => <TreeNode key={`${child.id}-${idx}`} node={child} level={level + 1} />)}
     </React.Fragment>
   );
 };
@@ -102,13 +119,14 @@ export default function BalanceSheet() {
   const { user, globalBranchId } = useAuth();
   const isHOUser = isHeadOfficeUser(user);
   const lockedBranchId = getLockedBranchId(user);
-  const [fromDate, setFromDate] = useState(user?.businessDate || new Date().toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState(user?.businessDate || new Date().toISOString().split('T')[0]);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [paperSize] = useState<CbsPaperSize>('a4-landscape');
+  const [signatureTier, setSignatureTier] = useState<'3-tier' | '4-tier'>('3-tier');
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [sansthaDetail, setSansthaDetail] = useState<any>(null);
   const [branches, setBranches] = useState<any[]>([]);
-  const reportRef = useRef<HTMLDivElement>(null);
 
   const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
   const initialBranchId = effectiveBranch === null ? 'all' : String(effectiveBranch);
@@ -182,18 +200,21 @@ export default function BalanceSheet() {
     }
   }, [fromDate, toDate, selectedBranchId]);
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   const handleExportExcel = () => {
     if (!reportData) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
 
-    const flattenList = (nodes: ReportNode[]): { name: string; isGroup: boolean; previousYearAmount: number; amount: number }[] => {
+    const flattenList = (
+      nodes: ReportNode[]
+    ): { name: string; isGroup: boolean; previousYearAmount: number; amount: number }[] => {
       const result: { name: string; isGroup: boolean; previousYearAmount: number; amount: number }[] = [];
       if (!nodes) return result;
       for (const group of nodes) {
-        const groupPrefix = group.displayOrder && group.displayOrder > 0 ? `${group.displayOrder} - ` : (group.code ? `${group.code} - ` : '');
+        const groupPrefix =
+          group.displayOrder && group.displayOrder > 0
+            ? `${group.displayOrder} - `
+            : group.code
+            ? `${group.code} - `
+            : '';
         result.push({
           name: `${groupPrefix}${group.name}`,
           isGroup: true,
@@ -202,8 +223,10 @@ export default function BalanceSheet() {
         });
         if (group.children && group.children.length > 0) {
           for (const child of group.children) {
-            const childPrefix = child.isGroup 
-              ? (child.displayOrder && child.displayOrder > 0 ? `${child.displayOrder} - ` : '') 
+            const childPrefix = child.isGroup
+              ? child.displayOrder && child.displayOrder > 0
+                ? `${child.displayOrder} - `
+                : ''
               : `${child.code || child.id} - `;
             result.push({
               name: `   ${childPrefix}${child.name}`,
@@ -220,11 +243,35 @@ export default function BalanceSheet() {
     const liabList = flattenList(reportData.liabilities || []);
     const assetList = flattenList(reportData.assets || []);
 
+    const authCap = reportData.authorizedCapital;
+    if (authCap && ((authCap.currentYearAmount || 0) > 0 || (authCap.previousYearAmount || 0) > 0)) {
+      liabList.unshift({
+        name: 'अधिकृत भागभांडवल (मेमो — बेरजेत समाविष्ट नाही)',
+        isGroup: true,
+        previousYearAmount: authCap.previousYearAmount || 0,
+        amount: authCap.currentYearAmount || 0
+      });
+      assetList.unshift({
+        name: '',
+        isGroup: false,
+        previousYearAmount: 0,
+        amount: 0
+      });
+    }
+
     const rows: any[] = [];
     rows.push(['ताळेबंद पत्रक (Balance Sheet)']);
     rows.push([`कालावधी: ${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)}`]);
     rows.push([]);
-    rows.push(['देयता बाजू / भांडवल व देणी (Liabilities)', 'मागील वर्ष (₹)', 'चालू वर्ष (₹)', '', 'जिंदगी बाजू / मालमत्ता व येणी (Assets)', 'मागील वर्ष (₹)', 'चालू वर्ष (₹)']);
+    rows.push([
+      'देयता बाजू / भांडवल व देणी (Liabilities)',
+      'मागील वर्ष (₹)',
+      'चालू वर्ष (₹)',
+      '',
+      'जिंदगी बाजू / मालमत्ता व येणी (Assets)',
+      'मागील वर्ष (₹)',
+      'चालू वर्ष (₹)'
+    ]);
 
     const maxRows = Math.max(liabList.length, assetList.length);
     for (let i = 0; i < maxRows; i++) {
@@ -258,361 +305,327 @@ export default function BalanceSheet() {
     XLSX.writeFile(wb, `Balance_Sheet_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const isTallied = reportData ? Math.abs(reportData.totalLiabilities - reportData.totalAssets) < 0.01 : false;
-  const difference = reportData ? Math.abs(reportData.totalLiabilities - reportData.totalAssets) : 0;
+  const isTallied = reportData ? Math.abs((reportData.totalLiabilities || 0) - (reportData.totalAssets || 0)) < 0.01 : false;
+  const difference = reportData ? Math.abs((reportData.totalLiabilities || 0) - (reportData.totalAssets || 0)) : 0;
 
-  return (
-    <div className="p-2 sm:p-4 md:p-6 bg-slate-50 min-h-screen font-sans text-slate-800 print:p-0 print:m-0 print:bg-white print:min-h-0">
-      
-      {/* Print Specific CSS */}
-      <style>
-        {`
-          @media print {
-            @page {
-              size: A4 landscape;
-              margin: 6mm 8mm 6mm 8mm;
-            }
-            html, body {
-              margin: 0 !important;
-              padding: 0 !important;
-              background: white !important;
-              color: black !important;
-              overflow: visible !important;
-              height: auto !important;
-            }
-            body * {
-              visibility: hidden;
-            }
-            .print-area, .print-area * {
-              visibility: visible;
-            }
-            .print-area {
-              position: static !important;
-              width: 100% !important;
-              max-width: 100% !important;
-              min-height: auto !important;
-              height: auto !important;
-              padding: 0 !important;
-              margin: 0 auto !important;
-              box-shadow: none !important;
-              border: none !important;
-              background: white !important;
-              overflow: visible !important;
-              display: block !important;
-            }
-            .no-print {
-              display: none !important;
-            }
-            .overflow-x-auto, .overflow-y-auto {
-              overflow: visible !important;
-            }
-            table {
-              page-break-inside: auto !important;
-              break-inside: auto !important;
-            }
-            tr {
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
-            }
-            thead {
-              display: table-header-group !important;
-            }
-            tfoot {
-              display: table-footer-group !important;
-            }
-          }
-        `}
-      </style>
+  const selectedBranchName =
+    selectedBranchId === 'all'
+      ? 'सर्व शाखा (एकत्रित)'
+      : branches.find((b) => String(b.branchID) === String(selectedBranchId))?.branchName || '';
 
-      {/* Sleek Compact CBS Header & Filter Control Panel (Hidden on Print) */}
-      <div className="bg-white px-3 py-2 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 no-print space-y-1.5 max-w-[1280px] mx-auto">
-        
-        {/* Row 1: Title + Inline Filters + Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-          
-          {/* Left: Compact Title */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-              <Scale size={14} className="stroke-[2.5]" />
-            </div>
-            <h1 className="text-xs font-bold text-gray-900 tracking-tight flex items-center gap-1">
-              <span>ताळेबंद पत्रक</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Balance Sheet)</span>
-            </h1>
-          </div>
+  const periodTextStr =
+    fromDate && toDate
+      ? `${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)} अखेर`
+      : toDate
+      ? `${formatDisplayDate(toDate)} अखेर`
+      : '';
 
-          {/* Center: Integrated Inline Filter Inputs */}
-          <div className="flex flex-wrap items-center gap-1.5 flex-1 justify-end sm:justify-center">
-            
-            {/* Branch */}
-            <div className="flex items-center gap-1">
-              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
-              <select
-                value={selectedBranchId}
-                disabled={!isHOUser}
-                onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-slate-100 disabled:text-slate-600"
-              >
-                {isHOUser && <option value="all">सर्व शाखा (All)</option>}
-                {(isHOUser || !lockedBranchId ? branches : branches.filter((b) => Number(b.branchID) === Number(lockedBranchId))).map((b) => (
-                  <option key={b.branchID} value={b.branchID.toString()}>
-                    {b.branchName}
-                  </option>
-                ))}
-              </select>
-            </div>
+  const hasAuthCap = Boolean(
+    reportData?.authorizedCapital &&
+      ((reportData.authorizedCapital.currentYearAmount || 0) > 0 ||
+        (reportData.authorizedCapital.previousYearAmount || 0) > 0)
+  );
 
-            {/* Dates */}
-            <div className="flex items-center gap-1">
-              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">पासून:</label>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28"
-              />
-            </div>
-
-            <div className="flex items-center gap-1">
-              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">पर्यंत:</label>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28"
-              />
-            </div>
-
-            {/* View Button */}
-            <button
-              onClick={fetchReport}
-              disabled={loading}
-              className="h-6 bg-primary hover:opacity-90 text-white px-2.5 rounded-sm text-[11px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            >
-              {loading ? <RefreshCw size={11} className="animate-spin" /> : <Search size={11} />}
-              <span>पहा</span>
-            </button>
-          </div>
-
-          {/* Right: Export & Print Action Buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={handleExportExcel}
-              disabled={!reportData}
-              className={`h-6 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${!reportData ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title="एक्सेल फाइल डाउनलोड करा"
-            >
-              <FileSpreadsheet size={12} />
-              <span>एक्सेल</span>
-            </button>
-
-            <button
-              onClick={handlePrint}
-              disabled={!reportData}
-              className={`h-6 bg-slate-800 hover:bg-slate-900 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${!reportData ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title="A4 Landscape प्रिंट काढा"
-            >
-              <Printer size={12} />
-              <span>प्रिंट (Landscape)</span>
-            </button>
-          </div>
-
-        </div>
-
+  const filterControls = (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      <div className="flex items-center gap-1">
+        <label className="text-[10.5px] font-semibold text-slate-600 whitespace-nowrap">शाखा:</label>
+        <select
+          value={selectedBranchId}
+          disabled={!isHOUser}
+          onChange={(e) => setSelectedBranchId(e.target.value)}
+          className="h-6 border border-slate-300 rounded px-1.5 text-[10.5px] font-medium bg-white text-slate-800 focus:outline-none focus:border-primary w-28 sm:w-32 disabled:bg-slate-100 disabled:text-slate-600"
+        >
+          {isHOUser && <option value="all">सर्व शाखा (All)</option>}
+          {(isHOUser || !lockedBranchId
+            ? branches
+            : branches.filter((b) => Number(b.branchID) === Number(lockedBranchId))
+          ).map((b) => (
+            <option key={b.branchID} value={b.branchID.toString()}>
+              {b.branchName}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Main Printable A4 Document Frame */}
-      {reportData ? (
-        <div 
-          ref={reportRef} 
-          className="print-area bg-white mx-auto max-w-[1280px] p-5 md:p-8 rounded-sm shadow-md border border-slate-300 min-h-[900px] print:min-h-0 print:border-none print:shadow-none print:p-0 print:m-0 flex flex-col justify-between text-xs"
+      <div className="flex items-center gap-1">
+        <label className="text-[10.5px] font-semibold text-slate-600 whitespace-nowrap">पासून:</label>
+        <input
+          type="date"
+          value={fromDate}
+          onChange={(e) => setFromDate(e.target.value)}
+          className="h-6 border border-slate-300 rounded px-1 text-[10.5px] font-medium bg-white text-slate-800 focus:outline-none focus:border-primary w-28"
+        />
+      </div>
+
+      <div className="flex items-center gap-1">
+        <label className="text-[10.5px] font-semibold text-slate-600 whitespace-nowrap">पर्यंत:</label>
+        <input
+          type="date"
+          value={toDate}
+          onChange={(e) => setToDate(e.target.value)}
+          className="h-6 border border-slate-300 rounded px-1 text-[10.5px] font-medium bg-white text-slate-800 focus:outline-none focus:border-primary w-28"
+        />
+      </div>
+
+      <div className="flex items-center gap-1">
+        <label className="text-[10.5px] font-semibold text-slate-600 whitespace-nowrap">स्वाक्षरी:</label>
+        <select
+          value={signatureTier}
+          onChange={(e) => setSignatureTier(e.target.value as '3-tier' | '4-tier')}
+          className="h-6 border border-slate-300 rounded px-1 text-[10.5px] bg-white text-slate-800 focus:outline-none focus:border-primary"
         >
-          <div>
-            
-            {/* Official Bank Header Box (Exact Reference Format) */}
-            <div className="border border-gray-900 p-3 relative text-center">
-              
-              {/* Registration Top Bar */}
-              <div className="flex justify-between items-center text-[12px] font-bold text-gray-900 border-b border-gray-300 pb-1 mb-2">
-                <div>
-                  <span>रजि. नं. - </span>
-                  <span className="font-mono">{sansthaDetail?.registrationNo || '-'}</span>
-                </div>
-                <div>
-                  <span>रजि. दि. - </span>
-                  <span className="font-mono">{sansthaDetail?.registrationDate ? formatDisplayDate(sansthaDetail.registrationDate) : '-'}</span>
-                </div>
-              </div>
+          <option value="3-tier">३-स्तरीय स्वाक्षरी</option>
+          <option value="4-tier">४-स्तरीय स्वाक्षरी</option>
+        </select>
+      </div>
 
-              {/* Central Sanstha Name */}
-              <h1 className="text-lg sm:text-xl font-extrabold text-gray-950 tracking-tight leading-snug font-serif uppercase">
-                {sansthaDetail?.sansthaName || 'सहकारी पतसंस्था मर्यादित'}
-              </h1>
+      <button
+        type="button"
+        onClick={fetchReport}
+        disabled={loading}
+        className="h-6 bg-primary hover:opacity-90 text-white px-2.5 rounded text-[11px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+      >
+        {loading ? <RefreshCw size={11} className="animate-spin" /> : <Search size={11} />}
+        <span>पहा</span>
+      </button>
+    </div>
+  );
 
-              {/* Subtitle / Address */}
-              <p className="text-xs sm:text-[13px] font-bold text-gray-800 mt-1">
-                {sansthaDetail?.address || ''} {sansthaDetail?.village ? `मु. ${sansthaDetail.village}, ` : ''}{sansthaDetail?.taluka ? `ता. ${sansthaDetail.taluka}, ` : ''}{sansthaDetail?.district ? `जि. ${sansthaDetail.district}` : ''}
-              </p>
-            </div>
-
-            {/* Report Title Banner Section */}
-            <div className="mt-3 mb-2 flex items-center justify-between">
-              <div className="w-28 hidden sm:block"></div>
-
-              {/* Title Banner Box */}
-              <div className="mx-auto inline-block border border-gray-400 bg-gray-50/80 px-8 py-1 rounded-xs shadow-2xs text-center">
-                <h2 className="text-sm sm:text-base font-extrabold text-gray-950 tracking-wider uppercase font-serif">
-                  ताळेबंद पत्रक (Balance Sheet)
-                </h2>
-              </div>
-
-              {/* Date Tag on Right */}
-              <div className="text-right text-xs font-bold text-gray-800">
-                <span>दिनांक : </span>
-                <span className="font-mono">{toDate ? formatDisplayDate(toDate) : ''} अखेर</span>
-              </div>
-            </div>
-
-            {/* T-Format Balance Sheet Grid */}
-            <div className="overflow-x-auto mt-2">
-              <div className="flex w-full border border-gray-900">
-                
-                {/* Liabilities Side (Left / देयता बाजू) */}
-                <div className="w-1/2 border-r border-gray-900 flex flex-col">
-                  <table className="w-full text-[11px] border-collapse">
-                    <thead>
-                      <tr className="border-b border-gray-900 bg-gray-100/90 text-gray-900 font-bold">
-                        <th className="py-1.5 px-1 font-bold text-center border-r border-gray-900 w-[24%] text-[10px]">
-                          मागील वर्ष<br/>{reportData.previousYearLabel || '३१/०३/२०२५'}
-                        </th>
-                        <th className="py-1.5 px-1 font-extrabold text-center border-r border-gray-900 w-[52%] text-xs">
-                          देयता बाजू / भांडवल व देणी (Liabilities)
-                        </th>
-                        <th className="py-1.5 px-1 font-bold text-center w-[24%] text-[10px]">
-                          चालू वर्ष<br/>{reportData.currentYearLabel || (toDate ? formatDisplayDate(toDate) : '३१/०३/२०२६')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="flex-1 divide-y divide-gray-200">
-                      {reportData.liabilities.map((node: ReportNode, i: number) => (
-                        <TreeNode key={`liab-${node.id || node.name}-${i}`} node={node} level={0} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Assets Side (Right / जिंदगी बाजू) */}
-                <div className="w-1/2 flex flex-col">
-                  <table className="w-full text-[11px] border-collapse">
-                    <thead>
-                      <tr className="border-b border-gray-900 bg-gray-100/90 text-gray-900 font-bold">
-                        <th className="py-1.5 px-1 font-bold text-center border-r border-gray-900 w-[24%] text-[10px]">
-                          मागील वर्ष<br/>{reportData.previousYearLabel || '३१/०३/२०२५'}
-                        </th>
-                        <th className="py-1.5 px-1 font-extrabold text-center border-r border-gray-900 w-[52%] text-xs">
-                          जिंदगी बाजू / मालमत्ता व येणी (Assets)
-                        </th>
-                        <th className="py-1.5 px-1 font-bold text-center w-[24%] text-[10px]">
-                          चालू वर्ष<br/>{reportData.currentYearLabel || (toDate ? formatDisplayDate(toDate) : '३१/०३/२०२६')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="flex-1 divide-y divide-gray-200">
-                      {reportData.assets.map((node: ReportNode, i: number) => (
-                        <TreeNode key={`asset-${node.id || node.name}-${i}`} node={node} level={0} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-              </div>
-
-              {/* Totals Row */}
-              <div className="flex w-full border-b-2 border-l border-r border-gray-900 font-bold text-gray-950 bg-gray-200/90 text-[11px]">
-                <div className="w-1/2 flex border-r border-gray-900">
-                  <div className="w-[24%] py-1.5 px-1 text-right border-r border-gray-900 font-mono">
-                    {reportData.totalPreviousYearLiabilities ? fmtCurrency(reportData.totalPreviousYearLiabilities) : '-'}
-                  </div>
-                  <div className="w-[52%] py-1.5 px-1 text-center border-r border-gray-900 font-bold">एकूण देयता (Total Liabilities):</div>
-                  <div className="w-[24%] py-1.5 px-1 text-right font-mono font-black text-gray-950">
-                    ₹ {fmtCurrency(reportData.totalLiabilities)}
-                  </div>
-                </div>
-                <div className="w-1/2 flex">
-                  <div className="w-[24%] py-1.5 px-1 text-right border-r border-gray-900 font-mono">
-                    {reportData.totalPreviousYearAssets ? fmtCurrency(reportData.totalPreviousYearAssets) : '-'}
-                  </div>
-                  <div className="w-[52%] py-1.5 px-1 text-center border-r border-gray-900 font-bold">एकूण मालमत्ता (Total Assets):</div>
-                  <div className="w-[24%] py-1.5 px-1 text-right font-mono font-black text-gray-950">
-                    ₹ {fmtCurrency(reportData.totalAssets)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Tallied Status Badge */}
-              <div className="flex justify-between items-center px-3 py-1.5 border border-gray-900 mt-2 bg-gray-50 text-[11px]">
-                <span className="text-gray-700 font-medium">SmartBanking CBS ताळेबंद सत्यापन प्रणाली</span>
-                <span className={`font-bold flex items-center gap-1 ${isTallied ? 'text-emerald-800' : 'text-red-600'}`}>
-                  {isTallied ? (
-                    <>
-                      <CheckCircle2 size={13} className="text-emerald-700 inline" />
-                      <span>✓ ताळेबंद पत्रक जुळले आहे (Balance Sheet Tallied)</span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle size={13} className="text-red-600 inline" />
-                      <span>⚠ फरक (Difference): ₹ {fmtCurrency(difference)}</span>
-                    </>
-                  )}
-                </span>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Ultra-Compact Official Verification Signatures & Metadata Footer Section */}
-          <div className="mt-3 pt-1.5 border-t border-gray-900 break-inside-avoid print:break-inside-avoid text-gray-950">
-            
-            {/* 3 Verification Signatures (Compact) */}
-            <div className="grid grid-cols-3 gap-6 text-center text-[11px] font-bold">
-              <div className="flex flex-col justify-end pt-4">
-                <p className="border-t border-gray-800 mx-6 pt-0.5 font-extrabold text-gray-950">लेखापाल / मुख्य हिशोबनीस</p>
-                <span className="text-[9.5px] text-gray-500 font-medium">(Accountant)</span>
-              </div>
-
-              <div className="flex flex-col justify-end pt-4">
-                <p className="border-t border-gray-800 mx-6 pt-0.5 font-extrabold text-gray-950">शाखा व्यवस्थापक / मानद सचिव</p>
-                <span className="text-[9.5px] text-gray-500 font-medium">(Manager / Secretary)</span>
-              </div>
-
-              <div className="flex flex-col justify-end pt-4">
-                <p className="border-t border-gray-800 mx-6 pt-0.5 font-extrabold text-gray-950">चेअरमन / व्हाईस चेअरमन</p>
-                <span className="text-[9.5px] text-gray-500 font-medium">(Chairman / Vice-Chairman)</span>
-              </div>
-            </div>
-
-            {/* Ultra-Compact Bottom Print Timestamp & Certification Bar */}
-            <div className="flex justify-between items-center text-[9px] font-medium text-gray-600 border-t border-gray-300 mt-2 pt-1 px-1 font-mono">
-              <div>
-                <span>मुद्रण दिनांक: </span>
-                <span>{new Date().toLocaleDateString('en-GB')} {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
-                <span className="ml-1 text-gray-400">| वापरकर्ता: {user?.username || 'Admin'}</span>
-              </div>
-              <div className="text-right text-gray-600 font-sans">
-                {sansthaDetail?.sansthaName || ''} - SmartBanking CBS
-              </div>
-            </div>
-
-          </div>
-
+  const summaryBanner = reportData ? (
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center text-xs">
+        <div>
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">
+            {hasAuthCap ? 'अधिकृत भागभांडवल (मेमो)' : 'ताळेबंद दिनांक'}
+          </span>
+          <strong className="text-primary font-mono text-[11px]">
+            {hasAuthCap
+              ? `₹ ${fmtCurrency(reportData.authorizedCapital.currentYearAmount)}`
+              : toDate
+              ? `${formatDisplayDate(toDate)} अखेर`
+              : '-'}
+          </strong>
         </div>
-      ) : (
-        <div className="bg-white p-12 text-center text-gray-500 rounded-sm border border-gray-200 shadow-xs max-w-5xl mx-auto">
+        <div>
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण देयता (Liabilities)</span>
+          <strong className="text-slate-900 font-mono text-[11px]">₹ {fmtCurrency(reportData.totalLiabilities)}</strong>
+        </div>
+        <div>
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण मालमत्ता (Assets)</span>
+          <strong className="text-slate-900 font-mono text-[11px]">₹ {fmtCurrency(reportData.totalAssets)}</strong>
+        </div>
+        <div className="sm:text-right">
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">ताळेबंद ताळा स्थिती</span>
+          {isTallied ? (
+            <strong className="text-emerald-700 font-bold text-[11px] inline-flex items-center gap-1">
+              <CheckCircle2 size={12} className="stroke-[2.5]" />
+              <span>ताळेबंद जुळले (Tallied)</span>
+            </strong>
+          ) : (
+            <strong className="text-red-700 font-mono font-bold text-[11px] inline-flex items-center gap-1">
+              <AlertTriangle size={12} className="stroke-[2.5]" />
+              <span>फरक: ₹ {fmtCurrency(difference)}</span>
+            </strong>
+          )}
+        </div>
+      </div>
+
+      {((reportData.pendingVouchersCount || 0) > 0 || reportData.isPreviousYearTallied === false) && (
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200 text-[10.5px] no-print">
+          {(reportData.pendingVouchersCount || 0) > 0 && (
+            <div className="flex items-center gap-1 bg-amber-50 border border-amber-300 text-amber-900 px-2 py-0.5 rounded font-semibold">
+              <AlertTriangle size={12} className="text-amber-600 shrink-0" />
+              <span>
+                सूचना: निवडलेल्या तारखेपर्यंत <b>{reportData.pendingVouchersCount}</b> प्रलंबित (Pending) व्हाउचर्स (एकूण ₹
+                {fmtCurrency(reportData.pendingVouchersAmount)}) मंजुरीअभावी ताळेबंदात समाविष्ट नाहीत.
+              </span>
+            </div>
+          )}
+          {reportData.isPreviousYearTallied === false && (
+            <div className="flex items-center gap-1 bg-red-50 border border-red-300 text-red-800 px-2 py-0.5 rounded font-semibold">
+              <AlertTriangle size={12} className="text-red-600 shrink-0" />
+              <span>मागील वर्षाचा ताळमेळ फरक: ₹{fmtCurrency(reportData.previousYearDifference)}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  ) : undefined;
+
+  return (
+    <CbsReportLayout
+      defaultPaperSize={paperSize}
+      allowPaperSizeToggle={true}
+      titleStyle="ribbon"
+      reportTitle="ताळेबंद पत्रक"
+      reportSubtitle="Balance Sheet"
+      periodText={periodTextStr}
+      branchName={selectedBranchName}
+      sansthaInfo={sansthaDetail}
+      summaryBanner={summaryBanner}
+      signatureTier={signatureTier}
+      signatureTitles={
+        signatureTier === '4-tier'
+          ? [
+              { title: 'लिपिक / तयार करणार', subtitle: '(Clerk / Maker)' },
+              { title: 'लेखापाल / तपासनीस', subtitle: '(Accountant / Checker)' },
+              { title: 'शाखा व्यवस्थापक / मानद सचिव', subtitle: '(Manager / Secretary)' },
+              { title: 'अध्यक्ष / संचालक मंडळ', subtitle: '(Chairman / Board of Directors)' }
+            ]
+          : [
+              { title: 'लेखापाल / मुख्य हिशोबनीस', subtitle: '(Accountant)' },
+              { title: 'शाखा व्यवस्थापक / मानद सचिव', subtitle: '(Manager / Secretary)' },
+              { title: 'चेअरमन / व्हाईस चेअरमन', subtitle: '(Chairman / Vice-Chairman)' }
+            ]
+      }
+      onExportExcel={handleExportExcel}
+      extraToolbarControls={filterControls}
+      isLoading={loading}
+      hasData={Boolean(reportData)}
+      preparedBy={user?.username || 'Admin'}
+      emptyState={
+        <div className="bg-white p-12 text-center text-slate-500 rounded-xs border border-slate-200 shadow-xs max-w-4xl mx-auto">
           <Scale size={32} className="mx-auto mb-2 text-primary/40" />
           <p className="font-semibold text-xs">माहिती लोड होत आहे किंवा उपलब्ध नाही.</p>
         </div>
-      )}
+      }
+    >
+      {reportData && (
+        <div>
+          {/* T-Format Balance Sheet Grid (CBS Standard Table) */}
+          <div className="flex w-full border border-slate-900">
+            {/* Liabilities Side (Left / देयता बाजू) */}
+            <div className="w-1/2 border-r border-slate-900 flex flex-col">
+              <table className="cbs-table w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 text-center font-bold">
+                    <th className="border border-slate-900 py-1.5 px-1 w-[23%] text-center text-[10px]">
+                      {reportData.isMidYearFromDate ? 'पूर्वीची शिल्लक' : 'मागील वर्ष'}
+                      <br />
+                      <span className="font-mono">{reportData.previousYearLabel || '३१/०३/२०२५'}</span>
+                    </th>
+                    <th className="border border-slate-900 py-1.5 px-2 w-[54%] text-center text-xs font-extrabold text-primary print:text-slate-950">
+                      देयता बाजू / भांडवल व देणी (Liabilities)
+                    </th>
+                    <th className="border border-slate-900 py-1.5 px-1 w-[23%] text-center text-[10px]">
+                      चालू वर्ष
+                      <br />
+                      <span className="font-mono">
+                        {reportData.currentYearLabel || (toDate ? formatDisplayDate(toDate) : '३१/०३/२०२६')}
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hasAuthCap && (
+                    <tr className="bg-primary/5 print:bg-white font-bold text-slate-950 border-b-4 border-double border-slate-900">
+                      <td className="border border-slate-900 py-1.5 px-1.5 w-[23%] align-top cbs-num-cell font-bold text-slate-900 text-[11px]">
+                        {reportData.authorizedCapital.previousYearAmount > 0
+                          ? fmtCurrency(reportData.authorizedCapital.previousYearAmount)
+                          : '-'}
+                      </td>
+                      <td className="border border-slate-900 py-1.5 px-2 w-[54%] align-top text-[11px]">
+                        <div className="font-extrabold text-slate-950 tracking-tight">
+                          अधिकृत भागभांडवल
+                          {selectedBranchId !== 'all' && (
+                            <span className="ml-1 text-[9.5px] font-semibold text-slate-600">(संस्था स्तर)</span>
+                          )}
+                        </div>
+                        {(reportData.authorizedCapital.currentYearShareCount > 0 ||
+                          reportData.authorizedCapital.shareFaceValue > 0) && (
+                          <div className="text-[9.5px] font-normal text-slate-600 leading-tight">
+                            {Number(reportData.authorizedCapital.currentYearShareCount || 0).toLocaleString('en-IN')}{' '}
+                            शेअर्स @ ₹{fmtCurrency(reportData.authorizedCapital.shareFaceValue || 100)} प्रमाणे (केवळ
+                            माहितीसाठी)
+                          </div>
+                        )}
+                      </td>
+                      <td className="border border-slate-900 py-1.5 px-1.5 w-[23%] align-top cbs-num-cell font-bold text-slate-950 text-[11px]">
+                        {reportData.authorizedCapital.currentYearAmount > 0
+                          ? fmtCurrency(reportData.authorizedCapital.currentYearAmount)
+                          : '-'}
+                      </td>
+                    </tr>
+                  )}
+                  {(reportData.liabilities || []).map((node: ReportNode, i: number) => (
+                    <TreeNode key={`liab-${node.id || node.name}-${i}`} node={node} level={0} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-    </div>
+            {/* Assets Side (Right / जिंदगी बाजू) */}
+            <div className="w-1/2 flex flex-col">
+              <table className="cbs-table w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 text-center font-bold">
+                    <th className="border border-slate-900 py-1.5 px-1 w-[23%] text-center text-[10px]">
+                      {reportData.isMidYearFromDate ? 'पूर्वीची शिल्लक' : 'मागील वर्ष'}
+                      <br />
+                      <span className="font-mono">{reportData.previousYearLabel || '३१/०३/२०२५'}</span>
+                    </th>
+                    <th className="border border-slate-900 py-1.5 px-2 w-[54%] text-center text-xs font-extrabold text-primary print:text-slate-950">
+                      जिंदगी बाजू / मालमत्ता व येणी (Assets)
+                    </th>
+                    <th className="border border-slate-900 py-1.5 px-1 w-[23%] text-center text-[10px]">
+                      चालू वर्ष
+                      <br />
+                      <span className="font-mono">
+                        {reportData.currentYearLabel || (toDate ? formatDisplayDate(toDate) : '३१/०३/२०२६')}
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hasAuthCap && (
+                    <tr className="bg-white border-b-4 border-double border-slate-900">
+                      <td className="border border-slate-900 py-1.5 px-1.5 w-[23%] text-[11px]">&nbsp;</td>
+                      <td className="border border-slate-900 py-1.5 px-2 w-[54%] text-[11px]">
+                        <div>&nbsp;</div>
+                        {(reportData.authorizedCapital.currentYearShareCount > 0 ||
+                          reportData.authorizedCapital.shareFaceValue > 0) && (
+                          <div className="text-[9.5px] leading-tight">&nbsp;</div>
+                        )}
+                      </td>
+                      <td className="border border-slate-900 py-1.5 px-1.5 w-[23%] text-[11px]">&nbsp;</td>
+                    </tr>
+                  )}
+                  {(reportData.assets || []).map((node: ReportNode, i: number) => (
+                    <TreeNode key={`asset-${node.id || node.name}-${i}`} node={node} level={0} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* CBS Standard Grand Totals Footer Row */}
+          <div className="flex w-full border-b-2 border-l border-r border-slate-900 font-bold text-slate-950 bg-slate-100 text-[11px] break-inside-avoid">
+            <div className="w-1/2 flex border-r border-slate-900">
+              <div className="w-[23%] py-1.5 px-1.5 border-r border-slate-900 cbs-num-cell font-bold">
+                {reportData.totalPreviousYearLiabilities ? fmtCurrency(reportData.totalPreviousYearLiabilities) : '-'}
+              </div>
+              <div className="w-[54%] py-1.5 px-2 text-right border-r border-slate-900 font-bold uppercase tracking-wide">
+                एकूण देयता (Total Liabilities):
+              </div>
+              <div className="w-[23%] py-1.5 px-1.5 cbs-num-cell font-black text-primary bg-primary/10 print:bg-slate-200 print:text-slate-950">
+                ₹ {fmtCurrency(reportData.totalLiabilities)}
+              </div>
+            </div>
+            <div className="w-1/2 flex">
+              <div className="w-[23%] py-1.5 px-1.5 border-r border-slate-900 cbs-num-cell font-bold">
+                {reportData.totalPreviousYearAssets ? fmtCurrency(reportData.totalPreviousYearAssets) : '-'}
+              </div>
+              <div className="w-[54%] py-1.5 px-2 text-right border-r border-slate-900 font-bold uppercase tracking-wide">
+                एकूण मालमत्ता (Total Assets):
+              </div>
+              <div className="w-[23%] py-1.5 px-1.5 cbs-num-cell font-black text-primary bg-primary/10 print:bg-slate-200 print:text-slate-950">
+                ₹ {fmtCurrency(reportData.totalAssets)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </CbsReportLayout>
   );
 }

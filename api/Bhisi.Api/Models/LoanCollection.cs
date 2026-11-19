@@ -140,5 +140,7 @@ namespace Bhisi.Api.Models
 
         [StringLength(100)]
         public string? SyncReferenceId { get; set; }
+
+        public int? RemittanceDepositId { get; set; }
     }
 }

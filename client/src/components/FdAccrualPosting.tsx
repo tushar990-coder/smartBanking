@@ -55,6 +55,7 @@ const FdAccrualPosting: React.FC = () => {
     }
   }, [user?.businessDate]);
   const [calculationMethod, setCalculationMethod] = useState<'OnPrincipal' | 'OnInterest'>('OnPrincipal');
+  const [postingTarget, setPostingTarget] = useState<'Principal' | 'Provision' | 'Auto'>('Provision');
 
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingPosting, setLoadingPosting] = useState(false);
@@ -148,6 +149,7 @@ const FdAccrualPosting: React.FC = () => {
         branchID: branchID,
         accrualDate: accrualDate,
         calculationMethod: calculationMethod,
+        postingTarget: postingTarget,
         selectedItems: selected.map((i) => ({
           fdAccountID: i.fdAccountID,
           calculatedInterest: i.calculatedInterest,
@@ -267,10 +269,13 @@ const FdAccrualPosting: React.FC = () => {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setCalculationMethod('OnPrincipal')}
+                onClick={() => {
+                  setCalculationMethod('OnPrincipal');
+                  setPostingTarget('Provision');
+                }}
                 className={`flex-1 py-1 px-2 text-xs font-semibold rounded-sm border transition cursor-pointer flex items-center justify-center gap-1 ${
                   calculationMethod === 'OnPrincipal'
-                    ? 'bg-primary text-white border-blue-900 font-bold shadow-xs'
+                    ? 'bg-primary text-white border-primary font-bold shadow-xs'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
                 }`}
               >
@@ -278,10 +283,13 @@ const FdAccrualPosting: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setCalculationMethod('OnInterest')}
+                onClick={() => {
+                  setCalculationMethod('OnInterest');
+                  setPostingTarget('Principal');
+                }}
                 className={`flex-1 py-1 px-2 text-xs font-semibold rounded-sm border transition cursor-pointer flex items-center justify-center gap-1 ${
                   calculationMethod === 'OnInterest'
-                    ? 'bg-purple-700 text-white border-purple-900 font-bold shadow-xs'
+                    ? 'bg-primary text-white border-primary font-bold shadow-xs'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
                 }`}
               >
@@ -291,12 +299,70 @@ const FdAccrualPosting: React.FC = () => {
               <button
                 type="submit"
                 disabled={loadingPreview}
-                className="bg-primary hover:bg-[#004a75] text-white px-4 py-1 rounded-sm shadow-sm text-xs font-medium cursor-pointer disabled:opacity-50 flex items-center gap-1 shrink-0"
+                className="bg-primary hover:opacity-90 text-white px-4 py-1 rounded-sm shadow-sm text-xs font-medium cursor-pointer disabled:opacity-50 flex items-center gap-1 shrink-0"
               >
                 {loadingPreview ? 'मोजणी चालू...' : '🔍 मोजणी करा'}
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Posting Target Selector (Principal / Deposits vs Provision / Interest Payable) */}
+        <div className="pt-2 mt-2 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-700">लेजर पोस्टिंग प्रकार (Balance Sheet Head):</span>
+            <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm border text-[11px] font-semibold cursor-pointer select-none ${
+              postingTarget === 'Principal'
+                ? 'bg-emerald-50 border-emerald-500 text-emerald-900'
+                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+            }`}>
+              <input
+                type="radio"
+                name="fdPostingTarget"
+                value="Principal"
+                checked={postingTarget === 'Principal'}
+                onChange={() => setPostingTarget('Principal')}
+                className="accent-emerald-600"
+              />
+              <span>🏦 मुद्दलात व्याज जमा (ठेवी / Deposits)</span>
+            </label>
+            <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm border text-[11px] font-semibold cursor-pointer select-none ${
+              postingTarget === 'Provision'
+                ? 'bg-amber-50 border-amber-500 text-amber-900'
+                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+            }`}>
+              <input
+                type="radio"
+                name="fdPostingTarget"
+                value="Provision"
+                checked={postingTarget === 'Provision'}
+                onChange={() => setPostingTarget('Provision')}
+                className="accent-amber-600"
+              />
+              <span>📋 केवळ व्याज तरतूद (Provision / देणे व्याज)</span>
+            </label>
+            <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm border text-[11px] font-semibold cursor-pointer select-none ${
+              postingTarget === 'Auto'
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+            }`}>
+              <input
+                type="radio"
+                name="fdPostingTarget"
+                value="Auto"
+                checked={postingTarget === 'Auto'}
+                onChange={() => setPostingTarget('Auto')}
+              />
+              <span>⚙️ योजनेनुसार स्वयंचलित (Auto)</span>
+            </label>
+          </div>
+          <span className="text-[10.5px] font-medium text-slate-600">
+            {postingTarget === 'Principal'
+              ? '✅ Cr. मुदत ठेव दायित्व (ताळेबंदात ठेवी खाली दिसेल; तरतुदीत नाही)'
+              : postingTarget === 'Provision'
+              ? 'ℹ️ Cr. देणे मुदत ठेव व्याज (ताळेबंदात तरतूद / देणे व्याज खाली दिसेल)'
+              : '⚙️ Cumulative/On-Interest → ठेवी (Deposits), Simple → तरतूद (Provision)'}
+          </span>
         </div>
       </form>
 

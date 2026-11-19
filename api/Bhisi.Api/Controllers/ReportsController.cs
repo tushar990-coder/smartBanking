@@ -2297,6 +2297,7 @@ namespace Bhisi.Api.Controllers
                 .ToList();
 
             var sectionGroups = new List<AccountGroup>();
+            var expandedUmbrellaRoots = new List<AccountGroup>();
 
             foreach (var root in candidateRootGroups)
             {
@@ -2310,6 +2311,7 @@ namespace Bhisi.Api.Controllers
                 if (isGenericUmbrella && directChildren.Count > 0)
                 {
                     sectionGroups.AddRange(directChildren);
+                    expandedUmbrellaRoots.Add(root);
                 }
                 else
                 {
@@ -2354,6 +2356,35 @@ namespace Bhisi.Api.Controllers
                 if (activeAccounts.Count > 0 || Math.Abs(rootNode.Amount) >= 0.01m || Math.Abs(rootNode.PreviousYearAmount) >= 0.01m)
                 {
                     result.Add(rootNode);
+                }
+            }
+
+            // Safeguard: include any active ledgers mapped directly under an expanded umbrella root group so Balance Sheet never drops them
+            foreach (var umbrellaRoot in expandedUmbrellaRoots)
+            {
+                if (!ledgersByGroupId.TryGetValue(umbrellaRoot.GroupID, out var directRootLedgers) || !directRootLedgers.Any())
+                    continue;
+
+                var activeDirect = directRootLedgers
+                    .Where(a => Math.Abs(a.Amount) >= 0.01m || Math.Abs(a.PreviousYearAmount) >= 0.01m || Math.Abs(a.OpeningBalance) >= 0.01m || a.TotalDebit >= 0.01m || a.TotalCredit >= 0.01m)
+                    .OrderBy(l => l.Code, new AlphanumericComparer())
+                    .ThenBy(l => l.Name)
+                    .ToList();
+
+                if (activeDirect.Any())
+                {
+                    result.Add(new ReportNodeDto
+                    {
+                        Id = umbrellaRoot.GroupID,
+                        Name = string.IsNullOrWhiteSpace(umbrellaRoot.GroupName) ? "इतर खाती" : $"{umbrellaRoot.GroupName} (थेट खाती)",
+                        Code = umbrellaRoot.GroupCode,
+                        DisplayOrder = 999,
+                        IsGroup = true,
+                        Children = activeDirect,
+                        Amount = activeDirect.Sum(c => c.Amount),
+                        PreviousYearAmount = activeDirect.Sum(c => c.PreviousYearAmount),
+                        OpeningBalance = activeDirect.Sum(c => c.OpeningBalance)
+                    });
                 }
             }
 
@@ -2482,8 +2513,96 @@ namespace Bhisi.Api.Controllers
             dto.PreviousYearLabel = fromDate.HasValue ? fromDate.Value.AddDays(-1).ToString("dd/MM/yyyy") : "मागील वर्ष";
             dto.CurrentYearLabel = toDate.HasValue ? toDate.Value.ToString("dd/MM/yyyy") : "चालू वर्ष";
 
+            // Statutory Memo Disclosure: अधिकृत भागभांडवल (Authorised Share Capital) — NEVER added to TotalLiabilities / Tally
+            DateTime currentAsOfDate = (toDate ?? DateTime.Today).Date;
+            DateTime previousAsOfDate = fromDate.HasValue
+                ? fromDate.Value.Date.AddDays(-1)
+                : currentAsOfDate.AddYears(-1);
+
+            var sansthaForCap = await _context.SansthaDetails.AsNoTracking().FirstOrDefaultAsync();
+            var capHistories = await _context.SansthaAuthorizedCapitalHistories
+                .AsNoTracking()
+                .OrderByDescending(h => h.EffectiveDate)
+                .ThenByDescending(h => h.HistoryID)
+                .ToListAsync();
+
+            if (capHistories.Any())
+            {
+                var curRow = capHistories.FirstOrDefault(h => h.EffectiveDate.Date <= currentAsOfDate);
+                var prevRow = capHistories.FirstOrDefault(h => h.EffectiveDate.Date <= previousAsOfDate);
+
+                decimal curAmt = curRow?.AuthorizedCapitalAmount ?? 0m;
+                decimal prevAmt = prevRow?.AuthorizedCapitalAmount ?? 0m;
+                decimal faceVal = curRow?.ShareFaceValue > 0m
+                    ? curRow.ShareFaceValue
+                    : (prevRow?.ShareFaceValue > 0m ? prevRow.ShareFaceValue : (sansthaForCap?.ShareFaceValue > 0m ? sansthaForCap.ShareFaceValue : 100m));
+
+                if (curAmt > 0m || prevAmt > 0m)
+                {
+                    dto.AuthorizedCapital = new AuthorizedCapitalDisclosureDto
+                    {
+                        CurrentYearAmount = curAmt,
+                        PreviousYearAmount = prevAmt,
+                        ShareFaceValue = faceVal,
+                        CurrentYearShareCount = curRow != null && curRow.AuthorizedShareCount > 0
+                            ? curRow.AuthorizedShareCount
+                            : (curAmt > 0m && faceVal > 0m ? (int)Math.Floor(curAmt / faceVal) : 0),
+                        PreviousYearShareCount = prevRow != null && prevRow.AuthorizedShareCount > 0
+                            ? prevRow.AuthorizedShareCount
+                            : (prevAmt > 0m && faceVal > 0m ? (int)Math.Floor(prevAmt / faceVal) : 0),
+                        CurrentEffectiveDate = curRow?.EffectiveDate,
+                        PreviousEffectiveDate = prevRow?.EffectiveDate,
+                        CurrentResolutionNo = curRow?.ResolutionNo,
+                        IsInstitutionLevel = true
+                    };
+                }
+            }
+            else if (sansthaForCap != null && sansthaForCap.AuthorizedShareCapital > 0m)
+            {
+                decimal faceVal = sansthaForCap.ShareFaceValue > 0m ? sansthaForCap.ShareFaceValue : 100m;
+                int shareCnt = sansthaForCap.AuthorizedShareCount > 0
+                    ? sansthaForCap.AuthorizedShareCount
+                    : (int)Math.Floor(sansthaForCap.AuthorizedShareCapital / faceVal);
+                dto.AuthorizedCapital = new AuthorizedCapitalDisclosureDto
+                {
+                    CurrentYearAmount = sansthaForCap.AuthorizedShareCapital,
+                    PreviousYearAmount = sansthaForCap.AuthorizedShareCapital,
+                    ShareFaceValue = faceVal,
+                    CurrentYearShareCount = shareCnt,
+                    PreviousYearShareCount = shareCnt,
+                    IsInstitutionLevel = true
+                };
+            }
+
             dto.Difference = Math.Abs(dto.TotalLiabilities - dto.TotalAssets);
             dto.IsTallied = dto.Difference < 0.01m;
+            dto.PreviousYearDifference = Math.Abs(dto.TotalPreviousYearLiabilities - dto.TotalPreviousYearAssets);
+            dto.IsPreviousYearTallied = dto.PreviousYearDifference < 0.01m;
+
+            if (fromDate.HasValue)
+            {
+                var matchingFy = await _context.FinancialYears
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(fy => fromDate.Value.Date >= fy.StartDate.Date && fromDate.Value.Date <= fy.EndDate.Date);
+                dto.IsMidYearFromDate = matchingFy != null && matchingFy.StartDate.Date != fromDate.Value.Date;
+            }
+
+            var pendingVQuery = _context.Vouchers
+                .AsNoTracking()
+                .Where(v => v.Status == "Pending" && v.VoucherDate <= currentAsOfDate.AddDays(1).AddTicks(-1));
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                pendingVQuery = pendingVQuery.Where(v => v.BranchID == branchId.Value);
+            }
+            var pendingStats = await pendingVQuery
+                .GroupBy(_ => 1)
+                .Select(g => new { Count = g.Count(), Total = g.Sum(x => x.TotalAmount) })
+                .FirstOrDefaultAsync();
+            if (pendingStats != null)
+            {
+                dto.PendingVouchersCount = pendingStats.Count;
+                dto.PendingVouchersAmount = pendingStats.Total;
+            }
 
             return dto;
         }

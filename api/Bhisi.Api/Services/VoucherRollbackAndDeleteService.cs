@@ -587,6 +587,25 @@ namespace Bhisi.Api.Services
             }
         }
 
+        private async Task<DateTime> ResolveBranchEffectiveBusinessDateAsync(int branchId, DateTime? fallbackDate = null)
+        {
+            int targetBranchId = branchId > 0 ? branchId : 1;
+            var latestDayEnd = await _context.BranchDayEndStatuses
+                .AsNoTracking()
+                .Where(b => b.BranchID == targetBranchId && b.BusinessDate.Year >= 2000)
+                .OrderByDescending(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            if (latestDayEnd != null)
+            {
+                return latestDayEnd.IsDayClosed
+                    ? latestDayEnd.BusinessDate.Date.AddDays(1)
+                    : latestDayEnd.BusinessDate.Date;
+            }
+
+            return (fallbackDate ?? DateTime.Today).Date;
+        }
+
         private async Task UnlinkRelatedVoucherReferencesAsync(HashSet<int> voucherIds)
         {
             if (!voucherIds.Any()) return;
@@ -822,8 +841,9 @@ namespace Bhisi.Api.Services
                     var pAcc = await _context.PigmyAccounts.FindAsync(pt.PigmyAccountID);
                     if (pAcc != null)
                     {
+                        DateTime effectiveBizDate = await ResolveBranchEffectiveBusinessDateAsync(pAcc.BranchID, pt.TransactionDate);
                         pAcc.TotalDepositedAmount = Math.Round(pAcc.TotalDepositedAmount + pt.DrAmount - pt.CrAmount, 2, MidpointRounding.AwayFromZero);
-                        pAcc.Status = pAcc.MaturityDate.Date <= DateTime.Today ? "Matured" : "Active";
+                        pAcc.Status = pAcc.MaturityDate.Date <= effectiveBizDate ? "Matured" : "Active";
                         _context.Entry(pAcc).State = EntityState.Modified;
                         affectedPigmyAccountIds.Add(pAcc.PigmyAccountID);
                     }
@@ -941,7 +961,8 @@ namespace Bhisi.Api.Services
                 }
 
                 var accrualFdTxs = await _context.FdTransactions
-                    .Where(t => voucherIds.Contains(t.VoucherID) && t.TransactionType == "Accrual")
+                    .Where(t => voucherIds.Contains(t.VoucherID) &&
+                                (t.TransactionType == "Accrual" || t.TransactionType == "Interest_Capitalized"))
                     .ToListAsync();
                 if (accrualFdTxs.Any())
                 {
@@ -1053,6 +1074,18 @@ namespace Bhisi.Api.Services
                         rolledBackLoanCollectionIds);
                 }
 
+                // Also remove companion closure-interest FdTransactions (e.g., Accrual / Interest_Capitalized posted on the same closure voucher)
+                var closedFdIds = closedFdAccounts.Select(f => f.FdAccountID).ToHashSet();
+                var companionClosureIntTxs = await _context.FdTransactions
+                    .Where(t => voucherIds.Contains(t.VoucherID) &&
+                                closedFdIds.Contains(t.FdAccountID) &&
+                                (t.TransactionType == "Accrual" || t.TransactionType == "Interest_Capitalized"))
+                    .ToListAsync();
+                if (companionClosureIntTxs.Any())
+                {
+                    _context.FdTransactions.RemoveRange(companionClosureIntTxs);
+                }
+
                 if (fdClosureTxs.Any())
                 {
                     _context.FdTransactions.RemoveRange(fdClosureTxs);
@@ -1060,7 +1093,9 @@ namespace Bhisi.Api.Services
 
                 foreach (var fd in closedFdAccounts)
                 {
-                    fd.Status = fd.MaturityDate.Date <= DateTime.Today ? "Matured" : "Active";
+                    int targetBranchId = fd.BranchID > 0 ? fd.BranchID : primaryVoucher.BranchID;
+                    DateTime effectiveBizDate = await ResolveBranchEffectiveBusinessDateAsync(targetBranchId, primaryVoucher.VoucherDate);
+                    fd.Status = fd.MaturityDate.Date <= effectiveBizDate ? "Matured" : "Active";
                     if (!string.IsNullOrEmpty(fd.Remarks))
                     {
                         fd.Remarks = Regex.Replace(fd.Remarks, @"\s*\|\s*बंद दिनांक:[^|]*", string.Empty).Trim();
@@ -1069,6 +1104,33 @@ namespace Bhisi.Api.Services
                 }
 
                 await _context.SaveChangesAsync();
+
+                // Recompute LastInterestPostingDate if companion closure interest rows were removed
+                if (companionClosureIntTxs.Any())
+                {
+                    foreach (var fd in closedFdAccounts)
+                    {
+                        DateTime? latestAccrual = await _context.FdInterestAccruals
+                            .Where(a => a.FdAccountID == fd.FdAccountID)
+                            .OrderByDescending(a => a.AccrualDate)
+                            .Select(a => (DateTime?)a.AccrualDate)
+                            .FirstOrDefaultAsync();
+
+                        DateTime? latestMis = await _context.FdMisPayouts
+                            .Where(m => m.FdAccountID == fd.FdAccountID && m.Status == "Success")
+                            .OrderByDescending(m => m.PayoutDate)
+                            .Select(m => (DateTime?)m.PayoutDate)
+                            .FirstOrDefaultAsync();
+
+                        if (latestAccrual.HasValue && latestMis.HasValue)
+                            fd.LastInterestPostingDate = latestAccrual.Value >= latestMis.Value ? latestAccrual : latestMis;
+                        else
+                            fd.LastInterestPostingDate = latestAccrual ?? latestMis;
+
+                        _context.Entry(fd).State = EntityState.Modified;
+                    }
+                    await _context.SaveChangesAsync();
+                }
             }
 
             // 3E. Single & Bulk FD Opening (REC-FD-* / JV-FD-* / REC-FD-BLK-* / JV-FD-BLK-* — excluding RD->FD renewal JV-RD-REN-*)
@@ -1783,8 +1845,9 @@ namespace Bhisi.Api.Services
                     var pAcc = await _context.PigmyAccounts.FindAsync(cloTx.PigmyAccountID);
                     if (pAcc != null)
                     {
+                        DateTime effectiveBizDate = await ResolveBranchEffectiveBusinessDateAsync(pAcc.BranchID, cloTx.TransactionDate);
                         pAcc.TotalDepositedAmount = Math.Round(pAcc.TotalDepositedAmount + cloTx.DrAmount, 2, MidpointRounding.AwayFromZero);
-                        pAcc.Status = pAcc.MaturityDate.Date <= DateTime.Today ? "Matured" : "Active";
+                        pAcc.Status = pAcc.MaturityDate.Date <= effectiveBizDate ? "Matured" : "Active";
                         _context.Entry(pAcc).State = EntityState.Modified;
                         affectedPigmyAccountIds.Add(pAcc.PigmyAccountID);
                     }
@@ -2260,7 +2323,8 @@ namespace Bhisi.Api.Services
                     pigmyAcc.TotalWithdrawnAmount = Math.Max(0m, Math.Round(pigmyAcc.TotalWithdrawnAmount - totalDeducted, 2, MidpointRounding.AwayFromZero));
                     if (collection.PigmyTransferType == "CLOSURE" && pigmyAcc.Status == "Closed")
                     {
-                        pigmyAcc.Status = pigmyAcc.MaturityDate.Date <= DateTime.Today ? "Matured" : "Active";
+                        DateTime effectiveBizDate = await ResolveBranchEffectiveBusinessDateAsync(pigmyAcc.BranchID, collection.CollectionDate);
+                        pigmyAcc.Status = pigmyAcc.MaturityDate.Date <= effectiveBizDate ? "Matured" : "Active";
                     }
                     _context.Entry(pigmyAcc).State = EntityState.Modified;
                     affectedPigmyAccountIds.Add(pigmyAcc.PigmyAccountID);

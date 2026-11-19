@@ -48,6 +48,10 @@ namespace Bhisi.Api.Models
 
         public bool IsPosted { get; set; } = true;
 
+        // "Provision" = Cr InterestPayableLedger (देणे व्याज तरतूद) | "Principal" = Cr FdLiabilityLedger (मुद्दलात जमा / ठेवी)
+        [StringLength(20)]
+        public string PostingTarget { get; set; } = "Provision";
+
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     }

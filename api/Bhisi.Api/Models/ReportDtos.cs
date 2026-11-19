@@ -67,8 +67,22 @@ namespace Bhisi.Api.Models
         public string? CurrentYearLabel { get; set; }
     }
 
+    public class AuthorizedCapitalDisclosureDto
+    {
+        public decimal CurrentYearAmount { get; set; }
+        public decimal PreviousYearAmount { get; set; }
+        public decimal ShareFaceValue { get; set; } = 100m;
+        public int CurrentYearShareCount { get; set; }
+        public int PreviousYearShareCount { get; set; }
+        public DateTime? CurrentEffectiveDate { get; set; }
+        public DateTime? PreviousEffectiveDate { get; set; }
+        public string? CurrentResolutionNo { get; set; }
+        public bool IsInstitutionLevel { get; set; } = true;
+    }
+
     public class BalanceSheetDto
     {
+        public AuthorizedCapitalDisclosureDto? AuthorizedCapital { get; set; }
         public List<ReportNodeDto> Liabilities { get; set; } = new();
         public List<ReportNodeDto> Assets { get; set; } = new();
         public decimal TotalLiabilities { get; set; }
@@ -77,6 +91,11 @@ namespace Bhisi.Api.Models
         public decimal TotalPreviousYearAssets { get; set; }
         public decimal Difference { get; set; }
         public bool IsTallied { get; set; }
+        public decimal PreviousYearDifference { get; set; }
+        public bool IsPreviousYearTallied { get; set; } = true;
+        public int PendingVouchersCount { get; set; }
+        public decimal PendingVouchersAmount { get; set; }
+        public bool IsMidYearFromDate { get; set; }
         public string? PreviousYearLabel { get; set; }
         public string? CurrentYearLabel { get; set; }
     }

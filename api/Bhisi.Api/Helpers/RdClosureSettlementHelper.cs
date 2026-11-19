@@ -1395,7 +1395,8 @@ namespace Bhisi.Api.Helpers
                 .Include(t => t.RdAccount)
                     .ThenInclude(a => a!.Branch)
                 .FirstOrDefaultAsync(t =>
-                    targetVoucherIds.Contains(t.VoucherID) &&
+                    t.VoucherID.HasValue &&
+                    targetVoucherIds.Contains(t.VoucherID.Value) &&
                     (t.TransactionType == "Payout" || t.TransactionType == "Premature_Close" || t.TransactionType == "Renewal"));
 
             RdAccount? account = tx?.RdAccount;
@@ -1615,7 +1616,7 @@ namespace Bhisi.Api.Helpers
             }
 
             var closureTxs = await context.RdTransactions
-                .Where(rt => voucherIds.Contains(rt.VoucherID))
+                .Where(rt => rt.VoucherID.HasValue && voucherIds.Contains(rt.VoucherID.Value))
                 .ToListAsync();
 
             bool matchesPrefix = IsRdClosureOrRenewalVoucher(voucher) ||
@@ -1729,8 +1730,18 @@ namespace Bhisi.Api.Helpers
                 var rdAcc = await context.RdAccounts.FindAsync(rdId);
                 if (rdAcc != null)
                 {
+                    int targetBranchId = rdAcc.BranchID > 0 ? rdAcc.BranchID : (voucher.BranchID > 0 ? voucher.BranchID : 1);
+                    var branchDayEnd = await context.BranchDayEndStatuses
+                        .AsNoTracking()
+                        .Where(b => b.BranchID == targetBranchId && b.BusinessDate.Year >= 2000)
+                        .OrderByDescending(b => b.BusinessDate)
+                        .FirstOrDefaultAsync();
+                    DateTime effectiveBizDate = branchDayEnd != null
+                        ? (branchDayEnd.IsDayClosed ? branchDayEnd.BusinessDate.Date.AddDays(1) : branchDayEnd.BusinessDate.Date)
+                        : voucher.VoucherDate.Date;
+
                     bool isMaturedNow = (rdAcc.DurationMonths > 0 && rdAcc.TotalPaidInstallments >= rdAcc.DurationMonths) ||
-                                        rdAcc.MaturityDate.Date <= DateTime.Today.Date;
+                                        rdAcc.MaturityDate.Date <= effectiveBizDate;
                     rdAcc.Status = isMaturedNow ? "Matured" : "Active";
                     rdAcc.ClosureDate = null;
                     rdAcc.ClosureType = null;

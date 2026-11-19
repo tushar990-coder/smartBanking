@@ -213,8 +213,18 @@ export default function CbsReportLayout({
     ];
   };
 
+  const pageSizeCss =
+    paperSize === 'a4-landscape'
+      ? 'A4 landscape'
+      : paperSize === 'legal-landscape'
+      ? 'legal landscape'
+      : paperSize === 'a5-portrait'
+      ? 'A5 portrait'
+      : 'A4 portrait';
+
   return (
-    <div className="cbs-report-wrapper p-2 sm:p-4 bg-slate-100 min-h-screen">
+    <div className="cbs-report-wrapper p-2 sm:p-4 bg-slate-100 min-h-screen print:p-0 print:bg-white print:min-h-0">
+      <style>{`@media print { @page { size: ${pageSizeCss}; margin: 6mm 8mm 6mm 8mm; } }`}</style>
       
       {/* 1. Sleek Unified CBS Action Toolbar (Hidden on Print) */}
       <div className="cbs-toolbar bg-white px-3 py-1.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 no-print flex flex-wrap items-center justify-between gap-2">

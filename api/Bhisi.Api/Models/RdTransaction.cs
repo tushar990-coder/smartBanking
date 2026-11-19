@@ -30,8 +30,7 @@ namespace Bhisi.Api.Models
         [ForeignKey("RdAccountID")]
         public virtual RdAccount? RdAccount { get; set; }
 
-        [Required]
-        public int VoucherID { get; set; }
+        public int? VoucherID { get; set; }
 
         [ForeignKey("VoucherID")]
         public virtual Voucher? Voucher { get; set; }
@@ -81,5 +80,7 @@ namespace Bhisi.Api.Models
 
         [StringLength(100)]
         public string? SyncReferenceId { get; set; }
+
+        public int? RemittanceDepositId { get; set; }
     }
 }

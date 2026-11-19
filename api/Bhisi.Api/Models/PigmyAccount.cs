@@ -114,5 +114,8 @@ namespace Bhisi.Api.Models
 
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
+
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
     }
 }

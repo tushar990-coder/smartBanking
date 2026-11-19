@@ -1,5 +1,22 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-19] - आवृत्ती v2.6.33 (Authorised Share Capital Register, CBS v2.4 Balance Sheet & FD Interest Capitalization vs Provision, and FD Closure Rollback Re-Entry Fix)
+
+### 🏛️ 1. अधिकृत भागभांडवल (Authorised Share Capital) वैधानिक मेमो व उपविधी नोंदवही
+- **`SansthaAuthorizedCapitalHistory.cs`, `SansthaDetailsController.cs`, `SansthaMaster.tsx`, `ReportsController.cs`, `BalanceSheet.tsx`, `BalanceSheetFormN.tsx` व `AuthorizedShareCapitalBalanceSheetTests.cs`:**
+  - संस्था मास्टरमध्ये उपविधी / सर्वसाधारण सभा ठराव क्रमांकासह अधिकृत भागभांडवल वाढ/घट इतिहास नोंदवही जोडली (वसूल भागभांडवलापेक्षा कमी करण्यावर कडक प्रतिबंध व ऑडिट लॉगसह).
+  - ताळेबंद पत्रक व नमुना 'न' मध्ये देयता बाजूच्या शीर्षस्थानी बेरजेत समाविष्ट न होणारी डबल-अंडरलाईन वैधानिक मेमो ओळ (चालू व मागील आर्थिक वर्षासाठी इतिहास-आधारित) जोडली.
+
+### 📊 2. ताळेबंद पत्रक व नमुना 'न' (CBS Sample Report v2.4) + FD व्याज मुद्दल (`ठेवी`) विरुद्ध तरतूद (`तरतूद`)
+- **`FdInterestAccrual.cs`, `FdAccountsController.cs`, `FdAccrualPosting.tsx`, `VoucherRollbackAndDeleteService.cs`, `Program.cs`, `tools/master_vps_update_schema.sql`, `ReportsController.cs`, `BalanceSheet.tsx`, `BalanceSheetFormN.tsx`, `CbsReportLayout.tsx` व `BalanceSheetAndFdCapitalizationTests.cs`:**
+  - FD व्याज पोस्टिंगमध्ये `PostingTarget = "Principal"` निवडल्यास व्याज थेट **FD Liability Ledger (`ठेवी`)** ला क्रेडिट होते (`Interest_Capitalized`), तर `"Provision"` निवडल्यास **Interest Payable Ledger (`तरतूद`)** ला क्रेडिट होते (`Accrual`); क्लोजर, मुदतपूर्व बंद, नूतनीकरण व रोलबॅकमध्ये दोन्ही लेजर्स अचूक ₹0.00 ला क्लिअर होतात.
+  - दोन्ही ताळेबंद अहवाल प्रमाणित **`CbsReportLayout` v2.4** वर स्थलांतरित करून `A4 Portrait / A4 Landscape / Legal Landscape` डायनॅमिक `@page` प्रिंट, ३/४-स्तरीय स्वाक्षरी सिलेक्टर, ऋण/विपरीत शिल्लक लाल रंगात (`विपरीत` बॅजसह), प्रलंबित व्हाउचर्स व मागील वर्ष ताळमेळ चेतावणी पट्टी आणि थेट रूट-ग्रुप लेजर्स संरक्षण जोडले.
+
+### 🔧 3. FD क्लोजर / मुदतपूर्व बंद व्हाउचर डिलीट रोलबॅकनंतर री-एन्ट्री डेडलॉक निवारण
+- **`FdAccountsController.cs`, `VoucherRollbackAndDeleteService.cs`, `FdRenewalRollbackHelper.cs`, `RdClosureSettlementHelper.cs`, `FdWithdrawalMaturity.tsx` व `FdClosureRollbackReentryTests.cs`:**
+  - `PrematureClose` मध्ये `Active` व `Matured` दोन्ही स्थिती स्वीकारून `effectiveClosureDate < MaturityDate` तारीख रक्षक कायम ठेवला (आधीच `"Matured"` अडकलेली खाती तात्काळ अनब्लॉक).
+  - व्हाउचर डिलीट रोलबॅक व `ReopenFdAccount` मध्ये सर्व्हरच्या `DateTime.Today` ऐवजी शाखेची सक्रिय CBS व्यवसाय तारीख वापरली, क्लोजर व्हाउचरमधील सहचर `"Accrual"` `FdTransaction` स्वच्छ काढले व UI स्थिती बॅज CBS व्यवसाय तारखेशी संरेखित केला (**१३०/१३० xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-19] - आवृत्ती v2.6.32 (Allow FD Renewal on Overdue Loan with Automatic Lien Carry-Forward & Strict Break Guard)
 
 ### 🔄 1. थकीत/सक्रिय कर्ज व तारण असताना मुदत ठेव नूतनीकरण (FD Renewal) नेहमी अनुज्ञेय

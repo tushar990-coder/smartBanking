@@ -120,5 +120,8 @@ namespace Bhisi.Api.Models
 
         [ForeignKey("AssignedAgentID")]
         public virtual PigmyAgent? AssignedAgent { get; set; }
+
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
     }
 }

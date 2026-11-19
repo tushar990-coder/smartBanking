@@ -1016,7 +1016,7 @@ namespace Bhisi.Api.Controllers
             bool hasSubsequentPaidSchedules = await _context.RDInstallmentSchedules
                 .AnyAsync(s => s.RdAccountID == id && s.InstallmentNo > initialAllowedInstallments && s.Status == "Paid");
 
-            var txVoucherIds = transactions.Where(t => t.VoucherID > 0).Select(t => t.VoucherID).Distinct().ToList();
+            var txVoucherIds = transactions.Where(t => t.VoucherID.HasValue && t.VoucherID.Value > 0).Select(t => t.VoucherID!.Value).Distinct().ToList();
             var schedVoucherIds = await _context.RDInstallmentSchedules
                 .Where(s => s.RdAccountID == id && s.VoucherID.HasValue && s.VoucherID.Value > 0)
                 .Select(s => s.VoucherID!.Value)

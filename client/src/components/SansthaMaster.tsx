@@ -3,8 +3,31 @@ import axios from 'axios';
 import { 
   Building2, RefreshCw, CheckCircle2, ShieldCheck, MapPin, FileBadge, 
   RotateCcw, CheckSquare, IndianRupee, Phone, Mail, Calendar, 
-  FileText, Shield, Sparkles
+  FileText, Shield, Sparkles, Scale, Plus, Pencil, Trash2, AlertTriangle
 } from 'lucide-react';
+
+interface AuthorizedCapitalHistoryItem {
+  historyID: number;
+  sansthaID: number;
+  effectiveDate: string;
+  authorizedCapitalAmount: number;
+  shareFaceValue: number;
+  authorizedShareCount: number;
+  resolutionNo?: string | null;
+  registrarApprovalNo?: string | null;
+  remarks?: string | null;
+}
+
+interface AuthorizedCapitalOverview {
+  sansthaId: number;
+  currentAuthorizedCapital: number;
+  currentShareFaceValue: number;
+  currentAuthorizedShareCount: number;
+  paidUpShareCapital: number;
+  remainingCapacity: number;
+  utilizationPercent: number;
+  history: AuthorizedCapitalHistoryItem[];
+}
 
 interface SansthaDetail {
   sansthaID: number;
@@ -44,8 +67,125 @@ export default function SansthaMaster() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // अधिकृत भागभांडवल व उपविधी नोंदवही (Authorised Share Capital & Bye-Law History)
+  const [capOverview, setCapOverview] = useState<AuthorizedCapitalOverview | null>(null);
+  const [capLoading, setCapLoading] = useState(false);
+  const [capSaving, setCapSaving] = useState(false);
+  const [capError, setCapError] = useState('');
+  const [capSuccess, setCapSuccess] = useState('');
+  const [editingHistoryId, setEditingHistoryId] = useState<number | null>(null);
+  const [capEffectiveDate, setCapEffectiveDate] = useState<string>(`${new Date().getFullYear() - 1}-04-01`);
+  const [capAmount, setCapAmount] = useState<string>('');
+  const [capFaceValue, setCapFaceValue] = useState<string>('100');
+  const [capResolutionNo, setCapResolutionNo] = useState<string>('');
+  const [capApprovalNo, setCapApprovalNo] = useState<string>('');
+  const [capRemarks, setCapRemarks] = useState<string>('');
+
   const API_URL = '/api/SansthaDetails';
   const sansthaNameInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchAuthorizedCapitalHistory = async () => {
+    setCapLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/authorized-capital-history`);
+      if (res.data) {
+        setCapOverview(res.data);
+      }
+    } catch (err) {
+      console.error('Error fetching authorized share capital history', err);
+    } finally {
+      setCapLoading(false);
+    }
+  };
+
+  const resetCapitalForm = (defaultDate?: string) => {
+    setEditingHistoryId(null);
+    setCapEffectiveDate(defaultDate || new Date().toISOString().split('T')[0]);
+    setCapAmount('');
+    setCapFaceValue(String(capOverview?.currentShareFaceValue || 100));
+    setCapResolutionNo('');
+    setCapApprovalNo('');
+    setCapRemarks('');
+    setCapError('');
+  };
+
+  const handleSaveAuthorizedCapital = async () => {
+    setCapError('');
+    setCapSuccess('');
+    const amt = parseFloat(capAmount);
+    const face = parseFloat(capFaceValue) || 100;
+    if (!capEffectiveDate) {
+      setCapError('कृपया प्रभावी दिनांक (Effective Date) निवडा.');
+      return;
+    }
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setCapError('कृपया वैध अधिकृत भागभांडवल रक्कम (₹ > 0) प्रविष्ट करा.');
+      return;
+    }
+    if (!Number.isFinite(face) || face <= 0) {
+      setCapError('कृपया एका शेअरचे वैध दर्शनी मूल्य (₹ > 0) प्रविष्ट करा.');
+      return;
+    }
+
+    setCapSaving(true);
+    try {
+      const payload = {
+        effectiveDate: capEffectiveDate,
+        authorizedCapitalAmount: amt,
+        shareFaceValue: face,
+        authorizedShareCount: Math.floor(amt / face),
+        resolutionNo: capResolutionNo.trim() || null,
+        registrarApprovalNo: capApprovalNo.trim() || null,
+        remarks: capRemarks.trim() || null
+      };
+
+      if (editingHistoryId) {
+        await axios.put(`${API_URL}/authorized-capital-history/${editingHistoryId}`, payload);
+        setCapSuccess('अधिकृत भागभांडवल नोंद यशस्वीरीत्या अद्ययावत झाली आहे.');
+      } else {
+        await axios.post(`${API_URL}/authorized-capital-history`, payload);
+        setCapSuccess('नवीन अधिकृत भागभांडवल नोंद यशस्वीरीत्या जतन झाली आहे (ताळेबंदात आपोआप परावर्तित होईल).');
+      }
+      resetCapitalForm();
+      await Promise.all([fetchAuthorizedCapitalHistory(), fetchSansthaDetails()]);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'अधिकृत भागभांडवल सेव्ह करताना त्रुटी आली.';
+      setCapError(msg);
+    } finally {
+      setCapSaving(false);
+    }
+  };
+
+  const handleEditCapitalRow = (row: AuthorizedCapitalHistoryItem) => {
+    setCapError('');
+    setCapSuccess('');
+    setEditingHistoryId(row.historyID);
+    setCapEffectiveDate(row.effectiveDate ? row.effectiveDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+    setCapAmount(String(row.authorizedCapitalAmount));
+    setCapFaceValue(String(row.shareFaceValue || 100));
+    setCapResolutionNo(row.resolutionNo || '');
+    setCapApprovalNo(row.registrarApprovalNo || '');
+    setCapRemarks(row.remarks || '');
+  };
+
+  const handleDeleteCapitalRow = async (row: AuthorizedCapitalHistoryItem) => {
+    const dt = row.effectiveDate ? row.effectiveDate.split('T')[0].split('-').reverse().join('/') : '';
+    if (!window.confirm(`दिनांक ${dt} ची ₹${row.authorizedCapitalAmount.toLocaleString('en-IN')} अधिकृत भागभांडवलाची नोंद खात्रीपूर्वक हटवायची का?`)) {
+      return;
+    }
+    setCapError('');
+    setCapSuccess('');
+    try {
+      await axios.delete(`${API_URL}/authorized-capital-history/${row.historyID}`);
+      if (editingHistoryId === row.historyID) {
+        resetCapitalForm();
+      }
+      setCapSuccess('अधिकृत भागभांडवल नोंद हटवली गेली आहे.');
+      await Promise.all([fetchAuthorizedCapitalHistory(), fetchSansthaDetails()]);
+    } catch (err: any) {
+      setCapError(err?.response?.data?.message || 'नोंद हटवताना त्रुटी आली.');
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -72,6 +212,7 @@ export default function SansthaMaster() {
     };
 
     loadDetails();
+    fetchAuthorizedCapitalHistory();
     const timer = setTimeout(() => {
       if (isMounted && sansthaNameInputRef.current) {
         sansthaNameInputRef.current.focus();
@@ -625,6 +766,260 @@ export default function SansthaMaster() {
         </div>
 
       </form>
+
+      {/* Section 5: Authorised Share Capital & Bye-Law Register (Non-Accounting Statutory Memo) */}
+      <div className="bg-white border border-gray-200 rounded-sm p-3.5 shadow-2xs space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-1.5">
+          <div className="flex items-center gap-1.5">
+            <Scale className="w-4 h-4 text-primary" />
+            <h2 className="text-xs font-bold text-primary">
+              ५. अधिकृत भागभांडवल व उपविधी नोंदवही (Authorised Share Capital &amp; Bye-Law Register)
+            </h2>
+          </div>
+          <span className="text-[10px] bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded font-semibold">
+            ताळेबंद (Form &apos;N&apos;) वैधानिक मेमो नोंद — एकूण देयता बेरजेत समाविष्ट नाही
+          </span>
+        </div>
+
+        {/* Summary KPI Strip */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+          <div className="bg-slate-50 border border-slate-200 rounded-sm p-2">
+            <span className="text-[10px] text-slate-500 block font-semibold">सद्य अधिकृत भागभांडवल (Authorised)</span>
+            <span className="font-mono font-extrabold text-sm text-primary">
+              ₹ {(capOverview?.currentAuthorizedCapital || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-[10px] text-slate-500 block font-mono">
+              {(capOverview?.currentAuthorizedShareCount || 0).toLocaleString('en-IN')} शेअर्स @ ₹{(capOverview?.currentShareFaceValue || 100).toLocaleString('en-IN')}
+            </span>
+          </div>
+          <div className="bg-emerald-50/70 border border-emerald-200 rounded-sm p-2">
+            <span className="text-[10px] text-emerald-700 block font-semibold">प्रत्यक्ष वसुल भागभांडवल (Paid-Up)</span>
+            <span className="font-mono font-extrabold text-sm text-emerald-800">
+              ₹ {(capOverview?.paidUpShareCapital || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-[10px] text-emerald-700 block">सभासद शेअर्स खात्यांनुसार</span>
+          </div>
+          <div className="bg-amber-50/70 border border-amber-200 rounded-sm p-2">
+            <span className="text-[10px] text-amber-800 block font-semibold">उर्वरित भागभांडवल मर्यादा (Remaining)</span>
+            <span className="font-mono font-extrabold text-sm text-amber-900">
+              ₹ {(capOverview?.remainingCapacity || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-[10px] text-amber-700 block">वापर: {(capOverview?.utilizationPercent || 0).toFixed(2)}%</span>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-sm p-2 flex flex-col justify-between">
+            <span className="text-[10px] text-slate-600 font-semibold">मर्यादा वापर स्थिती (Utilization)</span>
+            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden my-1">
+              <div
+                className={`h-full transition-all ${
+                  (capOverview?.utilizationPercent || 0) >= 90
+                    ? 'bg-red-600'
+                    : (capOverview?.utilizationPercent || 0) >= 75
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-600'
+                }`}
+                style={{ width: `${Math.min(100, capOverview?.utilizationPercent || 0)}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-slate-500">
+              वाढ/घट करण्यासाठी खाली प्रभावी दिनांकासह नोंद जोडा
+            </span>
+          </div>
+        </div>
+
+        {capError && (
+          <div className="bg-red-50 border border-red-300 text-red-800 text-xs px-3 py-2 rounded-sm flex items-center gap-2 font-semibold">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{capError}</span>
+          </div>
+        )}
+        {capSuccess && (
+          <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs px-3 py-2 rounded-sm flex items-center gap-2 font-semibold">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{capSuccess}</span>
+          </div>
+        )}
+
+        {/* Revision Entry Form */}
+        <div className="bg-slate-50/80 border border-slate-200 rounded-sm p-3 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-800">
+              {editingHistoryId ? '✏️ अधिकृत भागभांडवल नोंद दुरुस्त करा (Edit Revision)' : '➕ अधिकृत भागभांडवल वाढ / घट नोंदवा (Add Revision)'}
+            </span>
+            {editingHistoryId && (
+              <button
+                type="button"
+                onClick={() => resetCapitalForm()}
+                className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 underline cursor-pointer"
+              >
+                रद्द करा (Cancel Edit)
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 text-xs">
+            <div>
+              <label className="block text-[10.5px] font-bold text-slate-700 mb-0.5">प्रभावी दिनांक *</label>
+              <input
+                type="date"
+                value={capEffectiveDate}
+                onChange={(e) => setCapEffectiveDate(e.target.value)}
+                className="w-full h-8 px-2 text-xs font-semibold bg-white border border-slate-300 rounded-sm focus:border-primary focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10.5px] font-bold text-slate-700 mb-0.5">अधिकृत भागभांडवल (₹) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="1"
+                value={capAmount}
+                onChange={(e) => setCapAmount(e.target.value)}
+                placeholder="उदा. 5000000"
+                className="w-full h-8 px-2 text-xs font-mono font-bold bg-white border border-slate-300 rounded-sm focus:border-primary focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10.5px] font-bold text-slate-700 mb-0.5">शेअर दर्शनी मूल्य (₹)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="1"
+                value={capFaceValue}
+                onChange={(e) => setCapFaceValue(e.target.value)}
+                className="w-full h-8 px-2 text-xs font-mono font-semibold bg-white border border-slate-300 rounded-sm focus:border-primary focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10.5px] font-bold text-slate-700 mb-0.5">अधिकृत शेअर्स (Auto)</label>
+              <input
+                type="text"
+                readOnly
+                value={
+                  parseFloat(capAmount) > 0 && parseFloat(capFaceValue) > 0
+                    ? Math.floor(parseFloat(capAmount) / parseFloat(capFaceValue)).toLocaleString('en-IN')
+                    : '0'
+                }
+                className="w-full h-8 px-2 text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300 rounded-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[10.5px] font-bold text-slate-700 mb-0.5">AGM ठराव क्र.</label>
+              <input
+                type="text"
+                value={capResolutionNo}
+                onChange={(e) => setCapResolutionNo(e.target.value)}
+                placeholder="उदा. ठराव क्र. ५"
+                className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded-sm focus:border-primary focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10.5px] font-bold text-slate-700 mb-0.5">निबंधक मंजुरी क्र.</label>
+              <input
+                type="text"
+                value={capApprovalNo}
+                onChange={(e) => setCapApprovalNo(e.target.value)}
+                placeholder="उदा. DDR/2025/12"
+                className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded-sm focus:border-primary focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <input
+              type="text"
+              value={capRemarks}
+              onChange={(e) => setCapRemarks(e.target.value)}
+              placeholder="शेरा / उपविधी दुरुस्ती तपशील (ऐच्छिक)"
+              className="flex-1 min-w-[220px] h-8 px-2 text-xs bg-white border border-slate-300 rounded-sm focus:border-primary focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={handleSaveAuthorizedCapital}
+              disabled={capSaving}
+              className="h-8 px-4 bg-primary hover:opacity-90 text-white font-bold rounded-sm text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {capSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              <span>{editingHistoryId ? 'बदल अपडेट करा' : 'भागभांडवल नोंद जतन करा'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* History Table */}
+        <div className="border border-slate-200 rounded-sm overflow-x-auto">
+          <table className="w-full text-[11px] border-collapse">
+            <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+              <tr>
+                <th className="px-2.5 py-1.5 text-left">प्रभावी दिनांक</th>
+                <th className="px-2.5 py-1.5 text-right">अधिकृत भागभांडवल (₹)</th>
+                <th className="px-2.5 py-1.5 text-right">दर्शनी मूल्य (₹)</th>
+                <th className="px-2.5 py-1.5 text-right">अधिकृत शेअर्स</th>
+                <th className="px-2.5 py-1.5 text-left">ठराव / निबंधक मंजुरी</th>
+                <th className="px-2.5 py-1.5 text-left">शेरा</th>
+                <th className="px-2.5 py-1.5 text-center w-24">कृती</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {capLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-4 text-center text-slate-500">लोड होत आहे...</td>
+                </tr>
+              ) : !capOverview?.history || capOverview.history.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-4 text-center text-slate-500">
+                    अद्याप कोणतीही अधिकृत भागभांडवल नोंद नाही. वरील फॉर्ममधून पहिली नोंद (उदा. ₹50,00,000) जोडा.
+                  </td>
+                </tr>
+              ) : (
+                capOverview.history.map((item, idx) => (
+                  <tr key={item.historyID} className={idx === 0 ? 'bg-blue-50/40 font-semibold' : 'hover:bg-slate-50'}>
+                    <td className="px-2.5 py-1.5 font-mono">
+                      {item.effectiveDate ? item.effectiveDate.split('T')[0].split('-').reverse().join('/') : '-'}
+                      {idx === 0 && (
+                        <span className="ml-1.5 text-[9.5px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded font-bold">
+                          सद्य लागू
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-right font-mono font-bold text-slate-900">
+                      ₹ {Number(item.authorizedCapitalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-right font-mono">
+                      ₹ {Number(item.shareFaceValue || 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-right font-mono">
+                      {Number(item.authorizedShareCount || 0).toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-slate-700">
+                      {[item.resolutionNo, item.registrarApprovalNo].filter(Boolean).join(' • ') || '-'}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-slate-600">{item.remarks || '-'}</td>
+                    <td className="px-2.5 py-1.5 text-center">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleEditCapitalRow(item)}
+                          className="p-1 text-blue-700 hover:bg-blue-100 rounded cursor-pointer"
+                          title="दुरुस्त करा"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCapitalRow(item)}
+                          className="p-1 text-red-700 hover:bg-red-100 rounded cursor-pointer"
+                          title="हटवा"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

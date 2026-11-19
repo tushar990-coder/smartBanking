@@ -321,7 +321,7 @@ namespace Bhisi.Api.Helpers
                 .Where(t => t.RdAccountID == account.RdAccountID &&
                             t.TransactionType == "Installment" &&
                             t.DebitCredit == "Cr" &&
-                            (deletedVoucherIds == null || !deletedVoucherIds.Contains(t.VoucherID)))
+                            (deletedVoucherIds == null || !t.VoucherID.HasValue || !deletedVoucherIds.Contains(t.VoucherID.Value)))
                 .OrderBy(t => t.TransactionDate)
                 .ThenBy(t => t.RdTransactionID)
                 .ToListAsync();
@@ -520,8 +520,9 @@ namespace Bhisi.Api.Helpers
             }
 
             var linkedInstallmentTxs = await context.RdTransactions
-                .Where(rt => rt.VoucherID > 0 &&
-                             voucherIds.Contains(rt.VoucherID) &&
+                .Where(rt => rt.VoucherID.HasValue &&
+                             rt.VoucherID.Value > 0 &&
+                             voucherIds.Contains(rt.VoucherID.Value) &&
                              rt.TransactionType == "Installment")
                 .ToListAsync();
 

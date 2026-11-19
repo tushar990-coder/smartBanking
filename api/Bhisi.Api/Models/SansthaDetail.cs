@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Bhisi.Api.Models
 {
@@ -64,6 +65,17 @@ namespace Bhisi.Api.Models
 
         // नूतनीकरणावेळी कस्टम / प्री-प्रिंटेड पावती क्र. टाकण्याची मुभा
         public bool AllowManualReceiptNoOnRenewal { get; set; } = false;
+
+        // अधिकृत भागभांडवल (Authorised Share Capital — Statutory Memo Ceiling, Non-Accounting)
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal AuthorizedShareCapital { get; set; } = 0m;
+
+        // एका शेअरचे दर्शनी मूल्य (Share Face Value)
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal ShareFaceValue { get; set; } = 100.00m;
+
+        // एकूण अधिकृत शेअर्स संख्या (AuthorizedShareCapital / ShareFaceValue)
+        public int AuthorizedShareCount { get; set; } = 0;
     }
 }
 

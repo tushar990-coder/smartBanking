@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Bhisi.Api.Models
 {
@@ -34,17 +35,28 @@ namespace Bhisi.Api.Models
 
         public int MaxLockDays { get; set; } = 2;
 
+        [JsonIgnore]
         [StringLength(255)]
         public string? PasswordHash { get; set; }
 
         [StringLength(100)]
         public string? Username { get; set; }
 
+        [JsonIgnore]
         [System.ComponentModel.DataAnnotations.Schema.NotMapped]
         public string? Password { get; set; }
 
+        [JsonIgnore]
         [StringLength(10)]
         public string? Pin { get; set; }
+
+        public int FailedLoginAttempts { get; set; } = 0;
+
+        public bool IsLocked { get; set; } = false;
+
+        [JsonIgnore]
+        [StringLength(2000)]
+        public string? ActiveSessionToken { get; set; }
 
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;

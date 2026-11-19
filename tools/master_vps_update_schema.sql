@@ -7035,6 +7035,60 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- AUTHORISED SHARE CAPITAL & BYE-LAW HISTORY (STATUTORY MEMO DISCLOSURE)
+-- ========================================================================
+IF OBJECT_ID('dbo.SansthaDetails', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('SansthaDetails', 'AuthorizedShareCapital') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SansthaDetails] ADD [AuthorizedShareCapital] decimal(18,2) NOT NULL DEFAULT 0.00;
+        PRINT '  -> Added SansthaDetails.AuthorizedShareCapital';
+    END
+    IF COL_LENGTH('SansthaDetails', 'ShareFaceValue') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SansthaDetails] ADD [ShareFaceValue] decimal(18,2) NOT NULL DEFAULT 100.00;
+        PRINT '  -> Added SansthaDetails.ShareFaceValue';
+    END
+    IF COL_LENGTH('SansthaDetails', 'AuthorizedShareCount') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SansthaDetails] ADD [AuthorizedShareCount] int NOT NULL DEFAULT 0;
+        PRINT '  -> Added SansthaDetails.AuthorizedShareCount';
+    END
+END
+GO
+
+IF OBJECT_ID('dbo.SansthaAuthorizedCapitalHistories', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[SansthaAuthorizedCapitalHistories] (
+        [HistoryID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [SansthaID] int NOT NULL DEFAULT 1,
+        [EffectiveDate] datetime2 NOT NULL,
+        [AuthorizedCapitalAmount] decimal(18,2) NOT NULL,
+        [ShareFaceValue] decimal(18,2) NOT NULL DEFAULT 100.00,
+        [AuthorizedShareCount] int NOT NULL DEFAULT 0,
+        [ResolutionNo] nvarchar(100) NULL,
+        [RegistrarApprovalNo] nvarchar(100) NULL,
+        [Remarks] nvarchar(500) NULL,
+        [CreatedBy] int NOT NULL DEFAULT 1,
+        [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE()
+    );
+    CREATE INDEX [IX_SansthaAuthorizedCapitalHistories_EffectiveDate]
+        ON [dbo].[SansthaAuthorizedCapitalHistories]([SansthaID], [EffectiveDate] DESC);
+    PRINT '  -> Created SansthaAuthorizedCapitalHistories table';
+END
+GO
+
+IF OBJECT_ID('dbo.FdInterestAccruals', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('FdInterestAccruals', 'PostingTarget') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[FdInterestAccruals] ADD [PostingTarget] nvarchar(20) NOT NULL DEFAULT 'Provision';
+        PRINT '  -> Added FdInterestAccruals.PostingTarget';
+    END
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

@@ -1112,7 +1112,16 @@ namespace Bhisi.Api.Helpers
                     bool hasChildFd = await HasExistingRenewedChildByFkAsync(context, cand.FdAccountID);
                     if (hasChildFd) continue;
 
-                    RestoreOldAccountFromRenewal(cand);
+                    var branchDayEnd = await context.BranchDayEndStatuses
+                        .AsNoTracking()
+                        .Where(b => b.BranchID == (cand.BranchID > 0 ? cand.BranchID : 1) && b.BusinessDate.Year >= 2000)
+                        .OrderByDescending(b => b.BusinessDate)
+                        .FirstOrDefaultAsync();
+                    DateTime branchBizDate = branchDayEnd != null
+                        ? (branchDayEnd.IsDayClosed ? branchDayEnd.BusinessDate.Date.AddDays(1) : branchDayEnd.BusinessDate.Date)
+                        : DateTime.Today;
+
+                    RestoreOldAccountFromRenewal(cand, branchBizDate);
                     branchesToSync.Add(cand.BranchID);
                     modified = true;
                 }

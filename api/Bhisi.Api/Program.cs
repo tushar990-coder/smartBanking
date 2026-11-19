@@ -1132,6 +1132,45 @@ try
                 BEGIN
                     ALTER TABLE [SansthaDetails] ADD [AllowManualReceiptNoOnRenewal] bit NOT NULL DEFAULT 0;
                 END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'AuthorizedShareCapital')
+                BEGIN
+                    ALTER TABLE [SansthaDetails] ADD [AuthorizedShareCapital] decimal(18,2) NOT NULL DEFAULT 0.00;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'ShareFaceValue')
+                BEGIN
+                    ALTER TABLE [SansthaDetails] ADD [ShareFaceValue] decimal(18,2) NOT NULL DEFAULT 100.00;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SansthaDetails]') AND name = 'AuthorizedShareCount')
+                BEGIN
+                    ALTER TABLE [SansthaDetails] ADD [AuthorizedShareCount] int NOT NULL DEFAULT 0;
+                END
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SansthaAuthorizedCapitalHistories')
+            BEGIN
+                CREATE TABLE [SansthaAuthorizedCapitalHistories] (
+                    [HistoryID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [SansthaID] int NOT NULL DEFAULT 1,
+                    [EffectiveDate] datetime2 NOT NULL,
+                    [AuthorizedCapitalAmount] decimal(18,2) NOT NULL,
+                    [ShareFaceValue] decimal(18,2) NOT NULL DEFAULT 100.00,
+                    [AuthorizedShareCount] int NOT NULL DEFAULT 0,
+                    [ResolutionNo] nvarchar(100) NULL,
+                    [RegistrarApprovalNo] nvarchar(100) NULL,
+                    [Remarks] nvarchar(500) NULL,
+                    [CreatedBy] int NOT NULL DEFAULT 1,
+                    [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE()
+                );
+                CREATE INDEX [IX_SansthaAuthorizedCapitalHistories_EffectiveDate]
+                    ON [SansthaAuthorizedCapitalHistories]([SansthaID], [EffectiveDate] DESC);
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdInterestAccruals')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdInterestAccruals]') AND name = 'PostingTarget')
+                BEGIN
+                    ALTER TABLE [FdInterestAccruals] ADD [PostingTarget] nvarchar(20) NOT NULL DEFAULT 'Provision';
+                END
             END
 
             -- -----------------------------------------------------------------------------------------

@@ -120,16 +120,25 @@ interface FdAccount {
   branchName?: string;
 }
 
-// प्रभावी स्थिती: API status + मुदतपूर्ती तारीख यावरून (Matured / Active / इतर)
-const getFdEffectiveStatus = (acc: Pick<FdAccount, 'status' | 'maturityDate'>): { key: string; label: string } => {
+// प्रभावी स्थिती: API status + मुदतपूर्ती तारीख (CBS व्यवसाय तारखेनुसार Matured / Active / इतर)
+const getFdEffectiveStatus = (
+  acc: Pick<FdAccount, 'status' | 'maturityDate'>,
+  referenceDateIso?: string
+): { key: string; label: string } => {
   const raw = (acc.status || '').trim();
+  const rawLower = raw.toLowerCase();
   const now = new Date();
-  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const fallbackTodayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const refIso = (referenceDateIso || fallbackTodayIso).split('T')[0];
   const matIso = acc.maturityDate ? acc.maturityDate.split('T')[0] : '';
-  if (raw.toLowerCase() === 'matured' || (matIso && matIso <= todayIso && (raw === '' || raw.toLowerCase() === 'active'))) {
-    return { key: 'Matured', label: 'मुदतपूर्ण (Matured)' };
-  }
-  if (raw === '' || raw.toLowerCase() === 'active') {
+
+  if (rawLower === '' || rawLower === 'active' || rawLower === 'matured') {
+    if (matIso && matIso > refIso) {
+      return { key: 'Active', label: 'चालू (Active)' };
+    }
+    if (rawLower === 'matured' || (matIso && matIso <= refIso)) {
+      return { key: 'Matured', label: 'मुदतपूर्ण (Matured)' };
+    }
     return { key: 'Active', label: 'चालू (Active)' };
   }
   return { key: raw, label: raw };
@@ -2178,7 +2187,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const custName = a.customerName || a.memberName || 'खातेदार';
       const legacyNo = (a.legacyAccountNumber || '').trim();
       const legacyPart = legacyNo ? ` [जुना: ${legacyNo}]` : '';
-      const statusObj = getFdEffectiveStatus(a);
+      const statusObj = getFdEffectiveStatus(a, closureDate || activeBusinessDate);
       const isMatured = statusObj.key.toLowerCase() === 'matured';
       const matDateStr = a.maturityDate ? a.maturityDate.split('T')[0].split('-').reverse().join('/') : '';
       return {
@@ -4262,7 +4271,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               </span>
                             )}
                             {(() => {
-                              const st = getFdEffectiveStatus(acc);
+                              const st = getFdEffectiveStatus(acc, closureDate || activeBusinessDate);
                               const cls = st.key === 'Matured'
                                 ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                                 : st.key === 'Active'

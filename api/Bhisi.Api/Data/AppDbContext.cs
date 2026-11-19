@@ -40,6 +40,7 @@ namespace Bhisi.Api.Data
         public DbSet<Voucher> Vouchers { get; set; }
         public DbSet<VoucherDetail> VoucherDetails { get; set; }
         public DbSet<SansthaDetail> SansthaDetails { get; set; }
+        public DbSet<SansthaAuthorizedCapitalHistory> SansthaAuthorizedCapitalHistories { get; set; }
         public DbSet<VoucherMapping> VoucherMappings { get; set; }
         public DbSet<CustomerOpeningBalance> CustomerOpeningBalances { get; set; }
         public DbSet<MemberOpeningBalance> MemberOpeningBalances { get; set; }

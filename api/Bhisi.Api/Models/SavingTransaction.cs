@@ -76,5 +76,9 @@ namespace Bhisi.Api.Models
 
         [MaxLength(100)]
         public string? SyncReferenceId { get; set; }
+
+        public int? VoucherID { get; set; }
+
+        public int? RemittanceDepositId { get; set; }
     }
 }

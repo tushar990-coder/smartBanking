@@ -37,11 +37,14 @@ interface PigmyAgent {
   joiningDate?: string;
   status: string;
   branchID?: number;
+  branchName?: string;
   branch?: {
     branchID: number;
     branchName: string;
-    branchCode: string;
+    branchCode?: string;
   };
+  mobileNo?: string;
+  isLocked?: boolean;
   customerID?: number;
   createdBy?: number;
   createdDate?: string;
@@ -296,6 +299,29 @@ export default function PigmyAgentMaster() {
       fetchAgents();
     } catch (error: any) {
       showToast(error.response?.data?.message || 'एजंट इनॲक्टिव्ह करताना त्रुटी आली.');
+    }
+  };
+
+  const handleUnlockAgent = async (agent: PigmyAgent) => {
+    const id = getAgentId(agent);
+    if (!id) return;
+    try {
+      await axios.put(`/api/PigmyAgents/${id}`, {
+        pigmyAgentID: id,
+        agentName: agent.agentName,
+        joiningDate: agent.joiningDate,
+        status: agent.status || 'Active',
+        branchID: agent.branchID || agent.branch?.branchID || null,
+        customerID: agent.customerID || null,
+        username: agent.username || '',
+        maxCashLimit: agent.maxCashLimit || 20000,
+        maxLockDays: agent.maxLockDays || 2,
+        isLocked: false
+      });
+      showToast(`एजंट '${agent.agentName}' चे खाते यशस्वीरित्या अनलॉक केले.`);
+      fetchAgents();
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'एजंट अनलॉक करताना त्रुटी आली.');
     }
   };
 
@@ -808,7 +834,7 @@ export default function PigmyAgentMaster() {
                       const joiningDateStr = ag.joiningDate 
                         ? new Date(ag.joiningDate).toLocaleDateString('en-GB')
                         : '-';
-                      const branchName = ag.branch?.branchName || '-';
+                      const branchName = ag.branchName || ag.branch?.branchName || '-';
 
                       return (
                         <tr key={id} className="hover:bg-blue-50/40 transition">
@@ -843,6 +869,16 @@ export default function PigmyAgentMaster() {
                               }`}></span>
                               {ag.status}
                             </span>
+                            {ag.isLocked && (
+                              <button
+                                type="button"
+                                onClick={() => handleUnlockAgent(ag)}
+                                className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 text-[9.5px] font-bold cursor-pointer"
+                                title="लॉक झालेले एजंट खाते अनलॉक करा"
+                              >
+                                🔒 अनलॉक करा
+                              </button>
+                            )}
                           </td>
                           <td className="py-1.5 px-3 text-center">
                             <div className="flex justify-center gap-1.5">

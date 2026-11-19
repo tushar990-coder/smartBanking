@@ -7089,6 +7089,66 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- PHASE 1: AGENT APP SECURITY, CONCURRENCY & MULTI-PRODUCT REMITTANCE
+-- ========================================================================
+IF OBJECT_ID('dbo.PigmyAgents', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('PigmyAgents', 'FailedLoginAttempts') IS NULL
+        ALTER TABLE [dbo].[PigmyAgents] ADD [FailedLoginAttempts] INT NOT NULL DEFAULT 0;
+    IF COL_LENGTH('PigmyAgents', 'IsLocked') IS NULL
+        ALTER TABLE [dbo].[PigmyAgents] ADD [IsLocked] BIT NOT NULL DEFAULT 0;
+    IF COL_LENGTH('PigmyAgents', 'ActiveSessionToken') IS NULL
+        ALTER TABLE [dbo].[PigmyAgents] ADD [ActiveSessionToken] NVARCHAR(2000) NULL;
+END
+GO
+
+IF OBJECT_ID('dbo.LoanCollections', 'U') IS NOT NULL AND COL_LENGTH('LoanCollections', 'RemittanceDepositId') IS NULL
+    ALTER TABLE [dbo].[LoanCollections] ADD [RemittanceDepositId] INT NULL;
+GO
+
+IF OBJECT_ID('dbo.SavingTransactions', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('SavingTransactions', 'VoucherID') IS NULL
+        ALTER TABLE [dbo].[SavingTransactions] ADD [VoucherID] INT NULL;
+    IF COL_LENGTH('SavingTransactions', 'RemittanceDepositId') IS NULL
+        ALTER TABLE [dbo].[SavingTransactions] ADD [RemittanceDepositId] INT NULL;
+END
+GO
+
+IF OBJECT_ID('dbo.RdTransactions', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('RdTransactions', 'RemittanceDepositId') IS NULL
+        ALTER TABLE [dbo].[RdTransactions] ADD [RemittanceDepositId] INT NULL;
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.RdTransactions') AND name = 'VoucherID' AND is_nullable = 0)
+        ALTER TABLE [dbo].[RdTransactions] ALTER COLUMN [VoucherID] INT NULL;
+END
+GO
+
+IF OBJECT_ID('dbo.PigmyAccounts', 'U') IS NOT NULL AND COL_LENGTH('PigmyAccounts', 'RowVersion') IS NULL
+    ALTER TABLE [dbo].[PigmyAccounts] ADD [RowVersion] ROWVERSION NOT NULL;
+IF OBJECT_ID('dbo.LoanAccounts', 'U') IS NOT NULL AND COL_LENGTH('LoanAccounts', 'RowVersion') IS NULL
+    ALTER TABLE [dbo].[LoanAccounts] ADD [RowVersion] ROWVERSION NOT NULL;
+IF OBJECT_ID('dbo.SavingAccountMasters', 'U') IS NOT NULL AND COL_LENGTH('SavingAccountMasters', 'RowVersion') IS NULL
+    ALTER TABLE [dbo].[SavingAccountMasters] ADD [RowVersion] ROWVERSION NOT NULL;
+IF OBJECT_ID('dbo.RdAccounts', 'U') IS NOT NULL AND COL_LENGTH('RdAccounts', 'RowVersion') IS NULL
+    ALTER TABLE [dbo].[RdAccounts] ADD [RowVersion] ROWVERSION NOT NULL;
+GO
+
+IF OBJECT_ID('dbo.LoanCollections', 'U') IS NOT NULL
+   AND COL_LENGTH('LoanCollections', 'SyncReferenceId') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_LoanCollections_SyncReferenceId' AND object_id = OBJECT_ID('dbo.LoanCollections'))
+    CREATE UNIQUE NONCLUSTERED INDEX [UQ_LoanCollections_SyncReferenceId] ON [dbo].[LoanCollections] ([SyncReferenceId]) WHERE [SyncReferenceId] IS NOT NULL;
+IF OBJECT_ID('dbo.SavingTransactions', 'U') IS NOT NULL
+   AND COL_LENGTH('SavingTransactions', 'SyncReferenceId') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_SavingTransactions_SyncReferenceId' AND object_id = OBJECT_ID('dbo.SavingTransactions'))
+    CREATE UNIQUE NONCLUSTERED INDEX [UQ_SavingTransactions_SyncReferenceId] ON [dbo].[SavingTransactions] ([SyncReferenceId]) WHERE [SyncReferenceId] IS NOT NULL;
+IF OBJECT_ID('dbo.RdTransactions', 'U') IS NOT NULL
+   AND COL_LENGTH('RdTransactions', 'SyncReferenceId') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_RdTransactions_SyncReferenceId' AND object_id = OBJECT_ID('dbo.RdTransactions'))
+    CREATE UNIQUE NONCLUSTERED INDEX [UQ_RdTransactions_SyncReferenceId] ON [dbo].[RdTransactions] ([SyncReferenceId]) WHERE [SyncReferenceId] IS NOT NULL;
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

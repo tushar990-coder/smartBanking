@@ -776,10 +776,10 @@ namespace Bhisi.Api.Helpers
 
                 // 4. RD Module (RdTransactions, RDInstallmentSchedules, RdInterestAccruals)
                 var rdTxs = await context.RdTransactions.AsNoTracking()
-                    .Where(t => idChunk.Contains(t.VoucherID) && t.RdAccount != null)
+                    .Where(t => t.VoucherID.HasValue && idChunk.Contains(t.VoucherID.Value) && t.RdAccount != null)
                     .Select(t => new
                     {
-                        t.VoucherID,
+                        VoucherID = t.VoucherID!.Value,
                         t.DebitCredit,
                         t.RdAccount!.CustomerID,
                         t.RdAccount.AccountNo,

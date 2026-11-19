@@ -302,10 +302,10 @@ namespace Bhisi.Api.Helpers
 
             // 4. Recurring Deposits (RD)
             var rdTxns = await db.RdTransactions.AsNoTracking()
-                .Where(r => voucherIds.Contains(r.VoucherID))
+                .Where(r => r.VoucherID.HasValue && voucherIds.Contains(r.VoucherID.Value))
                 .Select(r => new
                 {
-                    r.VoucherID,
+                    VoucherID = r.VoucherID!.Value,
                     AccNo = r.RdAccount != null ? r.RdAccount.AccountNo : null,
                     OldNo = r.RdAccount != null ? r.RdAccount.LegacyAccountNumber : null
                 })

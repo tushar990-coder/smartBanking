@@ -28,6 +28,7 @@ namespace Bhisi.Api.Services
 
         public int? AgentId { get; set; }
         public string? ReceiptNo { get; set; }
+        public bool OfflineSync { get; set; } = false;
     }
 
     public class SingleCollectionResponseDto

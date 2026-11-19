@@ -55,7 +55,8 @@ namespace Bhisi.Api.Services
                 .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
 
             var totalSavingCash = await _context.SavingTransactions
-                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit")
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" &&
+                            (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
                 .SumAsync(t => (decimal?)t.Amount) ?? 0m;
 
             var totalRdCash = await _context.RdTransactions
@@ -77,7 +78,7 @@ namespace Bhisi.Api.Services
                 ? $"Agent locked. Pending cash (₹{pendingCash:N2}) exceeds ₹{maxLimit:N2} limit. Please remit cash to branch."
                 : "Agent active and allowed to collect.";
 
-            // 3. Time Rule: Lock if there are pending cash collections older than MaxLockDays
+            // 3. Time Rule: Lock if there are pending cash collections older than MaxLockDays (IST date-based across all products)
             if (!isLocked && pendingCash > 0)
             {
                 var lastDepositDate = await _context.PigmyAgentCashDeposits
@@ -86,22 +87,50 @@ namespace Bhisi.Api.Services
                     .Select(d => (DateTime?)d.DepositDate)
                     .FirstOrDefaultAsync();
 
-                var unremittedCollectionsQuery = _context.PigmyCollections
-                    .Where(c => c.AgentId == agentId && (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"));
+                var pigmyOldestQuery = _context.PigmyCollections
+                    .Where(c => c.AgentId == agentId && !c.IsVoucherGenerated && (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"));
+                var loanOldestQuery = _context.LoanCollections
+                    .Where(c => c.AgentID == agentId && c.CollectionSource == "AGENT_MOBILE" && c.RemittanceDepositId == null && (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"));
+                var savingOldestQuery = _context.SavingTransactions
+                    .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" && t.RemittanceDepositId == null && (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"));
+                var rdOldestQuery = _context.RdTransactions
+                    .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" && t.RemittanceDepositId == null);
 
                 if (lastDepositDate.HasValue)
                 {
-                    unremittedCollectionsQuery = unremittedCollectionsQuery.Where(c => c.CollectionDate > lastDepositDate.Value);
+                    var cutoff = lastDepositDate.Value.Date;
+                    pigmyOldestQuery = pigmyOldestQuery.Where(c => c.CollectionDate.Date > cutoff);
+                    loanOldestQuery = loanOldestQuery.Where(c => c.CollectionDate.Date > cutoff);
+                    savingOldestQuery = savingOldestQuery.Where(t => t.TransactionDate.Date > cutoff);
+                    rdOldestQuery = rdOldestQuery.Where(t => t.TransactionDate.Date > cutoff);
                 }
 
-                var oldestUnremittedCollectionDate = await unremittedCollectionsQuery
-                    .OrderBy(c => c.CollectionDate)
-                    .Select(c => (DateTime?)c.CollectionDate)
-                    .FirstOrDefaultAsync();
-
-                if (oldestUnremittedCollectionDate.HasValue)
+                var candidateDates = new[]
                 {
-                    if ((DateTime.UtcNow - oldestUnremittedCollectionDate.Value).TotalDays >= agent.MaxLockDays)
+                    await pigmyOldestQuery.OrderBy(c => c.CollectionDate).Select(c => (DateTime?)c.CollectionDate).FirstOrDefaultAsync(),
+                    await loanOldestQuery.OrderBy(c => c.CollectionDate).Select(c => (DateTime?)c.CollectionDate).FirstOrDefaultAsync(),
+                    await savingOldestQuery.OrderBy(t => t.TransactionDate).Select(t => (DateTime?)t.TransactionDate).FirstOrDefaultAsync(),
+                    await rdOldestQuery.OrderBy(t => t.TransactionDate).Select(t => (DateTime?)t.TransactionDate).FirstOrDefaultAsync()
+                }
+                .Where(d => d.HasValue)
+                .Select(d => d!.Value.Date)
+                .ToList();
+
+                if (candidateDates.Any())
+                {
+                    var oldestDate = candidateDates.Min();
+                    DateTime istToday;
+                    try
+                    {
+                        var istZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+                        istToday = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, istZone).Date;
+                    }
+                    catch
+                    {
+                        istToday = DateTime.UtcNow.AddHours(5.5).Date;
+                    }
+
+                    if ((istToday - oldestDate).TotalDays >= agent.MaxLockDays)
                     {
                         isLocked = true;
                         message = $"Agent locked. You have pending cash collections older than {agent.MaxLockDays} days. Please remit pending cash (₹{pendingCash:N2}) to branch.";

@@ -12,11 +12,16 @@ namespace Bhisi.Api.Services
     {
         private readonly AppDbContext _context;
         private readonly IAgentLockService _lockService;
+        private readonly IBusinessDateGuardService _businessDateGuard;
 
-        public PigmySyncService(AppDbContext context, IAgentLockService lockService)
+        public PigmySyncService(
+            AppDbContext context,
+            IAgentLockService lockService,
+            IBusinessDateGuardService? businessDateGuard = null)
         {
             _context = context;
             _lockService = lockService;
+            _businessDateGuard = businessDateGuard ?? new BusinessDateGuardService(context);
         }
 
         public async Task<SingleCollectionResponseDto> ProcessSingleCollectionAsync(int agentId, SingleCollectionRequestDto dto)
@@ -101,12 +106,12 @@ namespace Bhisi.Api.Services
                 int targetId = dto.AccountId > 0 ? dto.AccountId : (dto.PigmyAccountId ?? 0);
                 PigmyAccount? account = null;
 
-                // 1. Try finding by Primary Key ID
+                // 1. Try finding by Primary Key ID (scoped to this agent)
                 if (targetId > 0)
                 {
                     account = await _context.PigmyAccounts
                         .Include(a => a.Customer)
-                        .FirstOrDefaultAsync(a => a.PigmyAccountID == targetId);
+                        .FirstOrDefaultAsync(a => a.PigmyAccountID == targetId && a.PigmyAgentID == agentId);
                 }
 
                 // 2. Try finding by Old Account Number (Physical Passbook No) under this agent
@@ -119,13 +124,13 @@ namespace Bhisi.Api.Services
                             (a.OldAccountNo == cleanOldNo || a.LegacyAccountNumber == cleanOldNo || a.PreviousAccountNo == cleanOldNo));
                 }
 
-                // 3. Try finding by CBS Account Number
+                // 3. Try finding by CBS Account Number (scoped to this agent)
                 if (account == null && !string.IsNullOrWhiteSpace(dto.AccountNo))
                 {
                     string cleanAccNo = dto.AccountNo.Trim();
                     account = await _context.PigmyAccounts
                         .Include(a => a.Customer)
-                        .FirstOrDefaultAsync(a => a.AccountNo == cleanAccNo);
+                        .FirstOrDefaultAsync(a => a.AccountNo == cleanAccNo && a.PigmyAgentID == agentId);
                 }
 
                 if (account == null)
@@ -153,14 +158,30 @@ namespace Bhisi.Api.Services
                     };
                 }
 
-                DateTime collDate = dto.Timestamp ?? dto.CollectionDate ?? DateTime.Today;
+                bool isOffline = dto.OfflineSync;
+                var requestedDate = dto.Timestamp ?? dto.CollectionDate;
+                var dateCheck = await _businessDateGuard.ValidateCollectionDateAsync(account.BranchID, requestedDate, isOffline);
+                if (!dateCheck.IsAllowed)
+                {
+                    await transaction.RollbackAsync();
+                    return new SingleCollectionResponseDto
+                    {
+                        Success = false,
+                        StatusCode = 409,
+                        TransactionId = cleanTxId,
+                        AccountId = account.PigmyAccountID,
+                        Message = dateCheck.ErrorMessage ?? "Selected business date is closed."
+                    };
+                }
+
+                DateTime collDate = dateCheck.EffectiveCollectionDate;
                 decimal openingBal = account.TotalDepositedAmount;
                 decimal addedAmount = dto.Amount;
                 decimal closingBal = openingBal + addedAmount;
 
                 string receiptNo = !string.IsNullOrWhiteSpace(dto.ReceiptNo)
                     ? dto.ReceiptNo.Trim()
-                    : $"PG-AGT-{agentId}-{collDate:yyyyMMddHHmmss}";
+                    : $"PG-AGT-{agentId}-{collDate:yyyyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..4].ToUpper()}";
 
                 var newColl = new PigmyCollection
                 {
@@ -223,8 +244,10 @@ namespace Bhisi.Api.Services
                         BranchID = account.BranchID,
                         ModuleName = "Pigmy",
                         NotificationType = "COLLECTION",
-                        Title = $"पिग्मी पावती ₹{addedAmount:N0} जमा",
-                        Description = $"खाते क्र. {account.AccountNo} ({customerName}) मध्ये ₹{addedAmount:N2} जमा. पावती: {receiptNo}, चालू शिल्लक: ₹{closingBal:N2}",
+                        Title = dateCheck.IsPostEodOfflineSync
+                            ? $"Post-EOD ऑफलाइन पिग्मी पावती ₹{addedAmount:N0}"
+                            : $"पिग्मी पावती ₹{addedAmount:N0} जमा",
+                        Description = $"खाते क्र. {account.AccountNo} ({customerName}) मध्ये ₹{addedAmount:N2} जमा. पावती: {receiptNo}, संकलन दिनांक: {collDate:dd/MM/yyyy}, चालू शिल्लक: ₹{closingBal:N2}",
                         Priority = "LOW",
                         TargetTab = "Pigmy",
                         EntityName = "PigmyAccount",
@@ -299,6 +322,7 @@ namespace Bhisi.Api.Services
 
             foreach (var item in items)
             {
+                item.OfflineSync = true;
                 var result = await ProcessSingleCollectionAsync(agentId, item);
                 response.Results.Add(result);
 

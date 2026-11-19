@@ -1,5 +1,8 @@
+using Bhisi.Api.Helpers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace Bhisi.Api.Controllers
 {
@@ -12,44 +15,44 @@ namespace Bhisi.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Upload(IFormFile file)
         {
-            if (file == null || file.Length == 0)
+            var (isValid, error, _, apiUrl) = await FileUploadSecurityHelper.SaveValidatedKycFileAsync(file);
+            if (!isValid)
             {
-                return BadRequest("कोणतीही फाईल अपलोड केलेली नाही.");
+                return BadRequest(error);
             }
 
-            if (file.Length > 10 * 1024 * 1024)
-            {
-                return BadRequest("फाईलची साईझ १० MB पेक्षा जास्त नसावी.");
-            }
-
-            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".pdf" };
-            var fileExt = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (!allowedExtensions.Contains(fileExt))
-            {
-                return BadRequest("केवळ .jpg, .jpeg, .png, .webp किंवा .pdf फाईल्स अपलोड करता येतील.");
-            }
-
-            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-            if (!Directory.Exists(uploadsFolder))
-            {
-                Directory.CreateDirectory(uploadsFolder);
-            }
-
-            var uniqueFileName = Guid.NewGuid().ToString("N") + fileExt;
-            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
-
-            using (var fileStream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(fileStream);
-            }
-
-            var fileUrl = $"/uploads/{uniqueFileName}";
             return Ok(new
             {
-                url = fileUrl,
-                filePath = fileUrl,
-                path = fileUrl
+                url = apiUrl,
+                filePath = apiUrl,
+                path = apiUrl
             });
+        }
+
+        // GET: api/Upload/kyc/{fileName}
+        // Strict 32-hex-char GUID filename guard + nosniff so browser <img>/<a href> previews work securely
+        [AllowAnonymous]
+        [HttpGet("kyc/{fileName}")]
+        public IActionResult GetKycFile(string fileName)
+        {
+            var safeName = Path.GetFileName(fileName);
+            if (string.IsNullOrWhiteSpace(safeName) ||
+                !string.Equals(safeName, fileName, System.StringComparison.Ordinal) ||
+                !System.Text.RegularExpressions.Regex.IsMatch(safeName, @"^[0-9a-fA-F]{32}\.(jpg|jpeg|png|webp|pdf)$"))
+            {
+                return BadRequest("Invalid file name.");
+            }
+
+            var folder = FileUploadSecurityHelper.GetPrivateUploadDirectory();
+            var fullPath = Path.GetFullPath(Path.Combine(folder, safeName));
+            if (!fullPath.StartsWith(Path.GetFullPath(folder), System.StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(fullPath))
+            {
+                return NotFound("File not found.");
+            }
+
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            Response.Headers["Cache-Control"] = "private, max-age=3600";
+            return PhysicalFile(fullPath, FileUploadSecurityHelper.GetContentType(safeName));
         }
     }
 }

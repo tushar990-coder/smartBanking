@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -8,6 +10,7 @@ using System.Text;
 using Bhisi.Api.Data;
 using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
+using Bhisi.Api.Services;
 
 namespace Bhisi.Api.Controllers
 {
@@ -18,11 +21,19 @@ namespace Bhisi.Api.Controllers
     {
         private readonly AppDbContext _context;
         private readonly IConfiguration _configuration;
+        private readonly IJwtTokenService _tokenService;
+        private readonly IWebHostEnvironment? _env;
 
-        public AuthController(AppDbContext context, IConfiguration configuration)
+        public AuthController(
+            AppDbContext context,
+            IConfiguration configuration,
+            IJwtTokenService? tokenService = null,
+            IWebHostEnvironment? env = null)
         {
             _context = context;
             _configuration = configuration;
+            _tokenService = tokenService ?? new JwtTokenService(configuration);
+            _env = env;
         }
 
         [AllowAnonymous]
@@ -36,8 +47,8 @@ namespace Bhisi.Api.Controllers
                     .Include(u => u.DefaultBranch)
                     .FirstOrDefaultAsync(u => u.Username == request.Username);
 
-                // Auto-create initial admin if database has no admin account yet
-                if (user == null && request.Username == "admin" && request.Password == "Shri@2026")
+                // Auto-create initial admin ONLY in Development when database has no admin account yet
+                if (user == null && (_env?.IsDevelopment() ?? false) && request.Username == "admin" && request.Password == "Shri@2026")
                 {
                     var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Admin")
                                     ?? new Role { RoleName = "Admin", Description = "System Administrator" };
@@ -75,19 +86,50 @@ namespace Bhisi.Api.Controllers
 
                     if (agent != null)
                     {
-                        bool isAgentPasswordValid = true;
+                        if (agent.IsLocked)
+                        {
+                            return Unauthorized("आपले एजंट खाते अनेक चुकीच्या प्रयत्नांमुळे लॉक झाले आहे. कृपया शाखेशी संपर्क साधा.");
+                        }
+
+                        bool isAgentPasswordValid = false;
                         if (!string.IsNullOrEmpty(agent.PasswordHash))
                         {
-                            isAgentPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, agent.PasswordHash);
+                            string agentHash = agent.PasswordHash;
+                            if (agentHash.StartsWith("$2y$")) agentHash = "$2a$" + agentHash.Substring(4);
+                            try { isAgentPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, agentHash); }
+                            catch { isAgentPasswordValid = false; }
                         }
                         else if (!string.IsNullOrEmpty(agent.Pin))
                         {
-                            isAgentPasswordValid = request.Password == agent.Pin;
+                            if (agent.Pin.StartsWith("$2a$") || agent.Pin.StartsWith("$2b$") || agent.Pin.StartsWith("$2y$"))
+                            {
+                                string pinHash = agent.Pin.StartsWith("$2y$") ? "$2a$" + agent.Pin.Substring(4) : agent.Pin;
+                                try { isAgentPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, pinHash); }
+                                catch { isAgentPasswordValid = false; }
+                            }
+                            else
+                            {
+                                isAgentPasswordValid = request.Password == agent.Pin;
+                                if (isAgentPasswordValid)
+                                {
+                                    // Auto-upgrade legacy plaintext PIN to BCrypt hash
+                                    agent.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+                                    agent.Pin = null;
+                                }
+                            }
                         }
 
                         if (!isAgentPasswordValid)
                         {
-                            return Unauthorized("Invalid agent mobile number or password.");
+                            agent.FailedLoginAttempts++;
+                            if (agent.FailedLoginAttempts >= 5)
+                            {
+                                agent.IsLocked = true;
+                            }
+                            await _context.SaveChangesAsync();
+                            return Unauthorized(agent.IsLocked
+                                ? "अनेक चुकीच्या प्रयत्नांमुळे एजंट खाते लॉक झाले आहे. कृपया शाखेशी संपर्क साधा."
+                                : "Invalid agent mobile number or password.");
                         }
 
                         if (!agent.BranchID.HasValue || agent.BranchID.Value <= 0)
@@ -117,29 +159,11 @@ namespace Bhisi.Api.Controllers
                             ? (agentActiveDateRecord.IsDayClosed ? agentActiveDateRecord.BusinessDate.AddDays(1) : agentActiveDateRecord.BusinessDate)
                             : DateTime.Today;
 
-                        var tokenHandlerAgent = new JwtSecurityTokenHandler();
-                        var keyStrAgent = _configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
-                        var keyAgent = Encoding.ASCII.GetBytes(keyStrAgent);
-                        var tokenDescriptorAgent = new SecurityTokenDescriptor
-                        {
-                            Subject = new ClaimsIdentity(new[]
-                            {
-                                new Claim(ClaimTypes.NameIdentifier, agent.PigmyAgentID.ToString()),
-                                new Claim(ClaimTypes.Name, agent.AgentName),
-                                new Claim(ClaimTypes.Role, "AGENT"),
-                                new Claim("agentId", agent.PigmyAgentID.ToString()),
-                                new Claim("AgentId", agent.PigmyAgentID.ToString()),
-                                new Claim("MobileNo", agent.Customer?.MobileNo ?? string.Empty),
-                                new Claim("BranchID", agentBranch.BranchID.ToString()),
-                                new Claim("DefaultBranchID", agentBranch.BranchID.ToString()),
-                                new Claim("FinancialYearID", (agentFy?.FinancialYearID ?? 1).ToString()),
-                                new Claim("BusinessDate", agentBusinessDate.ToString("yyyy-MM-dd"))
-                            }),
-                            Expires = DateTime.UtcNow.AddDays(7),
-                            SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(keyAgent), SecurityAlgorithms.HmacSha256Signature)
-                        };
-                        var tokenObj = tokenHandlerAgent.CreateToken(tokenDescriptorAgent);
-                        var jwtAgent = tokenHandlerAgent.WriteToken(tokenObj);
+                        var jwtAgent = _tokenService.CreateAgentToken(agent, agentBranch.BranchID, agentFy?.FinancialYearID ?? 1, agentBusinessDate);
+                        agent.FailedLoginAttempts = 0;
+                        agent.IsLocked = false;
+                        agent.ActiveSessionToken = jwtAgent;
+                        await _context.SaveChangesAsync();
 
                         return Ok(new LoginResponseDto
                         {
@@ -182,8 +206,8 @@ namespace Bhisi.Api.Controllers
                     isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, hashToVerify);
                 }
 
-                // Master Admin emergency fallback / migration
-                if (!isPasswordValid && string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase) && request.Password == "Shri@2026")
+                // Master Admin emergency fallback ONLY in Development
+                if (!isPasswordValid && (_env?.IsDevelopment() ?? false) && string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase) && request.Password == "Shri@2026")
                 {
                     user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
                     isPasswordValid = true;
@@ -347,26 +371,7 @@ namespace Bhisi.Api.Controllers
             }
 
             // Create JWT Token
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var keyStr = _configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
-            var key = Encoding.ASCII.GetBytes(keyStr);
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(new[]
-                {
-                    new Claim(ClaimTypes.NameIdentifier, user.UserID.ToString()),
-                    new Claim(ClaimTypes.Name, user.Username),
-                    new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "User"),
-                    new Claim("BranchID", request.BranchID.ToString()),
-                    new Claim("DefaultBranchID", (user.DefaultBranchID ?? request.BranchID).ToString()),
-                    new Claim("FinancialYearID", request.FinancialYearID.ToString()),
-                    new Claim("BusinessDate", businessDate.ToString("yyyy-MM-dd"))
-                }),
-                Expires = DateTime.UtcNow.AddDays(7),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-            };
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var jwt = tokenHandler.WriteToken(token);
+            var jwt = _tokenService.CreateStaffToken(user, request.BranchID, request.FinancialYearID, businessDate);
 
             user.ActiveSessionToken = jwt;
             await _context.SaveChangesAsync();
@@ -514,7 +519,7 @@ namespace Bhisi.Api.Controllers
                     {
                         isCurrentPasswordValid = BCrypt.Net.BCrypt.Verify(request.CurrentPassword, hashToVerify);
                     }
-                    else if (user.Username == "admin" && request.CurrentPassword == "Shri@2026")
+                    else if ((_env?.IsDevelopment() ?? false) && user.Username == "admin" && request.CurrentPassword == "Shri@2026")
                     {
                         isCurrentPasswordValid = true;
                     }
@@ -647,26 +652,7 @@ namespace Bhisi.Api.Controllers
                     businessDate = activeFy?.StartDate ?? DateTime.Today;
                 }
 
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var keyStr = _configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
-                var key = Encoding.ASCII.GetBytes(keyStr);
-                var tokenDescriptor = new SecurityTokenDescriptor
-                {
-                    Subject = new ClaimsIdentity(new[]
-                    {
-                        new Claim(ClaimTypes.NameIdentifier, user.UserID.ToString()),
-                        new Claim(ClaimTypes.Name, user.Username),
-                        new Claim(ClaimTypes.Role, userRole),
-                        new Claim("BranchID", targetBranch.BranchID.ToString()),
-                        new Claim("DefaultBranchID", (user.DefaultBranchID ?? targetBranch.BranchID).ToString()),
-                        new Claim("FinancialYearID", (activeFy?.FinancialYearID ?? 1).ToString()),
-                        new Claim("BusinessDate", businessDate.ToString("yyyy-MM-dd"))
-                    }),
-                    Expires = DateTime.UtcNow.AddDays(7),
-                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-                };
-                var token = tokenHandler.CreateToken(tokenDescriptor);
-                var jwt = tokenHandler.WriteToken(token);
+                var jwt = _tokenService.CreateStaffToken(user, targetBranch.BranchID, activeFy?.FinancialYearID ?? 1, businessDate);
 
                 user.ActiveSessionToken = jwt;
 

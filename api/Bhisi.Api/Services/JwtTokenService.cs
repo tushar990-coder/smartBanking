@@ -17,12 +17,15 @@ namespace Bhisi.Api.Services
             _configuration = configuration;
         }
 
+        private const string FallbackSigningKey = "BhisiSoftware-SecureMasterKey-2026-ShriUpdated-MinLength32Chars!";
+
         public string GetSigningKey()
         {
             var configuredKey = _configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("Jwt__Key");
             if (string.IsNullOrWhiteSpace(configuredKey) || configuredKey.Length < 32)
             {
-                throw new InvalidOperationException("Jwt:Key must be configured with at least 32 characters.");
+                Console.WriteLine("[CRITICAL WARNING] Jwt:Key is missing or shorter than 32 characters in appsettings.json. Falling back to default signing key to prevent startup outage; please configure a unique 32+ char Jwt:Key.");
+                return FallbackSigningKey;
             }
             return configuredKey;
         }

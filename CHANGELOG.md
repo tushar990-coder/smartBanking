@@ -15,7 +15,13 @@
 ### 🔧 3. FD क्लोजर / मुदतपूर्व बंद व्हाउचर डिलीट रोलबॅकनंतर री-एन्ट्री डेडलॉक निवारण
 - **`FdAccountsController.cs`, `VoucherRollbackAndDeleteService.cs`, `FdRenewalRollbackHelper.cs`, `RdClosureSettlementHelper.cs`, `FdWithdrawalMaturity.tsx` व `FdClosureRollbackReentryTests.cs`:**
   - `PrematureClose` मध्ये `Active` व `Matured` दोन्ही स्थिती स्वीकारून `effectiveClosureDate < MaturityDate` तारीख रक्षक कायम ठेवला (आधीच `"Matured"` अडकलेली खाती तात्काळ अनब्लॉक).
-  - व्हाउचर डिलीट रोलबॅक व `ReopenFdAccount` मध्ये सर्व्हरच्या `DateTime.Today` ऐवजी शाखेची सक्रिय CBS व्यवसाय तारीख वापरली, क्लोजर व्हाउचरमधील सहचर `"Accrual"` `FdTransaction` स्वच्छ काढले व UI स्थिती बॅज CBS व्यवसाय तारखेशी संरेखित केला (**१३०/१३० xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+  - व्हाउचर डिलीट रोलबॅक व `ReopenFdAccount` मध्ये सर्व्हरच्या `DateTime.Today` ऐवजी शाखेची सक्रिय CBS व्यवसाय तारीख वापरली, क्लोजर व्हाउचरमधील सहचर `"Accrual"` `FdTransaction` स्वच्छ काढले व UI स्थिती बॅज CBS व्यवसाय तारखेशी संरेखित केला.
+
+### 🛡️ 4. पिग्मी अ‍ॅप (Phase 1) सुरक्षा, मल्टी-प्रॉडक्ट भरणा व ९ त्रुटी निवारण
+- **`AgentDayBookController.cs`, `VoucherRollbackAndDeleteService.cs`, `PigmyAgentsController.cs`, `PigmyAgentDtos.cs`, `PigmyAgentMaster.tsx`, `UploadController.cs`, `LoanAccountsController.cs`, `JwtTokenService.cs`, `DashboardController.cs`, `PigmyMobileApiController.cs`, `Program.cs`, `tools/master_vps_update_schema.sql` व `Phase1AgentSecurityAndAccountingTests.cs`:**
+  - एजंट मल्टी-प्रॉडक्ट भरणा व्हाउचर (`PV-...-AGT-...`) व्हाउचर पासिंग/मास्टरमधून डिलीट केल्यास ग्राहकांचे मोबाईल कर्ज/RD/बचत संकलन डिलीट न होता फक्त अनलिंक (`RemittanceDepositId = null; VoucherID = null`) होण्याचे संरक्षण जोडले.
+  - `PigmyAgentUpsertDto` द्वारे एजंट पासवर्ड अचूक BCrypt हॅश सेव्ह, `Cashier/Clerk/Operator` साठी `GET /api/PigmyAgents` खुला, `PigmyAgentMaster.tsx` मध्ये शाखा नाव व एक-क्लिक लॉक अनलॉक बटण.
+  - सुरक्षित ३२-अंकी GUID + `nosniff` सह KYC इमेज प्रदर्शन, `PUT /api/LoanAccounts/{id}` वरील `RowVersion` कॉन्करन्सी क्रॅश निवारण, VPS `Jwt:Key` सेफ फॉलबॅक, `master_vps_update_schema.sql` व `Program.cs` मध्ये सर्व Phase 1 कॉलम्स व ३ `SyncReferenceId` युनिक इंडेक्सेस सिंक, `GetMobileAdminSummary` N+1 क्वेरी निवारण आणि `CollectRdInstallment` शेड्यूल सिंक (**१४१/१४१ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
 
 ## 📅 [2026-11-19] - आवृत्ती v2.6.32 (Allow FD Renewal on Overdue Loan with Automatic Lien Carry-Forward & Strict Break Guard)
 

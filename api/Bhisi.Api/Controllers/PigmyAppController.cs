@@ -1,25 +1,62 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
+using Bhisi.Api.Services;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Microsoft.AspNetCore.Authorization.Authorize]
+    [Authorize]
     public class PigmyAppController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IJwtTokenService? _tokenService;
+        private readonly IBusinessDateGuardService _businessDateGuard;
+        private readonly IAgentLockService _lockService;
 
-        public PigmyAppController(AppDbContext context)
+        public PigmyAppController(
+            AppDbContext context,
+            IJwtTokenService? tokenService = null,
+            IBusinessDateGuardService? businessDateGuard = null,
+            IAgentLockService? lockService = null)
         {
             _context = context;
+            _tokenService = tokenService;
+            _businessDateGuard = businessDateGuard ?? new BusinessDateGuardService(context);
+            _lockService = lockService ?? new AgentLockService(context);
+        }
+
+        private bool IsAgentRole()
+        {
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? string.Empty;
+            return string.Equals(roleClaim, "AGENT", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private int ResolveAuthorizedAgentId(int? requestedAgentId = null, int headerAgentId = 0)
+        {
+            var jwtClaim = User.Claims.FirstOrDefault(c => c.Type == "agentId" || c.Type == "AgentId")?.Value
+                ?? (IsAgentRole() ? User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value : null);
+            int tokenAgentId = int.TryParse(jwtClaim, out int tid) ? tid : 0;
+
+            if (IsAgentRole())
+            {
+                return tokenAgentId;
+            }
+
+            if (requestedAgentId.HasValue && requestedAgentId.Value > 0) return requestedAgentId.Value;
+            if (tokenAgentId > 0) return tokenAgentId;
+            if (headerAgentId > 0) return headerAgentId;
+            return 0;
         }
 
         public class LoginRequest
@@ -32,28 +69,57 @@ namespace Bhisi.Api.Controllers
         }
 
         // POST: api/PigmyApp/Login
-        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+        [AllowAnonymous]
         [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
             var agent = await _context.PigmyAgents
                 .Include(a => a.Customer)
                 .Include(a => a.Branch)
-                .FirstOrDefaultAsync(a => a.Username == request.Username && a.Status == "Active");
+                .FirstOrDefaultAsync(a => (a.Username == request.Username || (a.Customer != null && a.Customer.MobileNo == request.Username)) && a.Status == "Active");
             
             if (agent == null)
             {
                 return Unauthorized(new { message = "अवैध युझरनेम किंवा एजंट सक्रिय नाही." });
             }
 
-            // Verify Password using BCrypt
-            if (string.IsNullOrEmpty(agent.PasswordHash) || !BCrypt.Net.BCrypt.Verify(request.Password, agent.PasswordHash))
+            if (agent.IsLocked)
             {
+                return Unauthorized(new { message = "आपले एजंट खाते अनेक चुकीच्या प्रयत्नांमुळे लॉक झाले आहे. कृपया शाखेशी संपर्क साधा." });
+            }
+
+            bool isPasswordValid = false;
+            if (!string.IsNullOrEmpty(agent.PasswordHash))
+            {
+                string hash = agent.PasswordHash.StartsWith("$2y$") ? "$2a$" + agent.PasswordHash.Substring(4) : agent.PasswordHash;
+                try { isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, hash); }
+                catch { isPasswordValid = false; }
+            }
+
+            if (!isPasswordValid)
+            {
+                agent.FailedLoginAttempts++;
+                if (agent.FailedLoginAttempts >= 5) agent.IsLocked = true;
+                await _context.SaveChangesAsync();
                 return Unauthorized(new { message = "चुकीचा पासवर्ड." });
             }
 
-            // In a real production scenario, generate and return a JWT here.
-            // For now, return a secure payload with AgentId to use as token header.
+            if (_tokenService == null)
+            {
+                return StatusCode(500, new { message = "JWT token service is not configured." });
+            }
+
+            int branchId = agent.BranchID ?? 1;
+            var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive)
+                ?? await _context.FinancialYears.FirstOrDefaultAsync();
+            var (businessDate, _) = await _businessDateGuard.GetBranchBusinessDateAsync(branchId);
+
+            string jwt = _tokenService.CreateAgentToken(agent, branchId, fy?.FinancialYearID ?? 1, businessDate);
+            agent.FailedLoginAttempts = 0;
+            agent.IsLocked = false;
+            agent.ActiveSessionToken = jwt;
+            await _context.SaveChangesAsync();
+
             return Ok(new
             {
                 agentId = agent.PigmyAgentID,
@@ -62,7 +128,8 @@ namespace Bhisi.Api.Controllers
                 mobileNo = agent.Customer?.MobileNo ?? string.Empty,
                 branchId = agent.BranchID,
                 branchName = agent.Branch?.BranchName ?? "",
-                token = $"temp-token-agent-{agent.PigmyAgentID}"
+                businessDate = businessDate.ToString("yyyy-MM-dd"),
+                token = jwt
             });
         }
 
@@ -78,9 +145,10 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/PigmyApp/ChangePassword
         [HttpPost("ChangePassword")]
-        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, [FromHeader(Name = "X-Agent-Id")] int agentId)
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, [FromHeader(Name = "X-Agent-Id")] int headerAgentId)
         {
-            if (agentId <= 0) return Unauthorized(new { message = "वैध X-Agent-Id हेडर पुरवा." });
+            int agentId = ResolveAuthorizedAgentId(null, headerAgentId);
+            if (agentId <= 0) return Unauthorized(new { message = "वैध Agent JWT टोकन आवश्यक आहे." });
 
             var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == agentId);
             if (agent == null) return NotFound(new { message = "एजंट सापडला नाही." });
@@ -111,11 +179,12 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        // GET: api/PigmyApp/Dashboard (UNTOUCHED)
+        // GET: api/PigmyApp/Dashboard
         [HttpGet("Dashboard")]
-        public async Task<IActionResult> GetDashboard([FromHeader(Name = "X-Agent-Id")] int agentId)
+        public async Task<IActionResult> GetDashboard([FromHeader(Name = "X-Agent-Id")] int headerAgentId)
         {
-            if (agentId <= 0) return Unauthorized("Missing X-Agent-Id header");
+            int agentId = ResolveAuthorizedAgentId(null, headerAgentId);
+            if (agentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
             var today = DateTime.Today;
 
@@ -148,11 +217,12 @@ namespace Bhisi.Api.Controllers
             });
         }
 
-        // GET: api/PigmyApp/Accounts (UNTOUCHED)
+        // GET: api/PigmyApp/Accounts
         [HttpGet("Accounts")]
-        public async Task<IActionResult> GetAssignedAccounts([FromHeader(Name = "X-Agent-Id")] int agentId)
+        public async Task<IActionResult> GetAssignedAccounts([FromHeader(Name = "X-Agent-Id")] int headerAgentId)
         {
-            if (agentId <= 0) return Unauthorized("Missing X-Agent-Id header");
+            int agentId = ResolveAuthorizedAgentId(null, headerAgentId);
+            if (agentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
             var accounts = await _context.PigmyAccounts
                 .Include(a => a.Customer)
@@ -191,17 +261,24 @@ namespace Bhisi.Api.Controllers
 
         // 1. POST: api/PigmyApp/CreateCustomer
         [HttpPost("CreateCustomer")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager,Clerk")]
         public async Task<IActionResult> CreateCustomer(
             [FromBody] CreateCustomerDto dto,
             [FromHeader(Name = "X-Agent-Id")] int headerAgentId)
         {
-            int agentId = dto.AgentId.HasValue && dto.AgentId.Value > 0 ? dto.AgentId.Value : headerAgentId;
-            if (agentId <= 0) return Unauthorized("वैध X-Agent-Id हेडर किंवा AgentId पुरवा.");
+            int agentId = ResolveAuthorizedAgentId(dto.AgentId, headerAgentId);
+            if (agentId <= 0) return Unauthorized("वैध AgentId पुरवा.");
 
             var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == agentId);
             if (agent == null) return BadRequest("नियुक्त एजंट सापडला नाही.");
 
-            int branchId = dto.BranchID > 0 ? dto.BranchID : (agent.BranchID ?? 1);
+            int branchId = User.ResolveBranchId(dto.BranchID > 0 ? dto.BranchID : agent.BranchID);
+
+            string? aadhaar = string.IsNullOrWhiteSpace(dto.AadhaarNo) ? null : dto.AadhaarNo.Trim();
+            if (!string.IsNullOrEmpty(aadhaar) && !KycValidationHelper.IsValidAadhaar(aadhaar, out var aadhaarError))
+            {
+                return BadRequest(aadhaarError ?? "आधार क्रमांक वैध नाही.");
+            }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -214,7 +291,7 @@ namespace Bhisi.Api.Controllers
                     MiddleName = dto.MiddleName?.Trim(),
                     LastName = dto.LastName.Trim(),
                     MobileNo = dto.MobileNo.Trim(),
-                    AadhaarNo = !string.IsNullOrWhiteSpace(dto.AadhaarNo) ? dto.AadhaarNo.Trim() : "000000000000",
+                    AadhaarNo = aadhaar,
                     Address = dto.Address?.Trim(),
                     Gender = dto.Gender ?? "Male",
                     CreatedBy = agentId,
@@ -287,8 +364,8 @@ namespace Bhisi.Api.Controllers
         [HttpGet("CollectionStatus")]
         public async Task<IActionResult> GetCollectionStatus([FromHeader(Name = "X-Agent-Id")] int headerAgentId, [FromQuery] int? agentId)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : headerAgentId;
-            if (targetAgentId <= 0) return Unauthorized("वैध X-Agent-Id हेडर किंवा agentId क्वेरी पुरवा.");
+            int targetAgentId = ResolveAuthorizedAgentId(agentId, headerAgentId);
+            if (targetAgentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
             var today = DateTime.Today;
             var day1 = today.AddDays(-1); // Yesterday
@@ -441,46 +518,23 @@ namespace Bhisi.Api.Controllers
             [FromBody] BulkAppCollectionRequest request,
             [FromHeader(Name = "X-Agent-Id")] int headerAgentId)
         {
-            int agentId = request.AgentId.HasValue && request.AgentId.Value > 0 ? request.AgentId.Value : headerAgentId;
-            if (agentId <= 0) return Unauthorized("वैध X-Agent-Id हेडर किंवा AgentId पुरवा.");
+            int agentId = ResolveAuthorizedAgentId(request.AgentId, headerAgentId);
+            if (agentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
             if (request.Items == null || request.Items.Count == 0)
             {
                 return BadRequest("जमा करण्यासाठी कोणतीही खाती पाठवलेली नाहीत.");
             }
 
-            // Step 1: Validate 2-Day Remittance Lock
-            var today = DateTime.Today;
-            var day1 = today.AddDays(-1);
-            var day2 = today.AddDays(-2);
-
-            int pastPendingDaysCount = 0;
-            for (int i = 2; i >= 1; i--)
-            {
-                var pastDate = today.AddDays(-i);
-                var nextPastDate = pastDate.AddDays(1);
-
-                var dayCollected = await _context.PigmyCollections
-                    .Where(c => c.AgentId == agentId && c.CollectionDate >= pastDate && c.CollectionDate < nextPastDate)
-                    .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
-
-                var dayRemitted = await _context.PigmyAgentCashDeposits
-                    .Where(d => d.AgentId == agentId && d.DepositDate >= pastDate && d.DepositDate < nextPastDate)
-                    .SumAsync(d => (decimal?)d.Amount) ?? 0m;
-
-                if (dayCollected > 0 && (dayCollected - dayRemitted) > 0)
-                {
-                    pastPendingDaysCount++;
-                }
-            }
-
-            if (pastPendingDaysCount >= 2)
+            // Step 1: Validate unified AgentLockService (Cash limit + Multi-Product IST MaxLockDays)
+            var lockStatus = await _lockService.GetLockStatusAsync(agentId);
+            if (lockStatus.IsLocked)
             {
                 return StatusCode(403, new
                 {
                     collect_Pigmi = 0,
                     is_pending = 1,
-                    message = "मागील २ दिवसांचे पिग्मी संकलन शाखेत जमा केलेले नाही. कृपया आधी शाखेत कॅश जमा करा."
+                    message = lockStatus.Message
                 });
             }
 
@@ -500,7 +554,7 @@ namespace Bhisi.Api.Controllers
 
                     if (targetId > 0)
                     {
-                        account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == targetId);
+                        account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == targetId && a.PigmyAgentID == agentId);
                     }
                     if (account == null && !string.IsNullOrWhiteSpace(item.OldAccountNo))
                     {
@@ -511,16 +565,17 @@ namespace Bhisi.Api.Controllers
                     if (account == null && !string.IsNullOrWhiteSpace(item.AccountNo))
                     {
                         string cleanAcc = item.AccountNo.Trim();
-                        account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.AccountNo == cleanAcc);
+                        account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.AccountNo == cleanAcc && a.PigmyAgentID == agentId);
                     }
 
                     if (account == null || account.Status != "Active") continue;
 
-                    DateTime collDate = item.CollectionDate ?? DateTime.Now;
+                    var dateCheck = await _businessDateGuard.ValidateCollectionDateAsync(account.BranchID, item.CollectionDate, isOfflineSync: true);
+                    DateTime collDate = dateCheck.EffectiveCollectionDate;
                     
                     string receiptNo = !string.IsNullOrWhiteSpace(item.ReceiptNo) 
                         ? item.ReceiptNo 
-                        : $"PG-AGT-{agentId}-{collDate:yyyyMMddHHmmss}";
+                        : $"PG-AGT-{agentId}-{collDate:yyyyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..4].ToUpper()}";
 
                     // Check if collection with this ReceiptNo already exists (Idempotency Check)
                     var existingReceipt = await _context.PigmyCollections.FirstOrDefaultAsync(c =>
@@ -536,7 +591,7 @@ namespace Bhisi.Api.Controllers
                             oldAccountNo = account.OldAccountNo ?? account.LegacyAccountNumber ?? account.PreviousAccountNo ?? "",
                             receiptNo = receiptNo,
                             amount = existingReceipt.CollectionAmount,
-                            newBalance = account.TotalDepositedAmount, // We might not have exact snapshot, but it's safe to return current
+                            newBalance = account.TotalDepositedAmount,
                             duplicate_ignored = true
                         });
                         continue;
@@ -547,14 +602,17 @@ namespace Bhisi.Api.Controllers
 
                     var newColl = new PigmyCollection
                     {
-                        PigmyAccountId = item.PigmyAccountId,
+                        PigmyAccountId = account.PigmyAccountID,
                         AgentId = agentId,
                         CollectionDate = collDate,
                         OpeningBalance = prevOpening,
                         CollectionAmount = addedAmount,
                         ClosingBalance = prevOpening + addedAmount,
                         ReceiptNo = receiptNo,
+                        PaymentMode = string.IsNullOrWhiteSpace(item.PaymentMode) ? (string.IsNullOrWhiteSpace(request.PaymentMode) ? "CASH" : request.PaymentMode.Trim().ToUpperInvariant()) : item.PaymentMode.Trim().ToUpperInvariant(),
                         CollectionSource = "APP",
+                        TransactionId = string.IsNullOrWhiteSpace(item.TransactionId) ? Guid.NewGuid().ToString("N") : item.TransactionId.Trim(),
+                        SyncReferenceId = string.IsNullOrWhiteSpace(item.TransactionId) ? receiptNo : item.TransactionId.Trim(),
                         CreatedBy = agentId,
                         CreatedOn = DateTime.UtcNow
                     };
@@ -632,6 +690,14 @@ namespace Bhisi.Api.Controllers
                 .FirstOrDefaultAsync(a => a.PigmyAccountID == pigmyAccountId);
 
             if (account == null) return NotFound("पिग्मी खाते सापडले नाही.");
+            if (IsAgentRole() && account.PigmyAgentID != ResolveAuthorizedAgentId())
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर एजंटच्या खात्याचे पासबुक पाहण्याची परवानगी नाही." });
+            }
+            if (!IsAgentRole() && !User.CanAccessBranch(account.BranchID))
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर शाखेतील खात्याचे पासबुक पाहण्याची परवानगी नाही." });
+            }
 
             DateTime fDate = fromDate?.Date ?? new DateTime(DateTime.Today.Year, 1, 1);
             DateTime tDate = toDate?.Date ?? DateTime.Today;
@@ -704,8 +770,8 @@ namespace Bhisi.Api.Controllers
             [FromQuery] DateTime? fromDate,
             [FromQuery] DateTime? toDate)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : headerAgentId;
-            if (targetAgentId <= 0) return Unauthorized("वैध X-Agent-Id हेडर किंवा agentId पुरवा.");
+            int targetAgentId = ResolveAuthorizedAgentId(agentId, headerAgentId);
+            if (targetAgentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
             DateTime fDate = fromDate?.Date ?? DateTime.Today;
             DateTime tDate = toDate?.Date ?? DateTime.Today;
@@ -753,8 +819,8 @@ namespace Bhisi.Api.Controllers
             [FromQuery] DateTime? fromDate,
             [FromQuery] DateTime? toDate)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : headerAgentId;
-            if (targetAgentId <= 0) return Unauthorized("वैध X-Agent-Id हेडर किंवा agentId पुरवा.");
+            int targetAgentId = ResolveAuthorizedAgentId(agentId, headerAgentId);
+            if (targetAgentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
             DateTime fDate = fromDate?.Date ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
             DateTime tDate = toDate?.Date ?? DateTime.Today;

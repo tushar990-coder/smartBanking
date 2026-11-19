@@ -54,7 +54,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPost("generate")]
-        [AllowAnonymous]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<ActionResult<DemandNotice>> GenerateDemand([FromBody] GenerateDemandDto request)
         {
             // Check if demand already exists for this employer, month and year

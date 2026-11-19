@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
@@ -7,7 +9,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Microsoft.AspNetCore.Authorization.Authorize]
+    [Authorize]
     public class AgentDayBookController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -57,8 +59,21 @@ namespace Bhisi.Api.Controllers
             public decimal RangeAlreadyRemitted { get; set; }  // Total already remitted for this range
             public bool IsFullyRemitted { get; set; }
             public decimal TotalPendingCash { get; set; }
+            public decimal PigmyRangeAmount { get; set; }
+            public decimal LoanRangeAmount { get; set; }
+            public decimal SavingRangeAmount { get; set; }
+            public decimal RdRangeAmount { get; set; }
             public List<DayBreakupDto> DayBreakup { get; set; } = new List<DayBreakupDto>();
             public List<RemittanceItemDto> RecentRemittances { get; set; } = new List<RemittanceItemDto>();
+        }
+
+        private bool IsAgentOnlyCaller(out int tokenAgentId)
+        {
+            var role = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? string.Empty;
+            var claimVal = User.Claims.FirstOrDefault(c => c.Type == "agentId" || c.Type == "AgentId")?.Value
+                ?? User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+            tokenAgentId = int.TryParse(claimVal, out int id) ? id : 0;
+            return string.Equals(role, "AGENT", StringComparison.OrdinalIgnoreCase);
         }
 
         private static (DateTime? fromDate, DateTime? toDate) GetDepositCollectionRange(PigmyAgentCashDeposit d)
@@ -127,17 +142,46 @@ namespace Bhisi.Api.Controllers
 
         private async Task<List<DayAllocationItem>> ComputeAgentDayAllocations(int agentId)
         {
-            var dailyCollections = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionAmount > 0)
+            var pigmyDaily = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionAmount > 0 &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
                 .GroupBy(c => c.CollectionDate.Date)
+                .Select(g => new { Date = g.Key, Count = g.Count(), Amount = g.Sum(x => x.CollectionAmount) })
+                .ToListAsync();
+
+            var loanDaily = await _context.LoanCollections
+                .Where(c => c.AgentID == agentId && c.CollectionSource == "AGENT_MOBILE" && c.TotalAmountReceived > 0 &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .GroupBy(c => c.CollectionDate.Date)
+                .Select(g => new { Date = g.Key, Count = g.Count(), Amount = g.Sum(x => x.TotalAmountReceived) })
+                .ToListAsync();
+
+            var savingDaily = await _context.SavingTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" && t.Amount > 0 &&
+                            (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
+                .GroupBy(t => t.TransactionDate.Date)
+                .Select(g => new { Date = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
+                .ToListAsync();
+
+            var rdDaily = await _context.RdTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" && t.PrincipalAmount > 0)
+                .GroupBy(t => t.TransactionDate.Date)
+                .Select(g => new { Date = g.Key, Count = g.Count(), Amount = g.Sum(x => x.PrincipalAmount) })
+                .ToListAsync();
+
+            var dailyCollections = pigmyDaily
+                .Concat(loanDaily)
+                .Concat(savingDaily)
+                .Concat(rdDaily)
+                .GroupBy(x => x.Date)
                 .Select(g => new
                 {
                     Date = g.Key,
-                    Count = g.Count(),
-                    Amount = g.Sum(x => x.CollectionAmount)
+                    Count = g.Sum(x => x.Count),
+                    Amount = g.Sum(x => x.Amount)
                 })
                 .OrderBy(x => x.Date)
-                .ToListAsync();
+                .ToList();
 
             var allocations = dailyCollections.Select(d => new DayAllocationItem
             {
@@ -212,6 +256,11 @@ namespace Bhisi.Api.Controllers
             [FromQuery] DateTime? toDate, 
             [FromQuery] DateTime? depositDate)
         {
+            if (IsAgentOnlyCaller(out int tokenAgentId) && tokenAgentId != agentId)
+            {
+                return StatusCode(403, "आपण फक्त स्वतःचे डे-बुक पाहू शकता.");
+            }
+
             var agentExists = await _context.PigmyAgents.AnyAsync(a => a.PigmyAgentID == agentId);
             if (!agentExists) return NotFound("Agent not found.");
 
@@ -219,20 +268,48 @@ namespace Bhisi.Api.Controllers
             var effectiveFromDate = (fromDate ?? date ?? DateTime.Today).Date;
             var effectiveToDate = (toDate ?? date ?? DateTime.Today).Date;
 
-            // Total Historical Collections (Before deposit date)
-            var historicalCollections = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionDate.Date < effectiveDepositDate)
+            // Total Historical Cash Collections across all products (Before deposit date)
+            var historicalPigmy = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionDate.Date < effectiveDepositDate &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
                 .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+            var historicalLoan = await _context.LoanCollections
+                .Where(c => c.AgentID == agentId && c.CollectionSource == "AGENT_MOBILE" && c.CollectionDate.Date < effectiveDepositDate &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
+            var historicalSaving = await _context.SavingTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" &&
+                            t.TransactionDate.Date < effectiveDepositDate && (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            var historicalRd = await _context.RdTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" &&
+                            t.TransactionDate.Date < effectiveDepositDate)
+                .SumAsync(t => (decimal?)t.PrincipalAmount) ?? 0m;
+            var historicalCollections = historicalPigmy + historicalLoan + historicalSaving + historicalRd;
 
             // Total Historical Deposits (Before deposit date)
             var historicalDeposits = await _context.PigmyAgentCashDeposits
                 .Where(d => d.AgentId == agentId && d.DepositDate.Date < effectiveDepositDate)
                 .SumAsync(d => (decimal?)d.Amount) ?? 0m;
 
-            // Today's Collection on deposit date
-            var todaysCollection = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionDate.Date == effectiveDepositDate)
+            // Today's Cash Collection on deposit date across all products
+            var todaysPigmy = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionDate.Date == effectiveDepositDate &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
                 .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+            var todaysLoan = await _context.LoanCollections
+                .Where(c => c.AgentID == agentId && c.CollectionSource == "AGENT_MOBILE" && c.CollectionDate.Date == effectiveDepositDate &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
+            var todaysSaving = await _context.SavingTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" &&
+                            t.TransactionDate.Date == effectiveDepositDate && (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            var todaysRd = await _context.RdTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" &&
+                            t.TransactionDate.Date == effectiveDepositDate)
+                .SumAsync(t => (decimal?)t.PrincipalAmount) ?? 0m;
+            var todaysCollection = todaysPigmy + todaysLoan + todaysSaving + todaysRd;
 
             // Today's Cash Deposited on deposit date
             var todaysDeposit = await _context.PigmyAgentCashDeposits
@@ -241,6 +318,24 @@ namespace Bhisi.Api.Controllers
 
             var openingBalance = historicalCollections - historicalDeposits;
             var closingBalance = openingBalance + todaysCollection - todaysDeposit;
+
+            var pigmyRangeAmount = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionDate.Date >= effectiveFromDate && c.CollectionDate.Date <= effectiveToDate &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+            var loanRangeAmount = await _context.LoanCollections
+                .Where(c => c.AgentID == agentId && c.CollectionSource == "AGENT_MOBILE" && c.CollectionDate.Date >= effectiveFromDate && c.CollectionDate.Date <= effectiveToDate &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
+            var savingRangeAmount = await _context.SavingTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" &&
+                            t.TransactionDate.Date >= effectiveFromDate && t.TransactionDate.Date <= effectiveToDate &&
+                            (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            var rdRangeAmount = await _context.RdTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" &&
+                            t.TransactionDate.Date >= effectiveFromDate && t.TransactionDate.Date <= effectiveToDate)
+                .SumAsync(t => (decimal?)t.PrincipalAmount) ?? 0m;
 
             // Compute strict date-bound allocations across all agent collections
             var allAllocations = await ComputeAgentDayAllocations(agentId);
@@ -268,10 +363,24 @@ namespace Bhisi.Api.Controllers
 
             bool isFullyRemitted = (rangeTotalCollected > 0 && totalPendingRangeAmount == 0);
 
-            // Total Pending Cash up to deposit date across all time
-            var allCollectionsUpToDeposit = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionDate.Date <= effectiveDepositDate)
+            // Total Pending Cash up to deposit date across all time (all products)
+            var allPigmyUpToDeposit = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionDate.Date <= effectiveDepositDate &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
                 .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+            var allLoanUpToDeposit = await _context.LoanCollections
+                .Where(c => c.AgentID == agentId && c.CollectionSource == "AGENT_MOBILE" && c.CollectionDate.Date <= effectiveDepositDate &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
+            var allSavingUpToDeposit = await _context.SavingTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" &&
+                            t.TransactionDate.Date <= effectiveDepositDate && (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            var allRdUpToDeposit = await _context.RdTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" &&
+                            t.TransactionDate.Date <= effectiveDepositDate)
+                .SumAsync(t => (decimal?)t.PrincipalAmount) ?? 0m;
+            var allCollectionsUpToDeposit = allPigmyUpToDeposit + allLoanUpToDeposit + allSavingUpToDeposit + allRdUpToDeposit;
 
             var allDepositsUpToDeposit = await _context.PigmyAgentCashDeposits
                 .Where(d => d.AgentId == agentId && d.DepositDate.Date <= effectiveDepositDate)
@@ -326,6 +435,10 @@ namespace Bhisi.Api.Controllers
                 RangeAlreadyRemitted = rangeAlreadyRemitted,
                 IsFullyRemitted = isFullyRemitted,
                 TotalPendingCash = totalPendingCash,
+                PigmyRangeAmount = pigmyRangeAmount,
+                LoanRangeAmount = loanRangeAmount,
+                SavingRangeAmount = savingRangeAmount,
+                RdRangeAmount = rdRangeAmount,
                 DayBreakup = dayBreakup,
                 RecentRemittances = historyItems
             });
@@ -357,6 +470,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/AgentDayBook/DepositCash
         [HttpPost("DepositCash")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager,Cashier,Clerk")]
         public async Task<IActionResult> DepositCash([FromBody] CashDepositDto request)
         {
             if (request.Amount <= 0) return BadRequest("जमा रक्कम शून्यपेक्षा जास्त असणे आवश्यक आहे.");
@@ -390,10 +504,24 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Calculate current holding for validation
-            var historicalCollections = await _context.PigmyCollections
-                .Where(c => c.AgentId == request.AgentId && c.CollectionDate.Date <= request.DepositDate.Date)
+            // Calculate current holding for validation across ALL doorstep cash products (Pigmy + Loan + Saving + RD)
+            var historicalPigmyHold = await _context.PigmyCollections
+                .Where(c => c.AgentId == request.AgentId && c.CollectionDate.Date <= request.DepositDate.Date &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
                 .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+            var historicalLoanHold = await _context.LoanCollections
+                .Where(c => c.AgentID == request.AgentId && c.CollectionSource == "AGENT_MOBILE" && c.CollectionDate.Date <= request.DepositDate.Date &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
+            var historicalSavingHold = await _context.SavingTransactions
+                .Where(t => t.AgentID == request.AgentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" &&
+                            t.TransactionDate.Date <= request.DepositDate.Date && (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            var historicalRdHold = await _context.RdTransactions
+                .Where(t => t.AgentID == request.AgentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" &&
+                            t.TransactionDate.Date <= request.DepositDate.Date)
+                .SumAsync(t => (decimal?)t.PrincipalAmount) ?? 0m;
+            var historicalCollections = historicalPigmyHold + historicalLoanHold + historicalSavingHold + historicalRdHold;
 
             var historicalDeposits = await _context.PigmyAgentCashDeposits
                 .Where(d => d.AgentId == request.AgentId && d.DepositDate.Date <= request.DepositDate.Date)
@@ -474,17 +602,114 @@ namespace Bhisi.Api.Controllers
 
                 string combinedNarration = $"{dateRangeTag}{request.Narration}".Trim();
 
-                // Voucher Auto Generation Logic (Consolidated Day Voucher for Cash Remittance)
+                // Voucher Auto Generation Logic (Consolidated Multi-Product Day Voucher for Cash Remittance)
+                DateTime rangeFrom = (request.CollectionDateFrom ?? request.DepositDate).Date;
+                DateTime rangeTo = (request.CollectionDateTo ?? request.DepositDate).Date;
+
+                var unremittedLoans = await _context.LoanCollections
+                    .Include(l => l.LoanAccount)
+                        .ThenInclude(a => a!.LoanRate)
+                    .Where(l => l.AgentID == request.AgentId &&
+                                l.CollectionSource == "AGENT_MOBILE" &&
+                                l.RemittanceDepositId == null &&
+                                l.CollectionDate.Date >= rangeFrom &&
+                                l.CollectionDate.Date <= rangeTo &&
+                                (l.PaymentMode == null || l.PaymentMode == "" || l.PaymentMode.ToUpper() == "CASH"))
+                    .OrderBy(l => l.CollectionDate)
+                    .ThenBy(l => l.LoanCollectionID)
+                    .ToListAsync();
+
+                var unremittedSavings = await _context.SavingTransactions
+                    .Include(s => s.SavingAccount)
+                    .Where(s => s.AgentID == request.AgentId &&
+                                s.CollectionSource == "AGENT_MOBILE" &&
+                                s.TransactionType == "Deposit" &&
+                                s.RemittanceDepositId == null &&
+                                s.TransactionDate.Date >= rangeFrom &&
+                                s.TransactionDate.Date <= rangeTo &&
+                                (s.PaymentMode == null || s.PaymentMode == "" || s.PaymentMode.ToUpper() == "CASH"))
+                    .OrderBy(s => s.TransactionDate)
+                    .ThenBy(s => s.TransactionID)
+                    .ToListAsync();
+
+                var unremittedRds = await _context.RdTransactions
+                    .Include(r => r.RdAccount)
+                        .ThenInclude(a => a!.RdScheme)
+                    .Where(r => r.AgentID == request.AgentId &&
+                                r.CollectionSource == "AGENT_MOBILE" &&
+                                r.TransactionType == "Installment" &&
+                                r.RemittanceDepositId == null &&
+                                r.TransactionDate.Date >= rangeFrom &&
+                                r.TransactionDate.Date <= rangeTo)
+                    .OrderBy(r => r.TransactionDate)
+                    .ThenBy(r => r.RdTransactionID)
+                    .ToListAsync();
+
                 int branchCashId = isBankMode ? resolvedBankLedgerId : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "PIGMY");
                 var debitLedger = isBankMode
                     ? await _context.Ledgers.FindAsync(resolvedBankLedgerId)
                     : (await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand"));
                 
                 var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == request.BranchId && m.IsActive);
-                int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense")))?.LedgerID ?? 47;
-                var creditLedger = await _context.Ledgers.FindAsync(crLedgerId) ?? await _context.Ledgers.FirstAsync();
+                int pigmyCrLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense")))?.LedgerID ?? 47;
+                var pigmyCreditLedger = await _context.Ledgers.FindAsync(pigmyCrLedgerId) ?? await _context.Ledgers.FirstAsync();
                 
                 if (debitLedger == null) debitLedger = await _context.Ledgers.FirstAsync();
+
+                var creditTotalsByLedger = new Dictionary<int, decimal>();
+                void AddCredit(int ledgerId, decimal amt)
+                {
+                    if (amt <= 0) return;
+                    if (!creditTotalsByLedger.ContainsKey(ledgerId)) creditTotalsByLedger[ledgerId] = 0m;
+                    creditTotalsByLedger[ledgerId] += amt;
+                }
+
+                var settledLoans = new List<LoanCollection>();
+                var settledSavings = new List<SavingTransaction>();
+                var settledRds = new List<RdTransaction>();
+                decimal allocatedNonPigmy = 0m;
+
+                foreach (var lc in unremittedLoans)
+                {
+                    if (allocatedNonPigmy + lc.TotalAmountReceived > request.Amount) continue;
+                    int pLedger = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? pigmyCreditLedger.LedgerID;
+                    int iLedger = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? pLedger;
+                    int oLedger = lc.LoanAccount?.LoanRate?.OverdueInterestLedgerID ?? iLedger;
+                    AddCredit(pLedger, lc.PrincipalCollected);
+                    AddCredit(iLedger, lc.InterestCollected);
+                    AddCredit(oLedger, lc.PenaltyInterestCollected);
+                    decimal itemized = lc.PrincipalCollected + lc.InterestCollected + lc.PenaltyInterestCollected;
+                    if (lc.TotalAmountReceived > itemized)
+                    {
+                        AddCredit(pLedger, lc.TotalAmountReceived - itemized);
+                    }
+                    allocatedNonPigmy += lc.TotalAmountReceived;
+                    settledLoans.Add(lc);
+                }
+
+                foreach (var st in unremittedSavings)
+                {
+                    if (allocatedNonPigmy + st.Amount > request.Amount) continue;
+                    int sLedger = st.SavingAccount?.LedgerID ?? (await _context.SavingInterestSettings.Select(x => (int?)x.SavingLiabilityLedgerID).FirstOrDefaultAsync()) ?? pigmyCreditLedger.LedgerID;
+                    AddCredit(sLedger, st.Amount);
+                    allocatedNonPigmy += st.Amount;
+                    settledSavings.Add(st);
+                }
+
+                foreach (var rt in unremittedRds)
+                {
+                    if (allocatedNonPigmy + rt.PrincipalAmount > request.Amount) continue;
+                    int rLedger = rt.RdAccount?.RdScheme?.RdLiabilityLedgerID ?? pigmyCreditLedger.LedgerID;
+                    AddCredit(rLedger, rt.PrincipalAmount);
+                    allocatedNonPigmy += rt.PrincipalAmount;
+                    settledRds.Add(rt);
+                }
+
+                decimal pigmyOrRemainder = request.Amount - allocatedNonPigmy;
+                if (pigmyOrRemainder > 0)
+                {
+                    AddCredit(pigmyCreditLedger.LedgerID, pigmyOrRemainder);
+                }
 
                 var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == request.AgentId);
                 string agentName = agent?.AgentName ?? ("Agent-" + request.AgentId);
@@ -496,6 +721,15 @@ namespace Bhisi.Api.Controllers
                     uniqueVoucherNo = $"PV-{request.BranchId}-{request.DepositDate:yyyyMMdd}-AGT-{request.AgentId}-{nextSeq:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
                 }
 
+                var voucherDetailsList = new List<VoucherDetail>
+                {
+                    new VoucherDetail { LedgerID = debitLedger.LedgerID, DrCr = "Dr", Amount = request.Amount }
+                };
+                foreach (var kv in creditTotalsByLedger)
+                {
+                    voucherDetailsList.Add(new VoucherDetail { LedgerID = kv.Key, DrCr = "Cr", Amount = kv.Value });
+                }
+
                 var voucher = new Voucher
                 {
                     BranchID = request.BranchId,
@@ -504,14 +738,10 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Receipt",
                     Status = "Pending",
                     TotalAmount = request.Amount,
-                    Narration = $"पिग्मी एजंट संकलन भरणा (एजंट: {agentName}). पावती: {receiptNo} {combinedNarration}".Trim(),
+                    Narration = $"एजंट संकलन भरणा (एजंट: {agentName}). पावती: {receiptNo} {combinedNarration}".Trim(),
                     CreatedBy = 1,
                     CreatedOn = DateTime.Now,
-                    VoucherDetails = new List<VoucherDetail>
-                    {
-                        new VoucherDetail { LedgerID = debitLedger.LedgerID, DrCr = "Dr", Amount = request.Amount },
-                        new VoucherDetail { LedgerID = creditLedger.LedgerID, DrCr = "Cr", Amount = request.Amount }
-                    }
+                    VoucherDetails = voucherDetailsList
                 };
 
                 _context.Vouchers.Add(voucher);
@@ -534,6 +764,23 @@ namespace Bhisi.Api.Controllers
 
                 _context.PigmyAgentCashDeposits.Add(deposit);
                 await _context.SaveChangesAsync();
+
+                // Mark exact settled Loan, Saving, and RD mobile collections with this RemittanceDepositId & consolidated VoucherID
+                foreach (var lc in settledLoans)
+                {
+                    lc.RemittanceDepositId = deposit.DepositId;
+                    lc.VoucherID = voucher.VoucherID;
+                }
+                foreach (var st in settledSavings)
+                {
+                    st.RemittanceDepositId = deposit.DepositId;
+                    st.VoucherID = voucher.VoucherID;
+                }
+                foreach (var rt in settledRds)
+                {
+                    rt.RemittanceDepositId = deposit.DepositId;
+                    rt.VoucherID = voucher.VoucherID;
+                }
 
                 // Link collections for this agent within this deposit date range to this consolidated voucher,
                 // and remove any superseded individual per-customer import/bulk vouchers so Daybook never double-counts.
@@ -779,6 +1026,10 @@ namespace Bhisi.Api.Controllers
         [HttpGet("DayCollections")]
         public async Task<IActionResult> GetDayCollections([FromQuery] int agentId, [FromQuery] DateTime date)
         {
+            if (IsAgentOnlyCaller(out int tokenAgentId) && tokenAgentId != agentId)
+            {
+                return StatusCode(403, "आपण फक्त स्वतःचे संकलन पाहू शकता.");
+            }
             var targetDate = date.Date;
             var nextDate = targetDate.AddDays(1);
             var collections = await _context.PigmyCollections
@@ -818,6 +1069,7 @@ namespace Bhisi.Api.Controllers
 
         // DELETE: api/AgentDayBook/Deposit/{id}
         [HttpDelete("Deposit/{id}")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager,Cashier")]
         public async Task<IActionResult> DeleteDeposit(int id)
         {
             var deposit = await _context.PigmyAgentCashDeposits.FindAsync(id);
@@ -891,6 +1143,16 @@ namespace Bhisi.Api.Controllers
                         _context.Vouchers.Remove(voucher);
                     }
                 }
+
+                // Unlink any Loan, Saving, or RD mobile collections tied to this deposit
+                var linkedLoanCols = await _context.LoanCollections.Where(l => l.RemittanceDepositId == deposit.DepositId).ToListAsync();
+                foreach (var lc in linkedLoanCols) { lc.RemittanceDepositId = null; lc.VoucherID = null; }
+
+                var linkedSavingTxs = await _context.SavingTransactions.Where(s => s.RemittanceDepositId == deposit.DepositId).ToListAsync();
+                foreach (var st in linkedSavingTxs) { st.RemittanceDepositId = null; st.VoucherID = null; }
+
+                var linkedRdTxs = await _context.RdTransactions.Where(r => r.RemittanceDepositId == deposit.DepositId).ToListAsync();
+                foreach (var rt in linkedRdTxs) { rt.RemittanceDepositId = null; rt.VoucherID = null; }
 
                 // Remove linked cash denominations if any
                 if (!string.IsNullOrEmpty(deposit.ReceiptNo))

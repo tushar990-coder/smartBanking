@@ -23,8 +23,17 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
+        private int GetTokenAgentId()
+        {
+            var claim = User.FindFirst("agentId")?.Value
+                ?? User.FindFirst("AgentId")?.Value
+                ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out int id) ? id : 0;
+        }
+
         // GET: api/PigmyAgents/next-id
         [HttpGet("next-id")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<ActionResult<object>> GetNextAgentId()
         {
             int maxId = await _context.PigmyAgents.AnyAsync()
@@ -37,10 +46,16 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/PigmyAgents
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<PigmyAgent>>> GetPigmyAgents([FromQuery] int? branchId = null)
+        public async Task<ActionResult<IEnumerable<PigmyAgentPublicDto>>> GetPigmyAgents([FromQuery] int? branchId = null)
         {
+            if (User.IsInRole("AGENT"))
+            {
+                return StatusCode(403, new { message = "एजंट खात्याला सर्व एजंट्सची यादी पाहण्याची परवानगी नाही." });
+            }
+
             int? effectiveBranchId = User.ResolveOptionalBranchId(branchId);
             var query = _context.PigmyAgents
+                .AsNoTracking()
                 .Include(a => a.Branch)
                 .Include(a => a.Customer)
                 .AsQueryable();
@@ -50,14 +65,21 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(a => a.BranchID == effectiveBranchId.Value);
             }
 
-            return await query.ToListAsync();
+            var agents = await query.ToListAsync();
+            return Ok(agents.Select(PigmyAgentPublicDto.FromEntity));
         }
 
         // GET: api/PigmyAgents/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<PigmyAgent>> GetPigmyAgent(int id)
+        public async Task<ActionResult<PigmyAgentPublicDto>> GetPigmyAgent(int id)
         {
+            if (User.IsInRole("AGENT") && GetTokenAgentId() != id)
+            {
+                return StatusCode(403, new { message = "आपण फक्त स्वतःची एजंट माहिती पाहू शकता." });
+            }
+
             var pigmyAgent = await _context.PigmyAgents
+                .AsNoTracking()
                 .Include(a => a.Branch)
                 .Include(a => a.Customer)
                 .FirstOrDefaultAsync(a => a.PigmyAgentID == id);
@@ -72,13 +94,17 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(403, new { message = "आपल्याला इतर शाखेतील एजंटची माहिती पाहण्याची परवानगी नाही." });
             }
 
-            return pigmyAgent;
+            return Ok(PigmyAgentPublicDto.FromEntity(pigmyAgent));
         }
 
         // GET: api/PigmyAgents/5/customers
         [HttpGet("{id}/customers")]
         public async Task<IActionResult> GetAgentCustomers(int id)
         {
+            if (User.IsInRole("AGENT") && GetTokenAgentId() != id)
+            {
+                return StatusCode(403, new { message = "आपण फक्त स्वतःचे खातेदार पाहू शकता." });
+            }
             var pigmyAgent = await _context.PigmyAgents.AsNoTracking().FirstOrDefaultAsync(a => a.PigmyAgentID == id);
             if (pigmyAgent == null) return NotFound();
             if (pigmyAgent.BranchID.HasValue && !User.CanAccessBranch(pigmyAgent.BranchID.Value))
@@ -121,9 +147,10 @@ namespace Bhisi.Api.Controllers
 
         // PUT: api/PigmyAgents/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPigmyAgent(int id, PigmyAgent pigmyAgent)
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
+        public async Task<IActionResult> PutPigmyAgent(int id, [FromBody] PigmyAgentUpsertDto pigmyAgent)
         {
-            if (id != pigmyAgent.PigmyAgentID)
+            if (pigmyAgent == null || (pigmyAgent.PigmyAgentID != 0 && id != pigmyAgent.PigmyAgentID))
             {
                 return BadRequest(new { message = "अवैध एजंट आयडी (Invalid Agent ID)." });
             }
@@ -142,10 +169,17 @@ namespace Bhisi.Api.Controllers
             existing.Username = pigmyAgent.Username;
             existing.MaxCashLimit = pigmyAgent.MaxCashLimit;
             existing.MaxLockDays = pigmyAgent.MaxLockDays;
+            existing.IsLocked = pigmyAgent.IsLocked;
+            if (!pigmyAgent.IsLocked)
+            {
+                existing.FailedLoginAttempts = 0;
+            }
 
-            if (!string.IsNullOrEmpty(pigmyAgent.Password))
+            if (!string.IsNullOrWhiteSpace(pigmyAgent.Password))
             {
                 existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(pigmyAgent.Password);
+                existing.Pin = null;
+                existing.ActiveSessionToken = null;
             }
 
             try
@@ -161,33 +195,54 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/PigmyAgents
         [HttpPost]
-        public async Task<ActionResult<PigmyAgent>> PostPigmyAgent(PigmyAgent pigmyAgent)
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
+        public async Task<ActionResult<PigmyAgentPublicDto>> PostPigmyAgent([FromBody] PigmyAgentUpsertDto dto)
         {
-            if (!pigmyAgent.JoiningDate.HasValue)
+            if (dto == null || string.IsNullOrWhiteSpace(dto.AgentName))
             {
-                pigmyAgent.JoiningDate = DateTime.Today;
+                return BadRequest(new { message = "कृपया एजंटचे नाव प्रविष्ट करा." });
             }
-            pigmyAgent.CreatedDate = DateTime.Now;
 
-            if (!string.IsNullOrEmpty(pigmyAgent.Password))
+            var pigmyAgent = new PigmyAgent
             {
-                pigmyAgent.PasswordHash = BCrypt.Net.BCrypt.HashPassword(pigmyAgent.Password);
+                AgentName = dto.AgentName.Trim(),
+                JoiningDate = dto.JoiningDate ?? DateTime.Today,
+                Status = string.IsNullOrWhiteSpace(dto.Status) ? "Active" : dto.Status.Trim(),
+                BranchID = dto.BranchID,
+                CustomerID = dto.CustomerID,
+                MaxCashLimit = dto.MaxCashLimit > 0 ? dto.MaxCashLimit : 20000m,
+                MaxLockDays = dto.MaxLockDays > 0 ? dto.MaxLockDays : 2,
+                Username = dto.Username?.Trim(),
+                IsLocked = dto.IsLocked,
+                FailedLoginAttempts = 0,
+                CreatedDate = DateTime.Now
+            };
+
+            if (!string.IsNullOrWhiteSpace(dto.Password))
+            {
+                pigmyAgent.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+                pigmyAgent.Pin = null;
             }
 
             _context.PigmyAgents.Add(pigmyAgent);
             await _context.SaveChangesAsync();
 
-            // Load branch details before returning
+            // Load branch & customer details before returning
             if (pigmyAgent.BranchID.HasValue)
             {
                 await _context.Entry(pigmyAgent).Reference(a => a.Branch).LoadAsync();
             }
+            if (pigmyAgent.CustomerID.HasValue)
+            {
+                await _context.Entry(pigmyAgent).Reference(a => a.Customer).LoadAsync();
+            }
 
-            return CreatedAtAction("GetPigmyAgent", new { id = pigmyAgent.PigmyAgentID }, pigmyAgent);
+            return CreatedAtAction("GetPigmyAgent", new { id = pigmyAgent.PigmyAgentID }, PigmyAgentPublicDto.FromEntity(pigmyAgent));
         }
 
         // DELETE: api/PigmyAgents/5
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<IActionResult> DeletePigmyAgent(int id)
         {
             var pigmyAgent = await _context.PigmyAgents.FindAsync(id);
@@ -230,6 +285,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/PigmyAgents/5/TransferPreCheck
         [HttpGet("{id}/TransferPreCheck")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<ActionResult<object>> GetTransferPreCheck(int id)
         {
             var agent = await _context.PigmyAgents
@@ -310,6 +366,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/PigmyAgents/TransferAccounts
         [HttpPost("TransferAccounts")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<IActionResult> TransferAccounts([FromBody] AgentAccountTransferRequestDto dto)
         {
             if (dto.FromAgentId <= 0 || dto.ToAgentId <= 0)

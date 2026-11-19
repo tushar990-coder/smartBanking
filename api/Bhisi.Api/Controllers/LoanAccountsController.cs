@@ -2109,7 +2109,23 @@ namespace Bhisi.Api.Controllers
                 return BadRequest();
             }
 
-            _context.Entry(loanAccount).State = EntityState.Modified;
+            var existing = await _context.LoanAccounts.FindAsync(id);
+            if (existing == null)
+            {
+                return NotFound();
+            }
+
+            var preservedRowVersion = existing.RowVersion;
+            _context.Entry(existing).CurrentValues.SetValues(loanAccount);
+            if (loanAccount.RowVersion != null && loanAccount.RowVersion.Length > 0)
+            {
+                _context.Entry(existing).OriginalValues[nameof(LoanAccount.RowVersion)] = loanAccount.RowVersion;
+            }
+            else
+            {
+                existing.RowVersion = preservedRowVersion;
+                _context.Entry(existing).Property(x => x.RowVersion).IsModified = false;
+            }
 
             try
             {
@@ -2123,7 +2139,7 @@ namespace Bhisi.Api.Controllers
                 }
                 else
                 {
-                    throw;
+                    return Conflict(new { message = "कर्ज खात्यात समांतर बदल झाला आहे. कृपया पान रिफ्रेश करून पुन्हा प्रयत्न करा." });
                 }
             }
 

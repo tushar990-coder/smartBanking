@@ -1316,41 +1316,13 @@ namespace Bhisi.Api.Controllers
         [HttpPost("upload")]
         public async Task<IActionResult> UploadFile(IFormFile file)
         {
-            if (file == null || file.Length == 0)
+            var (isValid, error, _, apiUrl) = await FileUploadSecurityHelper.SaveValidatedKycFileAsync(file);
+            if (!isValid)
             {
-                return BadRequest("कोणतीही फाईल अपलोड केलेली नाही.");
+                return BadRequest(error);
             }
 
-            // File size validation (Max 10 MB)
-            if (file.Length > 10 * 1024 * 1024)
-            {
-                return BadRequest("फाईलची साईझ १० MB पेक्षा जास्त नसावी.");
-            }
-
-            // Extension Whitelist validation
-            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".pdf" };
-            var fileExt = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (!allowedExtensions.Contains(fileExt))
-            {
-                return BadRequest("केवळ .jpg, .jpeg, .png, .webp किंवा .pdf फाईल्स अपलोड करता येतील.");
-            }
-
-            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-            if (!Directory.Exists(uploadsFolder))
-            {
-                Directory.CreateDirectory(uploadsFolder);
-            }
-
-            var uniqueFileName = Guid.NewGuid().ToString("N") + fileExt;
-            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
-
-            using (var fileStream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(fileStream);
-            }
-
-            var fileUrl = $"/uploads/{uniqueFileName}";
-            return Ok(new { url = fileUrl });
+            return Ok(new { url = apiUrl });
         }
 
         // GET: api/Members/{id}/ClosureInfo

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
 using Bhisi.Api.Services;
 
@@ -20,23 +21,30 @@ namespace Bhisi.Api.Controllers
         private readonly AppDbContext _context;
         private readonly IAgentLockService _lockService;
         private readonly IPigmySyncService _syncService;
+        private readonly IBusinessDateGuardService _businessDateGuard;
 
         public PigmyMobileApiController(
             AppDbContext context,
             IAgentLockService lockService,
-            IPigmySyncService syncService)
+            IPigmySyncService syncService,
+            IBusinessDateGuardService? businessDateGuard = null)
         {
             _context = context;
             _lockService = lockService;
             _syncService = syncService;
+            _businessDateGuard = businessDateGuard ?? new BusinessDateGuardService(context);
+        }
+
+        private bool IsAgentRole()
+        {
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? string.Empty;
+            return string.Equals(roleClaim, "AGENT", StringComparison.OrdinalIgnoreCase);
         }
 
         private int GetCurrentAgentId(int? explicitAgentId = null)
         {
-            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? string.Empty;
-
             // Strict Security: If authenticated as AGENT, ALWAYS trust JWT claim first so headers/query params cannot impersonate another agent
-            if (string.Equals(roleClaim, "AGENT", StringComparison.OrdinalIgnoreCase))
+            if (IsAgentRole())
             {
                 var agentClaimJwt = User.Claims.FirstOrDefault(c =>
                     c.Type == "agentId" ||
@@ -51,6 +59,7 @@ namespace Bhisi.Api.Controllers
                 {
                     return jwtNameId;
                 }
+                return 0;
             }
 
             if (explicitAgentId.HasValue && explicitAgentId.Value > 0)
@@ -83,6 +92,17 @@ namespace Bhisi.Api.Controllers
             return 0;
         }
 
+        private int ResolveAuthorizedAgentId(int? requestedAgentId)
+        {
+            int tokenAgentId = GetCurrentAgentId(requestedAgentId);
+            if (IsAgentRole())
+            {
+                // Ignore spoofed query/body agentId when caller is an AGENT; enforce token agentId strictly
+                return tokenAgentId;
+            }
+            return requestedAgentId.HasValue && requestedAgentId.Value > 0 ? requestedAgentId.Value : tokenAgentId;
+        }
+
         // ==========================================
         // 1. GET /api/agent/lock-status
         // ==========================================
@@ -90,10 +110,10 @@ namespace Bhisi.Api.Controllers
         [HttpGet("api/PigmyApp/lock-status")]
         public async Task<IActionResult> GetAgentLockStatus([FromQuery] int? agentId)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(agentId);
             if (targetAgentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             var lockResult = await _lockService.GetLockStatusAsync(targetAgentId);
@@ -116,10 +136,10 @@ namespace Bhisi.Api.Controllers
         [HttpGet("api/PigmyApp/accounts-list")]
         public async Task<IActionResult> GetAgentAccounts([FromQuery] int? agentId)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(agentId);
             if (targetAgentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             var accounts = await _context.PigmyAccounts
@@ -159,10 +179,10 @@ namespace Bhisi.Api.Controllers
         [HttpGet("api/PigmyApp/customers")]
         public async Task<IActionResult> GetMobileCustomers([FromQuery] int? agentId)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(agentId);
             if (targetAgentId <= 0)
             {
-                return BadRequest(new { message = "Agent ID is required (e.g. ?agentId=1 or X-Agent-Id header or Bearer token)." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             var accounts = await _context.PigmyAccounts
@@ -226,12 +246,13 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPost("api/accounts")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager,Clerk")]
         public async Task<IActionResult> CreateAccount([FromBody] CreateAccountRequestDto dto)
         {
-            int agentId = dto.AgentId.HasValue && dto.AgentId.Value > 0 ? dto.AgentId.Value : GetCurrentAgentId();
+            int agentId = ResolveAuthorizedAgentId(dto.AgentId);
             if (agentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return BadRequest(new { message = "Assigned AgentId is required." });
             }
 
             var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == agentId);
@@ -240,7 +261,13 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "Assigned agent not found." });
             }
 
-            int branchId = dto.BranchID > 0 ? dto.BranchID : (agent.BranchID ?? 1);
+            int branchId = User.ResolveBranchId(dto.BranchID > 0 ? dto.BranchID : agent.BranchID);
+
+            string? aadhaar = string.IsNullOrWhiteSpace(dto.AadhaarNo) ? null : dto.AadhaarNo.Trim();
+            if (!string.IsNullOrEmpty(aadhaar) && !KycValidationHelper.IsValidAadhaar(aadhaar, out var aadhaarError))
+            {
+                return BadRequest(new { message = aadhaarError ?? "आधार क्रमांक वैध नाही." });
+            }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -253,7 +280,7 @@ namespace Bhisi.Api.Controllers
                     MiddleName = dto.MiddleName?.Trim(),
                     LastName = dto.LastName.Trim(),
                     MobileNo = dto.MobileNo.Trim(),
-                    AadhaarNo = !string.IsNullOrWhiteSpace(dto.AadhaarNo) ? dto.AadhaarNo.Trim() : "000000000000",
+                    AadhaarNo = aadhaar,
                     Address = dto.Address?.Trim(),
                     Gender = dto.Gender ?? "Male",
                     CreatedOn = DateTime.UtcNow,
@@ -263,17 +290,21 @@ namespace Bhisi.Api.Controllers
                 _context.Customers.Add(customer);
                 await _context.SaveChangesAsync();
 
-                // Assign CIF
-                customer.CIFNo = $"CIF-{branchId:D2}-{customer.CustomerID:D6}";
+                // Assign Standard CBS CIF
+                customer.CIFNo = await AccountNumberHelper.GenerateUniqueCifAsync(_context);
                 await _context.SaveChangesAsync();
 
                 // 2. Default Pigmy Scheme
                 var scheme = await _context.PigmySchemes.FirstOrDefaultAsync() 
                     ?? new PigmyScheme { PigmySchemeID = 1, InterestRate = 4.0m };
 
-                // 3. Generate Account No
-                var dateStr = DateTime.Now.ToString("yyyyMMdd");
-                var accountNo = $"PGM-{branchId}-{dateStr}-{customer.CustomerID:D4}";
+                // 3. Generate Standard CBS 14-digit Account No
+                var accountNo = await AccountNumberHelper.GenerateNextPigmyAccountNo(
+                    _context,
+                    branchId,
+                    scheme.PigmySchemeID,
+                    incrementSequence: true
+                );
 
                 var pigmyAccount = new PigmyAccount
                 {
@@ -343,13 +374,12 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPost("api/PigmyApp/create-request")]
-        [AllowAnonymous]
         public async Task<IActionResult> CreateAccountRequest([FromBody] MobileCreateRequestDto dto)
         {
-            int agentId = dto.AgentId.HasValue && dto.AgentId.Value > 0 ? dto.AgentId.Value : GetCurrentAgentId();
+            int agentId = ResolveAuthorizedAgentId(dto.AgentId);
             if (agentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == agentId);
@@ -411,10 +441,10 @@ namespace Bhisi.Api.Controllers
         [HttpPost("api/PigmyApp/collect")]
         public async Task<IActionResult> ProcessSingleCollection([FromBody] SingleCollectionRequestDto dto)
         {
-            int agentId = GetCurrentAgentId(dto.AgentId);
+            int agentId = ResolveAuthorizedAgentId(dto.AgentId);
             if (agentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             var result = await _syncService.ProcessSingleCollectionAsync(agentId, dto);
@@ -459,10 +489,10 @@ namespace Bhisi.Api.Controllers
         [HttpPost("api/collections/bulk-sync")]
         public async Task<IActionResult> ProcessBulkSync([FromBody] object payload)
         {
-            int agentId = GetCurrentAgentId();
+            int agentId = ResolveAuthorizedAgentId(null);
             if (agentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             List<SingleCollectionRequestDto> items = new List<SingleCollectionRequestDto>();
@@ -506,27 +536,67 @@ namespace Bhisi.Api.Controllers
         [HttpGet("api/dashboard/summary")]
         public async Task<IActionResult> GetDashboardSummary([FromQuery] int? agentId)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(agentId);
             if (targetAgentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
-            var today = DateTime.Today;
+            var today = _businessDateGuard.GetIstToday();
             var tomorrow = today.AddDays(1);
 
-            // Today's Collection
-            var todaysCollections = await _context.PigmyCollections
+            // Today's Cash + UPI Collections across all doorstep products
+            var todaysPigmyCollections = await _context.PigmyCollections
                 .Where(c => c.AgentId == targetAgentId && c.CollectionDate >= today && c.CollectionDate < tomorrow)
                 .ToListAsync();
+            decimal todaysPigmyCash = todaysPigmyCollections
+                .Where(c => string.IsNullOrWhiteSpace(c.PaymentMode) || c.PaymentMode.Equals("CASH", StringComparison.OrdinalIgnoreCase))
+                .Sum(c => c.CollectionAmount);
+            var todaysLoanRows = await _context.LoanCollections
+                .Where(c => c.AgentID == targetAgentId && c.CollectionSource == "AGENT_MOBILE" &&
+                            c.CollectionDate >= today && c.CollectionDate < tomorrow &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .Select(c => c.TotalAmountReceived)
+                .ToListAsync();
+            decimal todaysLoanCash = todaysLoanRows.Sum();
 
-            decimal todaysCollectionAmount = todaysCollections.Sum(c => c.CollectionAmount);
-            int totalReceipts = todaysCollections.Count;
+            var todaysSavingRows = await _context.SavingTransactions
+                .Where(t => t.AgentID == targetAgentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" &&
+                            t.TransactionDate >= today && t.TransactionDate < tomorrow &&
+                            (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
+                .Select(t => t.Amount)
+                .ToListAsync();
+            decimal todaysSavingCash = todaysSavingRows.Sum();
 
-            // Historical Collections before today
-            decimal historicalCollections = await _context.PigmyCollections
-                .Where(c => c.AgentId == targetAgentId && c.CollectionDate < today)
+            var todaysRdRows = await _context.RdTransactions
+                .Where(t => t.AgentID == targetAgentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" &&
+                            t.TransactionDate >= today && t.TransactionDate < tomorrow)
+                .Select(t => t.PrincipalAmount)
+                .ToListAsync();
+            decimal todaysRdCash = todaysRdRows.Sum();
+
+            decimal todaysCollectionAmount = todaysPigmyCash + todaysLoanCash + todaysSavingCash + todaysRdCash;
+            int totalReceipts = todaysPigmyCollections.Count + todaysLoanRows.Count + todaysSavingRows.Count + todaysRdRows.Count;
+
+            // Historical Cash Collections before today
+            decimal historicalPigmy = await _context.PigmyCollections
+                .Where(c => c.AgentId == targetAgentId && c.CollectionDate < today &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
                 .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+            decimal historicalLoan = await _context.LoanCollections
+                .Where(c => c.AgentID == targetAgentId && c.CollectionSource == "AGENT_MOBILE" && c.CollectionDate < today &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
+            decimal historicalSaving = await _context.SavingTransactions
+                .Where(t => t.AgentID == targetAgentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" &&
+                            t.TransactionDate < today && (t.PaymentMode == null || t.PaymentMode == "" || t.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            decimal historicalRd = await _context.RdTransactions
+                .Where(t => t.AgentID == targetAgentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" &&
+                            t.TransactionDate < today)
+                .SumAsync(t => (decimal?)t.PrincipalAmount) ?? 0m;
+
+            decimal historicalCollections = historicalPigmy + historicalLoan + historicalSaving + historicalRd;
 
             // Historical Deposits to branch before today
             decimal historicalRemittances = await _context.PigmyAgentCashDeposits
@@ -589,6 +659,15 @@ namespace Bhisi.Api.Controllers
             if (account == null)
             {
                 return NotFound(new { message = $"Pigmy account with ID {targetAccountId} not found." });
+            }
+
+            if (IsAgentRole() && account.PigmyAgentID != GetCurrentAgentId())
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर एजंटच्या ग्राहकांचे पासबुक पाहण्याची परवानगी नाही." });
+            }
+            if (!IsAgentRole() && !User.CanAccessBranch(account.BranchID))
+            {
+                return StatusCode(403, new { message = "आपल्याला इतर शाखेतील खात्याचे पासबुक पाहण्याची परवानगी नाही." });
             }
 
             DateTime fDate = fromDate?.Date ?? new DateTime(DateTime.Today.Year, 1, 1);
@@ -667,10 +746,10 @@ namespace Bhisi.Api.Controllers
             [FromQuery] DateTime? fromDate,
             [FromQuery] DateTime? toDate)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(agentId);
             if (targetAgentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             DateTime fDate = fromDate?.Date ?? DateTime.Today;
@@ -725,10 +804,10 @@ namespace Bhisi.Api.Controllers
             [FromQuery] DateTime? fromDate,
             [FromQuery] DateTime? toDate)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(agentId);
             if (targetAgentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             DateTime fDate = fromDate?.Date ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
@@ -825,10 +904,10 @@ namespace Bhisi.Api.Controllers
         [HttpGet("api/reports/pigmy-book")]
         public async Task<IActionResult> GetPigmyBookReport([FromQuery] int? agentId, [FromQuery] string? filter, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(agentId);
             if (targetAgentId <= 0)
             {
-                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             DateTime fDate = DateTime.Today;
@@ -901,7 +980,6 @@ namespace Bhisi.Api.Controllers
         // 11. DOORSTEP MULTI-PRODUCT PROFILE & PRIVACY
         // GET /api/PigmyApp/customers/{customerId}/doorstep-profile
         // ==========================================
-        [AllowAnonymous]
         [HttpGet("api/PigmyApp/customers/{customerId}/doorstep-profile")]
         [HttpGet("api/PigmyApp/accounts/{pigmyAccountId}/doorstep-profile")]
         public async Task<IActionResult> GetDoorstepCustomerProfile(
@@ -910,10 +988,10 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? agentId = null,
             [FromQuery] int? pigmyAccountIdQuery = null)
         {
-            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(agentId);
             if (targetAgentId <= 0)
             {
-                return BadRequest(new { message = "Agent ID is required (?agentId=... or X-Agent-Id header)." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             int resolvedCustomerId = customerId ?? 0;
@@ -1076,7 +1154,6 @@ namespace Bhisi.Api.Controllers
             public string? Remarks { get; set; }
         }
 
-        [AllowAnonymous]
         [HttpPost("api/PigmyApp/collect-loan-emi")]
         public async Task<IActionResult> CollectLoanEmi([FromBody] CollectLoanEmiRequestDto request)
         {
@@ -1085,10 +1162,10 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "अवैध रक्कम (Invalid collection amount)." });
             }
 
-            int targetAgentId = request.AgentId.HasValue && request.AgentId.Value > 0 ? request.AgentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(request.AgentId);
             if (targetAgentId <= 0)
             {
-                return BadRequest(new { message = "Agent ID is required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             // 1. Agent Lock Check
@@ -1141,10 +1218,17 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "कर्ज खाते आधीच बंद झाले आहे." });
             }
 
+            bool isOfflineLoan = !string.IsNullOrWhiteSpace(request.SyncReferenceId) && request.CollectionDate.HasValue;
+            var loanDateCheck = await _businessDateGuard.ValidateCollectionDateAsync(loan.BranchID > 0 ? loan.BranchID : 1, request.CollectionDate, isOfflineLoan);
+            if (!loanDateCheck.IsAllowed)
+            {
+                return Conflict(new { message = loanDateCheck.ErrorMessage });
+            }
+
             using var dbTx = await _context.Database.BeginTransactionAsync();
             try
             {
-                DateTime collDate = request.CollectionDate ?? DateTime.Today;
+                DateTime collDate = loanDateCheck.EffectiveCollectionDate;
 
                 // Waterfall Application: Overdue/Interest -> Principal
                 decimal remaining = request.Amount;
@@ -1183,7 +1267,7 @@ namespace Bhisi.Api.Controllers
                     loan.Status = "Closed";
                 }
 
-                string receiptNo = $"LN-AGT-{targetAgentId}-{DateTime.Now:yyyyMMddHHmmss}-{new Random().Next(100, 999)}";
+                string receiptNo = $"LN-AGT-{targetAgentId}-{collDate:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
                 var loanCollection = new LoanCollection
                 {
@@ -1194,11 +1278,12 @@ namespace Bhisi.Api.Controllers
                     TransactionId = Guid.NewGuid().ToString("N"),
                     ReceiptNo = receiptNo,
                     CollectionDate = collDate,
-                    PaymentMode = request.PaymentMode ?? "CASH",
+                    PaymentMode = string.IsNullOrWhiteSpace(request.PaymentMode) ? "CASH" : request.PaymentMode.Trim().ToUpperInvariant(),
                     TotalAmountReceived = request.Amount,
                     PrincipalCollected = principalPaid,
                     InterestCollected = interestPaid,
                     PenaltyInterestCollected = overduePaid,
+                    CreatedByUserID = targetAgentId,
                     Remarks = $"डोअरस्टेप एजंट वसुली: {agent?.AgentName ?? targetAgentId.ToString()}" + 
                               (string.IsNullOrWhiteSpace(request.Remarks) ? "" : $" - {request.Remarks}"),
                     BranchID = loan.BranchID > 0 ? loan.BranchID : 1
@@ -1217,7 +1302,10 @@ namespace Bhisi.Api.Controllers
                     loanAccountNo = loan.LoanAccountNo ?? $"LN-{loan.LoanAccountID}",
                     amount = request.Amount,
                     principalPaid,
+                    principalCollected = principalPaid,
                     interestPaid,
+                    regularInterestCollected = interestPaid,
+                    overdueInterestCollected = overduePaid,
                     newPrincipalBalance = loan.PrincipalBalance,
                     collectionDate = collDate.ToString("yyyy-MM-dd"),
                     message = "कर्ज EMI यशस्वीरीत्या गोळा करण्यात आला आहे."
@@ -1248,7 +1336,6 @@ namespace Bhisi.Api.Controllers
             public string? Remarks { get; set; }
         }
 
-        [AllowAnonymous]
         [HttpPost("api/PigmyApp/collect-saving")]
         public async Task<IActionResult> CollectSavingDeposit([FromBody] CollectSavingDepositRequestDto request)
         {
@@ -1257,10 +1344,10 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "अवैध रक्कम (Invalid deposit amount)." });
             }
 
-            int targetAgentId = request.AgentId.HasValue && request.AgentId.Value > 0 ? request.AgentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(request.AgentId);
             if (targetAgentId <= 0)
             {
-                return BadRequest(new { message = "Agent ID is required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             // 1. Agent Lock Check
@@ -1311,13 +1398,20 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "बचत खाते बंद आहे." });
             }
 
+            bool isOfflineSaving = !string.IsNullOrWhiteSpace(request.SyncReferenceId) && request.CollectionDate.HasValue;
+            var savingDateCheck = await _businessDateGuard.ValidateCollectionDateAsync(saving.BranchID > 0 ? saving.BranchID : 1, request.CollectionDate, isOfflineSaving);
+            if (!savingDateCheck.IsAllowed)
+            {
+                return Conflict(new { message = savingDateCheck.ErrorMessage });
+            }
+
             using var dbTx = await _context.Database.BeginTransactionAsync();
             try
             {
-                DateTime collDate = request.CollectionDate ?? DateTime.Today;
+                DateTime collDate = savingDateCheck.EffectiveCollectionDate;
                 saving.CurrentBalance += request.Amount;
 
-                string voucherNo = $"SB-AGT-{targetAgentId}-{DateTime.Now:yyyyMMddHHmmss}";
+                string voucherNo = $"SB-AGT-{targetAgentId}-{collDate:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
                 var savingTx = new SavingTransaction
                 {
@@ -1326,7 +1420,7 @@ namespace Bhisi.Api.Controllers
                     BranchID = saving.BranchID > 0 ? saving.BranchID : 1,
                     TransactionDate = collDate,
                     TransactionType = "Deposit",
-                    PaymentMode = request.PaymentMode ?? "Cash",
+                    PaymentMode = string.IsNullOrWhiteSpace(request.PaymentMode) ? "CASH" : request.PaymentMode.Trim().ToUpperInvariant(),
                     Amount = request.Amount,
                     BalanceAfterTxn = saving.CurrentBalance,
                     Narration = $"डोअरस्टेप एजंट ठेव: {agent?.AgentName ?? targetAgentId.ToString()}" +
@@ -1335,7 +1429,7 @@ namespace Bhisi.Api.Controllers
                     AgentID = targetAgentId,
                     CollectionSource = "AGENT_MOBILE",
                     SyncReferenceId = request.SyncReferenceId,
-                    CreatedBy = 1,
+                    CreatedBy = targetAgentId,
                     CreatedOn = DateTime.UtcNow
                 };
 
@@ -1380,7 +1474,6 @@ namespace Bhisi.Api.Controllers
             public string? Remarks { get; set; }
         }
 
-        [AllowAnonymous]
         [HttpPost("api/PigmyApp/collect-rd")]
         public async Task<IActionResult> CollectRdInstallment([FromBody] CollectRdInstallmentRequestDto request)
         {
@@ -1389,10 +1482,10 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "अवैध रक्कम (Invalid RD amount)." });
             }
 
-            int targetAgentId = request.AgentId.HasValue && request.AgentId.Value > 0 ? request.AgentId.Value : GetCurrentAgentId();
+            int targetAgentId = ResolveAuthorizedAgentId(request.AgentId);
             if (targetAgentId <= 0)
             {
-                return BadRequest(new { message = "Agent ID is required." });
+                return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
             // 1. Agent Lock Check
@@ -1443,10 +1536,17 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "आरडी खाते बंद आहे." });
             }
 
+            bool isOfflineRd = !string.IsNullOrWhiteSpace(request.SyncReferenceId) && request.CollectionDate.HasValue;
+            var rdDateCheck = await _businessDateGuard.ValidateCollectionDateAsync(rd.BranchID > 0 ? rd.BranchID : 1, request.CollectionDate, isOfflineRd);
+            if (!rdDateCheck.IsAllowed)
+            {
+                return Conflict(new { message = rdDateCheck.ErrorMessage });
+            }
+
             using var dbTx = await _context.Database.BeginTransactionAsync();
             try
             {
-                DateTime collDate = request.CollectionDate ?? DateTime.Today;
+                DateTime collDate = rdDateCheck.EffectiveCollectionDate;
                 rd.TotalDepositedAmount += request.Amount;
 
                 int installments = rd.InstallmentAmount > 0 ? (int)Math.Max(1, Math.Floor(request.Amount / rd.InstallmentAmount)) : 1;
@@ -1463,7 +1563,7 @@ namespace Bhisi.Api.Controllers
                     BranchID = rd.BranchID > 0 ? rd.BranchID : 1,
                     FinancialYearID = rd.FinancialYearID > 0 ? rd.FinancialYearID : 1,
                     RdAccountID = rd.RdAccountID,
-                    VoucherID = 1,
+                    VoucherID = null,
                     TransactionDate = collDate,
                     TransactionType = "Installment",
                     InstallmentNo = rd.TotalPaidInstallments,
@@ -1477,11 +1577,30 @@ namespace Bhisi.Api.Controllers
                     AgentID = targetAgentId,
                     CollectionSource = "AGENT_MOBILE",
                     SyncReferenceId = request.SyncReferenceId,
-                    CreatedBy = 1,
+                    CreatedBy = targetAgentId,
                     CreatedDate = DateTime.UtcNow
                 };
 
                 _context.RdTransactions.Add(rdTx);
+
+                // Synchronize pending RDInstallmentSchedules rows so RD passbook/schedules stay consistent
+                var pendingSchedules = await _context.RDInstallmentSchedules
+                    .Where(s => s.RdAccountID == rd.RdAccountID && s.Status != "Paid")
+                    .OrderBy(s => s.InstallmentNo)
+                    .Take(installments)
+                    .ToListAsync();
+                decimal remainingForSchedules = request.Amount;
+                foreach (var sched in pendingSchedules)
+                {
+                    if (remainingForSchedules <= 0m) break;
+                    decimal expected = sched.ExpectedAmount > 0m ? sched.ExpectedAmount : rd.InstallmentAmount;
+                    decimal toApply = expected > 0m ? Math.Min(remainingForSchedules, expected) : remainingForSchedules;
+                    sched.PaidAmount += toApply;
+                    sched.PaidDate = collDate;
+                    sched.Status = (expected > 0m && sched.PaidAmount + 0.01m >= expected) ? "Paid" : "Partial";
+                    remainingForSchedules -= toApply;
+                }
+
                 await _context.SaveChangesAsync();
                 await dbTx.CommitAsync();
 

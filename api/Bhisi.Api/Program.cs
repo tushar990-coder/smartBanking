@@ -64,8 +64,9 @@ try
     });
 
     // Configure JWT Authentication
-    var keyStr = builder.Configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
-    var key = System.Text.Encoding.ASCII.GetBytes(keyStr);
+    var jwtService = new Bhisi.Api.Services.JwtTokenService(builder.Configuration);
+    var keyStr = jwtService.GetSigningKey();
+    var key = System.Text.Encoding.UTF8.GetBytes(keyStr);
     builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
@@ -73,7 +74,7 @@ try
     })
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false;
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
         options.SaveToken = true;
         options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
         {
@@ -90,18 +91,60 @@ try
                 var principal = context.Principal;
                 if (principal == null) return;
 
-                string role = principal.GetUserRole();
-                if (string.Equals(role, "AGENT", StringComparison.OrdinalIgnoreCase)) return;
-
-                var idClaim = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-                if (!int.TryParse(idClaim, out int uid) || uid <= 0) return;
-
                 string authHeader = context.Request.Headers["Authorization"].ToString();
                 string? rawToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
                     ? authHeader.Substring(7).Trim()
                     : null;
 
                 var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                string role = principal.GetUserRole();
+
+                if (string.Equals(role, "AGENT", StringComparison.OrdinalIgnoreCase))
+                {
+                    var agentClaim = principal.FindFirst("agentId")?.Value
+                        ?? principal.FindFirst("AgentId")?.Value
+                        ?? principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    if (!int.TryParse(agentClaim, out int aid) || aid <= 0)
+                    {
+                        context.Fail("Invalid agent token claims.");
+                        return;
+                    }
+
+                    var dbAgent = await db.PigmyAgents.AsNoTracking()
+                        .Where(a => a.PigmyAgentID == aid)
+                        .Select(a => new
+                        {
+                            a.Status,
+                            a.IsLocked,
+                            a.ActiveSessionToken,
+                            a.BranchID
+                        })
+                        .FirstOrDefaultAsync();
+
+                    if (dbAgent == null || dbAgent.Status != "Active" || dbAgent.IsLocked)
+                    {
+                        context.Fail("Agent account is inactive or locked.");
+                        return;
+                    }
+
+                    if (!string.IsNullOrEmpty(rawToken) && !string.IsNullOrEmpty(dbAgent.ActiveSessionToken) &&
+                        !string.Equals(dbAgent.ActiveSessionToken, rawToken, StringComparison.Ordinal))
+                    {
+                        context.Fail("Agent session expired or invalidated by a newer login.");
+                        return;
+                    }
+
+                    if (dbAgent.BranchID.HasValue && dbAgent.BranchID.Value > 0 &&
+                        principal.GetOperatingBranchId() != dbAgent.BranchID.Value)
+                    {
+                        context.Fail("Agent branch assignment mismatch.");
+                    }
+                    return;
+                }
+
+                var idClaim = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (!int.TryParse(idClaim, out int uid) || uid <= 0) return;
+
                 var dbUser = await db.Users.AsNoTracking()
                     .Where(u => u.UserID == uid)
                     .Select(u => new
@@ -143,7 +186,7 @@ try
         ?? builder.Configuration.GetConnectionString("LocalDB")
         ?? builder.Configuration.GetConnectionString("OnlineDB")
         ?? (builder.Configuration["ActiveDatabase"] != null ? builder.Configuration.GetConnectionString(builder.Configuration["ActiveDatabase"]!) : null)
-        ?? "Server=.;Database=SmartBanking_Bambawade;User Id=Admin;Password=Mindspace@;Trusted_Connection=False;TrustServerCertificate=True;MultipleActiveResultSets=true;Connect Timeout=60;";
+        ?? "Server=.;Database=SmartBanking_Template;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;Connect Timeout=60;";
 
     var resolvedConnStr = ResolveWorkingConnectionString(rawConnStr);
 
@@ -158,6 +201,8 @@ try
 
     // Register Services
     builder.Services.AddHttpContextAccessor();
+    builder.Services.AddSingleton<Bhisi.Api.Services.IJwtTokenService, Bhisi.Api.Services.JwtTokenService>();
+    builder.Services.AddScoped<Bhisi.Api.Services.IBusinessDateGuardService, Bhisi.Api.Services.BusinessDateGuardService>();
     builder.Services.AddScoped<Bhisi.Api.Services.IAgentLockService, Bhisi.Api.Services.AgentLockService>();
     builder.Services.AddScoped<Bhisi.Api.Services.IPigmySyncService, Bhisi.Api.Services.PigmySyncService>();
     builder.Services.AddScoped<Bhisi.Api.Services.NpaEngineService>();
@@ -438,7 +483,46 @@ try
                 IF COL_LENGTH('PigmyAgents', 'JoiningDate') IS NULL ALTER TABLE [PigmyAgents] ADD [JoiningDate] datetime2 NULL;
                 IF COL_LENGTH('PigmyAgents', 'CreatedBy') IS NULL ALTER TABLE [PigmyAgents] ADD [CreatedBy] int NOT NULL DEFAULT 1;
                 IF COL_LENGTH('PigmyAgents', 'CreatedDate') IS NULL ALTER TABLE [PigmyAgents] ADD [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE();
+                IF COL_LENGTH('PigmyAgents', 'FailedLoginAttempts') IS NULL ALTER TABLE [PigmyAgents] ADD [FailedLoginAttempts] int NOT NULL DEFAULT 0;
+                IF COL_LENGTH('PigmyAgents', 'IsLocked') IS NULL ALTER TABLE [PigmyAgents] ADD [IsLocked] bit NOT NULL DEFAULT 0;
+                IF COL_LENGTH('PigmyAgents', 'ActiveSessionToken') IS NULL ALTER TABLE [PigmyAgents] ADD [ActiveSessionToken] nvarchar(2000) NULL;
             END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections') AND COL_LENGTH('LoanCollections', 'RemittanceDepositId') IS NULL
+                ALTER TABLE [dbo].[LoanCollections] ADD [RemittanceDepositId] int NULL;
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingTransactions')
+            BEGIN
+                IF COL_LENGTH('SavingTransactions', 'VoucherID') IS NULL ALTER TABLE [dbo].[SavingTransactions] ADD [VoucherID] int NULL;
+                IF COL_LENGTH('SavingTransactions', 'RemittanceDepositId') IS NULL ALTER TABLE [dbo].[SavingTransactions] ADD [RemittanceDepositId] int NULL;
+            END
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RdTransactions')
+            BEGIN
+                IF COL_LENGTH('RdTransactions', 'RemittanceDepositId') IS NULL ALTER TABLE [dbo].[RdTransactions] ADD [RemittanceDepositId] int NULL;
+                IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.RdTransactions') AND name = 'VoucherID' AND is_nullable = 0)
+                    ALTER TABLE [dbo].[RdTransactions] ALTER COLUMN [VoucherID] int NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAccounts') AND COL_LENGTH('PigmyAccounts', 'RowVersion') IS NULL
+                ALTER TABLE [dbo].[PigmyAccounts] ADD [RowVersion] rowversion NOT NULL;
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts') AND COL_LENGTH('LoanAccounts', 'RowVersion') IS NULL
+                ALTER TABLE [dbo].[LoanAccounts] ADD [RowVersion] rowversion NOT NULL;
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingAccountMasters') AND COL_LENGTH('SavingAccountMasters', 'RowVersion') IS NULL
+                ALTER TABLE [dbo].[SavingAccountMasters] ADD [RowVersion] rowversion NOT NULL;
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RdAccounts') AND COL_LENGTH('RdAccounts', 'RowVersion') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [RowVersion] rowversion NOT NULL;
+
+            IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'LoanCollections')
+               AND COL_LENGTH('LoanCollections', 'SyncReferenceId') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_LoanCollections_SyncReferenceId' AND object_id = OBJECT_ID('dbo.LoanCollections'))
+                CREATE UNIQUE NONCLUSTERED INDEX [UQ_LoanCollections_SyncReferenceId] ON [dbo].[LoanCollections] ([SyncReferenceId]) WHERE [SyncReferenceId] IS NOT NULL;
+            IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SavingTransactions')
+               AND COL_LENGTH('SavingTransactions', 'SyncReferenceId') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_SavingTransactions_SyncReferenceId' AND object_id = OBJECT_ID('dbo.SavingTransactions'))
+                CREATE UNIQUE NONCLUSTERED INDEX [UQ_SavingTransactions_SyncReferenceId] ON [dbo].[SavingTransactions] ([SyncReferenceId]) WHERE [SyncReferenceId] IS NOT NULL;
+            IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'RdTransactions')
+               AND COL_LENGTH('RdTransactions', 'SyncReferenceId') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_RdTransactions_SyncReferenceId' AND object_id = OBJECT_ID('dbo.RdTransactions'))
+                CREATE UNIQUE NONCLUSTERED INDEX [UQ_RdTransactions_SyncReferenceId] ON [dbo].[RdTransactions] ([SyncReferenceId]) WHERE [SyncReferenceId] IS NOT NULL;
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAccounts')
             BEGIN
@@ -3959,12 +4043,15 @@ try
         }
     }
 
-    // Enable Swagger UI for easy testing
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
+    // Enable Swagger UI only in Development
+    if (app.Environment.IsDevelopment())
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Bhisi API v1");
-    });
+        app.UseSwagger();
+        app.UseSwaggerUI(c =>
+        {
+            c.SwaggerEndpoint("/swagger/v1/swagger.json", "Bhisi API v1");
+        });
+    }
 
     // Global Exception Handler — catches ALL unhandled exceptions (including SqlNullValueException)
     // and returns a clean JSON error response with full logging

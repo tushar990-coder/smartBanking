@@ -284,5 +284,122 @@ namespace Bhisi.Api.Controllers
                 });
             }
         }
+
+        // GET: api/Dashboard/mobile-admin-summary
+        [HttpGet("mobile-admin-summary")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
+        public async Task<ActionResult> GetMobileAdminSummary([FromQuery] int? branchId = null)
+        {
+            branchId = User.ResolveOptionalBranchId(branchId);
+            var dateGuard = new Services.BusinessDateGuardService(_context);
+            DateTime today;
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                var (activeBizDate, _) = await dateGuard.GetBranchBusinessDateAsync(branchId.Value);
+                today = activeBizDate.Date;
+            }
+            else
+            {
+                today = dateGuard.GetIstToday();
+            }
+            var tomorrow = today.AddDays(1);
+
+            var accountsQuery = _context.PigmyAccounts.AsNoTracking().Where(a => a.Status == "Active");
+            var agentsQuery = _context.PigmyAgents.AsNoTracking().Include(a => a.Customer).Where(a => a.Status == "Active");
+            var collectionsQuery = _context.PigmyCollections.AsNoTracking()
+                .Include(c => c.PigmyAccount).ThenInclude(a => a!.Customer)
+                .Include(c => c.Agent)
+                .AsQueryable();
+
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                accountsQuery = accountsQuery.Where(a => a.BranchID == branchId.Value);
+                agentsQuery = agentsQuery.Where(a => a.BranchID == branchId.Value);
+                collectionsQuery = collectionsQuery.Where(c => c.PigmyAccount != null && c.PigmyAccount.BranchID == branchId.Value);
+            }
+
+            // Single batched projection eliminates N+1 agent loop queries
+            var activeAccountRows = await accountsQuery
+                .Select(a => new { a.PigmyAgentID, a.TotalDepositedAmount, a.DailyDepositAmount })
+                .ToListAsync();
+
+            decimal totalPigmyBalance = activeAccountRows.Sum(a => a.TotalDepositedAmount);
+            int activeAccountsCount = activeAccountRows.Count;
+            var accountsByAgent = activeAccountRows
+                .GroupBy(a => a.PigmyAgentID)
+                .ToDictionary(
+                    g => g.Key,
+                    g => new
+                    {
+                        Count = g.Count(),
+                        Target = g.Sum(x => x.DailyDepositAmount > 0 ? x.DailyDepositAmount : 100m)
+                    });
+
+            var todaysCollections = await collectionsQuery
+                .Where(c => c.CollectionDate >= today && c.CollectionDate < tomorrow)
+                .ToListAsync();
+
+            decimal todaysTotalCollected = todaysCollections.Sum(c => c.CollectionAmount);
+            int todaysReceiptsCount = todaysCollections.Count;
+
+            var activeAgents = await agentsQuery.ToListAsync();
+            var agentStats = new List<object>();
+            foreach (var agt in activeAgents)
+            {
+                var agtInfo = accountsByAgent.TryGetValue(agt.PigmyAgentID, out var info)
+                    ? info
+                    : new { Count = 0, Target = 0m };
+                var agtTodayCols = todaysCollections.Where(c => c.AgentId == agt.PigmyAgentID).ToList();
+                decimal agtTodaySum = agtTodayCols.Sum(c => c.CollectionAmount);
+                int collectedAccCount = agtTodayCols.Select(c => c.PigmyAccountId).Distinct().Count();
+
+                agentStats.Add(new
+                {
+                    id = $"agt_{agt.PigmyAgentID}",
+                    agentId = agt.PigmyAgentID,
+                    name = agt.AgentName,
+                    phone = agt.Customer?.MobileNo ?? string.Empty,
+                    assignedCustomersCount = agtInfo.Count,
+                    todayTargetAmount = agtInfo.Target,
+                    todayCollectedAmount = agtTodaySum,
+                    pendingCustomersCount = Math.Max(0, agtInfo.Count - collectedAccCount),
+                    status = agt.Status == "Active" ? "ACTIVE" : "INACTIVE"
+                });
+            }
+
+            var recentCollections = todaysCollections
+                .OrderByDescending(c => c.CollectionId)
+                .Take(20)
+                .Select(c => new
+                {
+                    id = $"srv_{c.CollectionId}",
+                    transactionId = c.TransactionId ?? $"srv_txn_{c.CollectionId}",
+                    receiptNo = c.ReceiptNo,
+                    accountId = $"acc_{c.PigmyAccountId}",
+                    accountNumber = c.PigmyAccount?.AccountNo ?? "",
+                    customerName = c.PigmyAccount?.Customer != null
+                        ? $"{c.PigmyAccount.Customer.FirstName} {c.PigmyAccount.Customer.LastName}".Trim()
+                        : "",
+                    agentId = $"agt_{c.AgentId}",
+                    agentName = c.Agent?.AgentName ?? "",
+                    amount = c.CollectionAmount,
+                    paymentMode = string.IsNullOrWhiteSpace(c.PaymentMode) ? "CASH" : c.PaymentMode,
+                    timestamp = c.CollectionDate.ToString("yyyy-MM-dd HH:mm"),
+                    status = "VERIFIED",
+                    syncStatus = "SYNCED"
+                })
+                .ToList();
+
+            return Ok(new
+            {
+                totalBalance = totalPigmyBalance,
+                todaysCollection = todaysTotalCollected,
+                todaysReceiptsCount,
+                activeAccountsCount,
+                activeAgentsCount = activeAgents.Count,
+                agents = agentStats,
+                recentCollections
+            });
+        }
     }
 }

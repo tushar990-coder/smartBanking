@@ -205,6 +205,15 @@ namespace Bhisi.Api.Services
                 }
 
                 // =========================================================================
+                // PRE-CHECK: AGENT MULTI-PRODUCT CASH REMITTANCE UNLINK (PV-...-AGT-*)
+                // CRITICAL DOMAIN RULE: Pre-collected mobile Loan/Saving/RD receipts must
+                // NEVER be hard-deleted or balance-reversed when their consolidated branch
+                // remittance voucher is deleted — only unlink RemittanceDepositId & VoucherID
+                // BEFORE Modules 4 (RD), 7 (Loan), and Saving reversal run!
+                // =========================================================================
+                await UnlinkAgentMultiProductRemittanceIfApplicableAsync(voucherIds, reversedSavingTxnIds);
+
+                // =========================================================================
                 // MODULE 3: FIXED DEPOSIT (Renewal, MIS, Accrual, Closure/FD Settlement, Single & Bulk Opening)
                 // =========================================================================
                 await RollbackFdModuleAsync(
@@ -604,6 +613,65 @@ namespace Bhisi.Api.Services
             }
 
             return (fallbackDate ?? DateTime.Today).Date;
+        }
+
+        private async Task UnlinkAgentMultiProductRemittanceIfApplicableAsync(
+            HashSet<int> voucherIds,
+            HashSet<int> reversedSavingTxnIds)
+        {
+            if (!voucherIds.Any()) return;
+
+            var agentDepositIds = await _context.PigmyAgentCashDeposits
+                .AsNoTracking()
+                .Where(d => d.VoucherId.HasValue && voucherIds.Contains(d.VoucherId.Value))
+                .Select(d => d.DepositId)
+                .ToListAsync();
+
+            if (!agentDepositIds.Any()) return;
+
+            bool modified = false;
+
+            var linkedLoanCols = await _context.LoanCollections
+                .Where(l => (l.RemittanceDepositId.HasValue && agentDepositIds.Contains(l.RemittanceDepositId.Value)) ||
+                            (l.CollectionSource == "AGENT_MOBILE" && l.VoucherID.HasValue && voucherIds.Contains(l.VoucherID.Value)))
+                .ToListAsync();
+            foreach (var lc in linkedLoanCols)
+            {
+                lc.RemittanceDepositId = null;
+                lc.VoucherID = null;
+                _context.Entry(lc).State = EntityState.Modified;
+                modified = true;
+            }
+
+            var linkedSavingTxs = await _context.SavingTransactions
+                .Where(s => (s.RemittanceDepositId.HasValue && agentDepositIds.Contains(s.RemittanceDepositId.Value)) ||
+                            (s.CollectionSource == "AGENT_MOBILE" && s.VoucherID.HasValue && voucherIds.Contains(s.VoucherID.Value)))
+                .ToListAsync();
+            foreach (var st in linkedSavingTxs)
+            {
+                st.RemittanceDepositId = null;
+                st.VoucherID = null;
+                _context.Entry(st).State = EntityState.Modified;
+                reversedSavingTxnIds.Add(st.TransactionID); // Prevent generic saving reversal from deleting pre-collected doorstep deposit
+                modified = true;
+            }
+
+            var linkedRdTxs = await _context.RdTransactions
+                .Where(r => (r.RemittanceDepositId.HasValue && agentDepositIds.Contains(r.RemittanceDepositId.Value)) ||
+                            (r.CollectionSource == "AGENT_MOBILE" && r.VoucherID.HasValue && voucherIds.Contains(r.VoucherID.Value)))
+                .ToListAsync();
+            foreach (var rt in linkedRdTxs)
+            {
+                rt.RemittanceDepositId = null;
+                rt.VoucherID = null;
+                _context.Entry(rt).State = EntityState.Modified;
+                modified = true;
+            }
+
+            if (modified)
+            {
+                await _context.SaveChangesAsync();
+            }
         }
 
         private async Task UnlinkRelatedVoucherReferencesAsync(HashSet<int> voucherIds)
@@ -1391,7 +1459,7 @@ namespace Bhisi.Api.Services
                 }
 
                 var rdAccrualTxs = await _context.RdTransactions
-                    .Where(t => voucherIds.Contains(t.VoucherID) && t.TransactionType == "Accrual")
+                    .Where(t => t.VoucherID.HasValue && voucherIds.Contains(t.VoucherID.Value) && t.TransactionType == "Accrual")
                     .ToListAsync();
                 if (rdAccrualTxs.Any())
                 {
@@ -1407,7 +1475,7 @@ namespace Bhisi.Api.Services
             {
                 var openRdTxs = await _context.RdTransactions
                     .Include(t => t.RdAccount)
-                    .Where(t => voucherIds.Contains(t.VoucherID))
+                    .Where(t => t.VoucherID.HasValue && voucherIds.Contains(t.VoucherID.Value))
                     .ToListAsync();
 
                 var openedRds = openRdTxs
@@ -1456,7 +1524,7 @@ namespace Bhisi.Api.Services
                         }
 
                         bool hasLaterTx = await _context.RdTransactions
-                            .AnyAsync(t => t.RdAccountID == rd.RdAccountID && !voucherIds.Contains(t.VoucherID));
+                            .AnyAsync(t => t.RdAccountID == rd.RdAccountID && (!t.VoucherID.HasValue || !voucherIds.Contains(t.VoucherID.Value)));
                         bool hasAccrual = await _context.RdInterestAccruals
                             .AnyAsync(a => a.RdAccountID == rd.RdAccountID);
                         bool hasExtraPaidSched = await _context.RDInstallmentSchedules

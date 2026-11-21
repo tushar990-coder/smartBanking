@@ -553,6 +553,13 @@ export default function LoanOpeningBalanceMaster() {
   };
 
   const [isInstAmountEdited, setIsInstAmountEdited] = useState(false);
+  const isInstAmountEditedRef = useRef<boolean>(false);
+  const emiPreviewReqSeqRef = useRef<number>(0);
+  const emiAbortControllerRef = useRef<AbortController | null>(null);
+  const setInstAmountEdited = (edited: boolean) => {
+    isInstAmountEditedRef.current = edited;
+    setIsInstAmountEdited(edited);
+  };
   const [isInterestManuallyEdited, setIsInterestManuallyEdited] = useState(false);
 
   // GL vs SL Reconciliation States
@@ -872,10 +879,8 @@ export default function LoanOpeningBalanceMaster() {
     }
 
     if (name === 'installmentAmount') {
-      setIsInstAmountEdited(true);
-    }
-    if (name === 'sanctionedAmount' || name === 'disbursedAmount' || name === 'loanRateID' || name === 'durationMonths' || name === 'installmentFrequency') {
-      setIsInstAmountEdited(false);
+      // Lock manual installment when non-empty; clearing to empty unlocks auto-calculation
+      setInstAmountEdited(value.trim() !== '');
     }
     if (name === 'sanctionedAmount') {
       if (!formData.disbursedAmount || formData.disbursedAmount === formData.sanctionedAmount) {
@@ -983,7 +988,10 @@ export default function LoanOpeningBalanceMaster() {
   }, [formData.durationMonths, formData.installmentFrequency]);
 
   useEffect(() => {
-    calculateEMI();
+    const timer = window.setTimeout(() => {
+      calculateEMI();
+    }, 250);
+    return () => window.clearTimeout(timer);
   }, [
     formData.sanctionedAmount, 
     formData.disbursedAmount,
@@ -994,7 +1002,8 @@ export default function LoanOpeningBalanceMaster() {
     formData.loanRateID, 
     formData.loanDisbursementDate, 
     formData.firstInstallmentDate,
-    formData.installmentAmount
+    formData.installmentAmount,
+    isInstAmountEdited
   ]);
 
   useEffect(() => {
@@ -1143,19 +1152,10 @@ export default function LoanOpeningBalanceMaster() {
   // NOTE: Automatic calculateAccurateInterest useEffect is intentionally removed
   // to allow 100% manual entry without background calculation overwriting saved values.
 
-  const calculateEMI = async () => {
-    const calcBasePrincipal = (parseFloat(formData.disbursedAmount) > 0 ? parseFloat(formData.disbursedAmount) : parseFloat(formData.sanctionedAmount)) || 0;
-    const rate = parseFloat(formData.interestRate) || 0;
+  const resolveEffectiveInstallmentCount = () => {
     const months = parseInt(formData.durationMonths) || 0;
-    
-    if (calcBasePrincipal <= 0 || rate <= 0 || months <= 0 || !formData.loanRateID) {
-      if(!isEditing) setFormData(prev => ({ ...prev, installmentAmount: '' }));
-      setInstallmentChart([]);
-      return;
-    }
-
     let count = parseInt(formData.noOfInstallments) || 0;
-    if (count <= 0) {
+    if (count <= 0 && months > 0) {
       if (formData.installmentFrequency === 'साप्ताहिक') {
         count = Math.max(1, Math.round(months * 4.33));
       } else {
@@ -1166,67 +1166,120 @@ export default function LoanOpeningBalanceMaster() {
         count = Math.max(1, Math.floor(months / step));
       }
     }
+    return count;
+  };
+
+  const getExpectedInstallmentFromChartRow = (firstRow: any) => {
+    if (!firstRow) return 0;
+    const rateObj = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
+    let instAmount = Math.round(parseFloat(firstRow.total) || 0);
+    if (rateObj) {
+      const calcMethod = rateObj.interestCalculationMethod || "Reducing (घटती शिल्लक)";
+      const instType = rateObj.loanInstallmentType || "समान हप्ता";
+      if (calcMethod.includes("Reducing") && (instType === "समान मुद्दल" || instType === "कर्जावरती" || instType.includes("मुद्दल") || instType.includes("कर्जावर"))) {
+        instAmount = Math.round(parseFloat(firstRow.principal) || 0);
+      }
+    }
+    return instAmount;
+  };
+
+  const fetchInstallmentChartSnapshot = async (overrideCustomInst?: number | null, signal?: AbortSignal) => {
+    const calcBasePrincipal = (parseFloat(formData.disbursedAmount) > 0 ? parseFloat(formData.disbursedAmount) : parseFloat(formData.sanctionedAmount)) || 0;
+    const rate = parseFloat(formData.interestRate) || 0;
+    const months = parseInt(formData.durationMonths) || 0;
+    if (calcBasePrincipal <= 0 || rate <= 0 || months <= 0 || !formData.loanRateID) {
+      return [];
+    }
+
+    const count = resolveEffectiveInstallmentCount();
+    const customInst = overrideCustomInst !== undefined
+      ? (overrideCustomInst || 0)
+      : (isInstAmountEditedRef.current ? (parseFloat(formData.installmentAmount) || 0) : 0);
+
+    const payload = {
+      loanRateID: parseInt(formData.loanRateID),
+      loanAmount: calcBasePrincipal,
+      interestRate: rate,
+      noOfInstallments: count,
+      durationMonths: months,
+      installmentFrequency: formData.installmentFrequency || 'मासिक',
+      loanDisbursementDate: formData.loanDisbursementDate || new Date().toISOString().split('T')[0],
+      firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null,
+      customInstallmentAmount: customInst > 0 ? customInst : null
+    };
+
+    const res = await axios.post('/api/LoanAccounts/PreviewSchedule', payload, signal ? { signal } : undefined);
+    return (Array.isArray(res.data) ? res.data : []).map((row: any) => {
+      const roundedPrincipal = Math.round(row.principal);
+      const roundedInterest = Math.round(row.interest);
+      const roundedTotal = roundedPrincipal + roundedInterest;
+      return {
+        no: row.no,
+        date: new Date(row.date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        principal: roundedPrincipal.toString(),
+        interest: roundedInterest.toString(),
+        total: roundedTotal.toString(),
+        balance: Math.round(row.balance).toString(),
+        principalValue: roundedPrincipal,
+        openingBalance: Math.round(row.openingBalance),
+        closingBalance: Math.round(row.closingBalance),
+        days: row.days,
+        interestRate: row.interestRate
+      };
+    });
+  };
+
+  const calculateEMI = async (forceAutoRecalc = false) => {
+    const calcBasePrincipal = (parseFloat(formData.disbursedAmount) > 0 ? parseFloat(formData.disbursedAmount) : parseFloat(formData.sanctionedAmount)) || 0;
+    const rate = parseFloat(formData.interestRate) || 0;
+    const months = parseInt(formData.durationMonths) || 0;
+    
+    if (calcBasePrincipal <= 0 || rate <= 0 || months <= 0 || !formData.loanRateID) {
+      if (!isEditing && !isInstAmountEditedRef.current) setFormData(prev => ({ ...prev, installmentAmount: '' }));
+      setInstallmentChart([]);
+      return;
+    }
+
+    if (emiAbortControllerRef.current) {
+      emiAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    emiAbortControllerRef.current = controller;
+    const reqSeq = ++emiPreviewReqSeqRef.current;
 
     try {
-      const customInst = isInstAmountEdited ? (parseFloat(formData.installmentAmount) || 0) : 0;
-      const payload = {
-        loanRateID: parseInt(formData.loanRateID),
-        loanAmount: calcBasePrincipal,
-        interestRate: rate,
-        noOfInstallments: count,
-        durationMonths: months,
-        installmentFrequency: formData.installmentFrequency || 'मासिक',
-        loanDisbursementDate: formData.loanDisbursementDate || new Date().toISOString().split('T')[0],
-        firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null,
-        customInstallmentAmount: customInst > 0 ? customInst : null
-      };
+      const customInstOverride = forceAutoRecalc
+        ? null
+        : (isInstAmountEditedRef.current ? (parseFloat(formData.installmentAmount) || null) : null);
 
-      const res = await axios.post('/api/LoanAccounts/PreviewSchedule', payload);
-      
-      const mappedChart = res.data.map((row: any) => {
-        const roundedPrincipal = Math.round(row.principal);
-        const roundedInterest = Math.round(row.interest);
-        const roundedTotal = roundedPrincipal + roundedInterest;
-        return {
-          no: row.no,
-          date: new Date(row.date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-          principal: roundedPrincipal.toString(),
-          interest: roundedInterest.toString(),
-          total: roundedTotal.toString(),
-          balance: Math.round(row.balance).toString(),
-          principalValue: roundedPrincipal,
-          openingBalance: Math.round(row.openingBalance),
-          closingBalance: Math.round(row.closingBalance),
-          days: row.days,
-          interestRate: row.interestRate
-        };
-      });
+      const mappedChart = await fetchInstallmentChartSnapshot(customInstOverride, controller.signal);
 
-      if (mappedChart.length > 0 && !isInstAmountEdited) {
-        const firstRow = mappedChart[0];
-        const rateObj = safeArray(loanRates).find(r => r.loanRateID.toString() === formData.loanRateID);
-        let instAmount = Math.round(parseFloat(firstRow.total) || 0);
-        
-        if (rateObj) {
-          const calcMethod = rateObj.interestCalculationMethod || "Reducing (घटती शिल्लक)";
-          const instType = rateObj.loanInstallmentType || "समान हप्ता";
-          if (calcMethod.includes("Reducing") && (instType === "समान मुद्दल" || instType === "कर्जावरती" || instType.includes("मुद्दल") || instType.includes("कर्जावर"))) {
-            instAmount = Math.round(parseFloat(firstRow.principal) || 0);
-          }
-        }
+      // Drop stale out-of-order responses
+      if (reqSeq !== emiPreviewReqSeqRef.current) return;
 
-        if (formData.installmentAmount !== instAmount.toString()) {
-          setFormData(prev => ({ ...prev, installmentAmount: instAmount.toString() }));
-        }
+      // Only auto-populate installmentAmount when live ref confirms user has NOT manually locked an amount
+      if (mappedChart.length > 0 && (forceAutoRecalc || !isInstAmountEditedRef.current)) {
+        const instAmount = getExpectedInstallmentFromChartRow(mappedChart[0]);
+        setFormData(prev => {
+          if (!forceAutoRecalc && isInstAmountEditedRef.current) return prev;
+          if (prev.installmentAmount === instAmount.toString()) return prev;
+          return { ...prev, installmentAmount: instAmount.toString() };
+        });
       }
       setInstallmentChart(mappedChart);
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
       console.error(err);
     }
   };
 
+  const handleResetInstAmount = () => {
+    setInstAmountEdited(false);
+    calculateEMI(true);
+  };
+
   const handleNew = () => {
-    setIsInstAmountEdited(false);
+    setInstAmountEdited(false);
     setIsInterestManuallyEdited(false);
     setFormData({
       loanOpeningBalanceID: 0,
@@ -1363,6 +1416,28 @@ export default function LoanOpeningBalanceMaster() {
     }
     
     try {
+      const parsedInstAmt = parseFloat(formData.installmentAmount || '0');
+      const parsedInstCount = parseInt(formData.noOfInstallments || '0');
+      let latestChart = installmentChart;
+
+      // Ensure installment schedule is 100% synchronized with manually entered/rounded installmentAmount before saving
+      const currentChartInst = latestChart.length > 0 ? getExpectedInstallmentFromChartRow(latestChart[0]) : 0;
+      const isChartStale =
+        latestChart.length === 0 ||
+        (parsedInstAmt > 0 && Math.abs(currentChartInst - Math.round(parsedInstAmt)) >= 1);
+
+      if (isChartStale && disbAmt > 0 && parseFloat(formData.interestRate || '0') > 0 && parseInt(formData.durationMonths || '0') > 0) {
+        try {
+          const syncedChart = await fetchInstallmentChartSnapshot(parsedInstAmt > 0 ? parsedInstAmt : null);
+          if (syncedChart.length > 0) {
+            latestChart = syncedChart;
+            setInstallmentChart(syncedChart);
+          }
+        } catch (syncErr) {
+          console.error('Pre-save schedule sync warning:', syncErr);
+        }
+      }
+
       const dataToSubmit = {
         ...formData,
         legacyAccountNumber: formData.legacyAccountNumber || null,
@@ -1384,9 +1459,9 @@ export default function LoanOpeningBalanceMaster() {
         disbursedAmount: disbAmt,
         interestRate: parseFloat(formData.interestRate || '0'),
         durationMonths: parseInt(formData.durationMonths || '0'),
-        installmentAmount: parseFloat(formData.installmentAmount || '0'),
+        installmentAmount: parsedInstAmt,
         securityValue: parseFloat(formData.securityValue || '0'),
-        noOfInstallments: installmentChart.length,
+        noOfInstallments: parsedInstCount > 0 ? parsedInstCount : latestChart.length,
         guarantor1CustomerID: formData.guarantor1 ? parseInt(formData.guarantor1) : null,
         guarantor2CustomerID: formData.guarantor2 ? parseInt(formData.guarantor2) : null,
         goldItems: goldItems.map(g => {
@@ -1436,7 +1511,7 @@ export default function LoanOpeningBalanceMaster() {
         firstInstallmentDate: formData.firstInstallmentDate || null,
         maturityDate: formData.maturityDate || null,
         lastInstallmentPaidDate: formData.lastInstallmentPaidDate || null,
-        schedule: installmentChart.map((row: any) => {
+        schedule: latestChart.map((row: any) => {
           let dateStr = row.date;
           if (row.date && typeof row.date === 'string' && row.date.includes('/')) {
             const parts = row.date.split('/');
@@ -1495,7 +1570,8 @@ export default function LoanOpeningBalanceMaster() {
   };
 
   const handleEdit = async (balance: any) => {
-    setIsInstAmountEdited(false);
+    // Preserve saved installmentAmount (e.g., manually rounded-up 8400) instead of overwriting with auto-calculation
+    setInstAmountEdited(Number(balance.installmentAmount || 0) > 0);
     setIsInterestManuallyEdited(true);
     const custId = balance.customerID || balance.customer?.customerID;
     setFormData({
@@ -1937,7 +2013,26 @@ export default function LoanOpeningBalanceMaster() {
                 />
               </div>
               <div>
-                <label className={labelClass}>हप्ता रक्कम</label>
+                <div className="flex items-center justify-between gap-1">
+                  <label className={labelClass}>
+                    हप्ता रक्कम
+                    {isInstAmountEdited && (
+                      <span className="ml-1 text-[9px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-1 rounded">
+                        मॅन्युअल
+                      </span>
+                    )}
+                  </label>
+                  {isInstAmountEdited && (
+                    <button
+                      type="button"
+                      onClick={handleResetInstAmount}
+                      title="सिस्टीमनुसार ऑटो हप्ता पुन्हा मोजा"
+                      className="text-[9.5px] font-bold text-primary hover:underline cursor-pointer mb-0.5"
+                    >
+                      🔄 ऑटो करा
+                    </button>
+                  )}
+                </div>
                 <input 
                   type="number" 
                   step="0.01" 
@@ -1945,7 +2040,11 @@ export default function LoanOpeningBalanceMaster() {
                   value={formData.installmentAmount} 
                   onChange={handleChange} 
                   onFocus={(e) => e.target.select()} 
-                  className={`${inputClass} bg-amber-50/70 font-bold text-primary font-mono`} 
+                  className={`${inputClass} font-bold font-mono ${
+                    isInstAmountEdited
+                      ? 'bg-purple-50/70 text-purple-900 border-purple-300 focus:border-purple-500'
+                      : 'bg-amber-50/70 text-primary'
+                  }`} 
                   placeholder="0.00" 
                 />
               </div>

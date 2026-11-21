@@ -270,7 +270,7 @@ namespace Bhisi.Api.Tests
             var controller = new FdAccountsController(db);
             AttachAdmin(controller, closureDate);
 
-            // 1. With InterestDebitMode = "Auto": Debits ₹5,000 from 114 (Payable) + ₹2,605 from 333 (Expense)
+            // 1. With InterestDebitMode = "Provision": Debits ₹5,000 from 114 (Payable) + ₹2,605 from 333 (Expense)
             var autoCloseRes = await controller.PrematureClose(333, closureDate, new FdClosureRequest
             {
                 ClosureDate = closureDate,
@@ -278,7 +278,7 @@ namespace Bhisi.Api.Tests
                 IsManualAmountOverride = true,
                 CustomAccruedInterest = 7605m,
                 ManualOverrideReason = "थेट सेटलमेंट संपादन",
-                InterestDebitMode = "Auto"
+                InterestDebitMode = "Provision"
             });
             Assert.IsType<OkObjectResult>(autoCloseRes);
 

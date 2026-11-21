@@ -734,13 +734,30 @@ namespace Bhisi.Api.Controllers
                 _context.LoanDisbursements.Add(disbursement);
                 await _context.SaveChangesAsync();
 
-                if (dto.Schedule != null && dto.Schedule.Any())
+                var effectiveSchedule = dto.Schedule;
+                if ((effectiveSchedule == null || !effectiveSchedule.Any()) && loanRate != null && actualDisbursementAmount > 0)
+                {
+                    effectiveSchedule = Services.LoanScheduleGenerator.GeneratePreviewSchedule(new LoanSchedulePreviewRequest
+                    {
+                        LoanRateID = dto.LoanRateID,
+                        LoanAmount = actualDisbursementAmount,
+                        InterestRate = dto.InterestRate,
+                        NoOfInstallments = dto.NoOfInstallments,
+                        DurationMonths = dto.DurationMonths,
+                        InstallmentFrequency = dto.InstallmentFrequency ?? "मासिक",
+                        LoanDisbursementDate = dto.LoanDisbursementDate ?? dto.OpeningDate,
+                        FirstInstallmentDate = dto.FirstInstallmentDate,
+                        CustomInstallmentAmount = dto.InstallmentAmount > 0 ? dto.InstallmentAmount : null
+                    }, loanRate);
+                }
+
+                if (effectiveSchedule != null && effectiveSchedule.Any())
                 {
                     decimal pureBal = dto.PurePrincipalBalance > 0 
                         ? dto.PurePrincipalBalance 
                         : (dto.CapitalizedInterestAmount > 0 ? (dto.PrincipalBalance - dto.CapitalizedInterestAmount) : dto.PrincipalBalance);
                     decimal totalPrincipalPaid = Math.Max(0, actualDisbursementAmount - pureBal);
-                    foreach (var s in dto.Schedule)
+                    foreach (var s in effectiveSchedule)
                     {
                         string status = "Pending";
                         DateTime? paidDate = null;
@@ -1107,13 +1124,30 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 // Add new schedule
-                if (dto.Schedule != null && dto.Schedule.Any())
+                var effectiveSchedule = dto.Schedule;
+                if ((effectiveSchedule == null || !effectiveSchedule.Any()) && loanRate != null && actualDisbursementAmount > 0)
+                {
+                    effectiveSchedule = Services.LoanScheduleGenerator.GeneratePreviewSchedule(new LoanSchedulePreviewRequest
+                    {
+                        LoanRateID = dto.LoanRateID,
+                        LoanAmount = actualDisbursementAmount,
+                        InterestRate = dto.InterestRate,
+                        NoOfInstallments = dto.NoOfInstallments,
+                        DurationMonths = dto.DurationMonths,
+                        InstallmentFrequency = dto.InstallmentFrequency ?? "मासिक",
+                        LoanDisbursementDate = dto.LoanDisbursementDate ?? dto.OpeningDate,
+                        FirstInstallmentDate = dto.FirstInstallmentDate,
+                        CustomInstallmentAmount = dto.InstallmentAmount > 0 ? dto.InstallmentAmount : null
+                    }, loanRate);
+                }
+
+                if (effectiveSchedule != null && effectiveSchedule.Any())
                 {
                     decimal pureBal = dto.PurePrincipalBalance > 0 
                         ? dto.PurePrincipalBalance 
                         : (dto.CapitalizedInterestAmount > 0 ? (dto.PrincipalBalance - dto.CapitalizedInterestAmount) : dto.PrincipalBalance);
                     decimal totalPrincipalPaid = Math.Max(0, actualDisbursementAmount - pureBal);
-                    foreach (var s in dto.Schedule)
+                    foreach (var s in effectiveSchedule)
                     {
                         string status = "Pending";
                         DateTime? paidDate = null;

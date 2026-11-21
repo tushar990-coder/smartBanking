@@ -95,6 +95,8 @@ namespace Bhisi.Api.Services
                         InterestRate = ratePerYear
                     });
 
+                    if (bal <= 0) break;
+
                     prevDueDate = currentDueDate;
                     currentDueDate = isWeekly ? currentDueDate.AddDays(7) : currentDueDate.AddMonths(stepMonths);
                 }
@@ -134,6 +136,8 @@ namespace Bhisi.Api.Services
                         InterestRate = ratePerYear
                     });
 
+                    if (bal <= 0) break;
+
                     prevDueDate = currentDueDate;
                     currentDueDate = isWeekly ? currentDueDate.AddDays(7) : currentDueDate.AddMonths(stepMonths);
                 }
@@ -171,7 +175,12 @@ namespace Bhisi.Api.Services
                     {
                         totalEmi = Math.Round(emi);
                         principalPart = totalEmi - Math.Round(interest);
-                        if (principalPart > bal) principalPart = bal;
+                        if (principalPart < 0) principalPart = 0;
+                        if (principalPart > bal)
+                        {
+                            principalPart = bal;
+                            totalEmi = Math.Round(principalPart + interest);
+                        }
                         bal -= principalPart;
                     }
                     if (bal < 0) bal = 0;
@@ -191,6 +200,8 @@ namespace Bhisi.Api.Services
                         Days = days,
                         InterestRate = ratePerYear
                     });
+
+                    if (bal <= 0) break;
 
                     prevDueDate = currentDueDate;
                     currentDueDate = isWeekly ? currentDueDate.AddDays(7) : currentDueDate.AddMonths(stepMonths);

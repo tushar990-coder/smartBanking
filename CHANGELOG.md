@@ -1,5 +1,16 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-21] - आवृत्ती v2.6.35 (Loan Opening Balance Manual Installment Preservation & Schedule Sync)
+
+### 🏦 1. कर्ज आरंभिक शिल्लक नोंदणी — मॅन्युअल हप्ता रक्कम (`8400` राऊंड-अप) जतन व अचूक हप्ता चार्ट
+- **`LoanOpeningBalanceMaster.tsx`:**
+  - `handleEdit` मध्ये आधीपासून सेव्ह असलेली `installmentAmount` (`8400`) मॅन्युअल लॉक (`setInstAmountEdited(true)`) करून संपादन उघडताच ऑटो-कॅल्क्युलेशनने ती पुन्हा `8333` होण्याचा दोष कायमचा दूर केला.
+  - `calculateEMI` साठी `250ms debounce`, `AbortController`, request-sequence guard (`emiPreviewReqSeqRef`) आणि live `isInstAmountEditedRef` जोडले, जेणेकरून टाइप करताना जुन्या async प्रतिसादाने (stale closure) मॅन्युअल रक्कम ओव्हरराईट होणार नाही.
+  - `हप्ता रक्कम` इनपुटवर **`मॅन्युअल`** बॅज व एक-क्लिक **`🔄 ऑटो करा`** रिसेट बटण दिले आणि `handleSubmit` मध्ये सेव्ह करण्यापूर्वी हप्ता वेळापत्रक (`schedule`) मॅन्युअल हप्ता रकमेनुसार १००% सिंक केले.
+- **`LoanScheduleGenerator.cs`, `LoanAccountsController.cs` व `LoanOpeningBalanceInstallmentTests.cs`:**
+  - जास्त राऊंड-अप हप्त्यामुळे मुद्दल शिल्लक `₹0` झाल्यावर अनावश्यक शून्य-रकमेच्या (`₹0`) ओळी थांबवण्यासाठी तिन्ही कॅल्क्युलेशन पद्धतींमध्ये `if (bal <= 0) break;` जोडले.
+  - `PostOpeningBalance` व `PutOpeningBalance` मध्ये `Schedule` रिकामी असल्यास `CustomInstallmentAmount = dto.InstallmentAmount` सह सर्व्हरवर अचूक हप्ता वेळापत्रक तयार केले (**१४७/१४७ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-19] - आवृत्ती v2.6.34 (FD Closure Interest Expense Ledger & Exact Manual Amount Fix)
 
 ### 🏦 1. मुदत ठेव बंद / मुदतपूर्व बंद / नूतनीकरण — अचूक `मुदतठेवीवरील व्याज` लेजर व रक्कम संरक्षण

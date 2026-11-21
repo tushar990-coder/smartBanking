@@ -7192,6 +7192,19 @@ IF OBJECT_ID('dbo.RdTransactions', 'U') IS NOT NULL
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_RdTransactions_SyncReferenceId] ON [dbo].[RdTransactions] ([SyncReferenceId]) WHERE [SyncReferenceId] IS NOT NULL;
 GO
 
+IF OBJECT_ID('dbo.Customers', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('Customers', 'PortalPinHash') IS NULL
+        ALTER TABLE [dbo].[Customers] ADD [PortalPinHash] NVARCHAR(255) NULL;
+    IF COL_LENGTH('Customers', 'PortalFailedAttempts') IS NULL
+        ALTER TABLE [dbo].[Customers] ADD [PortalFailedAttempts] INT NOT NULL DEFAULT 0;
+    IF COL_LENGTH('Customers', 'IsPortalLocked') IS NULL
+        ALTER TABLE [dbo].[Customers] ADD [IsPortalLocked] BIT NOT NULL DEFAULT 0;
+    IF COL_LENGTH('Customers', 'PortalSessionToken') IS NULL
+        ALTER TABLE [dbo].[Customers] ADD [PortalSessionToken] NVARCHAR(2000) NULL;
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

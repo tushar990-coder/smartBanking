@@ -50,6 +50,13 @@ namespace Bhisi.Api.Controllers
                 a.AccountNo == key || a.LegacyAccountNumber == key || a.OldAccountNo == key);
         }
 
+        private static string FormatCustomerFullName(Customer? c)
+        {
+            if (c == null) return string.Empty;
+            return string.Join(" ", new[] { c.FirstName, c.MiddleName, c.LastName }
+                .Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+        }
+
         public class ActiveLoanDto
         {
             public int LoanAccountId { get; set; }
@@ -66,6 +73,7 @@ namespace Bhisi.Api.Controllers
             public int CustomerId { get; set; }
             public string AccountNo { get; set; } = string.Empty;
             public string? LegacyAccountNumber { get; set; }
+            public string CustomerName { get; set; } = string.Empty;
             public string MemberName { get; set; } = string.Empty;
             public string CIFNo { get; set; } = string.Empty;
             public DateTime OpeningDate { get; set; }
@@ -107,6 +115,7 @@ namespace Bhisi.Api.Controllers
             public int CustomerId { get; set; }
             public string AccountNo { get; set; } = string.Empty;
             public string? LegacyAccountNumber { get; set; }
+            public string CustomerName { get; set; } = string.Empty;
             public string MemberName { get; set; } = string.Empty;
             public string CIFNo { get; set; } = string.Empty;
             public decimal CurrentBalance { get; set; }
@@ -253,13 +262,15 @@ namespace Bhisi.Api.Controllers
             bool hasActiveLoanLien = activeLoans.Any(l => l.TotalOutstanding > 0);
             decimal totalLoanLiability = activeLoans.Sum(l => l.TotalOutstanding);
 
+            string fullCustomerName = FormatCustomerFullName(account.Customer);
             return Ok(new ClosurePreviewResult
             {
                 PigmyAccountId = account.PigmyAccountID,
                 CustomerId = account.CustomerID,
                 AccountNo = account.AccountNo,
                 LegacyAccountNumber = account.LegacyAccountNumber ?? account.OldAccountNo,
-                MemberName = account.Customer != null ? (account.Customer.FirstName + " " + (account.Customer.LastName ?? "")).Trim() : "",
+                CustomerName = fullCustomerName,
+                MemberName = fullCustomerName,
                 CIFNo = account.Customer?.CIFNo ?? "",
                 OpeningDate = account.OpeningDate,
                 MaturityDate = account.MaturityDate,
@@ -337,13 +348,15 @@ namespace Bhisi.Api.Controllers
             bool hasActiveLoanLien = activeLoans.Any(l => l.TotalOutstanding > 0);
             decimal totalLoanLiability = activeLoans.Sum(l => l.TotalOutstanding);
 
+            string fullCustomerName = FormatCustomerFullName(account.Customer);
             return Ok(new WithdrawalPreviewResult
             {
                 PigmyAccountId = account.PigmyAccountID,
                 CustomerId = account.CustomerID,
                 AccountNo = account.AccountNo,
                 LegacyAccountNumber = account.LegacyAccountNumber ?? account.OldAccountNo,
-                MemberName = account.Customer != null ? (account.Customer.FirstName + " " + (account.Customer.LastName ?? "")).Trim() : "",
+                CustomerName = fullCustomerName,
+                MemberName = fullCustomerName,
                 CIFNo = account.Customer?.CIFNo ?? "",
                 CurrentBalance = account.TotalDepositedAmount,
                 RequestedAmount = amount,

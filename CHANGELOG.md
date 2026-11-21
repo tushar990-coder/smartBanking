@@ -1,5 +1,17 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-21] - आवृत्ती v2.6.37 (Pigmy Withdrawal & Closure Searchable Customer/Account Selector & Customer Portal mPIN VPS Sync)
+
+### 🏦 1. पिग्मी विड्रॉल व खाते बंद व्यवस्थापन (`पिग्मीदार / खातेदार नाव व खाते शोध`) सुधारणा
+- **`PigmyClosureMaster.tsx`, `PigmyAccountsController.cs`, `PigmyClosureController.cs` व `PigmyClosureAccountSearchTests.cs`:**
+  - `१. खाते शोध (Search Pigmy Account)` विभागात पर्यायी **पिग्मी एजंट फिल्टर** व **`SearchableSelect` खातेदार/खाते ड्रॉपडाउन** जोडले; त्यात खातेदाराचे पूर्ण मराठी नाव, १४-अंकी CBS खाते क्र., `[जुना क्र.]`, `CIF / योजना / एजंट / मो. / इंग्रजी नाव` आणि वर्तमान **`शिल्लक` (₹)** दिसतात व यादीतून निवड करताच थेट **एक-क्लिक प्रिव्ह्यू लोड** होते ( तसेच थेट खाते क्र./जुना क्र. टाइप करून शोध व रीफ्रेश बटण व URL deep-link `?accountNo=...` ठेवले आहे).
+  - `GetPigmyAccounts` मध्ये `excludeClosed = true` फास्ट पाथ (फक्त सक्रिय/परिपक्व खाती व `PigmyOpeningBalances` स्किप करून जलद लोड), `User.ResolveOptionalBranchId(branchId)` शाखा मर्यादा आणि `MiddleName`, `FirstNameEng`, `MiddleNameEng`, `LastNameEng`, `LegacyCustomerNo` वरून शोध समाविष्ट केले.
+  - `ClosurePreviewResult` व `WithdrawalPreviewResult` मध्ये `FormatCustomerFullName(Customer?)` द्वारे पूर्ण ३-भागी मराठी नाव (`FirstName MiddleName LastName`) जोडले (**१५२/१५२ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
+### 🔐 2. ग्राहक पोर्टल तात्पुरते mPIN ऑथेंटिकेशन व VPS स्कीमा सिंक
+- **`AuthController.cs`, `CustomerPortalController.cs`, `Program.cs` व `tools/master_vps_update_schema.sql`:**
+  - `Customers` टेबलमधील `PortalPinHash`, `PortalFailedAttempts`, `IsPortalLocked` आणि `PortalSessionToken` हे स्तंभ आयडेम्पोटंट SQL पद्धतीने मास्टर VPS अपडेट स्क्रिप्टमध्ये (`Step 2`) समाविष्ट केले.
+
 ## 📅 [2026-11-21] - आवृत्ती v2.6.36 (Allow Direct Saving/Cash/Bank Payout on Unpledged FDs with Direct-Lien-Only Guard)
 
 ### 🏦 1. तारण नसलेल्या नियमित मुदत ठेव पावत्या (`1343`, `1345`) थेट `Saving Transfer` / रोख / बँक परतावा अनुज्ञेय

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { resolveWriteBranchId } from '../utils/branchAccess';
+import { getEffectiveBranchId, resolveWriteBranchId } from '../utils/branchAccess';
 import BankLedgerSelect from './common/BankLedgerSelect';
+import SearchableSelect, { SearchableSelectOption } from './SearchableSelect';
 import { 
   ExclamationTriangleIcon, 
   ShieldExclamationIcon, 
@@ -55,6 +56,7 @@ interface ClosurePreview {
 interface WithdrawalPreview {
   pigmyAccountId: number;
   accountNo: string;
+  customerName?: string;
   memberName: string;
   cifNo: string;
   currentBalance: number;
@@ -103,7 +105,7 @@ interface PigmyClosureMasterProps {
 }
 
 const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: propVoucherId, isPassingMode: propIsPassingMode, onNavigate }) => {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
   const queryParams = new URLSearchParams(window.location.search);
   const voucherId = propVoucherId || (queryParams.get('voucherId') ? parseInt(queryParams.get('voucherId')!, 10) : undefined);
   const isPassingMode = propIsPassingMode ?? (queryParams.get('passingMode') === 'true');
@@ -117,6 +119,10 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
   const [activeTab, setActiveTab] = useState<'withdrawal' | 'closure'>('withdrawal');
   const [accountNo, setAccountNo] = useState('');
   const [withdrawalAmount, setWithdrawalAmount] = useState('');
+  const [pigmyAccounts, setPigmyAccounts] = useState<any[]>([]);
+  const [pigmyAgents, setPigmyAgents] = useState<any[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<number>(0);
+  const [accountsLoading, setAccountsLoading] = useState<boolean>(false);
   
   // Previews
   const [closurePreview, setClosurePreview] = useState<ClosurePreview | null>(null);
@@ -260,8 +266,107 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
     }
   };
 
-  const handleSearch = async () => {
-    if (!accountNo.trim()) return;
+  const fetchActivePigmyAccounts = async (autoSelectFromUrl = false) => {
+    setAccountsLoading(true);
+    try {
+      const effBranch = getEffectiveBranchId(user, globalBranchId);
+      const branchQuery = typeof effBranch === 'number' && effBranch > 0 ? { branchId: effBranch } : {};
+      const [accRes, agRes] = await Promise.all([
+        axios.get('/api/PigmyAccounts', {
+          params: { excludeClosed: true, sortOrder: 'asc', ...branchQuery }
+        }),
+        axios.get('/api/PigmyAgents').catch(() => ({ data: [] }))
+      ]);
+
+      const rawAccs = Array.isArray(accRes.data) ? accRes.data.filter((a: any) => a.status !== 'Closed') : [];
+      rawAccs.sort((a: any, b: any) => {
+        const aLeg = String(a.legacyAccountNumber || a.oldAccountNo || '').trim();
+        const bLeg = String(b.legacyAccountNumber || b.oldAccountNo || '').trim();
+        if (aLeg && bLeg) return aLeg.localeCompare(bLeg, undefined, { numeric: true, sensitivity: 'base' });
+        if (aLeg && !bLeg) return -1;
+        if (!aLeg && bLeg) return 1;
+        return String(a.accountNo || '').localeCompare(String(b.accountNo || ''), undefined, { numeric: true });
+      });
+      setPigmyAccounts(rawAccs);
+
+      const rawAgents = Array.isArray(agRes.data) ? agRes.data : [];
+      const filteredAgents = typeof effBranch === 'number' && effBranch > 0
+        ? rawAgents.filter((ag: any) => !ag.branchID || Number(ag.branchID) === effBranch)
+        : rawAgents;
+      setPigmyAgents(filteredAgents);
+
+      if (autoSelectFromUrl && !voucherId && rawAccs.length > 0) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetAccNo = (urlParams.get('accountNo') || '').trim();
+        const targetAccId = parseInt(urlParams.get('accountId') || '0', 10);
+        const targetCustId = parseInt(urlParams.get('customerId') || '0', 10);
+        const targetCif = (urlParams.get('cifNo') || '').trim().toUpperCase();
+
+        if (targetAccNo || targetAccId > 0 || targetCustId > 0 || targetCif) {
+          const matched = rawAccs.find((a: any) =>
+            (targetAccNo && (a.accountNo === targetAccNo || a.legacyAccountNumber === targetAccNo || a.oldAccountNo === targetAccNo)) ||
+            (targetAccId > 0 && Number(a.pigmyAccountID) === targetAccId) ||
+            (targetCustId > 0 && Number(a.customerID) === targetCustId) ||
+            (targetCif && String(a.customer?.cifNo || '').trim().toUpperCase() === targetCif)
+          );
+          if (matched?.accountNo) {
+            setAccountNo(matched.accountNo);
+            handleSearch(matched.accountNo);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load active Pigmy accounts:', err);
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isPassingMode) {
+      fetchActivePigmyAccounts(true);
+    }
+  }, [globalBranchId, user?.branchID, isPassingMode]);
+
+  const accountOptions: SearchableSelectOption[] = useMemo(() => {
+    const baseList = selectedAgentId > 0
+      ? pigmyAccounts.filter((a: any) => Number(a.pigmyAgentID) === selectedAgentId)
+      : pigmyAccounts;
+
+    return baseList.map((a: any) => {
+      const custName = (
+        a.customerName ||
+        a.fullName ||
+        [a.customer?.firstName, a.customer?.middleName, a.customer?.lastName].filter(Boolean).join(' ')
+      ).trim() || 'पिग्मी खातेदार';
+      const engName = [a.customer?.firstNameEng, a.customer?.middleNameEng, a.customer?.lastNameEng].filter(Boolean).join(' ').trim();
+      const legacyNo = String(a.legacyAccountNumber || a.oldAccountNo || a.previousAccountNo || '').trim();
+      const dispNo = String(a.formattedAccountNo || a.accountNo || '').trim();
+      const cif = String(a.customer?.cifNo || '').trim();
+      const scheme = String(a.pigmyScheme?.schemeName || '').trim();
+      const agent = String(a.pigmyAgent?.agentName || '').trim();
+      const mobile = String(a.customer?.mobileNo || '').trim();
+      const bal = Number(a.totalDepositedAmount || 0);
+
+      return {
+        value: String(a.accountNo || ''),
+        label: `${custName} — ${dispNo}${legacyNo ? ` [जुना क्र.: ${legacyNo}]` : ''}`,
+        subLabel: [
+          cif ? `CIF: ${cif}` : '',
+          scheme ? `योजना: ${scheme}` : '',
+          agent ? `एजंट: ${agent}` : '',
+          mobile ? `मो.: ${mobile}` : '',
+          engName
+        ].filter(Boolean).join(' • '),
+        badge: `शिल्लक: ₹ ${bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-300'
+      };
+    });
+  }, [pigmyAccounts, selectedAgentId]);
+
+  const handleSearch = async (overrideAccNo?: string | React.MouseEvent | React.KeyboardEvent) => {
+    const lookupNo = (typeof overrideAccNo === 'string' ? overrideAccNo : accountNo).trim();
+    if (!lookupNo) return;
     setLoading(true);
     setMessage('');
     setClosurePreview(null);
@@ -271,17 +376,19 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
     
     try {
       if (activeTab === 'closure') {
-        const res = await axios.get(`/api/PigmyClosure/Preview/${encodeURIComponent(accountNo.trim())}`);
+        const res = await axios.get(`/api/PigmyClosure/Preview/${encodeURIComponent(lookupNo)}`);
         setClosurePreview(res.data);
+        if (res.data?.accountNo) setAccountNo(res.data.accountNo);
         fetchCustomerSavingAccounts(res.data?.customerId, res.data?.cifNo);
         toast.success('पिग्मी खाते माहिती उपलब्ध झाली.');
       } else {
         // In withdrawal tab, fetch closure preview as basic account snapshot + withdrawal history
         const [cRes, hRes] = await Promise.all([
-          axios.get(`/api/PigmyClosure/Preview/${encodeURIComponent(accountNo.trim())}`),
-          axios.get(`/api/PigmyClosure/WithdrawalsHistory/${encodeURIComponent(accountNo.trim())}`)
+          axios.get(`/api/PigmyClosure/Preview/${encodeURIComponent(lookupNo)}`),
+          axios.get(`/api/PigmyClosure/WithdrawalsHistory/${encodeURIComponent(lookupNo)}`)
         ]);
         setClosurePreview(cRes.data);
+        if (cRes.data?.accountNo) setAccountNo(cRes.data.accountNo);
         setWithdrawalHistory(hRes.data || []);
         fetchCustomerSavingAccounts(cRes.data?.customerId, cRes.data?.cifNo);
         toast.success('पिग्मी खाते माहिती व सायकल इतिहास लोड झाला.');
@@ -358,8 +465,9 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       setMessage(successMsg);
       toast.success(successMsg);
 
-      // Refresh account details and history
-      handleSearch();
+      // Refresh account details, history and active accounts dropdown balance
+      await handleSearch(withdrawalPreview.accountNo);
+      fetchActivePigmyAccounts(false);
       setWithdrawalPreview(null);
       setWithdrawalAmount('');
       setNarration('');
@@ -417,6 +525,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       toast.success(successMsg);
       setClosurePreview(null);
       setAccountNo('');
+      fetchActivePigmyAccounts(false);
       setNarration('');
       setPaymentMode('Cash');
       setBankLedgerId(0);
@@ -530,25 +639,82 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
               </span>
             </div>
 
-            <div className="flex gap-2.5 items-end">
-              <div className="flex-1">
-                <label className="block text-[11px] font-medium text-gray-600 mb-0.5">पिग्मी खाते नंबर (Account Number) *</label>
-                <input 
-                  type="text" 
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900" 
-                  placeholder="उदा. PG-1234 किंवा जुना खाते क्र. 105"
-                  value={accountNo} 
-                  onChange={(e) => setAccountNo(e.target.value)} 
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+              <div className="md:col-span-3">
+                <label className="block text-[11px] font-medium text-gray-600 mb-0.5">पिग्मी एजंट फिल्टर (ऐच्छिक)</label>
+                <select
+                  value={selectedAgentId}
+                  onChange={(e) => setSelectedAgentId(parseInt(e.target.value, 10) || 0)}
+                  className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs bg-white font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value={0}>सर्व एजंट ({pigmyAccounts.length} खाती)</option>
+                  {pigmyAgents.map((ag: any) => (
+                    <option key={ag.pigmyAgentID} value={ag.pigmyAgentID}>
+                      {ag.agentName}{ag.username ? ` (${ag.username})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-6">
+                <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
+                  पिग्मी खातेदार नाव / खाते क्र. निवडा *
+                </label>
+                <SearchableSelect
+                  options={accountOptions}
+                  value={accountNo}
+                  onChange={(e) => {
+                    const selectedVal = String(e.target.value || '').trim();
+                    setAccountNo(selectedVal);
+                    if (selectedVal) {
+                      handleSearch(selectedVal);
+                    } else {
+                      setClosurePreview(null);
+                      setWithdrawalPreview(null);
+                      setWithdrawalHistory([]);
+                      setMessage('');
+                    }
+                  }}
+                  disabled={isPassingMode}
+                  placeholder={accountsLoading ? 'पिग्मी खाती लोड होत आहेत...' : 'पिग्मीदाराचे नाव, जुना क्र., खाते क्र. किंवा CIF ने शोधा...'}
+                  searchPlaceholder="पिग्मीदाराचे नाव (मराठी/इंग्रजी), जुना क्र., खाते क्र., CIF किंवा मोबाईल..."
+                  countLabel="सक्रिय पिग्मी खाती"
+                  emptyMessage="कोणतेही सक्रिय पिग्मी खाते आढळले नाही."
+                  emptySubMessage="एजंट फिल्टर तपासा किंवा खाते क्र. / नाव तपासा."
+                  minMenuWidth={460}
                 />
               </div>
-              <button 
-                className="bg-primary hover:bg-[#004a75] text-white px-4 py-1.5 rounded-sm font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer flex items-center gap-1"
-                onClick={handleSearch}
-                disabled={loading || !accountNo.trim()}
-              >
-                <span>{loading ? 'शोधत आहे...' : '🔍 खाते शोधा (Search)'}</span>
-              </button>
+
+              <div className="md:col-span-3 flex gap-1.5 items-end">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-[11px] font-medium text-gray-600 mb-0.5">थेट खाते / जुना क्र.</label>
+                  <input
+                    type="text"
+                    className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900"
+                    placeholder="PG / जुना क्र."
+                    value={accountNo}
+                    onChange={(e) => setAccountNo(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="bg-primary hover:bg-[#004a75] text-white h-[30px] px-3 rounded-sm font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer flex items-center gap-1 shrink-0"
+                  onClick={handleSearch}
+                  disabled={loading || !accountNo.trim()}
+                >
+                  <span>{loading ? '...' : '🔍 शोधा'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fetchActivePigmyAccounts(false)}
+                  disabled={accountsLoading}
+                  title="पिग्मी खाती यादी रिफ्रेश करा"
+                  className="bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 h-[30px] px-2 rounded-sm font-bold text-xs shadow-2xs transition cursor-pointer shrink-0 flex items-center justify-center"
+                >
+                  <ArrowPathIcon className={`w-3.5 h-3.5 ${accountsLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
           </div>
 

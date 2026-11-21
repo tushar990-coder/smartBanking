@@ -31,6 +31,7 @@ namespace Bhisi.Api.Controllers
 
     [Route("api/[controller]")]
     [ApiController]
+    [Microsoft.AspNetCore.Authorization.Authorize]
     public class PigmyAccountsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -302,6 +303,21 @@ namespace Bhisi.Api.Controllers
         [HttpGet("Agent/{agentId}")]
         public async Task<ActionResult<IEnumerable<object>>> GetAccountsByAgent(int agentId, [FromQuery] string status = "Active")
         {
+            if (User.IsInRole("CUSTOMER"))
+            {
+                return Forbid();
+            }
+            if (User.IsInRole("AGENT"))
+            {
+                var claim = User.FindFirst("agentId")?.Value
+                    ?? User.FindFirst("AgentId")?.Value
+                    ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (!int.TryParse(claim, out int tokenAgentId) || tokenAgentId != agentId)
+                {
+                    return Forbid();
+                }
+            }
+
             // 1. Fetch records into memory first (avoids EF Core SQL translation issues with LuhnHelper and ToString)
             var dbAccounts = await _context.PigmyAccounts
                 .AsNoTracking()

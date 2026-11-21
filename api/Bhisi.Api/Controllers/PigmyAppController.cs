@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Helpers;
@@ -44,6 +45,12 @@ namespace Bhisi.Api.Controllers
 
         private int ResolveAuthorizedAgentId(int? requestedAgentId = null, int headerAgentId = 0)
         {
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? string.Empty;
+            if (string.Equals(roleClaim, "CUSTOMER", StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+
             var jwtClaim = User.Claims.FirstOrDefault(c => c.Type == "agentId" || c.Type == "AgentId")?.Value
                 ?? (IsAgentRole() ? User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value : null);
             int tokenAgentId = int.TryParse(jwtClaim, out int tid) ? tid : 0;
@@ -70,6 +77,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/PigmyApp/Login
         [AllowAnonymous]
+        [EnableRateLimiting("AuthRateLimit")]
         [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
@@ -186,7 +194,7 @@ namespace Bhisi.Api.Controllers
             int agentId = ResolveAuthorizedAgentId(null, headerAgentId);
             if (agentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
-            var today = DateTime.Today;
+            var today = _businessDateGuard.GetIstToday();
 
             // Today's Collection
             var todaysCollections = await _context.PigmyCollections
@@ -367,7 +375,7 @@ namespace Bhisi.Api.Controllers
             int targetAgentId = ResolveAuthorizedAgentId(agentId, headerAgentId);
             if (targetAgentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
-            var today = DateTime.Today;
+            var today = _businessDateGuard.GetIstToday();
             var day1 = today.AddDays(-1); // Yesterday
             var day2 = today.AddDays(-2); // Day before yesterday
 
@@ -473,7 +481,7 @@ namespace Bhisi.Api.Controllers
             bool isLocked = pendingCashInHand > agent.MaxCashLimit;
 
             // Also check 2-day lock: count distinct past days that have unremitted collections
-            var today = DateTime.Today;
+            var today = _businessDateGuard.GetIstToday();
             int pastPendingDaysCount = 0;
             int lockDaysToCheck = agent.MaxLockDays > 0 ? agent.MaxLockDays : 2;
 

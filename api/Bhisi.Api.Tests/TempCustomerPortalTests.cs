@@ -174,5 +174,76 @@ namespace Bhisi.Api.Tests
             var ownPb = await controller.GetPassbook("PIGMY", 10);
             Assert.IsType<OkObjectResult>(ownPb);
         }
+
+        [Fact]
+        public async Task RoleBoundaryFilter_BlocksCustomerFromAgentAndCbsControllers_AndBlocksAgentFromCbsControllers()
+        {
+            var filter = new Bhisi.Api.Filters.EnforceRoleBoundaryAttribute();
+
+            static Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext MakeCtx(string role, string controllerName, string actionName, int id = 1)
+            {
+                var claims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.NameIdentifier, id.ToString()),
+                    new Claim(ClaimTypes.Role, role)
+                };
+                if (role == "AGENT") claims.Add(new Claim("agentId", id.ToString()));
+                if (role == "CUSTOMER") claims.Add(new Claim("CustomerId", id.ToString()));
+
+                var http = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"))
+                };
+                http.Request.Method = "GET";
+
+                var cad = new Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor
+                {
+                    ControllerName = controllerName,
+                    ActionName = actionName
+                };
+                var actionCtx = new ActionContext(http, new Microsoft.AspNetCore.Routing.RouteData(), cad);
+                return new Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext(
+                    actionCtx,
+                    new List<Microsoft.AspNetCore.Mvc.Filters.IFilterMetadata>(),
+                    new Dictionary<string, object?>(),
+                    new object());
+            }
+
+            // 1. CUSTOMER blocked from PigmyMobileApi, PigmyApp, and Ledgers
+            var c1 = MakeCtx("CUSTOMER", "PigmyMobileApi", "GetCustomers");
+            filter.OnActionExecuting(c1);
+            Assert.IsType<ForbidResult>(c1.Result);
+
+            var c2 = MakeCtx("CUSTOMER", "Ledgers", "GetLedgers");
+            filter.OnActionExecuting(c2);
+            Assert.IsType<ForbidResult>(c2.Result);
+
+            // CUSTOMER allowed on CustomerPortal
+            var cOk = MakeCtx("CUSTOMER", "CustomerPortal", "GetSummary");
+            filter.OnActionExecuting(cOk);
+            Assert.Null(cOk.Result);
+
+            // 2. AGENT blocked from internal CBS Ledgers & PigmyAccounts.ClearAllPigmyData, allowed on PigmyMobileApi
+            var a1 = MakeCtx("AGENT", "Ledgers", "GetLedgers");
+            filter.OnActionExecuting(a1);
+            Assert.IsType<ForbidResult>(a1.Result);
+
+            var a2 = MakeCtx("AGENT", "PigmyAccounts", "ClearAllPigmyData");
+            filter.OnActionExecuting(a2);
+            Assert.IsType<ForbidResult>(a2.Result);
+
+            var aOk = MakeCtx("AGENT", "PigmyMobileApi", "CollectRdInstallment");
+            filter.OnActionExecuting(aOk);
+            Assert.Null(aOk.Result);
+
+            // 3. PigmyAccountsController.GetAccountsByAgent rejects AGENT accessing another agentId and rejects CUSTOMER
+            using var db = GetInMemoryDbContext(nameof(RoleBoundaryFilter_BlocksCustomerFromAgentAndCbsControllers_AndBlocksAgentFromCbsControllers));
+            var pigmyAccCtrl = new PigmyAccountsController(db)
+            {
+                ControllerContext = BuildCustomerContext(customerId: 1)
+            };
+            var custRes = await pigmyAccCtrl.GetAccountsByAgent(1);
+            Assert.IsType<ForbidResult>(custRes.Result);
+        }
     }
 }

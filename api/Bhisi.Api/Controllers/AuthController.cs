@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
@@ -37,6 +38,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [AllowAnonymous]
+        [EnableRateLimiting("AuthRateLimit")]
         [HttpPost("login")]
         public async Task<ActionResult<LoginResponseDto>> Login(LoginRequestDto request)
         {
@@ -777,6 +779,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [AllowAnonymous]
+        [EnableRateLimiting("AuthRateLimit")]
         [HttpPost("customer/activate-temp-pin")]
         public async Task<ActionResult<LoginResponseDto>> ActivateCustomerTempPin([FromBody] CustomerTempActivatePinDto dto)
         {

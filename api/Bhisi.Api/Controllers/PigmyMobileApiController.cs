@@ -43,6 +43,12 @@ namespace Bhisi.Api.Controllers
 
         private int GetCurrentAgentId(int? explicitAgentId = null)
         {
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? string.Empty;
+            if (string.Equals(roleClaim, "CUSTOMER", StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+
             // Strict Security: If authenticated as AGENT, ALWAYS trust JWT claim first so headers/query params cannot impersonate another agent
             if (IsAgentRole())
             {
@@ -1055,6 +1061,7 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             // 2. Loan Accounts: STRICT PRIVACY FILTER (Only allowed & assigned to this agent)
+            var todayIst = _businessDateGuard.GetIstToday();
             var loanAccounts = await _context.LoanAccounts
                 .AsNoTracking()
                 .Include(l => l.LoanRate)
@@ -1069,6 +1076,9 @@ namespace Bhisi.Api.Controllers
                     currentBalance = l.PrincipalBalance,
                     targetAmount = l.InstallmentAmount,
                     interestRate = l.InterestRate,
+                    interestBalance = l.InterestBalance,
+                    overdueInterestBalance = l.OverdueInterestBalance,
+                    overdueInstallmentsCount = _context.LoanInstallmentSchedules.Count(s => s.LoanAccountID == l.LoanAccountID && s.Status != "Paid" && s.DueDate < todayIst),
                     lastPaidDate = l.LastInstallmentPaidDate.HasValue ? l.LastInstallmentPaidDate.Value.ToString("yyyy-MM-dd") : null,
                     isAgentAllowed = true,
                     status = l.Status
@@ -1225,49 +1235,201 @@ namespace Bhisi.Api.Controllers
                 return Conflict(new { message = loanDateCheck.ErrorMessage });
             }
 
+            DateTime collDate = loanDateCheck.EffectiveCollectionDate;
+
+            var closedFy = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed && collDate.Date >= fy.StartDate.Date && collDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest(new { message = $"निवडलेली तारीख बंद झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडत असल्याने कर्ज वसुली करता येत नाही." });
+            }
+
+            decimal overdueExpenses = await _context.OverdueRecoveryLedgers
+                .Where(l => l.LoanAccountID == loan.LoanAccountID)
+                .SumAsync(l => (decimal?)(l.DebitAmount - l.CreditAmount)) ?? 0m;
+            if (overdueExpenses < 0m) overdueExpenses = 0m;
+
+            var dbSchedules = await _context.LoanInstallmentSchedules
+                .Where(s => s.LoanAccountID == loan.LoanAccountID)
+                .OrderBy(s => s.InstallmentNo)
+                .ToListAsync();
+
+            var pastCollections = await _context.LoanCollections
+                .Where(c => c.LoanAccountID == loan.LoanAccountID)
+                .ToListAsync();
+
+            var loanRate = loan.LoanRate;
+            bool isFlatMethod = loanRate != null &&
+                ((loanRate.InterestCalculationMethod?.Contains("Flat", StringComparison.OrdinalIgnoreCase) == true) ||
+                 (loanRate.InterestCalculationMethod?.Contains("फ्लॅट") == true));
+            bool isDailyReducing = !isFlatMethod;
+
+            decimal existingReceivableInterest = Math.Max(0m, loan.InterestBalance);
+            decimal existingOverduePenalty = Math.Max(0m, loan.OverdueInterestBalance);
+            decimal currentPeriodInterest = 0m;
+
+            if (isDailyReducing)
+            {
+                bool hasOpeningBookedInterest = loan.IsOpeningBalance &&
+                    (loan.InterestBalance > 0m || loan.CapitalizedInterestAmount > 0m);
+
+                DateTime fromDate;
+                if (loan.LastInstallmentPaidDate.HasValue && loan.LastInterestPostingDate.HasValue)
+                {
+                    fromDate = loan.LastInstallmentPaidDate.Value > loan.LastInterestPostingDate.Value
+                        ? loan.LastInstallmentPaidDate.Value
+                        : loan.LastInterestPostingDate.Value;
+                }
+                else if (loan.LastInterestPostingDate.HasValue)
+                {
+                    fromDate = loan.LastInterestPostingDate.Value;
+                }
+                else if (loan.LastInstallmentPaidDate.HasValue)
+                {
+                    fromDate = loan.LastInstallmentPaidDate.Value;
+                }
+                else if (hasOpeningBookedInterest)
+                {
+                    fromDate = loan.OpeningDate;
+                }
+                else
+                {
+                    fromDate = loan.LoanDisbursementDate ?? loan.OpeningDate;
+                }
+
+                decimal rate = loan.InterestRate > 0m ? loan.InterestRate : (loanRate?.InterestRate ?? 0m);
+                int diffDays = Math.Max(0, (collDate.Date - fromDate.Date).Days);
+                decimal effectivePrincipal = LoanAccountsController.GetEffectiveInterestBearingPrincipal(loan);
+                currentPeriodInterest = (diffDays > 0 && rate > 0m && effectivePrincipal > 0m)
+                    ? Math.Round((effectivePrincipal * rate * diffDays) / 36500m)
+                    : 0m;
+            }
+            else
+            {
+                currentPeriodInterest = LoanScheduleGenerator.GetUnpaidScheduledInterest(
+                    loan,
+                    dbSchedules,
+                    pastCollections,
+                    collDate);
+            }
+
+            decimal maxPayable = overdueExpenses + existingOverduePenalty + existingReceivableInterest + currentPeriodInterest + Math.Max(0m, loan.PrincipalBalance);
+            if (request.Amount > maxPayable + 0.01m)
+            {
+                return BadRequest(new
+                {
+                    message = $"एकूण येणे बाकी फक्त ₹{maxPayable:N2} आहे (मुद्दल: ₹{loan.PrincipalBalance:N2}, चालू व्याज: ₹{currentPeriodInterest:N2}, मागील येणे व्याज: ₹{existingReceivableInterest:N2}, दंड व्याज: ₹{existingOverduePenalty:N2}{(overdueExpenses > 0m ? $", वसुली खर्च: ₹{overdueExpenses:N2}" : "")}). त्यापेक्षा जास्त रक्कम (₹{request.Amount:N2}) वसूल करता येणार नाही.",
+                    maxPayable,
+                    principalBalance = loan.PrincipalBalance,
+                    currentPeriodInterest,
+                    receivableInterest = existingReceivableInterest,
+                    overdueInterest = existingOverduePenalty,
+                    overdueExpenses
+                });
+            }
+
             using var dbTx = await _context.Database.BeginTransactionAsync();
             try
             {
-                DateTime collDate = loanDateCheck.EffectiveCollectionDate;
-
-                // Waterfall Application: Overdue/Interest -> Principal
+                // CBS Standard Recovery Waterfall: Expenses -> Overdue Penalty -> Existing Receivable Int -> Current Period Int -> Principal
                 decimal remaining = request.Amount;
-                decimal overduePaid = 0m;
-                decimal interestPaid = 0m;
-                decimal principalPaid = 0m;
 
-                if (loan.OverdueInterestBalance > 0)
-                {
-                    overduePaid = Math.Min(remaining, loan.OverdueInterestBalance);
-                    loan.OverdueInterestBalance -= overduePaid;
-                    remaining -= overduePaid;
-                }
+                decimal expensesPaid = Math.Min(remaining, overdueExpenses);
+                remaining -= expensesPaid;
 
-                if (remaining > 0 && loan.InterestBalance > 0)
-                {
-                    interestPaid = Math.Min(remaining, loan.InterestBalance);
-                    loan.InterestBalance -= interestPaid;
-                    remaining -= interestPaid;
-                }
+                decimal overduePaid = Math.Min(remaining, existingOverduePenalty);
+                remaining -= overduePaid;
 
-                if (remaining > 0)
+                decimal receivablePaid = Math.Min(remaining, existingReceivableInterest);
+                remaining -= receivablePaid;
+
+                decimal regularInterestPaid = Math.Min(remaining, currentPeriodInterest);
+                remaining -= regularInterestPaid;
+
+                decimal principalPaid = Math.Min(remaining, Math.Max(0m, loan.PrincipalBalance));
+                remaining -= principalPaid;
+
+                loan.OverdueInterestBalance = Math.Max(0m, existingOverduePenalty - overduePaid);
+                decimal unpaidCurrentPeriodInterest = principalPaid <= 0m
+                    ? Math.Max(0m, currentPeriodInterest - regularInterestPaid)
+                    : 0m;
+                loan.InterestBalance = Math.Max(0m, (existingReceivableInterest - receivablePaid) + unpaidCurrentPeriodInterest);
+                loan.PrincipalBalance = Math.Max(0m, loan.PrincipalBalance - principalPaid);
+
+                if (principalPaid > 0m)
                 {
-                    principalPaid = Math.Min(remaining, loan.PrincipalBalance);
-                    loan.PrincipalBalance = Math.Max(0, loan.PrincipalBalance - principalPaid);
-                    if (loan.PurePrincipalBalance > 0)
+                    if (loan.CapitalizedInterestAmount > 0m)
                     {
-                        loan.PurePrincipalBalance = Math.Max(0, loan.PurePrincipalBalance - principalPaid);
+                        decimal capDeduction = Math.Min(principalPaid, loan.CapitalizedInterestAmount);
+                        loan.CapitalizedInterestAmount -= capDeduction;
+                        decimal pureDeduction = principalPaid - capDeduction;
+                        loan.PurePrincipalBalance = Math.Max(0m, loan.PurePrincipalBalance - pureDeduction);
                     }
-                    remaining -= principalPaid;
+                    else if (loan.PurePrincipalBalance > 0m)
+                    {
+                        loan.PurePrincipalBalance = Math.Max(0m, loan.PurePrincipalBalance - principalPaid);
+                    }
+                }
+
+                decimal totalInterestPaid = receivablePaid + regularInterestPaid;
+                if (totalInterestPaid > 0m && loan.InterestProvisionBalance > 0m)
+                {
+                    loan.InterestProvisionBalance -= Math.Min(totalInterestPaid, loan.InterestProvisionBalance);
                 }
 
                 loan.LastInstallmentPaidDate = collDate;
-                if (loan.PrincipalBalance <= 0)
-                {
-                    loan.Status = "Closed";
-                }
 
                 string receiptNo = $"LN-AGT-{targetAgentId}-{collDate:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+
+                if (loan.PrincipalBalance <= 0m && loan.InterestBalance <= 0m && loan.OverdueInterestBalance <= 0m)
+                {
+                    loan.Status = "Closed";
+                    var openSec101Cases = await _context.Sec101CaseMasters
+                        .Where(c => c.LoanAccountId == loan.LoanAccountID &&
+                                    c.Status != "CLOSED_RECOVERED" &&
+                                    c.Status != "DISMISSED" &&
+                                    c.Status != "WITHDRAWN")
+                        .ToListAsync();
+                    foreach (var openCase in openSec101Cases)
+                    {
+                        openCase.Status = "CLOSED_RECOVERED";
+                        openCase.ClosedDate = collDate;
+                        openCase.ClosedReason = $"डोअरस्टेप कर्ज पूर्ण वसुली पावती क्र. {receiptNo}";
+                    }
+                }
+
+                var lastNpaStatus = await _context.LoanAccountNpaStatuses
+                    .AsNoTracking()
+                    .Where(s => s.LoanAccountID == loan.LoanAccountID)
+                    .OrderByDescending(s => s.AsOfDate)
+                    .FirstOrDefaultAsync();
+                bool isNpa = (lastNpaStatus != null && lastNpaStatus.Category != "Standard") ||
+                             (!string.IsNullOrWhiteSpace(loan.InitialNpaClassification) && loan.InitialNpaClassification != "Standard");
+
+                if (expensesPaid > 0m)
+                {
+                    _context.OverdueRecoveryLedgers.Add(new OverdueRecoveryLedger
+                    {
+                        LoanAccountID = loan.LoanAccountID,
+                        TransactionDate = collDate,
+                        DebitAmount = 0m,
+                        CreditAmount = expensesPaid,
+                        Particulars = $"Recovery expenses paid via doorstep collection (Rect No: {receiptNo})"
+                    });
+                }
+
+                if (totalInterestPaid > 0m && isNpa)
+                {
+                    _context.OverdueInterestLedgers.Add(new OverdueInterestLedger
+                    {
+                        LoanAccountID = loan.LoanAccountID,
+                        TransactionDate = collDate,
+                        DebitAmount = 0m,
+                        CreditAmount = totalInterestPaid,
+                        Particulars = $"Unrealized interest recovered via doorstep collection (Rect No: {receiptNo})"
+                    });
+                }
 
                 var loanCollection = new LoanCollection
                 {
@@ -1281,7 +1443,8 @@ namespace Bhisi.Api.Controllers
                     PaymentMode = string.IsNullOrWhiteSpace(request.PaymentMode) ? "CASH" : request.PaymentMode.Trim().ToUpperInvariant(),
                     TotalAmountReceived = request.Amount,
                     PrincipalCollected = principalPaid,
-                    InterestCollected = interestPaid,
+                    ReceivableInterestCollected = receivablePaid,
+                    InterestCollected = regularInterestPaid,
                     PenaltyInterestCollected = overduePaid,
                     CreatedByUserID = targetAgentId,
                     Remarks = $"डोअरस्टेप एजंट वसुली: {agent?.AgentName ?? targetAgentId.ToString()}" + 
@@ -1291,6 +1454,22 @@ namespace Bhisi.Api.Controllers
 
                 _context.LoanCollections.Add(loanCollection);
                 await _context.SaveChangesAsync();
+
+                int paidInstallmentsCount = 0;
+                int pendingInstallmentsCount = 0;
+                if (dbSchedules.Any())
+                {
+                    var allCollections = new List<LoanCollection>(pastCollections) { loanCollection };
+                    LoanScheduleGenerator.SynchronizeSchedules(loan, dbSchedules, allCollections);
+                    foreach (var schedule in dbSchedules)
+                    {
+                        _context.Entry(schedule).State = EntityState.Modified;
+                    }
+                    await _context.SaveChangesAsync();
+                    paidInstallmentsCount = dbSchedules.Count(s => s.Status == "Paid");
+                    pendingInstallmentsCount = dbSchedules.Count(s => s.Status != "Paid");
+                }
+
                 await dbTx.CommitAsync();
 
                 return Ok(new
@@ -1303,10 +1482,17 @@ namespace Bhisi.Api.Controllers
                     amount = request.Amount,
                     principalPaid,
                     principalCollected = principalPaid,
-                    interestPaid,
-                    regularInterestCollected = interestPaid,
+                    interestPaid = totalInterestPaid,
+                    regularInterestCollected = regularInterestPaid,
+                    receivableInterestCollected = receivablePaid,
+                    totalInterestCollected = totalInterestPaid,
                     overdueInterestCollected = overduePaid,
                     newPrincipalBalance = loan.PrincipalBalance,
+                    newInterestBalance = loan.InterestBalance,
+                    newOverdueInterestBalance = loan.OverdueInterestBalance,
+                    loanStatus = loan.Status,
+                    paidInstallmentsCount,
+                    pendingInstallmentsCount,
                     collectionDate = collDate.ToString("yyyy-MM-dd"),
                     message = "कर्ज EMI यशस्वीरीत्या गोळा करण्यात आला आहे."
                 });

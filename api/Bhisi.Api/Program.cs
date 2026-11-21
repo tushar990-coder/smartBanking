@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
 using Bhisi.Api.Data;
 using Bhisi.Api.Helpers;
 using Serilog;
@@ -45,6 +47,7 @@ try
     builder.Services.AddControllers(options =>
     {
         options.Filters.Add<EnforceBranchScopeAttribute>();
+        options.Filters.Add<Bhisi.Api.Filters.EnforceRoleBoundaryAttribute>();
     }).AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
@@ -54,6 +57,20 @@ try
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
     builder.Services.AddMemoryCache();
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        options.AddPolicy("AuthRateLimit", httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 25,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                }));
+    });
 
     // Global Authorization — सर्व API ला login आवश्यक (AllowAnonymous ने override करता येतो)
     builder.Services.AddAuthorization(options =>
@@ -4233,9 +4250,8 @@ try
         }
     });
 
-    app.UseCors("AllowReactApp");
-
     app.UseMiddleware<Bhisi.Api.Filters.LicenseEnforcementMiddleware>();
+    app.UseRateLimiter();
 
     app.Use(async (context, next) =>
     {

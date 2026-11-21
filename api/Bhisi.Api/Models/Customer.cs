@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace Bhisi.Api.Models
 {
@@ -174,6 +175,18 @@ namespace Bhisi.Api.Models
 
         // Soft Delete
         public bool IsDeleted { get; set; } = false;
+
+        // Customer Mobile Portal Credentials (Temporary mPIN / Session Tracking)
+        [JsonIgnore]
+        [MaxLength(255)]
+        public string? PortalPinHash { get; set; }
+
+        public int PortalFailedAttempts { get; set; } = 0;
+
+        public bool IsPortalLocked { get; set; } = false;
+
+        [JsonIgnore]
+        public string? PortalSessionToken { get; set; }
 
         // Audit Fields
         public int CreatedBy { get; set; } = 1;

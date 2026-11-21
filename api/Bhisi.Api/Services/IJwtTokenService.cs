@@ -8,5 +8,6 @@ namespace Bhisi.Api.Services
         string GetSigningKey();
         string CreateStaffToken(User user, int branchId, int financialYearId, DateTime businessDate);
         string CreateAgentToken(PigmyAgent agent, int branchId, int financialYearId, DateTime businessDate);
+        string CreateCustomerToken(Customer customer, int branchId, int financialYearId, DateTime businessDate);
     }
 }

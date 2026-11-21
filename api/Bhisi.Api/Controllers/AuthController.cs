@@ -42,6 +42,11 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                if (string.Equals(request.LoginAs, "CUSTOMER", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await LoginCustomerInternalAsync(request);
+                }
+
                 var user = await _context.Users
                     .Include(u => u.Role)
                     .Include(u => u.DefaultBranch)
@@ -684,6 +689,206 @@ namespace Bhisi.Api.Controllers
             {
                 return StatusCode(500, $"शाखा बदलताना त्रुटी आली: {ex.Message}");
             }
+        }
+
+        private static string NormalizeDigits(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            var chars = value.Where(char.IsDigit).ToArray();
+            string digits = new string(chars);
+            return digits.Length > 10 ? digits.Substring(digits.Length - 10) : digits;
+        }
+
+        private static string NormalizeCif(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return value.Replace("-", "").Replace(" ", "").Trim().ToUpperInvariant();
+        }
+
+        // Temporary Customer Portal Login (Testing Phase - without SMS OTP)
+        private async Task<ActionResult<LoginResponseDto>> LoginCustomerInternalAsync(LoginRequestDto request)
+        {
+            string cleanId = (request.Username ?? string.Empty).Trim();
+            string normDigits = NormalizeDigits(cleanId);
+            string normCif = NormalizeCif(cleanId);
+            if (string.IsNullOrWhiteSpace(cleanId) || normDigits == "0000000000")
+            {
+                return BadRequest("कृपया वैध मोबाईल नंबर किंवा CIF क्रमांक प्रविष्ट करा.");
+            }
+
+            var candidates = await _context.Customers
+                .Include(c => c.Branch)
+                .Where(c => !c.IsDeleted && c.Status != null && c.Status.ToUpper() == "ACTIVE" &&
+                    ((!string.IsNullOrEmpty(normCif) && c.CIFNo != null && c.CIFNo.Replace("-", "").Replace(" ", "").ToUpper() == normCif) ||
+                     (normDigits.Length == 10 && c.MobileNo != null && c.MobileNo.EndsWith(normDigits)) ||
+                     (c.MobileNo != null && c.MobileNo == cleanId)))
+                .Take(20)
+                .ToListAsync();
+
+            var customer = candidates.FirstOrDefault(c => !string.IsNullOrEmpty(normCif) && NormalizeCif(c.CIFNo) == normCif)
+                ?? candidates.FirstOrDefault(c => normDigits.Length == 10 && NormalizeDigits(c.MobileNo) == normDigits)
+                ?? candidates.FirstOrDefault();
+
+            if (customer == null)
+            {
+                return Unauthorized("नोंदणीकृत खातेदार आढळला नाही किंवा खाते निष्क्रिय आहे.");
+            }
+
+            if (customer.IsPortalLocked)
+            {
+                return Unauthorized("अनेक चुकीच्या प्रयत्नांमुळे खातेदार लॉगिन लॉक झाले आहे. कृपया शाखेशी संपर्क साधा.");
+            }
+
+            bool isValid = false;
+            if (!string.IsNullOrEmpty(customer.PortalPinHash))
+            {
+                string hash = customer.PortalPinHash.StartsWith("$2y$")
+                    ? "$2a$" + customer.PortalPinHash.Substring(4)
+                    : customer.PortalPinHash;
+                try { isValid = BCrypt.Net.BCrypt.Verify(request.Password, hash); }
+                catch { isValid = false; }
+            }
+            else if (!string.IsNullOrWhiteSpace(customer.CIFNo) &&
+                     string.Equals(request.Password.Trim(), customer.CIFNo.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                // First-time temporary testing login using CIF No as initial PIN, auto-upgraded to BCrypt
+                customer.PortalPinHash = BCrypt.Net.BCrypt.HashPassword(request.Password.Trim());
+                isValid = true;
+            }
+            else
+            {
+                return Unauthorized("तुमचा पोर्टल mPIN सेट केलेला नाही. कृपया खालील 'तात्पुरता mPIN सेट करा' वापरून मोबाईल व CIF क्र. ने पिन सेट करा.");
+            }
+
+            if (!isValid)
+            {
+                customer.PortalFailedAttempts++;
+                if (customer.PortalFailedAttempts >= 5)
+                {
+                    customer.IsPortalLocked = true;
+                }
+                await _context.SaveChangesAsync();
+                return Unauthorized(customer.IsPortalLocked
+                    ? "अनेक चुकीच्या प्रयत्नांमुळे खातेदार लॉगिन लॉक झाले आहे."
+                    : "चुकीचा मोबाईल नंबर / CIF किंवा mPIN.");
+            }
+
+            return await IssueCustomerTokenResponseAsync(customer, request.BranchID, request.FinancialYearID);
+        }
+
+        [AllowAnonymous]
+        [HttpPost("customer/activate-temp-pin")]
+        public async Task<ActionResult<LoginResponseDto>> ActivateCustomerTempPin([FromBody] CustomerTempActivatePinDto dto)
+        {
+            string mobile = (dto.MobileNo ?? string.Empty).Trim();
+            string cif = (dto.CifNo ?? string.Empty).Trim();
+            string pin = (dto.NewPin ?? string.Empty).Trim();
+            string normMobile = NormalizeDigits(mobile);
+            string normCif = NormalizeCif(cif);
+
+            if (string.IsNullOrWhiteSpace(normMobile) || normMobile == "0000000000" || string.IsNullOrWhiteSpace(normCif))
+            {
+                return BadRequest("कृपया वैध नोंदणीकृत मोबाईल नंबर आणि CIF क्रमांक प्रविष्ट करा.");
+            }
+
+            if (pin.Length < 4 || pin.Length > 12)
+            {
+                return BadRequest("mPIN किमान ४ ते १२ अंकांचा असणे आवश्यक आहे.");
+            }
+
+            var candidates = await _context.Customers
+                .Include(c => c.Branch)
+                .Where(c => !c.IsDeleted && c.Status != null && c.Status.ToUpper() == "ACTIVE" &&
+                    c.CIFNo != null && c.CIFNo.Replace("-", "").Replace(" ", "").ToUpper() == normCif)
+                .Take(20)
+                .ToListAsync();
+
+            var customer = candidates.FirstOrDefault(c =>
+                (normMobile.Length == 10 && NormalizeDigits(c.MobileNo) == normMobile) ||
+                string.Equals((c.MobileNo ?? string.Empty).Trim(), mobile, StringComparison.Ordinal));
+
+            if (customer == null)
+            {
+                return Unauthorized("मोबाईल नंबर आणि CIF क्रमांक शाखेच्या नोंदीशी जुळत नाहीत.");
+            }
+
+            if (customer.IsPortalLocked)
+            {
+                return Unauthorized("खातेदार पोर्टल लॉक आहे. कृपया शाखेशी संपर्क साधा.");
+            }
+
+            customer.PortalPinHash = BCrypt.Net.BCrypt.HashPassword(pin);
+            customer.PortalFailedAttempts = 0;
+
+            return await IssueCustomerTokenResponseAsync(customer, 0, 0);
+        }
+
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
+        [HttpPost("customer/{customerId:int}/set-temp-pin")]
+        public async Task<IActionResult> AdminSetCustomerTempPin(int customerId, [FromBody] AdminSetCustomerPinDto dto)
+        {
+            string pin = (dto.Pin ?? string.Empty).Trim();
+            if (pin.Length < 4 || pin.Length > 12)
+            {
+                return BadRequest(new { message = "mPIN किमान ४ ते १२ अंकांचा असावा." });
+            }
+
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId && !c.IsDeleted);
+            if (customer == null) return NotFound(new { message = "खातेदार आढळला नाही." });
+            if (!User.CanAccessBranch(customer.BranchID))
+            {
+                return StatusCode(403, new { message = "इतर शाखेतील खातेदाराचा पिन बदलण्याची परवानगी नाही." });
+            }
+
+            customer.PortalPinHash = BCrypt.Net.BCrypt.HashPassword(pin);
+            customer.PortalFailedAttempts = 0;
+            customer.IsPortalLocked = false;
+            customer.PortalSessionToken = null;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = $"खातेदार '{customer.FullName}' साठी तात्पुरता mPIN यशस्वीरीत्या सेट केला आहे." });
+        }
+
+        private async Task<ActionResult<LoginResponseDto>> IssueCustomerTokenResponseAsync(Customer customer, int requestedBranchId, int requestedFyId)
+        {
+            int branchId = customer.BranchID > 0 ? customer.BranchID : 1;
+            if (requestedBranchId > 0 && requestedBranchId != branchId)
+            {
+                return StatusCode(403, "खातेदार केवळ आपल्या मूळ शाखेतूनच लॉगिन करू शकतो.");
+            }
+
+            var branch = await _context.Branches.FindAsync(branchId)
+                         ?? await _context.Branches.FirstOrDefaultAsync()
+                         ?? new Branch { BranchID = 1, BranchName = "Main Branch" };
+            var fy = await _context.FinancialYears.FindAsync(requestedFyId)
+                     ?? await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive)
+                     ?? await _context.FinancialYears.FirstOrDefaultAsync();
+
+            var dateGuard = new BusinessDateGuardService(_context);
+            var (bizDate, _) = await dateGuard.GetBranchBusinessDateAsync(branch.BranchID);
+
+            var jwt = _tokenService.CreateCustomerToken(customer, branch.BranchID, fy?.FinancialYearID ?? 1, bizDate);
+            customer.PortalFailedAttempts = 0;
+            customer.IsPortalLocked = false;
+            customer.PortalSessionToken = jwt;
+            await _context.SaveChangesAsync();
+
+            return Ok(new LoginResponseDto
+            {
+                Token = jwt,
+                Username = customer.FullName,
+                Role = "CUSTOMER",
+                CustomerId = customer.CustomerID,
+                CifNo = customer.CIFNo ?? string.Empty,
+                MobileNo = customer.MobileNo ?? string.Empty,
+                BranchID = branch.BranchID,
+                DefaultBranchID = branch.BranchID,
+                BranchName = branch.BranchName,
+                FinancialYearID = fy?.FinancialYearID ?? 1,
+                FinancialYearCode = fy?.YearCode ?? "2026-2027",
+                BusinessDate = bizDate.ToString("yyyy-MM-dd"),
+                RequirePasswordChange = false
+            });
         }
 
         private async Task LogAudit(int userId, string status)

@@ -15,6 +15,8 @@ namespace Bhisi.Api.Models
         public int FinancialYearID { get; set; }
 
         public DateTime? BusinessDate { get; set; }
+
+        public string? LoginAs { get; set; } // Optional: "CUSTOMER" | "AGENT" | "STAFF"
     }
 
     public class LoginResponseDto
@@ -30,7 +32,31 @@ namespace Bhisi.Api.Models
         public string BusinessDate { get; set; } = string.Empty;
         public bool RequirePasswordChange { get; set; }
         public int? AgentId { get; set; }
+        public int? CustomerId { get; set; }
+        public string? CifNo { get; set; }
         public string? MobileNo { get; set; }
+    }
+
+    public class CustomerTempActivatePinDto
+    {
+        [Required]
+        public string MobileNo { get; set; } = string.Empty;
+
+        [Required]
+        public string CifNo { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(4)]
+        [MaxLength(12)]
+        public string NewPin { get; set; } = string.Empty;
+    }
+
+    public class AdminSetCustomerPinDto
+    {
+        [Required]
+        [MinLength(4)]
+        [MaxLength(12)]
+        public string Pin { get; set; } = string.Empty;
     }
 
     public class ChangePasswordDto

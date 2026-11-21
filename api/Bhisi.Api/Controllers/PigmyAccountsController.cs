@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Bhisi.Api.Filters;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -179,7 +180,7 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/PigmyAccounts
-        // GET: api/PigmyAccounts?agentId=2&branchId=1&status=Active&sortOrder=asc
+        // GET: api/PigmyAccounts?agentId=2&branchId=1&status=Active&excludeClosed=true&sortOrder=asc
         [HttpGet]
         public async Task<ActionResult<IEnumerable<PigmyAccount>>> GetPigmyAccounts(
             [FromQuery] int? agentId,
@@ -187,7 +188,8 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? customerId,
             [FromQuery] string? status,
             [FromQuery] string? search = null,
-            [FromQuery] string? sortOrder = null)
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] bool excludeClosed = false)
         {
             var query = _context.PigmyAccounts
                 .AsNoTracking()
@@ -202,9 +204,13 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(p => p.PigmyAgentID == agentId.Value);
             }
 
-            if (branchId.HasValue && branchId.Value > 0)
+            int? effectiveBranchId = User?.Identity?.IsAuthenticated == true
+                ? User.ResolveOptionalBranchId(branchId.HasValue && branchId.Value > 0 ? branchId : null)
+                : (branchId.HasValue && branchId.Value > 0 ? branchId : null);
+
+            if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
             {
-                query = query.Where(p => p.BranchID == branchId.Value);
+                query = query.Where(p => p.BranchID == effectiveBranchId.Value);
             }
 
             if (customerId.HasValue && customerId.Value > 0)
@@ -215,6 +221,10 @@ namespace Bhisi.Api.Controllers
             if (!string.IsNullOrWhiteSpace(status))
             {
                 query = query.Where(p => p.Status == status);
+            }
+            else if (excludeClosed)
+            {
+                query = query.Where(p => p.Status != "Closed");
             }
 
             if (!string.IsNullOrWhiteSpace(search))
@@ -228,9 +238,14 @@ namespace Bhisi.Api.Controllers
                     (p.LegacyAccountNumber != null && p.LegacyAccountNumber.Contains(sTerm)) ||
                     (p.PreviousAccountNo != null && p.PreviousAccountNo.Contains(sTerm)) ||
                     (p.Customer != null && (
-                        p.Customer.FirstName.Contains(sTerm) || 
-                        p.Customer.LastName.Contains(sTerm) || 
-                        (p.Customer.MobileNo != null && p.Customer.MobileNo.Contains(sTerm)) || 
+                        p.Customer.FirstName.Contains(sTerm) ||
+                        (p.Customer.MiddleName != null && p.Customer.MiddleName.Contains(sTerm)) ||
+                        p.Customer.LastName.Contains(sTerm) ||
+                        (p.Customer.FirstNameEng != null && p.Customer.FirstNameEng.Contains(sTerm)) ||
+                        (p.Customer.MiddleNameEng != null && p.Customer.MiddleNameEng.Contains(sTerm)) ||
+                        (p.Customer.LastNameEng != null && p.Customer.LastNameEng.Contains(sTerm)) ||
+                        (p.Customer.LegacyCustomerNo != null && p.Customer.LegacyCustomerNo.Contains(sTerm)) ||
+                        (p.Customer.MobileNo != null && p.Customer.MobileNo.Contains(sTerm)) ||
                         (p.Customer.CIFNo != null && p.Customer.CIFNo.Contains(sTerm))
                     ))
                 );
@@ -244,6 +259,16 @@ namespace Bhisi.Api.Controllers
             else
             {
                 accounts = await query.OrderByDescending(p => p.PigmyAccountID).ToListAsync();
+            }
+
+            if (excludeClosed)
+            {
+                foreach (var acc in accounts)
+                {
+                    acc.FormattedAccountNo = LuhnHelper.Format14Digit(acc.AccountNo);
+                    acc.OpeningBalance = acc.TotalDepositedAmount;
+                }
+                return accounts;
             }
 
             var accountIds = accounts.Select(a => a.PigmyAccountID).ToList();

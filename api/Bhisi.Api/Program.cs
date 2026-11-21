@@ -142,6 +142,48 @@ try
                     return;
                 }
 
+                if (string.Equals(role, "CUSTOMER", StringComparison.OrdinalIgnoreCase))
+                {
+                    var custClaim = principal.FindFirst("CustomerId")?.Value
+                        ?? principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    if (!int.TryParse(custClaim, out int cid) || cid <= 0)
+                    {
+                        context.Fail("Invalid customer token claims.");
+                        return;
+                    }
+
+                    var dbCustomer = await db.Customers.AsNoTracking()
+                        .Where(c => c.CustomerID == cid)
+                        .Select(c => new
+                        {
+                            c.IsDeleted,
+                            c.Status,
+                            c.IsPortalLocked,
+                            c.PortalSessionToken,
+                            c.BranchID
+                        })
+                        .FirstOrDefaultAsync();
+
+                    if (dbCustomer == null || dbCustomer.IsDeleted || dbCustomer.Status != "Active" || dbCustomer.IsPortalLocked)
+                    {
+                        context.Fail("Customer portal account is inactive or locked.");
+                        return;
+                    }
+
+                    if (!string.IsNullOrEmpty(rawToken) && !string.IsNullOrEmpty(dbCustomer.PortalSessionToken) &&
+                        !string.Equals(dbCustomer.PortalSessionToken, rawToken, StringComparison.Ordinal))
+                    {
+                        context.Fail("Customer session expired or invalidated by a newer login.");
+                        return;
+                    }
+
+                    if (dbCustomer.BranchID > 0 && principal.GetOperatingBranchId() != dbCustomer.BranchID)
+                    {
+                        context.Fail("Customer branch assignment mismatch.");
+                    }
+                    return;
+                }
+
                 var idClaim = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
                 if (!int.TryParse(idClaim, out int uid) || uid <= 0) return;
 
@@ -486,6 +528,14 @@ try
                 IF COL_LENGTH('PigmyAgents', 'FailedLoginAttempts') IS NULL ALTER TABLE [PigmyAgents] ADD [FailedLoginAttempts] int NOT NULL DEFAULT 0;
                 IF COL_LENGTH('PigmyAgents', 'IsLocked') IS NULL ALTER TABLE [PigmyAgents] ADD [IsLocked] bit NOT NULL DEFAULT 0;
                 IF COL_LENGTH('PigmyAgents', 'ActiveSessionToken') IS NULL ALTER TABLE [PigmyAgents] ADD [ActiveSessionToken] nvarchar(2000) NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Customers')
+            BEGIN
+                IF COL_LENGTH('Customers', 'PortalPinHash') IS NULL ALTER TABLE [dbo].[Customers] ADD [PortalPinHash] nvarchar(255) NULL;
+                IF COL_LENGTH('Customers', 'PortalFailedAttempts') IS NULL ALTER TABLE [dbo].[Customers] ADD [PortalFailedAttempts] int NOT NULL DEFAULT 0;
+                IF COL_LENGTH('Customers', 'IsPortalLocked') IS NULL ALTER TABLE [dbo].[Customers] ADD [IsPortalLocked] bit NOT NULL DEFAULT 0;
+                IF COL_LENGTH('Customers', 'PortalSessionToken') IS NULL ALTER TABLE [dbo].[Customers] ADD [PortalSessionToken] nvarchar(2000) NULL;
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections') AND COL_LENGTH('LoanCollections', 'RemittanceDepositId') IS NULL

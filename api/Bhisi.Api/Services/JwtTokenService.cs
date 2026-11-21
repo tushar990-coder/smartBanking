@@ -89,5 +89,32 @@ namespace Bhisi.Api.Services
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
         }
+
+        public string CreateCustomerToken(Customer customer, int branchId, int financialYearId, DateTime businessDate)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.UTF8.GetBytes(GetSigningKey());
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, customer.CustomerID.ToString()),
+                    new Claim(ClaimTypes.Name, customer.FullName),
+                    new Claim(ClaimTypes.Role, "CUSTOMER"),
+                    new Claim("CustomerId", customer.CustomerID.ToString()),
+                    new Claim("CIFNo", customer.CIFNo ?? string.Empty),
+                    new Claim("MobileNo", customer.MobileNo ?? string.Empty),
+                    new Claim("BranchID", branchId.ToString()),
+                    new Claim("DefaultBranchID", branchId.ToString()),
+                    new Claim("FinancialYearID", financialYearId.ToString()),
+                    new Claim("BusinessDate", businessDate.ToString("yyyy-MM-dd"))
+                }),
+                Expires = DateTime.UtcNow.AddDays(GetExpireDays()),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
+        }
     }
 }

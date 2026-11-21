@@ -1855,6 +1855,8 @@ namespace Bhisi.Api.Tests
                     DepositAmount = 50000m,
                     MaturityAmount = 55000m,
                     InterestRate = 10m,
+                    IsLienMarked = true,
+                    LienLoanAccountNo = "001-601-0000503-8",
                     Status = "Active"
                 },
                 new FdAccount
@@ -1875,6 +1877,8 @@ namespace Bhisi.Api.Tests
                     DepositAmount = 40000m,
                     MaturityAmount = 44000m,
                     InterestRate = 10m,
+                    IsLienMarked = true,
+                    LienLoanAccountNo = "001-601-0000503-8",
                     Status = "Active"
                 }
             );
@@ -1931,6 +1935,171 @@ namespace Bhisi.Api.Tests
             Assert.Equal(0m, updatedLoan!.OverdueInterestBalance);
             Assert.Equal(0m, updatedLoan.InterestBalance);
             Assert.Equal(32000m, updatedLoan.PrincipalBalance); // 80,000 - (55,000 - 2,000 - 5,000) = 32,000
+        }
+
+        [Fact]
+        public async Task CloseAndPrematureClose_WhenFdIsUnpledgedRegular_AllowsDirectSavingTransferEvenWhenCustomerHasActiveLoan()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 4, 27);
+            var (_, custA, _) = await SeedBaseFdEnvironmentAsync(db, "RETAIN_ORIGINAL", allowManual: false, businessDate);
+
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 105, GroupID = 3, LedgerCode = "LN-PRIN", LedgerName = "कर्ज मुद्दल येणे", AccountType = "Loan", IsActive = true },
+                new Ledger { LedgerID = 106, GroupID = 2, LedgerCode = "LN-INT", LedgerName = "कर्ज व्याज उत्पन्न", AccountType = "Income", IsActive = true },
+                new Ledger { LedgerID = 107, GroupID = 2, LedgerCode = "LN-PEN", LedgerName = "थकीत दंड व्याज", AccountType = "Income", IsActive = true },
+                new Ledger { LedgerID = 108, GroupID = 1, LedgerCode = "SB-LIAB", LedgerName = "बचत ठेव", AccountType = "Saving", IsActive = true }
+            );
+            db.LoanRates.Add(new LoanRate
+            {
+                LoanRateID = 1,
+                LoanType = "ठेव तारण",
+                LoanCode = "LN204",
+                LoanLedgerID = 105,
+                InterestLedgerID = 106,
+                OverdueInterestLedgerID = 107,
+                InterestRate = 12m,
+                OverdueInterestRate = 2m
+            });
+
+            // Customer has another active FD (1340) pledged against active Loan 001-204-0000482-2 (₹3,15,551)
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 1340,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = custA.CustomerID,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0001340-1",
+                ReceiptNo = "1340",
+                LegacyAccountNumber = "1340",
+                OpeningDate = new DateTime(2025, 4, 1),
+                MaturityDate = new DateTime(2027, 4, 1),
+                DurationType = "Months",
+                DurationValue = 24,
+                DurationInDays = 730,
+                DepositAmount = 400000m,
+                MaturityAmount = 480000m,
+                InterestRate = 10m,
+                IsLienMarked = true,
+                LienLoanAccountNo = "001-204-0000482-2",
+                Status = "Active"
+            });
+
+            db.LoanAccounts.Add(new LoanAccount
+            {
+                LoanAccountID = 482,
+                BranchID = 1,
+                CustomerID = custA.CustomerID,
+                LoanRateID = 1,
+                LoanAccountNo = "001-204-0000482-2",
+                SanctionedAmount = 315551m,
+                PrincipalBalance = 315551m,
+                InterestBalance = 0m,
+                OverdueInterestBalance = 0m,
+                InterestRate = 12m,
+                OpeningDate = new DateTime(2025, 11, 17),
+                LastInterestPostingDate = businessDate,
+                SecurityDetails = "ठेव तारण: 001-401-0001340-1",
+                Status = "Active"
+            });
+
+            // Unpledged regular FDs (1343 Premature, 1345 Matured)
+            db.FdAccounts.AddRange(
+                new FdAccount
+                {
+                    FdAccountID = 1343,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0001343-5",
+                    ReceiptNo = "1343",
+                    LegacyAccountNumber = "1343",
+                    OpeningDate = new DateTime(2025, 11, 17),
+                    MaturityDate = new DateTime(2026, 12, 17),
+                    DurationType = "Days",
+                    DurationValue = 395,
+                    DurationInDays = 395,
+                    DepositAmount = 100000m,
+                    MaturityAmount = 110833m,
+                    InterestRate = 10m,
+                    IsLienMarked = false,
+                    Status = "Active"
+                },
+                new FdAccount
+                {
+                    FdAccountID = 1345,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = 1,
+                    AccountNo = "001-401-0001345-2",
+                    ReceiptNo = "1345",
+                    LegacyAccountNumber = "1345",
+                    OpeningDate = new DateTime(2025, 4, 20),
+                    MaturityDate = new DateTime(2026, 4, 20),
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 100000m,
+                    MaturityAmount = 110000m,
+                    InterestRate = 10m,
+                    IsLienMarked = false,
+                    Status = "Active"
+                }
+            );
+
+            var savingAccount = new SavingAccountMaster
+            {
+                SavingAccountID = 601,
+                BranchID = 1,
+                CustomerID = custA.CustomerID,
+                LedgerID = 108,
+                AccountNo = "00110100000601",
+                OpeningDate = new DateTime(2025, 1, 1),
+                CurrentBalance = 1000m,
+                Status = "Active"
+            };
+            db.SavingAccountMasters.Add(savingAccount);
+            await db.SaveChangesAsync();
+
+            var controller = new FdAccountsController(db);
+            AttachUser(controller, BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate));
+
+            // 1. ActiveLoans endpoint must report hasActiveLoan = true AND hasDirectLien = false for FD 1343
+            var activeLoansJson = ParseOkJson(await controller.GetActiveLoansForFd(1343, businessDate));
+            Assert.True(activeLoansJson.GetProperty("hasActiveLoan").GetBoolean());
+            Assert.False(activeLoansJson.GetProperty("hasDirectLien").GetBoolean());
+
+            // 2. PrematureClose on unpledged FD 1343 directly to Saving Transfer (AdjustInLoan = false) MUST SUCCEED
+            var prematureRes = await controller.PrematureClose(1343, businessDate, new FdClosureRequest
+            {
+                ClosureDate = businessDate,
+                PaymentMode = "Transfer",
+                SavingAccountID = savingAccount.SavingAccountID,
+                AdjustInLoan = false,
+                IsManualAmountOverride = true,
+                CustomAccruedInterest = 3529m,
+                ManualOverrideReason = "थेट सेटलमेंट संपादन",
+                InterestDebitMode = "Expense"
+            });
+            Assert.IsType<OkObjectResult>(prematureRes);
+            Assert.Equal("Closed", (await db.FdAccounts.FindAsync(1343))!.Status);
+            Assert.Equal(104529m, (await db.SavingAccountMasters.FindAsync(601))!.CurrentBalance); // 1,000 + 1,03,529
+
+            // 3. MaturedClose on unpledged FD 1345 directly to Saving Transfer (AdjustInLoan = false) MUST ALSO SUCCEED
+            var maturedRes = await controller.MaturedClose(1345, new FdClosureRequest
+            {
+                ClosureDate = businessDate,
+                PaymentMode = "Transfer",
+                SavingAccountID = savingAccount.SavingAccountID,
+                AdjustInLoan = false,
+                InterestDebitMode = "Expense"
+            });
+            Assert.IsType<OkObjectResult>(maturedRes);
+            Assert.Equal("Closed", (await db.FdAccounts.FindAsync(1345))!.Status);
+            Assert.Equal(214529m, (await db.SavingAccountMasters.FindAsync(601))!.CurrentBalance); // 1,04,529 + 1,10,000
         }
     }
 }

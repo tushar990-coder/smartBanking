@@ -1,5 +1,13 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-21] - आवृत्ती v2.6.36 (Allow Direct Saving/Cash/Bank Payout on Unpledged FDs with Direct-Lien-Only Guard)
+
+### 🏦 1. तारण नसलेल्या नियमित मुदत ठेव पावत्या (`1343`, `1345`) थेट `Saving Transfer` / रोख / बँक परतावा अनुज्ञेय
+- **`FdAccountsController.cs`, `FdWithdrawalMaturity.tsx` व `FdRenewalPolicyAndAutoRenewalTests.cs`:**
+  - `GetFdActiveLoansAndLienContextAsync` मध्ये `hasDirectLien` केवळ **सक्रिय व शिल्लक बाकी असलेल्या** कर्जाशी प्रत्यक्ष तारण जोडलेल्या पावतीपुरते मर्यादित केले.
+  - `MaturedClose` आणि `PrematureClose` मधून तारण नसलेल्या नियमित पावतीवरील `FD_BREAK_BLOCKED_BY_ACTIVE_LOAN` बंदी काढली, त्यामुळे खातेदाराकडे दुसऱ्या पावतीवर कर्ज चालू असले तरी नियमित पावती थेट **`बचत खात्यात वर्ग (Saving Transfer)`**, रोख किंवा बँकद्वारे बंद करता येईल; प्रत्यक्ष तारण पावतीवर (`hasDirectLien == true`) कडक संरक्षण कायम ठेवले आहे.
+  - `FdWithdrawalMaturity.tsx` मध्ये नियमित पावतीवर `Adjust in Loan` आपोआप टिक होणे थांबवून `पेमेंट पद्धत → बचत खात्यात वर्ग` थेट खुला ठेवला व तळच्या स्टेटस पट्टीत प्रत्यक्ष तारण विरुद्ध इतर सक्रिय कर्ज स्पष्ट वेगळे दाखवले (**१४८/१४८ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-21] - आवृत्ती v2.6.35 (Loan Opening Balance Manual Installment Preservation & Schedule Sync)
 
 ### 🏦 1. कर्ज आरंभिक शिल्लक नोंदणी — मॅन्युअल हप्ता रक्कम (`8400` राऊंड-अप) जतन व अचूक हप्ता चार्ट

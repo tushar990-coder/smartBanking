@@ -2784,17 +2784,24 @@ namespace Bhisi.Api.Controllers
                 totalOutstanding += l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance + accruedInt;
             }
 
+            bool hasActiveCollateralLoan = collateralLoanIds.Any() &&
+                                           activeLoans.Any(l => collateralLoanIds.Contains(l.LoanAccountID));
             bool hasSecurityLoan = !string.IsNullOrEmpty(accNo) &&
                                    activeLoans.Any(l => l.SecurityDetails != null && l.SecurityDetails.Contains(accNo));
             bool hasLinkedLienLoan = !string.IsNullOrEmpty(lienLoanNo) &&
                                      activeLoans.Any(l => string.Equals(l.LoanAccountNo, lienLoanNo, StringComparison.OrdinalIgnoreCase));
+            bool hasUnlinkedManualLienWithActiveLoan = account.IsLienMarked &&
+                                                       string.IsNullOrEmpty(lienLoanNo) &&
+                                                       !collateralLoanIds.Any() &&
+                                                       activeLoans.Any();
 
-            bool hasDirectLien = account.IsLienMarked || activeCollaterals.Any() || hasSecurityLoan || hasLinkedLienLoan;
-            string? resolvedDirectLienLoanNo = !string.IsNullOrEmpty(lienLoanNo)
+            bool hasDirectLien = hasActiveCollateralLoan || hasSecurityLoan || hasLinkedLienLoan || hasUnlinkedManualLienWithActiveLoan;
+            string? resolvedDirectLienLoanNo = hasLinkedLienLoan
                 ? lienLoanNo
                 : activeLoans.FirstOrDefault(l =>
                     collateralLoanIds.Contains(l.LoanAccountID) ||
-                    (!string.IsNullOrEmpty(accNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(accNo)))?.LoanAccountNo;
+                    (!string.IsNullOrEmpty(accNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(accNo)))?.LoanAccountNo
+                  ?? (hasUnlinkedManualLienWithActiveLoan ? activeLoans.FirstOrDefault()?.LoanAccountNo : null);
 
             return (hasDirectLien, resolvedDirectLienLoanNo, activeLoans, totalOutstanding, memberId);
         }
@@ -3078,22 +3085,13 @@ namespace Bhisi.Api.Controllers
             var (hasDirectLien, directLienLoanNo, activeLoans, totalActiveLoanDebt, linkedMemberId) =
                 await GetFdActiveLoansAndLienContextAsync(account, closureDate);
 
-            // नियम: कर्ज थकीत/बाकी असल्यास किंवा तारण बोजा असल्यास कर्जात समायोजित (AdjustInLoan) केल्याशिवाय ठेव मोडता येणार नाही (नूतनीकरण करता येईल).
-            if ((hasDirectLien || (activeLoans.Any() && totalActiveLoanDebt > 0.01m)) && req?.AdjustInLoan != true)
+            // नियम: सदर पावतीवर प्रत्यक्ष तारण बोजा (Direct Lien) असल्यास कर्जात समायोजित (AdjustInLoan) केल्याशिवाय ठेव मोडता येणार नाही (नूतनीकरण करता येईल).
+            if (hasDirectLien && req?.AdjustInLoan != true)
             {
-                if (hasDirectLien)
-                {
-                    return BadRequest(new
-                    {
-                        errorCode = "FD_LIEN_BREAK_BLOCKED",
-                        message = $"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{directLienLoanNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज बाकी असताना ठेव मोडून परतावा घेता येत नाही; कृपया ठेव 'नूतनीकरण (FD Renewal)' करा किंवा 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' निवडा."
-                    });
-                }
-
                 return BadRequest(new
                 {
-                    errorCode = "FD_BREAK_BLOCKED_BY_ACTIVE_LOAN",
-                    message = $"सदर खातेदाराकडे एकूण ₹{totalActiveLoanDebt:N2} चे सक्रिय/थकीत कर्ज बाकी आहे. पतसंस्थेच्या नियमांनुसार कर्ज बाकी असताना मुदत ठेव मोडून परतावा घेता येत नाही. कृपया ठेव 'नूतनीकरण (FD Renewal)' करा किंवा परतावा रक्कम 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' करा."
+                    errorCode = "FD_LIEN_BREAK_BLOCKED",
+                    message = $"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{directLienLoanNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज बाकी असताना ठेव मोडून परतावा घेता येत नाही; कृपया ठेव 'नूतनीकरण (FD Renewal)' करा किंवा 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' निवडा."
                 });
             }
 
@@ -3182,14 +3180,14 @@ namespace Bhisi.Api.Controllers
                 decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance + pendingInterest;
                 decimal maxAdjustable = Math.Min(totalMaturityPayout, targetLoanTotalDue);
 
-                if ((hasDirectLien || totalActiveLoanDebt > 0.01m) &&
+                if (hasDirectLien &&
                     req.LoanAdjustmentAmount.HasValue &&
                     req.LoanAdjustmentAmount.Value + 0.01m < maxAdjustable)
                 {
                     return BadRequest(new
                     {
                         errorCode = "PARTIAL_LOAN_ADJUST_NOT_ALLOWED",
-                        message = $"खातेदाराकडे सक्रिय/थकीत कर्ज बाकी असल्यामुळे ठेव मोडताना किमान ₹{maxAdjustable:N2} रक्कम कर्जात समायोजित करणे बंधनकारक आहे. कमी रक्कम कर्जात टाकून उर्वरित रक्कम रोख/बँकेत काढता येत नाही (ठेव कायम ठेवायची असल्यास 'नूतनीकरण' निवडा)."
+                        message = $"सदर मुदत ठेव पावतीवर कर्जाचा तारण बोजा असल्यामुळे ठेव मोडताना किमान ₹{maxAdjustable:N2} रक्कम तारण कर्जात समायोजित करणे बंधनकारक आहे. कमी रक्कम कर्जात टाकून उर्वरित रक्कम रोख/बँकेत काढता येत नाही (ठेव कायम ठेवायची असल्यास 'नूतनीकरण' निवडा)."
                     });
                 }
 
@@ -4001,21 +3999,12 @@ namespace Bhisi.Api.Controllers
             var (hasDirectLien, directLienLoanNo, activeLoans, totalActiveLoanDebt, linkedMemberId) =
                 await GetFdActiveLoansAndLienContextAsync(account, effectiveClosureDate);
 
-            if ((hasDirectLien || (activeLoans.Any() && totalActiveLoanDebt > 0.01m)) && req?.AdjustInLoan != true)
+            if (hasDirectLien && req?.AdjustInLoan != true)
             {
-                if (hasDirectLien)
-                {
-                    return BadRequest(new
-                    {
-                        errorCode = "FD_LIEN_BREAK_BLOCKED",
-                        message = $"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{directLienLoanNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज बाकी असताना मुदतपूर्व ठेव मोडून परतावा घेता येत नाही; कृपया मुदतीनंतर 'नूतनीकरण (FD Renewal)' करा किंवा 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' निवडा."
-                    });
-                }
-
                 return BadRequest(new
                 {
-                    errorCode = "FD_BREAK_BLOCKED_BY_ACTIVE_LOAN",
-                    message = $"सदर खातेदाराकडे एकूण ₹{totalActiveLoanDebt:N2} चे सक्रिय/थकीत कर्ज बाकी आहे. पतसंस्थेच्या नियमांनुसार कर्ज बाकी असताना मुदतपूर्व ठेव मोडून परतावा घेता येत नाही. कृपया परतावा रक्कम 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' करा."
+                    errorCode = "FD_LIEN_BREAK_BLOCKED",
+                    message = $"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{directLienLoanNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज बाकी असताना मुदतपूर्व ठेव मोडून परतावा घेता येत नाही; कृपया मुदतीनंतर 'नूतनीकरण (FD Renewal)' करा किंवा 'सक्रिय कर्ज खात्यात समायोजित (Adjust in Loan)' निवडा."
                 });
             }
 
@@ -4162,7 +4151,7 @@ namespace Bhisi.Api.Controllers
                         decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance + pendingInterest;
                         decimal maxAdjustable = Math.Min(netPayoutAmount, targetLoanTotalDue);
 
-                        if ((hasDirectLien || totalActiveLoanDebt > 0.01m) &&
+                        if (hasDirectLien &&
                             req.LoanAdjustmentAmount.HasValue &&
                             req.LoanAdjustmentAmount.Value + 0.01m < maxAdjustable)
                         {
@@ -4170,7 +4159,7 @@ namespace Bhisi.Api.Controllers
                             return BadRequest(new
                             {
                                 errorCode = "PARTIAL_LOAN_ADJUST_NOT_ALLOWED",
-                                message = $"खातेदाराकडे सक्रिय/थकीत कर्ज बाकी असल्यामुळे ठेव मोडताना किमान ₹{maxAdjustable:N2} रक्कम कर्जात समायोजित करणे बंधनकारक आहे. कमी रक्कम कर्जात टाकून उर्वरित रक्कम रोख/बँकेत काढता येत नाही."
+                                message = $"सदर मुदत ठेव पावतीवर कर्जाचा तारण बोजा असल्यामुळे ठेव मोडताना किमान ₹{maxAdjustable:N2} रक्कम तारण कर्जात समायोजित करणे बंधनकारक आहे. कमी रक्कम कर्जात टाकून उर्वरित रक्कम रोख/बँकेत काढता येत नाही."
                             });
                         }
 

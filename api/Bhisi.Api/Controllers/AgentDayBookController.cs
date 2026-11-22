@@ -672,13 +672,23 @@ namespace Bhisi.Api.Controllers
                 foreach (var lc in unremittedLoans)
                 {
                     if (allocatedNonPigmy + lc.TotalAmountReceived > request.Amount) continue;
-                    int pLedger = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? pigmyCreditLedger.LedgerID;
-                    int iLedger = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? pLedger;
-                    int oLedger = lc.LoanAccount?.LoanRate?.OverdueInterestLedgerID ?? iLedger;
+                    int pLedger = (lc.LoanAccount?.LoanRate?.LoanLedgerID ?? 0) > 0
+                        ? lc.LoanAccount!.LoanRate!.LoanLedgerID!.Value
+                        : pigmyCreditLedger.LedgerID;
+                    int iLedger = (lc.LoanAccount?.LoanRate?.InterestLedgerID ?? 0) > 0
+                        ? lc.LoanAccount!.LoanRate!.InterestLedgerID!.Value
+                        : pLedger;
+                    int rIntLedger = (lc.LoanAccount?.LoanRate?.ReceivableInterestLedgerID ?? 0) > 0
+                        ? lc.LoanAccount!.LoanRate!.ReceivableInterestLedgerID!.Value
+                        : iLedger;
+                    int oLedger = (lc.LoanAccount?.LoanRate?.OverdueInterestLedgerID ?? 0) > 0
+                        ? lc.LoanAccount!.LoanRate!.OverdueInterestLedgerID!.Value
+                        : iLedger;
                     AddCredit(pLedger, lc.PrincipalCollected);
+                    AddCredit(rIntLedger, lc.ReceivableInterestCollected);
                     AddCredit(iLedger, lc.InterestCollected);
                     AddCredit(oLedger, lc.PenaltyInterestCollected);
-                    decimal itemized = lc.PrincipalCollected + lc.InterestCollected + lc.PenaltyInterestCollected;
+                    decimal itemized = lc.PrincipalCollected + lc.ReceivableInterestCollected + lc.InterestCollected + lc.PenaltyInterestCollected;
                     if (lc.TotalAmountReceived > itemized)
                     {
                         AddCredit(pLedger, lc.TotalAmountReceived - itemized);

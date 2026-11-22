@@ -51,20 +51,35 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Start date must be before end date.");
             }
 
-            var activeAccounts = await _context.SavingAccountMasters
-                .Where(a => a.Status == "Active")
+            var accountQuery = _context.SavingAccountMasters
+                .Where(a => a.Status == "Active");
+
+            if (request.SavingSchemeID.HasValue && request.SavingSchemeID.Value > 0)
+            {
+                accountQuery = accountQuery.Where(a => a.SavingSchemeID == request.SavingSchemeID.Value);
+            }
+
+            var activeAccounts = await accountQuery
                 .Include(a => a.Customer)
                 .ToListAsync();
+
+            SavingInterestSetting? explicitScheme = (request.SavingSchemeID.HasValue && request.SavingSchemeID.Value > 0)
+                ? await _context.SavingInterestSettings.AsNoTracking().FirstOrDefaultAsync(s => s.SettingID == request.SavingSchemeID.Value)
+                : null;
 
             var results = new List<InterestCalculationResult>();
 
             foreach (var account in activeAccounts)
             {
-                decimal interest = CalculateAccountInterest(account, request.PeriodStart, request.PeriodEnd);
+                decimal? effectiveOverrideRate = (request.OverrideInterestRate.HasValue && request.OverrideInterestRate.Value > 0)
+                    ? request.OverrideInterestRate.Value
+                    : (explicitScheme != null && explicitScheme.InterestRate > 0 && account.InterestRate <= 0 ? explicitScheme.InterestRate : (decimal?)null);
+
+                decimal interest = CalculateAccountInterest(account, request.PeriodStart, request.PeriodEnd, effectiveOverrideRate, explicitScheme);
                 if (interest > 0)
                 {
-                    string custName = account.Customer != null 
-                        ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() 
+                    string custName = account.Customer != null
+                        ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim()
                         : "";
                     results.Add(new InterestCalculationResult
                     {
@@ -73,7 +88,7 @@ namespace Bhisi.Api.Controllers
                         CIFNo = account.Customer?.CIFNo ?? "",
                         CustomerName = custName,
                         CurrentBalance = account.CurrentBalance,
-                        InterestRate = account.InterestRate,
+                        InterestRate = effectiveOverrideRate ?? account.InterestRate,
                         CalculatedInterest = Math.Round(interest, 2)
                     });
                 }
@@ -91,13 +106,20 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Start date must be before end date.");
             }
 
-            // 1. Idempotency Check: Prevent duplicate interest posting for overlapping periods
+            // 1. Idempotency Check: Prevent duplicate interest posting for overlapping periods (scoped by scheme when SavingSchemeID is supplied)
+            string schemeTag = (request.SavingSchemeID.HasValue && request.SavingSchemeID.Value > 0)
+                ? $"[SCH-{request.SavingSchemeID.Value}]"
+                : string.Empty;
+
             bool isAlreadyPosted = await _context.SavingInterestPostings
-                .AnyAsync(p => (request.PeriodStart <= p.PeriodEnd && request.PeriodEnd >= p.PeriodStart));
+                .AnyAsync(p => (request.PeriodStart <= p.PeriodEnd && request.PeriodEnd >= p.PeriodStart) &&
+                               (string.IsNullOrEmpty(schemeTag)
+                                   ? (p.VoucherNo == null || !p.VoucherNo.Contains("[SCH-"))
+                                   : (p.VoucherNo != null && p.VoucherNo.Contains(schemeTag))));
 
             if (isAlreadyPosted)
             {
-                return BadRequest($"या कालावधीसाठी ({request.PeriodStart:dd/MM/yyyy} ते {request.PeriodEnd:dd/MM/yyyy}) बचत व्याज आधीच पोस्ट केलेले आहे. दुहेरी व्याज पोस्टिंग करता येणार नाही.");
+                return BadRequest($"या कालावधीसाठी ({request.PeriodStart:dd/MM/yyyy} ते {request.PeriodEnd:dd/MM/yyyy}) बचत/ठेव व्याज आधीच पोस्ट केलेले आहे. दुहेरी व्याज पोस्टिंग करता येणार नाही.");
             }
 
             var activeYear = await _context.FinancialYears.FirstOrDefaultAsync(y => y.IsActive);
@@ -107,10 +129,23 @@ namespace Bhisi.Api.Controllers
             }
 
             // 2. Fetch and validate GL ledgers up-front
-            var currentSetting = await _context.SavingInterestSettings
-                .Where(s => s.EffectiveDate <= DateTime.Today)
-                .OrderByDescending(s => s.EffectiveDate)
-                .FirstOrDefaultAsync();
+            SavingInterestSetting? currentSetting = null;
+            if (request.SavingSchemeID.HasValue && request.SavingSchemeID.Value > 0)
+            {
+                currentSetting = await _context.SavingInterestSettings
+                    .FirstOrDefaultAsync(s => s.SettingID == request.SavingSchemeID.Value);
+                if (currentSetting == null)
+                {
+                    return BadRequest("निवडलेली बचत/ठेव योजना आढळली नाही.");
+                }
+            }
+            else
+            {
+                currentSetting = await _context.SavingInterestSettings
+                    .Where(s => s.EffectiveDate <= DateTime.Today)
+                    .OrderByDescending(s => s.EffectiveDate)
+                    .FirstOrDefaultAsync();
+            }
 
             int expLedgerId = currentSetting?.InterestExpenseLedgerID ?? 0;
             int liabLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
@@ -133,7 +168,7 @@ namespace Bhisi.Api.Controllers
 
             if (expLedgerId <= 0 || liabLedgerId <= 0)
             {
-                return BadRequest("बचत व्याज पोस्टिंगसाठी बचत ठेव देयता लेजर (Saving Liability Ledger) किंवा व्याज खर्च लेजर (Interest Expense Ledger) मॅप केलेले नाही. कृपया 'बचत ठेव व्याजदर सेटिंग' मध्ये लेजर मॅपिंग पूर्ण करा.");
+                return BadRequest("बचत/ठेव व्याज पोस्टिंगसाठी देयता लेजर (Saving Liability Ledger) किंवा व्याज खर्च लेजर (Interest Expense Ledger) मॅप केलेले नाही. कृपया 'बचत ठेव व्याजदर सेटिंग' मध्ये लेजर मॅपिंग पूर्ण करा.");
             }
 
             var liabLedger = await _context.Ledgers.FindAsync(liabLedgerId);
@@ -146,9 +181,12 @@ namespace Bhisi.Api.Controllers
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var activeAccounts = await _context.SavingAccountMasters
-                    .Where(a => a.Status == "Active")
-                    .ToListAsync();
+                var accQuery = _context.SavingAccountMasters.Where(a => a.Status == "Active");
+                if (request.SavingSchemeID.HasValue && request.SavingSchemeID.Value > 0)
+                {
+                    accQuery = accQuery.Where(a => a.SavingSchemeID == request.SavingSchemeID.Value);
+                }
+                var activeAccounts = await accQuery.ToListAsync();
 
                 var branchGroups = activeAccounts.GroupBy(a => a.BranchID).ToList();
                 decimal grandTotalInterest = 0;
@@ -171,17 +209,29 @@ namespace Bhisi.Api.Controllers
 
                     foreach (var account in branchGroup)
                     {
-                        decimal interest = CalculateAccountInterest(account, request.PeriodStart, request.PeriodEnd);
+                        decimal? effectiveOverrideRate = (request.OverrideInterestRate.HasValue && request.OverrideInterestRate.Value > 0)
+                            ? request.OverrideInterestRate.Value
+                            : (request.SavingSchemeID.HasValue && currentSetting != null && currentSetting.InterestRate > 0 && account.InterestRate <= 0
+                                ? currentSetting.InterestRate
+                                : (decimal?)null);
+
+                        decimal interest = CalculateAccountInterest(account, request.PeriodStart, request.PeriodEnd, effectiveOverrideRate, currentSetting);
                         interest = Math.Round(interest, 2);
 
                         if (interest > 0)
                         {
+                            decimal usedRate = effectiveOverrideRate ?? account.InterestRate;
                             account.CurrentBalance += interest;
+                            if (request.OverrideInterestRate.HasValue && request.OverrideInterestRate.Value > 0)
+                            {
+                                account.InterestRate = request.OverrideInterestRate.Value;
+                            }
                             account.LastInterestPostingDate = request.PeriodEnd;
                             account.LastInterestAmount = interest;
                             account.UpdatedOn = now;
                             _context.Entry(account).State = EntityState.Modified;
 
+                            string schemePrefix = currentSetting != null ? $"{currentSetting.SchemeName} " : "बचत ";
                             var txn = new SavingTransaction
                             {
                                 SavingAccountID = account.SavingAccountID,
@@ -192,7 +242,7 @@ namespace Bhisi.Api.Controllers
                                 PaymentMode = "Transfer",
                                 Amount = interest,
                                 BalanceAfterTxn = account.CurrentBalance,
-                                Narration = $"बचत व्याज जमा ({request.PeriodStart:dd/MM/yyyy} ते {request.PeriodEnd:dd/MM/yyyy})",
+                                Narration = $"{schemePrefix}वार्षिक व्याज जमा ({usedRate:N2}% दराने, {request.PeriodStart:dd/MM/yyyy} ते {request.PeriodEnd:dd/MM/yyyy})",
                                 CreatedBy = request.PostedBy,
                                 CreatedOn = now
                             };
@@ -204,7 +254,7 @@ namespace Bhisi.Api.Controllers
                     if (branchTotalInterest > 0)
                     {
                         // Generate Branch-Specific Voucher for this branch
-                        string voucherNo = $"VCH-SAV-INT-{branchCode}-{todayStr}-{nextVchSeq:D4}";
+                        string voucherNo = await Helpers.VoucherNumberHelper.NextVoucherNoAsync(_context, $"VCH-SAV-INT-{branchCode}-{todayStr}-", 4);
                         nextVchSeq++;
 
                         var voucher = new Voucher
@@ -214,7 +264,7 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = effPostDate,
                             VoucherType = "Journal",
                             TotalAmount = branchTotalInterest,
-                            Narration = $"Savings Interest Posting for branch {branchCode} ({request.PeriodStart:dd/MM/yyyy} to {request.PeriodEnd:dd/MM/yyyy})",
+                            Narration = $"{(currentSetting?.SchemeName ?? "Savings")} Interest Posting for branch {branchCode} ({request.PeriodStart:dd/MM/yyyy} to {request.PeriodEnd:dd/MM/yyyy})",
                             CreatedBy = request.PostedBy,
                             VoucherDetails = new List<VoucherDetail>
                             {
@@ -223,10 +273,12 @@ namespace Bhisi.Api.Controllers
                             }
                         };
                         _context.Vouchers.Add(voucher);
+                        await _context.SaveChangesAsync();
 
                         foreach (var txn in branchTxns)
                         {
                             txn.VoucherNo = voucherNo;
+                            txn.VoucherID = voucher.VoucherID;
                             _context.SavingTransactions.Add(txn);
                         }
 
@@ -237,13 +289,19 @@ namespace Bhisi.Api.Controllers
 
                 if (grandTotalInterest > 0)
                 {
+                    string trackedVoucherNos = string.Join(", ", generatedVoucherNos);
+                    if (!string.IsNullOrEmpty(schemeTag))
+                    {
+                        trackedVoucherNos = $"{schemeTag} {trackedVoucherNos}".Trim();
+                    }
+
                     var posting = new SavingInterestPosting
                     {
                         FinancialYearID = activeYear.FinancialYearID,
                         PeriodStart = request.PeriodStart,
                         PeriodEnd = request.PeriodEnd,
                         TotalInterest = grandTotalInterest,
-                        VoucherNo = string.Join(", ", generatedVoucherNos),
+                        VoucherNo = trackedVoucherNos,
                         PostedOn = DateTime.Now,
                         PostedBy = request.PostedBy
                     };
@@ -251,9 +309,9 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                     await dbTransaction.CommitAsync();
 
-                    return Ok(new { 
-                        Message = "Interest posted successfully across branches.", 
-                        TotalInterest = grandTotalInterest, 
+                    return Ok(new {
+                        Message = "Interest posted successfully across branches.",
+                        TotalInterest = grandTotalInterest,
                         Vouchers = generatedVoucherNos,
                         VoucherNo = string.Join(", ", generatedVoucherNos)
                     });
@@ -270,7 +328,7 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        private decimal CalculateAccountInterest(SavingAccountMaster account, DateTime start, DateTime end)
+        private decimal CalculateAccountInterest(SavingAccountMaster account, DateTime start, DateTime end, decimal? overrideRate = null, SavingInterestSetting? explicitScheme = null)
         {
             // Determine effective start date for this account based on LastInterestPostingDate (+1 day) or OpeningDate
             DateTime accountStartDate = account.LastInterestPostingDate.HasValue
@@ -281,13 +339,18 @@ namespace Bhisi.Api.Controllers
             if (effectiveStart > end) return 0;
 
             // Fetch scheme setting mapped to this account or latest effective setting
-            var schemeSetting = _context.SavingInterestSettings
-                .Where(s => s.EffectiveDate <= end)
-                .OrderByDescending(s => s.EffectiveDate)
-                .FirstOrDefault();
+            var schemeSetting = explicitScheme
+                ?? (account.SavingSchemeID.HasValue
+                    ? _context.SavingInterestSettings.FirstOrDefault(s => s.SettingID == account.SavingSchemeID.Value)
+                    : null)
+                ?? _context.SavingInterestSettings
+                    .Where(s => s.EffectiveDate <= end)
+                    .OrderByDescending(s => s.EffectiveDate)
+                    .FirstOrDefault();
 
             string calcMethod = schemeSetting?.CalculationMethod ?? "Daily Product";
-            decimal rate = account.InterestRate / 100;
+            decimal effectiveRatePct = (overrideRate.HasValue && overrideRate.Value > 0) ? overrideRate.Value : account.InterestRate;
+            decimal rate = effectiveRatePct / 100m;
             decimal totalInterest = 0;
 
             // Get all transactions for this account ordered by date
@@ -348,6 +411,8 @@ namespace Bhisi.Api.Controllers
     {
         public DateTime PeriodStart { get; set; }
         public DateTime PeriodEnd { get; set; }
+        public int? SavingSchemeID { get; set; }
+        public decimal? OverrideInterestRate { get; set; }
     }
 
     public class InterestPostingRequest
@@ -356,6 +421,8 @@ namespace Bhisi.Api.Controllers
         public DateTime PeriodEnd { get; set; }
         public DateTime? PostingDate { get; set; }
         public int PostedBy { get; set; } = 1;
+        public int? SavingSchemeID { get; set; }
+        public decimal? OverrideInterestRate { get; set; }
     }
 
     public class InterestCalculationResult

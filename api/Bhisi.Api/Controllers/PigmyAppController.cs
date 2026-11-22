@@ -281,17 +281,55 @@ namespace Bhisi.Api.Controllers
             if (agent == null) return BadRequest("नियुक्त एजंट सापडला नाही.");
 
             int branchId = User.ResolveBranchId(dto.BranchID > 0 ? dto.BranchID : agent.BranchID);
+            int creatorUserId = IsAgentRole() ? 1 : User.GetUserId();
 
-            string? aadhaar = string.IsNullOrWhiteSpace(dto.AadhaarNo) ? null : dto.AadhaarNo.Trim();
-            if (!string.IsNullOrEmpty(aadhaar) && !KycValidationHelper.IsValidAadhaar(aadhaar, out var aadhaarError))
+            var (businessDate, _) = await _businessDateGuard.GetBranchBusinessDateAsync(branchId);
+            if (await _businessDateGuard.IsDateClosedAsync(branchId, businessDate))
             {
-                return BadRequest(aadhaarError ?? "आधार क्रमांक वैध नाही.");
+                return Conflict(new { message = $"दिनांक {businessDate:dd/MM/yyyy} चा दिवस Day-End ने बंद केला आहे. बंद तारखेवर नवीन खाते उघडता येणार नाही." });
+            }
+
+            var closedFy = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed && businessDate.Date >= fy.StartDate.Date && businessDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest(new { message = $"शाखेची चालू तारीख ({businessDate:dd/MM/yyyy}) बंद आर्थिक वर्षात ({closedFy.YearCode}) मोडते. नवीन ग्राहक/खाते उघडता येणार नाही." });
+            }
+
+            string? aadhaar = string.IsNullOrWhiteSpace(dto.AadhaarNo)
+                ? null
+                : dto.AadhaarNo.Trim().Replace(" ", "").Replace("-", "");
+            if (!string.IsNullOrEmpty(aadhaar))
+            {
+                if (!KycValidationHelper.IsValidAadhaar(aadhaar, out var aadhaarError))
+                {
+                    return BadRequest(new { message = aadhaarError ?? "आधार क्रमांक वैध नाही." });
+                }
+
+                var dupCustomer = await _context.Customers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => !c.IsDeleted && c.AadhaarNo != null &&
+                        c.AadhaarNo.Replace(" ", "").Replace("-", "") == aadhaar);
+                if (dupCustomer != null)
+                {
+                    return BadRequest(new { message = $"हा आधार क्रमांक ({aadhaar}) आधीच खातेदार '{dupCustomer.FirstName} {dupCustomer.LastName}' (CIF: {dupCustomer.CIFNo}) यांच्या नावे नोंदवला आहे. कृपया नवीन ग्राहक नोंदणीऐवजी विद्यमान खातेदारावर खाते उघडा." });
+                }
+            }
+
+            var scheme = await _context.PigmySchemes
+                .Where(s => s.Status == "Active")
+                .OrderBy(s => s.PigmySchemeID)
+                .FirstOrDefaultAsync();
+            if (scheme == null)
+            {
+                return BadRequest(new { message = "कोणतीही सक्रिय (Active) पिग्मी योजना आढळली नाही. कृपया प्रथम पिग्मी योजना सुरू करा." });
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Create Customer record
+                // Create Customer record using active branch CBS BusinessDate
                 var customer = new Customer
                 {
                     BranchID = branchId,
@@ -302,21 +340,22 @@ namespace Bhisi.Api.Controllers
                     AadhaarNo = aadhaar,
                     Address = dto.Address?.Trim(),
                     Gender = dto.Gender ?? "Male",
-                    CreatedBy = agentId,
+                    RegistrationDate = businessDate,
+                    CreatedBy = creatorUserId,
                     CreatedOn = DateTime.UtcNow,
-                    Status = "Active"
+                    Status = "Active",
+                    IsDeleted = false
                 };
 
                 _context.Customers.Add(customer);
                 await _context.SaveChangesAsync();
 
-                // Assign Standard CBS CIF (e.g. CIF000123)
-                customer.CIFNo = await Bhisi.Api.Helpers.AccountNumberHelper.GenerateUniqueCifAsync(_context);
+                // Assign Standard 1-to-1 CBS CIF (e.g. CIF000123)
+                string standardCif = $"CIF{customer.CustomerID:D6}";
+                customer.CIFNo = !await _context.Customers.AnyAsync(c => c.CustomerID != customer.CustomerID && c.CIFNo == standardCif)
+                    ? standardCif
+                    : await Bhisi.Api.Helpers.AccountNumberHelper.GenerateUniqueCifAsync(_context);
                 await _context.SaveChangesAsync();
-
-                // Get Default Pigmy Scheme
-                var scheme = await _context.PigmySchemes.FirstOrDefaultAsync() 
-                    ?? new PigmyScheme { PigmySchemeID = 1 };
 
                 // Generate CBS Standard 14-digit Account Number
                 var accountNo = await Bhisi.Api.Helpers.AccountNumberHelper.GenerateNextPigmyAccountNo(
@@ -326,7 +365,7 @@ namespace Bhisi.Api.Controllers
                     incrementSequence: true
                 );
 
-                // Create Pigmy Account
+                // Create Pigmy Account on CBS BusinessDate with scheme InterestRate & DurationMonths
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
@@ -334,11 +373,12 @@ namespace Bhisi.Api.Controllers
                     BranchID = branchId,
                     PigmySchemeID = scheme.PigmySchemeID,
                     PigmyAgentID = agentId,
-                    OpeningDate = DateTime.Today,
-                    MaturityDate = DateTime.Today.AddYears(1),
+                    OpeningDate = businessDate,
+                    MaturityDate = businessDate.AddMonths(scheme.DurationMonths > 0 ? scheme.DurationMonths : 12),
+                    InterestRate = scheme.InterestRate,
                     TotalDepositedAmount = 0m,
                     Status = "Active",
-                    CreatedBy = agentId,
+                    CreatedBy = creatorUserId,
                     CreatedDate = DateTime.UtcNow
                 };
 
@@ -353,8 +393,11 @@ namespace Bhisi.Api.Controllers
                     message = "नवीन पिग्मी ग्राहक व खाते यशस्वीरीत्या उघडले गेले!",
                     customerId = customer.CustomerID,
                     memberId = customer.CustomerID,
+                    cifNo = customer.CIFNo,
                     pigmyAccountId = pigmyAccount.PigmyAccountID,
                     accountNo = pigmyAccount.AccountNo,
+                    openingDate = pigmyAccount.OpeningDate.ToString("yyyy-MM-dd"),
+                    maturityDate = pigmyAccount.MaturityDate.ToString("yyyy-MM-dd"),
                     customerName = $"{customer.FirstName} {customer.LastName}".Trim(),
                     memberName = $"{customer.FirstName} {customer.LastName}".Trim(),
                     mobileNo = customer.MobileNo,
@@ -707,8 +750,9 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(403, new { message = "आपल्याला इतर शाखेतील खात्याचे पासबुक पाहण्याची परवानगी नाही." });
             }
 
-            DateTime fDate = fromDate?.Date ?? new DateTime(DateTime.Today.Year, 1, 1);
-            DateTime tDate = toDate?.Date ?? DateTime.Today;
+            var istToday = _businessDateGuard.GetIstToday();
+            DateTime fDate = fromDate?.Date ?? new DateTime(istToday.Year, 1, 1);
+            DateTime tDate = toDate?.Date ?? istToday;
             DateTime nextTDate = tDate.AddDays(1);
 
             // Compute Opening Balance before fDate using transactions / migrated balances
@@ -781,8 +825,9 @@ namespace Bhisi.Api.Controllers
             int targetAgentId = ResolveAuthorizedAgentId(agentId, headerAgentId);
             if (targetAgentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
-            DateTime fDate = fromDate?.Date ?? DateTime.Today;
-            DateTime tDate = toDate?.Date ?? DateTime.Today;
+            var istToday = _businessDateGuard.GetIstToday();
+            DateTime fDate = fromDate?.Date ?? istToday;
+            DateTime tDate = toDate?.Date ?? istToday;
             DateTime nextTDate = tDate.AddDays(1);
 
             var query = _context.PigmyCollections
@@ -830,8 +875,9 @@ namespace Bhisi.Api.Controllers
             int targetAgentId = ResolveAuthorizedAgentId(agentId, headerAgentId);
             if (targetAgentId <= 0) return Unauthorized("Valid Agent JWT token required.");
 
-            DateTime fDate = fromDate?.Date ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-            DateTime tDate = toDate?.Date ?? DateTime.Today;
+            var istToday = _businessDateGuard.GetIstToday();
+            DateTime fDate = fromDate?.Date ?? new DateTime(istToday.Year, istToday.Month, 1);
+            DateTime tDate = toDate?.Date ?? istToday;
             DateTime nextTDate = tDate.AddDays(1);
 
             // Fetch active commission rate setting for agent

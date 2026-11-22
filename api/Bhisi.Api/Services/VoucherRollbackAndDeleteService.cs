@@ -185,6 +185,67 @@ namespace Bhisi.Api.Services
                 var affectedDemandNoticeIds = demandRecoveryRows.Select(d => d.DemandNoticeId).Distinct().ToList();
                 if (demandRecoveryRows.Any())
                 {
+                    var demandRecoveryIds = demandRecoveryRows.Select(d => d.DemandRecoveryId).ToList();
+
+                    // Rollback exact per-column & multi-RD sub-row allocations
+                    var allocRows = await _context.DemandRecoveryAllocations
+                        .Where(a => demandRecoveryIds.Contains(a.DemandRecoveryId))
+                        .ToListAsync();
+
+                    if (allocRows.Any())
+                    {
+                        var colItemIds = allocRows.Select(a => a.DemandMemberColumnItemId).Distinct().ToList();
+                        var colItemsMap = await _context.DemandMemberColumnItems
+                            .Where(c => colItemIds.Contains(c.DemandMemberColumnItemId))
+                            .ToDictionaryAsync(c => c.DemandMemberColumnItemId);
+
+                        foreach (var al in allocRows)
+                        {
+                            if (colItemsMap.TryGetValue(al.DemandMemberColumnItemId, out var cItem))
+                            {
+                                cItem.RecoveredPrincipalOrDeposit = Math.Max(0m, Math.Round(cItem.RecoveredPrincipalOrDeposit - al.AllocatedPrincipalOrDeposit, 2, MidpointRounding.AwayFromZero));
+                                cItem.RecoveredInterest = Math.Max(0m, Math.Round(cItem.RecoveredInterest - al.AllocatedInterest, 2, MidpointRounding.AwayFromZero));
+                                cItem.RecoveredPenalInterest = Math.Max(0m, Math.Round(cItem.RecoveredPenalInterest - al.AllocatedPenalInterest, 2, MidpointRounding.AwayFromZero));
+                                _context.Entry(cItem).State = EntityState.Modified;
+                            }
+                        }
+
+                        _context.DemandRecoveryAllocations.RemoveRange(allocRows);
+                    }
+
+                    // Rollback RD Installments linked via VCH-DMD-* VoucherID (Module 4 handles JV-RD-COLL-* only)
+                    var demandRdTxs = await _context.RdTransactions
+                        .Where(rt => rt.VoucherID.HasValue && voucherIds.Contains(rt.VoucherID.Value) && rt.TransactionType == "Installment")
+                        .ToListAsync();
+
+                    if (demandRdTxs.Any())
+                    {
+                        var affectedRdAccIds = demandRdTxs.Select(r => r.RdAccountID).Distinct().ToList();
+                        foreach (var rAccId in affectedRdAccIds)
+                        {
+                            var rdAcc = await _context.RdAccounts.Include(r => r.RdScheme).FirstOrDefaultAsync(r => r.RdAccountID == rAccId);
+                            if (rdAcc != null)
+                            {
+                                decimal revAmt = demandRdTxs.Where(r => r.RdAccountID == rAccId && r.DebitCredit == "Cr").Sum(r => r.PrincipalAmount);
+                                rdAcc.TotalDepositedAmount = Math.Max(0m, Math.Round(rdAcc.TotalDepositedAmount - revAmt, 2, MidpointRounding.AwayFromZero));
+                                _context.Entry(rdAcc).State = EntityState.Modified;
+                            }
+                        }
+
+                        _context.RdTransactions.RemoveRange(demandRdTxs);
+                        await _context.SaveChangesAsync();
+
+                        foreach (var rAccId in affectedRdAccIds)
+                        {
+                            var rdAcc = await _context.RdAccounts.Include(r => r.RdScheme).FirstOrDefaultAsync(r => r.RdAccountID == rAccId);
+                            if (rdAcc != null)
+                            {
+                                await Helpers.RdInstallmentCollectionRollbackHelper.ReconcileRdSchedulesWithDepositedAmountAsync(
+                                    _context, rdAcc, deletedVoucherIds: voucherIds);
+                            }
+                        }
+                    }
+
                     // Reverse Demand's Pigmy credit deposits (linked via ReferenceId == VoucherNo)
                     var demandPigmyTxs = await _context.PigmyTransactions
                         .Where(pt => pt.ReferenceId != null &&
@@ -283,17 +344,49 @@ namespace Bhisi.Api.Services
                             .Where(r => r.DemandNoticeId == noticeId)
                             .SumAsync(r => (decimal?)r.TotalReceivedAmount) ?? 0m;
 
-                        if (remainingRecovered <= 0.009m)
+                        notice.TotalRecoveredAmount = Math.Round(remainingRecovered, 2, MidpointRounding.AwayFromZero);
+
+                        var memberDetails = await _context.DemandMemberDetails
+                            .Include(m => m.ColumnItems)
+                            .Where(m => m.DemandNoticeId == noticeId)
+                            .ToListAsync();
+
+                        foreach (var md in memberDetails)
                         {
-                            notice.Status = "Pending";
-                            var memberDetails = await _context.DemandMemberDetails
-                                .Where(m => m.DemandNoticeId == noticeId && m.IsProcessed)
-                                .ToListAsync();
-                            foreach (var md in memberDetails)
+                            if (md.ColumnItems.Any())
                             {
+                                decimal memRec = Math.Round(md.ColumnItems.Sum(c => c.RecoveredPrincipalOrDeposit + c.RecoveredInterest + c.RecoveredPenalInterest), 2, MidpointRounding.AwayFromZero);
+                                md.RecoveredAmount = memRec;
+                                if (md.TotalDeduction > 0m && memRec >= md.TotalDeduction - 0.01m)
+                                {
+                                    md.RecoveryStatus = "Recovered";
+                                    md.IsProcessed = true;
+                                }
+                                else if (memRec > 0.009m)
+                                {
+                                    md.RecoveryStatus = "Partial";
+                                    md.IsProcessed = false;
+                                }
+                                else
+                                {
+                                    md.RecoveredAmount = 0m;
+                                    md.RecoveryStatus = "Pending";
+                                    md.IsProcessed = false;
+                                }
+                                _context.Entry(md).State = EntityState.Modified;
+                            }
+                            else if (remainingRecovered <= 0.009m)
+                            {
+                                md.RecoveredAmount = 0m;
+                                md.RecoveryStatus = "Pending";
                                 md.IsProcessed = false;
                                 _context.Entry(md).State = EntityState.Modified;
                             }
+                        }
+
+                        if (remainingRecovered <= 0.009m)
+                        {
+                            notice.Status = "Pending";
                         }
                         else if (remainingRecovered < notice.TotalDemandAmount - 0.009m)
                         {

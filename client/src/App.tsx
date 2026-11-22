@@ -40,6 +40,9 @@ import CustomerBulkEntry from './components/CustomerBulkEntry';
 import MemberMaster from './components/MemberMaster';
 import EmployeeBankDetails from './components/EmployeeBankDetails';
 import EmployerMaster from './components/EmployerMaster';
+import EmployeeDemandForm from './components/EmployeeDemandForm';
+import DemandRecoveryMaster from './components/DemandRecoveryMaster';
+import DemandSettingsMaster from './components/DemandSettingsMaster';
 import CustomerOpeningBalance from './components/CustomerOpeningBalance';
 import MemberOpeningBalance from './components/MemberOpeningBalance';
 import MemberClosure from './components/MemberClosure';
@@ -284,6 +287,9 @@ function App() {
     'loan-rate': '/karjvibhag/yojana',
     'employer-master': '/karjvibhag/employer',
     'employee-bank': '/karjvibhag/employee-bank',
+    'demand-notice': '/karjvibhag/demand',
+    'demand-recovery': '/karjvibhag/demand-recovery',
+    'demand-settings': '/karjvibhag/demand-settings',
 
     // Saving Deposit (बचत ठेव)
     'saving': '/saving/dashboard',
@@ -482,6 +488,10 @@ function App() {
     const params = new URLSearchParams(window.location.search);
     return params.get('customerId') || params.get('memberId');
   });
+  const [selectedDemandNoticeId, setSelectedDemandNoticeId] = useState<number | undefined>(() => {
+    const n = new URLSearchParams(window.location.search).get('noticeId');
+    return n ? Number(n) : undefined;
+  });
   const [navKey, setNavKey] = useState<number>(0);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -513,12 +523,14 @@ function App() {
       const params = new URLSearchParams(window.location.search);
       const mId = params.get('customerId') || params.get('memberId');
       setLastMemberId(mId || null);
+      const nId = params.get('noticeId');
+      setSelectedDemandNoticeId(nId ? Number(nId) : undefined);
       if (!mId) {
         try {
           sessionStorage.removeItem('cbs_active_customer_transfer');
         } catch (e) {}
       }
-      setNavKey(prev => prev + 1);
+    setNavKey(prev => prev + 1);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -551,6 +563,11 @@ function App() {
       } catch (e) {
         console.error('Failed to clear customer transfer bridge:', e);
       }
+    }
+    if (mergedParams.noticeId !== undefined) {
+      setSelectedDemandNoticeId(Number(mergedParams.noticeId) || undefined);
+    } else if (cleanTab !== 'demand-recovery') {
+      setSelectedDemandNoticeId(undefined);
     }
     setNavKey(prev => prev + 1);
 
@@ -826,6 +843,9 @@ function App() {
         {activeTab === 'gold-loan-details' && <GoldLoanDetails />}
         {activeTab === 'employee-bank' && <EmployeeBankDetails onNavigate={handleNavigate} />}
         {activeTab === 'employer-master' && <EmployerMaster />}
+        {activeTab === 'demand-notice' && <EmployeeDemandForm onNavigate={handleNavigate} />}
+        {activeTab === 'demand-recovery' && <DemandRecoveryMaster initialNoticeId={selectedDemandNoticeId} onNavigate={handleNavigate} />}
+        {activeTab === 'demand-settings' && <DemandSettingsMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-collection' && <LoanCollectionMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-interest-posting' && <LoanInterestPostingMaster />}
         {activeTab === 'loan-documents' && <LoanDocumentsUpload />}

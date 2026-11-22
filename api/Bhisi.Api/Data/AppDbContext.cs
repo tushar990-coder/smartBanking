@@ -158,6 +158,9 @@ namespace Bhisi.Api.Data
         public DbSet<DemandNotice> DemandNotices { get; set; }
         public DbSet<DemandMemberDetail> DemandMemberDetails { get; set; }
         public DbSet<DemandRecovery> DemandRecoveries { get; set; }
+        public DbSet<DemandColumnSetting> DemandColumnSettings { get; set; }
+        public DbSet<DemandMemberColumnItem> DemandMemberColumnItems { get; set; }
+        public DbSet<DemandRecoveryAllocation> DemandRecoveryAllocations { get; set; }
 
         // Locker Management Module DbSets
         public DbSet<LockerType> LockerTypes { get; set; }
@@ -475,6 +478,25 @@ namespace Bhisi.Api.Data
             {
                 entity.HasIndex(e => e.CustomerId);
                 entity.HasIndex(e => e.NoticeId);
+            });
+
+            modelBuilder.Entity<DemandRecovery>(entity =>
+            {
+                entity.HasIndex(r => r.IdempotencyKey)
+                      .IsUnique()
+                      .HasFilter("[IdempotencyKey] IS NOT NULL")
+                      .HasDatabaseName("UQ_DemandRecoveries_IdempotencyKey");
+            });
+
+            modelBuilder.Entity<DemandMemberColumnItem>(entity =>
+            {
+                entity.HasIndex(i => new { i.DemandMemberDetailId, i.SequenceOrder, i.SubRowIndex });
+            });
+
+            modelBuilder.Entity<DemandRecoveryAllocation>(entity =>
+            {
+                entity.HasIndex(a => a.DemandRecoveryId);
+                entity.HasIndex(a => a.DemandMemberColumnItemId);
             });
 
             // Disable cascade deletes globally to prevent SQL Server multiple cascade paths error

@@ -64,6 +64,7 @@ interface Customer {
   aadhaarDocPath?: string;
   panDocPath?: string;
   employerId?: number;
+  employeeCode?: string;
   legacyCustomerNo?: string;
   customerType?: string;
   kycStatus?: string;
@@ -215,6 +216,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     aadhaarDocPath: '',
     panDocPath: '',
     employerId: '',
+    employeeCode: '',
     customerType: 'Individual',
     kycStatus: 'Verified',
     riskCategory: 'Low',
@@ -762,6 +764,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       ...formData,
       branchID: Number(formData.branchID),
       employerId: formData.employerId ? Number(formData.employerId) : null,
+      employeeCode: formData.employeeCode ? formData.employeeCode.trim() : null,
       birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : null,
       registrationDate: formData.registrationDate ? new Date(formData.registrationDate).toISOString() : new Date().toISOString(),
       nomineeBirthDate: formData.nomineeBirthDate ? new Date(formData.nomineeBirthDate).toISOString() : null,
@@ -936,6 +939,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       aadhaarDocPath: customer.aadhaarDocPath || '',
       panDocPath: customer.panDocPath || '',
       employerId: customer.employerId ? customer.employerId.toString() : '',
+      employeeCode: customer.employeeCode || '',
       customerType: customer.customerType || 'Individual',
       kycStatus: customer.kycStatus || 'Verified',
       riskCategory: customer.riskCategory || 'Low',
@@ -1063,6 +1067,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       aadhaarDocPath: '',
       panDocPath: '',
       employerId: '',
+      employeeCode: '',
       customerType: 'Individual',
       kycStatus: 'Verified',
       riskCategory: 'Low',
@@ -1598,6 +1603,35 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   onChange={handleChange}
                   className={inputClass} 
                   placeholder="व्यवसाय" 
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>नियोक्ता / ऑफिस (Employer - पतसंस्था डिमांडसाठी)</label>
+                <select
+                  name="employerId"
+                  value={formData.employerId}
+                  onChange={handleChange}
+                  className={inputClass}
+                >
+                  <option value="">-- नियोक्ता निवडा (ऐच्छिक) --</option>
+                  {employers.map((emp: any) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>कर्मचारी कोड (Emp Code)</label>
+                <input
+                  type="text"
+                  name="employeeCode"
+                  value={formData.employeeCode}
+                  onChange={handleChange}
+                  className={inputClass}
+                  placeholder="उदा. 7, 12, 21..."
                 />
               </div>
 

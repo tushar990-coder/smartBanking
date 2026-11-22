@@ -3878,6 +3878,258 @@ try
 
         try
         {
+            // Employee Salary Demand Settings, Multi-RD Sub-Row Breakdown & Bulk Recovery Schema DDL Verification
+            db.Database.ExecuteSqlRaw(@"
+            IF OBJECT_ID(N'[dbo].[Customers]', N'U') IS NOT NULL AND COL_LENGTH('Customers', 'EmployeeCode') IS NULL
+                ALTER TABLE [dbo].[Customers] ADD [EmployeeCode] nvarchar(50) NULL;
+
+            IF OBJECT_ID(N'[dbo].[DemandNotices]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[DemandNotices] (
+                    [DemandNoticeId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [NoticeNumber] nvarchar(50) NOT NULL DEFAULT '',
+                    [Month] int NOT NULL DEFAULT 1,
+                    [Year] int NOT NULL DEFAULT 2026,
+                    [EmployerId] int NOT NULL DEFAULT 0,
+                    [BranchId] int NOT NULL DEFAULT 1,
+                    [TotalDemandAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [TotalRecoveredAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [DemandDate] datetime2 NOT NULL DEFAULT GETDATE(),
+                    [OnlyBorrowers] bit NOT NULL DEFAULT 0,
+                    [ContributionInputAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [Remarks] nvarchar(500) NULL,
+                    [Status] nvarchar(20) NOT NULL DEFAULT 'Pending',
+                    [CreatedDate] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [CreatedBy] int NOT NULL DEFAULT 1
+                );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('DemandNotices', 'NoticeNumber') IS NULL
+                BEGIN
+                    ALTER TABLE [dbo].[DemandNotices] ADD [NoticeNumber] nvarchar(50) NOT NULL CONSTRAINT [DF_DemandNotices_NoticeNumber] DEFAULT '';
+                    IF COL_LENGTH('DemandNotices', 'NoticeNo') IS NOT NULL
+                        EXEC(N'UPDATE [dbo].[DemandNotices] SET [NoticeNumber] = ISNULL([NoticeNo], '''') WHERE [NoticeNumber] = '''';');
+                END
+                IF COL_LENGTH('DemandNotices', 'Month') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [Month] int NOT NULL CONSTRAINT [DF_DemandNotices_Month] DEFAULT 1;
+                IF COL_LENGTH('DemandNotices', 'Year') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [Year] int NOT NULL CONSTRAINT [DF_DemandNotices_Year] DEFAULT 2026;
+                IF COL_LENGTH('DemandNotices', 'BranchId') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [BranchId] int NOT NULL CONSTRAINT [DF_DemandNotices_BranchId] DEFAULT 1;
+                IF COL_LENGTH('DemandNotices', 'TotalRecoveredAmount') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [TotalRecoveredAmount] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandNotices_TotalRecoveredAmount] DEFAULT 0;
+                IF COL_LENGTH('DemandNotices', 'DemandDate') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [DemandDate] datetime2 NOT NULL CONSTRAINT [DF_DemandNotices_DemandDate] DEFAULT GETDATE();
+                IF COL_LENGTH('DemandNotices', 'OnlyBorrowers') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [OnlyBorrowers] bit NOT NULL CONSTRAINT [DF_DemandNotices_OnlyBorrowers] DEFAULT 0;
+                IF COL_LENGTH('DemandNotices', 'ContributionInputAmount') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [ContributionInputAmount] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandNotices_ContributionInputAmount] DEFAULT 0;
+                IF COL_LENGTH('DemandNotices', 'Remarks') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [Remarks] nvarchar(500) NULL;
+                IF COL_LENGTH('DemandNotices', 'CreatedDate') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [CreatedDate] datetime2 NOT NULL CONSTRAINT [DF_DemandNotices_CreatedDate] DEFAULT GETUTCDATE();
+                IF COL_LENGTH('DemandNotices', 'CreatedBy') IS NULL
+                    ALTER TABLE [dbo].[DemandNotices] ADD [CreatedBy] int NOT NULL CONSTRAINT [DF_DemandNotices_CreatedBy] DEFAULT 1;
+            END
+
+            IF OBJECT_ID(N'[dbo].[DemandMemberDetails]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[DemandMemberDetails] (
+                    [DemandMemberDetailId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [DemandNoticeId] int NOT NULL,
+                    [MemberId] int NOT NULL,
+                    [CustomerId] int NULL,
+                    [EmpCode] nvarchar(50) NULL,
+                    [CIFNo] nvarchar(20) NULL,
+                    [MemberName] nvarchar(200) NULL,
+                    [IsSelected] bit NOT NULL DEFAULT 1,
+                    [LoanInstallment] decimal(18,2) NOT NULL DEFAULT 0,
+                    [SavingDeposit] decimal(18,2) NOT NULL DEFAULT 0,
+                    [ShareDeposit] decimal(18,2) NOT NULL DEFAULT 0,
+                    [PigmyDeposit] decimal(18,2) NOT NULL DEFAULT 0,
+                    [RdDeposit] decimal(18,2) NOT NULL DEFAULT 0,
+                    [TotalDeduction] decimal(18,2) NOT NULL DEFAULT 0,
+                    [RecoveredAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [RecoveryStatus] nvarchar(20) NOT NULL DEFAULT 'Pending',
+                    [Remarks] nvarchar(250) NULL,
+                    [IsProcessed] bit NOT NULL DEFAULT 0
+                );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('DemandMemberDetails', 'DetailID') IS NOT NULL AND COL_LENGTH('DemandMemberDetails', 'DemandMemberDetailId') IS NULL
+                    EXEC sp_rename 'dbo.DemandMemberDetails.DetailID', 'DemandMemberDetailId', 'COLUMN';
+                IF COL_LENGTH('DemandMemberDetails', 'CustomerId') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [CustomerId] int NULL;
+                IF COL_LENGTH('DemandMemberDetails', 'EmpCode') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [EmpCode] nvarchar(50) NULL;
+                IF COL_LENGTH('DemandMemberDetails', 'CIFNo') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [CIFNo] nvarchar(20) NULL;
+                IF COL_LENGTH('DemandMemberDetails', 'MemberName') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [MemberName] nvarchar(200) NULL;
+                IF COL_LENGTH('DemandMemberDetails', 'IsSelected') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [IsSelected] bit NOT NULL CONSTRAINT [DF_DemandMemberDetails_IsSelected] DEFAULT 1;
+                IF COL_LENGTH('DemandMemberDetails', 'LoanInstallment') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [LoanInstallment] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_LoanInstallment] DEFAULT 0;
+                IF COL_LENGTH('DemandMemberDetails', 'SavingDeposit') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [SavingDeposit] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_SavingDeposit] DEFAULT 0;
+                IF COL_LENGTH('DemandMemberDetails', 'ShareDeposit') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [ShareDeposit] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_ShareDeposit] DEFAULT 0;
+                IF COL_LENGTH('DemandMemberDetails', 'PigmyDeposit') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [PigmyDeposit] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_PigmyDeposit] DEFAULT 0;
+                IF COL_LENGTH('DemandMemberDetails', 'RdDeposit') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [RdDeposit] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_RdDeposit] DEFAULT 0;
+                IF COL_LENGTH('DemandMemberDetails', 'TotalDeduction') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [TotalDeduction] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_TotalDeduction] DEFAULT 0;
+                IF COL_LENGTH('DemandMemberDetails', 'RecoveredAmount') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [RecoveredAmount] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_RecoveredAmount] DEFAULT 0;
+                IF COL_LENGTH('DemandMemberDetails', 'RecoveryStatus') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [RecoveryStatus] nvarchar(20) NOT NULL CONSTRAINT [DF_DemandMemberDetails_RecoveryStatus] DEFAULT 'Pending';
+                IF COL_LENGTH('DemandMemberDetails', 'Remarks') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [Remarks] nvarchar(250) NULL;
+                IF COL_LENGTH('DemandMemberDetails', 'IsProcessed') IS NULL
+                    ALTER TABLE [dbo].[DemandMemberDetails] ADD [IsProcessed] bit NOT NULL CONSTRAINT [DF_DemandMemberDetails_IsProcessed] DEFAULT 0;
+            END
+
+            IF OBJECT_ID(N'[dbo].[DemandRecoveries]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[DemandRecoveries] (
+                    [DemandRecoveryId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [DemandNoticeId] int NOT NULL,
+                    [BranchId] int NOT NULL DEFAULT 1,
+                    [RecoveryDate] datetime2 NOT NULL DEFAULT GETDATE(),
+                    [TotalReceivedAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [PaymentMode] nvarchar(30) NOT NULL DEFAULT 'Bank',
+                    [BankLedgerID] int NULL,
+                    [ReferenceNo] nvarchar(100) NULL,
+                    [BatchReference] nvarchar(100) NULL,
+                    [IdempotencyKey] nvarchar(100) NULL,
+                    [RecoveredMemberCount] int NOT NULL DEFAULT 0,
+                    [VoucherId] int NULL,
+                    [Remarks] nvarchar(250) NULL,
+                    [CreatedDate] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [CreatedBy] int NOT NULL DEFAULT 1
+                );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('DemandRecoveries', 'RecoveryID') IS NOT NULL AND COL_LENGTH('DemandRecoveries', 'DemandRecoveryId') IS NULL
+                    EXEC sp_rename 'dbo.DemandRecoveries.RecoveryID', 'DemandRecoveryId', 'COLUMN';
+                IF COL_LENGTH('DemandRecoveries', 'BranchId') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [BranchId] int NOT NULL CONSTRAINT [DF_DemandRecoveries_BranchId] DEFAULT 1;
+                IF COL_LENGTH('DemandRecoveries', 'TotalReceivedAmount') IS NULL
+                BEGIN
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [TotalReceivedAmount] decimal(18,2) NOT NULL CONSTRAINT [DF_DemandRecoveries_TotalReceivedAmount] DEFAULT 0;
+                    IF COL_LENGTH('DemandRecoveries', 'TotalAmount') IS NOT NULL
+                        EXEC(N'UPDATE [dbo].[DemandRecoveries] SET [TotalReceivedAmount] = ISNULL([TotalAmount], 0) WHERE [TotalReceivedAmount] = 0;');
+                END
+                IF COL_LENGTH('DemandRecoveries', 'PaymentMode') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [PaymentMode] nvarchar(30) NOT NULL CONSTRAINT [DF_DemandRecoveries_PaymentMode] DEFAULT 'Bank';
+                IF COL_LENGTH('DemandRecoveries', 'BankLedgerID') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [BankLedgerID] int NULL;
+                IF COL_LENGTH('DemandRecoveries', 'ReferenceNo') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [ReferenceNo] nvarchar(100) NULL;
+                IF COL_LENGTH('DemandRecoveries', 'BatchReference') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [BatchReference] nvarchar(100) NULL;
+                IF COL_LENGTH('DemandRecoveries', 'IdempotencyKey') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [IdempotencyKey] nvarchar(100) NULL;
+                IF COL_LENGTH('DemandRecoveries', 'RecoveredMemberCount') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [RecoveredMemberCount] int NOT NULL CONSTRAINT [DF_DemandRecoveries_RecoveredMemberCount] DEFAULT 0;
+                IF COL_LENGTH('DemandRecoveries', 'CreatedDate') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [CreatedDate] datetime2 NOT NULL CONSTRAINT [DF_DemandRecoveries_CreatedDate] DEFAULT GETUTCDATE();
+                IF COL_LENGTH('DemandRecoveries', 'CreatedBy') IS NULL
+                    ALTER TABLE [dbo].[DemandRecoveries] ADD [CreatedBy] int NOT NULL CONSTRAINT [DF_DemandRecoveries_CreatedBy] DEFAULT 1;
+            END
+
+            IF OBJECT_ID(N'[dbo].[DemandRecoveries]', N'U') IS NOT NULL
+               AND COL_LENGTH('DemandRecoveries', 'IdempotencyKey') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandRecoveries_IdempotencyKey' AND object_id = OBJECT_ID('dbo.DemandRecoveries'))
+                EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandRecoveries_IdempotencyKey] ON [dbo].[DemandRecoveries] ([IdempotencyKey]) WHERE [IdempotencyKey] IS NOT NULL;');
+
+            IF OBJECT_ID(N'[dbo].[DemandColumnSettings]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[DemandColumnSettings] (
+                    [DemandColumnSettingId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [SequenceOrder] int NOT NULL DEFAULT 1,
+                    [ColumnHeaderMr] nvarchar(100) NOT NULL,
+                    [ItemType] nvarchar(30) NOT NULL DEFAULT 'LOAN',
+                    [LoanRateID] int NULL,
+                    [SavingSchemeID] int NULL,
+                    [RdSchemeID] int NULL,
+                    [ShareSchemeId] int NULL,
+                    [PrincipalOrDepositLedgerID] int NULL,
+                    [InterestLedgerID] int NULL,
+                    [ReceivableInterestLedgerID] int NULL,
+                    [OverdueInterestLedgerID] int NULL,
+                    [ShowBalanceColumn] bit NOT NULL DEFAULT 1,
+                    [IncludeOverduePenalInterest] bit NOT NULL DEFAULT 0,
+                    [LoanIntraAllocationOrder] nvarchar(20) NOT NULL DEFAULT 'INTEREST_FIRST',
+                    [IsContributionTarget] bit NOT NULL DEFAULT 0,
+                    [DefaultAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [IsActive] bit NOT NULL DEFAULT 1,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [UpdatedAt] datetime2 NULL
+                );
+            END
+
+            IF OBJECT_ID(N'[dbo].[DemandMemberColumnItems]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[DemandMemberColumnItems] (
+                    [DemandMemberColumnItemId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [DemandMemberDetailId] int NOT NULL,
+                    [DemandColumnSettingId] int NULL,
+                    [SequenceOrder] int NOT NULL DEFAULT 1,
+                    [ItemType] nvarchar(30) NOT NULL DEFAULT 'LOAN',
+                    [ColumnHeaderMr] nvarchar(100) NOT NULL DEFAULT '',
+                    [SchemeId] int NULL,
+                    [AccountId] int NULL,
+                    [SourceAccountIdsCsv] nvarchar(500) NULL,
+                    [SubRowIndex] int NOT NULL DEFAULT 0,
+                    [DisplaySubLabel] nvarchar(150) NULL,
+                    [PrincipalOrDepositLedgerID] int NULL,
+                    [InterestLedgerID] int NULL,
+                    [ReceivableInterestLedgerID] int NULL,
+                    [OverdueInterestLedgerID] int NULL,
+                    [LoanIntraAllocationOrder] nvarchar(20) NOT NULL DEFAULT 'INTEREST_FIRST',
+                    [CurrentBalanceAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [DemandPrincipalOrDeposit] decimal(18,2) NOT NULL DEFAULT 0,
+                    [DemandInterest] decimal(18,2) NOT NULL DEFAULT 0,
+                    [DemandPenalInterest] decimal(18,2) NOT NULL DEFAULT 0,
+                    [RecoveredPrincipalOrDeposit] decimal(18,2) NOT NULL DEFAULT 0,
+                    [RecoveredInterest] decimal(18,2) NOT NULL DEFAULT 0,
+                    [RecoveredPenalInterest] decimal(18,2) NOT NULL DEFAULT 0
+                );
+                CREATE NONCLUSTERED INDEX [IX_DemandMemberColumnItems_Member_Seq] ON [dbo].[DemandMemberColumnItems] ([DemandMemberDetailId], [SequenceOrder], [SubRowIndex]);
+            END
+
+            IF OBJECT_ID(N'[dbo].[DemandRecoveryAllocations]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[DemandRecoveryAllocations] (
+                    [DemandRecoveryAllocationId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [DemandRecoveryId] int NOT NULL,
+                    [DemandMemberDetailId] int NOT NULL,
+                    [DemandMemberColumnItemId] int NOT NULL,
+                    [AllocatedPrincipalOrDeposit] decimal(18,2) NOT NULL DEFAULT 0,
+                    [AllocatedInterest] decimal(18,2) NOT NULL DEFAULT 0,
+                    [AllocatedPenalInterest] decimal(18,2) NOT NULL DEFAULT 0,
+                    [TotalAllocated] decimal(18,2) NOT NULL DEFAULT 0,
+                    [GeneratedSubLedgerType] nvarchar(30) NULL,
+                    [GeneratedSubLedgerIdsCsv] nvarchar(500) NULL
+                );
+                CREATE NONCLUSTERED INDEX [IX_DemandRecoveryAllocations_RecoveryId] ON [dbo].[DemandRecoveryAllocations] ([DemandRecoveryId]);
+                CREATE NONCLUSTERED INDEX [IX_DemandRecoveryAllocations_ColumnItemId] ON [dbo].[DemandRecoveryAllocations] ([DemandMemberColumnItemId]);
+            END
+        ");
+            Log.Information("Employee Salary Demand schema DDL verified successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to verify Employee Salary Demand schema DDL");
+        }
+
+        try
+        {
             // Core Banking Inter-Branch Transfer (IBT) Startup Auto-Sync & Historical Self-Healing
             Bhisi.Api.Helpers.IbtLedgerHelper.EnsureIbtLedgerProvisionedAsync(db).GetAwaiter().GetResult();
             int repaired = Bhisi.Api.Helpers.IbtLedgerHelper.RepairHistoricalCrossBranchCollectionsAsync(db).GetAwaiter().GetResult();

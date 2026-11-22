@@ -338,20 +338,44 @@ namespace Bhisi.Api.Services
         {
             if (schedules == null || !schedules.Any()) return;
 
-            decimal priorPrincipalPaid = (account.IsOpeningBalance && account.SanctionedAmount > account.PrincipalBalance && account.PrincipalBalance > 0)
-                ? (account.SanctionedAmount - account.PrincipalBalance)
-                : 0;
+            decimal softwarePrincipalPaid = collections?.Sum(c => c.PrincipalCollected) ?? 0m;
+            decimal openingPrincipalAtMigration = account.PrincipalBalance + softwarePrincipalPaid;
+            decimal priorPrincipalPaid = (account.IsOpeningBalance && account.SanctionedAmount > openingPrincipalAtMigration)
+                ? (account.SanctionedAmount - openingPrincipalAtMigration)
+                : 0m;
 
-            decimal totalPrincipalPaid = priorPrincipalPaid + (collections?.Sum(c => c.PrincipalCollected) ?? 0);
-            decimal totalInterestPaid = collections?.Sum(c => c.InterestCollected + c.ReceivableInterestCollected) ?? 0;
+            decimal totalPrincipalPaid = priorPrincipalPaid + softwarePrincipalPaid;
+            decimal totalInterestPaid = collections?.Sum(c => c.InterestCollected + c.ReceivableInterestCollected) ?? 0m;
 
             var sortedSchedules = schedules.OrderBy(s => s.InstallmentNo).ToList();
             var orderedCollections = (collections ?? new List<LoanCollection>())
                 .OrderBy(c => c.CollectionDate)
+                .ThenBy(c => c.LoanCollectionID)
                 .ToList();
+
+            DateTime ResolveFifoPaidDate(decimal principalConsumedThroughInstallment)
+            {
+                if (priorPrincipalPaid > 0m && principalConsumedThroughInstallment <= priorPrincipalPaid + 0.01m)
+                {
+                    return account.OpeningDate;
+                }
+
+                decimal running = priorPrincipalPaid;
+                foreach (var c in orderedCollections)
+                {
+                    running += c.PrincipalCollected;
+                    if (running + 0.01m >= principalConsumedThroughInstallment)
+                    {
+                        return c.CollectionDate;
+                    }
+                }
+
+                return orderedCollections.LastOrDefault()?.CollectionDate ?? DateTime.Today;
+            }
 
             decimal runningPrincipalPaid = totalPrincipalPaid;
             decimal runningInterestPaid = totalInterestPaid;
+            decimal consumedPrincipalSoFar = 0m;
 
             foreach (var s in sortedSchedules)
             {
@@ -359,29 +383,31 @@ namespace Bhisi.Api.Services
                 {
                     s.Status = "Paid";
                     s.PaidDate = account.OpeningDate;
+                    decimal used = Math.Min(runningPrincipalPaid, s.PrincipalAmount);
                     runningPrincipalPaid = Math.Max(0, runningPrincipalPaid - s.PrincipalAmount);
+                    consumedPrincipalSoFar += used;
                     continue;
                 }
 
-                bool isPrincipalCovered = runningPrincipalPaid >= s.PrincipalAmount;
-                bool isInterestCovered = s.InterestAmount <= 0 || runningInterestPaid >= s.InterestAmount;
+                bool isPrincipalCovered = runningPrincipalPaid + 0.01m >= s.PrincipalAmount;
 
                 if (isPrincipalCovered)
                 {
                     s.Status = "Paid";
-                    runningPrincipalPaid -= s.PrincipalAmount;
+                    consumedPrincipalSoFar += s.PrincipalAmount;
+                    runningPrincipalPaid = Math.Max(0, runningPrincipalPaid - s.PrincipalAmount);
                     if (s.InterestAmount > 0)
                     {
                         runningInterestPaid = Math.Max(0, runningInterestPaid - s.InterestAmount);
                     }
 
-                    var lastColl = orderedCollections.LastOrDefault();
-                    s.PaidDate = lastColl?.CollectionDate ?? DateTime.Today;
+                    s.PaidDate = ResolveFifoPaidDate(consumedPrincipalSoFar);
                 }
                 else if (runningPrincipalPaid > 0 || runningInterestPaid > 0)
                 {
                     s.Status = "PartiallyPaid";
-                    runningPrincipalPaid = Math.Max(0, runningPrincipalPaid - s.PrincipalAmount);
+                    consumedPrincipalSoFar += runningPrincipalPaid;
+                    runningPrincipalPaid = 0m;
                     if (s.InterestAmount > 0)
                     {
                         runningInterestPaid = Math.Max(0, runningInterestPaid - s.InterestAmount);

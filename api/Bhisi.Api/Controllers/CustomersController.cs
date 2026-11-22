@@ -237,6 +237,7 @@ namespace Bhisi.Api.Controllers
                         PhotoPath = c.PhotoPath ?? string.Empty,
                         LegacyCustomerNo = c.LegacyCustomerNo ?? string.Empty,
                         c.EmployerId,
+                        EmployeeCode = c.EmployeeCode ?? string.Empty,
                         c.IsDeleted,
                         c.CreatedBy,
                         c.CreatedOn,
@@ -342,6 +343,7 @@ namespace Bhisi.Api.Controllers
                     PhotoPath = c.PhotoPath,
                     LegacyCustomerNo = c.LegacyCustomerNo,
                     EmployerId = c.EmployerId,
+                    EmployeeCode = c.EmployeeCode,
                     IsDeleted = c.IsDeleted,
                     CreatedBy = c.CreatedBy,
                     CreatedOn = c.CreatedOn,
@@ -548,7 +550,7 @@ namespace Bhisi.Api.Controllers
                             [NomineeGuardianName], [PhotoPath], [SignaturePath], [AadhaarDocPath], [PanDocPath], [Gender],
                             [BirthDate], [Occupation], [CasteCategory], [Caste], [Email], [IsMinor], [GuardianName],
                             [GuardianNameEng], [GuardianRelation], [GuardianAadhaarNo], [GuardianMobileNo], [GuardianAddress],
-                            [Status], [EmployerId], [IsDeleted], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn]
+                            [Status], [EmployerId], [EmployeeCode], [IsDeleted], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn]
                         )
                         SELECT 
                             @TargetCustId, [BranchID], @CorrectedCif, [LegacyCustomerNo],
@@ -558,7 +560,7 @@ namespace Bhisi.Api.Controllers
                             [NomineeBirthDate], [NomineeIsMinor], [NomineeGuardianName], [PhotoPath], [SignaturePath],
                             [AadhaarDocPath], [PanDocPath], [Gender], [BirthDate], [Occupation], [CasteCategory], [Caste],
                             [Email], [IsMinor], [GuardianName], [GuardianNameEng], [GuardianRelation], [GuardianAadhaarNo],
-                            [GuardianMobileNo], [GuardianAddress], [Status], [EmployerId], [IsDeleted], [CreatedBy],
+                            [GuardianMobileNo], [GuardianAddress], [Status], [EmployerId], [EmployeeCode], [IsDeleted], [CreatedBy],
                             [CreatedOn], [UpdatedBy], [UpdatedOn]
                         FROM [Customers]
                         WHERE [CustomerID] = 0;
@@ -838,6 +840,7 @@ namespace Bhisi.Api.Controllers
             existingCustomer.NomineeGuardianName = customer.NomineeGuardianName;
             existingCustomer.Status = customer.Status;
             existingCustomer.EmployerId = customer.EmployerId;
+            existingCustomer.EmployeeCode = !string.IsNullOrWhiteSpace(customer.EmployeeCode) ? customer.EmployeeCode.Trim() : null;
             if (!string.IsNullOrWhiteSpace(customer.KYCStatus))
                 existingCustomer.KYCStatus = customer.KYCStatus.Trim();
             if (!string.IsNullOrWhiteSpace(customer.CustomerType))

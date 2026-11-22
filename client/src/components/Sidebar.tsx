@@ -49,6 +49,7 @@ export default function Sidebar({
   // Helpers to detect active state
   const isSharesActive = activeTab === 'members' || activeTab === 'share-master' || activeTab === 'share-transfer' || activeTab === 'member-closure' || activeTab === 'share-withdrawal';
   const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-documents' || activeTab === 'employee-bank' || activeTab === 'employer-master';
+  const isDemandActive = activeTab === 'demand-notice' || activeTab === 'demand-recovery' || activeTab === 'demand-settings';
   const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing';
   const isFdActive = activeTab === 'fd' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-mis-payout' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate';
   const isRdActive = activeTab === 'rd' || activeTab === 'rd-dashboard' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-collection' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-scheme';
@@ -320,6 +321,36 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'employee-bank')} onClick={() => handleNavigate('employee-bank')}>
               {renderSubDot(activeTab === 'employee-bank')}
               <span className="truncate">कर्मचारी बँक खाती</span>
+            </li>
+          </ul>
+        )}
+
+        {/* Employee Patsanstha Demand Module */}
+        <button
+          onClick={() => handleNavigate('demand-notice')}
+          title="पगारदार डिमांड (Salary Demand)"
+          className={getModuleBtnClass(isDemandActive)}
+        >
+          <div className="flex items-center truncate">
+            <FileSpreadsheet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isDemandActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            {isSidebarOpen && <span className="truncate">पगारदार डिमांड</span>}
+          </div>
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isDemandActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+        </button>
+
+        {isSidebarOpen && isDemandActive && (
+          <ul className={subMenuContainerClass}>
+            <li className={getSubItemClass(activeTab === 'demand-notice')} onClick={() => handleNavigate('demand-notice')}>
+              {renderSubDot(activeTab === 'demand-notice')}
+              <span className="truncate">डिमांड फॉर्म (Demand)</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'demand-recovery')} onClick={() => handleNavigate('demand-recovery')}>
+              {renderSubDot(activeTab === 'demand-recovery')}
+              <span className="truncate">बल्क पगार वसुली</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'demand-settings')} onClick={() => handleNavigate('demand-settings')}>
+              {renderSubDot(activeTab === 'demand-settings')}
+              <span className="truncate">डिमांड सेटिंग्ज (Sequence)</span>
             </li>
           </ul>
         )}

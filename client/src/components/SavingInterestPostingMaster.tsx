@@ -22,9 +22,20 @@ interface InterestPostingHistory {
   postedOn: string;
 }
 
+interface SavingSchemeOption {
+  settingID: number;
+  schemeCode: string;
+  schemeName: string;
+  interestRate: number;
+  postingFrequency: string;
+}
+
 const SavingInterestPostingMaster: React.FC = () => {
   const { user } = useAuth();
   const [history, setHistory] = useState<InterestPostingHistory[]>([]);
+  const [schemes, setSchemes] = useState<SavingSchemeOption[]>([]);
+  const [savingSchemeID, setSavingSchemeID] = useState<string>('');
+  const [overrideInterestRate, setOverrideInterestRate] = useState<string>('');
   const [calculationResults, setCalculationResults] = useState<CalculatedInterest[]>([]);
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -56,7 +67,17 @@ const SavingInterestPostingMaster: React.FC = () => {
 
   useEffect(() => {
     fetchHistory();
+    fetchSchemes();
   }, []);
+
+  const fetchSchemes = async () => {
+    try {
+      const res = await axios.get('/api/SavingInterestSettings');
+      setSchemes(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error fetching saving schemes', err);
+    }
+  };
 
   const fetchHistory = async () => {
     try {
@@ -83,7 +104,12 @@ const SavingInterestPostingMaster: React.FC = () => {
     setCalculationResults([]);
 
     try {
-      const response = await axios.post(`${API_URL}/calculate`, dateRange);
+      const payload = {
+        ...dateRange,
+        savingSchemeID: savingSchemeID ? Number(savingSchemeID) : null,
+        overrideInterestRate: overrideInterestRate ? Number(overrideInterestRate) : null
+      };
+      const response = await axios.post(`${API_URL}/calculate`, payload);
       setCalculationResults(response.data);
       if (response.data.length === 0) {
         setSuccess('या कालावधीसाठी कोणतेही व्याज देय नाही.');
@@ -106,7 +132,9 @@ const SavingInterestPostingMaster: React.FC = () => {
       const response = await axios.post(`${API_URL}/post`, {
         ...dateRange,
         postingDate,
-        postedBy: user?.userID || 1
+        postedBy: user?.userID || 1,
+        savingSchemeID: savingSchemeID ? Number(savingSchemeID) : null,
+        overrideInterestRate: overrideInterestRate ? Number(overrideInterestRate) : null
       });
       setSuccess(response.data.message);
       setCalculationResults([]);
@@ -143,7 +171,42 @@ const SavingInterestPostingMaster: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleCalculate} className="grid grid-cols-1 md:grid-cols-4 gap-x-3 gap-y-1.5 items-end">
+        <form onSubmit={handleCalculate} className="grid grid-cols-1 md:grid-cols-6 gap-x-3 gap-y-1.5 items-end">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-gray-700 mb-0.5">ठेव योजना (Scheme / संजीवनी ठेव)</label>
+            <select
+              value={savingSchemeID}
+              onChange={(e) => {
+                setSavingSchemeID(e.target.value);
+                const found = schemes.find((s) => String(s.settingID) === e.target.value);
+                if (found && !overrideInterestRate) {
+                  setOverrideInterestRate(String(found.interestRate || ''));
+                }
+              }}
+              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm bg-white text-xs"
+            >
+              <option value="">-- सर्व सक्रिय बचत योजना (डिफॉल्ट) --</option>
+              {schemes.map((s) => (
+                <option key={s.settingID} value={s.settingID}>
+                  {s.schemeName} ({s.postingFrequency}, {s.interestRate}%)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-0.5">मीटिंग व्याजदर % (ऐच्छिक)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={overrideInterestRate}
+              onChange={(e) => setOverrideInterestRate(e.target.value)}
+              placeholder="डिफॉल्ट दर"
+              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm text-xs font-mono text-right"
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-0.5">पासून तारीख (Start Date) *</label>
             <input

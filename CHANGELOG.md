@@ -1,5 +1,30 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-22] - आवृत्ती v2.6.38 (Employee Salary Demand, Sequence Settings, Multi-RD Sub-Rows, Bulk Recovery & Pigmy App Fixes)
+
+### 🏦 1. पगारदार / कर्मचारी पतसंस्था डिमांड मॉड्यूल व एकमेव डिमांड सेटिंग्ज
+- **डिमांड सेटिंग्ज (`DemandColumnSetting.cs`, `DemandSettingsController.cs`, `DemandSettingsMaster.tsx`, `SettingsDashboard.tsx`):**
+  - संपूर्ण संस्थेसाठी एकच डिफॉल्ट सेटिंग (`SequenceOrder` हा डावीकडून उजवीकडे कॉलम्सचा/RD उप-ओळींचा क्रम **आणि** अपुऱ्या पगार कपातीतील वसुली प्राधान्यक्रम दोन्हीसाठी वापरला जातो).
+  - कर्ज (`LoanRate`), कायमस्वरूपी संजीवनी/वर्गणी ठेव (`SavingInterestSetting`), आवर्ती ठेव (`RdScheme`), शेअर्स (`ShareScheme`) व सामान्य लेजरसाठी Credit व Interest GL लेजर मॅपिंग आणि `वर्गणी ठेव Auto-Fill` लक्ष्य निवड.
+- **पगार डिमांड फॉर्म व Multi-RD उप-ओळी (`DemandNoticesController.cs`, `DemandMemberColumnItem.cs`, `DemandPayrollHelper.cs`, `EmployeeDemandForm.tsx`, `Customer.cs`, `CustomersController.cs`, `CustomerMaster.tsx`):**
+  - `शाखा`, `खाते प्रकार (Employer)`, `दिनांक (अखेर)`, `कर्जदार` चेकबॉक्स, `वर्गणी ठेव` रक्कम + `पहा`, `शोधा (Emp Code / नाव / CIF)` सह संपादनयोग्य ग्रिड व पिवळी `एकूण` रो.
+  - एकाच कर्ज योजनेत २+ सक्रिय कर्जे असल्यास त्यांची `बाकी`, **`येणेबाकी` (`हप्ता`)** आणि मागील वसुलीपासून `दिनांक (अखेर)` पर्यंतचे **Daily Reducing `व्याज`** बेरीज करून दाखवले जाते.
+  - **एकापेक्षा जास्त RD स्कीम/खाती असल्यास:** फक्त RD साठी आडवे कॉलम्स न वाढवता पहिल्या RD नंतर **त्याच कर्मचाऱ्याच्या रोच्या खाली** `Demand Settings` च्या `SequenceOrder` नुसार उप-ओळी (`↳ RD`) तयार होतात.
+  - लाल `Validation` तपासणी, `नविन`, `जतन`, `बाहेर`, `यादी पहा` (Print व Excel/CSV Export) आणि SideBar मध्ये `पगारदार डिमांड` विभाग (`App.tsx`, `Sidebar.tsx`).
+
+### 💰 2. बल्क पगार वसुली (`Bulk Demand Recovery`), संजीवनी ठेव वार्षिक व्याज व अचूक रोलबॅक
+- **बल्क वसुली व प्राधान्य विभाजन (`DemandRecoveriesController.cs`, `DemandRecoveryAllocation.cs`, `DemandRecoveryMaster.tsx`, `VoucherRollbackAndDeleteService.cs`):**
+  - नियोक्त्याकडून एकत्रित पगार (NEFT/Cheque/Cash) आल्यावर कर्मचारी-निहाय स्वतंत्र पूलवर (`Per-Employee Pool`) अपुऱ्या पगाराचे सेट केलेल्या **`SequenceOrder`** नुसार विभाजन (Multi-RD उप-ओळींसह).
+  - Multi-Loan FIFO व `LoanScheduleGenerator.SynchronizeSchedules` सिंक, `RdInstallmentCollectionRollbackHelper.ReconcileRdSchedulesWithDepositedAmountAsync`, `SavingTransaction` (`VoucherID` सहित व गरज पडल्यास नवीन खाते ऑटो-ओपन), संतुलित एकत्रित `Receipt` व्हाउचर, `Pending` व्हाउचर टकराव/Closed FY/`BusinessDate`/`IdempotencyKey` संरक्षण व व्हाउचर Reject केल्यावर १००% रोलबॅक.
+- **वार्षिक `संजीवनी ठेव` व्याज पोस्टिंग (`SavingInterestPostingsController.cs`, `SavingInterestPostingMaster.tsx`):**
+  - ऐच्छिक `SavingSchemeID` आणि वार्षिक मीटिंगनुसार `OverrideInterestRate` द्वारे संबंधित ठेव योजनेचे व्याज मोजून थेट मुद्दलात (`CurrentBalance`) जमा करण्याची सोय.
+
+### 📱 3. पिग्मी अ‍ॅप डोअरस्टेप कर्ज हप्ता वेळापत्रक व खाते उघडणी `BusinessDate` / KYC पडताळणी
+- **डोअरस्टेप कर्ज वसुली (`PigmyMobileApiController.cs`, `LoanScheduleGenerator.cs`, `AgentDayBookController.cs`, `DoorstepLoanEmiScheduleAndWaterfallTests.cs`):**
+  - `CollectLoanEmi` मध्ये मुद्दल+व्याज व्हॉटरफॉल व `LoanInstallmentSchedules` अद्ययावत करणे.
+- **खाते उघडणी व KYC (`PigmyAppController.cs`, `AgentCustomerRequestsController.cs`, `PigmyAppAccountOpeningBusinessDateAndKycTests.cs`):**
+  - `DateTime.Today` ऐवजी CBS `BusinessDate` / Closed-FY संरक्षण व डुप्लिकेट Aadhaar/PAN/OldAccountNo पडताळणी (**१६६/१६६ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-21] - आवृत्ती v2.6.37 (Pigmy Withdrawal & Closure Searchable Customer/Account Selector & Customer Portal mPIN VPS Sync)
 
 ### 🏦 1. पिग्मी विड्रॉल व खाते बंद व्यवस्थापन (`पिग्मीदार / खातेदार नाव व खाते शोध`) सुधारणा

@@ -7202,6 +7202,155 @@ BEGIN
         ALTER TABLE [dbo].[Customers] ADD [IsPortalLocked] BIT NOT NULL DEFAULT 0;
     IF COL_LENGTH('Customers', 'PortalSessionToken') IS NULL
         ALTER TABLE [dbo].[Customers] ADD [PortalSessionToken] NVARCHAR(2000) NULL;
+    IF COL_LENGTH('Customers', 'EmployeeCode') IS NULL
+        ALTER TABLE [dbo].[Customers] ADD [EmployeeCode] NVARCHAR(50) NULL;
+END
+GO
+
+-- -----------------------------------------------------------------------------------------
+-- EMPLOYEE SALARY DEMAND MODULE TABLES & UPGRADE SYNC (v2.6.39)
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID('dbo.DemandNotices', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('DemandNotices', 'NoticeNumber') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[DemandNotices] ADD [NoticeNumber] NVARCHAR(50) NOT NULL CONSTRAINT [DF_DemandNotices_NoticeNumber_VPS] DEFAULT '';
+        IF COL_LENGTH('DemandNotices', 'NoticeNo') IS NOT NULL
+            EXEC(N'UPDATE [dbo].[DemandNotices] SET [NoticeNumber] = ISNULL([NoticeNo], '''') WHERE [NoticeNumber] = '''';');
+    END
+    IF COL_LENGTH('DemandNotices', 'Month') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [Month] INT NOT NULL CONSTRAINT [DF_DemandNotices_Month_VPS] DEFAULT 1;
+    IF COL_LENGTH('DemandNotices', 'Year') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [Year] INT NOT NULL CONSTRAINT [DF_DemandNotices_Year_VPS] DEFAULT 2026;
+    IF COL_LENGTH('DemandNotices', 'BranchId') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [BranchId] INT NOT NULL CONSTRAINT [DF_DemandNotices_BranchId_VPS] DEFAULT 1;
+    IF COL_LENGTH('DemandNotices', 'TotalRecoveredAmount') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [TotalRecoveredAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandNotices_TotalRec_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandNotices', 'DemandDate') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [DemandDate] DATETIME2 NOT NULL CONSTRAINT [DF_DemandNotices_DemandDate_VPS] DEFAULT GETDATE();
+    IF COL_LENGTH('DemandNotices', 'OnlyBorrowers') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [OnlyBorrowers] BIT NOT NULL CONSTRAINT [DF_DemandNotices_OnlyBorr_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandNotices', 'ContributionInputAmount') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [ContributionInputAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandNotices_Contrib_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandNotices', 'Remarks') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [Remarks] NVARCHAR(500) NULL;
+    IF COL_LENGTH('DemandNotices', 'CreatedDate') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [CreatedDate] DATETIME2 NOT NULL CONSTRAINT [DF_DemandNotices_CreatedDate_VPS] DEFAULT GETUTCDATE();
+    IF COL_LENGTH('DemandNotices', 'CreatedBy') IS NULL ALTER TABLE [dbo].[DemandNotices] ADD [CreatedBy] INT NOT NULL CONSTRAINT [DF_DemandNotices_CreatedBy_VPS] DEFAULT 1;
+END
+GO
+
+IF OBJECT_ID('dbo.DemandMemberDetails', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('DemandMemberDetails', 'DetailID') IS NOT NULL AND COL_LENGTH('DemandMemberDetails', 'DemandMemberDetailId') IS NULL
+        EXEC sp_rename 'dbo.DemandMemberDetails.DetailID', 'DemandMemberDetailId', 'COLUMN';
+    IF COL_LENGTH('DemandMemberDetails', 'CustomerId') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [CustomerId] INT NULL;
+    IF COL_LENGTH('DemandMemberDetails', 'EmpCode') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [EmpCode] NVARCHAR(50) NULL;
+    IF COL_LENGTH('DemandMemberDetails', 'CIFNo') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [CIFNo] NVARCHAR(20) NULL;
+    IF COL_LENGTH('DemandMemberDetails', 'MemberName') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [MemberName] NVARCHAR(200) NULL;
+    IF COL_LENGTH('DemandMemberDetails', 'IsSelected') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [IsSelected] BIT NOT NULL CONSTRAINT [DF_DemandMemberDetails_IsSel_VPS] DEFAULT 1;
+    IF COL_LENGTH('DemandMemberDetails', 'LoanInstallment') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [LoanInstallment] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_LoanInst_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandMemberDetails', 'SavingDeposit') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [SavingDeposit] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_Sav_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandMemberDetails', 'ShareDeposit') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [ShareDeposit] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_Shr_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandMemberDetails', 'PigmyDeposit') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [PigmyDeposit] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_Pig_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandMemberDetails', 'RdDeposit') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [RdDeposit] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_Rd_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandMemberDetails', 'TotalDeduction') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [TotalDeduction] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_Tot_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandMemberDetails', 'RecoveredAmount') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [RecoveredAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandMemberDetails_RecAmt_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandMemberDetails', 'RecoveryStatus') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [RecoveryStatus] NVARCHAR(20) NOT NULL CONSTRAINT [DF_DemandMemberDetails_RecSt_VPS] DEFAULT 'Pending';
+    IF COL_LENGTH('DemandMemberDetails', 'Remarks') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [Remarks] NVARCHAR(250) NULL;
+    IF COL_LENGTH('DemandMemberDetails', 'IsProcessed') IS NULL ALTER TABLE [dbo].[DemandMemberDetails] ADD [IsProcessed] BIT NOT NULL CONSTRAINT [DF_DemandMemberDetails_Proc_VPS] DEFAULT 0;
+END
+GO
+
+IF OBJECT_ID('dbo.DemandRecoveries', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('DemandRecoveries', 'RecoveryID') IS NOT NULL AND COL_LENGTH('DemandRecoveries', 'DemandRecoveryId') IS NULL
+        EXEC sp_rename 'dbo.DemandRecoveries.RecoveryID', 'DemandRecoveryId', 'COLUMN';
+    IF COL_LENGTH('DemandRecoveries', 'BranchId') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [BranchId] INT NOT NULL CONSTRAINT [DF_DemandRecoveries_Br_VPS] DEFAULT 1;
+    IF COL_LENGTH('DemandRecoveries', 'TotalReceivedAmount') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[DemandRecoveries] ADD [TotalReceivedAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_DemandRecoveries_TotRec_VPS] DEFAULT 0;
+        IF COL_LENGTH('DemandRecoveries', 'TotalAmount') IS NOT NULL
+            EXEC(N'UPDATE [dbo].[DemandRecoveries] SET [TotalReceivedAmount] = ISNULL([TotalAmount], 0) WHERE [TotalReceivedAmount] = 0;');
+    END
+    IF COL_LENGTH('DemandRecoveries', 'PaymentMode') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [PaymentMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_DemandRecoveries_PM_VPS] DEFAULT 'Bank';
+    IF COL_LENGTH('DemandRecoveries', 'BankLedgerID') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [BankLedgerID] INT NULL;
+    IF COL_LENGTH('DemandRecoveries', 'ReferenceNo') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [ReferenceNo] NVARCHAR(100) NULL;
+    IF COL_LENGTH('DemandRecoveries', 'BatchReference') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [BatchReference] NVARCHAR(100) NULL;
+    IF COL_LENGTH('DemandRecoveries', 'IdempotencyKey') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [IdempotencyKey] NVARCHAR(100) NULL;
+    IF COL_LENGTH('DemandRecoveries', 'RecoveredMemberCount') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [RecoveredMemberCount] INT NOT NULL CONSTRAINT [DF_DemandRecoveries_RMC_VPS] DEFAULT 0;
+    IF COL_LENGTH('DemandRecoveries', 'CreatedDate') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [CreatedDate] DATETIME2 NOT NULL CONSTRAINT [DF_DemandRecoveries_CD_VPS] DEFAULT GETUTCDATE();
+    IF COL_LENGTH('DemandRecoveries', 'CreatedBy') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [CreatedBy] INT NOT NULL CONSTRAINT [DF_DemandRecoveries_CB_VPS] DEFAULT 1;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandRecoveries_IdempotencyKey' AND object_id = OBJECT_ID('dbo.DemandRecoveries'))
+        CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandRecoveries_IdempotencyKey] ON [dbo].[DemandRecoveries] ([IdempotencyKey]) WHERE [IdempotencyKey] IS NOT NULL;
+END
+GO
+
+IF OBJECT_ID('dbo.DemandColumnSettings', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[DemandColumnSettings] (
+        [DemandColumnSettingId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [SequenceOrder] INT NOT NULL DEFAULT 1,
+        [ColumnHeaderMr] NVARCHAR(100) NOT NULL,
+        [ItemType] NVARCHAR(30) NOT NULL DEFAULT 'LOAN',
+        [LoanRateID] INT NULL,
+        [SavingSchemeID] INT NULL,
+        [RdSchemeID] INT NULL,
+        [ShareSchemeId] INT NULL,
+        [PrincipalOrDepositLedgerID] INT NULL,
+        [InterestLedgerID] INT NULL,
+        [ReceivableInterestLedgerID] INT NULL,
+        [OverdueInterestLedgerID] INT NULL,
+        [ShowBalanceColumn] BIT NOT NULL DEFAULT 1,
+        [IncludeOverduePenalInterest] BIT NOT NULL DEFAULT 0,
+        [LoanIntraAllocationOrder] NVARCHAR(20) NOT NULL DEFAULT 'INTEREST_FIRST',
+        [IsContributionTarget] BIT NOT NULL DEFAULT 0,
+        [DefaultAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [IsActive] BIT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+        [UpdatedAt] DATETIME2 NULL
+    );
+END
+GO
+
+IF OBJECT_ID('dbo.DemandMemberColumnItems', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[DemandMemberColumnItems] (
+        [DemandMemberColumnItemId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [DemandMemberDetailId] INT NOT NULL,
+        [DemandColumnSettingId] INT NULL,
+        [SequenceOrder] INT NOT NULL DEFAULT 1,
+        [ItemType] NVARCHAR(30) NOT NULL DEFAULT 'LOAN',
+        [ColumnHeaderMr] NVARCHAR(100) NOT NULL DEFAULT '',
+        [SchemeId] INT NULL,
+        [AccountId] INT NULL,
+        [SourceAccountIdsCsv] NVARCHAR(500) NULL,
+        [SubRowIndex] INT NOT NULL DEFAULT 0,
+        [DisplaySubLabel] NVARCHAR(150) NULL,
+        [PrincipalOrDepositLedgerID] INT NULL,
+        [InterestLedgerID] INT NULL,
+        [ReceivableInterestLedgerID] INT NULL,
+        [OverdueInterestLedgerID] INT NULL,
+        [LoanIntraAllocationOrder] NVARCHAR(20) NOT NULL DEFAULT 'INTEREST_FIRST',
+        [CurrentBalanceAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [DemandPrincipalOrDeposit] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [DemandInterest] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [DemandPenalInterest] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [RecoveredPrincipalOrDeposit] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [RecoveredInterest] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [RecoveredPenalInterest] DECIMAL(18,2) NOT NULL DEFAULT 0
+    );
+    CREATE NONCLUSTERED INDEX [IX_DemandMemberColumnItems_Member_Seq] ON [dbo].[DemandMemberColumnItems] ([DemandMemberDetailId], [SequenceOrder], [SubRowIndex]);
+END
+GO
+
+IF OBJECT_ID('dbo.DemandRecoveryAllocations', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[DemandRecoveryAllocations] (
+        [DemandRecoveryAllocationId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [DemandRecoveryId] INT NOT NULL,
+        [DemandMemberDetailId] INT NOT NULL,
+        [DemandMemberColumnItemId] INT NOT NULL,
+        [AllocatedPrincipalOrDeposit] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [AllocatedInterest] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [AllocatedPenalInterest] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [TotalAllocated] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [GeneratedSubLedgerType] NVARCHAR(30) NULL,
+        [GeneratedSubLedgerIdsCsv] NVARCHAR(500) NULL
+    );
+    CREATE NONCLUSTERED INDEX [IX_DemandRecoveryAllocations_RecoveryId] ON [dbo].[DemandRecoveryAllocations] ([DemandRecoveryId]);
+    CREATE NONCLUSTERED INDEX [IX_DemandRecoveryAllocations_ColumnItemId] ON [dbo].[DemandRecoveryAllocations] ([DemandMemberColumnItemId]);
 END
 GO
 

@@ -243,10 +243,12 @@ namespace Bhisi.Api.Controllers
             [Required]
             public string MobileNo { get; set; } = string.Empty;
             public string? AadhaarNo { get; set; }
+            public string? PANNo { get; set; }
             public string? Address { get; set; }
             public string? Gender { get; set; } = "Male";
             public int BranchID { get; set; } = 1;
             public int? AgentId { get; set; }
+            public int? PigmySchemeID { get; set; }
             public string? OldAccountNo { get; set; }
             public decimal DailyDepositAmount { get; set; } = 100;
         }
@@ -268,17 +270,85 @@ namespace Bhisi.Api.Controllers
             }
 
             int branchId = User.ResolveBranchId(dto.BranchID > 0 ? dto.BranchID : agent.BranchID);
+            int creatorUserId = IsAgentRole() ? 1 : User.GetUserId();
 
-            string? aadhaar = string.IsNullOrWhiteSpace(dto.AadhaarNo) ? null : dto.AadhaarNo.Trim();
-            if (!string.IsNullOrEmpty(aadhaar) && !KycValidationHelper.IsValidAadhaar(aadhaar, out var aadhaarError))
+            var (businessDate, _) = await _businessDateGuard.GetBranchBusinessDateAsync(branchId);
+            if (await _businessDateGuard.IsDateClosedAsync(branchId, businessDate))
             {
-                return BadRequest(new { message = aadhaarError ?? "आधार क्रमांक वैध नाही." });
+                return Conflict(new { message = $"दिनांक {businessDate:dd/MM/yyyy} चा दिवस Day-End ने बंद केला आहे. बंद तारखेवर नवीन खाते उघडता येणार नाही." });
+            }
+
+            var closedFy = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed && businessDate.Date >= fy.StartDate.Date && businessDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest(new { message = $"शाखेची चालू तारीख ({businessDate:dd/MM/yyyy}) बंद आर्थिक वर्षात ({closedFy.YearCode}) मोडते. नवीन ग्राहक/खाते उघडता येणार नाही." });
+            }
+
+            string? aadhaar = string.IsNullOrWhiteSpace(dto.AadhaarNo)
+                ? null
+                : dto.AadhaarNo.Trim().Replace(" ", "").Replace("-", "");
+            if (!string.IsNullOrEmpty(aadhaar))
+            {
+                if (!KycValidationHelper.IsValidAadhaar(aadhaar, out var aadhaarError))
+                {
+                    return BadRequest(new { message = aadhaarError ?? "आधार क्रमांक वैध नाही." });
+                }
+
+                var dupCustomer = await _context.Customers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => !c.IsDeleted && c.AadhaarNo != null &&
+                        c.AadhaarNo.Replace(" ", "").Replace("-", "") == aadhaar);
+                if (dupCustomer != null)
+                {
+                    return BadRequest(new { message = $"हा आधार क्रमांक ({aadhaar}) आधीच खातेदार '{dupCustomer.FirstName} {dupCustomer.LastName}' (CIF: {dupCustomer.CIFNo}) यांच्या नावे नोंदवला आहे." });
+                }
+            }
+
+            string? pan = string.IsNullOrWhiteSpace(dto.PANNo) ? null : dto.PANNo.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(pan))
+            {
+                if (!KycValidationHelper.IsValidPan(pan, out var panError))
+                {
+                    return BadRequest(new { message = panError ?? "पॅन क्रमांक वैध नाही." });
+                }
+
+                var dupPanCustomer = await _context.Customers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => !c.IsDeleted && c.PANNo != null && c.PANNo.ToUpper() == pan);
+                if (dupPanCustomer != null)
+                {
+                    return BadRequest(new { message = $"हा पॅन क्रमांक ({pan}) आधीच खातेदार '{dupPanCustomer.FirstName} {dupPanCustomer.LastName}' (CIF: {dupPanCustomer.CIFNo}) यांच्या नावे नोंदवला आहे." });
+                }
+            }
+
+            PigmyScheme? scheme = (dto.PigmySchemeID.HasValue && dto.PigmySchemeID.Value > 0)
+                ? await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == dto.PigmySchemeID.Value && s.Status == "Active")
+                : await _context.PigmySchemes.Where(s => s.Status == "Active").OrderBy(s => s.PigmySchemeID).FirstOrDefaultAsync();
+            if (scheme == null)
+            {
+                return BadRequest(new { message = "कोणतीही सक्रिय (Active) पिग्मी योजना आढळली नाही." });
+            }
+
+            string? cleanOld = string.IsNullOrWhiteSpace(dto.OldAccountNo) ? null : dto.OldAccountNo.Trim();
+            if (!string.IsNullOrEmpty(cleanOld))
+            {
+                bool legacyExists = await _context.PigmyAccounts.AnyAsync(p =>
+                    p.BranchID == branchId &&
+                    p.PigmySchemeID == scheme.PigmySchemeID &&
+                    ((p.LegacyAccountNumber != null && p.LegacyAccountNumber.Trim() == cleanOld) ||
+                     (p.OldAccountNo != null && p.OldAccountNo.Trim() == cleanOld)));
+                if (legacyExists)
+                {
+                    return BadRequest(new { message = $"जुना पिग्मी खाते क्रमांक '{cleanOld}' या योजनेखाली आधीच नोंदवला आहे." });
+                }
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // 1. Create Customer
+                // 1. Create Customer using active CBS BusinessDate
                 var customer = new Customer
                 {
                     BranchID = branchId,
@@ -287,22 +357,24 @@ namespace Bhisi.Api.Controllers
                     LastName = dto.LastName.Trim(),
                     MobileNo = dto.MobileNo.Trim(),
                     AadhaarNo = aadhaar,
+                    PANNo = pan,
                     Address = dto.Address?.Trim(),
                     Gender = dto.Gender ?? "Male",
+                    RegistrationDate = businessDate,
                     CreatedOn = DateTime.UtcNow,
-                    CreatedBy = agentId,
-                    Status = "Active"
+                    CreatedBy = creatorUserId,
+                    Status = "Active",
+                    IsDeleted = false
                 };
                 _context.Customers.Add(customer);
                 await _context.SaveChangesAsync();
 
-                // Assign Standard CBS CIF
-                customer.CIFNo = await AccountNumberHelper.GenerateUniqueCifAsync(_context);
+                // Assign Standard 1-to-1 CBS CIF
+                string standardCif = $"CIF{customer.CustomerID:D6}";
+                customer.CIFNo = !await _context.Customers.AnyAsync(c => c.CustomerID != customer.CustomerID && c.CIFNo == standardCif)
+                    ? standardCif
+                    : await AccountNumberHelper.GenerateUniqueCifAsync(_context);
                 await _context.SaveChangesAsync();
-
-                // 2. Default Pigmy Scheme
-                var scheme = await _context.PigmySchemes.FirstOrDefaultAsync() 
-                    ?? new PigmyScheme { PigmySchemeID = 1, InterestRate = 4.0m };
 
                 // 3. Generate Standard CBS 14-digit Account No
                 var accountNo = await AccountNumberHelper.GenerateNextPigmyAccountNo(
@@ -319,15 +391,15 @@ namespace Bhisi.Api.Controllers
                     BranchID = branchId,
                     PigmySchemeID = scheme.PigmySchemeID,
                     PigmyAgentID = agentId,
-                    OpeningDate = DateTime.Today,
-                    MaturityDate = DateTime.Today.AddYears(1),
+                    OpeningDate = businessDate,
+                    MaturityDate = businessDate.AddMonths(scheme.DurationMonths > 0 ? scheme.DurationMonths : 12),
                     InterestRate = scheme.InterestRate,
                     TotalDepositedAmount = 0m,
                     Status = "Active",
-                    OldAccountNo = string.IsNullOrWhiteSpace(dto.OldAccountNo) ? null : dto.OldAccountNo.Trim(),
-                    LegacyAccountNumber = string.IsNullOrWhiteSpace(dto.OldAccountNo) ? null : dto.OldAccountNo.Trim(),
+                    OldAccountNo = cleanOld,
+                    LegacyAccountNumber = cleanOld,
                     DailyDepositAmount = dto.DailyDepositAmount > 0 ? dto.DailyDepositAmount : 100m,
-                    CreatedBy = agentId,
+                    CreatedBy = creatorUserId,
                     CreatedDate = DateTime.UtcNow
                 };
                 _context.PigmyAccounts.Add(pigmyAccount);
@@ -342,6 +414,9 @@ namespace Bhisi.Api.Controllers
                     accountId = pigmyAccount.PigmyAccountID,
                     pigmyAccountId = pigmyAccount.PigmyAccountID,
                     accountNo = pigmyAccount.AccountNo,
+                    cifNo = customer.CIFNo,
+                    openingDate = pigmyAccount.OpeningDate.ToString("yyyy-MM-dd"),
+                    maturityDate = pigmyAccount.MaturityDate.ToString("yyyy-MM-dd"),
                     customerId = customer.CustomerID,
                     memberId = customer.CustomerID,
                     customerName = $"{customer.FirstName} {customer.LastName}".Trim(),
@@ -394,7 +469,78 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "Assigned agent not found." });
             }
 
-            int branchId = dto.BranchID > 0 ? dto.BranchID : (agent.BranchID ?? 1);
+            int branchId = IsAgentRole()
+                ? (agent.BranchID ?? User.GetOperatingBranchId())
+                : User.ResolveBranchId(dto.BranchID > 0 ? dto.BranchID : agent.BranchID);
+
+            var (businessDate, _) = await _businessDateGuard.GetBranchBusinessDateAsync(branchId);
+            var closedFy = await _context.FinancialYears
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fy => fy.IsClosed && businessDate.Date >= fy.StartDate.Date && businessDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest(new { message = $"शाखेची चालू तारीख ({businessDate:dd/MM/yyyy}) बंद आर्थिक वर्षात ({closedFy.YearCode}) मोडते." });
+            }
+
+            string? aadhaar = string.IsNullOrWhiteSpace(dto.AadhaarNo)
+                ? null
+                : dto.AadhaarNo.Trim().Replace(" ", "").Replace("-", "");
+            if (!string.IsNullOrEmpty(aadhaar))
+            {
+                if (!KycValidationHelper.IsValidAadhaar(aadhaar, out var aadhaarError))
+                {
+                    return BadRequest(new { message = aadhaarError ?? "आधार क्रमांक वैध नाही." });
+                }
+
+                var dupCustomer = await _context.Customers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => !c.IsDeleted && c.AadhaarNo != null &&
+                        c.AadhaarNo.Replace(" ", "").Replace("-", "") == aadhaar);
+                if (dupCustomer != null)
+                {
+                    return BadRequest(new { message = $"हा आधार क्रमांक ({aadhaar}) आधीच खातेदार '{dupCustomer.FirstName} {dupCustomer.LastName}' (CIF: {dupCustomer.CIFNo}) यांच्या नावे नोंदवला आहे." });
+                }
+
+                bool pendingDupRequest = await _context.AgentCustomerRequests
+                    .AsNoTracking()
+                    .AnyAsync(r => r.Status == "Pending" && r.AadhaarNo != null &&
+                        r.AadhaarNo.Replace(" ", "").Replace("-", "") == aadhaar);
+                if (pendingDupRequest)
+                {
+                    return BadRequest(new { message = $"या आधार क्रमांकाची ({aadhaar}) खाते उघडणी विनंती आधीच शाखेकडे प्रलंबित आहे." });
+                }
+            }
+
+            string? pan = string.IsNullOrWhiteSpace(dto.PANNo) ? null : dto.PANNo.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(pan))
+            {
+                if (!KycValidationHelper.IsValidPan(pan, out var panError))
+                {
+                    return BadRequest(new { message = panError ?? "पॅन क्रमांक वैध नाही." });
+                }
+
+                var dupPanCustomer = await _context.Customers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => !c.IsDeleted && c.PANNo != null && c.PANNo.ToUpper() == pan);
+                if (dupPanCustomer != null)
+                {
+                    return BadRequest(new { message = $"हा पॅन क्रमांक ({pan}) आधीच खातेदार '{dupPanCustomer.FirstName} {dupPanCustomer.LastName}' (CIF: {dupPanCustomer.CIFNo}) यांच्या नावे नोंदवला आहे." });
+                }
+            }
+
+            string? cleanOld = string.IsNullOrWhiteSpace(dto.OldAccountNo) ? null : dto.OldAccountNo.Trim();
+            if (!string.IsNullOrEmpty(cleanOld))
+            {
+                bool legacyExists = await _context.PigmyAccounts.AnyAsync(p =>
+                    p.BranchID == branchId &&
+                    (!dto.PigmySchemeID.HasValue || dto.PigmySchemeID.Value <= 0 || p.PigmySchemeID == dto.PigmySchemeID.Value) &&
+                    ((p.LegacyAccountNumber != null && p.LegacyAccountNumber.Trim() == cleanOld) ||
+                     (p.OldAccountNo != null && p.OldAccountNo.Trim() == cleanOld)));
+                if (legacyExists)
+                {
+                    return BadRequest(new { message = $"जुना पिग्मी खाते क्रमांक '{cleanOld}' या योजनेखाली आधीच नोंदवला आहे." });
+                }
+            }
 
             try
             {
@@ -410,16 +556,16 @@ namespace Bhisi.Api.Controllers
                     LastName = lastName,
                     MobileNo = dto.MobileNo?.Trim(),
                     Address = dto.Address?.Trim(),
-                    AadhaarNo = dto.AadhaarNo?.Trim(),
-                    PANNo = dto.PANNo?.Trim(),
+                    AadhaarNo = aadhaar,
+                    PANNo = pan,
                     PigmySchemeID = dto.PigmySchemeID,
                     DailyDepositAmount = dto.DailyDepositAmount,
-                    OldAccountNo = string.IsNullOrWhiteSpace(dto.OldAccountNo) ? null : dto.OldAccountNo.Trim(),
+                    OldAccountNo = cleanOld,
                     OpenPigmyAccount = true,
                     BranchID = branchId,
                     PigmyAgentID = agentId,
                     AgentName = agent.AgentName,
-                    RequestDate = DateTime.Now,
+                    RequestDate = businessDate,
                     Status = "Pending"
                 };
 
@@ -676,8 +822,9 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(403, new { message = "आपल्याला इतर शाखेतील खात्याचे पासबुक पाहण्याची परवानगी नाही." });
             }
 
-            DateTime fDate = fromDate?.Date ?? new DateTime(DateTime.Today.Year, 1, 1);
-            DateTime tDate = toDate?.Date ?? DateTime.Today;
+            var istToday = _businessDateGuard.GetIstToday();
+            DateTime fDate = fromDate?.Date ?? new DateTime(istToday.Year, 1, 1);
+            DateTime tDate = toDate?.Date ?? istToday;
             DateTime nextTDate = tDate.AddDays(1);
 
             // Calculate Opening Balance prior to fDate
@@ -758,8 +905,9 @@ namespace Bhisi.Api.Controllers
                 return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
-            DateTime fDate = fromDate?.Date ?? DateTime.Today;
-            DateTime tDate = toDate?.Date ?? DateTime.Today;
+            var istToday = _businessDateGuard.GetIstToday();
+            DateTime fDate = fromDate?.Date ?? istToday;
+            DateTime tDate = toDate?.Date ?? istToday;
             DateTime nextTDate = tDate.AddDays(1);
 
             var collections = await _context.PigmyCollections
@@ -816,8 +964,9 @@ namespace Bhisi.Api.Controllers
                 return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
-            DateTime fDate = fromDate?.Date ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-            DateTime tDate = toDate?.Date ?? DateTime.Today;
+            var istToday = _businessDateGuard.GetIstToday();
+            DateTime fDate = fromDate?.Date ?? new DateTime(istToday.Year, istToday.Month, 1);
+            DateTime tDate = toDate?.Date ?? istToday;
             DateTime nextTDate = tDate.AddDays(1);
 
             // Fetch commission rate setting
@@ -916,8 +1065,9 @@ namespace Bhisi.Api.Controllers
                 return Unauthorized(new { message = "Valid Agent JWT token required." });
             }
 
-            DateTime fDate = DateTime.Today;
-            DateTime tDate = DateTime.Today;
+            var today = _businessDateGuard.GetIstToday();
+            DateTime fDate = today;
+            DateTime tDate = today;
 
             if (fromDate.HasValue && toDate.HasValue)
             {
@@ -926,7 +1076,6 @@ namespace Bhisi.Api.Controllers
             }
             else if (!string.IsNullOrWhiteSpace(filter))
             {
-                var today = DateTime.Today;
                 switch (filter.Trim().ToUpper())
                 {
                     case "LAST_7_DAYS":

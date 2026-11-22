@@ -173,6 +173,9 @@ namespace Bhisi.Api.Models
         [ForeignKey("EmployerId")]
         public virtual EmployerMaster? Employer { get; set; }
 
+        [MaxLength(50)]
+        public string? EmployeeCode { get; set; }
+
         // Soft Delete
         public bool IsDeleted { get; set; } = false;
 

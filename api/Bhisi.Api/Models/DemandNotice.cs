@@ -35,6 +35,19 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal TotalDemandAmount { get; set; } = 0;
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal TotalRecoveredAmount { get; set; } = 0;
+
+        public DateTime DemandDate { get; set; } = DateTime.Today;
+
+        public bool OnlyBorrowers { get; set; } = false;
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal ContributionInputAmount { get; set; } = 0;
+
+        [MaxLength(500)]
+        public string? Remarks { get; set; }
+
         [Required]
         [MaxLength(20)]
         public string Status { get; set; } = "Pending"; // Pending, PartiallyReceived, Received, Cancelled

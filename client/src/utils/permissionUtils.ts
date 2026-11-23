@@ -99,7 +99,15 @@ export function hasPermission(
   let normalizedRole: RoleCode = 'Operator';
   const roleLower = role.toLowerCase().replace(/[\s\_]+/g, '');
   
-  if (roleLower === 'admin') normalizedRole = 'Admin';
+  if (
+    roleLower === 'admin' ||
+    roleLower === 'superadmin' ||
+    roleLower === 'systemadmin' ||
+    roleLower === 'headoffice' ||
+    roleLower === 'generalmanager' ||
+    roleLower === 'ceo' ||
+    roleLower === 'chairman'
+  ) normalizedRole = 'Admin';
   else if (roleLower.includes('homanager') || roleLower === 'ho_manager') normalizedRole = 'HO_Manager';
   else if (roleLower.includes('branchmanager') || roleLower === 'branch_manager') normalizedRole = 'Branch_Manager';
   else if (roleLower.includes('cashier')) normalizedRole = 'Cashier';

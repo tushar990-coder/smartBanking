@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
@@ -7,6 +8,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class LoanDocumentsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -29,17 +31,22 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/LoanDocuments/Upload
         [HttpPost("Upload")]
-        public async Task<ActionResult<LoanDocument>> UploadDocument([FromForm] int loanAccountId, [FromForm] string documentType, [FromForm] string documentName, IFormFile file)
+        public async Task<ActionResult<LoanDocument>> UploadDocument(
+            [FromForm] int loanAccountId,
+            [FromForm] string documentType,
+            [FromForm] string? documentName,
+            [FromForm] DateTime? uploadedDate,
+            IFormFile file)
         {
             if (file == null || file.Length == 0)
             {
-                return BadRequest("No file uploaded.");
+                return BadRequest("कृपया अपलोड करण्यासाठी वैध फाईल निवडा.");
             }
 
             var loanExists = await _context.LoanAccounts.AnyAsync(l => l.LoanAccountID == loanAccountId);
             if (!loanExists)
             {
-                return NotFound("Loan account not found.");
+                return NotFound("कर्ज खाते सापडले नाही.");
             }
 
             // Create uploads folder if it doesn't exist
@@ -49,24 +56,22 @@ namespace Bhisi.Api.Controllers
                 Directory.CreateDirectory(uploadsFolder);
             }
 
-            // Generate unique filename
-            string uniqueFileName = Guid.NewGuid().ToString() + "_" + file.FileName;
+            string safeName = Path.GetFileName(file.FileName);
+            string uniqueFileName = $"{Guid.NewGuid():N}_{safeName}";
             string filePath = Path.Combine(uploadsFolder, uniqueFileName);
 
-            // Save file
             using (var fileStream = new FileStream(filePath, FileMode.Create))
             {
                 await file.CopyToAsync(fileStream);
             }
 
-            // Save database record
             var doc = new LoanDocument
             {
                 LoanAccountID = loanAccountId,
-                DocumentType = documentType,
-                DocumentName = documentName,
-                FilePath = $"/uploads/documents/{uniqueFileName}", // Relative path for frontend
-                UploadedDate = DateTime.Today
+                DocumentType = string.IsNullOrWhiteSpace(documentType) ? "इतर (Other)" : documentType.Trim(),
+                DocumentName = documentName?.Trim() ?? string.Empty,
+                FilePath = $"/uploads/documents/{uniqueFileName}",
+                UploadedDate = (uploadedDate ?? DateTime.Today).Date
             };
 
             _context.LoanDocuments.Add(doc);

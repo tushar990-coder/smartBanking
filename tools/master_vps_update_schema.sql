@@ -7354,6 +7354,203 @@ BEGIN
 END
 GO
 
+IF OBJECT_ID('dbo.DemandColumnSettings', 'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Loan' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+       AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'LOAN' AND [LoanRateID] IS NOT NULL GROUP BY [LoanRateID] HAVING COUNT(*) > 1)
+        EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_Loan] ON [dbo].[DemandColumnSettings] ([LoanRateID]) WHERE [IsActive] = 1 AND [ItemType] = ''LOAN'' AND [LoanRateID] IS NOT NULL;');
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Saving' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+       AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'THRIFT_SAVING' AND [SavingSchemeID] IS NOT NULL GROUP BY [SavingSchemeID] HAVING COUNT(*) > 1)
+        EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_Saving] ON [dbo].[DemandColumnSettings] ([SavingSchemeID]) WHERE [IsActive] = 1 AND [ItemType] = ''THRIFT_SAVING'' AND [SavingSchemeID] IS NOT NULL;');
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Rd' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+       AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'RD' AND [RdSchemeID] IS NOT NULL GROUP BY [RdSchemeID] HAVING COUNT(*) > 1)
+        EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_Rd] ON [dbo].[DemandColumnSettings] ([RdSchemeID]) WHERE [IsActive] = 1 AND [ItemType] = ''RD'' AND [RdSchemeID] IS NOT NULL;');
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Share' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+       AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'SHARE' AND [ShareSchemeId] IS NOT NULL GROUP BY [ShareSchemeId] HAVING COUNT(*) > 1)
+        EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_Share] ON [dbo].[DemandColumnSettings] ([ShareSchemeId]) WHERE [IsActive] = 1 AND [ItemType] = ''SHARE'' AND [ShareSchemeId] IS NOT NULL;');
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_ContribTarget' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+       AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [IsContributionTarget] = 1 HAVING COUNT(*) > 1)
+        EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_ContribTarget] ON [dbo].[DemandColumnSettings] ([IsContributionTarget]) WHERE [IsActive] = 1 AND [IsContributionTarget] = 1;');
+END
+GO
+
+-- -----------------------------------------------------------------------------------------
+-- GOLD LOAN CUSTODY TRACKER & SANSTHA EXTERNAL BANK BORROWINGS MODULE (v2.6.39)
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID('dbo.SansthaExternalLockers', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[SansthaExternalLockers] (
+        [ExternalLockerID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [BranchID] INT NOT NULL DEFAULT 1,
+        [InstitutionID] INT NULL,
+        [BankOrSocietyName] NVARCHAR(150) NOT NULL,
+        [BankBranchName] NVARCHAR(100) NULL,
+        [LockerNo] NVARCHAR(50) NOT NULL,
+        [CabinetOrBoxNo] NVARCHAR(50) NULL,
+        [KeyNo] NVARCHAR(50) NULL,
+        [AnnualRentAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [AgreementStartDate] DATETIME2 NULL,
+        [AgreementExpiryDate] DATETIME2 NULL,
+        [AuthorizedSignatories] NVARCHAR(200) NULL,
+        [Remarks] NVARCHAR(300) NULL,
+        [IsActive] BIT NOT NULL DEFAULT 1,
+        [CreatedBy] INT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    );
+END
+GO
+
+IF OBJECT_ID('dbo.SansthaBorrowings', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[SansthaBorrowings] (
+        [BorrowingID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [BranchID] INT NOT NULL DEFAULT 1,
+        [FinancialYearID] INT NOT NULL DEFAULT 1,
+        [BorrowingNo] NVARCHAR(50) NOT NULL,
+        [LenderInstitutionID] INT NULL,
+        [LenderName] NVARCHAR(150) NOT NULL,
+        [LenderBranchName] NVARCHAR(100) NULL,
+        [ExternalLoanAccountNo] NVARCHAR(80) NULL,
+        [BorrowingType] NVARCHAR(40) NOT NULL DEFAULT 'GOLD_REPLEDGE',
+        [PledgedInvestmentAccountID] INT NULL,
+        [SanctionDate] DATETIME2 NOT NULL,
+        [DisbursementDate] DATETIME2 NOT NULL,
+        [MaturityDate] DATETIME2 NULL,
+        [SanctionedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [DisbursedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [OutstandingPrincipal] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [TotalInterestPaid] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [BorrowingInterestRate] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [InterestCalculationMethod] NVARCHAR(40) NOT NULL DEFAULT 'Reducing',
+        [InstallmentAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [BorrowingLiabilityLedgerID] INT NOT NULL,
+        [InterestExpenseLedgerID] INT NOT NULL,
+        [PaymentMode] NVARCHAR(30) NOT NULL DEFAULT 'Bank',
+        [BankLedgerID] INT NULL,
+        [ReferenceNo] NVARCHAR(80) NULL,
+        [DisbursementVoucherID] INT NULL,
+        [PurposeOrLinkedLoansNote] NVARCHAR(300) NULL,
+        [Remarks] NVARCHAR(300) NULL,
+        [Status] NVARCHAR(20) NOT NULL DEFAULT 'Active',
+        [ClosedDate] DATETIME2 NULL,
+        [CreatedBy] INT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+        [UpdatedAt] DATETIME2 NULL
+    );
+    CREATE UNIQUE NONCLUSTERED INDEX [UQ_SansthaBorrowings_BorrowingNo] ON [dbo].[SansthaBorrowings] ([BorrowingNo]);
+END
+GO
+
+IF OBJECT_ID('dbo.GoldLoanCustodies', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[GoldLoanCustodies] (
+        [GoldCustodyID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [LoanAccountID] INT NOT NULL,
+        [BranchID] INT NOT NULL DEFAULT 1,
+        [PacketNumber] NVARCHAR(60) NOT NULL,
+        [SealNumber] NVARCHAR(60) NULL,
+        [TotalOrnamentsCount] INT NOT NULL DEFAULT 0,
+        [TotalGrossWeight] DECIMAL(18,3) NOT NULL DEFAULT 0,
+        [TotalNetWeight] DECIMAL(18,3) NOT NULL DEFAULT 0,
+        [TotalValuationAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [CustodyStatus] NVARCHAR(40) NOT NULL DEFAULT 'BRANCH_SAFE',
+        [VaultRackOrTrayNo] NVARCHAR(100) NULL,
+        [OwnLockerID] INT NULL,
+        [ExternalLockerID] INT NULL,
+        [ActiveBorrowingID] INT NULL,
+        [CustodyReceivedDate] DATETIME2 NOT NULL,
+        [LastLocationUpdatedDate] DATETIME2 NULL,
+        [ReleasedDate] DATETIME2 NULL,
+        [ReleasedToName] NVARCHAR(150) NULL,
+        [ReleasedToRelation] NVARCHAR(60) NULL,
+        [ReceiverMobile] NVARCHAR(20) NULL,
+        [ReceiverIdProof] NVARCHAR(100) NULL,
+        [ReleaseReceiptNo] NVARCHAR(60) NULL,
+        [ReleasePhotoOrDocPath] NVARCHAR(500) NULL,
+        [SettlementCollectionID] INT NULL,
+        [ReleasedByUserID] INT NULL,
+        [Remarks] NVARCHAR(500) NULL,
+        [CreatedBy] INT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+        [UpdatedAt] DATETIME2 NULL
+    );
+    CREATE UNIQUE NONCLUSTERED INDEX [UQ_GoldLoanCustodies_LoanAccountID] ON [dbo].[GoldLoanCustodies] ([LoanAccountID]);
+END
+GO
+
+IF OBJECT_ID('dbo.GoldCustodyMovementLogs', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[GoldCustodyMovementLogs] (
+        [MovementLogID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [GoldCustodyID] INT NOT NULL,
+        [LoanAccountID] INT NOT NULL,
+        [FromStatus] NVARCHAR(40) NULL,
+        [ToStatus] NVARCHAR(40) NOT NULL,
+        [FromLocationSummary] NVARCHAR(250) NULL,
+        [ToLocationSummary] NVARCHAR(250) NOT NULL,
+        [ReferenceBorrowingID] INT NULL,
+        [Remarks] NVARCHAR(300) NULL,
+        [MovementDate] DATETIME2 NOT NULL,
+        [MovedByUserID] INT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    );
+    CREATE NONCLUSTERED INDEX [IX_GoldCustodyMovementLogs_Custody] ON [dbo].[GoldCustodyMovementLogs] ([GoldCustodyID], [MovementDate]);
+END
+GO
+
+IF OBJECT_ID('dbo.SansthaBorrowingGoldPledges', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[SansthaBorrowingGoldPledges] (
+        [BorrowingGoldPledgeID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [BorrowingID] INT NOT NULL,
+        [LoanAccountID] INT NOT NULL,
+        [GoldCustodyID] INT NOT NULL,
+        [CustomerLoanInterestRate] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [InterestSpreadPercent] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [AllocatedBorrowedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [LenderPledgeReceiptNo] NVARCHAR(80) NULL,
+        [PledgedDate] DATETIME2 NOT NULL,
+        [PreviousCustodyStatus] NVARCHAR(40) NOT NULL DEFAULT 'BRANCH_SAFE',
+        [PreviousOwnLockerID] INT NULL,
+        [PreviousExternalLockerID] INT NULL,
+        [PreviousVaultRackNo] NVARCHAR(100) NULL,
+        [PledgeStatus] NVARCHAR(20) NOT NULL DEFAULT 'Pledged',
+        [ReleasedDate] DATETIME2 NULL,
+        [ReleasedOnRepaymentID] INT NULL,
+        [ReleaseRemarks] NVARCHAR(250) NULL
+    );
+    CREATE NONCLUSTERED INDEX [IX_SansthaBorrowingGoldPledges_Borrowing] ON [dbo].[SansthaBorrowingGoldPledges] ([BorrowingID], [PledgeStatus]);
+    CREATE NONCLUSTERED INDEX [IX_SansthaBorrowingGoldPledges_Loan] ON [dbo].[SansthaBorrowingGoldPledges] ([LoanAccountID], [PledgeStatus]);
+END
+GO
+
+IF OBJECT_ID('dbo.SansthaBorrowingRepayments', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[SansthaBorrowingRepayments] (
+        [BorrowingRepaymentID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [BorrowingID] INT NOT NULL,
+        [BranchID] INT NOT NULL DEFAULT 1,
+        [RepaymentDate] DATETIME2 NOT NULL,
+        [PrincipalPaid] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [InterestPaid] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [PenalOrChargesPaid] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [TotalPaid] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [PaymentMode] NVARCHAR(30) NOT NULL DEFAULT 'Bank',
+        [BankLedgerID] INT NULL,
+        [ReferenceNo] NVARCHAR(80) NULL,
+        [VoucherID] INT NULL,
+        [Remarks] NVARCHAR(300) NULL,
+        [CreatedBy] INT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    );
+    CREATE NONCLUSTERED INDEX [IX_SansthaBorrowingRepayments_Borrowing] ON [dbo].[SansthaBorrowingRepayments] ([BorrowingID], [RepaymentDate]);
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

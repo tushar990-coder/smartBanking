@@ -714,5 +714,147 @@ namespace Bhisi.Api.Tests
             Assert.Equal(850m, intTxn!.Amount);
             Assert.True(intTxn.VoucherID > 0);
         }
+
+        [Fact]
+        public async Task PreviewAndGetGrid_ExposesRdZoneSequenceBeforeNonRdColumns_WhenRdIsSequenceOne()
+        {
+            using var db = GetInMemoryDbContext(nameof(PreviewAndGetGrid_ExposesRdZoneSequenceBeforeNonRdColumns_WhenRdIsSequenceOne));
+            SeedCoreMasters(db);
+
+            // Reorder existing DemandColumnSettings: Seq 1 = नियमित RD, Seq 2 = Loan, Seq 3 = संजीवनी ठेव, Seq 4 = बालभविष्य RD
+            var sLoan = await db.DemandColumnSettings.FindAsync(1);
+            var sThrift = await db.DemandColumnSettings.FindAsync(2);
+            var sRd2 = await db.DemandColumnSettings.FindAsync(3);
+            var sRd1 = await db.DemandColumnSettings.FindAsync(4);
+            sRd1!.SequenceOrder = 1;
+            sLoan!.SequenceOrder = 2;
+            sThrift!.SequenceOrder = 3;
+            sRd2!.SequenceOrder = 4;
+
+            db.Customers.Add(new Customer { CustomerID = 31, BranchID = 1, CIFNo = "CIF0031", FirstName = "प्रवीण", LastName = "जोशी", EmployerId = 1, EmployeeCode = "15", Status = "Active" });
+            db.Members.Add(new Member { MemberID = 131, CustomerID = 31, BranchID = 1, MemberCode = "M131", Status = "Active" });
+            db.RdAccounts.Add(new RdAccount
+            {
+                RdAccountID = 801,
+                BranchID = 1,
+                CustomerID = 31,
+                RdSchemeID = 1,
+                AccountNo = "RD-801",
+                InstallmentAmount = 1000m,
+                TotalDepositedAmount = 3000m,
+                OpeningDate = new DateTime(2026, 1, 1),
+                MaturityDate = new DateTime(2027, 1, 1),
+                Status = "Active"
+            });
+            await db.SaveChangesAsync();
+
+            var noticeCtrl = new DemandNoticesController(db) { ControllerContext = BuildAdminContext() };
+            using var prevDoc = ParseResultJson(await noticeCtrl.PreviewDemandGrid(new DemandPreviewRequestDto
+            {
+                BranchId = 1,
+                EmployerId = 1,
+                DemandDate = new DateTime(2026, 10, 31),
+                ContributionAmount = 500m
+            }));
+
+            Assert.True(prevDoc.RootElement.GetProperty("hasRdZone").GetBoolean());
+            Assert.Equal(1, prevDoc.RootElement.GetProperty("rdZoneSequence").GetInt32());
+            var cols = prevDoc.RootElement.GetProperty("columns");
+            Assert.Equal(2, cols.GetArrayLength());
+            Assert.Equal(2, cols[0].GetProperty("sequenceOrder").GetInt32());
+            Assert.Equal(3, cols[1].GetProperty("sequenceOrder").GetInt32());
+        }
+
+        [Fact]
+        public async Task ValidateDemandGrid_CatchesMissingRdLedger_AndChecksInactiveHistoricalSetting()
+        {
+            using var db = GetInMemoryDbContext(nameof(ValidateDemandGrid_CatchesMissingRdLedger_AndChecksInactiveHistoricalSetting));
+            SeedCoreMasters(db);
+
+            // Soft-deactivated historical column missing PrincipalOrDepositLedgerID
+            db.DemandColumnSettings.Add(new DemandColumnSetting
+            {
+                DemandColumnSettingId = 98,
+                SequenceOrder = 9999,
+                ColumnHeaderMr = "जुनी वर्गणी ठेव",
+                ItemType = "THRIFT_SAVING",
+                SavingSchemeID = 2,
+                PrincipalOrDepositLedgerID = null,
+                IsActive = false
+            });
+
+            // RD Scheme & Setting both missing PrincipalOrDepositLedgerID / RdLiabilityLedgerID
+            db.RdSchemes.Add(new RdScheme
+            {
+                RdSchemeID = 99,
+                SchemeCode = "RD99",
+                SchemeName = "अपूर्ण लेजर RD",
+                DurationMonths = 12,
+                MinimumInstallment = 500m,
+                MaximumInstallment = 10000m,
+                InterestRate = 7m,
+                RdLiabilityLedgerID = null,
+                IsActive = true
+            });
+            db.DemandColumnSettings.Add(new DemandColumnSetting
+            {
+                DemandColumnSettingId = 99,
+                SequenceOrder = 5,
+                ColumnHeaderMr = "अपूर्ण लेजर RD",
+                ItemType = "RD",
+                RdSchemeID = 99,
+                PrincipalOrDepositLedgerID = null,
+                IsActive = true
+            });
+            await db.SaveChangesAsync();
+
+            var noticeCtrl = new DemandNoticesController(db) { ControllerContext = BuildAdminContext() };
+            using var valDoc = ParseResultJson(await noticeCtrl.ValidateDemandGrid(new SaveDemandGridRequestDto
+            {
+                BranchId = 1,
+                EmployerId = 1,
+                DemandDate = new DateTime(2026, 10, 31),
+                Rows = new List<SaveDemandMemberRowDto>
+                {
+                    new SaveDemandMemberRowDto
+                    {
+                        MemberId = 101,
+                        EmpCode = "7",
+                        MemberName = "दिगंबर चव्हाण",
+                        IsSelected = true,
+                        Cells = new List<SaveDemandCellDto>
+                        {
+                            new SaveDemandCellDto
+                            {
+                                DemandColumnSettingId = 98,
+                                SequenceOrder = 1,
+                                ItemType = "THRIFT_SAVING",
+                                ColumnHeaderMr = "जुनी वर्गणी ठेव",
+                                DemandPrincipalOrDeposit = 500m
+                            }
+                        },
+                        PrimaryRd = new SaveDemandRdItemDto
+                        {
+                            DemandColumnSettingId = 99,
+                            SequenceOrder = 5,
+                            SubRowIndex = 0,
+                            ColumnHeaderMr = "अपूर्ण लेजर RD",
+                            RdSchemeID = 99,
+                            AccountId = 701,
+                            DemandPrincipalOrDeposit = 500m,
+                            PrincipalOrDepositLedgerID = null
+                        }
+                    }
+                }
+            }));
+
+            Assert.False(valDoc.RootElement.GetProperty("isValid").GetBoolean());
+            var errors = valDoc.RootElement.GetProperty("errors").EnumerateArray().Select(e => e.GetString() ?? "").ToList();
+            var warnings = valDoc.RootElement.GetProperty("warnings").EnumerateArray().Select(w => w.GetString() ?? "").ToList();
+
+            Assert.Contains(errors, e => e.Contains("जुनी वर्गणी ठेव"));
+            Assert.Contains(errors, e => e.Contains("अपूर्ण लेजर RD"));
+            Assert.Contains(warnings, w => w.Contains("जुनी वर्गणी ठेव") && w.Contains("निष्क्रिय"));
+        }
     }
 }

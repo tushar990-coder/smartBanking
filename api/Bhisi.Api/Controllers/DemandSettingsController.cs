@@ -33,6 +33,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/DemandSettings
         [HttpGet]
+        [Authorize(Roles = "Admin,SuperAdmin,Super Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager,GeneralManager,CEO,Chairman,Auditor")]
         public async Task<ActionResult<object>> GetDemandSettings()
         {
             var settings = await _context.DemandColumnSettings
@@ -40,6 +41,12 @@ namespace Bhisi.Api.Controllers
                 .Where(s => s.IsActive)
                 .OrderBy(s => s.SequenceOrder)
                 .ThenBy(s => s.DemandColumnSettingId)
+                .ToListAsync();
+
+            var inactiveSettings = await _context.DemandColumnSettings
+                .AsNoTracking()
+                .Where(s => !s.IsActive)
+                .OrderBy(s => s.DemandColumnSettingId)
                 .ToListAsync();
 
             var loanRates = await _context.LoanRates
@@ -215,6 +222,7 @@ namespace Bhisi.Api.Controllers
             {
                 isConfigured = settings.Any(),
                 settings,
+                inactiveSettings,
                 suggestedDefaults,
                 loanRates,
                 savingSchemes,
@@ -224,9 +232,66 @@ namespace Bhisi.Api.Controllers
             });
         }
 
+        private static string? ValidateLedgerRole(
+            Dictionary<int, Ledger> validLedgersMap,
+            int? ledgerId,
+            bool required,
+            string columnHeader,
+            string ledgerRoleLabel,
+            params string[] allowedNatures)
+        {
+            if (!ledgerId.HasValue || ledgerId.Value <= 0)
+            {
+                return required
+                    ? $"'{columnHeader}' साठी वैध '{ledgerRoleLabel}' निवडणे आवश्यक आहे."
+                    : null;
+            }
+
+            if (!validLedgersMap.TryGetValue(ledgerId.Value, out var ledger))
+            {
+                return $"'{columnHeader}' साठी निवडलेले '{ledgerRoleLabel}' सक्रिय लेजर यादीत नाही.";
+            }
+
+            string acctType = (ledger.AccountType ?? string.Empty).Trim();
+            if (acctType.Contains("Cash", StringComparison.OrdinalIgnoreCase) ||
+                acctType.Contains("Bank", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"'{columnHeader}' साठी '{ledgerRoleLabel}' म्हणून रोख/बँक ('{ledger.LedgerName}') लेजर निवडता येत नाही.";
+            }
+
+            string nature = (ledger.AccountGroup?.NatureOfGroup ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(nature))
+            {
+                return $"'{columnHeader}' मधील लेजर '{ledger.LedgerName}' चा खाते गट (NatureOfGroup) कॉन्फिगर केलेला नाही.";
+            }
+
+            if (!allowedNatures.Any(n => string.Equals(n, nature, StringComparison.OrdinalIgnoreCase)))
+            {
+                string expectedStr = string.Join(" / ", allowedNatures);
+                return $"'{columnHeader}' साठी '{ledgerRoleLabel}' मध्ये '{ledger.LedgerName}' ({nature}) लेजर वापरता येत नाही — अपेक्षित खाते गट: {expectedStr}.";
+            }
+
+            return null;
+        }
+
+        private static bool MatchesDeactivatedScheme(DemandColumnSetting entity, DemandColumnSettingDto row)
+        {
+            if (!string.Equals(entity.ItemType, row.ItemType, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return row.ItemType switch
+            {
+                "LOAN" => entity.LoanRateID.HasValue && entity.LoanRateID == row.LoanRateID,
+                "THRIFT_SAVING" => entity.SavingSchemeID.HasValue && entity.SavingSchemeID == row.SavingSchemeID,
+                "RD" => entity.RdSchemeID.HasValue && entity.RdSchemeID == row.RdSchemeID,
+                "SHARE" => entity.ShareSchemeId.HasValue && entity.ShareSchemeId == row.ShareSchemeId,
+                _ => false
+            };
+        }
+
         // PUT: api/DemandSettings
         [HttpPut]
-        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
+        [Authorize(Roles = "Admin,SuperAdmin,Super Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager,GeneralManager,CEO,Chairman")]
         public async Task<ActionResult<object>> SaveDemandSettings([FromBody] SaveDemandSettingsDto request)
         {
             if (request == null || request.Items == null || !request.Items.Any())
@@ -254,12 +319,19 @@ namespace Bhisi.Api.Controllers
             var savingSchemesMap = await _context.SavingInterestSettings.AsNoTracking().ToDictionaryAsync(s => s.SettingID);
             var rdSchemesMap = await _context.RdSchemes.AsNoTracking().ToDictionaryAsync(r => r.RdSchemeID);
             var shareSchemesMap = await _context.ShareSchemes.AsNoTracking().ToDictionaryAsync(s => s.ShareSchemeId);
-            var validLedgerIds = (await _context.Ledgers.AsNoTracking().Select(l => l.LedgerID).ToListAsync()).ToHashSet();
+            var validLedgersMap = await _context.Ledgers
+                .AsNoTracking()
+                .Include(l => l.AccountGroup)
+                .Where(l => l.IsActive)
+                .ToDictionaryAsync(l => l.LedgerID);
 
             var validatedRows = new List<DemandColumnSettingDto>();
             int seqCounter = 1;
             var usedLoanIds = new HashSet<int>();
+            var usedSavingIds = new HashSet<int>();
             var usedRdIds = new HashSet<int>();
+            var usedShareIds = new HashSet<int>();
+            bool usedGenericShare = false;
 
             foreach (var item in activeInputs)
             {
@@ -267,6 +339,11 @@ namespace Bhisi.Api.Controllers
                 if (!AllowedItemTypes.Contains(type))
                 {
                     return BadRequest($"अवैध प्रकार: '{item.ItemType}'.");
+                }
+
+                if (item.IsContributionTarget && type != "THRIFT_SAVING" && type != "LEDGER_OTHER")
+                {
+                    return BadRequest("'वर्गणी ठेव Auto-Fill लक्ष्य' फक्त 'संजीवनी / वर्गणी ठेव' किंवा 'इतर सामान्य लेजर' कॉलमसाठीच निवडता येते.");
                 }
 
                 string header = (item.ColumnHeaderMr ?? string.Empty).Trim();
@@ -286,15 +363,15 @@ namespace Bhisi.Api.Controllers
                         return BadRequest($"कर्ज योजना '{lr.LoanType}' एकापेक्षा जास्त वेळा जोडता येत नाही.");
                     }
                     if (string.IsNullOrWhiteSpace(header)) header = !string.IsNullOrWhiteSpace(lr.ShortName) ? lr.ShortName : lr.LoanType;
-                    prinLedger ??= lr.LoanLedgerID;
-                    intLedger ??= lr.InterestLedgerID;
-                    recIntLedger ??= lr.ReceivableInterestLedgerID;
-                    ovdIntLedger ??= lr.OverdueInterestLedgerID;
 
-                    if (!intLedger.HasValue || !validLedgerIds.Contains(intLedger.Value))
-                    {
-                        return BadRequest($"'{header}' साठी वैध 'कर्ज व्याज लेजर' निवडणे आवश्यक आहे.");
-                    }
+                    var intErr = ValidateLedgerRole(validLedgersMap, intLedger, true, header, "चालू व्याज उत्पन्न लेजर", "Income");
+                    if (intErr != null) return BadRequest(intErr);
+
+                    var recErr = ValidateLedgerRole(validLedgersMap, recIntLedger, false, header, "येणे व्याज लेजर", "Assets");
+                    if (recErr != null) return BadRequest(recErr);
+
+                    var ovdErr = ValidateLedgerRole(validLedgersMap, ovdIntLedger, false, header, "थकीत दंडव्याज उत्पन्न लेजर", "Income");
+                    if (ovdErr != null) return BadRequest(ovdErr);
                 }
                 else if (type == "THRIFT_SAVING")
                 {
@@ -302,8 +379,11 @@ namespace Bhisi.Api.Controllers
                     {
                         return BadRequest($"क्रम {seqCounter}: कृपया वैध संजीवनी / बचत ठेव योजना निवडा.");
                     }
+                    if (!usedSavingIds.Add(ss.SettingID))
+                    {
+                        return BadRequest($"ठेव योजना '{ss.SchemeName ?? ss.SchemeCode}' एकापेक्षा जास्त वेळा जोडता येत नाही.");
+                    }
                     if (string.IsNullOrWhiteSpace(header)) header = ss.SchemeName ?? "संजीवनी ठेव";
-                    prinLedger ??= ss.SavingLiabilityLedgerID ?? ss.LedgerID;
                 }
                 else if (type == "RD")
                 {
@@ -316,18 +396,29 @@ namespace Bhisi.Api.Controllers
                         return BadRequest($"RD योजना '{rds.SchemeName}' एकापेक्षा जास्त वेळा जोडता येत नाही.");
                     }
                     if (string.IsNullOrWhiteSpace(header)) header = rds.SchemeName;
-                    prinLedger ??= rds.RdLiabilityLedgerID;
                 }
                 else if (type == "SHARE")
                 {
-                    if (item.ShareSchemeId.HasValue && shareSchemesMap.TryGetValue(item.ShareSchemeId.Value, out var shs))
+                    if (item.ShareSchemeId.HasValue)
                     {
+                        if (!shareSchemesMap.TryGetValue(item.ShareSchemeId.Value, out var shs))
+                        {
+                            return BadRequest($"क्रम {seqCounter}: कृपया वैध शेअर योजना निवडा.");
+                        }
+                        if (!usedShareIds.Add(shs.ShareSchemeId))
+                        {
+                            return BadRequest($"शेअर योजना '{shs.SchemeName}' एकापेक्षा जास्त वेळा जोडता येत नाही.");
+                        }
                         if (string.IsNullOrWhiteSpace(header)) header = shs.SchemeName;
-                        prinLedger ??= shs.ShareCapitalLedgerID;
                     }
-                    else if (string.IsNullOrWhiteSpace(header))
+                    else
                     {
-                        header = "शेअर्स";
+                        if (usedGenericShare)
+                        {
+                            return BadRequest("सामान्य 'शेअर्स' कॉलम एकापेक्षा जास्त वेळा जोडता येत नाही.");
+                        }
+                        usedGenericShare = true;
+                        if (string.IsNullOrWhiteSpace(header)) header = "शेअर्स";
                     }
                 }
 
@@ -336,10 +427,14 @@ namespace Bhisi.Api.Controllers
                     return BadRequest($"क्रम {seqCounter}: कॉलमचे नाव भरणे आवश्यक आहे.");
                 }
 
-                if (!prinLedger.HasValue || !validLedgerIds.Contains(prinLedger.Value))
+                string[] allowedPrincipalNatures = type switch
                 {
-                    return BadRequest($"'{header}' साठी वैध जमा (Credit/Liability) लेजर निवडणे आवश्यक आहे.");
-                }
+                    "LOAN" => new[] { "Assets" },
+                    "LEDGER_OTHER" => new[] { "Liabilities", "Income", "Assets" },
+                    _ => new[] { "Liabilities" }
+                };
+                var prinErr = ValidateLedgerRole(validLedgersMap, prinLedger, true, header, "जमा (Credit/Principal) लेजर", allowedPrincipalNatures);
+                if (prinErr != null) return BadRequest(prinErr);
 
                 validatedRows.Add(new DemandColumnSettingDto
                 {
@@ -379,6 +474,14 @@ namespace Bhisi.Api.Controllers
                     if (row.DemandColumnSettingId > 0)
                     {
                         entity = existingRows.FirstOrDefault(e => e.DemandColumnSettingId == row.DemandColumnSettingId);
+                    }
+                    else
+                    {
+                        // Reactivate matching soft-deactivated scheme row to keep audit continuity and avoid orphan duplicates
+                        entity = existingRows.FirstOrDefault(e =>
+                            !e.IsActive &&
+                            !keepIds.Contains(e.DemandColumnSettingId) &&
+                            MatchesDeactivatedScheme(e, row));
                     }
 
                     if (entity == null)
@@ -443,10 +546,17 @@ namespace Bhisi.Api.Controllers
                     .ThenBy(s => s.DemandColumnSettingId)
                     .ToListAsync();
 
+                var inactiveUpdated = await _context.DemandColumnSettings
+                    .AsNoTracking()
+                    .Where(s => !s.IsActive)
+                    .OrderBy(s => s.DemandColumnSettingId)
+                    .ToListAsync();
+
                 return Ok(new
                 {
                     message = "डिमांड सेटिंग्ज यशस्वीरीत्या जतन केल्या आहेत!",
-                    settings = updated
+                    settings = updated,
+                    inactiveSettings = inactiveUpdated
                 });
             }
             catch (Exception ex)

@@ -152,7 +152,12 @@ interface Props {
     draftApplication?: any;
     editingDisbursement?: any;
     onRequestEditApplication?: (d: any) => void;
-    onSaveSuccess?: () => void;
+    onSaveSuccess?: (savedInfo?: {
+        loanAccountID?: number;
+        loanAccountNo?: string;
+        isGoldLoan?: boolean;
+        goldPacketNumber?: string;
+    }) => void;
     onNavigate?: (tab: string, params?: any) => void;
 }
 
@@ -203,6 +208,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const [passingVoucher, setPassingVoucher] = useState<any>(null);
     const [passingActionLoading, setPassingActionLoading] = useState(false);
     const [rejectModalOpen, setRejectModalOpen] = useState(false);
+    const [lastDisbursedGoldLoan, setLastDisbursedGoldLoan] = useState<{
+        loanAccountID: number;
+        loanAccountNo: string;
+        goldPacketNumber?: string;
+    } | null>(null);
     const [rejectionReason, setRejectionReason] = useState('');
     const [disbursements, setDisbursements] = useState<LoanDisbursement[]>([]);
     const [applications, setApplications] = useState<LoanApplication[]>([]);
@@ -1334,15 +1344,38 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
             let sMsg = '';
             let shouldAlertPending = false;
+            let savedGoldInfo: {
+                loanAccountID?: number;
+                loanAccountNo?: string;
+                isGoldLoan?: boolean;
+                goldPacketNumber?: string;
+            } | undefined;
 
             if (editingId) {
                 await axios.put(`/api/LoanDisbursements/${editingId}`, payload);
                 sMsg = `कर्ज वाटप #${editingId} यशस्वीरीत्या अद्यतनित (Updated) झाले!`;
+                setLastDisbursedGoldLoan(null);
             } else {
                 const res = await axios.post('/api/LoanDisbursements', payload);
                 const vNo = res.data?.voucherNo ? ` (${res.data.voucherNo})` : '';
                 const vStatus = res.data?.voucherStatus || '';
                 const netPaidFormatted = (formData.netAmountPaid || 0).toLocaleString('en-IN');
+
+                if (res.data?.isGoldLoan && res.data?.loanAccountID) {
+                    savedGoldInfo = {
+                        loanAccountID: Number(res.data.loanAccountID),
+                        loanAccountNo: res.data.loanAccountNo || '',
+                        isGoldLoan: true,
+                        goldPacketNumber: res.data.goldPacketNumber || undefined
+                    };
+                    setLastDisbursedGoldLoan({
+                        loanAccountID: Number(res.data.loanAccountID),
+                        loanAccountNo: res.data.loanAccountNo || '',
+                        goldPacketNumber: res.data.goldPacketNumber || undefined
+                    });
+                } else {
+                    setLastDisbursedGoldLoan(null);
+                }
 
                 if (vStatus === 'Pending') {
                     shouldAlertPending = true;
@@ -1361,7 +1394,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             if (shouldAlertPending) {
                 alert(sMsg);
             }
-            if (onSaveSuccess) onSaveSuccess();
+            if (onSaveSuccess) onSaveSuccess(savedGoldInfo);
         } catch (err: any) {
             console.error(err);
             const msg = err.response?.data?.message || err.response?.data?.title || (typeof err.response?.data === 'string' ? err.response.data : err.message);
@@ -1625,6 +1658,36 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     >
                         ✕
                     </button>
+                </div>
+            )}
+
+            {lastDisbursedGoldLoan && (
+                <div className="bg-amber-50 border border-amber-300 border-l-4 border-l-amber-600 p-3 rounded-sm shadow-xs flex flex-wrap items-center justify-between gap-2.5 mb-3">
+                    <div className="text-xs text-amber-950">
+                        <span className="font-bold">🏅 सोने तारण कस्टडी ट्रॅकिंग:</span>{' '}
+                        कर्ज खाते <b className="font-mono">{lastDisbursedGoldLoan.loanAccountNo}</b> साठी पाकीट क्र.{' '}
+                        <b className="font-mono">{lastDisbursedGoldLoan.goldPacketNumber || 'PKT'}</b> शाखेच्या तिजोरीत नोंदवले आहे. लॉकर / बँक लॉकर ठिकाण नोंदवण्यासाठी पुढे जा.
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                sessionStorage.setItem('cbs_target_collateral_loan_id', String(lastDisbursedGoldLoan.loanAccountID));
+                                if (onNavigate) onNavigate('loan-documents', { loanAccountId: lastDisbursedGoldLoan.loanAccountID });
+                                else window.location.href = `/?tab=loan-documents&loanAccountId=${lastDisbursedGoldLoan.loanAccountID}`;
+                            }}
+                            className="px-3 py-1.5 rounded-sm bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-2xs cursor-pointer"
+                        >
+                            🏅 दागिन्यांचे पाकीट व लॉकर ठिकाण नोंदवा →
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setLastDisbursedGoldLoan(null)}
+                            className="text-amber-800 hover:text-amber-950 text-xs font-bold px-1.5 cursor-pointer"
+                        >
+                            ✕
+                        </button>
+                    </div>
                 </div>
             )}
 

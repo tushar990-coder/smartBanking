@@ -108,6 +108,7 @@ const VoterListReport = React.lazy(() => import('./components/VoterListReport'))
 const GoldLoanDetails = React.lazy(() => import('./components/GoldLoanDetails'));
 const GoldJewelryReport = React.lazy(() => import('./components/GoldJewelryReport'));
 const LoanDocumentsUpload = React.lazy(() => import('./components/LoanDocumentsUpload'));
+const BankBorrowingMaster = React.lazy(() => import('./components/BankBorrowingMaster'));
 const NpaRegister = React.lazy(() => import('./components/NpaRegister'));
 const InterestWaiverRegister = React.lazy(() => import('./components/InterestWaiverRegister'));
 import SavingAccountMaster from './components/SavingAccountMaster';
@@ -217,6 +218,7 @@ import CashDenominationEntry from './components/CashDenominationEntry';
 
 import axios from 'axios';
 import { useAuth } from './context/AuthContext';
+import { hasPermission } from './utils/permissionUtils';
 import { getCachedMasterData } from './utils/apiCache';
 import LoginForm from './components/LoginForm';
 import ChangePasswordModal from './components/ChangePasswordModal';
@@ -284,6 +286,7 @@ function App() {
     'loan-collection': '/karjvibhag/vasuli',
     'loan-interest-posting': '/karjvibhag/vyaj',
     'loan-documents': '/karjvibhag/documents',
+    'bank-borrowing': '/karjvibhag/bank-borrowing',
     'loan-rate': '/karjvibhag/yojana',
     'employer-master': '/karjvibhag/employer',
     'employee-bank': '/karjvibhag/employee-bank',
@@ -845,10 +848,27 @@ function App() {
         {activeTab === 'employer-master' && <EmployerMaster />}
         {activeTab === 'demand-notice' && <EmployeeDemandForm onNavigate={handleNavigate} />}
         {activeTab === 'demand-recovery' && <DemandRecoveryMaster initialNoticeId={selectedDemandNoticeId} onNavigate={handleNavigate} />}
-        {activeTab === 'demand-settings' && <DemandSettingsMaster onNavigate={handleNavigate} />}
+        {activeTab === 'demand-settings' && (
+          hasPermission(user?.role, 'Settings', 'View') ? (
+            <DemandSettingsMaster onNavigate={handleNavigate} />
+          ) : (
+            <div className="p-6 max-w-xl mx-auto mt-8 bg-red-50 border border-red-300 rounded text-center text-red-900 space-y-2">
+              <div className="font-bold text-base">प्रवेश नाकारला (Access Denied — 403)</div>
+              <p className="text-xs">संस्थेचे डिमांड सेटिंग्ज पाहण्याची किंवा बदलण्याची परवानगी फक्त Head Office / Admin यांना आहे.</p>
+              <button
+                type="button"
+                onClick={() => handleNavigate('demand-notice')}
+                className="px-3 py-1.5 rounded bg-primary text-white text-xs font-bold cursor-pointer"
+              >
+                डिमांड फॉर्मवर परत जा
+              </button>
+            </div>
+          )
+        )}
         {activeTab === 'loan-collection' && <LoanCollectionMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-interest-posting' && <LoanInterestPostingMaster />}
-        {activeTab === 'loan-documents' && <LoanDocumentsUpload />}
+        {activeTab === 'loan-documents' && <LoanDocumentsUpload onNavigate={handleNavigate} />}
+        {activeTab === 'bank-borrowing' && <BankBorrowingMaster onNavigate={handleNavigate} />}
         {(activeTab === 'loan-ob' || activeTab === 'loan-opening') && <SettingsDashboard defaultCategory="opening-balance" defaultSub="loan-ob" />}
 
         {/* Day End / EOD Module Screens */}
@@ -995,7 +1015,7 @@ function App() {
         {activeTab === 'interest-calculator' && <InterestCalculator />}
 
         {/* Settings */}
-        {activeTab === 'settings' && <SettingsDashboard />}
+        {activeTab === 'settings' && <SettingsDashboard onNavigate={handleNavigate} />}
         {activeTab === 'system-update' && <SettingsDashboard defaultCategory="admin" defaultSub="system-update" />}
         {(activeTab === 'branch-ledger-opening' || activeTab === 'branch-ledger-ob') && <BranchLedgerOpeningMaster />}
         {activeTab === 'branch-master' && <SettingsDashboard defaultCategory="general" defaultSub="branch" />}

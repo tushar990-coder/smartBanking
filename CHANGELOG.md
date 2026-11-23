@@ -1,5 +1,22 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-23] - आवृत्ती v2.6.39 (Gold Custody Tracker, Bank Borrowing & Gold Re-pledge Module, Loan Collateral Upgrade & Demand Settings QA Remediation)
+
+### 🏅 1. सोने तारण दागिने कस्टडी ट्रॅकिंग व कर्ज तारण दस्तऐवज सुधारणा
+- **`GoldLoanCustody.cs`, `GoldCustodyMovementLog.cs`, `SansthaExternalLocker.cs`, `GoldCustodyController.cs`, `LoanDocumentsController.cs`, `LoanDocumentsUpload.tsx`:**
+  - `कर्ज कागदपत्रे अपलोड` फॉर्मचे नाव बदलून **कर्ज तारण दस्तऐवज व सोने दागिने कस्टडी ट्रॅकिंग** केले.
+  - कर्ज वाटपानंतर दागिन्यांचे पाकीट कोठे ठेवले आहे (`BRANCH_SAFE` शाखा तिजोरी, `OWN_LOCKER` संस्था लॉकर, `EXTERNAL_LOCKER` इतर बँक/पतसंस्थेतील भाड्याचे लॉकर Quick-Add सह, `REPLEDGED_BORROWING` पुनर्गहाण, `RELEASED_TO_CUSTOMER` सुपूर्द) याचा संपूर्ण ट्रॅकर व A4 सुपूर्दगी पोचपावती प्रिंट (`GRL-*`).
+- **वाटप, वसुली व रिपोर्ट हुक्स (`LoanDisbursementsController.cs`, `LoanCollectionsController.cs`, `ReportsController.cs`, `LoanProcessMaster.tsx`, `LoanCollectionMaster.tsx`, `GoldJewelryReport.tsx`):**
+  - सोने तारण वाटपानंतर पाकीट ऑटो-इनिशियलायझेशन व लॉकर निवडीचा बॅनर, १००% कर्ज वसुलीनंतर दागिने ठिकाण / पुनर्गहाण सूचना पॉप-अप, आणि सोने जिन्नस रिपोर्टमध्ये कस्टडी फिल्टर, ठिकाण बॅज व एक्सेल रकाने.
+
+### 🏦 2. बाह्य बँक / पतसंस्था देणे कर्जे व सोने पुनर्गहाण मॉड्यूल (`BankBorrowingMaster.tsx`, `BorrowingsController.cs`)
+- **सोने पुनर्गहाण व बिगर-सोने बाह्य कर्जे (`SansthaBorrowing.cs`, `SansthaBorrowingGoldPledge.cs`, `SansthaBorrowingRepayment.cs`):**
+  - ग्राहकाचे सोने पाकीट बाह्य बँक/पतसंस्थेकडे कमी दराने पुनर्गहाण ठेवून निधी घेणे (`GOLD_REPLEDGE`, निव्वळ व्याज फरक `Interest Spread %` गणनेसह), तसेच `TERM_LOAN`, `CASH_CREDIT_OD` व `FD_AGAINST_LOAN`.
+  - `REC-BRW-*` व `PAY-BRW-*` संतुलित मेकर-चेकर व्हाउचर्स, पुनर्गहाण दागिने संस्थेत परत येईपर्यंत खातेदारास सुपूर्द करण्यावर कडक हार्ड-गार्ड आणि प्रलंबित व्हाउचर रद्द केल्यास `VoucherRollbackAndDeleteService.cs` मधून १००% रोल्बॅक.
+
+### 🛡️ 3. कर्मचारी पगार डिमांड सेटिंग्ज QA सुधारणा (`DemandSettingsController.cs`, `DemandSettingsMaster.tsx`)
+- HO/Admin RBAC संरक्षण, रोख/बँक/अयोग्य GL निसर्ग ब्लॉकिंग, एकमेव सक्रिय स्कीम व `वर्गणी ठेव Auto-Fill` युनिक फिल्टर्ड इंडेक्सेस आणि `AuditLogs` नोंदी (**१८३/१८३ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-22] - आवृत्ती v2.6.38 (Employee Salary Demand, Sequence Settings, Multi-RD Sub-Rows, Bulk Recovery & Pigmy App Fixes)
 
 ### 🏦 1. पगारदार / कर्मचारी पतसंस्था डिमांड मॉड्यूल व एकमेव डिमांड सेटिंग्ज

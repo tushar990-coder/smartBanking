@@ -185,6 +185,14 @@ namespace Bhisi.Api.Data
         public DbSet<CashierBalance> CashierBalances { get; set; }
         public DbSet<CashManagementSetting> CashManagementSettings { get; set; }
 
+        // Gold Custody & Bank/Patsanstha Borrowing Module DbSets
+        public DbSet<SansthaExternalLocker> SansthaExternalLockers { get; set; }
+        public DbSet<GoldLoanCustody> GoldLoanCustodies { get; set; }
+        public DbSet<GoldCustodyMovementLog> GoldCustodyMovementLogs { get; set; }
+        public DbSet<SansthaBorrowing> SansthaBorrowings { get; set; }
+        public DbSet<SansthaBorrowingGoldPledge> SansthaBorrowingGoldPledges { get; set; }
+        public DbSet<SansthaBorrowingRepayment> SansthaBorrowingRepayments { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<AccountGroup>(entity =>
@@ -497,6 +505,24 @@ namespace Bhisi.Api.Data
             {
                 entity.HasIndex(a => a.DemandRecoveryId);
                 entity.HasIndex(a => a.DemandMemberColumnItemId);
+            });
+
+            modelBuilder.Entity<GoldLoanCustody>(entity =>
+            {
+                entity.HasIndex(c => c.LoanAccountID).IsUnique();
+                entity.Property(c => c.TotalGrossWeight).HasPrecision(18, 3);
+                entity.Property(c => c.TotalNetWeight).HasPrecision(18, 3);
+            });
+
+            modelBuilder.Entity<SansthaBorrowing>(entity =>
+            {
+                entity.HasIndex(b => b.BorrowingNo).IsUnique();
+            });
+
+            modelBuilder.Entity<SansthaBorrowingGoldPledge>(entity =>
+            {
+                entity.HasIndex(p => new { p.BorrowingID, p.PledgeStatus });
+                entity.HasIndex(p => new { p.LoanAccountID, p.PledgeStatus });
             });
 
             // Disable cascade deletes globally to prevent SQL Server multiple cascade paths error

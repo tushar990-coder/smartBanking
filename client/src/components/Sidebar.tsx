@@ -27,6 +27,7 @@ import {
   UserCog,
   LogOut
 } from 'lucide-react';
+import { hasPermission } from '../utils/permissionUtils';
 
 interface SidebarProps {
   isSidebarOpen: boolean;
@@ -48,7 +49,7 @@ export default function Sidebar({
   
   // Helpers to detect active state
   const isSharesActive = activeTab === 'members' || activeTab === 'share-master' || activeTab === 'share-transfer' || activeTab === 'member-closure' || activeTab === 'share-withdrawal';
-  const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-documents' || activeTab === 'employee-bank' || activeTab === 'employer-master';
+  const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-documents' || activeTab === 'bank-borrowing' || activeTab === 'employee-bank' || activeTab === 'employer-master';
   const isDemandActive = activeTab === 'demand-notice' || activeTab === 'demand-recovery' || activeTab === 'demand-settings';
   const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing';
   const isFdActive = activeTab === 'fd' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-mis-payout' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate';
@@ -312,7 +313,11 @@ export default function Sidebar({
             </li>
             <li className={getSubItemClass(activeTab === 'loan-documents')} onClick={() => handleNavigate('loan-documents')}>
               {renderSubDot(activeTab === 'loan-documents')}
-              <span className="truncate">कर्ज कागदपत्रे</span>
+              <span className="truncate">तारण दस्त व दागिने ट्रॅकिंग</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'bank-borrowing')} onClick={() => handleNavigate('bank-borrowing')}>
+              {renderSubDot(activeTab === 'bank-borrowing')}
+              <span className="truncate">बाह्य कर्जे / पुनर्गहाण</span>
             </li>
             <li className={getSubItemClass(activeTab === 'employer-master')} onClick={() => handleNavigate('employer-master')}>
               {renderSubDot(activeTab === 'employer-master')}
@@ -348,10 +353,12 @@ export default function Sidebar({
               {renderSubDot(activeTab === 'demand-recovery')}
               <span className="truncate">बल्क पगार वसुली</span>
             </li>
-            <li className={getSubItemClass(activeTab === 'demand-settings')} onClick={() => handleNavigate('demand-settings')}>
-              {renderSubDot(activeTab === 'demand-settings')}
-              <span className="truncate">डिमांड सेटिंग्ज (Sequence)</span>
-            </li>
+            {hasPermission(user?.role, 'Settings', 'View') && (
+              <li className={getSubItemClass(activeTab === 'demand-settings')} onClick={() => handleNavigate('demand-settings')}>
+                {renderSubDot(activeTab === 'demand-settings')}
+                <span className="truncate">डिमांड सेटिंग्ज (Sequence)</span>
+              </li>
+            )}
           </ul>
         )}
 
@@ -837,14 +844,16 @@ export default function Sidebar({
           <div className="border-t border-slate-200/80 my-1" />
         )}
 
-        <button 
-          onClick={() => handleNavigate('settings')}
-          title="सिस्टीम सेटिंग्ज"
-          className={getItemClass(activeTab === 'settings' || activeTab === 'member-opening')}
-        >
-          <Settings size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${(activeTab === 'settings' || activeTab === 'member-opening') ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
-          {isSidebarOpen && <span className="truncate">सिस्टीम सेटिंग्ज</span>}
-        </button>
+        {hasPermission(user?.role, 'Settings', 'View') && (
+          <button 
+            onClick={() => handleNavigate('settings')}
+            title="सिस्टीम सेटिंग्ज"
+            className={getItemClass(activeTab === 'settings' || activeTab === 'member-opening')}
+          >
+            <Settings size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${(activeTab === 'settings' || activeTab === 'member-opening') ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            {isSidebarOpen && <span className="truncate">सिस्टीम सेटिंग्ज</span>}
+          </button>
+        )}
 
         {(user.role === 'Admin' || user.role === 'HO_Manager' || user.role === 'HO Manager') && (
           <button 

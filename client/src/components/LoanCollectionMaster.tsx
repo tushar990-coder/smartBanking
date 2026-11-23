@@ -245,6 +245,43 @@ interface LienReleasePrompt {
     collectionId?: number;
 }
 
+interface GoldCustodyClosurePrompt {
+    loanAccountId: number;
+    loanAccountNo: string;
+    packetNumber?: string;
+    custodyStatus?: string;
+    locationDisplay?: string;
+    isRepledged?: boolean;
+    repledgedLenderName?: string | null;
+    repledgedBorrowingNo?: string | null;
+}
+
+const isGoldLoanAccountObj = (acc: any): boolean => {
+    if (!acc) return false;
+    const cat = String(acc.loanRate?.collateralCategory || '').toLowerCase();
+    if (cat === 'gold') return true;
+    const text = [
+        acc.loanRate?.loanType,
+        acc.loanRate?.shortName,
+        acc.loanRate?.securityType,
+        acc.loanType,
+        acc.securityDetails
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+    return (
+        text.includes('gold') ||
+        text.includes('सोने') ||
+        text.includes('सोन्या') ||
+        text.includes('सुवर्ण') ||
+        text.includes('दागिन') ||
+        text.includes('अलंकार') ||
+        text.includes('ornament') ||
+        text.includes('jewel')
+    );
+};
+
 const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate }) => {
     const { user } = useAuth();
     const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
@@ -289,6 +326,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     // Lien release on loan closure prompt state
     const [lienPromptData, setLienPromptData] = useState<LienReleasePrompt | null>(null);
     const [releasingLien, setReleasingLien] = useState(false);
+    const [goldCustodyPromptData, setGoldCustodyPromptData] = useState<GoldCustodyClosurePrompt | null>(null);
+    const [activeGoldCustody, setActiveGoldCustody] = useState<any | null>(null);
 
     // View All Receipts Modal State
     const [showReceiptsModal, setShowReceiptsModal] = useState(false);
@@ -345,6 +384,28 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [isSaving, setIsSaving] = useState(false);
     const [accountDetails, setAccountDetails] = useState<AccountDetailsAndSchedule | null>(null);
     const [npaStatus, setNpaStatus] = useState<{ category: string, overdueDays: number, categoryMarathi: string } | null>(null);
+
+    useEffect(() => {
+        const accId = selectedAccount?.loanAccountID;
+        if (!accId || !isGoldLoanAccountObj(selectedAccount)) {
+            setActiveGoldCustody(null);
+            return;
+        }
+        let cancelled = false;
+        axios
+            .get(`/api/GoldCustody/by-loan/${accId}`)
+            .then(res => {
+                if (!cancelled && res.data?.isGoldLoan) {
+                    setActiveGoldCustody(res.data);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) setActiveGoldCustody(null);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedAccount?.loanAccountID]);
     const [todayTotalCash, setTodayTotalCash] = useState(0);
     const [todayTotalBank, setTodayTotalBank] = useState(0);
     const [sanstha, setSanstha] = useState<any>(() => {
@@ -1995,15 +2056,42 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 } : a));
             }
 
-            // Check if loan was fully settled and has active collaterals
-            if (res.data?.isLoanFullySettled && res.data?.activeCollaterals && res.data.activeCollaterals.length > 0) {
+            // Check if loan was fully settled and has active collaterals or gold custody handover pending
+            const hasLienPrompt = Boolean(
+                res.data?.isLoanFullySettled &&
+                res.data?.activeCollaterals &&
+                res.data.activeCollaterals.length > 0
+            );
+            const hasGoldCustodyPrompt = Boolean(
+                res.data?.isLoanFullySettled &&
+                res.data?.goldCustodySummary?.isGoldLoan &&
+                !res.data.goldCustodySummary.isAlreadyReleased
+            );
+
+            if (hasLienPrompt) {
                 setLienPromptData({
                     loanAccountId: res.data.loanAccountID || res.data.LoanAccountID || selectedAccount?.loanAccountID,
                     loanAccountNo: res.data.settledLoanAccountNo || selectedAccount?.loanAccountNo || '',
                     activeCollaterals: res.data.activeCollaterals,
                     collectionId: savedCollectionId
                 });
-            } else {
+            }
+
+            if (hasGoldCustodyPrompt) {
+                const gSummary = res.data.goldCustodySummary;
+                setGoldCustodyPromptData({
+                    loanAccountId: Number(res.data.loanAccountID || res.data.LoanAccountID || selectedAccount?.loanAccountID || 0),
+                    loanAccountNo: res.data.settledLoanAccountNo || selectedAccount?.loanAccountNo || '',
+                    packetNumber: gSummary.packetNumber,
+                    custodyStatus: gSummary.custodyStatus,
+                    locationDisplay: gSummary.locationDisplay,
+                    isRepledged: Boolean(gSummary.isRepledged),
+                    repledgedLenderName: gSummary.repledgedLenderName,
+                    repledgedBorrowingNo: gSummary.repledgedBorrowingNo
+                });
+            }
+
+            if (!hasLienPrompt && !hasGoldCustodyPrompt) {
                 alert('पावती यशस्वीरित्या जतन झाली!');
             }
 
@@ -3805,6 +3893,38 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             </span>
                                         )}
                                     </div>
+
+                                    {activeGoldCustody && (
+                                        <div
+                                            className={`mt-1.5 px-2 py-1.5 rounded-sm border text-[10.5px] flex flex-wrap items-center justify-between gap-1.5 ${
+                                                activeGoldCustody.custodyStatus === 'REPLEDGED_BORROWING'
+                                                    ? 'bg-rose-50 border-rose-300 text-rose-900'
+                                                    : activeGoldCustody.custodyStatus === 'RELEASED_TO_CUSTOMER'
+                                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                                      : 'bg-amber-50 border-amber-300 text-amber-950'
+                                            }`}
+                                        >
+                                            <div>
+                                                <span className="font-bold">🏅 दागिने कस्टडी:</span>{' '}
+                                                <b>{activeGoldCustody.locationSummary || 'शाखा तिजोरी'}</b>
+                                                {activeGoldCustody.custody?.packetNumber && (
+                                                    <span className="ml-1 font-mono font-bold">
+                                                        (पाकीट: {activeGoldCustody.custody.packetNumber})
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    sessionStorage.setItem('cbs_target_collateral_loan_id', String(selectedAccount.loanAccountID));
+                                                    if (onNavigate) onNavigate('loan-documents', { loanAccountId: selectedAccount.loanAccountID });
+                                                }}
+                                                className="px-1.5 py-0.5 rounded bg-white border border-amber-400 text-amber-900 font-bold text-[9.5px] hover:bg-amber-100 cursor-pointer"
+                                            >
+                                                ट्रॅकिंग पहा
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* 2. Four Key KPI Tiles (2x2 Grid) in Soft Pastel Shades */}
@@ -4840,6 +4960,138 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </>
                                 )}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 🏅 Gold Loan Closure — Ornament Location & Handover / Re-pledge Guard Modal */}
+            {goldCustodyPromptData && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-2xs">
+                    <div
+                        className={`bg-white rounded-md shadow-2xl w-full max-w-lg overflow-hidden border border-t-4 animate-in fade-in zoom-in-95 duration-150 ${
+                            goldCustodyPromptData.isRepledged
+                                ? 'border-rose-300 border-t-rose-600'
+                                : 'border-amber-300 border-t-amber-600'
+                        }`}
+                    >
+                        <div
+                            className={`px-4 py-3 border-b flex items-center justify-between gap-2 ${
+                                goldCustodyPromptData.isRepledged
+                                    ? 'bg-rose-50 border-rose-200'
+                                    : 'bg-amber-50 border-amber-200'
+                            }`}
+                        >
+                            <div className="flex items-center gap-2">
+                                <Coins
+                                    className={`w-5 h-5 ${
+                                        goldCustodyPromptData.isRepledged ? 'text-rose-600' : 'text-amber-600'
+                                    }`}
+                                />
+                                <div>
+                                    <h3
+                                        className={`text-sm font-bold ${
+                                            goldCustodyPromptData.isRepledged ? 'text-rose-950' : 'text-amber-950'
+                                        }`}
+                                    >
+                                        {goldCustodyPromptData.isRepledged
+                                            ? '⚠️ बाह्य कर्जात पुनर्गहाण दागिने — तात्काळ परत देता येणार नाहीत!'
+                                            : '🏅 सोने तारण कर्ज पूर्ण वसूल — दागिने कस्टडी ठिकाण व सुपूर्दगी'}
+                                    </h3>
+                                    <p className="text-[11px] text-slate-700 font-mono">
+                                        कर्ज खाते क्र.: <b>{goldCustodyPromptData.loanAccountNo}</b>
+                                        {goldCustodyPromptData.packetNumber && (
+                                            <> | पाकीट क्र.: <b>{goldCustodyPromptData.packetNumber}</b></>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setGoldCustodyPromptData(null)}
+                                className="text-slate-500 hover:text-slate-900 font-bold text-sm px-1.5 cursor-pointer"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="p-4 space-y-3 text-xs">
+                            <div className="bg-emerald-50 border border-emerald-200 rounded p-2.5 text-emerald-950 font-semibold">
+                                🎉 सदर सोने तारण कर्ज खात्याची सर्व येणे मुद्दल व व्याज वसुली पूर्ण झाली आहे!
+                            </div>
+
+                            {goldCustodyPromptData.isRepledged ? (
+                                <div className="bg-rose-50 border border-rose-300 rounded p-3 text-rose-950 space-y-1.5 leading-relaxed">
+                                    <div className="font-bold text-rose-900">
+                                        🛑 महत्त्वाची सूचना (Re-Pledged Gold Hard Guard):
+                                    </div>
+                                    <p>
+                                        या खात्याचे सोन्याचे दागिने सध्या{' '}
+                                        <b className="underline">
+                                            {goldCustodyPromptData.repledgedLenderName || 'बाह्य बँक / पतसंस्था'}
+                                        </b>{' '}
+                                        कडे बाह्य कर्ज क्र.{' '}
+                                        <b className="font-mono">
+                                            {goldCustodyPromptData.repledgedBorrowingNo || '-'}
+                                        </b>{' '}
+                                        अंतर्गत पुनर्गहाण (Re-pledged) ठेवलेले आहेत.
+                                    </p>
+                                    <p className="text-[11px] text-rose-800">
+                                        ग्राहकाला दागिने परत देण्यापूर्वी आधी बाह्य कर्जाची परतफेड करा किंवा दागिन्यांचे पाकीट पुनर्गहाणातून मोकळे (Unpledge) करा.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="bg-amber-50 border border-amber-300 rounded p-3 text-amber-950 space-y-1.5">
+                                    <div className="text-[11px] font-bold uppercase text-amber-800">
+                                        📍 दागिने येथून काढा (Current Custody Location):
+                                    </div>
+                                    <div className="text-sm font-black text-slate-900">
+                                        {goldCustodyPromptData.locationDisplay || 'शाखा तिजोरी (Branch Safe)'}
+                                    </div>
+                                    <p className="text-[11px] text-amber-900">
+                                        वरील ठिकाणाहून दागिन्यांचे पाकीट काढून खातेदारास सुपूर्द करा व पोचपावती (Release Receipt) प्रिंट करा.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setGoldCustodyPromptData(null)}
+                                className="px-3 py-1.5 rounded bg-white border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 cursor-pointer"
+                            >
+                                नंतर करा
+                            </button>
+                            {goldCustodyPromptData.isRepledged ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setGoldCustodyPromptData(null);
+                                        if (onNavigate) onNavigate('bank-borrowing');
+                                        else window.location.href = '/?tab=bank-borrowing';
+                                    }}
+                                    className="px-4 py-1.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <Landmark size={14} />
+                                    <span>बाह्य कर्ज परतफेड / दागिने मोकळे करा →</span>
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const targetLoanId = goldCustodyPromptData.loanAccountId;
+                                        sessionStorage.setItem('cbs_target_collateral_loan_id', String(targetLoanId));
+                                        setGoldCustodyPromptData(null);
+                                        if (onNavigate) onNavigate('loan-documents', { loanAccountId: targetLoanId });
+                                        else window.location.href = `/?tab=loan-documents&loanAccountId=${targetLoanId}`;
+                                    }}
+                                    className="px-4 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <CheckCircle size={14} />
+                                    <span>दागिने सुपूर्द करा व पोचपावती प्रिंट करा →</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

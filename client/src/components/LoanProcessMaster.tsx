@@ -20,6 +20,11 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
     const [editingDisbursement, setEditingDisbursement] = useState<any>(null);
     const [applicationKey, setApplicationKey] = useState<number>(0);
     const [hasVisitedDisbursementTab, setHasVisitedDisbursementTab] = useState<boolean>(() => activeTab === 2);
+    const [lastGoldDisbursement, setLastGoldDisbursement] = useState<{
+        loanAccountID: number;
+        loanAccountNo: string;
+        goldPacketNumber?: string;
+    } | null>(null);
 
     const queryParams = new URLSearchParams(window.location.search);
     const voucherIdParam = queryParams.get('voucherId');
@@ -71,7 +76,21 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
         setActiveTab(1);
     };
 
-    const handleDisbursementSaved = () => {
+    const handleDisbursementSaved = (savedInfo?: {
+        loanAccountID?: number;
+        loanAccountNo?: string;
+        isGoldLoan?: boolean;
+        goldPacketNumber?: string;
+    }) => {
+        if (savedInfo?.isGoldLoan && savedInfo?.loanAccountID) {
+            setLastGoldDisbursement({
+                loanAccountID: savedInfo.loanAccountID,
+                loanAccountNo: savedInfo.loanAccountNo || '',
+                goldPacketNumber: savedInfo.goldPacketNumber
+            });
+        } else {
+            setLastGoldDisbursement(null);
+        }
         setDraftApplication(null);
         setEditingDisbursement(null);
         setApplicationKey(prev => prev + 1);
@@ -115,6 +134,40 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
                     )}
                 </button>
             </div>
+
+            {lastGoldDisbursement && (
+                <div className="mx-3 mt-2 bg-amber-50 border border-amber-300 border-l-4 border-l-amber-600 px-3 py-2 rounded-sm shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="text-amber-950">
+                        <span className="font-bold">🏅 सोने तारण दागिने कस्टडी:</span>{' '}
+                        कर्ज खाते क्र. <b className="font-mono">{lastGoldDisbursement.loanAccountNo}</b> (पाकीट क्र.{' '}
+                        <b className="font-mono">{lastGoldDisbursement.goldPacketNumber || 'PKT'}</b>) चे दागिने शाखेच्या तिजोरीत प्राथमिकरीत्या नोंदवले आहेत. लॉकर किंवा बँक लॉकर निवडण्यासाठी खालील बटण दाबा:
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const targetId = lastGoldDisbursement.loanAccountID;
+                                sessionStorage.setItem('cbs_target_collateral_loan_id', String(targetId));
+                                setLastGoldDisbursement(null);
+                                if (onNavigate) onNavigate('loan-documents', { loanAccountId: targetId });
+                                else window.location.href = `/?tab=loan-documents&loanAccountId=${targetId}`;
+                            }}
+                            className="px-3 py-1.5 rounded-sm bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-2xs flex items-center gap-1 cursor-pointer"
+                        >
+                            <span>🏅 दागिन्यांचे पाकीट व लॉकर ठिकाण नोंदवा</span>
+                            <ChevronRight size={14} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setLastGoldDisbursement(null)}
+                            className="text-amber-800 hover:text-amber-950 font-bold px-1.5 cursor-pointer"
+                            title="बंद करा"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            )}
             
             <div className="flex-1 overflow-y-auto relative">
                 <div className={`${activeTab === 1 ? 'block' : 'hidden'}`}>

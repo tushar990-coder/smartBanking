@@ -185,12 +185,21 @@ export default function LoanDashboard({ onNavigate }: LoanDashboardProps) {
     },
     {
       id: 'loan-docs',
-      titleMr: 'कागदपत्रे अपलोड',
-      titleEn: 'DOCUMENTS',
+      titleMr: 'तारण व दागिने ट्रॅकिंग',
+      titleEn: 'COLLATERAL & CUSTODY',
       icon: Layers,
       tab: 'loan-documents',
       params: {},
       gradient: themeCfg.gradients[4]
+    },
+    {
+      id: 'bank-borrowing',
+      titleMr: 'बाह्य कर्जे / पुनर्गहाण',
+      titleEn: 'BANK BORROWINGS',
+      icon: Landmark,
+      tab: 'bank-borrowing',
+      params: {},
+      gradient: themeCfg.gradients[6]
     },
     {
       id: 'loan-reports',
@@ -260,7 +269,7 @@ export default function LoanDashboard({ onNavigate }: LoanDashboardProps) {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 sm:gap-5 justify-items-center pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 justify-items-center pt-2">
               {loanActionButtons.map((btn) => {
                 const IconComponent = btn.icon;
                 return (

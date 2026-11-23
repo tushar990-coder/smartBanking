@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import SansthaMaster from './SansthaMaster';
 import FinancialYearMaster from './FinancialYearMaster';
 import VoucherMappingMaster from './VoucherMappingMaster';
@@ -38,13 +38,19 @@ import BranchLedgerOpeningMaster from './BranchLedgerOpeningMaster';
 import DeadstockOpeningBalance from './DeadstockOpeningBalance';
 import AssetCategoryMaster from './AssetCategoryMaster';
 import DemandSettingsMaster from './DemandSettingsMaster';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission } from '../utils/permissionUtils';
 
 interface SettingsDashboardProps {
   defaultCategory?: string;
   defaultSub?: string;
+  onNavigate?: (tab: string) => void;
 }
 
-const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, defaultSub }) => {
+const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, defaultSub, onNavigate }) => {
+  const { user } = useAuth();
+  const canViewSettings = hasPermission(user?.role, 'Settings', 'View');
+
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return defaultCategory || params.get('category') || 'general';
@@ -53,6 +59,11 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
     const params = new URLSearchParams(window.location.search);
     return defaultSub || params.get('sub') || 'sanstha';
   });
+
+  useEffect(() => {
+    if (defaultCategory) setActiveTab(defaultCategory);
+    if (defaultSub) setActiveSubTab(defaultSub);
+  }, [defaultCategory, defaultSub]);
 
   // Streamlined 5 Core Categories
   const tabs = [
@@ -150,7 +161,13 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       case 'asset-scheme': return <AssetCategoryMaster />;
       case 'saving-setting': return <SavingInterestSettingMaster />;
       case 'loan-rate': return <LoanRateMaster />;
-      case 'demand-settings': return <DemandSettingsMaster />;
+      case 'demand-settings': return canViewSettings ? (
+        <DemandSettingsMaster onNavigate={onNavigate} />
+      ) : (
+        <div className="p-4 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded">
+          डिमांड सेटिंग्ज पाहण्याची परवानगी नाही.
+        </div>
+      );
       case 'security-type': return <SecurityTypeMaster />;
       case 'branch-ledger-ob': return <BranchLedgerOpeningMaster />;
       case 'customer-ob':
@@ -213,7 +230,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
           <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 py-1 border-b border-gray-100 mb-1">
             सेटिंग्ज प्रकार (Category)
           </div>
-          {subTabs[activeTab]?.map(subTab => (
+          {subTabs[activeTab]?.filter(subTab => subTab.id !== 'demand-settings' || canViewSettings).map(subTab => (
             <button
               key={subTab.id}
               onClick={() => setActiveSubTab(subTab.id)}

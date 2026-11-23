@@ -403,6 +403,11 @@ namespace Bhisi.Api.Services
                 await RollbackInvestmentModuleAsync(voucherIds, voucherNos);
 
                 // =========================================================================
+                // MODULE 8F: SANSTHA EXTERNAL BORROWINGS & GOLD REPLEDGES
+                // =========================================================================
+                await RollbackBorrowingModuleAsync(voucherIds);
+
+                // =========================================================================
                 // MODULE 9: LOCKER (Surrender, Allotment, Rent Posting)
                 // =========================================================================
                 await RollbackLockerModuleAsync(voucherIds);
@@ -2904,6 +2909,158 @@ namespace Bhisi.Api.Services
                 _context.InvestmentAccounts.Remove(invAcc);
                 await _context.SaveChangesAsync();
                 await SyncBranchInvestmentSequenceAsync(invBranchId);
+            }
+        }
+
+        // =====================================================================
+        // MODULE 8F: SANSTHA EXTERNAL BORROWINGS & GOLD REPLEDGES
+        // =====================================================================
+
+        private async Task RollbackBorrowingModuleAsync(HashSet<int> voucherIds)
+        {
+            // 1. Rollback Borrowing Repayments (PAY-BRW-*)
+            var repayments = await _context.SansthaBorrowingRepayments
+                .Where(r => r.VoucherID.HasValue && voucherIds.Contains(r.VoucherID.Value))
+                .OrderByDescending(r => r.BorrowingRepaymentID)
+                .ToListAsync();
+
+            foreach (var rep in repayments)
+            {
+                var borrowing = await _context.SansthaBorrowings.FindAsync(rep.BorrowingID);
+                if (borrowing != null)
+                {
+                    var releasedPledges = await _context.SansthaBorrowingGoldPledges
+                        .Include(p => p.GoldCustody)
+                        .Where(p => p.BorrowingID == borrowing.BorrowingID && p.ReleasedOnRepaymentID == rep.BorrowingRepaymentID)
+                        .ToListAsync();
+
+                    foreach (var pl in releasedPledges)
+                    {
+                        if (pl.GoldCustody != null &&
+                            string.Equals(pl.GoldCustody.CustodyStatus, "RELEASED_TO_CUSTOMER", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new VoucherRollbackDomainException(
+                                StatusCodes.Status409Conflict,
+                                $"बाह्य कर्ज परतफेड रद्द करता येत नाही कारण सोने पाकीट '{pl.GoldCustody.PacketNumber}' आधीच खातेदारास सुपूर्द केले गेले आहे.");
+                        }
+
+                        pl.PledgeStatus = "Pledged";
+                        pl.ReleasedDate = null;
+                        pl.ReleasedOnRepaymentID = null;
+                        pl.ReleaseRemarks = null;
+
+                        if (pl.GoldCustody != null)
+                        {
+                            string prevLoc = Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(pl.GoldCustody);
+                            pl.GoldCustody.CustodyStatus = "REPLEDGED_BORROWING";
+                            pl.GoldCustody.ActiveBorrowingID = borrowing.BorrowingID;
+                            pl.GoldCustody.OwnLockerID = null;
+                            pl.GoldCustody.ExternalLockerID = null;
+                            pl.GoldCustody.VaultRackOrTrayNo = null;
+                            pl.GoldCustody.UpdatedAt = DateTime.UtcNow;
+
+                            _context.GoldCustodyMovementLogs.Add(new GoldCustodyMovementLog
+                            {
+                                GoldCustodyID = pl.GoldCustody.GoldCustodyID,
+                                LoanAccountID = pl.GoldCustody.LoanAccountID,
+                                FromStatus = pl.PreviousCustodyStatus,
+                                ToStatus = "REPLEDGED_BORROWING",
+                                FromLocationSummary = prevLoc,
+                                ToLocationSummary = Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(pl.GoldCustody, null, null, borrowing),
+                                ReferenceBorrowingID = borrowing.BorrowingID,
+                                MovementDate = DateTime.Today,
+                                MovedByUserID = 1,
+                                Remarks = "बाह्य कर्ज परतफेड व्हाउचर डिलीट/रिजेक्ट रोल्बॅक"
+                            });
+                        }
+                    }
+
+                    borrowing.OutstandingPrincipal = Math.Round(borrowing.OutstandingPrincipal + rep.PrincipalPaid, 2, MidpointRounding.AwayFromZero);
+                    borrowing.TotalInterestPaid = Math.Max(0m, Math.Round(borrowing.TotalInterestPaid - (rep.InterestPaid + rep.PenalOrChargesPaid), 2, MidpointRounding.AwayFromZero));
+                    borrowing.Status = "Active";
+                    borrowing.ClosedDate = null;
+                    borrowing.UpdatedAt = DateTime.UtcNow;
+                }
+
+                _context.SansthaBorrowingRepayments.Remove(rep);
+                await _context.SaveChangesAsync();
+            }
+
+            // 2. Rollback Borrowing Drawdown / Opening (REC-BRW-*)
+            var borrowings = await _context.SansthaBorrowings
+                .Where(b => b.DisbursementVoucherID.HasValue && voucherIds.Contains(b.DisbursementVoucherID.Value))
+                .ToListAsync();
+
+            foreach (var brw in borrowings)
+            {
+                bool hasRemainingRepayments = await _context.SansthaBorrowingRepayments
+                    .AnyAsync(r => r.BorrowingID == brw.BorrowingID);
+
+                if (hasRemainingRepayments)
+                {
+                    throw new VoucherRollbackDomainException(
+                        StatusCodes.Status400BadRequest,
+                        $"बाह्य कर्ज क्र. '{brw.BorrowingNo}' वर परतफेड व्यवहार अस्तित्वात असल्याने मूळ कर्ज प्राप्ती व्हाउचर डिलीट करता येत नाही.");
+                }
+
+                var pledges = await _context.SansthaBorrowingGoldPledges
+                    .Include(p => p.GoldCustody)
+                    .Where(p => p.BorrowingID == brw.BorrowingID)
+                    .ToListAsync();
+
+                foreach (var pl in pledges)
+                {
+                    var cust = pl.GoldCustody;
+                    if (string.Equals(pl.PledgeStatus, "Released", StringComparison.OrdinalIgnoreCase) ||
+                        (cust != null && string.Equals(cust.CustodyStatus, "RELEASED_TO_CUSTOMER", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        throw new VoucherRollbackDomainException(
+                            StatusCodes.Status409Conflict,
+                            $"बाह्य कर्ज क्र. '{brw.BorrowingNo}' डिलीट करता येत नाही कारण पुनर्गहाण पाकीट '{cust?.PacketNumber ?? pl.LoanAccountID.ToString()}' वर पुढील सुटका / खातेदारास सुपूर्दगी व्यवहार झालेला आहे.");
+                    }
+
+                    if (cust != null && string.Equals(cust.CustodyStatus, "REPLEDGED_BORROWING", StringComparison.OrdinalIgnoreCase) && cust.ActiveBorrowingID == brw.BorrowingID)
+                    {
+                        string fromLoc = Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(cust, null, null, brw);
+                        cust.CustodyStatus = string.IsNullOrWhiteSpace(pl.PreviousCustodyStatus) ? "BRANCH_SAFE" : pl.PreviousCustodyStatus;
+                        cust.ActiveBorrowingID = null;
+                        cust.OwnLockerID = cust.CustodyStatus == "OWN_LOCKER" ? pl.PreviousOwnLockerID : null;
+                        cust.ExternalLockerID = cust.CustodyStatus == "EXTERNAL_LOCKER" ? pl.PreviousExternalLockerID : null;
+                        cust.VaultRackOrTrayNo = cust.CustodyStatus == "BRANCH_SAFE" ? (pl.PreviousVaultRackNo ?? "मुख्य तिजोरी") : null;
+                        cust.UpdatedAt = DateTime.UtcNow;
+
+                        _context.GoldCustodyMovementLogs.Add(new GoldCustodyMovementLog
+                        {
+                            GoldCustodyID = cust.GoldCustodyID,
+                            LoanAccountID = cust.LoanAccountID,
+                            FromStatus = "REPLEDGED_BORROWING",
+                            ToStatus = cust.CustodyStatus,
+                            FromLocationSummary = fromLoc,
+                            ToLocationSummary = Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(cust),
+                            ReferenceBorrowingID = null,
+                            MovementDate = DateTime.Today,
+                            MovedByUserID = 1,
+                            Remarks = $"बाह्य कर्ज '{brw.BorrowingNo}' व्हाउचर रद्द/डिलीट केल्यामुळे मूळ लॉकर/तिजोरीत परत"
+                        });
+                    }
+                }
+
+                var linkedMoveLogs = await _context.GoldCustodyMovementLogs
+                    .Where(m => m.ReferenceBorrowingID == brw.BorrowingID)
+                    .ToListAsync();
+                foreach (var mLog in linkedMoveLogs)
+                {
+                    mLog.ReferenceBorrowingID = null;
+                }
+
+                if (pledges.Any())
+                {
+                    _context.SansthaBorrowingGoldPledges.RemoveRange(pledges);
+                }
+
+                await _context.SaveChangesAsync();
+                _context.SansthaBorrowings.Remove(brw);
+                await _context.SaveChangesAsync();
             }
         }
 

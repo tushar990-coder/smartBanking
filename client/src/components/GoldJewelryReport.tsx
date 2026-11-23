@@ -54,6 +54,10 @@ export interface GoldJewelryItem {
   sanctionedAmount: number;
   principalBalance: number;
   loanDisbursementDate?: string;
+  packetNumber?: string | null;
+  custodyStatus?: string | null;
+  custodyLocationDisplay?: string | null;
+  isRepledged?: boolean;
 }
 
 export interface GoldJewelryReportResponse {
@@ -138,6 +142,7 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
   const [selectedLoanId, setSelectedLoanId] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('Active');
   const [detailFilter, setDetailFilter] = useState<'all' | 'recorded' | 'pending'>('all');
+  const [custodyFilter, setCustodyFilter] = useState<string>('all');
   const [asOfDate, setAsOfDate] = useState<string>(() => getSmartInitialAsOfDate(user?.businessDate));
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [digitMode, setDigitMode] = useState<'marathi' | 'english'>('marathi');
@@ -251,6 +256,17 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
     }
   };
 
+  const handleNavigateToCustody = (item: GoldJewelryItem) => {
+    if (item.loanAccountID > 0) {
+      sessionStorage.setItem('cbs_target_collateral_loan_id', String(item.loanAccountID));
+      if (onNavigate) {
+        onNavigate('loan-documents', { loanAccountId: item.loanAccountID });
+      } else {
+        window.location.href = `/?tab=loan-documents&loanAccountId=${item.loanAccountID}`;
+      }
+    }
+  };
+
   const handleOpenReceipt = (targetItem: GoldJewelryItem) => {
     const accItems = (reportData?.items || []).filter(
       i =>
@@ -316,6 +332,10 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
     return (reportData?.items || []).filter(item => {
       if (detailFilter === 'recorded' && item.isCollateralDetailPending) return false;
       if (detailFilter === 'pending' && !item.isCollateralDetailPending) return false;
+      if (custodyFilter !== 'all') {
+        const effCustody = item.custodyStatus || 'BRANCH_SAFE';
+        if (effCustody !== custodyFilter) return false;
+      }
 
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase().trim();
@@ -326,12 +346,14 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
         (item.ornamentName || '').toLowerCase().includes(term) ||
         (item.cifNo || '').toLowerCase().includes(term) ||
         (item.memberCode || '').toLowerCase().includes(term) ||
+        (item.packetNumber && item.packetNumber.toLowerCase().includes(term)) ||
+        (item.custodyLocationDisplay && item.custodyLocationDisplay.toLowerCase().includes(term)) ||
         (item.valuerName && item.valuerName.toLowerCase().includes(term)) ||
         (item.valuationReceiptNo && item.valuationReceiptNo.toLowerCase().includes(term)) ||
         (item.customerMobile && item.customerMobile.includes(term))
       );
     });
-  }, [reportData?.items, detailFilter, searchTerm]);
+  }, [reportData?.items, detailFilter, custodyFilter, searchTerm]);
 
   // Compute deduplicated account metrics & ornament totals across filteredItems
   const metrics = useMemo(() => {
@@ -420,6 +442,8 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
         'सोनाराचे नाव': item.valuerName || '',
         'व्हॅल्युएशन पावती क्र': item.valuationReceiptNo || '',
         'मूल्यांकन दिनांक': item.valuationDate ? formatDisplayDate(item.valuationDate) : '',
+        'पाकीट क्र.': item.packetNumber || '',
+        'दागिने कस्टडी ठिकाण': item.custodyLocationDisplay || '',
         'शेरा': item.remarks || '',
         'कर्ज स्थिती':
           item.loanStatus === 'Active'
@@ -452,6 +476,8 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
       'सोनाराचे नाव': '',
       'व्हॅल्युएशन पावती क्र': '',
       'मूल्यांकन दिनांक': '',
+      'पाकीट क्र.': '',
+      'दागिने कस्टडी ठिकाण': '',
       'शेरा': '',
       'कर्ज स्थिती': ''
     });
@@ -592,6 +618,23 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
           <option value="all">सर्व सोनेतारण</option>
           <option value="recorded">दागिने नोंदवलेली</option>
           <option value="pending">तपशील भरणे बाकी</option>
+        </select>
+      </div>
+
+      {/* Custody Location Filter */}
+      <div className="flex items-center gap-1">
+        <label className="text-[10.5px] font-semibold text-slate-600 whitespace-nowrap">कस्टडी:</label>
+        <select
+          value={custodyFilter}
+          onChange={e => setCustodyFilter(e.target.value)}
+          className="h-6 border border-slate-300 rounded px-1 text-[10.5px] bg-white text-slate-800 w-28 sm:w-32"
+        >
+          <option value="all">सर्व कस्टडी</option>
+          <option value="BRANCH_SAFE">शाखा तिजोरी</option>
+          <option value="OWN_LOCKER">संस्था लॉकर</option>
+          <option value="EXTERNAL_LOCKER">बाह्य बँक लॉकर</option>
+          <option value="REPLEDGED_BORROWING">पुनर्गहाण (Re-pledged)</option>
+          <option value="RELEASED_TO_CUSTOMER">खातेदारास सुपूर्द</option>
         </select>
       </div>
 
@@ -859,6 +902,22 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
                           )}
                         </div>
                       )}
+                      {isFirstForAccount && item.custodyLocationDisplay && (
+                        <div
+                          className={`mt-1 px-1.5 py-0.5 rounded text-[9px] font-semibold leading-snug border ${
+                            item.isRepledged
+                              ? 'bg-rose-50 text-rose-900 border-rose-300'
+                              : item.custodyStatus === 'RELEASED_TO_CUSTOMER'
+                                ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                                : 'bg-slate-100 text-slate-800 border-slate-300'
+                          }`}
+                        >
+                          <span>📍 {item.custodyLocationDisplay}</span>
+                          {item.packetNumber && (
+                            <span className="ml-1 font-mono font-bold">({d(item.packetNumber)})</span>
+                          )}
+                        </div>
+                      )}
                     </td>
 
                     {/* 6. Quantity */}
@@ -973,6 +1032,17 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
                               <span>पावती</span>
                             </button>
                           )
+                        )}
+
+                        {isFirstForAccount && item.loanAccountID > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleNavigateToCustody(item)}
+                            className="px-1.5 py-0.5 bg-sky-50 hover:bg-sky-100 text-sky-900 rounded text-[9.5px] font-bold border border-sky-300 cursor-pointer whitespace-nowrap"
+                            title="दागिन्यांचे लॉकर / कस्टडी ठिकाण पहा किंवा बदला"
+                          >
+                            कस्टडी
+                          </button>
                         )}
                       </div>
                     </td>

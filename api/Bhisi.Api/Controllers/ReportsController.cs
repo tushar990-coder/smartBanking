@@ -6849,6 +6849,12 @@ namespace Bhisi.Api.Controllers
             }
 
             var items = new List<GoldJewelryReportItemDto>();
+            var custodiesByAccount = await _context.GoldLoanCustodies
+                .AsNoTracking()
+                .Include(c => c.OwnLocker)
+                .Include(c => c.ExternalLocker)
+                .Include(c => c.ActiveBorrowing)
+                .ToDictionaryAsync(c => c.LoanAccountID);
 
             // 1. Add rows from GoldLoanDetails
             foreach (var g in rawGoldList)
@@ -6914,6 +6920,7 @@ namespace Bhisi.Api.Controllers
                 var lr = l?.LoanRate ?? app?.LoanRate;
                 var meta = ResolveBorrowerMeta(l, app);
 
+                custodiesByAccount.TryGetValue(resolvedAccId, out var custForRow);
                 items.Add(new GoldJewelryReportItemDto
                 {
                     GoldLoanDetailID = g.GoldLoanDetailID,
@@ -6953,7 +6960,13 @@ namespace Bhisi.Api.Controllers
                     LoanStatus = l?.Status ?? (l == null && app != null ? "Pending Disbursement" : "Active"),
                     SanctionedAmount = l?.SanctionedAmount ?? (app?.RequestedAmount ?? 0),
                     PrincipalBalance = l?.PrincipalBalance ?? (app?.RequestedAmount ?? 0),
-                    LoanDisbursementDate = l?.LoanDisbursementDate ?? l?.OpeningDate ?? app?.ApplicationDate
+                    LoanDisbursementDate = l?.LoanDisbursementDate ?? l?.OpeningDate ?? app?.ApplicationDate,
+                    PacketNumber = custForRow?.PacketNumber,
+                    CustodyStatus = custForRow?.CustodyStatus ?? (resolvedAccId > 0 ? "BRANCH_SAFE" : "PENDING_DISBURSEMENT"),
+                    CustodyLocationDisplay = resolvedAccId > 0
+                        ? Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(custForRow)
+                        : "वाटप बाकी",
+                    IsRepledged = string.Equals(custForRow?.CustodyStatus, "REPLEDGED_BORROWING", StringComparison.OrdinalIgnoreCase)
                 });
             }
 
@@ -6999,6 +7012,7 @@ namespace Bhisi.Api.Controllers
                 var meta = ResolveBorrowerMeta(l, null);
                 var lr = l.LoanRate;
 
+                custodiesByAccount.TryGetValue(l.LoanAccountID, out var custForPendingAcc);
                 items.Add(new GoldJewelryReportItemDto
                 {
                     GoldLoanDetailID = 0,
@@ -7039,7 +7053,11 @@ namespace Bhisi.Api.Controllers
                     LoanStatus = l.Status,
                     SanctionedAmount = l.SanctionedAmount,
                     PrincipalBalance = l.PrincipalBalance,
-                    LoanDisbursementDate = l.LoanDisbursementDate ?? l.OpeningDate
+                    LoanDisbursementDate = l.LoanDisbursementDate ?? l.OpeningDate,
+                    PacketNumber = custForPendingAcc?.PacketNumber,
+                    CustodyStatus = custForPendingAcc?.CustodyStatus ?? "BRANCH_SAFE",
+                    CustodyLocationDisplay = Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(custForPendingAcc),
+                    IsRepledged = string.Equals(custForPendingAcc?.CustodyStatus, "REPLEDGED_BORROWING", StringComparison.OrdinalIgnoreCase)
                 });
             }
 

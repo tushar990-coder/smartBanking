@@ -1235,6 +1235,58 @@ namespace Bhisi.Api.Controllers
                         })
                         .ToListAsync();
 
+                    object? goldCustodySummary = null;
+                    bool hasGoldRows = await _context.GoldLoanDetails
+                        .AsNoTracking()
+                        .AnyAsync(g => g.LoanAccountID == loanAccount.LoanAccountID ||
+                                       (loanAccount.LoanApplicationID.HasValue && g.LoanApplicationID == loanAccount.LoanApplicationID.Value));
+
+                    if (Helpers.GoldCustodyAndBorrowingHelper.IsGoldLoanAccount(loanAccFetched ?? loanAccount, loanRate, null, hasGoldRows))
+                    {
+                        var goldCustody = await _context.GoldLoanCustodies
+                            .AsNoTracking()
+                            .Include(c => c.OwnLocker)
+                            .Include(c => c.ExternalLocker)
+                            .Include(c => c.ActiveBorrowing)
+                            .FirstOrDefaultAsync(c => c.LoanAccountID == loanAccount.LoanAccountID);
+
+                        if (goldCustody == null)
+                        {
+                            await Helpers.GoldCustodyAndBorrowingHelper.EnsureOrSyncGoldCustodyAsync(
+                                _context,
+                                loanAccFetched ?? loanAccount,
+                                1,
+                                collection.CollectionDate);
+
+                            goldCustody = await _context.GoldLoanCustodies
+                                .AsNoTracking()
+                                .Include(c => c.OwnLocker)
+                                .Include(c => c.ExternalLocker)
+                                .Include(c => c.ActiveBorrowing)
+                                .FirstOrDefaultAsync(c => c.LoanAccountID == loanAccount.LoanAccountID);
+                        }
+
+                        if (goldCustody != null)
+                        {
+                            goldCustodySummary = new
+                            {
+                                isGoldLoan = true,
+                                goldCustody.GoldCustodyID,
+                                goldCustody.PacketNumber,
+                                goldCustody.SealNumber,
+                                goldCustody.CustodyStatus,
+                                locationDisplay = Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(goldCustody),
+                                isRepledged = string.Equals(goldCustody.CustodyStatus, "REPLEDGED_BORROWING", StringComparison.OrdinalIgnoreCase),
+                                isAlreadyReleased = string.Equals(goldCustody.CustodyStatus, "RELEASED_TO_CUSTOMER", StringComparison.OrdinalIgnoreCase),
+                                goldCustody.ActiveBorrowingID,
+                                repledgedLenderName = goldCustody.ActiveBorrowing?.LenderName,
+                                repledgedBorrowingNo = goldCustody.ActiveBorrowing?.BorrowingNo,
+                                goldCustody.TotalOrnamentsCount,
+                                goldCustody.TotalNetWeight
+                            };
+                        }
+                    }
+
                     return CreatedAtAction("GetLoanCollection", new { id = collection.LoanCollectionID }, new
                     {
                         collection.LoanCollectionID,
@@ -1249,7 +1301,8 @@ namespace Bhisi.Api.Controllers
                         collection.SurchargeCollected,
                         isLoanFullySettled = true,
                         settledLoanAccountNo = loanAccount.LoanAccountNo,
-                        activeCollaterals = activeCollaterals
+                        activeCollaterals = activeCollaterals,
+                        goldCustodySummary
                     });
                 }
 

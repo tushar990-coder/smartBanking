@@ -799,6 +799,10 @@ namespace Bhisi.Api.Models
         public bool IsCollateralDetailPending { get; set; }
         public string? VoucherStatus { get; set; }
         public string? BranchName { get; set; }
+        public string? PacketNumber { get; set; }
+        public string? CustodyStatus { get; set; }
+        public string? CustodyLocationDisplay { get; set; }
+        public bool IsRepledged { get; set; }
     }
 
     public class GoldJewelryReportResponseDto

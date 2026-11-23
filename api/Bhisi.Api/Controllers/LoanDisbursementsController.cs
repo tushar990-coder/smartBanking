@@ -977,12 +977,45 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
+                // Gold Custody Integration: Auto-initialize initial Branch Safe Gold Packet Custody record on Gold Loan disbursement
+                var disbursedLoanForCustody = await _context.LoanAccounts
+                    .Include(l => l.LoanRate)
+                    .Include(l => l.LoanApplication)
+                    .FirstOrDefaultAsync(l => l.LoanAccountID == disbursement.LoanAccountID);
+
+                bool hasGoldRowsForCustody = await _context.GoldLoanDetails
+                    .AsNoTracking()
+                    .AnyAsync(g => g.LoanAccountID == disbursement.LoanAccountID ||
+                                   (disbursedLoanForCustody != null &&
+                                    disbursedLoanForCustody.LoanApplicationID.HasValue &&
+                                    g.LoanApplicationID == disbursedLoanForCustody.LoanApplicationID.Value));
+
+                bool isGoldDisbursement = Helpers.GoldCustodyAndBorrowingHelper.IsGoldLoanAccount(
+                    disbursedLoanForCustody,
+                    disbursedLoanForCustody?.LoanRate,
+                    disbursedLoanForCustody?.LoanApplication,
+                    hasGoldRowsForCustody);
+
+                GoldLoanCustody? initializedCustody = null;
+                if (isGoldDisbursement && disbursedLoanForCustody != null)
+                {
+                    initializedCustody = await Helpers.GoldCustodyAndBorrowingHelper.EnsureOrSyncGoldCustodyAsync(
+                        _context,
+                        disbursedLoanForCustody,
+                        1,
+                        cleanDate);
+                }
+
                 await transaction.CommitAsync();
 
                 return Ok(new
                 {
                     message = "Success",
                     id = disbursement.LoanDisbursementID,
+                    loanAccountID = disbursement.LoanAccountID,
+                    loanAccountNo = disbursedLoanForCustody?.LoanAccountNo ?? "",
+                    isGoldLoan = isGoldDisbursement,
+                    goldPacketNumber = initializedCustody?.PacketNumber,
                     voucherId = voucher.VoucherID,
                     voucherNo = voucher.VoucherNo,
                     voucherStatus = vStatus

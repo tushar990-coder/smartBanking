@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getBusinessDateStr } from '../utils/businessDateUtils';
+import { hasPermission } from '../utils/permissionUtils';
 
 interface BranchOption {
   branchID: number;
@@ -114,6 +115,7 @@ const fmtDec = (val: number) =>
 
 export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormProps) {
   const { user } = useAuth();
+  const canViewSettings = hasPermission(user?.role, 'Settings', 'View');
   const activeBizStr = getBusinessDateStr(user?.businessDate);
 
   const [branches, setBranches] = useState<BranchOption[]>([]);
@@ -128,6 +130,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
 
   const [columns, setColumns] = useState<DemandColumnMeta[]>([]);
   const [hasRdZone, setHasRdZone] = useState<boolean>(false);
+  const [rdZoneSequence, setRdZoneSequence] = useState<number | null>(null);
   const [rows, setRows] = useState<DemandRow[]>([]);
   const [loadedNoticeId, setLoadedNoticeId] = useState<number | null>(null);
   const [loadedNoticeNo, setLoadedNoticeNo] = useState<string>('');
@@ -221,6 +224,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
         setColumns([]);
         setRows([]);
         setHasRdZone(false);
+        setRdZoneSequence(null);
         setErrorMsg(data.message || 'कृपया प्रथम डिमांड सेटिंग्ज कॉन्फिगर करा.');
         return;
       }
@@ -228,6 +232,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
       setNeedsSetup(false);
       setColumns(data.columns || []);
       setHasRdZone(Boolean(data.hasRdZone));
+      setRdZoneSequence(typeof data.rdZoneSequence === 'number' ? data.rdZoneSequence : null);
       setRows(
         (data.rows || []).map((r: DemandRow) => ({
           ...r,
@@ -348,6 +353,28 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
     };
   }, [rows, columns]);
 
+  type GridSlot =
+    | { kind: 'COL'; sequenceOrder: number; col: DemandColumnMeta }
+    | { kind: 'RD_ZONE'; sequenceOrder: number };
+
+  const getColTdCount = (col: DemandColumnMeta) =>
+    col.itemType === 'LOAN' ? (col.showBalanceColumn ? 3 : 2) : 1;
+
+  const displaySlots = useMemo<GridSlot[]>(() => {
+    const items: GridSlot[] = columns.map((col, idx) => ({
+      kind: 'COL',
+      sequenceOrder: Number(col.sequenceOrder ?? idx + 1),
+      col
+    }));
+    if (hasRdZone) {
+      items.push({
+        kind: 'RD_ZONE',
+        sequenceOrder: typeof rdZoneSequence === 'number' ? rdZoneSequence : 9999
+      });
+    }
+    return items.sort((a, b) => a.sequenceOrder - b.sequenceOrder);
+  }, [columns, hasRdZone, rdZoneSequence]);
+
   const runValidation = async (): Promise<boolean> => {
     setErrorMsg('');
     try {
@@ -407,6 +434,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
     setRows([]);
     setColumns([]);
     setHasRdZone(false);
+    setRdZoneSequence(null);
     setLoadedNoticeId(null);
     setLoadedNoticeNo('');
     setSearchEmp('');
@@ -447,6 +475,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
       setContributionAmount(String(n.contributionInputAmount || 0));
       setColumns(data.columns || []);
       setHasRdZone(Boolean(data.hasRdZone));
+      setRdZoneSequence(typeof data.rdZoneSequence === 'number' ? data.rdZoneSequence : null);
       setRows(
         (data.rows || []).map((r: any) => ({
           srNo: r.srNo,
@@ -487,8 +516,12 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
     const brName = branches.find((b) => b.branchID === branchId)?.branchName || 'मुख्य शाखा';
     const selected = rows.filter((r) => r.isSelected);
 
-    const colHeadersHtml = columns
-      .map((col) => {
+    const colHeadersHtml = displaySlots
+      .map((slot) => {
+        if (slot.kind === 'RD_ZONE') {
+          return `<th>RD योजना / खाते</th><th>RD हप्ता</th>`;
+        }
+        const col = slot.col;
         if (col.itemType === 'LOAN') {
           return `
             ${col.showBalanceColumn ? `<th>${col.columnHeaderMr}<br/>(बाकी)</th>` : ''}
@@ -500,12 +533,14 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
       })
       .join('');
 
-    const rdHeaderHtml = hasRdZone ? `<th>RD योजना / खाते</th><th>RD हप्ता</th>` : '';
-
     const bodyHtml = selected
       .map((r, i) => {
-        const nonRdTds = columns
-          .map((col) => {
+        const mainSlotTds = displaySlots
+          .map((slot) => {
+            if (slot.kind === 'RD_ZONE') {
+              return `<td>${r.primaryRd?.displaySubLabel || '-'}</td><td style="text-align:right">${fmtNum(r.primaryRd?.demandPrincipalOrDeposit || 0)}</td>`;
+            }
+            const col = slot.col;
             const c = r.cells.find((x) => x.demandColumnSettingId === col.demandColumnSettingId);
             if (col.itemType === 'LOAN') {
               return `
@@ -518,46 +553,48 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
           })
           .join('');
 
-        const primaryRdTds = hasRdZone
-          ? `<td>${r.primaryRd?.displaySubLabel || '-'}</td><td style="text-align:right">${fmtNum(r.primaryRd?.demandPrincipalOrDeposit || 0)}</td>`
-          : '';
-
         const mainRowHtml = `
           <tr>
             <td style="text-align:center">${i + 1}</td>
             <td style="text-align:center">${r.empCode}</td>
             <td style="text-align:center">${r.cifNo}</td>
             <td>${r.memberName}</td>
-            ${nonRdTds}
-            ${primaryRdTds}
+            ${mainSlotTds}
             <td style="text-align:right;font-weight:bold">${fmtNum(r.totalDeduction)}</td>
           </tr>
         `;
 
-        const blankNonRdCount = columns.reduce(
-          (acc, c) => acc + (c.itemType === 'LOAN' ? (c.showBalanceColumn ? 3 : 2) : 1),
-          0
-        );
         const subRowsHtml = (r.rdSubRows || [])
-          .map(
-            (sr) => `
+          .map((sr) => {
+            const subSlotTds = displaySlots
+              .map((slot) => {
+                if (slot.kind === 'RD_ZONE') {
+                  return `<td>${sr.displaySubLabel}</td><td style="text-align:right">${fmtNum(sr.demandPrincipalOrDeposit)}</td>`;
+                }
+                return Array(getColTdCount(slot.col)).fill('<td style="background:#f1f5f9"></td>').join('');
+              })
+              .join('');
+
+            return `
             <tr style="background:#f8fafc;font-size:10px;">
               <td></td><td></td><td></td><td style="color:#475569;padding-left:16px">↳ अतिरिक्त RD (Seq ${sr.sequenceOrder})</td>
-              <td colspan="${blankNonRdCount}"></td>
-              <td>${sr.displaySubLabel}</td>
-              <td style="text-align:right">${fmtNum(sr.demandPrincipalOrDeposit)}</td>
+              ${subSlotTds}
               <td style="text-align:right;color:#64748b">-</td>
             </tr>
-          `
-          )
+          `;
+          })
           .join('');
 
         return mainRowHtml + subRowsHtml;
       })
       .join('');
 
-    const footerNonRdTds = columns
-      .map((col) => {
+    const footerSlotTds = displaySlots
+      .map((slot) => {
+        if (slot.kind === 'RD_ZONE') {
+          return `<td></td><td style="text-align:right">${fmtNum(footerTotals.rdTotal)}</td>`;
+        }
+        const col = slot.col;
         const tot = footerTotals.cellTotals[col.demandColumnSettingId] || { bal: 0, prin: 0, intr: 0 };
         if (col.itemType === 'LOAN') {
           return `
@@ -569,8 +606,6 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
         return `<td style="text-align:right">${fmtNum(tot.prin)}</td>`;
       })
       .join('');
-
-    const footerRdTds = hasRdZone ? `<td></td><td style="text-align:right">${fmtNum(footerTotals.rdTotal)}</td>` : '';
 
     const win = window.open('', '_blank', 'width=1200,height=800');
     if (!win) return;
@@ -591,15 +626,13 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
         <thead><tr>
           <th>अ.नं.</th><th>Emp Code</th><th>CIF</th><th>खातेदाराचे नाव</th>
           ${colHeadersHtml}
-          ${rdHeaderHtml}
           <th>एकूण</th>
         </tr></thead>
         <tbody>
           ${bodyHtml}
           <tr class="tot">
             <td colspan="4" style="text-align:right">एकूण (${footerTotals.selectedEmployees} खातेदार):</td>
-            ${footerNonRdTds}
-            ${footerRdTds}
+            ${footerSlotTds}
             <td style="text-align:right">${fmtNum(footerTotals.grandTotal)}</td>
           </tr>
         </tbody>
@@ -616,7 +649,12 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
     const selected = rows.filter((r) => r.isSelected);
 
     const headers: string[] = ['अ. नं.', 'Emp Code', 'CIF', 'खातेदाराचे नाव'];
-    columns.forEach((c) => {
+    displaySlots.forEach((slot) => {
+      if (slot.kind === 'RD_ZONE') {
+        headers.push('RD योजना / खाते', 'RD हप्ता');
+        return;
+      }
+      const c = slot.col;
       if (c.itemType === 'LOAN') {
         if (c.showBalanceColumn) headers.push(`${c.columnHeaderMr} (बाकी)`);
         headers.push(`${c.columnHeaderMr} (हप्ता)`);
@@ -625,16 +663,18 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
         headers.push(c.columnHeaderMr);
       }
     });
-    if (hasRdZone) {
-      headers.push('RD योजना / खाते', 'RD हप्ता');
-    }
     headers.push('एकूण');
 
     const lines: string[] = [headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(',')];
 
     selected.forEach((r, idx) => {
       const line: string[] = [String(idx + 1), `"${r.empCode}"`, `"${r.cifNo}"`, `"${r.memberName}"`];
-      columns.forEach((col) => {
+      displaySlots.forEach((slot) => {
+        if (slot.kind === 'RD_ZONE') {
+          line.push(`"${r.primaryRd?.displaySubLabel || ''}"`, String(r.primaryRd?.demandPrincipalOrDeposit || 0));
+          return;
+        }
+        const col = slot.col;
         const c = r.cells.find((x) => x.demandColumnSettingId === col.demandColumnSettingId);
         if (col.itemType === 'LOAN') {
           if (col.showBalanceColumn) line.push(String(c?.currentBalanceAmount || 0));
@@ -644,23 +684,20 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
           line.push(String(c?.demandPrincipalOrDeposit || 0));
         }
       });
-      if (hasRdZone) {
-        line.push(`"${r.primaryRd?.displaySubLabel || ''}"`, String(r.primaryRd?.demandPrincipalOrDeposit || 0));
-      }
       line.push(String(r.totalDeduction || 0));
       lines.push(line.join(','));
 
       (r.rdSubRows || []).forEach((sr) => {
         const sLine: string[] = ['', `"${r.empCode}"`, `"${r.cifNo}"`, `"↳ ${r.memberName} (अतिरिक्त RD Seq ${sr.sequenceOrder})"`];
-        columns.forEach((col) => {
-          if (col.itemType === 'LOAN') {
-            if (col.showBalanceColumn) sLine.push('');
-            sLine.push('', '');
-          } else {
-            sLine.push('');
+        displaySlots.forEach((slot) => {
+          if (slot.kind === 'RD_ZONE') {
+            sLine.push(`"${sr.displaySubLabel}"`, String(sr.demandPrincipalOrDeposit || 0));
+            return;
           }
+          const span = getColTdCount(slot.col);
+          for (let k = 0; k < span; k++) sLine.push('');
         });
-        sLine.push(`"${sr.displaySubLabel}"`, String(sr.demandPrincipalOrDeposit || 0), '');
+        sLine.push('');
         lines.push(sLine.join(','));
       });
     });
@@ -691,13 +728,15 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
         <div className="flex items-center gap-2">
           {onNavigate && (
             <>
-              <button
-                type="button"
-                onClick={() => onNavigate('demand-settings')}
-                className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <Settings size={13} /> डिमांड सेटिंग्ज (Sequence / Ledger)
-              </button>
+              {canViewSettings && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('demand-settings')}
+                  className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Settings size={13} /> डिमांड सेटिंग्ज (Sequence / Ledger)
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() =>
@@ -808,7 +847,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
           <div className="flex items-center gap-1.5">
             <AlertTriangle size={15} /> {errorMsg}
           </div>
-          {needsSetup && onNavigate && (
+          {needsSetup && onNavigate && canViewSettings && (
             <button
               type="button"
               onClick={() => onNavigate('demand-settings')}
@@ -895,8 +934,22 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
               <th className="border border-slate-400 px-1.5 py-1.5 w-20 text-center">CIF</th>
               <th className="border border-slate-400 px-2 py-1.5 min-w-[180px] text-left">खातेदाराचे नाव</th>
 
-              {columns.map((col) =>
-                col.itemType === 'LOAN' ? (
+              {displaySlots.map((slot) => {
+                if (slot.kind === 'RD_ZONE') {
+                  return (
+                    <React.Fragment key="rd-zone-header">
+                      <th className="border border-slate-400 px-2 py-1 min-w-[155px] text-left bg-indigo-50">
+                        RD योजना / खाते
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 min-w-[90px] text-right bg-indigo-50">
+                        RD हप्ता
+                      </th>
+                    </React.Fragment>
+                  );
+                }
+
+                const col = slot.col;
+                return col.itemType === 'LOAN' ? (
                   <React.Fragment key={col.demandColumnSettingId}>
                     {col.showBalanceColumn && (
                       <th className="border border-slate-400 px-2 py-1 min-w-[95px] text-right bg-slate-100">
@@ -920,19 +973,8 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                   >
                     {col.columnHeaderMr}
                   </th>
-                )
-              )}
-
-              {hasRdZone && (
-                <>
-                  <th className="border border-slate-400 px-2 py-1 min-w-[155px] text-left bg-indigo-50">
-                    RD योजना / खाते
-                  </th>
-                  <th className="border border-slate-400 px-2 py-1 min-w-[90px] text-right bg-indigo-50">
-                    RD हप्ता
-                  </th>
-                </>
-              )}
+                );
+              })}
 
               <th className="border border-slate-400 px-2 py-1 min-w-[95px] text-right bg-amber-50 font-bold">
                 एकूण
@@ -976,7 +1018,40 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                         )}
                       </td>
 
-                      {columns.map((col) => {
+                      {displaySlots.map((slot) => {
+                        if (slot.kind === 'RD_ZONE') {
+                          return (
+                            <React.Fragment key="rd-zone-primary">
+                              <td className="border border-slate-300 px-2 py-1 text-left text-[10px] text-indigo-950 bg-indigo-50/30">
+                                {row.primaryRd ? (
+                                  <span className="font-medium">
+                                    {row.primaryRd.displaySubLabel}
+                                    <span className="ml-1 text-[9px] text-slate-500">(Seq {row.primaryRd.sequenceOrder})</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                              <td className="border border-slate-300 p-0.5 bg-indigo-50/30">
+                                {row.primaryRd ? (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step="1"
+                                    disabled={!row.isSelected}
+                                    value={row.primaryRd.demandPrincipalOrDeposit}
+                                    onChange={(e) => handleRdAmountChange(row.memberId, 0, e.target.value)}
+                                    className="w-full px-1.5 py-0.5 text-right font-mono bg-transparent focus:bg-yellow-50 focus:outline-none border border-transparent focus:border-primary rounded-2xs"
+                                  />
+                                ) : (
+                                  <div className="text-right px-1.5 text-slate-400">0</div>
+                                )}
+                              </td>
+                            </React.Fragment>
+                          );
+                        }
+
+                        const col = slot.col;
                         const cell = row.cells.find((c) => c.demandColumnSettingId === col.demandColumnSettingId);
                         if (!cell) {
                           if (col.itemType === 'LOAN') {
@@ -1068,37 +1143,6 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                         );
                       })}
 
-                      {/* Primary RD Zone on Main Row */}
-                      {hasRdZone && (
-                        <>
-                          <td className="border border-slate-300 px-2 py-1 text-left text-[10px] text-indigo-950 bg-indigo-50/30">
-                            {row.primaryRd ? (
-                              <span className="font-medium">
-                                {row.primaryRd.displaySubLabel}
-                                <span className="ml-1 text-[9px] text-slate-500">(Seq {row.primaryRd.sequenceOrder})</span>
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </td>
-                          <td className="border border-slate-300 p-0.5 bg-indigo-50/30">
-                            {row.primaryRd ? (
-                              <input
-                                type="number"
-                                min={0}
-                                step="1"
-                                disabled={!row.isSelected}
-                                value={row.primaryRd.demandPrincipalOrDeposit}
-                                onChange={(e) => handleRdAmountChange(row.memberId, 0, e.target.value)}
-                                className="w-full px-1.5 py-0.5 text-right font-mono bg-transparent focus:bg-yellow-50 focus:outline-none border border-transparent focus:border-primary rounded-2xs"
-                              />
-                            ) : (
-                              <div className="text-right px-1.5 text-slate-400">0</div>
-                            )}
-                          </td>
-                        </>
-                      )}
-
                       {/* Employee Row Grand Total */}
                       <td className="border border-slate-300 px-2 py-1 text-right font-mono font-bold text-slate-900 bg-amber-50/60">
                         {fmtNum(row.totalDeduction)}
@@ -1120,8 +1164,31 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                             अतिरिक्त RD (क्रम {sr.sequenceOrder})
                           </td>
 
-                          {columns.map((col) =>
-                            col.itemType === 'LOAN' ? (
+                          {displaySlots.map((slot) => {
+                            if (slot.kind === 'RD_ZONE') {
+                              return (
+                                <React.Fragment key="rd-zone-sub">
+                                  <td className="border border-slate-300 px-2 py-0.5 text-left text-[10px] font-semibold text-indigo-950">
+                                    {sr.displaySubLabel}
+                                    <span className="ml-1 text-[9px] text-indigo-700">(Seq {sr.sequenceOrder})</span>
+                                  </td>
+                                  <td className="border border-slate-300 p-0.5">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step="1"
+                                      disabled={!row.isSelected}
+                                      value={sr.demandPrincipalOrDeposit}
+                                      onChange={(e) => handleRdAmountChange(row.memberId, sr.subRowIndex, e.target.value)}
+                                      className="w-full px-1.5 py-0.5 text-right font-mono font-semibold text-indigo-950 bg-white/80 focus:bg-yellow-50 focus:outline-none border border-indigo-200 focus:border-primary rounded-2xs"
+                                    />
+                                  </td>
+                                </React.Fragment>
+                              );
+                            }
+
+                            const col = slot.col;
+                            return col.itemType === 'LOAN' ? (
                               <React.Fragment key={col.demandColumnSettingId}>
                                 {col.showBalanceColumn && (
                                   <td className="border border-slate-300 bg-slate-100/60"></td>
@@ -1131,24 +1198,9 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                               </React.Fragment>
                             ) : (
                               <td key={col.demandColumnSettingId} className="border border-slate-300 bg-slate-100/60"></td>
-                            )
-                          )}
+                            );
+                          })}
 
-                          <td className="border border-slate-300 px-2 py-0.5 text-left text-[10px] font-semibold text-indigo-950">
-                            {sr.displaySubLabel}
-                            <span className="ml-1 text-[9px] text-indigo-700">(Seq {sr.sequenceOrder})</span>
-                          </td>
-                          <td className="border border-slate-300 p-0.5">
-                            <input
-                              type="number"
-                              min={0}
-                              step="1"
-                              disabled={!row.isSelected}
-                              value={sr.demandPrincipalOrDeposit}
-                              onChange={(e) => handleRdAmountChange(row.memberId, sr.subRowIndex, e.target.value)}
-                              className="w-full px-1.5 py-0.5 text-right font-mono font-semibold text-indigo-950 bg-white/80 focus:bg-yellow-50 focus:outline-none border border-indigo-200 focus:border-primary rounded-2xs"
-                            />
-                          </td>
                           <td className="border border-slate-300 px-2 py-0.5 text-right text-[10px] text-slate-400">
                             (वर समाविष्ट)
                           </td>
@@ -1172,7 +1224,19 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                   ({footerTotals.selectedEmployees} निवडलेले)
                 </td>
 
-                {columns.map((col) => {
+                {displaySlots.map((slot) => {
+                  if (slot.kind === 'RD_ZONE') {
+                    return (
+                      <React.Fragment key="rd-zone-footer">
+                        <td className="border border-slate-400 px-2 py-1.5 text-right text-[10px]">RD एकूण:</td>
+                        <td className="border border-slate-400 px-2 py-1.5 text-right font-mono">
+                          {fmtNum(footerTotals.rdTotal)}
+                        </td>
+                      </React.Fragment>
+                    );
+                  }
+
+                  const col = slot.col;
                   const tot = footerTotals.cellTotals[col.demandColumnSettingId] || { bal: 0, prin: 0, intr: 0 };
                   if (col.itemType === 'LOAN') {
                     return (
@@ -1197,15 +1261,6 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                     </td>
                   );
                 })}
-
-                {hasRdZone && (
-                  <>
-                    <td className="border border-slate-400 px-2 py-1.5 text-right text-[10px]">RD एकूण:</td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-right font-mono">
-                      {fmtNum(footerTotals.rdTotal)}
-                    </td>
-                  </>
-                )}
 
                 <td className="border border-slate-400 px-2 py-1.5 text-right font-mono text-sm text-red-800">
                   {fmtNum(footerTotals.grandTotal)}

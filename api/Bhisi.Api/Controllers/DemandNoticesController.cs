@@ -776,10 +776,15 @@ namespace Bhisi.Api.Controllers
                 errors.Add("कृपया किमान एक खातेदार (Checkbox) निवडा.");
             }
 
-            var activeSettings = await _context.DemandColumnSettings
+            var allSettingsMap = await _context.DemandColumnSettings
                 .AsNoTracking()
-                .Where(s => s.IsActive)
                 .ToDictionaryAsync(s => s.DemandColumnSettingId);
+
+            var rdSchemesMap = await _context.RdSchemes
+                .AsNoTracking()
+                .ToDictionaryAsync(r => r.RdSchemeID);
+
+            var inactiveSettingWarningsAdded = new HashSet<int>();
 
             decimal grandTotal = 0m;
 
@@ -800,8 +805,13 @@ namespace Bhisi.Api.Controllers
                         AddRowIssue(r.MemberId, $"{r.MemberName} (Emp {r.EmpCode}): '{cell.ColumnHeaderMr}' हप्ता (₹{p:N2}) कर्ज बाकीपेक्षा (₹{cell.CurrentBalanceAmount:N2}) जास्त आहे.", true);
                     }
 
-                    if ((p > 0m || i > 0m) && activeSettings.TryGetValue(cell.DemandColumnSettingId, out var setting))
+                    if ((p > 0m || i > 0m) && allSettingsMap.TryGetValue(cell.DemandColumnSettingId, out var setting))
                     {
+                        if (!setting.IsActive && inactiveSettingWarningsAdded.Add(setting.DemandColumnSettingId))
+                        {
+                            warnings.Add($"'{setting.ColumnHeaderMr}' हा कॉलम सध्या डिमांड सेटिंग्जमध्ये निष्क्रिय (Inactive) आहे.");
+                        }
+
                         if (!setting.PrincipalOrDepositLedgerID.HasValue || setting.PrincipalOrDepositLedgerID.Value <= 0)
                         {
                             AddRowIssue(r.MemberId, $"'{setting.ColumnHeaderMr}' साठी डिमांड सेटिंग्जमध्ये जमा लेजर मॅप केलेले नाही.", true);
@@ -834,6 +844,32 @@ namespace Bhisi.Api.Controllers
                     {
                         AddRowIssue(r.MemberId, $"{r.MemberName} (Emp {r.EmpCode}): '{rd.ColumnHeaderMr}' साठी सक्रिय RD खाते आढळले नाही.", true);
                     }
+
+                    if (rdAmt > 0m)
+                    {
+                        allSettingsMap.TryGetValue(rd.DemandColumnSettingId, out var rdSetting);
+                        if (rdSetting != null && !rdSetting.IsActive && inactiveSettingWarningsAdded.Add(rdSetting.DemandColumnSettingId))
+                        {
+                            warnings.Add($"'{rdSetting.ColumnHeaderMr}' हा RD कॉलम सध्या डिमांड सेटिंग्जमध्ये निष्क्रिय (Inactive) आहे.");
+                        }
+
+                        int? resolvedRdSchemeId = rd.RdSchemeID ?? rdSetting?.RdSchemeID;
+                        int? schemeLiabilityLedgerId = null;
+                        if (resolvedRdSchemeId.HasValue && rdSchemesMap.TryGetValue(resolvedRdSchemeId.Value, out var rdScheme))
+                        {
+                            schemeLiabilityLedgerId = rdScheme.RdLiabilityLedgerID;
+                        }
+
+                        int? rdLedgerId = rdSetting?.PrincipalOrDepositLedgerID
+                            ?? rd.PrincipalOrDepositLedgerID
+                            ?? schemeLiabilityLedgerId;
+
+                        if (!rdLedgerId.HasValue || rdLedgerId.Value <= 0)
+                        {
+                            AddRowIssue(r.MemberId, $"'{rd.ColumnHeaderMr}' साठी डिमांड सेटिंग्ज किंवा RD स्कीममध्ये जमा लेजर मॅप केलेले नाही.", true);
+                        }
+                    }
+
                     memberSum += rdAmt;
                 }
 
@@ -856,7 +892,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/DemandNotices/save-grid
         [HttpPost("save-grid")]
-        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
+        [Authorize(Roles = "Admin,SuperAdmin,Super Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager,GeneralManager,CEO,Chairman,Manager,BranchManager,Branch_Manager")]
         public async Task<ActionResult<object>> SaveDemandGrid([FromBody] SaveDemandGridRequestDto request)
         {
             if (request == null || request.EmployerId <= 0)
@@ -1065,7 +1101,7 @@ namespace Bhisi.Api.Controllers
 
         // Legacy compatibility endpoint kept intact
         [HttpPost("generate")]
-        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
+        [Authorize(Roles = "Admin,SuperAdmin,Super Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager,GeneralManager,CEO,Chairman,Manager,BranchManager,Branch_Manager")]
         public async Task<ActionResult<DemandNotice>> GenerateDemand([FromBody] GenerateDemandDto request)
         {
             var existing = await _context.DemandNotices
@@ -1132,7 +1168,7 @@ namespace Bhisi.Api.Controllers
 
         // DELETE: api/DemandNotices/5
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
+        [Authorize(Roles = "Admin,SuperAdmin,Super Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager,GeneralManager,CEO,Chairman,Manager,BranchManager,Branch_Manager")]
         public async Task<IActionResult> DeleteDemandNotice(int id)
         {
             var notice = await _context.DemandNotices

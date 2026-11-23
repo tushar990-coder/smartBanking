@@ -23,6 +23,10 @@ namespace Bhisi.Api.Models
         [Required]
         public int DurationMonths { get; set; }
 
+        public int TenureDays { get; set; } = 365;
+
+        public int InterestDaysInYear { get; set; } = 365;
+
         [Required]
         [StringLength(20)]
         public string Status { get; set; } = "Active";
@@ -60,6 +64,10 @@ namespace Bhisi.Api.Models
         public int? CommissionExpenseLedgerID { get; set; }
         [ForeignKey("CommissionExpenseLedgerID")]
         public virtual Ledger? CommissionExpenseLedger { get; set; }
+
+        public int? PrematureDeductionLedgerID { get; set; }
+        [ForeignKey("PrematureDeductionLedgerID")]
+        public virtual Ledger? PrematureDeductionLedger { get; set; }
 
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;

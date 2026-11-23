@@ -307,7 +307,10 @@ namespace Bhisi.Api.Services
                     primaryVoucher,
                     voucherIds,
                     voucherNos,
-                    affectedPigmyAccountIds);
+                    reversedSavingTxnIds,
+                    affectedSavingAccountIds,
+                    affectedPigmyAccountIds,
+                    rolledBackLoanCollectionIds);
 
                 // =========================================================================
                 // MODULE 6: SHARE & MEMBER (Allotment, Transfer, Withdrawal/Member Closure, Dividends)
@@ -1675,7 +1678,10 @@ namespace Bhisi.Api.Services
             Voucher primaryVoucher,
             HashSet<int> voucherIds,
             HashSet<string> voucherNos,
-            HashSet<int> affectedPigmyAccountIds)
+            HashSet<int> reversedSavingTxnIds,
+            HashSet<int> affectedSavingAccountIds,
+            HashSet<int> affectedPigmyAccountIds,
+            HashSet<int> rolledBackLoanCollectionIds)
         {
             // 5A. AgentDayBook / MobileSync Cash Remittance (PigmyAgentCashDeposits)
             // CRITICAL DOMAIN RULE: Pre-collected PigmyCollections are NOT deleted; only their remittance link is cleared!
@@ -1943,16 +1949,48 @@ namespace Bhisi.Api.Services
                 await _context.SaveChangesAsync();
             }
 
-            // 5F. Pigmy Partial Withdrawals (PigmyWithdrawals / VCH-WDR-* / PV-*-PIGMY-WDR-* / JV-PIGMY-WDR-*)
-            if (voucherNos.Any())
+            // 5F. Pigmy Partial Withdrawals & Full Closures (PigmyWithdrawals / PigmyAccountClosures)
+            if (voucherIds.Any() || voucherNos.Any())
             {
                 var vNoList = voucherNos.ToList();
                 var withdrawals = await _context.PigmyWithdrawals
-                    .Where(w => w.VoucherNo != null && vNoList.Contains(w.VoucherNo))
+                    .Where(w => (w.VoucherID.HasValue && voucherIds.Contains(w.VoucherID.Value)) ||
+                                (w.VoucherNo != null && vNoList.Contains(w.VoucherNo)))
                     .ToListAsync();
 
                 foreach (var w in withdrawals)
                 {
+                    // Reverse any linked Pigmy Settlement LoanCollection first
+                    var wLoanCols = await _context.LoanCollections
+                        .Include(c => c.Fees)
+                        .Where(c => (w.LinkedLoanCollectionID.HasValue && c.LoanCollectionID == w.LinkedLoanCollectionID.Value) ||
+                                    (c.PaymentMode == "Pigmy Settlement" && c.VoucherID.HasValue && voucherIds.Contains(c.VoucherID.Value)))
+                        .ToListAsync();
+                    foreach (var lc in wLoanCols)
+                    {
+                        await RollbackAndHardDeleteLoanCollectionAsync(
+                            lc,
+                            voucherIds,
+                            voucherNos,
+                            reversedSavingTxnIds,
+                            affectedSavingAccountIds,
+                            affectedPigmyAccountIds,
+                            rolledBackLoanCollectionIds);
+                    }
+
+                    // Reverse any approved Saving Transfer credit once
+                    if (vNoList.Any())
+                    {
+                        var savTxs = await _context.SavingTransactions
+                            .Where(st => (st.VoucherID.HasValue && voucherIds.Contains(st.VoucherID.Value)) ||
+                                         (st.VoucherNo != null && vNoList.Contains(st.VoucherNo)))
+                            .ToListAsync();
+                        foreach (var st in savTxs)
+                        {
+                            await ReverseAndHardDeleteSavingTxnOnceAsync(st, reversedSavingTxnIds, affectedSavingAccountIds);
+                        }
+                    }
+
                     var pAcc = await _context.PigmyAccounts.FindAsync(w.PigmyAccountID);
                     if (pAcc != null)
                     {
@@ -1973,8 +2011,8 @@ namespace Bhisi.Api.Services
                     var wTx = await _context.PigmyTransactions
                         .Where(pt => pt.PigmyAccountID == w.PigmyAccountID &&
                                      pt.TransactionType == "WITHDRAWAL" &&
-                                     Math.Abs(pt.DrAmount - w.RequestedAmount) < 0.01m &&
-                                     pt.TransactionDate.Date == w.WithdrawalDate.Date)
+                                     ((pt.ReferenceId != null && vNoList.Contains(pt.ReferenceId)) ||
+                                      (Math.Abs(pt.DrAmount - w.RequestedAmount) < 0.01m && pt.TransactionDate.Date == w.WithdrawalDate.Date)))
                         .OrderByDescending(pt => pt.PigmyTransactionID)
                         .FirstOrDefaultAsync();
 
@@ -1991,43 +2029,142 @@ namespace Bhisi.Api.Services
                     await _context.SaveChangesAsync();
                 }
 
-                // Pigmy Full Account Closure (VCH-CLO-* / PV-*-PIGMY-CLO-* / JV-PIGMY-CLO-*)
-                var closurePigmyTxsByRef = await _context.PigmyTransactions
-                    .Where(pt => pt.TransactionType == "WITHDRAWAL" &&
-                                 pt.ReferenceId != null &&
-                                 vNoList.Contains(pt.ReferenceId))
+                // 5G. Pigmy Full Account Closures via PigmyAccountClosures snapshot table
+                var closures = await _context.PigmyAccountClosures
+                    .Where(c => (c.VoucherID.HasValue && voucherIds.Contains(c.VoucherID.Value)) ||
+                                (c.VoucherNo != null && vNoList.Contains(c.VoucherNo)))
                     .ToListAsync();
 
-                var candidateWithdrawalPigmyTxs = await _context.PigmyTransactions
-                    .Where(pt => pt.TransactionType == "WITHDRAWAL" && pt.Narration != null)
-                    .ToListAsync();
-                var closurePigmyTxsByNarr = candidateWithdrawalPigmyTxs
-                    .Where(pt => vNoList.Any(vn => pt.Narration!.Contains(vn, StringComparison.OrdinalIgnoreCase)))
-                    .ToList();
-
-                var closurePigmyTxs = closurePigmyTxsByRef
-                    .Concat(closurePigmyTxsByNarr)
-                    .GroupBy(pt => pt.PigmyTransactionID)
-                    .Select(g => g.First())
-                    .ToList();
-
-                foreach (var cloTx in closurePigmyTxs)
+                var handledClosureAccountIds = new HashSet<int>();
+                foreach (var clo in closures)
                 {
-                    var pAcc = await _context.PigmyAccounts.FindAsync(cloTx.PigmyAccountID);
+                    handledClosureAccountIds.Add(clo.PigmyAccountID);
+
+                    var cLoanCols = await _context.LoanCollections
+                        .Include(c => c.Fees)
+                        .Where(c => (clo.LinkedLoanCollectionID.HasValue && c.LoanCollectionID == clo.LinkedLoanCollectionID.Value) ||
+                                    (c.PaymentMode == "Pigmy Settlement" && c.VoucherID.HasValue && voucherIds.Contains(c.VoucherID.Value)))
+                        .ToListAsync();
+                    foreach (var lc in cLoanCols)
+                    {
+                        await RollbackAndHardDeleteLoanCollectionAsync(
+                            lc,
+                            voucherIds,
+                            voucherNos,
+                            reversedSavingTxnIds,
+                            affectedSavingAccountIds,
+                            affectedPigmyAccountIds,
+                            rolledBackLoanCollectionIds);
+                    }
+
+                    if (vNoList.Any())
+                    {
+                        var savTxs = await _context.SavingTransactions
+                            .Where(st => (st.VoucherID.HasValue && voucherIds.Contains(st.VoucherID.Value)) ||
+                                         (st.VoucherNo != null && vNoList.Contains(st.VoucherNo)))
+                            .ToListAsync();
+                        foreach (var st in savTxs)
+                        {
+                            await ReverseAndHardDeleteSavingTxnOnceAsync(st, reversedSavingTxnIds, affectedSavingAccountIds);
+                        }
+                    }
+
+                    var pAcc = await _context.PigmyAccounts.FindAsync(clo.PigmyAccountID);
                     if (pAcc != null)
                     {
-                        DateTime effectiveBizDate = await ResolveBranchEffectiveBusinessDateAsync(pAcc.BranchID, cloTx.TransactionDate);
-                        pAcc.TotalDepositedAmount = Math.Round(pAcc.TotalDepositedAmount + cloTx.DrAmount, 2, MidpointRounding.AwayFromZero);
-                        pAcc.Status = pAcc.MaturityDate.Date <= effectiveBizDate ? "Matured" : "Active";
+                        DateTime effectiveBizDate = await ResolveBranchEffectiveBusinessDateAsync(pAcc.BranchID, clo.ClosureDate);
+                        pAcc.TotalDepositedAmount = Math.Round(clo.GrossDepositBalance, 2, MidpointRounding.AwayFromZero);
+                        pAcc.Status = !string.IsNullOrWhiteSpace(clo.PreviousAccountStatus) && clo.PreviousAccountStatus != "Closed"
+                            ? clo.PreviousAccountStatus
+                            : (pAcc.MaturityDate.Date <= effectiveBizDate ? "Matured" : "Active");
+
+                        if (clo.WasLienMarked)
+                        {
+                            pAcc.IsLienMarked = true;
+                            pAcc.LienLoanAccountNo = clo.PreviousLienLoanAccountNo;
+                            pAcc.LienAmount = clo.PreviousLienAmount;
+                        }
+
+                        var releasedCollaterals = await _context.LoanDepositCollaterals
+                            .Where(col => (col.CollateralType == "Pigmy" || col.CollateralType == "PigmyDeposit") &&
+                                          col.DepositAccountID == pAcc.PigmyAccountID &&
+                                          (col.LienStatus == "Released" || col.LienStatus == "Invoked"))
+                            .ToListAsync();
+                        foreach (var col in releasedCollaterals)
+                        {
+                            col.LienStatus = "Pledged";
+                            col.LienReleasedDate = null;
+                            col.CurrentDepositBalance = clo.GrossDepositBalance;
+                        }
+
                         _context.Entry(pAcc).State = EntityState.Modified;
                         affectedPigmyAccountIds.Add(pAcc.PigmyAccountID);
                     }
-                    _context.PigmyTransactions.Remove(cloTx);
+
+                    var candidateCloTxs = await _context.PigmyTransactions
+                        .Where(pt => pt.PigmyAccountID == clo.PigmyAccountID &&
+                                     pt.TransactionType == "WITHDRAWAL")
+                        .ToListAsync();
+                    var cloTxs = candidateCloTxs
+                        .Where(pt => (pt.ReferenceId != null && vNoList.Contains(pt.ReferenceId)) ||
+                                     (pt.Narration != null && vNoList.Any(vn => pt.Narration.Contains(vn, StringComparison.OrdinalIgnoreCase))))
+                        .ToList();
+                    if (cloTxs.Any())
+                    {
+                        _context.PigmyTransactions.RemoveRange(cloTxs);
+                    }
+
+                    _context.PigmyAccountClosures.Remove(clo);
                 }
 
-                if (closurePigmyTxs.Any())
+                if (closures.Any())
                 {
                     await _context.SaveChangesAsync();
+                }
+
+                // Legacy fallback for historical Pigmy Full Account Closure without PigmyAccountClosures row
+                if (vNoList.Any())
+                {
+                    var closurePigmyTxsByRef = await _context.PigmyTransactions
+                        .Where(pt => pt.TransactionType == "WITHDRAWAL" &&
+                                     !handledClosureAccountIds.Contains(pt.PigmyAccountID) &&
+                                     pt.ReferenceId != null &&
+                                     vNoList.Contains(pt.ReferenceId))
+                        .ToListAsync();
+
+                    var candidateWithdrawalPigmyTxs = await _context.PigmyTransactions
+                        .Where(pt => pt.TransactionType == "WITHDRAWAL" &&
+                                     !handledClosureAccountIds.Contains(pt.PigmyAccountID) &&
+                                     pt.Narration != null)
+                        .ToListAsync();
+                    var closurePigmyTxsByNarr = candidateWithdrawalPigmyTxs
+                        .Where(pt => vNoList.Any(vn => pt.Narration!.Contains(vn, StringComparison.OrdinalIgnoreCase)))
+                        .ToList();
+
+                    var closurePigmyTxs = closurePigmyTxsByRef
+                        .Concat(closurePigmyTxsByNarr)
+                        .GroupBy(pt => pt.PigmyTransactionID)
+                        .Select(g => g.First())
+                        .ToList();
+
+                    foreach (var cloTx in closurePigmyTxs)
+                    {
+                        var pAcc = await _context.PigmyAccounts.FindAsync(cloTx.PigmyAccountID);
+                        if (pAcc != null)
+                        {
+                            DateTime effectiveBizDate = await ResolveBranchEffectiveBusinessDateAsync(pAcc.BranchID, cloTx.TransactionDate);
+                            pAcc.TotalDepositedAmount = Math.Round(pAcc.TotalDepositedAmount + cloTx.DrAmount, 2, MidpointRounding.AwayFromZero);
+                            pAcc.Status = pAcc.MaturityDate.Date <= effectiveBizDate ? "Matured" : "Active";
+                            _context.Entry(pAcc).State = EntityState.Modified;
+                            affectedPigmyAccountIds.Add(pAcc.PigmyAccountID);
+                        }
+                        _context.PigmyTransactions.Remove(cloTx);
+                    }
+
+                    if (closurePigmyTxs.Any())
+                    {
+                        await _context.SaveChangesAsync();
+                    }
                 }
             }
         }
@@ -2977,6 +3114,7 @@ namespace Bhisi.Api.Services
 
                     borrowing.OutstandingPrincipal = Math.Round(borrowing.OutstandingPrincipal + rep.PrincipalPaid, 2, MidpointRounding.AwayFromZero);
                     borrowing.TotalInterestPaid = Math.Max(0m, Math.Round(borrowing.TotalInterestPaid - (rep.InterestPaid + rep.PenalOrChargesPaid), 2, MidpointRounding.AwayFromZero));
+                    borrowing.LastInterestPaidDate = rep.PreviousLastInterestPaidDate;
                     borrowing.Status = "Active";
                     borrowing.ClosedDate = null;
                     borrowing.UpdatedAt = DateTime.UtcNow;
@@ -2984,14 +3122,156 @@ namespace Bhisi.Api.Services
 
                 _context.SansthaBorrowingRepayments.Remove(rep);
                 await _context.SaveChangesAsync();
+
+                if (borrowing != null)
+                {
+                    var schedules = await _context.SansthaBorrowingInstallmentSchedules
+                        .Where(s => s.BorrowingID == borrowing.BorrowingID)
+                        .OrderBy(s => s.InstallmentNo)
+                        .ToListAsync();
+                    if (schedules.Any())
+                    {
+                        var remainingReps = await _context.SansthaBorrowingRepayments
+                            .Where(r => r.BorrowingID == borrowing.BorrowingID)
+                            .ToListAsync();
+                        DateTime bizDate = await ResolveBranchEffectiveBusinessDateAsync(borrowing.BranchID, rep.RepaymentDate);
+                        BorrowingScheduleService.SynchronizeSchedules(borrowing, schedules, remainingReps, bizDate);
+                        foreach (var sch in schedules)
+                        {
+                            _context.Entry(sch).State = EntityState.Modified;
+                        }
+                        await _context.SaveChangesAsync();
+                    }
+                }
             }
 
-            // 2. Rollback Borrowing Drawdown / Opening (REC-BRW-*)
-            var borrowings = await _context.SansthaBorrowings
-                .Where(b => b.DisbursementVoucherID.HasValue && voucherIds.Contains(b.DisbursementVoucherID.Value))
+            // 2. Rollback Borrowing Disbursements / Drawdowns (REC-BRW-*)
+            var matchedDisbursements = await _context.SansthaBorrowingDisbursements
+                .Where(d => d.VoucherID.HasValue && voucherIds.Contains(d.VoucherID.Value))
+                .OrderByDescending(d => d.BorrowingDisbursementID)
                 .ToListAsync();
 
-            foreach (var brw in borrowings)
+            var handledBorrowingIds = new HashSet<int>();
+            foreach (var disb in matchedDisbursements)
+            {
+                var brw = await _context.SansthaBorrowings.FindAsync(disb.BorrowingID);
+                if (brw == null)
+                {
+                    _context.SansthaBorrowingDisbursements.Remove(disb);
+                    await _context.SaveChangesAsync();
+                    continue;
+                }
+
+                handledBorrowingIds.Add(brw.BorrowingID);
+
+                bool hasRemainingRepayments = await _context.SansthaBorrowingRepayments
+                    .AnyAsync(r => r.BorrowingID == brw.BorrowingID);
+                if (hasRemainingRepayments)
+                {
+                    throw new VoucherRollbackDomainException(
+                        StatusCodes.Status400BadRequest,
+                        $"बाह्य कर्ज क्र. '{brw.BorrowingNo}' वर परतफेड व्यवहार अस्तित्वात असल्याने मूळ कर्ज प्राप्ती व्हाउचर डिलीट करता येत नाही.");
+                }
+
+                var pledges = await _context.SansthaBorrowingGoldPledges
+                    .Include(p => p.GoldCustody)
+                    .Where(p => p.BorrowingID == brw.BorrowingID &&
+                                (!p.BorrowingDisbursementID.HasValue || p.BorrowingDisbursementID.Value == disb.BorrowingDisbursementID))
+                    .ToListAsync();
+
+                foreach (var pl in pledges)
+                {
+                    var cust = pl.GoldCustody;
+                    if (string.Equals(pl.PledgeStatus, "Released", StringComparison.OrdinalIgnoreCase) ||
+                        (cust != null && string.Equals(cust.CustodyStatus, "RELEASED_TO_CUSTOMER", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        throw new VoucherRollbackDomainException(
+                            StatusCodes.Status409Conflict,
+                            $"बाह्य कर्ज क्र. '{brw.BorrowingNo}' डिलीट करता येत नाही कारण पुनर्गहाण पाकीट '{cust?.PacketNumber ?? pl.LoanAccountID.ToString()}' वर पुढील सुटका / खातेदारास सुपूर्दगी व्यवहार झालेला आहे.");
+                    }
+
+                    if (cust != null && string.Equals(cust.CustodyStatus, "REPLEDGED_BORROWING", StringComparison.OrdinalIgnoreCase) && cust.ActiveBorrowingID == brw.BorrowingID)
+                    {
+                        string fromLoc = Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(cust, null, null, brw);
+                        cust.CustodyStatus = string.IsNullOrWhiteSpace(pl.PreviousCustodyStatus) ? "BRANCH_SAFE" : pl.PreviousCustodyStatus;
+                        cust.ActiveBorrowingID = null;
+                        cust.OwnLockerID = cust.CustodyStatus == "OWN_LOCKER" ? pl.PreviousOwnLockerID : null;
+                        cust.ExternalLockerID = cust.CustodyStatus == "EXTERNAL_LOCKER" ? pl.PreviousExternalLockerID : null;
+                        cust.VaultRackOrTrayNo = cust.CustodyStatus == "BRANCH_SAFE" ? (pl.PreviousVaultRackNo ?? "मुख्य तिजोरी") : null;
+                        cust.UpdatedAt = DateTime.UtcNow;
+
+                        _context.GoldCustodyMovementLogs.Add(new GoldCustodyMovementLog
+                        {
+                            GoldCustodyID = cust.GoldCustodyID,
+                            LoanAccountID = cust.LoanAccountID,
+                            FromStatus = "REPLEDGED_BORROWING",
+                            ToStatus = cust.CustodyStatus,
+                            FromLocationSummary = fromLoc,
+                            ToLocationSummary = Helpers.GoldCustodyAndBorrowingHelper.FormatCustodyLocationSummary(cust),
+                            ReferenceBorrowingID = null,
+                            MovementDate = DateTime.Today,
+                            MovedByUserID = 1,
+                            Remarks = $"बाह्य कर्ज '{brw.BorrowingNo}' व्हाउचर रद्द/डिलीट केल्यामुळे मूळ लॉकर/तिजोरीत परत"
+                        });
+                    }
+                }
+
+                if (pledges.Any())
+                {
+                    _context.SansthaBorrowingGoldPledges.RemoveRange(pledges);
+                }
+
+                bool isOneStepCreated = disb.Remarks != null && disb.Remarks.Contains("[ONE_STEP_CREATE]", StringComparison.OrdinalIgnoreCase);
+
+                brw.DisbursedAmount = Math.Max(0m, Math.Round(brw.DisbursedAmount - disb.GrossDisbursedAmount, 2, MidpointRounding.AwayFromZero));
+                brw.OutstandingPrincipal = Math.Max(0m, Math.Round(brw.OutstandingPrincipal - disb.GrossDisbursedAmount, 2, MidpointRounding.AwayFromZero));
+
+                _context.SansthaBorrowingDisbursements.Remove(disb);
+                await _context.SaveChangesAsync();
+
+                var otherDisbs = await _context.SansthaBorrowingDisbursements
+                    .Where(d => d.BorrowingID == brw.BorrowingID)
+                    .ToListAsync();
+
+                if (!otherDisbs.Any())
+                {
+                    var schedules = await _context.SansthaBorrowingInstallmentSchedules
+                        .Where(s => s.BorrowingID == brw.BorrowingID)
+                        .ToListAsync();
+                    if (schedules.Any())
+                    {
+                        _context.SansthaBorrowingInstallmentSchedules.RemoveRange(schedules);
+                    }
+
+                    var linkedMoveLogs = await _context.GoldCustodyMovementLogs
+                        .Where(m => m.ReferenceBorrowingID == brw.BorrowingID)
+                        .ToListAsync();
+                    foreach (var mLog in linkedMoveLogs)
+                    {
+                        mLog.ReferenceBorrowingID = null;
+                    }
+
+                    brw.DisbursementVoucherID = null;
+                    brw.Status = "Sanctioned";
+                    brw.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+
+                    if (isOneStepCreated)
+                    {
+                        _context.SansthaBorrowings.Remove(brw);
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
+
+            // 3. Legacy fallback for SansthaBorrowings without SansthaBorrowingDisbursements rows
+            var legacyBorrowings = await _context.SansthaBorrowings
+                .Where(b => !handledBorrowingIds.Contains(b.BorrowingID) &&
+                            b.DisbursementVoucherID.HasValue &&
+                            voucherIds.Contains(b.DisbursementVoucherID.Value))
+                .ToListAsync();
+
+            foreach (var brw in legacyBorrowings)
             {
                 bool hasRemainingRepayments = await _context.SansthaBorrowingRepayments
                     .AnyAsync(r => r.BorrowingID == brw.BorrowingID);

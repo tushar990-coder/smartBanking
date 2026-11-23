@@ -209,6 +209,27 @@ namespace Bhisi.Api.Helpers
             return (true, ledger, null);
         }
 
+        public static async Task<(bool IsValid, Ledger? Ledger, string? ErrorMessage)> ValidateBorrowingDeductionOrChargesLedgerAsync(
+            AppDbContext db,
+            int? ledgerId)
+        {
+            if (!ledgerId.HasValue || ledgerId.Value <= 0)
+                return (false, null, "प्रोसेसिंग फी / दंड / इतर कपातीसाठी कृपया वैध खर्च किंवा मालमत्ता (Expenses / Assets) GL लेजर निवडा.");
+
+            var ledger = await db.Ledgers
+                .AsNoTracking()
+                .Include(l => l.AccountGroup)
+                .FirstOrDefaultAsync(l => l.LedgerID == ledgerId.Value && l.IsActive);
+
+            if (ledger == null)
+                return (false, null, "निवडलेले कपात / शुल्क GL लेजर सक्रिय नाही किंवा सापडले नाही.");
+
+            if (BankLedgerHelper.IsCashLedger(ledger) || BankLedgerHelper.IsBankLedger(ledger))
+                return (false, ledger, $"कपात / शुल्क लेजर म्हणून रोख किंवा बँक खाते ('{ledger.LedgerName}') वापरता येत नाही.");
+
+            return (true, ledger, null);
+        }
+
         public static async Task<(bool IsValid, int LedgerId, string NormalizedMode, string? ErrorMessage)> ResolveSettlementLedgerAsync(
             AppDbContext db,
             int branchId,

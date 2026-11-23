@@ -31,6 +31,7 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
                 .Include(s => s.CommissionExpenseLedger)
+                .Include(s => s.PrematureDeductionLedger)
                 .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
                 .ToListAsync();
         }
@@ -44,6 +45,7 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
                 .Include(s => s.CommissionExpenseLedger)
+                .Include(s => s.PrematureDeductionLedger)
                 .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
                 .FirstOrDefaultAsync(s => s.PigmySchemeID == id);
 
@@ -71,15 +73,32 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = "पिग्मी योजना सापडली नाही." });
             }
 
+            var ledgerCheck = await Helpers.PigmySettlementHelper.ValidatePigmySchemeMappingsAsync(_context, pigmyScheme);
+            if (!ledgerCheck.IsValid)
+            {
+                return BadRequest(new { message = ledgerCheck.ErrorMessage });
+            }
+
+            int resolvedTenureDays = pigmyScheme.Slabs != null && pigmyScheme.Slabs.Any(s => s.IsActive)
+                ? pigmyScheme.Slabs.Where(s => s.IsActive).Max(s => s.ToDays)
+                : (pigmyScheme.TenureDays > 0 ? pigmyScheme.TenureDays : (pigmyScheme.DurationMonths > 60 ? pigmyScheme.DurationMonths : Math.Max(1, pigmyScheme.DurationMonths) * 30));
+
+            int resolvedDurationMonths = pigmyScheme.DurationMonths > 0 && pigmyScheme.DurationMonths <= 60
+                ? pigmyScheme.DurationMonths
+                : Math.Max(1, (int)Math.Round(resolvedTenureDays / 30.0, MidpointRounding.AwayFromZero));
+
             existing.SchemeCode = !string.IsNullOrWhiteSpace(pigmyScheme.SchemeCode) ? pigmyScheme.SchemeCode.Trim() : existing.SchemeCode;
             existing.SchemeName = pigmyScheme.SchemeName;
             existing.InterestRate = pigmyScheme.InterestRate;
-            existing.DurationMonths = pigmyScheme.DurationMonths;
+            existing.DurationMonths = resolvedDurationMonths;
+            existing.TenureDays = resolvedTenureDays;
+            existing.InterestDaysInYear = pigmyScheme.InterestDaysInYear >= 360 && pigmyScheme.InterestDaysInYear <= 366 ? pigmyScheme.InterestDaysInYear : 365;
             existing.Status = pigmyScheme.Status;
             existing.PigmyLiabilityLedgerID = pigmyScheme.PigmyLiabilityLedgerID;
             existing.InterestExpenseLedgerID = pigmyScheme.InterestExpenseLedgerID;
             existing.InterestPayableLedgerID = pigmyScheme.InterestPayableLedgerID;
             existing.CommissionExpenseLedgerID = pigmyScheme.CommissionExpenseLedgerID;
+            existing.PrematureDeductionLedgerID = pigmyScheme.PrematureDeductionLedgerID;
             existing.PrematureInterestRate = pigmyScheme.PrematureInterestRate;
             existing.MinDurationMonths = pigmyScheme.MinDurationMonths;
             existing.PenaltyInterestRate = pigmyScheme.PenaltyInterestRate;
@@ -148,6 +167,12 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "Admin,Manager,SuperAdmin,HeadOffice")]
         public async Task<ActionResult<PigmyScheme>> PostPigmyScheme(PigmyScheme pigmyScheme)
         {
+            var ledgerCheck = await Helpers.PigmySettlementHelper.ValidatePigmySchemeMappingsAsync(_context, pigmyScheme);
+            if (!ledgerCheck.IsValid)
+            {
+                return BadRequest(new { message = ledgerCheck.ErrorMessage });
+            }
+
             pigmyScheme.CreatedDate = DateTime.Now;
             if (string.IsNullOrWhiteSpace(pigmyScheme.SchemeCode))
             {
@@ -174,18 +199,30 @@ namespace Bhisi.Api.Controllers
             // Auto-populate 4 standard default slabs if none provided
             if (pigmyScheme.Slabs == null || !pigmyScheme.Slabs.Any())
             {
-                int duration = pigmyScheme.DurationMonths > 0 ? pigmyScheme.DurationMonths : 12;
-                decimal pRate = pigmyScheme.PenaltyInterestRate ?? 2.00m;
+                int duration = pigmyScheme.DurationMonths > 0 && pigmyScheme.DurationMonths <= 60 ? pigmyScheme.DurationMonths : 12;
+                int maxDays = pigmyScheme.TenureDays > 0 ? pigmyScheme.TenureDays : (duration == 12 ? 365 : duration * 30);
+                decimal pRate = pigmyScheme.PenaltyInterestRate ?? 0.00m;
                 decimal premRate = pigmyScheme.PrematureInterestRate ?? 5.50m;
                 decimal regRate = pigmyScheme.InterestRate;
 
                 pigmyScheme.Slabs = new List<PigmySchemeInterestSlab>
                 {
-                    new PigmySchemeInterestSlab { FromDays = 0, ToDays = 90, InterestRate = 0.00m, PenaltyRate = pRate, SlabDescription = "० ते ९० दिवस (२% दंड कपात)", IsActive = true },
-                    new PigmySchemeInterestSlab { FromDays = 91, ToDays = 180, InterestRate = 0.00m, PenaltyRate = 1.00m, SlabDescription = "९१ ते १८० दिवस (१% दंड कपात)", IsActive = true },
-                    new PigmySchemeInterestSlab { FromDays = 181, ToDays = 335, InterestRate = premRate, PenaltyRate = 0.00m, SlabDescription = "१८१ ते ३३५ दिवस (अकाली व्याजदर)", IsActive = true },
-                    new PigmySchemeInterestSlab { FromDays = 336, ToDays = Math.Max(365, duration * 30), InterestRate = regRate, PenaltyRate = 0.00m, SlabDescription = "३३६ ते ३६५ दिवस (पूर्ण नियमित व्याज)", IsActive = true }
+                    new PigmySchemeInterestSlab { FromDays = 0, ToDays = 90, InterestRate = 0.00m, PenaltyRate = pRate, SlabDescription = pRate > 0 ? $"० ते ९० दिवस ({pRate}% कमिशन/दंड कपात)" : "० ते ९० दिवस (०% व्याज)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromDays = 91, ToDays = 180, InterestRate = 0.00m, PenaltyRate = 0.00m, SlabDescription = "९१ ते १८० दिवस (मुद्दल परत, ०% व्याज)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromDays = 181, ToDays = Math.Max(182, maxDays - 30), InterestRate = premRate, PenaltyRate = 0.00m, SlabDescription = $"१८१ ते {Math.Max(182, maxDays - 30)} दिवस ({premRate}% मुदतपूर्व व्याज)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromDays = Math.Max(183, maxDays - 29), ToDays = maxDays, InterestRate = regRate, PenaltyRate = 0.00m, SlabDescription = $"{Math.Max(183, maxDays - 29)} ते {maxDays} दिवस ({regRate}% पूर्ण नियमित व्याज)", IsActive = true }
                 };
+            }
+
+            int postTenureDays = pigmyScheme.Slabs.Where(s => s.IsActive).Select(s => s.ToDays).DefaultIfEmpty(365).Max();
+            pigmyScheme.TenureDays = postTenureDays > 0 ? postTenureDays : 365;
+            if (pigmyScheme.DurationMonths <= 0 || pigmyScheme.DurationMonths > 60)
+            {
+                pigmyScheme.DurationMonths = Math.Max(1, (int)Math.Round(pigmyScheme.TenureDays / 30.0, MidpointRounding.AwayFromZero));
+            }
+            if (pigmyScheme.InterestDaysInYear < 360 || pigmyScheme.InterestDaysInYear > 366)
+            {
+                pigmyScheme.InterestDaysInYear = 365;
             }
 
             _context.PigmySchemes.Add(pigmyScheme);

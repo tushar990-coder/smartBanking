@@ -54,6 +54,14 @@ namespace Bhisi.Api.Controllers
 
             setting.IsActive = true;
             setting.EffectiveFrom = DateTime.Today;
+            if (prod == "PIGMY" && setting.DeductPrematureWithdrawals && setting.PrematureLockInDays <= 0)
+            {
+                setting.PrematureLockInDays = 180;
+            }
+            else if (prod != "PIGMY")
+            {
+                setting.DeductPrematureWithdrawals = false;
+            }
 
             _context.PigmyCommissionSettings.Add(setting);
             await _context.SaveChangesAsync();
@@ -242,9 +250,39 @@ namespace Bhisi.Api.Controllers
                     decimal totalCollection = 0m;
                     if (product == "PIGMY")
                     {
-                        totalCollection = await _context.PigmyCollections
+                        decimal rawCollection = await _context.PigmyCollections
                             .Where(c => c.AgentId == agent.PigmyAgentID && c.CollectionDate >= startDate && c.CollectionDate < queryNextDate)
                             .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+
+                        if (setting.DeductPrematureWithdrawals)
+                        {
+                            int lockDays = setting.PrematureLockInDays > 0 ? setting.PrematureLockInDays : 180;
+
+                            decimal prematurePartials = await _context.PigmyWithdrawals
+                                .Include(w => w.PigmyAccount)
+                                .Where(w => w.PigmyAccount != null &&
+                                            w.PigmyAccount.PigmyAgentID == agent.PigmyAgentID &&
+                                            w.WithdrawalDate >= startDate &&
+                                            w.WithdrawalDate < queryNextDate &&
+                                            w.ElapsedDays <= lockDays)
+                                .SumAsync(w => (decimal?)w.RequestedAmount) ?? 0m;
+
+                            decimal prematureClosures = await _context.PigmyAccountClosures
+                                .Include(c => c.PigmyAccount)
+                                .Where(c => c.PigmyAccount != null &&
+                                            c.PigmyAccount.PigmyAgentID == agent.PigmyAgentID &&
+                                            c.ClosureDate >= startDate &&
+                                            c.ClosureDate < queryNextDate &&
+                                            c.IsPremature &&
+                                            c.ElapsedDays <= lockDays)
+                                .SumAsync(c => (decimal?)c.GrossDepositBalance) ?? 0m;
+
+                            totalCollection = Math.Max(0m, Math.Round(rawCollection - prematurePartials - prematureClosures, 2, MidpointRounding.AwayFromZero));
+                        }
+                        else
+                        {
+                            totalCollection = rawCollection;
+                        }
                     }
                     else if (product == "LOAN")
                     {

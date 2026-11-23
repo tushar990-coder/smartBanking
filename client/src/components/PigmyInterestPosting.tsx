@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { resolveWriteBranchId } from '../utils/branchAccess';
+import { getEffectiveBranchId, resolveWriteBranchId } from '../utils/branchAccess';
 import { formatLocalYmd, getBusinessDateStr, parseYmdAsLocalDate } from '../utils/businessDateUtils';
 
 interface InterestPreviewResult {
@@ -10,12 +10,15 @@ interface InterestPreviewResult {
   accountNo: string;
   customerName?: string;
   memberName?: string;
+  schemeName?: string;
+  appliedInterestRate?: number;
+  calculationMethod?: string;
   currentBalance: number;
   calculatedInterest: number;
 }
 
 const PigmyInterestPosting: React.FC = () => {
-  const { user } = useAuth();
+  const { user, globalBranchId } = useAuth();
   const activeBizStr = getBusinessDateStr(user?.businessDate);
   const activeBizDate = parseYmdAsLocalDate(activeBizStr);
   const [startDate, setStartDate] = useState(formatLocalYmd(new Date(activeBizDate.getFullYear(), 3, 1))); // April 1
@@ -40,8 +43,13 @@ const PigmyInterestPosting: React.FC = () => {
     setLoading(true);
     setMessage('');
     try {
-      const res = await axios.get('/api/PigmyInterest/CalculatePreview', {
-        params: { startDate, endDate }
+      const effBranch = getEffectiveBranchId(user, globalBranchId);
+      const res = await api.get('/api/PigmyInterest/CalculatePreview', {
+        params: {
+          startDate,
+          endDate,
+          ...(typeof effBranch === 'number' && effBranch > 0 ? { branchId: effBranch } : {})
+        }
       });
       setPreviews(res.data || []);
       if (!res.data || res.data.length === 0) {
@@ -64,7 +72,7 @@ const PigmyInterestPosting: React.FC = () => {
     
     setLoading(true);
     try {
-      const res = await axios.post('/api/PigmyInterest/PostInterest', {
+      const res = await api.post('/api/PigmyInterest/PostInterest', {
         startDate,
         endDate,
         postingDate,

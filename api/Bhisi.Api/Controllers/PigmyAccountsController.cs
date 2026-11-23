@@ -484,7 +484,9 @@ namespace Bhisi.Api.Controllers
 
                 string accountHolderName = $"{customer.FirstName} {customer.LastName}".Trim();
 
-                var scheme = await _context.PigmySchemes.FindAsync(request.PigmySchemeID);
+                var scheme = await _context.PigmySchemes
+                    .Include(s => s.Slabs)
+                    .FirstOrDefaultAsync(s => s.PigmySchemeID == request.PigmySchemeID);
                 if (scheme == null || scheme.Status != "Active") return BadRequest("Invalid or inactive Scheme.");
 
                 var agent = await _context.PigmyAgents.FindAsync(request.PigmyAgentID);
@@ -537,6 +539,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // 3. Create Account
+                int openTenureDays = Services.PigmyInterestCalculationService.ResolveSchemeTenureDays(scheme);
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
@@ -548,7 +551,7 @@ namespace Bhisi.Api.Controllers
                     PigmyAgentID = request.PigmyAgentID,
                     OpeningDate = request.OpeningDate,
                     InterestRate = scheme!.InterestRate,
-                    MaturityDate = request.OpeningDate.AddMonths(scheme!.DurationMonths > 0 ? scheme!.DurationMonths : 12),
+                    MaturityDate = request.OpeningDate.Date.AddDays(openTenureDays),
                     TotalDepositedAmount = request.OpeningBalance,
                     Status = "Active",
                     CreatedDate = DateTime.Now,
@@ -656,7 +659,9 @@ namespace Bhisi.Api.Controllers
                 var customer = await _context.Customers.FindAsync(request.CustomerID);
                 if (customer == null) return BadRequest("निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
 
-                var scheme = await _context.PigmySchemes.FindAsync(request.PigmySchemeID);
+                var scheme = await _context.PigmySchemes
+                    .Include(s => s.Slabs)
+                    .FirstOrDefaultAsync(s => s.PigmySchemeID == request.PigmySchemeID);
                 if (scheme == null || scheme.Status != "Active") return BadRequest("Invalid or inactive Scheme.");
 
                 var agent = await _context.PigmyAgents.FindAsync(request.PigmyAgentID);
@@ -706,6 +711,7 @@ namespace Bhisi.Api.Controllers
                     accountNo = await GenerateNextPigmyAccountNo(request.BranchID, request.PigmySchemeID, incrementSequence: true);
                 }
 
+                int migTenureDays = Services.PigmyInterestCalculationService.ResolveSchemeTenureDays(scheme);
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
@@ -717,7 +723,7 @@ namespace Bhisi.Api.Controllers
                     PigmyAgentID = request.PigmyAgentID,
                     OpeningDate = request.OpeningDate,
                     InterestRate = scheme!.InterestRate,
-                    MaturityDate = request.OpeningDate.AddMonths(scheme!.DurationMonths > 0 ? scheme!.DurationMonths : 12),
+                    MaturityDate = request.OpeningDate.Date.AddDays(migTenureDays),
                     TotalDepositedAmount = request.OpeningBalance,
                     Status = "Active",
                     CreatedDate = DateTime.Now,

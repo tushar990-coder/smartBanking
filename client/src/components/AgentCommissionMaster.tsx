@@ -45,6 +45,8 @@ interface Setting {
   commissionType: string;
   commissionValue: number;
   calculationFrequency: string;
+  deductPrematureWithdrawals?: boolean;
+  prematureLockInDays?: number;
   isActive: boolean;
 }
 
@@ -127,6 +129,8 @@ export default function AgentCommissionMaster() {
   const [formCommissionType, setFormCommissionType] = useState<string>('PERCENTAGE');
   const [formCommissionValue, setFormCommissionValue] = useState<number>(2.5);
   const [formFrequency, setFormFrequency] = useState<string>('DAILY');
+  const [formDeductPremature, setFormDeductPremature] = useState<boolean>(false);
+  const [formPrematureLockInDays, setFormPrematureLockInDays] = useState<number>(180);
 
   // Payment Modal State
   const [selectedPayCommission, setSelectedPayCommission] = useState<PendingCommission | null>(null);
@@ -252,13 +256,17 @@ export default function AgentCommissionMaster() {
         productType: formProductType,
         commissionType: formCommissionType,
         commissionValue: formCommissionValue,
-        calculationFrequency: formFrequency
+        calculationFrequency: formFrequency,
+        deductPrematureWithdrawals: formProductType === 'PIGMY' ? formDeductPremature : false,
+        prematureLockInDays: formProductType === 'PIGMY' ? Number(formPrematureLockInDays || 180) : 180
       });
 
       setMessage({ text: 'एजंट कमिशन दर यशस्वीरीत्या सेव्ह झाला!', type: 'success' });
       fetchSettings();
       setFormAgentId('');
       setFormCommissionValue(2.5);
+      setFormDeductPremature(false);
+      setFormPrematureLockInDays(180);
     } catch (err: any) {
       setMessage({ text: 'सेटिंग सेव्ह करताना त्रुटी आली: ' + (err.response?.data || err.message), type: 'error' });
     }
@@ -646,6 +654,37 @@ export default function AgentCommissionMaster() {
                 </select>
               </div>
 
+              {formProductType === 'PIGMY' && (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formDeductPremature}
+                      onChange={(e) => setFormDeductPremature(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 text-amber-600 rounded border-gray-300"
+                    />
+                    <span className="text-[11px] font-bold text-amber-950 leading-tight">
+                      लॉक-इन कालावधीतील मुदतपूर्व पिग्मी विड्रॉल/क्लोजर संकलनातून वजा करा (Deduct Premature Withdrawals)
+                    </span>
+                  </label>
+                  {formDeductPremature && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-amber-900 mb-0.5">
+                        लॉक-इन दिवस (Premature Lock-In Days)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={1095}
+                        value={formPrematureLockInDays}
+                        onChange={(e) => setFormPrematureLockInDays(Math.max(1, Number(e.target.value) || 180))}
+                        className={inputClass}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button
                 type="submit"
                 className="w-full py-2 bg-primary hover:bg-[#004a75] text-white font-extrabold rounded-xl shadow-2xs transition duration-200 text-xs flex items-center justify-center gap-1.5"
@@ -712,7 +751,12 @@ export default function AgentCommissionMaster() {
                           {s.commissionType === 'PERCENTAGE' ? `${s.commissionValue}%` : `₹ ${s.commissionValue.toLocaleString('en-IN')}`}
                         </td>
                         <td className="py-2.5 px-3 text-center font-bold text-gray-600">
-                          {s.calculationFrequency}
+                          <div>{s.calculationFrequency}</div>
+                          {(s.productType === 'PIGMY' || !s.productType) && s.deductPrematureWithdrawals && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold">
+                              लॉक-इन वजावट: ≤{s.prematureLockInDays || 180} दि.
+                            </span>
+                          )}
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <button

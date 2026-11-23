@@ -395,6 +395,9 @@ namespace Bhisi.Api.Controllers
                             }
                         }
 
+                        // 🌟 Apply deferred Saving Transfer credit for Pigmy Withdrawal / Closure ONLY upon Voucher Approval
+                        await Helpers.PigmySettlementHelper.ApplyApprovedPigmySavingTransferAsync(_context, voucher, approverId);
+
                         // 🌟 Activate OverdueRecoveryLedgers debit ONLY upon LEG-* Voucher Approval
                         var approvedLegalExpenses = await _context.Sec101LegalExpenses
                             .Where(e => e.VoucherId == voucher.VoucherID && e.IsDebitedToLoan && e.LoanAccountId > 0)
@@ -588,10 +591,14 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    // 🌟 Reverse Saving Transfer credit for Loan Disbursement when Unpassed back to Pending
+                    // 🌟 Reverse Saving Transfer credit for Loan Disbursement or Pigmy Settlement when Unpassed back to Pending
                     bool isLoanDisbursementVoucher = await _context.LoanDisbursements
                         .AnyAsync(d => d.VoucherID == voucher.VoucherID);
-                    if (isLoanDisbursementVoucher)
+                    bool isPigmySettlementVoucher = await _context.PigmyWithdrawals
+                        .AnyAsync(w => w.VoucherID == voucher.VoucherID || (!string.IsNullOrEmpty(voucher.VoucherNo) && w.VoucherNo == voucher.VoucherNo))
+                        || await _context.PigmyAccountClosures
+                        .AnyAsync(c => c.VoucherID == voucher.VoucherID || (!string.IsNullOrEmpty(voucher.VoucherNo) && c.VoucherNo == voucher.VoucherNo));
+                    if (isLoanDisbursementVoucher || isPigmySettlementVoucher)
                     {
                         await LoanDisbursementReversalHelper.ReverseSavingTransferCreditForVoucherAsync(_context, voucher.VoucherNo);
                     }

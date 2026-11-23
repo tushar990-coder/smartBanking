@@ -106,6 +106,7 @@ namespace Bhisi.Api.Data
         public DbSet<AgentCustomerRequest> AgentCustomerRequests { get; set; }
         public DbSet<PigmyAgentAccountTransfer> PigmyAgentAccountTransfers { get; set; }
         public DbSet<PigmyWithdrawal> PigmyWithdrawals { get; set; }
+        public DbSet<PigmyAccountClosure> PigmyAccountClosures { get; set; }
 
         // Investment Module DbSets
         public DbSet<InvestmentInstitution> InvestmentInstitutions { get; set; }
@@ -190,6 +191,8 @@ namespace Bhisi.Api.Data
         public DbSet<GoldLoanCustody> GoldLoanCustodies { get; set; }
         public DbSet<GoldCustodyMovementLog> GoldCustodyMovementLogs { get; set; }
         public DbSet<SansthaBorrowing> SansthaBorrowings { get; set; }
+        public DbSet<SansthaBorrowingDisbursement> SansthaBorrowingDisbursements { get; set; }
+        public DbSet<SansthaBorrowingInstallmentSchedule> SansthaBorrowingInstallmentSchedules { get; set; }
         public DbSet<SansthaBorrowingGoldPledge> SansthaBorrowingGoldPledges { get; set; }
         public DbSet<SansthaBorrowingRepayment> SansthaBorrowingRepayments { get; set; }
 

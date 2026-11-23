@@ -4317,6 +4317,101 @@ try
                 );
                 CREATE NONCLUSTERED INDEX [IX_SansthaBorrowingRepayments_Borrowing] ON [dbo].[SansthaBorrowingRepayments] ([BorrowingID], [RepaymentDate]);
             END
+
+            IF COL_LENGTH(N'[dbo].[PigmySchemes]', N'PrematureDeductionLedgerID') IS NULL
+                ALTER TABLE [dbo].[PigmySchemes] ADD [PrematureDeductionLedgerID] int NULL;
+
+            IF COL_LENGTH(N'[dbo].[PigmyCommissionSettings]', N'DeductPrematureWithdrawals') IS NULL
+                ALTER TABLE [dbo].[PigmyCommissionSettings] ADD [DeductPrematureWithdrawals] bit NOT NULL CONSTRAINT [DF_PigmyCommSettings_DeductPrem] DEFAULT 0;
+
+            IF COL_LENGTH(N'[dbo].[PigmyCommissionSettings]', N'PrematureLockInDays') IS NULL
+                ALTER TABLE [dbo].[PigmyCommissionSettings] ADD [PrematureLockInDays] int NOT NULL CONSTRAINT [DF_PigmyCommSettings_LockDays] DEFAULT 90;
+
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'VoucherID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [VoucherID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'PaymentMode') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [PaymentMode] nvarchar(30) NOT NULL CONSTRAINT [DF_PigmyWithdrawals_PayMode] DEFAULT 'Cash';
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'BankLedgerID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [BankLedgerID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'SavingAccountID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [SavingAccountID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'ReferenceNo') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [ReferenceNo] nvarchar(80) NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'AdjustInLoan') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [AdjustInLoan] bit NOT NULL CONSTRAINT [DF_PigmyWithdrawals_AdjLoan] DEFAULT 0;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'TargetLoanAccountID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [TargetLoanAccountID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'LoanAdjustedAmount') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [LoanAdjustedAmount] decimal(18,2) NOT NULL CONSTRAINT [DF_PigmyWithdrawals_LoanAdjAmt] DEFAULT 0;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'LinkedLoanCollectionID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [LinkedLoanCollectionID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'SurplusPayoutAmount') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [SurplusPayoutAmount] decimal(18,2) NOT NULL CONSTRAINT [DF_PigmyWithdrawals_SurplusAmt] DEFAULT 0;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'SurplusPaymentMode') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [SurplusPaymentMode] nvarchar(30) NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'SurplusBankLedgerID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [SurplusBankLedgerID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'SurplusSavingAccountID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [SurplusSavingAccountID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'DeductionLedgerID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [DeductionLedgerID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'InterestDebitLedgerID') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [InterestDebitLedgerID] int NULL;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'IsManualOverride') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [IsManualOverride] bit NOT NULL CONSTRAINT [DF_PigmyWithdrawals_ManOvr] DEFAULT 0;
+            IF COL_LENGTH(N'[dbo].[PigmyWithdrawals]', N'OverrideReason') IS NULL
+                ALTER TABLE [dbo].[PigmyWithdrawals] ADD [OverrideReason] nvarchar(250) NULL;
+
+            IF OBJECT_ID(N'[dbo].[PigmyAccountClosures]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[PigmyAccountClosures] (
+                    [PigmyClosureID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [PigmyAccountID] int NOT NULL,
+                    [BranchID] int NOT NULL DEFAULT 1,
+                    [ClosureDate] datetime2 NOT NULL,
+                    [IsPremature] bit NOT NULL DEFAULT 0,
+                    [CycleNumber] int NOT NULL DEFAULT 1,
+                    [CycleStartSnapshot] datetime2 NOT NULL,
+                    [ElapsedDays] int NOT NULL DEFAULT 0,
+                    [GrossDepositBalance] decimal(18,2) NOT NULL DEFAULT 0,
+                    [AlreadyCapitalizedInterest] decimal(18,2) NOT NULL DEFAULT 0,
+                    [VerifiedProvisionedInterest] decimal(18,2) NOT NULL DEFAULT 0,
+                    [AppliedSlabID] int NULL,
+                    [CalculatedPenaltyRate] decimal(5,2) NOT NULL DEFAULT 0,
+                    [CommissionOrPenaltyAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [DeductionLedgerID] int NULL,
+                    [CalculatedInterestRate] decimal(5,2) NOT NULL DEFAULT 0,
+                    [FinalInterestAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [InterestDebitMode] nvarchar(30) NOT NULL DEFAULT 'Expense',
+                    [InterestDebitLedgerID] int NULL,
+                    [NetPayableAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [PaymentMode] nvarchar(30) NOT NULL DEFAULT 'Cash',
+                    [BankLedgerID] int NULL,
+                    [SavingAccountID] int NULL,
+                    [ReferenceNo] nvarchar(80) NULL,
+                    [AdjustInLoan] bit NOT NULL DEFAULT 0,
+                    [TargetLoanAccountID] int NULL,
+                    [LoanAdjustedAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [LinkedLoanCollectionID] int NULL,
+                    [SurplusPayoutAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [SurplusPaymentMode] nvarchar(30) NULL,
+                    [SurplusBankLedgerID] int NULL,
+                    [SurplusSavingAccountID] int NULL,
+                    [PreviousAccountStatus] nvarchar(20) NOT NULL DEFAULT 'Active',
+                    [WasLienMarked] bit NOT NULL DEFAULT 0,
+                    [PreviousLienLoanAccountNo] nvarchar(50) NULL,
+                    [PreviousLienAmount] decimal(18,2) NULL,
+                    [IsManualOverride] bit NOT NULL DEFAULT 0,
+                    [OverrideReason] nvarchar(250) NULL,
+                    [VoucherID] int NULL,
+                    [VoucherNo] nvarchar(60) NULL,
+                    [Narration] nvarchar(500) NULL,
+                    [CreatedBy] int NOT NULL DEFAULT 1,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE()
+                );
+                CREATE NONCLUSTERED INDEX [IX_PigmyAccountClosures_Account] ON [dbo].[PigmyAccountClosures] ([PigmyAccountID]);
+                CREATE NONCLUSTERED INDEX [IX_PigmyAccountClosures_Voucher] ON [dbo].[PigmyAccountClosures] ([VoucherID]);
+            END
             ");
             Log.Information("Gold Custody & Sanstha Borrowing schema DDL verified successfully.");
         }
@@ -4598,6 +4693,138 @@ try
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to auto-heal orphan FD Opening SB Debit transactions on startup");
+        }
+
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.SansthaBorrowings', 'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH('SansthaBorrowings', 'SanctionLetterNo') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [SanctionLetterNo] NVARCHAR(80) NULL;
+                    IF COL_LENGTH('SansthaBorrowings', 'PenalInterestRate') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [PenalInterestRate] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_SansthaBrw_PenRate] DEFAULT 0;
+                    IF COL_LENGTH('SansthaBorrowings', 'InstallmentType') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [InstallmentType] NVARCHAR(30) NOT NULL CONSTRAINT [DF_SansthaBrw_InstType] DEFAULT 'EMI';
+                    IF COL_LENGTH('SansthaBorrowings', 'InstallmentFrequency') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [InstallmentFrequency] NVARCHAR(30) NOT NULL CONSTRAINT [DF_SansthaBrw_InstFreq] DEFAULT 'Monthly';
+                    IF COL_LENGTH('SansthaBorrowings', 'TenureMonths') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [TenureMonths] INT NOT NULL CONSTRAINT [DF_SansthaBrw_TenureM] DEFAULT 12;
+                    IF COL_LENGTH('SansthaBorrowings', 'TotalInstallments') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [TotalInstallments] INT NOT NULL CONSTRAINT [DF_SansthaBrw_TotInst] DEFAULT 12;
+                    IF COL_LENGTH('SansthaBorrowings', 'MoratoriumMonths') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [MoratoriumMonths] INT NOT NULL CONSTRAINT [DF_SansthaBrw_MoratM] DEFAULT 0;
+                    IF COL_LENGTH('SansthaBorrowings', 'FirstInstallmentDueDate') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [FirstInstallmentDueDate] DATETIME2 NULL;
+                    IF COL_LENGTH('SansthaBorrowings', 'LastInterestPaidDate') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [LastInterestPaidDate] DATETIME2 NULL;
+                    IF COL_LENGTH('SansthaBorrowings', 'IsOpeningBalance') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [IsOpeningBalance] BIT NOT NULL CONSTRAINT [DF_SansthaBrw_IsOB] DEFAULT 0;
+                    IF COL_LENGTH('SansthaBorrowings', 'ProcessingChargesLedgerID') IS NULL ALTER TABLE [dbo].[SansthaBorrowings] ADD [ProcessingChargesLedgerID] INT NULL;
+                END
+
+                IF OBJECT_ID('dbo.SansthaBorrowingGoldPledges', 'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH('SansthaBorrowingGoldPledges', 'BorrowingDisbursementID') IS NULL
+                        ALTER TABLE [dbo].[SansthaBorrowingGoldPledges] ADD [BorrowingDisbursementID] INT NULL;
+                END
+
+                IF OBJECT_ID('dbo.SansthaBorrowingRepayments', 'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH('SansthaBorrowingRepayments', 'RepaymentNo') IS NULL ALTER TABLE [dbo].[SansthaBorrowingRepayments] ADD [RepaymentNo] NVARCHAR(60) NULL;
+                    IF COL_LENGTH('SansthaBorrowingRepayments', 'RepaymentType') IS NULL ALTER TABLE [dbo].[SansthaBorrowingRepayments] ADD [RepaymentType] NVARCHAR(30) NOT NULL CONSTRAINT [DF_SansthaBrwRep_Type] DEFAULT 'RegularEMI';
+                    IF COL_LENGTH('SansthaBorrowingRepayments', 'InstallmentsCovered') IS NULL ALTER TABLE [dbo].[SansthaBorrowingRepayments] ADD [InstallmentsCovered] NVARCHAR(120) NULL;
+                    IF COL_LENGTH('SansthaBorrowingRepayments', 'ChargesLedgerID') IS NULL ALTER TABLE [dbo].[SansthaBorrowingRepayments] ADD [ChargesLedgerID] INT NULL;
+                    IF COL_LENGTH('SansthaBorrowingRepayments', 'BalanceBeforeRepayment') IS NULL ALTER TABLE [dbo].[SansthaBorrowingRepayments] ADD [BalanceBeforeRepayment] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_SansthaBrwRep_BalBefore] DEFAULT 0;
+                    IF COL_LENGTH('SansthaBorrowingRepayments', 'BalanceAfterRepayment') IS NULL ALTER TABLE [dbo].[SansthaBorrowingRepayments] ADD [BalanceAfterRepayment] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_SansthaBrwRep_BalAfter] DEFAULT 0;
+                    IF COL_LENGTH('SansthaBorrowingRepayments', 'PreviousLastInterestPaidDate') IS NULL ALTER TABLE [dbo].[SansthaBorrowingRepayments] ADD [PreviousLastInterestPaidDate] DATETIME2 NULL;
+                END
+
+                IF OBJECT_ID('dbo.SansthaBorrowingDisbursements', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE [dbo].[SansthaBorrowingDisbursements] (
+                        [BorrowingDisbursementID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                        [BorrowingID] INT NOT NULL,
+                        [BranchID] INT NOT NULL DEFAULT 1,
+                        [DisbursementNo] NVARCHAR(60) NOT NULL,
+                        [DisbursementDate] DATETIME2 NOT NULL,
+                        [GrossDisbursedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [ProcessingFeeDeducted] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [OtherDeductionsAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [DeductionLedgerID] INT NULL,
+                        [NetReceivedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [PaymentMode] NVARCHAR(30) NOT NULL DEFAULT 'Bank',
+                        [BankLedgerID] INT NULL,
+                        [ReferenceNo] NVARCHAR(80) NULL,
+                        [VoucherID] INT NULL,
+                        [Remarks] NVARCHAR(300) NULL,
+                        [CreatedBy] INT NOT NULL DEFAULT 1,
+                        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                    );
+                    CREATE NONCLUSTERED INDEX [IX_SansthaBorrowingDisbursements_Borrowing] ON [dbo].[SansthaBorrowingDisbursements] ([BorrowingID], [DisbursementDate]);
+                    CREATE NONCLUSTERED INDEX [IX_SansthaBorrowingDisbursements_Voucher] ON [dbo].[SansthaBorrowingDisbursements] ([VoucherID]);
+                END
+
+                IF OBJECT_ID('dbo.SansthaBorrowingInstallmentSchedules', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE [dbo].[SansthaBorrowingInstallmentSchedules] (
+                        [ScheduleID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                        [BorrowingID] INT NOT NULL,
+                        [InstallmentNo] INT NOT NULL,
+                        [DueDate] DATETIME2 NOT NULL,
+                        [OpeningPrincipal] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [PrincipalDue] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [InterestDue] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [TotalInstallmentAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [ClosingPrincipal] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [PrincipalPaid] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [InterestPaid] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [PenaltyPaid] DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        [PaidDate] DATETIME2 NULL,
+                        [Status] NVARCHAR(20) NOT NULL DEFAULT 'Pending',
+                        [Remarks] NVARCHAR(200) NULL
+                    );
+                    CREATE NONCLUSTERED INDEX [IX_SansthaBorrowingSchedules_Borrowing] ON [dbo].[SansthaBorrowingInstallmentSchedules] ([BorrowingID], [InstallmentNo]);
+                    CREATE NONCLUSTERED INDEX [IX_SansthaBorrowingSchedules_DueDate] ON [dbo].[SansthaBorrowingInstallmentSchedules] ([DueDate], [Status]);
+                END
+
+                IF OBJECT_ID('dbo.PigmySchemes', 'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH('PigmySchemes', 'TenureDays') IS NULL
+                        ALTER TABLE [dbo].[PigmySchemes] ADD [TenureDays] INT NOT NULL CONSTRAINT [DF_PigmySchemes_TenureDays] DEFAULT 365;
+                    IF COL_LENGTH('PigmySchemes', 'InterestDaysInYear') IS NULL
+                        ALTER TABLE [dbo].[PigmySchemes] ADD [InterestDaysInYear] INT NOT NULL CONSTRAINT [DF_PigmySchemes_IntDays] DEFAULT 365;
+                END
+            ");
+
+            await db.Database.ExecuteSqlRawAsync(@"
+                IF OBJECT_ID('dbo.PigmySchemes', 'U') IS NOT NULL
+                BEGIN
+                    UPDATE [dbo].[PigmySchemes]
+                    SET [TenureDays] = [DurationMonths],
+                        [DurationMonths] = CASE WHEN ROUND([DurationMonths] / 30.0, 0) < 1 THEN 1 ELSE CAST(ROUND([DurationMonths] / 30.0, 0) AS INT) END
+                    WHERE [DurationMonths] > 60;
+
+                    IF OBJECT_ID('dbo.PigmySchemeInterestSlabs', 'U') IS NOT NULL
+                    BEGIN
+                        ;WITH SlabMax AS (
+                            SELECT [PigmySchemeID], MAX([ToDays]) AS MaxToDays
+                            FROM [dbo].[PigmySchemeInterestSlabs]
+                            WHERE [IsActive] = 1
+                            GROUP BY [PigmySchemeID]
+                        )
+                        UPDATE s
+                        SET s.[TenureDays] = sm.MaxToDays
+                        FROM [dbo].[PigmySchemes] s
+                        INNER JOIN SlabMax sm ON s.[PigmySchemeID] = sm.[PigmySchemeID]
+                        WHERE sm.MaxToDays > 0;
+                    END
+
+                    IF OBJECT_ID('dbo.PigmyAccounts', 'U') IS NOT NULL
+                    BEGIN
+                        UPDATE a
+                        SET a.[MaturityDate] = DATEADD(DAY, CASE WHEN s.[TenureDays] > 0 THEN s.[TenureDays] ELSE 365 END, a.[OpeningDate])
+                        FROM [dbo].[PigmyAccounts] a
+                        INNER JOIN [dbo].[PigmySchemes] s ON a.[PigmySchemeID] = s.[PigmySchemeID]
+                        WHERE a.[Status] <> 'Closed'
+                          AND DATEDIFF(YEAR, a.[OpeningDate], a.[MaturityDate]) > 10;
+                    END
+                END
+            ");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to run SansthaBorrowing full lifecycle DDL upgrade on startup");
         }
     }
 

@@ -49,7 +49,8 @@ export default function Sidebar({
   
   // Helpers to detect active state
   const isSharesActive = activeTab === 'members' || activeTab === 'share-master' || activeTab === 'share-transfer' || activeTab === 'member-closure' || activeTab === 'share-withdrawal';
-  const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-documents' || activeTab === 'bank-borrowing' || activeTab === 'employee-bank' || activeTab === 'employer-master';
+  const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-documents' || activeTab === 'employee-bank' || activeTab === 'employer-master';
+  const isBorrowingActive = activeTab === 'bank-borrowing' || activeTab === 'borrowing-dashboard' || activeTab === 'borrowing-account' || activeTab === 'borrowing-disbursement' || activeTab === 'borrowing-repayment' || activeTab === 'borrowing-custody';
   const isDemandActive = activeTab === 'demand-notice' || activeTab === 'demand-recovery' || activeTab === 'demand-settings';
   const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing';
   const isFdActive = activeTab === 'fd' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-mis-payout' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate';
@@ -93,6 +94,7 @@ export default function Sidebar({
     activeTab === 'collateral-compliance' ||
     activeTab === 'sec101-reports' ||
     activeTab === 'loan-rate' ||
+    activeTab === 'borrowing-reports' ||
     activeTab === 'audit-logs';
 
   const getItemClass = (isActive: boolean) => `
@@ -314,10 +316,6 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'loan-documents')} onClick={() => handleNavigate('loan-documents')}>
               {renderSubDot(activeTab === 'loan-documents')}
               <span className="truncate">तारण दस्त व दागिने ट्रॅकिंग</span>
-            </li>
-            <li className={getSubItemClass(activeTab === 'bank-borrowing')} onClick={() => handleNavigate('bank-borrowing')}>
-              {renderSubDot(activeTab === 'bank-borrowing')}
-              <span className="truncate">बाह्य कर्जे / पुनर्गहाण</span>
             </li>
             <li className={getSubItemClass(activeTab === 'employer-master')} onClick={() => handleNavigate('employer-master')}>
               {renderSubDot(activeTab === 'employer-master')}
@@ -592,6 +590,48 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'inv-accrual')} onClick={() => handleNavigate('inv-accrual')}>
               {renderSubDot(activeTab === 'inv-accrual')}
               <span className="truncate">व्याज तरतूद</span>
+            </li>
+          </ul>
+        )}
+
+        {/* Bank & Patsanstha Borrowings Module (Standalone Full Module) */}
+        <button
+          onClick={() => handleNavigate('borrowing-dashboard')}
+          title="बाह्य कर्जे व पुनर्गहाण (Bank Borrowings)"
+          className={getModuleBtnClass(isBorrowingActive)}
+        >
+          <div className="flex items-center truncate">
+            <Building2 size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isBorrowingActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            {isSidebarOpen && <span className="truncate">बाह्य कर्जे व पुनर्गहाण</span>}
+          </div>
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isBorrowingActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+        </button>
+
+        {isSidebarOpen && isBorrowingActive && (
+          <ul className={subMenuContainerClass}>
+            <li className={getSubItemClass(activeTab === 'borrowing-dashboard' || activeTab === 'bank-borrowing')} onClick={() => handleNavigate('borrowing-dashboard')}>
+              {renderSubDot(activeTab === 'borrowing-dashboard' || activeTab === 'bank-borrowing')}
+              <span className="truncate">डॅशबोर्ड व देय हप्ते</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'borrowing-account')} onClick={() => handleNavigate('borrowing-account')}>
+              {renderSubDot(activeTab === 'borrowing-account')}
+              <span className="truncate">१. नवीन बाह्य कर्ज खाते</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'borrowing-disbursement')} onClick={() => handleNavigate('borrowing-disbursement')}>
+              {renderSubDot(activeTab === 'borrowing-disbursement')}
+              <span className="truncate">२. कर्ज रक्कम उचल (वाटप)</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'borrowing-repayment')} onClick={() => handleNavigate('borrowing-repayment')}>
+              {renderSubDot(activeTab === 'borrowing-repayment')}
+              <span className="truncate">३. हप्ता भरणा व वेळापत्रक</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'borrowing-custody')} onClick={() => handleNavigate('borrowing-custody')}>
+              {renderSubDot(activeTab === 'borrowing-custody')}
+              <span className="truncate">४. सोने पाकीट सुटका</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'borrowing-reports')} onClick={() => handleNavigate('borrowing-reports')}>
+              {renderSubDot(activeTab === 'borrowing-reports')}
+              <span className="truncate">५. खतावणी व अहवाल</span>
             </li>
           </ul>
         )}

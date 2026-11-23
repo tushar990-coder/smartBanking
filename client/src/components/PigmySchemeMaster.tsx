@@ -28,7 +28,9 @@ import SearchableSelect from './SearchableSelect';
 interface Ledger {
   ledgerID: number;
   ledgerName: string;
-  accountGroup?: { groupName: string };
+  accountType?: string;
+  isActive?: boolean;
+  accountGroup?: { groupName: string; natureOfGroup?: string };
 }
 
 export interface PigmySchemeInterestSlab {
@@ -50,6 +52,8 @@ interface PigmyScheme {
   schemeName: string;
   interestRate: number;
   durationMonths: number;
+  tenureDays?: number;
+  interestDaysInYear?: number;
   prematureInterestRate?: number;
   minDurationMonths?: number;
   interestDays?: number;
@@ -61,10 +65,12 @@ interface PigmyScheme {
   interestExpenseLedgerID?: number | null;
   interestPayableLedgerID?: number | null;
   commissionExpenseLedgerID?: number | null;
+  prematureDeductionLedgerID?: number | null;
   pigmyLiabilityLedger?: Ledger | null;
   interestExpenseLedger?: Ledger | null;
   interestPayableLedger?: Ledger | null;
   commissionExpenseLedger?: Ledger | null;
+  prematureDeductionLedger?: Ledger | null;
   createdBy?: number;
   createdDate?: string;
   slabs?: PigmySchemeInterestSlab[];
@@ -139,13 +145,14 @@ export default function PigmySchemeMaster() {
     schemeCode: '',
     schemeName: '',
     interestDays: '365',
-    interestCalculationMethod: '',
-    interestPostingFrequency: '',
+    interestCalculationMethod: 'Daily Balance Product (दैनिक शिल्लक प्रॉडक्ट)',
+    interestPostingFrequency: 'At Maturity',
     status: 'Active',
     pigmyLiabilityLedgerID: 0,
     interestExpenseLedgerID: 0,
     interestPayableLedgerID: 0,
-    commissionExpenseLedgerID: 0
+    commissionExpenseLedgerID: 0,
+    prematureDeductionLedgerID: 0
   });
 
   const [slabs, setSlabs] = useState<PigmySchemeInterestSlab[]>(() => getDefaultSlabs(2.0, 5.5, 6.5));
@@ -208,13 +215,14 @@ export default function PigmySchemeMaster() {
       schemeCode: nextCode,
       schemeName: '',
       interestDays: '365',
-      interestCalculationMethod: '',
-      interestPostingFrequency: '',
+      interestCalculationMethod: 'Daily Balance Product (दैनिक शिल्लक प्रॉडक्ट)',
+      interestPostingFrequency: 'At Maturity',
       status: 'Active',
       pigmyLiabilityLedgerID: 0,
       interestExpenseLedgerID: 0,
       interestPayableLedgerID: 0,
-      commissionExpenseLedgerID: 0
+      commissionExpenseLedgerID: 0,
+      prematureDeductionLedgerID: 0
     });
     setSlabs(getDefaultSlabs(2.0, 5.5, 6.5));
     setIsEditMode(false);
@@ -229,14 +237,15 @@ export default function PigmySchemeMaster() {
     setFormData({
       schemeCode: scheme.schemeCode || '',
       schemeName: scheme.schemeName || '',
-      interestDays: scheme.interestDays !== undefined ? String(scheme.interestDays) : '365',
-      interestCalculationMethod: scheme.interestCalculationMethod || '',
-      interestPostingFrequency: scheme.interestPostingFrequency || '',
+      interestDays: String(scheme.interestDaysInYear || scheme.interestDays || 365),
+      interestCalculationMethod: scheme.interestCalculationMethod || 'Daily Balance Product (दैनिक शिल्लक प्रॉडक्ट)',
+      interestPostingFrequency: scheme.interestPostingFrequency || 'At Maturity',
       status: scheme.status || 'Active',
       pigmyLiabilityLedgerID: scheme.pigmyLiabilityLedgerID || 0,
       interestExpenseLedgerID: scheme.interestExpenseLedgerID || 0,
       interestPayableLedgerID: scheme.interestPayableLedgerID || 0,
-      commissionExpenseLedgerID: scheme.commissionExpenseLedgerID || 0
+      commissionExpenseLedgerID: scheme.commissionExpenseLedgerID || 0,
+      prematureDeductionLedgerID: scheme.prematureDeductionLedgerID || 0
     });
 
     if (scheme.slabs && scheme.slabs.length > 0) {
@@ -339,17 +348,17 @@ export default function PigmySchemeMaster() {
         toDays: cleanVal === '' ? '' : newTo
       };
 
-      // If valid positive number and greater than current fromDays, adjust subsequent fromDays
+      // If valid positive number and greater than current fromDays, adjust subsequent fromDays (+1 without overlap)
       if (newTo > 0 && typeof updated[index].fromDays === 'number' && newTo > (updated[index].fromDays as number)) {
         if (index + 1 < updated.length) {
+          const nextStart = newTo + 1;
           updated[index + 1] = {
             ...updated[index + 1],
-            fromDays: newTo
+            fromDays: nextStart
           };
-          // If subsequent toDays is now <= new fromDays, bump it forward
           const nextTo = Number(updated[index + 1].toDays) || 0;
-          if (nextTo <= newTo) {
-            updated[index + 1].toDays = newTo + 3;
+          if (nextTo <= nextStart) {
+            updated[index + 1].toDays = nextStart + 30;
           }
         }
       }
@@ -555,15 +564,33 @@ export default function PigmySchemeMaster() {
       return;
     }
 
-    // Automatically derive scheme tenure and key rates from dynamic slabs
-    const maxDuration = Math.max(...slabs.map((s) => Number(s.toDays) || 0));
+    if (!formData.pigmyLiabilityLedgerID || formData.pigmyLiabilityLedgerID <= 0) {
+      setError('⚠️ कृपया "१. पिग्मी ठेव देयता खाते (Liability GL)" निवडा.');
+      return;
+    }
+
+    if (!formData.interestExpenseLedgerID || formData.interestExpenseLedgerID <= 0) {
+      setError('⚠️ कृपया "२. पिग्मी व्याज खर्च खाते (Interest Expense GL)" निवडा.');
+      return;
+    }
+
+    const hasAnyPenaltySlab = slabs.some((s) => s.isActive !== false && (Number(s.penaltyRate) || 0) > 0);
+    if (hasAnyPenaltySlab && (!formData.prematureDeductionLedgerID || formData.prematureDeductionLedgerID <= 0)) {
+      setError('⚠️ या योजनेत कमिशन / दंड कपात दर (> ०%) लागू असल्यामुळे कृपया "५. मुदतपूर्व पिग्मी कमिशन कपात / दंड वसुली खाते" मॅप करा.');
+      return;
+    }
+
+    // Automatically derive scheme tenure (days & months) and key rates from dynamic slabs
+    const maxTenureDays = Math.max(...slabs.map((s) => Number(s.toDays) || 0));
+    const derivedDurationMonths = Math.max(1, Math.round(maxTenureDays / 30));
+    const parsedInterestDays = Math.min(366, Math.max(360, parseInt(String(formData.interestDays || '365'), 10) || 365));
     const lastSlab = slabs[slabs.length - 1];
     const fullRate = Number(lastSlab.interestRate) || 0;
 
     // Find premature interest rate and starting month
     const prematureSlab = slabs.slice(0, -1).reverse().find((s) => (Number(s.interestRate) || 0) > 0);
     const prematureRate = prematureSlab ? (Number(prematureSlab.interestRate) || 0) : 0;
-    const minDuration = prematureSlab ? (Number(prematureSlab.fromDays) || 0) : 0;
+    const minDurationMonths = prematureSlab ? Math.max(1, Math.round((Number(prematureSlab.fromDays) || 0) / 30)) : 0;
 
     // Find penalty rate
     const penaltySlab = slabs.find((s) => (Number(s.penaltyRate) || 0) > 0);
@@ -576,14 +603,17 @@ export default function PigmySchemeMaster() {
         schemeCode: formData.schemeCode.trim(),
         schemeName: formData.schemeName.trim(),
         interestRate: fullRate,
-        durationMonths: maxDuration,
+        durationMonths: derivedDurationMonths,
+        tenureDays: maxTenureDays,
+        interestDaysInYear: parsedInterestDays,
         status: formData.status,
         pigmyLiabilityLedgerID: formData.pigmyLiabilityLedgerID || null,
         interestExpenseLedgerID: formData.interestExpenseLedgerID || null,
         interestPayableLedgerID: formData.interestPayableLedgerID || null,
         commissionExpenseLedgerID: formData.commissionExpenseLedgerID || null,
+        prematureDeductionLedgerID: formData.prematureDeductionLedgerID || null,
         prematureInterestRate: prematureRate,
-        minDurationMonths: minDuration,
+        minDurationMonths: minDurationMonths,
         penaltyInterestRate: penaltyRate,
         interestCalculationMethod: formData.interestCalculationMethod,
         interestPostingFrequency: formData.interestPostingFrequency,
@@ -633,9 +663,10 @@ export default function PigmySchemeMaster() {
       'व्याजदर (%)': s.interestRate,
       'स्लॅब्स संख्या': s.slabs?.length || 0,
       'स्लॅब तपशील': s.slabs?.map(sl => `${sl.fromDays}-${sl.toDays}D: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ') || '-',
-      'देयता खाते': s.pigmyLiabilityLedger?.ledgerName || 'डिफॉल्ट',
-      'व्याज खर्च खाते': s.interestExpenseLedger?.ledgerName || 'डिफॉल्ट',
-      'कमिशन खर्च खाते': s.commissionExpenseLedger?.ledgerName || 'डिफॉल्ट',
+      'देयता खाते': s.pigmyLiabilityLedger?.ledgerName || '-',
+      'व्याज खर्च खाते': s.interestExpenseLedger?.ledgerName || '-',
+      'कमिशन खर्च खाते': s.commissionExpenseLedger?.ledgerName || '-',
+      'मुदतपूर्व कमिशन कपात / दंड खाते': s.prematureDeductionLedger?.ledgerName || '-',
       'स्थिती': s.status === 'Active' ? 'सक्रिय' : 'बंद'
     }));
 
@@ -653,13 +684,59 @@ export default function PigmySchemeMaster() {
     return nameMatch || codeMatch || idMatch;
   });
 
-  const ledgerOptions = [
-    { value: 0, label: '-- डिफॉल्ट सिस्टीम लेजर वापरा --' },
-    ...ledgers.map((l) => ({
-      value: l.ledgerID,
-      label: `${l.ledgerID} - ${l.ledgerName}${l.accountGroup ? ` (${l.accountGroup.groupName})` : ''}`
-    }))
-  ];
+  const isCashOrBank = (l: Ledger): boolean => {
+    const accType = (l.accountType || '').trim().toLowerCase();
+    if (['cash', 'cash in hand', 'bank', 'bank account', 'bank accounts'].includes(accType)) return true;
+    const gName = (l.accountGroup?.groupName || '').trim().toLowerCase();
+    return gName.includes('रोकड') || gName.includes('बँकेतील शिल्लक') || gName.includes('cash') || gName.includes('bank');
+  };
+
+  const ledgerOptions = useMemo(
+    () =>
+      ledgers
+        .filter((l) => l.isActive !== false && !isCashOrBank(l))
+        .map((l) => ({
+          value: l.ledgerID,
+          label: `${l.ledgerID} - ${l.ledgerName}`,
+          subLabel: l.accountGroup?.groupName ? `गट: ${l.accountGroup.groupName}` : undefined,
+          badge: l.accountGroup?.natureOfGroup || l.accountType || 'GL'
+        })),
+    [ledgers]
+  );
+
+  const optionalLedgerOptions = useMemo(
+    () => [{ value: 0, label: '-- लागू नाही / निवडलेले नाही (Optional) --' }, ...ledgerOptions],
+    [ledgerOptions]
+  );
+
+  const deductionCommissionLedgerOptions = useMemo(
+    () =>
+      ledgers
+        .filter((l) => {
+          if (l.isActive === false || isCashOrBank(l)) return false;
+          const nature = (l.accountGroup?.natureOfGroup || '').trim().toLowerCase();
+          const accType = (l.accountType || '').trim().toLowerCase();
+          return (
+            ['income', 'expenses', 'expense'].includes(nature) ||
+            ['income', 'expenses', 'expense'].includes(accType) ||
+            !nature
+          );
+        })
+        .map((l) => {
+          const nature = (l.accountGroup?.natureOfGroup || l.accountType || '').trim().toLowerCase();
+          const isInc = nature === 'income';
+          return {
+            value: l.ledgerID,
+            label: `${l.ledgerID} - ${l.ledgerName}`,
+            subLabel: l.accountGroup?.groupName ? `गट: ${l.accountGroup.groupName}` : undefined,
+            badge: isInc ? 'उत्पन्न (Income)' : 'कमिशन खर्च वसुली (Expense)',
+            badgeColor: isInc
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+              : 'bg-amber-50 text-amber-800 border-amber-300'
+          };
+        }),
+    [ledgers]
+  );
 
   // KPI Calculations
   const activeCount = schemes.filter(s => s.status === 'Active').length;
@@ -877,9 +954,16 @@ export default function PigmySchemeMaster() {
                   className={`${inputClass} font-mono ${!formData.interestCalculationMethod ? 'border-amber-400 bg-amber-50/50 text-amber-900' : ''}`}
                 >
                   <option value="">-- आकारणी निवडा * --</option>
-                  <option value="Flat (फ्लॅट)">Flat (फ्लॅट)</option>
-                  <option value="Daily Reducing (दैनिक घटती)">Daily Reducing (दैनिक घटती)</option>
-                  <option value="Reducing (घटती पद्धत)">Reducing (घटती पद्धत)</option>
+                  <option value="Daily Balance Product (दैनिक शिल्लक प्रॉडक्ट)">Daily Balance Product (दैनिक शिल्लक प्रॉडक्ट)</option>
+                  <option value="Monthly Minimum Balance (मासिक किमान शिल्लक)">Monthly Minimum Balance (मासिक किमान शिल्लक)</option>
+                  <option value="Simple Pro-Rata Days (प्रत्यक्ष दिवसांनुसार सरळव्याज)">Simple Pro-Rata Days (प्रत्यक्ष दिवसांनुसार सरळव्याज)</option>
+                  <option value="Flat (फ्लॅट)">Flat (फ्लॅट स्लॅब टक्केवारी)</option>
+                  {formData.interestCalculationMethod === 'Daily Reducing (दैनिक घटती)' && (
+                    <option value="Daily Reducing (दैनिक घटती)">Daily Reducing / दैनिक शिल्लक (Legacy)</option>
+                  )}
+                  {formData.interestCalculationMethod === 'Reducing (घटती पद्धत)' && (
+                    <option value="Reducing (घटती पद्धत)">Reducing / दैनिक शिल्लक (Legacy)</option>
+                  )}
                 </select>
               </div>
 
@@ -1095,14 +1179,14 @@ export default function PigmySchemeMaster() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
               <div>
                 <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
-                  १. पिग्मी ठेव देयता खाते (Pigmy Deposit Liability Ledger)
+                  १. पिग्मी ठेव देयता खाते (Pigmy Deposit Liability Ledger) <span className="text-red-500">*</span>
                 </label>
                 <SearchableSelect
                   name="pigmyLiabilityLedgerID"
-                  value={formData.pigmyLiabilityLedgerID}
-                  onChange={(e) => setFormData({ ...formData, pigmyLiabilityLedgerID: Number(e.target.value) })}
+                  value={formData.pigmyLiabilityLedgerID || ''}
+                  onChange={(e) => setFormData({ ...formData, pigmyLiabilityLedgerID: Number(e.target.value) || 0 })}
                   options={ledgerOptions}
-                  placeholder="-- उदा. १० पिग्मी ठेव खाते निवडा --"
+                  placeholder="-- पिग्मी ठेव देयता लेजर निवडा * --"
                 />
                 <span className="text-[10px] text-gray-500 block mt-0.5">
                   पिग्मी जमा रकमेची मुख्य देयता (Liability) नोंद.
@@ -1111,33 +1195,33 @@ export default function PigmySchemeMaster() {
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
-                  २. पिग्मी व्याज खर्च खाते (Pigmy Interest Expense Ledger)
+                  २. पिग्मी व्याज खर्च खाते (Pigmy Interest Expense Ledger) <span className="text-red-500">*</span>
                 </label>
                 <SearchableSelect
                   name="interestExpenseLedgerID"
-                  value={formData.interestExpenseLedgerID}
-                  onChange={(e) => setFormData({ ...formData, interestExpenseLedgerID: Number(e.target.value) })}
+                  value={formData.interestExpenseLedgerID || ''}
+                  onChange={(e) => setFormData({ ...formData, interestExpenseLedgerID: Number(e.target.value) || 0 })}
                   options={ledgerOptions}
-                  placeholder="-- उदा. १३३ पिग्मी ठेवीवरील व्याज निवडा --"
+                  placeholder="-- पिग्मी ठेवीवरील व्याज खर्च लेजर निवडा * --"
                 />
                 <span className="text-[10px] text-gray-500 block mt-0.5">
-                  नफा-तोटा खात्याशी संलग्न व्याज खर्च खाते.
+                  नफा-तोटा खात्याशी संलग्न व्याज खर्च खाते (विड्रॉल व क्लोजरच्या वेळी आपोआप वापरले जाते).
                 </span>
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
-                  ३. पिग्मी देणे व्याज खाते (Pigmy Interest Payable Ledger)
+                  ३. पिग्मी देणे व्याज तरतूद खाते (Pigmy Interest Payable Ledger — ऐच्छिक)
                 </label>
                 <SearchableSelect
                   name="interestPayableLedgerID"
                   value={formData.interestPayableLedgerID}
-                  onChange={(e) => setFormData({ ...formData, interestPayableLedgerID: Number(e.target.value) })}
-                  options={ledgerOptions}
-                  placeholder="-- उदा. २३ देणे पिग्मी व्याज निवडा --"
+                  onChange={(e) => setFormData({ ...formData, interestPayableLedgerID: Number(e.target.value) || 0 })}
+                  options={optionalLedgerOptions}
+                  placeholder="-- देणे पिग्मी व्याज तरतूद खाते (ऐच्छिक) --"
                 />
                 <span className="text-[10px] text-gray-500 block mt-0.5">
-                  साचलेले देय व्याज (Accrued Liability) खाते.
+                  साचलेले देय व्याज (Provision) असल्यास आपोआप यातून नावे टाकले जाते.
                 </span>
               </div>
 
@@ -1148,12 +1232,29 @@ export default function PigmySchemeMaster() {
                 <SearchableSelect
                   name="commissionExpenseLedgerID"
                   value={formData.commissionExpenseLedgerID}
-                  onChange={(e) => setFormData({ ...formData, commissionExpenseLedgerID: Number(e.target.value) })}
-                  options={ledgerOptions}
-                  placeholder="-- उदा. १३४ पिग्मी एजंट कमिशन निवडा --"
+                  onChange={(e) => setFormData({ ...formData, commissionExpenseLedgerID: Number(e.target.value) || 0 })}
+                  options={optionalLedgerOptions}
+                  placeholder="-- पिग्मी एजंट कमिशन खर्च लेजर निवडा --"
                 />
                 <span className="text-[10px] text-gray-500 block mt-0.5">
                   पिग्मी एजंटला दिलेल्या कमिशनचा खर्च नोंद.
+                </span>
+              </div>
+
+              <div className="md:col-span-2 bg-rose-50/50 p-2.5 rounded border border-rose-200">
+                <label className="block text-[11px] font-bold text-rose-900 mb-0.5">
+                  ५. पिग्मी विड्रॉल कमिशन कपात / मुदतपूर्व दंड वसुली खाते (Commission Deduction / Penalty Credit GL){' '}
+                  {slabs.some((s) => (Number(s.penaltyRate) || 0) > 0) && <span className="text-red-600">*</span>}
+                </label>
+                <SearchableSelect
+                  name="prematureDeductionLedgerID"
+                  value={formData.prematureDeductionLedgerID || ''}
+                  onChange={(e) => setFormData({ ...formData, prematureDeductionLedgerID: Number(e.target.value) || 0 })}
+                  options={deductionCommissionLedgerOptions}
+                  placeholder="-- पिग्मी कमिशन कपात / मुदतपूर्व दंड उत्पन्न किंवा वसुली लेजर निवडा --"
+                />
+                <span className="text-[10px] text-rose-800 block mt-1 font-medium">
+                  महत्त्वाचे: 'पिग्मी विड्रॉल व खाते बंद' स्क्रीनवरून ग्राहकाकडून कापलेली कमिशन/दंड रक्कम कोणत्याही मॅन्युअल निवडीशिवाय थेट याच योजनेत मॅप केलेल्या जी.एल. खात्यावर जमा (Cr) होईल.
                 </span>
               </div>
             </div>
@@ -1292,7 +1393,9 @@ export default function PigmySchemeMaster() {
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                             <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
-                            <div className="text-gray-500 text-[10px]">{s.durationMonths} दिवस • {s.interestCalculationMethod || 'Flat'}</div>
+                            <div className="text-gray-500 text-[10px]">
+                              {s.tenureDays || (s.durationMonths > 60 ? s.durationMonths : s.durationMonths * 30)} दिवस ({s.durationMonths > 60 ? Math.round(s.durationMonths / 30) : s.durationMonths} म.) • {s.interestCalculationMethod || 'Flat'}
+                            </div>
                             {s.interestPostingFrequency && (
                               <div className="text-blue-700 font-bold text-[9px]">
                                 पोस्टिंग: {s.interestPostingFrequency}
@@ -1313,7 +1416,14 @@ export default function PigmySchemeMaster() {
                                 {s.pigmyLiabilityLedger.ledgerName}
                               </span>
                             ) : (
-                              <span className="text-gray-400 italic">डिफॉल्ट पिग्मी ठेव लेजर</span>
+                              <span className="text-gray-400 italic">मॅप केलेले नाही</span>
+                            )}
+                            {s.prematureDeductionLedger?.ledgerName && (
+                              <div className="mt-1">
+                                <span className="bg-rose-50 text-rose-800 px-1.5 py-0.5 rounded border border-rose-200 font-semibold text-[10px]">
+                                  कपात GL: {s.prematureDeductionLedger.ledgerName}
+                                </span>
+                              </div>
                             )}
                           </td>
                           <td className="px-2 py-1.5 text-center">

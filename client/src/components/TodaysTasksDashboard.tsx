@@ -104,6 +104,7 @@ export default function TodaysTasksDashboard({
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(showLoginModal);
   const [liveNotifications, setLiveNotifications] = useState<any[]>([]);
+  const [borrowingDueEmis, setBorrowingDueEmis] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItemDetails, setSelectedItemDetails] = useState<TaskItem | null>(null);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
@@ -214,13 +215,21 @@ export default function TodaysTasksDashboard({
 
       if (isMountedRef && !isMountedRef.current) return;
 
-      // Fetch active notifications
-      const res = await axios.get('/api/Notification', {
-        params: { branchId: effectiveBranchId, status: 'Active' }
-      });
+      // Fetch active notifications and upcoming/overdue Bank Borrowing EMIs in parallel
+      const [res, brwEmiRes] = await Promise.all([
+        axios.get('/api/Notification', {
+          params: { branchId: effectiveBranchId, status: 'Active' }
+        }),
+        axios
+          .get('/api/Borrowings/upcoming-emis', {
+            params: { branchId: effectiveBranchId, days: 7 }
+          })
+          .catch(() => ({ data: { items: [] } }))
+      ]);
 
       if (!isMountedRef || isMountedRef.current) {
         setLiveNotifications(res.data || []);
+        setBorrowingDueEmis(brwEmiRes.data?.items || []);
       }
 
       await fetchStats(isMountedRef);
@@ -694,11 +703,40 @@ export default function TodaysTasksDashboard({
           moduleName: 'System',
           roleName: n.roleName
         }))
+      },
+      {
+        id: 'borrowing-emi-due',
+        titleMr: '११. बाह्य कर्ज देय व थकीत हप्ते',
+        titleEn: '11. Bank Borrowing EMIs Due',
+        category: 'Borrowings',
+        moduleKey: 'Borrowings',
+        icon: Building2,
+        count: borrowingDueEmis.length,
+        totalAmount: borrowingDueEmis.reduce((acc, item) => acc + Number(item.totalDue || 0), 0),
+        priority: borrowingDueEmis.some(x => x.isOverdue) ? 'URGENT' : 'HIGH',
+        badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
+        accentBg: 'border-l-4 border-l-amber-600',
+        targetTab: 'borrowing-repayment',
+        roles: ['MANAGER', 'CASHIER', 'LOANS'],
+        items: borrowingDueEmis.map((b: any) => ({
+          id: `brw-emi-${b.scheduleID || b.borrowingID}`,
+          accountNo: `${b.borrowingNo} (हप्ता #${b.installmentNo})`,
+          memberName: b.lenderName,
+          details: `मुद्दल: ₹${Number(b.principalDue || 0).toLocaleString('en-IN')} + व्याज: ₹${Number(b.interestDue || 0).toLocaleString('en-IN')}${b.externalLoanAccountNo ? ` • A/c: ${b.externalLoanAccountNo}` : ''}`,
+          amount: Number(b.totalDue || 0),
+          dueDate: b.dueDate ? new Date(b.dueDate).toLocaleDateString('en-IN') : 'आज',
+          status: b.isOverdue ? `${b.overdueDays} दिवस थकीत!` : b.daysRemaining === 0 ? 'आज देय आहे' : `${b.daysRemaining} दिवसांत देय`,
+          targetTab: 'borrowing-repayment',
+          entityId: String(b.borrowingID),
+          priority: b.isOverdue ? 'URGENT' : 'HIGH',
+          moduleName: 'Borrowings',
+          roleName: 'MANAGER'
+        }))
       }
     ];
 
     return sections;
-  }, [liveNotifications]);
+  }, [liveNotifications, borrowingDueEmis]);
 
   // Apply Role & Priority Filters
   const filteredSections = useMemo(() => {
@@ -740,7 +778,11 @@ export default function TodaysTasksDashboard({
   const handleActionClick = (targetTab: string, entityId?: string) => {
     if (onNavigate) {
       if (entityId) {
-        onNavigate(targetTab, { entityId, id: entityId });
+        onNavigate(targetTab, {
+          entityId,
+          id: entityId,
+          ...(targetTab.startsWith('borrowing-') ? { borrowingId: entityId } : {})
+        });
       } else {
         onNavigate(targetTab);
       }

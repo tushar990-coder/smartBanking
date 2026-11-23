@@ -34,5 +34,9 @@ namespace Bhisi.Api.Models
 
         [MaxLength(20)]
         public string ProductType { get; set; } = "PIGMY"; // PIGMY, LOAN, RD, SAVING
+
+        public bool DeductPrematureWithdrawals { get; set; } = false;
+
+        public int PrematureLockInDays { get; set; } = 90;
     }
 }

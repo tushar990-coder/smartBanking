@@ -1,5 +1,23 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-23] - आवृत्ती v2.6.40 (Standalone Bank Borrowing Lifecycle & EMI Tracker, Pigmy Settlement Overhaul, Scheme GL Mapping & Pigmy Interest Engine)
+
+### 🏦 1. स्वतंत्र बाह्य कर्जे व सोने पुनर्गहाण मॉड्यूल (`🏛️ बँकिंग व्यवहार` खाली)
+- **`BorrowingDashboard.tsx`, `BorrowingAccountOpening.tsx`, `BorrowingDisbursementMaster.tsx`, `BorrowingRepaymentMaster.tsx`, `BorrowingGoldUnpledgeMaster.tsx`, `BorrowingReports.tsx`, `Sidebar.tsx`, `App.tsx`, `TodaysTasksDashboard.tsx`:**
+  - ३-टप्प्यांचे पूर्ण स्वतंत्र कोअर बँकिंग मॉड्यूल:
+    1. **नवीन बाह्य कर्ज खाते उघडणे (`Account Create`):** मंजूर कर्ज मर्यादा, व्याजदर, हप्ता प्रकार (`EMI` / `EqualPrincipal` / `Flat` / `Bullet`), डायनॅमिक GL लेजर मॅपिंग आणि Go-Live `Opening Balance` पर्याय.
+    2. **कर्ज रक्कम उचल (`Loan Disbursement`):** प्रोसेसिंग फी व इतर कपातीसह संतुलित व्हाउचर, ग्राहक सोने पाकीट पुनर्गहाण (Interest Spread % सह) आणि स्वयंचलित EMI हप्ता वेळापत्रक निर्मिती.
+    3. **कर्ज हप्ता भरणा व वेळापत्रक (`Loan Repaid & EMI Tracker`):** प्रत्येक हप्त्याचे ट्रॅकिंग (`Pending` / `Partial` / `Overdue` / `Paid`), `Regular EMI` / `Part Payment` / `Interest Only` / `Foreclosure`, प्रिंटेबल पेमेंट अ‍ॅडव्हाईस पावती, चेकर पासिंग व्ह्यू आणि `आजची कामे` डॅशबोर्ड अलर्ट.
+- **बॅकएंड मॉडेल्स, शेड्यूल सर्व्हिस व Lossless Rollback (`SansthaBorrowingDisbursement.cs`, `SansthaBorrowingInstallmentSchedule.cs`, `BorrowingScheduleService.cs`, `BorrowingsController.cs`, `VoucherRollbackAndDeleteService.cs`):**
+  - हप्ता व्हाउचर रद्द केल्यास हप्ते पूर्ववत `Pending`/`Overdue` होतात आणि उचल व्हाउचर रद्द केल्यास खाते सुरक्षितपणे `Sanctioned` स्थितीत परत येते.
+
+### 🐷 2. पिग्मी विड्रॉल/क्लोजर ओव्हरहॉल, योजना जी.एल. लेजर मॅपिंग व योजनानिहाय व्याज गणना इंजिन
+- **योजना-आधारित लेजर मॅपिंग (`PigmySchemeMaster.tsx`, `PigmySchemesController.cs`, `PigmyClosureMaster.tsx`, `PigmySettlementHelper.cs`):**
+  - कमिशन / मुदतपूर्व दंड कपात लेजर (`PrematureDeductionLedgerID`) व व्याज खर्च लेजर पिग्मी योजना मास्टरमध्येच केंद्रीकृत केले असून `पिग्मी विड्रॉल व खाते बंद व्यवस्थापन` वरील दोन्ही मॅन्युअल जी.एल. लेजर निवडीचे ड्रॉपडाऊन्स काढून टाकले आहेत.
+  - `Cash` / `Bank` / `Saving Transfer` (चेकर पासिंगनंतरच बचत खात्यात जमा) / `Adjust in Loan` (दंड → व्याज → मुद्दल व्हॉटरफॉल व तारण मुक्ती), एजंट कमिशन लॉक-इन वजावट व १००% लॉसलेस रोल्बॅक.
+- **केंद्रीकृत पिग्मी व्याज गणना इंजिन (`PigmyInterestCalculationService.cs`, `PigmyClosureController.cs`, `PigmyInterestController.cs`, `PigmyAccountsController.cs`, `Program.cs`, `tools/master_vps_update_schema.sql`):**
+  - `TenureDays` व `InterestDaysInYear` स्तंभ व ३० वर्षांपुढे गेलेल्या `MaturityDate` चे स्वयंचलित ऑटो-हील, `asOfDate` सिंक आणि `Daily Balance Product`, `Monthly Minimum Balance`, `Simple Pro-Rata Days` व `Flat` पद्धतींनुसार अचूक व्याज गणना (**१९४/१९४ xUnit चाचण्या व प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-23] - आवृत्ती v2.6.39 (Gold Custody Tracker, Bank Borrowing & Gold Re-pledge Module, Loan Collateral Upgrade & Demand Settings QA Remediation)
 
 ### 🏅 1. सोने तारण दागिने कस्टडी ट्रॅकिंग व कर्ज तारण दस्तऐवज सुधारणा

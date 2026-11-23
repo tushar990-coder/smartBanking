@@ -18,6 +18,18 @@ namespace Bhisi.Api.Models
         [Required]
         public int BranchID { get; set; } = 1;
 
+        [StringLength(60)]
+        public string? RepaymentNo { get; set; }
+
+        /// <summary>
+        /// RegularEMI | PartPayment | InterestOnly | Foreclosure
+        /// </summary>
+        [StringLength(30)]
+        public string RepaymentType { get; set; } = "RegularEMI";
+
+        [StringLength(120)]
+        public string? InstallmentsCovered { get; set; }
+
         public DateTime RepaymentDate { get; set; } = DateTime.Today;
 
         [Column(TypeName = "decimal(18,2)")]
@@ -29,8 +41,21 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal PenalOrChargesPaid { get; set; } = 0m;
 
+        public int? ChargesLedgerID { get; set; }
+
+        [ForeignKey("ChargesLedgerID")]
+        public virtual Ledger? ChargesLedger { get; set; }
+
         [Column(TypeName = "decimal(18,2)")]
         public decimal TotalPaid { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal BalanceBeforeRepayment { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal BalanceAfterRepayment { get; set; }
+
+        public DateTime? PreviousLastInterestPaidDate { get; set; }
 
         [Required]
         [StringLength(30)]

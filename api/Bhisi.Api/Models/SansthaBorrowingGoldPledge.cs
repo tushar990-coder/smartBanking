@@ -15,6 +15,11 @@ namespace Bhisi.Api.Models
         [ForeignKey("BorrowingID")]
         public virtual SansthaBorrowing? Borrowing { get; set; }
 
+        public int? BorrowingDisbursementID { get; set; }
+
+        [ForeignKey("BorrowingDisbursementID")]
+        public virtual SansthaBorrowingDisbursement? BorrowingDisbursement { get; set; }
+
         [Required]
         public int LoanAccountID { get; set; }
 

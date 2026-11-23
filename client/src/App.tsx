@@ -108,7 +108,12 @@ const VoterListReport = React.lazy(() => import('./components/VoterListReport'))
 const GoldLoanDetails = React.lazy(() => import('./components/GoldLoanDetails'));
 const GoldJewelryReport = React.lazy(() => import('./components/GoldJewelryReport'));
 const LoanDocumentsUpload = React.lazy(() => import('./components/LoanDocumentsUpload'));
-const BankBorrowingMaster = React.lazy(() => import('./components/BankBorrowingMaster'));
+const BorrowingDashboard = React.lazy(() => import('./components/BorrowingDashboard'));
+const BorrowingAccountOpening = React.lazy(() => import('./components/BorrowingAccountOpening'));
+const BorrowingDisbursementMaster = React.lazy(() => import('./components/BorrowingDisbursementMaster'));
+const BorrowingRepaymentMaster = React.lazy(() => import('./components/BorrowingRepaymentMaster'));
+const BorrowingGoldUnpledgeMaster = React.lazy(() => import('./components/BorrowingGoldUnpledgeMaster'));
+const BorrowingReports = React.lazy(() => import('./components/BorrowingReports'));
 const NpaRegister = React.lazy(() => import('./components/NpaRegister'));
 const InterestWaiverRegister = React.lazy(() => import('./components/InterestWaiverRegister'));
 import SavingAccountMaster from './components/SavingAccountMaster';
@@ -286,7 +291,13 @@ function App() {
     'loan-collection': '/karjvibhag/vasuli',
     'loan-interest-posting': '/karjvibhag/vyaj',
     'loan-documents': '/karjvibhag/documents',
-    'bank-borrowing': '/karjvibhag/bank-borrowing',
+    'bank-borrowing': '/borrowings/dashboard',
+    'borrowing-dashboard': '/borrowings/dashboard',
+    'borrowing-account': '/borrowings/account-opening',
+    'borrowing-disbursement': '/borrowings/disbursement',
+    'borrowing-repayment': '/borrowings/repayment',
+    'borrowing-custody': '/borrowings/gold-custody',
+    'borrowing-reports': '/borrowings/reports',
     'loan-rate': '/karjvibhag/yojana',
     'employer-master': '/karjvibhag/employer',
     'employee-bank': '/karjvibhag/employee-bank',
@@ -471,6 +482,7 @@ function App() {
     '/asset-management/master': 'asset-master',
     '/asset-management/purchase': 'asset-purchase',
     '/asset-management/reports': 'asset-reports',
+    '/karjvibhag/bank-borrowing': 'borrowing-dashboard',
   };
 
   const getTabFromURL = () => {
@@ -868,7 +880,12 @@ function App() {
         {activeTab === 'loan-collection' && <LoanCollectionMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-interest-posting' && <LoanInterestPostingMaster />}
         {activeTab === 'loan-documents' && <LoanDocumentsUpload onNavigate={handleNavigate} />}
-        {activeTab === 'bank-borrowing' && <BankBorrowingMaster onNavigate={handleNavigate} />}
+        {(activeTab === 'bank-borrowing' || activeTab === 'borrowing-dashboard') && <BorrowingDashboard onNavigate={handleNavigate} />}
+        {activeTab === 'borrowing-account' && <BorrowingAccountOpening onNavigate={handleNavigate} />}
+        {activeTab === 'borrowing-disbursement' && <BorrowingDisbursementMaster onNavigate={handleNavigate} />}
+        {activeTab === 'borrowing-repayment' && <BorrowingRepaymentMaster onNavigate={handleNavigate} />}
+        {activeTab === 'borrowing-custody' && <BorrowingGoldUnpledgeMaster onNavigate={handleNavigate} />}
+        {activeTab === 'borrowing-reports' && <BorrowingReports onNavigate={handleNavigate} />}
         {(activeTab === 'loan-ob' || activeTab === 'loan-opening') && <SettingsDashboard defaultCategory="opening-balance" defaultSub="loan-ob" />}
 
         {/* Day End / EOD Module Screens */}

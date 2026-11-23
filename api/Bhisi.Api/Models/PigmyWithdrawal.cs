@@ -60,6 +60,55 @@ namespace Bhisi.Api.Models
         [StringLength(50)]
         public string? VoucherNo { get; set; }
 
+        public int? VoucherID { get; set; }
+
+        [ForeignKey("VoucherID")]
+        public virtual Voucher? Voucher { get; set; }
+
+        [StringLength(30)]
+        public string PaymentMode { get; set; } = "Cash";
+
+        public int? BankLedgerID { get; set; }
+
+        public int? SavingAccountID { get; set; }
+
+        [StringLength(80)]
+        public string? ReferenceNo { get; set; }
+
+        public bool AdjustInLoan { get; set; }
+
+        public int? TargetLoanAccountID { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal LoanAdjustedAmount { get; set; }
+
+        public int? LinkedLoanCollectionID { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal SurplusPayoutAmount { get; set; }
+
+        [StringLength(30)]
+        public string? SurplusPaymentMode { get; set; }
+
+        public int? SurplusBankLedgerID { get; set; }
+
+        public int? SurplusSavingAccountID { get; set; }
+
+        public int? DeductionLedgerID { get; set; }
+
+        [ForeignKey("DeductionLedgerID")]
+        public virtual Ledger? DeductionLedger { get; set; }
+
+        public int? InterestDebitLedgerID { get; set; }
+
+        [ForeignKey("InterestDebitLedgerID")]
+        public virtual Ledger? InterestDebitLedger { get; set; }
+
+        public bool IsManualOverride { get; set; }
+
+        [StringLength(250)]
+        public string? OverrideReason { get; set; }
+
         [StringLength(250)]
         public string? Narration { get; set; }
 

@@ -359,12 +359,19 @@ if (Test-Path $config.BackendFolderPath) {
 # -----------------------------------------------------------------------------------------
 Write-Host "`n[5/6] Updating Backend API & Frontend UI Files..." -ForegroundColor Yellow
 
+Write-Host "[DEPRECATED NOTICE] Standalone Testing patch script should match Multi-App Master Patch behavior. Prefer 1_Click_Update_Testing.bat from SmartBanking_VPS_Multi_App_Master_Patch_v$version.zip!" -ForegroundColor Yellow
+
 # 5.1 Update Backend
 if (-not (Test-Path $config.BackendFolderPath)) {
     New-Item -Path $config.BackendFolderPath -ItemType Directory -Force | Out-Null
 }
 $backendSource = Join-Path $scriptDir "backend"
-robocopy $backendSource $config.BackendFolderPath /E /XO /XF "appsettings.json" "appsettings.Production.json" "license.lic" "web.config" /XD "logs" "Uploads" | Out-Null
+& robocopy $backendSource $config.BackendFolderPath /E /R:3 /W:2 /NP /NFL /NDL /XF "appsettings.json" "appsettings.Production.json" "license.lic" "web.config" /XD "logs" "Uploads" | Out-Null
+if ($LASTEXITCODE -ge 8) {
+    Write-Host "[ERROR] Backend robocopy failed with exit code $LASTEXITCODE" -ForegroundColor Red
+    Read-Host "Press ENTER to exit"
+    exit 1
+}
 Write-Host "  -> Backend binaries updated (preserves existing connection strings & licenses)." -ForegroundColor Green
 
 # 5.2 Update Frontend
@@ -372,8 +379,13 @@ if (-not (Test-Path $config.FrontendFolderPath)) {
     New-Item -Path $config.FrontendFolderPath -ItemType Directory -Force | Out-Null
 }
 $frontendSource = Join-Path $scriptDir "frontend"
-robocopy $frontendSource $config.FrontendFolderPath /E /PURGE /XF "web.config" ".htaccess" | Out-Null
-Write-Host "  -> Frontend React UI bundle updated successfully." -ForegroundColor Green
+& robocopy $frontendSource $config.FrontendFolderPath /E /R:3 /W:2 /NP /NFL /NDL /PURGE /XF ".htaccess" | Out-Null
+if ($LASTEXITCODE -ge 8) {
+    Write-Host "[ERROR] Frontend robocopy failed with exit code $LASTEXITCODE" -ForegroundColor Red
+    Read-Host "Press ENTER to exit"
+    exit 1
+}
+Write-Host "  -> Frontend React UI bundle + web.config updated successfully." -ForegroundColor Green
 
 # -----------------------------------------------------------------------------------------
 # Step 6: Start IIS AppPool & Health Verification

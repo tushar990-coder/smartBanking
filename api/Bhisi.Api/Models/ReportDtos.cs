@@ -251,7 +251,10 @@ namespace Bhisi.Api.Models
         public decimal InterestCollected { get; set; }
         public decimal PenaltyInterestCollected { get; set; }
         public decimal SurchargeCollected { get; set; }
+        public decimal FeesCollected { get; set; }
         public decimal TotalAmountReceived { get; set; }
+        public decimal GrandTotalReceived { get; set; }
+        public string? FeesSummary { get; set; }
         public string PaymentMode { get; set; } = string.Empty;
         public int BranchID { get; set; }
         public string BranchName { get; set; } = string.Empty;
@@ -494,6 +497,8 @@ namespace Bhisi.Api.Models
         public decimal PenalInterest { get; set; }
         public decimal ReceivableInterest { get; set; }
         public decimal RecoveryCharges { get; set; }
+        public decimal OtherFees { get; set; }
+        public string? OtherFeesDetails { get; set; }
         public decimal Total { get; set; }
         public int Days { get; set; }
         public decimal Balance { get; set; }

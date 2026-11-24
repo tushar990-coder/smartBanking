@@ -310,23 +310,32 @@ namespace Bhisi.Api.Controllers
                     .FirstOrDefaultAsync(l => l.LoanAccountID == accountId && l.CustomerID == customerId);
                 if (acc == null) return NotFound(new { message = "कर्ज खाते आढळले नाही." });
 
-                var txs = await _context.LoanCollections.AsNoTracking()
+                var rawTxs = await _context.LoanCollections.AsNoTracking()
+                    .Include(t => t.Fees!)
+                        .ThenInclude(f => f.Ledger)
                     .Where(t => t.LoanAccountID == accountId)
                     .OrderByDescending(t => t.CollectionDate)
                     .ThenByDescending(t => t.LoanCollectionID)
                     .Take(50)
-                    .Select(t => new
+                    .ToListAsync();
+
+                var txs = rawTxs.Select(t =>
+                {
+                    decimal feesTotal = t.Fees?.Sum(f => f.Amount) ?? 0m;
+                    return new
                     {
                         id = t.LoanCollectionID,
                         date = t.CollectionDate.ToString("dd-MM-yyyy"),
                         type = "EMI",
-                        crAmount = t.TotalAmountReceived,
+                        crAmount = t.TotalAmountReceived + feesTotal,
                         drAmount = 0m,
                         balance = 0m,
-                        narration = $"मुद्दल ₹{t.PrincipalCollected:N0} + व्याज ₹{t.InterestCollected:N0}",
+                        narration = feesTotal > 0
+                            ? $"मुद्दल ₹{t.PrincipalCollected:N0} + व्याज ₹{t.InterestCollected:N0} + इतर फी ₹{feesTotal:N0}"
+                            : $"मुद्दल ₹{t.PrincipalCollected:N0} + व्याज ₹{t.InterestCollected:N0}",
                         reference = t.ReceiptNo ?? string.Empty
-                    })
-                    .ToListAsync();
+                    };
+                }).ToList();
 
                 return Ok(new { productType = "LOAN", accountNo = acc.LoanAccountNo ?? $"LN-{acc.LoanAccountID}", currentBalance = acc.PrincipalBalance, transactions = txs });
             }

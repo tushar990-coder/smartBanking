@@ -1,4 +1,4 @@
-# =========================================================================================
+﻿# =========================================================================================
 # SmartBanking ERP - 1-Click Multi-App Master VPS Patch Package Builder
 # Automates: Build Frontend + Publish Backend + Database SQL Patch + Multi-Target Packaging + Reverse Patch Engine
 # =========================================================================================
@@ -97,8 +97,16 @@ New-Item -ItemType Directory -Path $backendTempPublish -Force | Out-Null
 
 Push-Location $apiDir
 try {
-    dotnet restore -r win-x64
-    dotnet publish -c Release -r win-x64 --self-contained false -o $backendTempPublish
+    $assetsFile = Join-Path $apiDir "obj\project.assets.json"
+    dotnet restore -r win-x64 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        dotnet publish -c Release -r win-x64 --self-contained false -o $backendTempPublish
+    } elseif ((Test-Path $assetsFile) -and (Select-String -Path $assetsFile -Pattern '"net10\.0/win-x64"' -Quiet)) {
+        Write-Host "  -> Offline/cached NuGet fallback: publishing with --no-restore..." -ForegroundColor Yellow
+        dotnet publish -c Release -r win-x64 --self-contained false --no-restore -p:UseSharedCompilation=false -o $backendTempPublish
+    } else {
+        dotnet publish -c Release -r win-x64 --self-contained false -o $backendTempPublish
+    }
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $backendTempPublish "Bhisi.Api.dll"))) {
         Write-Host "[ERROR] Backend publish failed!" -ForegroundColor Red
         Pop-Location
@@ -307,7 +315,12 @@ if (Test-Path $versionJsonSource) {
     Copy-Item $versionJsonSource (Join-Path $patchFolder "version.json") -Force
     Copy-Item $versionJsonSource (Join-Path $backendDest "version.json") -Force
     Copy-Item $versionJsonSource (Join-Path $frontendDest "version.json") -Force
-    Write-Host "  -> version.json (v$version Changelog) included in patch." -ForegroundColor White
+    Copy-Item $versionJsonSource (Join-Path $apiDir "version.json") -Force
+    $clientPublicVersion = Join-Path $clientDir "public\version.json"
+    if (Test-Path (Split-Path -Parent $clientPublicVersion)) {
+        Copy-Item $versionJsonSource $clientPublicVersion -Force
+    }
+    Write-Host "  -> version.json (v$version Changelog) synced & included in patch." -ForegroundColor White
 }
 
 $changelogSource = Join-Path $workspaceRoot "CHANGELOG.md"
@@ -386,26 +399,154 @@ $fdSbDebitHealSql = Join-Path $scriptDir "database\heal_orphan_fd_sb_debit_trans
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
 
+$expectedVersion = ""
+$expectedBundleRel = ""
+$manifestFile = Join-Path $scriptDir "version.json"
+if (Test-Path $manifestFile) {
+    try {
+        $mv = Get-Content $manifestFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($mv.version) { $expectedVersion = [string]$mv.version }
+    } catch {}
+}
+$srcIndexHtml = Join-Path $frontendSource "index.html"
+if (Test-Path $srcIndexHtml) {
+    try {
+        $idxRaw = Get-Content $srcIndexHtml -Raw -Encoding UTF8
+        $mScript = [regex]::Match($idxRaw, '<script[^>]+src=["'']/?([^"'']+)["'']', 'IgnoreCase')
+        if ($mScript.Success) { $expectedBundleRel = $mScript.Groups[1].Value }
+    } catch {}
+}
+
+function Resolve-PatchTargets {
+    param([object[]]$AllTargets, [string]$TargetName)
+    if ($TargetName -eq "ALL" -or [string]::IsNullOrWhiteSpace($TargetName)) {
+        return @($AllTargets)
+    }
+
+    $needle = $TargetName.Trim()
+
+    # Priority 1: Exact match prevents 'Testing' from matching 'Testing1'
+    $exact = @($AllTargets | Where-Object {
+        $_.SansthaName -ieq $needle -or
+        $_.TargetDatabase -ieq $needle -or
+        $_.SansthaName -ieq "$needle Environment" -or
+        $_.TargetDatabase -ieq "SmartBanking_$needle"
+    })
+    if ($exact.Count -gt 0) { return $exact }
+
+    # Priority 2: Token boundary match (so 'testing' never matches 'testing1')
+    $esc = [regex]::Escape($needle)
+    $pattern = "(?i)(?:^|[\s_,.\-\\/])$esc(?:$|[\s_,.\-\\/])"
+    $boundary = @($AllTargets | Where-Object {
+        $_.SansthaName -match $pattern -or
+        $_.TargetDatabase -match $pattern -or
+        $_.BackendFolderPath -match $pattern -or
+        $_.FrontendFolderPath -match $pattern
+    })
+    if ($boundary.Count -gt 0) { return $boundary }
+
+    # Priority 3: Substring match fallback (e.g. 'padval' -> 'Padvalwadi', 'Yadrav' -> 'Yadravkar')
+    return @($AllTargets | Where-Object {
+        $_.SansthaName -like "*$needle*" -or
+        $_.TargetDatabase -like "*$needle*"
+    })
+}
+
+function Get-TargetDiscoveryTokens {
+    param($Target)
+    $tokens = [System.Collections.Generic.List[string]]::new()
+    $rawParts = [System.Collections.Generic.List[string]]::new()
+    if ($Target.TargetDatabase) {
+        $rawParts.Add($Target.TargetDatabase)
+        $dbShort = $Target.TargetDatabase -replace '^SmartBanking_', ''
+        if ($dbShort) { $rawParts.Add($dbShort) }
+    }
+    foreach ($p in @($Target.FrontendFolderPath, $Target.BackendFolderPath)) {
+        if ($p) {
+            foreach ($seg in ($p -split '[\\/]+')) {
+                if ($seg) { $rawParts.Add($seg) }
+            }
+        }
+    }
+    $ignored = @('d:', 'c:', 'e:', 'webapps', 'inetpub', 'wwwroot', 'frontend', 'backend', 'api', 'http', 'https', 'sites')
+    foreach ($r in $rawParts) {
+        $clean = $r.Trim()
+        if ($clean.Length -ge 4 -and ($ignored -notcontains $clean.ToLower()) -and (-not $tokens.Contains($clean.ToLower()))) {
+            $tokens.Add($clean.ToLower())
+        }
+    }
+    return $tokens
+}
+
 function Get-AllTargetFolders {
-    param([string]$baseFolder, [string]$type, [string]$sansthaKey)
+    param([string]$baseFolder, [string]$type, [string]$sansthaKey, $targetObj = $null)
     $folders = [System.Collections.Generic.List[string]]::new()
+    $discoveredPools = [System.Collections.Generic.List[string]]::new()
+
     if ($baseFolder -and (Test-Path $baseFolder)) {
         $folders.Add($baseFolder)
     }
 
+    $tokens = if ($targetObj) { Get-TargetDiscoveryTokens -Target $targetObj } else { @($sansthaKey.ToLower()) }
+
+    # Query live IIS sites/apps/vdirs by domain binding, site name, or physicalPath token (not DB name alone)
     $appcmd = "$env:SystemRoot\system32\inetsrv\appcmd.exe"
     if (Test-Path $appcmd) {
         try {
-            $vdirs = & $appcmd list vdirs /text:physicalPath 2>$null
-            foreach ($vd in $vdirs) {
-                if ($vd -and (Test-Path $vd)) {
-                    $vdClean = $vd.Trim()
-                    if ($sansthaKey -and ($vdClean -match $sansthaKey)) {
-                        if ($type -eq "frontend" -and ($vdClean -notmatch "api|backend") -and (-not $folders.Contains($vdClean))) {
-                            $folders.Add($vdClean)
+            $sitesXmlText = (& $appcmd list site /xml 2>$null) -join "`n"
+            $appsXmlText = (& $appcmd list app /xml 2>$null) -join "`n"
+            $vdirsXmlText = (& $appcmd list vdir /xml 2>$null) -join "`n"
+
+            $siteInfoByName = @{}
+            if ($sitesXmlText -match '<SITE') {
+                [xml]$sitesXml = $sitesXmlText
+                foreach ($s in @($sitesXml.appcmd.SITE)) {
+                    $sName = [string]$s.'SITE.NAME'
+                    $sBindings = [string]$s.bindings
+                    if ($sName) { $siteInfoByName[$sName.ToLower()] = "$sName $sBindings" }
+                }
+            }
+
+            $appPoolByPath = @{}
+            if ($appsXmlText -match '<APP') {
+                [xml]$appsXml = $appsXmlText
+                foreach ($a in @($appsXml.appcmd.APP)) {
+                    $aPath = [string]$a.'APP.NAME'
+                    $aPool = [string]$a.applicationPool
+                    if ($aPath -and $aPool) { $appPoolByPath[$aPath.ToLower()] = $aPool }
+                }
+            }
+
+            if ($vdirsXmlText -match '<VDIR') {
+                [xml]$vdirsXml = $vdirsXmlText
+                foreach ($v in @($vdirsXml.appcmd.VDIR)) {
+                    $vdRaw = [string]$v.physicalPath
+                    if (-not $vdRaw) { continue }
+                    $vdClean = [System.Environment]::ExpandEnvironmentVariables($vdRaw.Trim())
+                    $appKey = ([string]$v.'APP.NAME').ToLower()
+                    $siteName = (($appKey -split '/')[0])
+                    $searchHaystack = "$vdClean $siteName $($siteInfoByName[$siteName])"
+
+                    $matched = $false
+                    foreach ($tok in $tokens) {
+                        $tokEsc = [regex]::Escape($tok)
+                        if ($searchHaystack -match "(?i)(?:^|[\\/._:\s-])$tokEsc(?:$|[\\/._:\s-])") {
+                            $matched = $true
+                            break
                         }
-                        if ($type -eq "backend" -and ($vdClean -match "api|backend") -and (-not $folders.Contains($vdClean))) {
-                            $folders.Add($vdClean)
+                    }
+
+                    if ($matched) {
+                        $isBackendFolder = ($vdClean -match '(?i)(?:^|[\\/._-])(api|backend)(?:$|[\\/._-])') -or (Test-Path (Join-Path $vdClean "Bhisi.Api.dll"))
+                        $isFrontendFolder = (-not $isBackendFolder)
+                        if (($type -eq "frontend" -and $isFrontendFolder) -or ($type -eq "backend" -and $isBackendFolder)) {
+                            if (-not $folders.Contains($vdClean)) {
+                                $folders.Add($vdClean)
+                            }
+                            $pool = $appPoolByPath[$appKey]
+                            if ($pool -and (-not $discoveredPools.Contains($pool))) {
+                                $discoveredPools.Add($pool)
+                            }
                         }
                     }
                 }
@@ -413,43 +554,44 @@ function Get-AllTargetFolders {
         } catch {}
     }
 
+    $keyLower = ($sansthaKey + " " + ($tokens -join " ")).ToLower()
     $candidates = @()
-    if ($sansthaKey -match "bambavade") {
+    if ($keyLower -match "bambavadeurban|\bbambavade\b" -and $keyLower -notmatch "sahyadri") {
         if ($type -eq "frontend") {
             $candidates = @("D:\WebApps\bambavade\bambavade.hellomindspace.in", "D:\WebApps\bambavadeurban\frontend", "D:\WebApps\bambavade\frontend")
         } else {
             $candidates = @("D:\WebApps\bambavade\api.bambavade.hellomindspace.in", "D:\WebApps\bambavadeurban\backend", "D:\WebApps\bambavade\backend")
         }
     }
-    elseif ($sansthaKey -match "padval|jotirling") {
+    elseif ($keyLower -match "padval|jotirling") {
         if ($type -eq "frontend") {
             $candidates = @("D:\WebApps\Jotirlingpdw\jotirlingpdw.hellomindspace.in", "D:\WebApps\padvalwadi\frontend", "D:\WebApps\padvalwadi\padvalwadi.hellomindspace.in")
         } else {
             $candidates = @("D:\WebApps\Jotirlingpdw\api.jotirlingpdw.hellomindspace.in", "D:\WebApps\padvalwadi\backend", "D:\WebApps\padvalwadi\api.padvalwadi.hellomindspace.in")
         }
     }
-    elseif ($sansthaKey -match "yadrav") {
+    elseif ($keyLower -match "yadrav") {
         if ($type -eq "frontend") {
             $candidates = @("D:\WebApps\maharshiyadrav\frontend", "D:\WebApps\maharshiyadravkar\frontend", "D:\WebApps\maharshiyadrav\maharshiyadrav.hellomindspace.in")
         } else {
             $candidates = @("D:\WebApps\maharshiyadrav\backend", "D:\WebApps\maharshiyadravkar\backend", "D:\WebApps\maharshiyadrav\api.maharshiyadrav.hellomindspace.in")
         }
     }
-    elseif ($sansthaKey -match "ritemp|ritemployee") {
+    elseif ($keyLower -match "ritemp|ritemployee") {
         if ($type -eq "frontend") {
             $candidates = @("D:\WebApps\ritemployee\frontend", "D:\WebApps\ritemp\frontend", "D:\WebApps\ritemployee\ritemployee.hellomindspace.in")
         } else {
             $candidates = @("D:\WebApps\ritemployee\backend", "D:\WebApps\ritemp\backend", "D:\WebApps\ritemployee\api.ritemployee.hellomindspace.in")
         }
     }
-    elseif ($sansthaKey -match "testing1") {
+    elseif ($keyLower -match "\btesting1\b") {
         if ($type -eq "frontend") {
             $candidates = @("D:\WebApps\testing1\frontend", "D:\WebApps\testing1\testing1.hellomindspace.in")
         } else {
             $candidates = @("D:\WebApps\testing1\backend", "D:\WebApps\testing1\api.testing1.hellomindspace.in")
         }
     }
-    elseif ($sansthaKey -match "testing") {
+    elseif ($keyLower -match "\btesting\b") {
         if ($type -eq "frontend") {
             $candidates = @("D:\WebApps\Testing\testing.hellomindspace.in", "D:\WebApps\Testing\frontend")
         } else {
@@ -464,10 +606,87 @@ function Get-AllTargetFolders {
     }
 
     if ($folders.Count -eq 0 -and $baseFolder) {
+        Write-Host "  [WARNING] Target $type path '$baseFolder' not found in IIS or disk. Verify patch_config.json!" -ForegroundColor Yellow
         $folders.Add($baseFolder)
     }
 
-    return $folders
+    return [PSCustomObject]@{
+        Folders = $folders
+        AppPools = $discoveredPools
+    }
+}
+
+function Invoke-SqlPatchStep {
+    param(
+        [string]$StepLabel,
+        [string]$SqlPath,
+        [string]$DatabaseName,
+        [object]$Config,
+        [switch]$TrackStatus
+    )
+    if (-not (Test-Path $SqlPath)) { return "Skipped" }
+    Write-Host " $StepLabel on $DatabaseName..." -ForegroundColor Yellow
+
+    $prevPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $lastOutput = @()
+    $ok = $false
+    try {
+        if ($Config.SqlUser -and $Config.SqlPassword) {
+            $lastOutput = & sqlcmd -S $Config.SqlServerInstance -U $Config.SqlUser -P $Config.SqlPassword -d $DatabaseName -i $SqlPath -f 65001 -b 2>&1
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+        }
+        if (-not $ok) {
+            $lastOutput = & sqlcmd -S $Config.SqlServerInstance -d $DatabaseName -E -i $SqlPath -f 65001 -b 2>&1
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+        }
+    }
+    catch {
+        $lastOutput += $_.Exception.Message
+    }
+    finally {
+        $ErrorActionPreference = $prevPref
+    }
+
+    if ($ok) {
+        Write-Host "  -> Applied 100% OK!" -ForegroundColor Green
+        return "OK"
+    }
+
+    $errLines = @($lastOutput | Select-Object -Last 8) -join "`n     "
+    Write-Host "  -> [SQL WARNING/ERROR] ExitCode=$LASTEXITCODE" -ForegroundColor Red
+    if ($errLines) { Write-Host "     $errLines" -ForegroundColor DarkYellow }
+    if ($TrackStatus) { return "Failed" }
+    return "Warning"
+}
+
+function Invoke-RobustCopy {
+    param([string]$Source, [string]$Destination, [string[]]$ExtraArgs)
+    if (-not (Test-Path $Destination)) {
+        New-Item -Path $Destination -ItemType Directory -Force | Out-Null
+    }
+    $argsList = @($Source, $Destination, "/E", "/R:3", "/W:2", "/NP", "/NFL", "/NDL") + $ExtraArgs
+    $copyOut = & robocopy @argsList 2>&1
+    $rc = $LASTEXITCODE
+    if ($rc -ge 8) {
+        $tail = @($copyOut | Select-Object -Last 10) -join " | "
+        throw "Robocopy FAILED (exit code $rc) copying '$Source' -> '$Destination'. Details: $tail"
+    }
+    return $rc
+}
+
+function Invoke-IisAppPool {
+    param([string]$PoolName, [ValidateSet("stop", "start")][string]$Action)
+    if ([string]::IsNullOrWhiteSpace($PoolName)) { return }
+    $appcmd = "$env:windir\system32\inetsrv\appcmd.exe"
+    if (-not (Test-Path $appcmd)) { return }
+    $prevPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $appcmd $Action apppool "/apppool.name:$PoolName" 2>&1 | Out-Null
+    } catch {} finally {
+        $ErrorActionPreference = $prevPref
+    }
 }
 
 # Initialize Session Rollback Snapshot Directory
@@ -482,19 +701,17 @@ $latestPointerFile = Join-Path $rollbackBase "LATEST_ROLLBACK.txt"
 
 Write-Host "Safety Rollback Snapshot Directory Created:" -ForegroundColor Green
 Write-Host "  -> $sessionRollbackDir" -ForegroundColor White
+if ($expectedVersion) {
+    Write-Host "Expected Patch Version : v$expectedVersion" -ForegroundColor Yellow
+}
 Write-Host ""
 
 $allTargets = $config.Targets
-$selectedTargets = @()
-
-if ($TargetName -eq "ALL" -or [string]::IsNullOrWhiteSpace($TargetName)) {
-    $selectedTargets = $allTargets
-} else {
-    $selectedTargets = $allTargets | Where-Object { $_.SansthaName -like "*$TargetName*" -or $_.TargetDatabase -like "*$TargetName*" }
-    if ($selectedTargets.Count -eq 0) {
-        Write-Host "[WARNING] No specific match found for '$TargetName'. Defaulting to all configured targets." -ForegroundColor Yellow
-        $selectedTargets = $allTargets
-    }
+$selectedTargets = Resolve-PatchTargets -AllTargets $allTargets -TargetName $TargetName
+if ($selectedTargets.Count -eq 0) {
+    Write-Host "[ERROR] No target matched '$TargetName'. Check patch_config.json or pass -TargetName ALL." -ForegroundColor Red
+    Read-Host "Press ENTER to exit"
+    exit 1
 }
 
 $totalTargets = $selectedTargets.Count
@@ -535,10 +752,36 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         SqlSchema = "Skipped"
         Backend = "Skipped"
         Frontend = "Skipped"
+        Verified = "Pending"
         Status = "In Progress"
     }
 
     try {
+        # Discover exact live IIS folders & AppPools once per target
+        $backendInfo = Get-AllTargetFolders -baseFolder $target.BackendFolderPath -type "backend" -sansthaKey "$($target.TargetDatabase)" -targetObj $target
+        $frontendInfo = Get-AllTargetFolders -baseFolder $target.FrontendFolderPath -type "frontend" -sansthaKey "$($target.TargetDatabase)" -targetObj $target
+        $backendFolders = @($backendInfo.Folders)
+        $frontendFolders = @($frontendInfo.Folders)
+
+        $allAppPools = [System.Collections.Generic.List[string]]::new()
+        if (![string]::IsNullOrWhiteSpace($target.IISAppPoolName)) {
+            $allAppPools.Add($target.IISAppPoolName)
+        }
+        foreach ($p in @($backendInfo.AppPools) + @($frontendInfo.AppPools)) {
+            if ($p -and (-not $allAppPools.Contains($p))) {
+                $allAppPools.Add($p)
+            }
+        }
+        if ($target.TargetDatabase -match "bambavadeurban" -or ($target.TargetDatabase -match "bambavade" -and $target.TargetDatabase -notmatch "sahyadri")) {
+            foreach ($legacyPool in @("apibambavade", "bambavade-backend")) {
+                if (-not $allAppPools.Contains($legacyPool)) { $allAppPools.Add($legacyPool) }
+            }
+        }
+
+        Write-Host " Resolved IIS Backend Folders  : $($backendFolders -join ', ')" -ForegroundColor Gray
+        Write-Host " Resolved IIS Frontend Folders : $($frontendFolders -join ', ')" -ForegroundColor Gray
+        Write-Host " Resolved IIS AppPools         : $($allAppPools -join ', ')" -ForegroundColor Gray
+
         # 1. Database Safety Backup
         if ($config.TakeDbBackup) {
             Write-Host " [Step 1] Taking Database Pre-Patch Safety Backup..." -ForegroundColor Yellow
@@ -575,22 +818,17 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         # 1.5 Application Snapshot (Backend & Frontend for Instant Reverse Patch)
         Write-Host " [Step 1.5] Taking Application Snapshot (Backend & Frontend) for Instant Rollback..." -ForegroundColor Yellow
         try {
-            $backendFolders = Get-AllTargetFolders -baseFolder $target.BackendFolderPath -type "backend" -sansthaKey "$($target.TargetDatabase)"
-            $frontendFolders = Get-AllTargetFolders -baseFolder $target.FrontendFolderPath -type "frontend" -sansthaKey "$($target.TargetDatabase)"
-
             foreach ($bFolder in $backendFolders) {
                 if (Test-Path $bFolder) {
                     $bkDest = Join-Path $targetRollbackDir "backend"
-                    New-Item -Path $bkDest -ItemType Directory -Force | Out-Null
-                    robocopy $bFolder $bkDest /E /R:1 /W:1 /XD "logs" "uploads" "wwwroot" /XF "appsettings.Development.json" | Out-Null
+                    Invoke-RobustCopy -Source $bFolder -Destination $bkDest -ExtraArgs @("/XD", "logs", "uploads", "wwwroot", "/XF", "appsettings.Development.json") | Out-Null
                     break
                 }
             }
             foreach ($fFolder in $frontendFolders) {
                 if (Test-Path $fFolder) {
                     $ftDest = Join-Path $targetRollbackDir "frontend"
-                    New-Item -Path $ftDest -ItemType Directory -Force | Out-Null
-                    robocopy $fFolder $ftDest /E /R:1 /W:1 | Out-Null
+                    Invoke-RobustCopy -Source $fFolder -Destination $ftDest -ExtraArgs @() | Out-Null
                     break
                 }
             }
@@ -601,287 +839,31 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             $statusObj.AppSnapshot = "Warning"
         }
 
-        # 2.0 Instant Core Branch Schema Fix (DefaultIbtLedgerID & DefaultCashLedgerID)
-        if (Test-Path $instantFixSql) {
-            Write-Host " [Step 2.0] Ensuring DefaultIbtLedgerID & Core Branch Columns on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $cOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$instantFixSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $cOk = $true }
-                    } catch {}
-                }
-                if (-not $cOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$instantFixSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $cOk = $true }
-                }
-                if ($cOk) {
-                    Write-Host "  -> Core Branch Columns & DefaultIbtLedgerID verified 100% OK!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> Branch Columns Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
+        # 2. Database Schema Sync & Auto-Heal Scripts
+        Invoke-SqlPatchStep -StepLabel "[Step 2.0] Ensuring DefaultIbtLedgerID & Core Branch Columns" -SqlPath $instantFixSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        Invoke-SqlPatchStep -StepLabel "[Step 2.05] Ensuring Vouchers & LoanCollections IBT Columns" -SqlPath $vouchersIbtSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        $statusObj.SqlSchema = Invoke-SqlPatchStep -StepLabel "[Step 2] Applying Database Update Schema (update_schema.sql)" -SqlPath $sqlFile -DatabaseName $target.TargetDatabase -Config $config -TrackStatus
+        Invoke-SqlPatchStep -StepLabel "[Step 2.1] Running 14-Digit Saving Accounts Migration" -SqlPath $saving14Sql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        Invoke-SqlPatchStep -StepLabel "[Step 2.2] Auto-Healing Nominal Members with Shareholding" -SqlPath $autoHealSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        Invoke-SqlPatchStep -StepLabel "[Step 2.3] Auto-Healing Migrated FD Account Numbers & Sequences" -SqlPath $fdHealSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        Invoke-SqlPatchStep -StepLabel "[Step 2.4] Auto-Healing Non-Shareholder MemberCodes" -SqlPath $memberCodeHealSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        Invoke-SqlPatchStep -StepLabel "[Step 2.5] Auto-Healing Branch-wise Ledger Opening Balances" -SqlPath $branchLedgerOpeningSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        Invoke-SqlPatchStep -StepLabel "[Step 2.6] Restoring Orphaned Closed FD Accounts" -SqlPath $fdOrphanHealSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        Invoke-SqlPatchStep -StepLabel "[Step 2.7] Auto-Healing Daybook Orphan Loan Disbursements & Collections" -SqlPath $daybookOrphanHealSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
+        Invoke-SqlPatchStep -StepLabel "[Step 2.8] Auto-Healing Verified Orphan FD SB Debit Transactions" -SqlPath $fdSbDebitHealSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
 
-        # 2.05 Instant Vouchers & LoanCollections IBT Columns Fix (Trial Balance Fix)
-        if (Test-Path $vouchersIbtSql) {
-            Write-Host " [Step 2.05] Ensuring Vouchers & LoanCollections IBT Columns on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $vOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$vouchersIbtSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $vOk = $true }
-                    } catch {}
-                }
-                if (-not $vOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$vouchersIbtSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $vOk = $true }
-                }
-                if ($vOk) {
-                    Write-Host "  -> Vouchers & LoanCollections IBT Columns verified 100% OK!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> Vouchers IBT Columns Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 2. Database Schema Sync via Native sqlcmd Engine
-        Write-Host " [Step 2] Applying Database Update Schema via Native sqlcmd Engine..." -ForegroundColor Yellow
-        if (Test-Path $sqlFile) {
-            try {
-                $sqlOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$sqlFile`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $sqlOk = $true }
-                    } catch {}
-                }
-                if (-not $sqlOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$sqlFile`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $sqlOk = $true }
-                }
-
-                if ($sqlOk) {
-                    Write-Host "  -> Database Schema Synced 100% OK via sqlcmd!" -ForegroundColor Green
-                    $statusObj.SqlSchema = "OK"
-                } else {
-                    Write-Host "  -> Database Schema Notice (Check logs). Continuing deployment..." -ForegroundColor DarkYellow
-                    $statusObj.SqlSchema = "Notice"
-                }
-            } catch {
-                Write-Host "  -> SQL Note: $($_.Exception.Message). Continuing deployment..." -ForegroundColor DarkYellow
-                $statusObj.SqlSchema = "Notice (Bypassed)"
-            }
-        }
-
-        # 2.1 Automatic 14-Digit Saving Accounts Migration
-        if (Test-Path $saving14Sql) {
-            Write-Host " [Step 2.1] Running 14-Digit Saving Accounts Migration on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $m14Ok = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$saving14Sql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $m14Ok = $true }
-                    } catch {}
-                }
-                if (-not $m14Ok) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$saving14Sql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $m14Ok = $true }
-                }
-                if ($m14Ok) {
-                    Write-Host "  -> 14-Digit Saving Accounts Migration applied successfully!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> Migration Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 2.2 Auto-Heal Nominal Shareholders to Regular (MCS Act 1960 Compliance)
-        if (Test-Path $autoHealSql) {
-            Write-Host " [Step 2.2] Auto-Healing Nominal Members with Shareholding to Regular (MCS Act 1960)..." -ForegroundColor Yellow
-            try {
-                $hOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$autoHealSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $hOk = $true }
-                    } catch {}
-                }
-                if (-not $hOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$autoHealSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $hOk = $true }
-                }
-                if ($hOk) {
-                    Write-Host "  -> Nominal Members Auto-Healed to Regular Successfully!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> Auto-Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 2.3 Auto-Heal Migrated FD Account Numbers & Sequences
-        if (Test-Path $fdHealSql) {
-            Write-Host " [Step 2.3] Auto-Healing Migrated FD Account Numbers & Sequences on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $fdOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$fdHealSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $fdOk = $true }
-                    } catch {}
-                }
-                if (-not $fdOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$fdHealSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $fdOk = $true }
-                }
-                if ($fdOk) {
-                    Write-Host "  -> Migrated FD Account Numbers & Sequences Auto-Healed Successfully!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> FD Auto-Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 2.4 Auto-Heal Non-Shareholder MemberCodes & Resequence Shareholder Codes
-        if (Test-Path $memberCodeHealSql) {
-            Write-Host " [Step 2.4] Auto-Healing Non-Shareholder MemberCodes & Resequencing on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $mOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$memberCodeHealSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $mOk = $true }
-                    } catch {}
-                }
-                if (-not $mOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$memberCodeHealSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $mOk = $true }
-                }
-                if ($mOk) {
-                    Write-Host "  -> Non-Shareholder MemberCodes Purged & Shareholder Codes Resequenced Successfully!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> Member Code Auto-Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 2.5 Auto-Heal Branch-wise Ledger Opening Balances & Branch Columns
-        if (Test-Path $branchLedgerOpeningSql) {
-            Write-Host " [Step 2.5] Auto-Healing Branch-wise Ledger Opening Balances & DefaultIbtLedgerID on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $bloOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$branchLedgerOpeningSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $bloOk = $true }
-                    } catch {}
-                }
-                if (-not $bloOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$branchLedgerOpeningSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $bloOk = $true }
-                }
-                if ($bloOk) {
-                    Write-Host "  -> Branch-wise Ledger Opening Balances & DefaultIbtLedgerID applied successfully!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> Branch Ledger Opening Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 2.6 Auto-Restore Orphaned Closed FD Accounts (Where Closure Vouchers were deleted)
-        if (Test-Path $fdOrphanHealSql) {
-            Write-Host " [Step 2.6] Restoring Orphaned Closed FD Accounts on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $fdOrphanOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$fdOrphanHealSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $fdOrphanOk = $true }
-                    } catch {}
-                }
-                if (-not $fdOrphanOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$fdOrphanHealSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $fdOrphanOk = $true }
-                }
-                if ($fdOrphanOk) {
-                    Write-Host "  -> Orphaned Closed FD Accounts Restored Successfully!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> FD Restore Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 2.7 Auto-Heal Orphan Loan Disbursements & Collections (Daybook Payment Balance Restoration)
-        if (Test-Path $daybookOrphanHealSql) {
-            Write-Host " [Step 2.7] Auto-Healing Daybook Orphan Loan Disbursements & Collections on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $daybookOrphanOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$daybookOrphanHealSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $daybookOrphanOk = $true }
-                    } catch {}
-                }
-                if (-not $daybookOrphanOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$daybookOrphanHealSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $daybookOrphanOk = $true }
-                }
-                if ($daybookOrphanOk) {
-                    Write-Host "  -> Daybook Orphan Loan Disbursements & Collections Auto-Healed Successfully!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> Daybook Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 2.8 Auto-Heal Verified Orphan FD Opening SB Debit Transactions (Zero-Fallback)
-        if (Test-Path $fdSbDebitHealSql) {
-            Write-Host " [Step 2.8] Auto-Healing Verified Orphan FD SB Debit Transactions on $($target.TargetDatabase)..." -ForegroundColor Yellow
-            try {
-                $fdSbOk = $false
-                if ($config.SqlUser -and $config.SqlPassword) {
-                    try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$fdSbDebitHealSql`"" -f 65001 -b
-                        if ($LASTEXITCODE -eq 0) { $fdSbOk = $true }
-                    } catch {}
-                }
-                if (-not $fdSbOk) {
-                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$fdSbDebitHealSql`"" -f 65001 -b
-                    if ($LASTEXITCODE -eq 0) { $fdSbOk = $true }
-                }
-                if ($fdSbOk) {
-                    Write-Host "  -> Verified Orphan FD SB Debit Transactions Auto-Healed Successfully!" -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "  -> FD SB Debit Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-
-        # 3. Stop IIS AppPool & Release Process Locks
-        if (![string]::IsNullOrWhiteSpace($target.IISAppPoolName)) {
-            Write-Host " [Step 3] Stopping IIS AppPool ($($target.IISAppPoolName)) & releasing file locks..." -ForegroundColor Yellow
-            try {
-                cmd /c "%windir%\system32\inetsrv\appcmd.exe stop apppool /apppool.name:`"$($target.IISAppPoolName)`"" 2>$null
-            } catch {}
-        }
-        if ($target.TargetDatabase -match "bambavade") {
-            cmd /c "%windir%\system32\inetsrv\appcmd.exe stop apppool /apppool.name:`"apibambavade`"" 2>$null
-            cmd /c "%windir%\system32\inetsrv\appcmd.exe stop apppool /apppool.name:`"bambavade-backend`"" 2>$null
+        # 3. Stop IIS AppPools & Release Process Locks
+        Write-Host " [Step 3] Stopping IIS AppPools ($($allAppPools -join ', ')) & releasing file locks..." -ForegroundColor Yellow
+        foreach ($pool in $allAppPools) {
+            Invoke-IisAppPool -PoolName $pool -Action "stop"
         }
         Get-Process -Name "w3wp", "dotnet", "Bhisi.Api" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
 
-        # 4. Deploy Backend Files
+        # 4. Deploy Backend Files (checks Robocopy exit code >= 8)
         Write-Host " [Step 4] Deploying Backend API Binaries..." -ForegroundColor Yellow
-        $backendFolders = Get-AllTargetFolders -baseFolder $target.BackendFolderPath -type "backend" -sansthaKey "$($target.TargetDatabase)"
         foreach ($bFolder in $backendFolders) {
-            if (-not (Test-Path $bFolder)) {
-                New-Item -Path $bFolder -ItemType Directory -Force | Out-Null
-            }
-            robocopy $backendSource $bFolder /E /R:2 /W:1 /XF "appsettings.json" "appsettings.Production.json" "license.lic" /XD "logs" "uploads" "wwwroot" | Out-Null
+            Invoke-RobustCopy -Source $backendSource -Destination $bFolder -ExtraArgs @("/XF", "appsettings.json", "appsettings.Production.json", "license.lic", "/XD", "logs", "uploads", "wwwroot") | Out-Null
             Write-Host "  -> Backend Binaries Updated at: $bFolder" -ForegroundColor Green
         }
         $statusObj.Backend = "OK"
@@ -889,46 +871,123 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         # 4.5 Config Files Preserved Intact
         Write-Host " [Step 4.5] Existing server configuration (appsettings.json / appsettings.Production.json) preserved intact 100%." -ForegroundColor Gray
 
-        # 5. Deploy Frontend Files
-        Write-Host " [Step 5] Deploying Frontend Bundle (Cleaning old cached assets)..." -ForegroundColor Yellow
-        $frontendFolders = Get-AllTargetFolders -baseFolder $target.FrontendFolderPath -type "frontend" -sansthaKey "$($target.TargetDatabase)"
+        # 5. Deploy Frontend Files (checks Robocopy exit code >= 8)
+        Write-Host " [Step 5] Deploying Frontend Bundle (Cleaning old cached assets & refreshing web.config)..." -ForegroundColor Yellow
         foreach ($fFolder in $frontendFolders) {
-            if (-not (Test-Path $fFolder)) {
-                New-Item -Path $fFolder -ItemType Directory -Force | Out-Null
-            }
-            robocopy $frontendSource $fFolder /E /R:2 /W:1 /PURGE | Out-Null
+            Invoke-RobustCopy -Source $frontendSource -Destination $fFolder -ExtraArgs @("/PURGE") | Out-Null
             Write-Host "  -> Frontend Bundle Updated at: $fFolder" -ForegroundColor Green
         }
         $statusObj.Frontend = "OK"
 
-        # 6. Start IIS AppPool & Refresh
-        if (![string]::IsNullOrWhiteSpace($target.IISAppPoolName)) {
-            Write-Host " [Step 6] Restarting IIS AppPool ($($target.IISAppPoolName))..." -ForegroundColor Yellow
-            try {
-                cmd /c "%windir%\system32\inetsrv\appcmd.exe start apppool /apppool.name:`"$($target.IISAppPoolName)`"" 2>$null
-            } catch {}
+        # 6. Start IIS AppPools & Refresh IIS Cache
+        Write-Host " [Step 6] Restarting IIS AppPools ($($allAppPools -join ', ')) & IIS Cache..." -ForegroundColor Yellow
+        foreach ($pool in $allAppPools) {
+            Invoke-IisAppPool -PoolName $pool -Action "start"
         }
-        if ($target.TargetDatabase -match "bambavade") {
-            cmd /c "%windir%\system32\inetsrv\appcmd.exe start apppool /apppool.name:`"apibambavade`"" 2>$null
-            cmd /c "%windir%\system32\inetsrv\appcmd.exe start apppool /apppool.name:`"bambavade-backend`"" 2>$null
+        $iisOut = cmd /c "iisreset" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  -> [WARNING] iisreset returned exit code $LASTEXITCODE : $($iisOut -join ' ')" -ForegroundColor Yellow
         }
-        cmd /c "iisreset" 2>$null
 
-        $statusObj.Status = "Completed Successfully"
-        Write-Host "`n [SUCCESS] $($target.SansthaName) updated successfully!" -ForegroundColor Green
+        # 7. Post-Deploy Verification (Prevents silent stale deployment)
+        Write-Host " [Step 7] Verifying Deployed Frontend, Backend & DB Schema..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 1
+        $verifyIssues = [System.Collections.Generic.List[string]]::new()
+
+        foreach ($fFolder in $frontendFolders) {
+            $fvPath = Join-Path $fFolder "version.json"
+            if (-not (Test-Path $fvPath)) {
+                $verifyIssues.Add("Missing frontend version.json at $fFolder")
+            } elseif ($expectedVersion) {
+                try {
+                    $fvJson = Get-Content $fvPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if ($fvJson.version -ne $expectedVersion) {
+                        $verifyIssues.Add("Frontend version mismatch at $fFolder (found $($fvJson.version), expected $expectedVersion)")
+                    }
+                } catch {
+                    $verifyIssues.Add("Unreadable frontend version.json at $fFolder")
+                }
+            }
+            if ($expectedBundleRel) {
+                $fIdxPath = Join-Path $fFolder "index.html"
+                $cleanRel = $expectedBundleRel.TrimStart('/') -replace '/', '\'
+                if (-not (Test-Path $fIdxPath) -or -not (Get-Content $fIdxPath -Raw -Encoding UTF8).Contains($expectedBundleRel)) {
+                    $verifyIssues.Add("Frontend index.html mismatch at $fFolder")
+                } elseif (-not (Test-Path (Join-Path $fFolder $cleanRel))) {
+                    $verifyIssues.Add("Missing frontend bundle '$cleanRel' at $fFolder")
+                }
+            }
+        }
+
+        $srcDllPath = Join-Path $backendSource "Bhisi.Api.dll"
+        $srcDllLen = if (Test-Path $srcDllPath) { (Get-Item $srcDllPath).Length } else { -1 }
+        foreach ($bFolder in $backendFolders) {
+            $bvPath = Join-Path $bFolder "version.json"
+            $dstDllPath = Join-Path $bFolder "Bhisi.Api.dll"
+            if (-not (Test-Path $bvPath)) {
+                $verifyIssues.Add("Missing backend version.json at $bFolder")
+            } elseif ($expectedVersion) {
+                try {
+                    $bvJson = Get-Content $bvPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if ($bvJson.version -ne $expectedVersion) {
+                        $verifyIssues.Add("Backend version mismatch at $bFolder (found $($bvJson.version), expected $expectedVersion)")
+                    }
+                } catch {}
+            }
+            if ($srcDllLen -gt 0 -and (-not (Test-Path $dstDllPath) -or (Get-Item $dstDllPath).Length -ne $srcDllLen)) {
+                $verifyIssues.Add("Backend Bhisi.Api.dll mismatch at $bFolder")
+            }
+        }
+
+        # Verify critical v2.6.41+ LoanRates column exists in target DB
+        $colCheckQuery = "SET NOCOUNT ON; SELECT ISNULL(CASE WHEN COL_LENGTH('dbo.LoanRates','AllowManualPenalInRecovery') IS NOT NULL THEN 1 ELSE 0 END, 0);"
+        $colCheckOk = $false
+        $prevPrefCol = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            $colVal = ""
+            if ($config.SqlUser -and $config.SqlPassword) {
+                $colVal = (& sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d $target.TargetDatabase -h -1 -W -Q $colCheckQuery 2>$null) -join ""
+            }
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($colVal)) {
+                $colVal = (& sqlcmd -S $config.SqlServerInstance -d $target.TargetDatabase -E -h -1 -W -Q $colCheckQuery 2>$null) -join ""
+            }
+            if ($colVal.Trim() -match '^1') { $colCheckOk = $true }
+        } catch {} finally {
+            $ErrorActionPreference = $prevPrefCol
+        }
+        if (-not $colCheckOk) {
+            $verifyIssues.Add("DB column LoanRates.AllowManualPenalInRecovery missing or SQL check failed on $($target.TargetDatabase)")
+        }
+
+        if ($verifyIssues.Count -eq 0 -and $statusObj.SqlSchema -eq "OK") {
+            $statusObj.Verified = "OK (v$expectedVersion)"
+            $statusObj.Status = "Completed Successfully"
+            Write-Host "`n [SUCCESS] $($target.SansthaName) updated & verified (v$expectedVersion)!" -ForegroundColor Green
+        } else {
+            if ($verifyIssues.Count -gt 0) {
+                $statusObj.Verified = "FAILED ($($verifyIssues.Count))"
+                foreach ($iss in $verifyIssues) { Write-Host "  [VERIFY ERROR] $iss" -ForegroundColor Red }
+                $statusObj.Status = "Verification Failed"
+            } else {
+                $statusObj.Verified = "OK (Files v$expectedVersion, Check SQL)"
+                $statusObj.Status = "Completed with SQL Warning"
+            }
+        }
 
         $manifestEntries += [PSCustomObject]@{
             Sanstha = $target.SansthaName
             Database = $target.TargetDatabase
-            IISAppPool = $target.IISAppPoolName
-            BackendPath = $target.BackendFolderPath
-            FrontendPath = $target.FrontendFolderPath
+            IISAppPool = ($allAppPools -join ",")
+            BackendPath = ($backendFolders -join ";")
+            FrontendPath = ($frontendFolders -join ";")
             BackupFile = "$targetRollbackDir\$($target.TargetDatabase)_PrePatch.bak"
             UpdatedOn = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
         }
     }
     catch {
         Write-Host " ERROR during update of $($target.SansthaName): $_" -ForegroundColor Red
+        $statusObj.Verified = "FAILED"
         $statusObj.Status = "Failed: $_"
     }
 
@@ -947,7 +1006,7 @@ $manifestData | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encod
 Write-Host "`n==================================================================" -ForegroundColor Cyan
 Write-Host "                 MULTI-APP PATCH SUMMARY REPORT                   " -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
-$results | Format-Table -AutoSize Sanstha, Database, DbBackup, AppSnapshot, SqlSchema, Backend, Frontend, Status
+$results | Format-Table -AutoSize Sanstha, Database, DbBackup, AppSnapshot, SqlSchema, Backend, Frontend, Verified, Status
 
 Write-Host "`n[OK] Patch execution completed." -ForegroundColor Green
 Write-Host "To REVERT this patch at any time, run:" -ForegroundColor Yellow
@@ -1058,17 +1117,30 @@ if (-not $NonInteractive -and -not $doRestoreDb) {
     Write-Host ""
 }
 
-$allTargets = $config.Targets
-$selectedTargets = @()
+function Resolve-ReverseTargets {
+    param([object[]]$AllTargets, [string]$TargetName)
+    if ($TargetName -eq "ALL" -or [string]::IsNullOrWhiteSpace($TargetName)) { return @($AllTargets) }
+    $needle = $TargetName.Trim()
+    $exact = @($AllTargets | Where-Object {
+        $_.SansthaName -ieq $needle -or
+        $_.TargetDatabase -ieq $needle -or
+        $_.SansthaName -ieq "$needle Environment" -or
+        $_.TargetDatabase -ieq "SmartBanking_$needle"
+    })
+    if ($exact.Count -gt 0) { return $exact }
+    $esc = [regex]::Escape($needle)
+    $pattern = "(?i)(?:^|[\s_,.\-\\/])$esc(?:$|[\s_,.\-\\/])"
+    $boundary = @($AllTargets | Where-Object { $_.SansthaName -match $pattern -or $_.TargetDatabase -match $pattern })
+    if ($boundary.Count -gt 0) { return $boundary }
+    return @($AllTargets | Where-Object { $_.SansthaName -like "*$needle*" -or $_.TargetDatabase -like "*$needle*" })
+}
 
-if ($TargetName -eq "ALL" -or [string]::IsNullOrWhiteSpace($TargetName)) {
-    $selectedTargets = $allTargets
-} else {
-    $selectedTargets = $allTargets | Where-Object { $_.SansthaName -like "*$TargetName*" -or $_.TargetDatabase -like "*$TargetName*" }
-    if ($selectedTargets.Count -eq 0) {
-        Write-Host "[WARNING] No specific match found for '$TargetName'. Defaulting to all configured targets." -ForegroundColor Yellow
-        $selectedTargets = $allTargets
-    }
+$allTargets = $config.Targets
+$selectedTargets = Resolve-ReverseTargets -AllTargets $allTargets -TargetName $TargetName
+if ($selectedTargets.Count -eq 0) {
+    Write-Host "[ERROR] No rollback target matched '$TargetName'." -ForegroundColor Red
+    Read-Host "Press ENTER to exit"
+    exit 1
 }
 
 $totalTargets = $selectedTargets.Count
@@ -1129,7 +1201,8 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         $bkBackendSource = Join-Path $targetRollbackDir "backend"
         if (Test-Path $bkBackendSource) {
             Write-Host " [Step 2] Restoring Previous Backend API Binaries..." -ForegroundColor Yellow
-            robocopy $bkBackendSource $target.BackendFolderPath /E /R:2 /W:1 /XF "appsettings.json" "appsettings.Production.json" "license.lic" /XD "logs" "uploads" "wwwroot" | Out-Null
+            & robocopy $bkBackendSource $target.BackendFolderPath /E /R:2 /W:1 /NP /NFL /NDL /XF "appsettings.json" "appsettings.Production.json" "license.lic" /XD "logs" "uploads" "wwwroot" | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "Backend rollback robocopy failed with exit code $LASTEXITCODE" }
             Write-Host "  -> Backend Restored to Pre-Patch Version!" -ForegroundColor Green
             $statusObj.BackendRevert = "OK"
         } else {
@@ -1141,7 +1214,8 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         $bkFrontendSource = Join-Path $targetRollbackDir "frontend"
         if (Test-Path $bkFrontendSource) {
             Write-Host " [Step 3] Restoring Previous Frontend Bundle..." -ForegroundColor Yellow
-            robocopy $bkFrontendSource $target.FrontendFolderPath /E /R:2 /W:1 /PURGE | Out-Null
+            & robocopy $bkFrontendSource $target.FrontendFolderPath /E /R:2 /W:1 /NP /NFL /NDL /PURGE | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "Frontend rollback robocopy failed with exit code $LASTEXITCODE" }
             Write-Host "  -> Frontend Restored to Pre-Patch Version!" -ForegroundColor Green
             $statusObj.FrontendRevert = "OK"
         } else {
@@ -1273,8 +1347,8 @@ New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Padawalwadi.ba
 New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Padawalwadi" -ScriptFile "reverse_patch.ps1" -TargetName "padval" -Color "0D"
 
 # 2. Bambavade
-New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Bambavade.bat") -Title "SmartBanking ERP - 1-Click Update Bambavade" -ScriptFile "apply_patch.ps1" -TargetName "bambavade" -Color "0B"
-New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Bambavade.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Bambavade" -ScriptFile "reverse_patch.ps1" -TargetName "bambavade" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Bambavade.bat") -Title "SmartBanking ERP - 1-Click Update Bambavade" -ScriptFile "apply_patch.ps1" -TargetName "bambavadeurban" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Bambavade.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Bambavade" -ScriptFile "reverse_patch.ps1" -TargetName "bambavadeurban" -Color "0D"
 
 # 3. Yadravkar
 New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Yadravkar.bat") -Title "SmartBanking ERP - 1-Click Update Yadravkar" -ScriptFile "apply_patch.ps1" -TargetName "Yadrav" -Color "0B"
@@ -1303,6 +1377,10 @@ New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Sahyadr
 # 9. Sahyadri Karmachari
 New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_SahyadriKarmachari.bat") -Title "SmartBanking ERP - 1-Click Update Sahyadri Karmachari" -ScriptFile "apply_patch.ps1" -TargetName "sahyadrikarmachari" -Color "0B"
 New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_SahyadriKarmachari.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Sahyadri Karmachari" -ScriptFile "reverse_patch.ps1" -TargetName "sahyadrikarmachari" -Color "0D"
+
+# 10. Vidyasagar Kavathesar
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_VidyasagarKavathesar.bat") -Title "SmartBanking ERP - 1-Click Update Vidyasagar Kavathesar" -ScriptFile "apply_patch.ps1" -TargetName "kavathesarvidyasagar" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_VidyasagarKavathesar.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Vidyasagar Kavathesar" -ScriptFile "reverse_patch.ps1" -TargetName "kavathesarvidyasagar" -Color "0D"
 
 # Generate Comprehensive README & Patch Guide
 $readmeContent = @"
@@ -1489,31 +1567,41 @@ $readmeContent = @"
 Write-Host "  -> README_PATCH_AND_REVERSE_GUIDE.md created." -ForegroundColor White
 
 # -----------------------------------------------------------------------------------------
-# Step 5: Compress to ZIP & Copy to Desktop
+# Step 5: Compress to ZIP (Latest + Versioned) & Copy to Desktop
 # -----------------------------------------------------------------------------------------
-Write-Host "`n[5/5] Creating SmartBanking_VPS_Multi_App_Master_Patch.zip..." -ForegroundColor Cyan
+$versionedZipOutputFile = Join-Path $workspaceRoot "SmartBanking_VPS_Multi_App_Master_Patch_v$version.zip"
+Write-Host "`n[5/5] Creating SmartBanking_VPS_Multi_App_Master_Patch.zip & v$version archive..." -ForegroundColor Cyan
 
 if (Test-Path $zipOutputFile) {
     Remove-Item -Path $zipOutputFile -Force
 }
+if (Test-Path $versionedZipOutputFile) {
+    Remove-Item -Path $versionedZipOutputFile -Force
+}
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory($patchFolder, $zipOutputFile, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+Copy-Item $zipOutputFile $versionedZipOutputFile -Force
 
-$desktop = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
-$desktopDest = if (-not [string]::IsNullOrWhiteSpace($desktop) -and (Test-Path $desktop)) { Join-Path $desktop "SmartBanking_VPS_Multi_App_Master_Patch.zip" } else { "" }
-if (-not [string]::IsNullOrWhiteSpace($desktopDest)) { Copy-Item $zipOutputFile $desktopDest -Force }
-
-$localDesktop = "C:\Users\$env:USERNAME\Desktop"
-if ((Test-Path $localDesktop) -and ($localDesktop -ne $desktop)) {
-    Copy-Item $zipOutputFile (Join-Path $localDesktop "SmartBanking_VPS_Multi_App_Master_Patch.zip") -Force
+$desktopPaths = @()
+$specialDesktop = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
+if (-not [string]::IsNullOrWhiteSpace($specialDesktop) -and (Test-Path $specialDesktop)) { $desktopPaths += $specialDesktop }
+foreach ($candDesktop in @("C:\Users\$env:USERNAME\Desktop", "C:\Users\$env:USERNAME\OneDrive\Desktop")) {
+    if ((Test-Path $candDesktop) -and ($desktopPaths -notcontains $candDesktop)) { $desktopPaths += $candDesktop }
+}
+$desktopDest = ""
+foreach ($dp in $desktopPaths) {
+    Copy-Item $zipOutputFile (Join-Path $dp "SmartBanking_VPS_Multi_App_Master_Patch.zip") -Force -ErrorAction SilentlyContinue
+    Copy-Item $versionedZipOutputFile (Join-Path $dp "SmartBanking_VPS_Multi_App_Master_Patch_v$version.zip") -Force -ErrorAction SilentlyContinue
+    $desktopDest = Join-Path $dp "SmartBanking_VPS_Multi_App_Master_Patch_v$version.zip"
 }
 
 Write-Host ""
 Write-Host "==================================================================" -ForegroundColor Green
 Write-Host "  1-CLICK MULTI-APP MASTER PATCH & REVERSE ENGINE CREATED!        " -ForegroundColor Green
 Write-Host "==================================================================" -ForegroundColor Green
-Write-Host " Output File : $zipOutputFile" -ForegroundColor Yellow
+Write-Host " Output File : $versionedZipOutputFile" -ForegroundColor Yellow
+Write-Host " Latest Zip  : $zipOutputFile" -ForegroundColor Yellow
 Write-Host " Desktop     : $desktopDest" -ForegroundColor Yellow
 Write-Host " Size        : $([Math]::Round((Get-Item $zipOutputFile).Length / 1MB, 2)) MB" -ForegroundColor White
 Write-Host " Targets     : $($configJson.Targets.Count) configured applications" -ForegroundColor White

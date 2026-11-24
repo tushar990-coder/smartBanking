@@ -46,6 +46,8 @@ interface LoanLedgerTransactionDto {
   penalInterest: number;
   receivableInterest: number;
   recoveryCharges: number;
+  otherFees?: number;
+  otherFeesDetails?: string;
   total: number;
   days: number;
   balance: number;
@@ -153,6 +155,7 @@ const formatParticularsMarathi = (raw: string): string => {
   if (trimmed.includes('मागील शिल्लक') || trimmed === 'Previous Balance') return 'मागील शिल्लक (Op.Bal)';
   if (trimmed === 'Loan Disbursement') return 'कर्ज वाटप (Disbursement)';
   if (trimmed === 'Loan Collection') return 'कर्ज हप्ता / वसुली जमा';
+  if (trimmed.startsWith('Loan Collection (')) return trimmed.replace('Loan Collection', 'कर्ज हप्ता / वसुली जमा');
   return trimmed;
 };
 
@@ -569,6 +572,7 @@ const LoanLedgerReport: React.FC = () => {
     const totalPenal = txs.reduce((s, t) => s + (t.penalInterest || 0), 0);
     const totalReceivable = txs.reduce((s, t) => s + (t.receivableInterest || 0), 0);
     const totalCharges = txs.reduce((s, t) => s + (t.recoveryCharges || 0), 0);
+    const totalOtherFees = txs.reduce((s, t) => s + (t.otherFees || 0), 0);
     const totalReceived = txs.reduce((s, t) => s + (t.total || 0), 0);
     const closingBalance =
       txs.length > 0 ? txs[txs.length - 1].balance : item?.principalBalance || 0;
@@ -587,6 +591,7 @@ const LoanLedgerReport: React.FC = () => {
       totalPenal,
       totalReceivable,
       totalCharges,
+      totalOtherFees,
       totalReceived,
       closingBalance,
       totalCollateralBalance,
@@ -866,6 +871,7 @@ const LoanLedgerReport: React.FC = () => {
         'दंड व्याज (₹)',
         'येणे व्याज (₹)',
         'वसुली खर्च (₹)',
+        'इतर फी (₹)',
         'एकूण जमा (₹)',
         'दिवस',
         'शिल्लक मुद्दल (Balance ₹)'
@@ -887,6 +893,7 @@ const LoanLedgerReport: React.FC = () => {
           t.penalInterest || 0,
           t.receivableInterest || 0,
           t.recoveryCharges || 0,
+          t.otherFees || 0,
           t.total || 0,
           t.days || 0,
           t.balance || 0
@@ -904,6 +911,7 @@ const LoanLedgerReport: React.FC = () => {
         repTotals.totalPenal,
         repTotals.totalReceivable,
         repTotals.totalCharges,
+        repTotals.totalOtherFees,
         repTotals.totalReceived,
         '',
         repTotals.closingBalance
@@ -1429,10 +1437,11 @@ const LoanLedgerReport: React.FC = () => {
                         <th className="border border-slate-900 py-1.5 px-1.5 w-[7.5%] text-right">व्याज</th>
                         <th className="border border-slate-900 py-1.5 px-1.5 w-[6.5%] text-right">दंड व्याज</th>
                         <th className="border border-slate-900 py-1.5 px-1.5 w-[6.5%] text-right">येणे व्याज</th>
-                        <th className="border border-slate-900 py-1.5 px-1.5 w-[5.5%] text-right">खर्च</th>
-                        <th className="border border-slate-900 py-1.5 px-1.5 w-[8%] text-right">एकूण जमा</th>
+                        <th className="border border-slate-900 py-1.5 px-1.5 w-[5%] text-right">खर्च</th>
+                        <th className="border border-slate-900 py-1.5 px-1.5 w-[5.5%] text-right">इतर फी</th>
+                        <th className="border border-slate-900 py-1.5 px-1.5 w-[7.5%] text-right">एकूण जमा</th>
                         <th className="border border-slate-900 py-1.5 px-1 w-[3.5%] text-center">दिवस</th>
-                        <th className="border border-slate-900 py-1.5 px-1.5 w-[9.5%] text-right font-extrabold">
+                        <th className="border border-slate-900 py-1.5 px-1.5 w-[9%] text-right font-extrabold">
                           शिल्लक (Balance ₹)
                         </th>
                       </tr>
@@ -1497,6 +1506,9 @@ const LoanLedgerReport: React.FC = () => {
                               <td className="border border-slate-900 py-1 px-1.5 cbs-num-cell">
                                 {fmtCellAmount(t.recoveryCharges)}
                               </td>
+                              <td className="border border-slate-900 py-1 px-1.5 cbs-num-cell text-purple-900" title={t.otherFeesDetails || undefined}>
+                                {fmtCellAmount(t.otherFees || 0)}
+                              </td>
                               <td className="border border-slate-900 py-1 px-1.5 cbs-num-cell font-semibold">
                                 {fmtCellAmount(t.total)}
                               </td>
@@ -1512,7 +1524,7 @@ const LoanLedgerReport: React.FC = () => {
                       ) : (
                         <tr>
                           <td
-                            colSpan={13}
+                            colSpan={14}
                             className="border border-slate-900 py-6 text-center text-slate-500 font-semibold"
                           >
                             निवडलेल्या कालावधीत कोणतेही कर्ज व्यवहार आढळले नाहीत.
@@ -1545,6 +1557,9 @@ const LoanLedgerReport: React.FC = () => {
                         </td>
                         <td className="border border-slate-900 py-1.5 px-1.5 cbs-num-cell font-bold">
                           {fmtCellAmount(itemTotals.totalCharges)}
+                        </td>
+                        <td className="border border-slate-900 py-1.5 px-1.5 cbs-num-cell font-bold text-purple-900">
+                          {fmtCellAmount(itemTotals.totalOtherFees)}
                         </td>
                         <td className="border border-slate-900 py-1.5 px-1.5 cbs-num-cell font-bold">
                           ₹ {fmtCurrency(itemTotals.totalReceived)}

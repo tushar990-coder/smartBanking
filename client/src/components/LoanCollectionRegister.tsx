@@ -28,7 +28,10 @@ interface LoanCollectionRegisterDto {
   interestCollected: number;
   penaltyInterestCollected: number;
   surchargeCollected: number;
+  feesCollected?: number;
   totalAmountReceived: number;
+  grandTotalReceived?: number;
+  feesSummary?: string | null;
   paymentMode: string;
   branchID?: number;
   branchName?: string;
@@ -187,13 +190,17 @@ export default function LoanCollectionRegister() {
     groupedData[type].push(item);
   });
 
+  const getEffectiveTotalReceived = (r: LoanCollectionRegisterDto) =>
+    r.grandTotalReceived ?? ((r.totalAmountReceived || 0) + (r.feesCollected || 0));
+
   // Grand Totals
   const totalPrincipalSum = filteredData.reduce((sum, r) => sum + (r.principalCollected || 0), 0);
   const totalReceivableInterestSum = filteredData.reduce((sum, r) => sum + (r.receivableInterestCollected || 0), 0);
   const totalInterestSum = filteredData.reduce((sum, r) => sum + (r.interestCollected || 0), 0);
   const totalPenaltySum = filteredData.reduce((sum, r) => sum + (r.penaltyInterestCollected || 0), 0);
   const totalSurchargeSum = filteredData.reduce((sum, r) => sum + (r.surchargeCollected || 0), 0);
-  const totalReceivedSum = filteredData.reduce((sum, r) => sum + (r.totalAmountReceived || 0), 0);
+  const totalFeesSum = filteredData.reduce((sum, r) => sum + (r.feesCollected || 0), 0);
+  const totalReceivedSum = filteredData.reduce((sum, r) => sum + getEffectiveTotalReceived(r), 0);
 
   const handleExportExcel = () => {
     if (filteredData.length === 0) {
@@ -220,7 +227,9 @@ export default function LoanCollectionRegister() {
         'चालू व्याज (₹)': r.interestCollected || 0,
         'दंड व्याज (₹)': r.penaltyInterestCollected || 0,
         'इतर/अधिभार (₹)': r.surchargeCollected || 0,
-        'एकूण जमा रक्कम (₹)': r.totalAmountReceived || 0,
+        'इतर वसूल फी (₹)': r.feesCollected || 0,
+        'फी तपशील': r.feesSummary || '',
+        'एकूण जमा रक्कम (₹)': getEffectiveTotalReceived(r),
         'पेमेंट मोड': r.paymentMode === 'Cash' ? 'रोख (Cash)' : 'ट्रान्सफर (Transfer)'
       });
     });
@@ -241,6 +250,8 @@ export default function LoanCollectionRegister() {
       'चालू व्याज (₹)': totalInterestSum,
       'दंड व्याज (₹)': totalPenaltySum,
       'इतर/अधिभार (₹)': totalSurchargeSum,
+      'इतर वसूल फी (₹)': totalFeesSum,
+      'फी तपशील': '',
       'एकूण जमा रक्कम (₹)': totalReceivedSum,
       'पेमेंट मोड': ''
     });
@@ -463,6 +474,11 @@ export default function LoanCollectionRegister() {
             <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
               व्याज जमा: <strong className="text-amber-800 font-bold">₹ {fmtCurrency(totalReceivableInterestSum + totalInterestSum)}</strong>
             </span>
+            {totalFeesSum > 0 && (
+              <span className="bg-purple-50 px-2 py-0.5 rounded text-purple-800 border border-purple-200">
+                इतर फी: <strong className="text-purple-700 font-bold">₹ {fmtCurrency(totalFeesSum)}</strong>
+              </span>
+            )}
             <span className="bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
               एकूण वसुली: <strong className="text-emerald-700 font-bold">₹ {fmtCurrency(totalReceivedSum)}</strong>
             </span>
@@ -532,25 +548,26 @@ export default function LoanCollectionRegister() {
                   <th className="border border-gray-900 py-1.5 px-1 w-[8%] text-center">दिनांक</th>
                   <th className="border border-gray-900 py-1.5 px-1 w-[8%] text-center">पावती नं.</th>
                   <th className="border border-gray-900 py-1.5 px-1 w-[9%] text-center">खाते नं.</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[19%] text-left">कर्जदाराचे नाव</th>
-                  <th className="border border-gray-900 py-1.5 px-1 w-[10%] text-center">वसुल / कर्ज शाखा</th>
-                  <th className="border border-gray-900 py-1.5 px-1 w-[9%] text-left">कर्ज प्रकार</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[10%] text-right">मुद्दल जमा</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[9%] text-right">व्याज जमा</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[11%] text-right font-extrabold">एकूण जमा रक्कम</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[17%] text-left">कर्जदाराचे नाव</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[9%] text-center">वसुल / कर्ज शाखा</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[8%] text-left">कर्ज प्रकार</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[9%] text-right">मुद्दल जमा</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[8.5%] text-right">व्याज जमा</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[7.5%] text-right">इतर फी</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[10%] text-right font-extrabold">एकूण जमा रक्कम</th>
                   <th className="border border-gray-900 py-1.5 px-1 w-[6%] text-center">मोड</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                    <td colSpan={12} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                       माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
                     </td>
                   </tr>
                 ) : filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                    <td colSpan={12} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                       निवडलेल्या कालावधीत कोणतीही कर्ज वसुली नोंद आढळली नाही.
                     </td>
                   </tr>
@@ -558,15 +575,16 @@ export default function LoanCollectionRegister() {
                   Object.keys(groupedData).map((typeStr) => {
                     const rows = groupedData[typeStr];
                     const subPrincipal = rows.reduce((sum, r) => sum + (r.principalCollected || 0), 0);
-                    const subInterest = rows.reduce((sum, r) => sum + (r.receivableInterestCollected || 0) + (r.interestCollected || 0), 0);
-                    const subTotal = rows.reduce((sum, r) => sum + (r.totalAmountReceived || 0), 0);
+                    const subInterest = rows.reduce((sum, r) => sum + (r.receivableInterestCollected || 0) + (r.interestCollected || 0) + (r.penaltyInterestCollected || 0) + (r.surchargeCollected || 0), 0);
+                    const subFees = rows.reduce((sum, r) => sum + (r.feesCollected || 0), 0);
+                    const subTotal = rows.reduce((sum, r) => sum + getEffectiveTotalReceived(r), 0);
 
                     return (
                       <React.Fragment key={typeStr}>
                         {/* Section Sub-heading if All mode or multiple types */}
                         {Object.keys(groupedData).length > 1 && (
                           <tr className="bg-gray-50 font-bold text-gray-950 border-t border-b border-gray-900">
-                            <td colSpan={11} className="py-1 px-2 text-left text-primary font-bold">
+                            <td colSpan={12} className="py-1 px-2 text-left text-primary font-bold">
                               › कर्ज प्रकार: {typeStr} ({rows.length} पावत्या)
                             </td>
                           </tr>
@@ -623,8 +641,11 @@ export default function LoanCollectionRegister() {
                             <td className="border border-gray-900 py-1 px-1.5 text-right font-mono text-gray-900" title={`थकीत येणे व्याज: ₹${(row.receivableInterestCollected || 0).toFixed(2)} | चालू व्याज: ₹${(row.interestCollected || 0).toFixed(2)}`}>
                               {fmtCurrency((row.receivableInterestCollected || 0) + row.interestCollected + (row.penaltyInterestCollected || 0) + (row.surchargeCollected || 0))}
                             </td>
+                            <td className="border border-gray-900 py-1 px-1.5 text-right font-mono text-purple-900" title={row.feesSummary || undefined}>
+                              {(row.feesCollected || 0) > 0 ? fmtCurrency(row.feesCollected) : '-'}
+                            </td>
                             <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">
-                              {fmtCurrency(row.totalAmountReceived)}
+                              {fmtCurrency(getEffectiveTotalReceived(row))}
                             </td>
                             <td className="border border-gray-900 py-1 px-1.5 text-center font-mono text-[10.5px]">
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${row.paymentMode === 'Cash' ? 'bg-emerald-50 text-emerald-800' : 'bg-blue-50 text-blue-800'}`}>
@@ -645,6 +666,9 @@ export default function LoanCollectionRegister() {
                             </td>
                             <td className="border border-gray-900 py-1 px-1.5 text-right font-mono font-bold">
                               {fmtCurrency(subInterest)}
+                            </td>
+                            <td className="border border-gray-900 py-1 px-1.5 text-right font-mono font-bold text-purple-900">
+                              {subFees > 0 ? fmtCurrency(subFees) : '-'}
                             </td>
                             <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">
                               {fmtCurrency(subTotal)}
@@ -670,6 +694,9 @@ export default function LoanCollectionRegister() {
                     </td>
                     <td className="border border-gray-900 py-1.5 px-1.5 text-right font-mono font-extrabold text-gray-950">
                       ₹ {fmtCurrency(totalReceivableInterestSum + totalInterestSum + totalPenaltySum + totalSurchargeSum)}
+                    </td>
+                    <td className="border border-gray-900 py-1.5 px-1.5 text-right font-mono font-extrabold text-purple-900">
+                      ₹ {fmtCurrency(totalFeesSum)}
                     </td>
                     <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-extrabold text-emerald-900">
                       ₹ {fmtCurrency(totalReceivedSum)}

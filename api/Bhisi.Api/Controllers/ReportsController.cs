@@ -737,6 +737,7 @@ namespace Bhisi.Api.Controllers
                 var unvoucheredCols = await unvoucheredColQuery
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .Include(lc => lc.Fees!).ThenInclude(f => f.Ledger)
                     .ToListAsync();
 
 
@@ -861,6 +862,30 @@ namespace Bhisi.Api.Controllers
                             group.Entries.Add(entry);
                         }
                     }
+
+                    // Other Fee Ledgers -> Respective Fee GLs
+                    if (lc.Fees != null)
+                    {
+                        foreach (var fee in lc.Fees.Where(f => f.Amount > 0 && f.LedgerID > 0))
+                        {
+                            string feeLedgerName = fee.Ledger?.LedgerName
+                                ?? ledgers.FirstOrDefault(l => l.LedgerID == fee.LedgerID)?.LedgerName
+                                ?? $"इतर वसूल #{fee.LedgerID}";
+                            AddUnvoucheredLoanCreditEntry(
+                                jamaGroups,
+                                fee.LedgerID,
+                                feeLedgerName,
+                                memberNarration,
+                                lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                null,
+                                null,
+                                isCash,
+                                fee.Amount,
+                                colBranch,
+                                accBranch,
+                                isCrossBranch);
+                        }
+                    }
                 }
             }
 
@@ -882,6 +907,82 @@ namespace Bhisi.Api.Controllers
             response.ClosingBalance = openingBalance + response.TotalReceiptsCash - response.TotalPaymentsCash;
 
             return Ok(response);
+        }
+
+        private static void AddUnvoucheredLoanCreditEntry(
+            Dictionary<int, DaybookGroupDto> jamaGroups,
+            int ledgerId,
+            string ledgerName,
+            string memberNarration,
+            string voucherNo,
+            string? fullVoucherNo,
+            Helpers.LegacyDaybookHelper.FormattedLegacyLine? legacyFmt,
+            bool isCash,
+            decimal amount,
+            int colBranch,
+            int? accBranch,
+            bool isCrossBranch)
+        {
+            if (ledgerId <= 0 || amount <= 0) return;
+            if (!jamaGroups.ContainsKey(ledgerId))
+            {
+                jamaGroups[ledgerId] = new DaybookGroupDto
+                {
+                    LedgerId = ledgerId,
+                    LedgerName = ledgerName,
+                    Entries = new List<DaybookEntryDto>()
+                };
+            }
+            var group = jamaGroups[ledgerId];
+            var entry = new DaybookEntryDto
+            {
+                Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
+                    ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                    : memberNarration,
+                VoucherNo = voucherNo,
+                FullVoucherNo = fullVoucherNo,
+                DisplayCustomerNo = legacyFmt?.DisplayCustomerNo,
+                DisplayAccountNo = legacyFmt?.DisplayAccountNo,
+                IsLegacyCustomerNo = legacyFmt?.IsLegacyCustomerNo ?? false,
+                IsLegacyAccountNo = legacyFmt?.IsLegacyAccountNo ?? false,
+                CashAmount = isCash ? amount : 0,
+                TransferAmount = isCash ? 0 : amount,
+                Status = "Direct",
+                BranchId = colBranch,
+                IsCrossBranch = isCrossBranch,
+                HomeBranchId = accBranch
+            };
+            group.TotalCash += entry.CashAmount;
+            group.TotalTransfer += entry.TransferAmount;
+            group.Entries.Add(entry);
+        }
+
+        private static void AddUnvoucheredLoanSummaryCreditEntry(
+            Dictionary<int, DaybookSummaryLedgerDto> ledgerSummaries,
+            int ledgerId,
+            string ledgerName,
+            bool isCash,
+            decimal amount,
+            string memberDetails)
+        {
+            if (ledgerId <= 0 || amount <= 0) return;
+            if (!ledgerSummaries.ContainsKey(ledgerId))
+            {
+                ledgerSummaries[ledgerId] = new DaybookSummaryLedgerDto
+                {
+                    LedgerId = ledgerId,
+                    LedgerName = ledgerName
+                };
+            }
+            var summary = ledgerSummaries[ledgerId];
+            if (isCash) summary.ReceiptCash += amount;
+            else summary.ReceiptTransfer += amount;
+
+            if (!string.IsNullOrEmpty(memberDetails))
+            {
+                if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = memberDetails;
+                else if (!summary.MemberDetails.Contains(memberDetails)) summary.MemberDetails += ", " + memberDetails;
+            }
         }
 
         [HttpGet("DaybookBatch")]
@@ -1012,6 +1113,7 @@ namespace Bhisi.Api.Controllers
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .Include(lc => lc.Fees!).ThenInclude(f => f.Ledger)
                     .ToListAsync();
             }
 
@@ -1361,6 +1463,29 @@ namespace Bhisi.Api.Controllers
                                     group.Entries.Add(entry);
                                 }
                             }
+
+                            if (lc.Fees != null)
+                            {
+                                foreach (var fee in lc.Fees.Where(f => f.Amount > 0 && f.LedgerID > 0))
+                                {
+                                    string feeLedgerName = fee.Ledger?.LedgerName
+                                        ?? ledgers.FirstOrDefault(l => l.LedgerID == fee.LedgerID)?.LedgerName
+                                        ?? $"इतर वसूल #{fee.LedgerID}";
+                                    AddUnvoucheredLoanCreditEntry(
+                                        jamaGroups,
+                                        fee.LedgerID,
+                                        feeLedgerName,
+                                        memberNarration,
+                                        effColVch,
+                                        isLegacyMode ? rawColVch : null,
+                                        legacyColFmt,
+                                        isCash,
+                                        fee.Amount,
+                                        colBranch,
+                                        accBranch,
+                                        isCrossBranch);
+                                }
+                            }
                         }
                     }
                 }
@@ -1606,6 +1731,7 @@ namespace Bhisi.Api.Controllers
                 var unvoucheredColQuerySummary = _context.LoanCollections.AsNoTracking()
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .Include(lc => lc.Fees!).ThenInclude(f => f.Ledger)
                     .Where(lc => lc.CollectionDate >= startDate && lc.CollectionDate <= endDate
                               && !lc.VoucherID.HasValue);
                 if (branchId.HasValue && branchId.Value > 0)
@@ -1697,6 +1823,17 @@ namespace Bhisi.Api.Controllers
                                 if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
                                 else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
                             }
+                        }
+                    }
+
+                    if (lc.Fees != null)
+                    {
+                        foreach (var fee in lc.Fees.Where(f => f.Amount > 0 && f.LedgerID > 0))
+                        {
+                            string feeLedgerName = fee.Ledger?.LedgerName
+                                ?? ledgers.FirstOrDefault(x => x.LedgerID == fee.LedgerID)?.LedgerName
+                                ?? $"इतर वसूल #{fee.LedgerID}";
+                            AddUnvoucheredLoanSummaryCreditEntry(ledgerSummaries, fee.LedgerID, feeLedgerName, isCash, fee.Amount, mStr);
                         }
                     }
                 }
@@ -1853,6 +1990,7 @@ namespace Bhisi.Api.Controllers
                 var unvoucheredColQuery = _context.LoanCollections.AsNoTracking()
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .Include(lc => lc.Fees!).ThenInclude(f => f.Ledger)
                     .Where(lc => lc.CollectionDate >= rangeStart && lc.CollectionDate <= rangeEnd
                               && !lc.VoucherID.HasValue);
                 if (branchId.HasValue && branchId.Value > 0)
@@ -2067,6 +2205,17 @@ namespace Bhisi.Api.Controllers
                                         if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
                                         else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
                                     }
+                                }
+                            }
+
+                            if (lc.Fees != null)
+                            {
+                                foreach (var fee in lc.Fees.Where(f => f.Amount > 0 && f.LedgerID > 0))
+                                {
+                                    string feeLedgerName = fee.Ledger?.LedgerName
+                                        ?? ledgers.FirstOrDefault(x => x.LedgerID == fee.LedgerID)?.LedgerName
+                                        ?? $"इतर वसूल #{fee.LedgerID}";
+                                    AddUnvoucheredLoanSummaryCreditEntry(ledgerSummaries, fee.LedgerID, feeLedgerName, isCash, fee.Amount, mStr);
                                 }
                             }
                         }
@@ -3392,6 +3541,8 @@ namespace Bhisi.Api.Controllers
             var query = _context.LoanCollections
                 .Include(c => c.Voucher)
                 .Include(c => c.Branch)
+                .Include(c => c.Fees!)
+                    .ThenInclude(f => f.Ledger)
                 .Include(c => c.LoanAccount!)
                     .ThenInclude(a => a!.Branch)
                 .Include(c => c.LoanAccount!)
@@ -3431,6 +3582,11 @@ namespace Bhisi.Api.Controllers
                 string cif = cust?.CIFNo ?? memCust?.CIFNo ?? "";
                 string mCode = mem?.MemberCode ?? "";
 
+                decimal feesAmt = c.Fees?.Where(f => f.Amount > 0).Sum(f => f.Amount) ?? 0m;
+                string? feesSummary = (c.Fees != null && c.Fees.Any(f => f.Amount > 0))
+                    ? string.Join(", ", c.Fees.Where(f => f.Amount > 0).Select(f => $"{f.Ledger?.LedgerName ?? $"खाते #{f.LedgerID}"}: ₹{f.Amount:N2}"))
+                    : null;
+
                 return new LoanCollectionRegisterDto
                 {
                     LoanCollectionID = c.LoanCollectionID,
@@ -3447,7 +3603,10 @@ namespace Bhisi.Api.Controllers
                     InterestCollected = c.InterestCollected,
                     PenaltyInterestCollected = c.PenaltyInterestCollected,
                     SurchargeCollected = c.SurchargeCollected,
+                    FeesCollected = feesAmt,
                     TotalAmountReceived = c.TotalAmountReceived,
+                    GrandTotalReceived = c.TotalAmountReceived + feesAmt,
+                    FeesSummary = feesSummary,
                     PaymentMode = c.PaymentMode,
                     BranchID = c.BranchID,
                     BranchName = c.Branch?.BranchName ?? $"शाखा #{c.BranchID}",
@@ -4008,23 +4167,32 @@ namespace Bhisi.Api.Controllers
                 // Collections
                 var collections = await _context.LoanCollections
                     .Include(c => c.Voucher)
+                    .Include(c => c.Fees!)
+                        .ThenInclude(f => f.Ledger)
                     .Where(c => c.LoanAccountID == loanAccountId && c.CollectionDate >= fromDate && c.CollectionDate <= toDate)
                     .ToListAsync();
 
                 foreach (var c in collections)
                 {
+                    decimal feesAmt = c.Fees?.Where(f => f.Amount > 0).Sum(f => f.Amount) ?? 0m;
+                    string? feesDetails = (c.Fees != null && c.Fees.Any(f => f.Amount > 0))
+                        ? string.Join(", ", c.Fees.Where(f => f.Amount > 0).Select(f => $"{f.Ledger?.LedgerName ?? $"खाते #{f.LedgerID}"}: ₹{f.Amount:N2}"))
+                        : null;
+
                     transactions.Add(new LoanLedgerTransactionDto
                     {
                         Date = c.CollectionDate,
                         ReceiptNo = c.ReceiptNo ?? "",
                         VoucherNo = c.Voucher?.VoucherNo,
                         PassingStatus = c.Voucher != null ? (string.IsNullOrWhiteSpace(c.Voucher.Status) ? "Approved" : c.Voucher.Status) : null,
-                        Particulars = "Loan Collection",
+                        Particulars = feesAmt > 0 ? $"Loan Collection (+ इतर फी: {feesDetails})" : "Loan Collection",
                         PrincipalDeposit = c.PrincipalCollected,
                         ReceivableInterest = c.ReceivableInterestCollected,
                         Interest = c.InterestCollected,
                         PenalInterest = c.PenaltyInterestCollected,
-                        Total = c.TotalAmountReceived
+                        OtherFees = feesAmt,
+                        OtherFeesDetails = feesDetails,
+                        Total = c.TotalAmountReceived + feesAmt
                     });
                 }
 
@@ -4497,6 +4665,7 @@ namespace Bhisi.Api.Controllers
 
                 var memberLoanCollections = await _context.LoanCollections
                     .AsNoTracking()
+                    .Include(c => c.Fees!)
                     .Where(c => allLoanIds.Contains(c.LoanAccountID))
                     .ToListAsync();
 
@@ -4672,12 +4841,13 @@ namespace Bhisi.Api.Controllers
 
                     foreach (var col in collections)
                     {
+                        decimal colFees = col.Fees?.Sum(f => f.Amount) ?? 0m;
                         recentTxs.Add(new RecentTransactionDto
                         {
                             Date = col.CollectionDate.ToString("yyyy-MM-dd HH:mm"),
                             Module = "कर्ज विभाग (Loan)",
-                            TransactionType = "वसुली (Collection)",
-                            Amount = col.TotalAmountReceived,
+                            TransactionType = colFees > 0 ? "वसुली + फी (Collection)" : "वसुली (Collection)",
+                            Amount = col.TotalAmountReceived + colFees,
                             Branch = branchName,
                             VoucherNo = col.ReceiptNo ?? "-"
                         });
@@ -9468,6 +9638,7 @@ namespace Bhisi.Api.Controllers
                 var collections = accountIds.Count > 0
                     ? await _context.LoanCollections
                         .AsNoTracking()
+                        .Include(c => c.Fees)
                         .Where(c => accountIds.Contains(c.LoanAccountID))
                         .ToListAsync()
                     : new List<LoanCollection>();
@@ -9499,7 +9670,8 @@ namespace Bhisi.Api.Controllers
                     decimal collInterest = accCollections?.Sum(x => x.InterestCollected + x.ReceivableInterestCollected) ?? 0m;
                     decimal collPenalty = accCollections?.Sum(x => x.PenaltyInterestCollected + x.SurchargeCollected) ?? 0m;
                     decimal collWaived = accCollections?.Sum(x => x.InterestWaived + x.PenaltyWaived) ?? 0m;
-                    decimal collTotal = accCollections?.Sum(x => x.TotalAmountReceived) ?? 0m;
+                    decimal collFees = accCollections?.Sum(x => x.Fees?.Sum(f => f.Amount) ?? 0m) ?? 0m;
+                    decimal collTotal = (accCollections?.Sum(x => x.TotalAmountReceived) ?? 0m) + collFees;
 
                     var closedDate = latestCollection?.CollectionDate
                         ?? la.LastInstallmentPaidDate
@@ -9544,7 +9716,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     decimal principalPaid = collPrincipal > 0 ? collPrincipal : vatapRakkam;
-                    decimal totalCollected = collTotal > 0 ? collTotal : (principalPaid + collInterest + collPenalty);
+                    decimal totalCollected = collTotal > 0 ? collTotal : (principalPaid + collInterest + collPenalty + collFees);
 
                     var loanTypeStr = !string.IsNullOrWhiteSpace(la.LoanRate?.ShortName)
                         ? la.LoanRate.ShortName.Trim()

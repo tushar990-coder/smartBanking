@@ -62,9 +62,13 @@ export default function LoanCollectionReceiptPrint({ collectionId, onBack }: Loa
     const memberName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'खातेदार';
     const mobileNo = borrower?.mobileNo || '';
 
-    const totalCollected = (collection.totalAmountReceived || 0) + (collection.fees?.reduce((acc: number, f: any) => acc + f.amount, 0) || 0);
+    const feesList = (collection.fees || []).filter((f: any) => (Number(f.amount) || 0) > 0);
+    const totalCollected = (collection.totalAmountReceived || 0) + feesList.reduce((acc: number, f: any) => acc + (Number(f.amount) || 0), 0);
     const collectingBranchName = collection.branch?.branchName || '';
     const homeBranchName = collection.loanAccount?.branch?.branchName || '';
+    const feesTextBlock = feesList
+      .map((f: any) => `• ${f.ledger?.ledgerName || 'इतर वसूल'}: ₹ ${Number(f.amount).toLocaleString('en-IN')}\n`)
+      .join('');
 
     const message = 
 `🏦 *${sansthaName}*
@@ -83,7 +87,7 @@ ${collection.isCrossBranch && homeBranchName ? `📌 *कर्ज मूळ श
 💵 *जमा रक्कम तपशील:*
 • मुद्दल जमा: ₹ ${collection.principalCollected?.toLocaleString('en-IN') || '0.00'}
 ${(collection.receivableInterestCollected || 0) > 0 ? `• थकीत येणे व्याज: ₹ ${(collection.receivableInterestCollected || 0).toLocaleString('en-IN')}\n` : ''}• चालू व्याज जमा: ₹ ${collection.interestCollected?.toLocaleString('en-IN') || '0.00'}
-${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${collection.penaltyInterestCollected?.toLocaleString('en-IN')}\n` : ''}${collection.surchargeCollected > 0 ? `• सरचार्ज: ₹ ${collection.surchargeCollected?.toLocaleString('en-IN')}\n` : ''}💰 *एकूण जमा रक्कम:* ₹ ${totalCollected?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${collection.penaltyInterestCollected?.toLocaleString('en-IN')}\n` : ''}${collection.surchargeCollected > 0 ? `• सरचार्ज: ₹ ${collection.surchargeCollected?.toLocaleString('en-IN')}\n` : ''}${feesTextBlock}💰 *एकूण जमा रक्कम:* ₹ ${totalCollected?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
 💳 *पेमेंट पद्धत:* ${collection.paymentMode === 'Pigmy Transfer' ? `पिग्मी ठेव वर्ग (${collection.transferFromPigmyAccountNo || ''})` : collection.paymentMode === 'Saving Transfer' ? `बचत ठेव वर्ग (${collection.transferFromSavingAccountNo || ''}${collection.savingCustomerName ? ` - ${collection.savingCustomerName}` : ''})` : collection.paymentMode}
 
 सदर पावती संगणक प्रणालीद्वारे तयार करण्यात आली आहे.

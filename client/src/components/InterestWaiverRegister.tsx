@@ -27,6 +27,11 @@ interface WaiverRecord {
   resolutionNo?: string;
   paymentMode: string;
   remarks?: string;
+  fees?: Array<{
+    ledgerID: number;
+    amount: number;
+    ledger?: { ledgerName: string };
+  }>;
   loanAccount?: {
     loanAccountNo: string;
     sanctionedAmount: number;
@@ -122,8 +127,11 @@ export default function InterestWaiverRegister() {
     return matchSearch && matchStart && matchEnd;
   });
 
+  const getRowFees = (r: WaiverRecord) => (r.fees || []).reduce((s, f) => s + (Number(f.amount) || 0), 0);
+  const getRowGrandTotal = (r: WaiverRecord) => (r.totalAmountReceived || 0) + getRowFees(r);
+
   const totalWaivedSum = filteredRecords.reduce((sum, r) => sum + (r.interestWaived || 0) + (r.penaltyWaived || 0), 0);
-  const totalReceivedSum = filteredRecords.reduce((sum, r) => sum + (r.totalAmountReceived || 0), 0);
+  const totalReceivedSum = filteredRecords.reduce((sum, r) => sum + getRowGrandTotal(r), 0);
   const totalPrincipalSum = filteredRecords.reduce((sum, r) => sum + (r.principalCollected || 0), 0);
   const totalInterestSum = filteredRecords.reduce((sum, r) => sum + (r.receivableInterestCollected || 0) + (r.interestCollected || 0), 0);
 
@@ -137,6 +145,7 @@ export default function InterestWaiverRegister() {
     let sr = 1;
 
     filteredRecords.forEach((r) => {
+      const rowFees = getRowFees(r);
       excelRows.push({
         'अ.क्र.': sr++,
         'दिनांक': formatDisplayDate(r.collectionDate),
@@ -147,10 +156,11 @@ export default function InterestWaiverRegister() {
         'वसूल मुद्दल (₹)': r.principalCollected || 0,
         'वसूल येणे व्याज (₹)': r.receivableInterestCollected || 0,
         'वसूल चालू व्याज (₹)': r.interestCollected || 0,
+        'इतर फी (₹)': rowFees,
         'सूट दिलेले व्याज (₹)': r.interestWaived || 0,
         'सूट दिलेला दंड (₹)': r.penaltyWaived || 0,
         'एकूण सूट (₹)': (r.interestWaived || 0) + (r.penaltyWaived || 0),
-        'एकूण वसूल रक्कम (₹)': r.totalAmountReceived || 0,
+        'एकूण वसूल रक्कम (₹)': getRowGrandTotal(r),
         'प्रकार': r.isOTS ? 'OTS (तडजोड)' : 'व्याज सूट (Waiver)',
         'शेरा': r.remarks || '-'
       });
@@ -166,6 +176,7 @@ export default function InterestWaiverRegister() {
       'वसूल मुद्दल (₹)': totalPrincipalSum,
       'वसूल येणे व्याज (₹)': filteredRecords.reduce((s, r) => s + (r.receivableInterestCollected || 0), 0),
       'वसूल चालू व्याज (₹)': filteredRecords.reduce((s, r) => s + (r.interestCollected || 0), 0),
+      'इतर फी (₹)': filteredRecords.reduce((s, r) => s + getRowFees(r), 0),
       'सूट दिलेले व्याज (₹)': '',
       'सूट दिलेला दंड (₹)': '',
       'एकूण सूट (₹)': totalWaivedSum,
@@ -454,7 +465,12 @@ export default function InterestWaiverRegister() {
                           {fmtCurrency(waiverAmt)}
                         </td>
                         <td className="border border-gray-900 py-1 px-2 text-right font-mono font-extrabold text-emerald-800">
-                          {fmtCurrency(row.totalAmountReceived)}
+                          <div>{fmtCurrency(getRowGrandTotal(row))}</div>
+                          {getRowFees(row) > 0 && (
+                            <span className="text-[9.5px] font-normal text-purple-800 block">
+                              (+ फी ₹{fmtCurrency(getRowFees(row))})
+                            </span>
+                          )}
                         </td>
                         <td className="border border-gray-900 py-1 px-1.5 text-center text-[10px]">
                           <span className={`px-1.5 py-0.5 rounded font-bold ${row.isOTS ? 'bg-purple-50 text-purple-800' : 'bg-blue-50 text-blue-800'}`}>

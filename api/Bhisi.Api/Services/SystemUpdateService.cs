@@ -27,7 +27,7 @@ namespace Bhisi.Api.Services
         private readonly HttpClient _httpClient;
 
         private const string DefaultCurrentVersion = "1.0.0";
-        private const string DefaultManifestUrl = "https://raw.githubusercontent.com/tushar990-coder/smart-banking/main/latest-release.json";
+        private const string DefaultManifestUrl = "https://raw.githubusercontent.com/tushar990-coder/smartBanking/main/latest-release.json";
 
         public SystemUpdateService(
             AppDbContext context,
@@ -42,7 +42,11 @@ namespace Bhisi.Api.Services
             _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         }
 
-        private string GetAppRoot() => Directory.GetCurrentDirectory();
+        private string GetAppRoot()
+        {
+            var configuredRoot = _configuration["AppConfig:AppRoot"];
+            return !string.IsNullOrWhiteSpace(configuredRoot) ? configuredRoot : Directory.GetCurrentDirectory();
+        }
 
         private string GetStagingRoot()
         {
@@ -371,6 +375,22 @@ namespace Bhisi.Api.Services
                     }
                 }
                 catch { }
+            }
+
+            bool isMultiAppVpsPackage =
+                Directory.Exists(Path.Combine(extractPath, "backend")) &&
+                Directory.Exists(Path.Combine(extractPath, "frontend")) &&
+                File.Exists(Path.Combine(extractPath, "apply_patch.ps1"));
+
+            if (isMultiAppVpsPackage)
+            {
+                return new UpdateValidationResult
+                {
+                    IsValid = false,
+                    Version = version,
+                    ReleaseDate = releaseDate,
+                    ErrorMessage = "ही मल्टी-अ‍ॅप VPS मास्टर पॅच फाईल (backend/frontend/apply_patch.ps1) आहे. स्वतंत्र IIS फ्रंटएंड व डेटाबेस अचूक अपडेट करण्यासाठी सर्व्हरवर Extract करून 1_Click_Update_Testing.bat (Run as Administrator) द्वारे पॅच लागू करा."
+                };
             }
 
             bool hasSql = File.Exists(Path.Combine(extractPath, "migrate.sql"));

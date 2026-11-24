@@ -49,6 +49,122 @@ namespace Bhisi.Api.Controllers
             return (uid > 0 ? uid : (int?)null, role, branchId, isHO);
         }
 
+        private async Task<HashSet<int>> GetPersonalOrControlLedgerIdsAsync()
+        {
+            var blocked = new HashSet<int>();
+
+            void AddIds(IEnumerable<int?> ids)
+            {
+                foreach (var id in ids)
+                {
+                    if (id.HasValue && id.Value > 0) blocked.Add(id.Value);
+                }
+            }
+
+            AddIds(await _context.LoanRates.AsNoTracking().Select(r => r.LoanLedgerID).ToListAsync());
+            AddIds(await _context.LoanRates.AsNoTracking().Select(r => r.ReceivableInterestLedgerID).ToListAsync());
+            AddIds(await _context.FdSchemes.AsNoTracking().Select(f => f.FdLiabilityLedgerID).ToListAsync());
+            AddIds(await _context.FdSchemes.AsNoTracking().Select(f => f.InterestPayableLedgerID).ToListAsync());
+            AddIds(await _context.RdSchemes.AsNoTracking().Select(r => r.RdLiabilityLedgerID).ToListAsync());
+            AddIds(await _context.RdSchemes.AsNoTracking().Select(r => r.InterestPayableLedgerID).ToListAsync());
+            AddIds(await _context.PigmySchemes.AsNoTracking().Select(p => p.PigmyLiabilityLedgerID).ToListAsync());
+            AddIds(await _context.PigmySchemes.AsNoTracking().Select(p => p.InterestPayableLedgerID).ToListAsync());
+            AddIds(await _context.SavingInterestSettings.AsNoTracking().Select(s => s.LedgerID).ToListAsync());
+            AddIds(await _context.SavingInterestSettings.AsNoTracking().Select(s => s.SavingLiabilityLedgerID).ToListAsync());
+            AddIds(await _context.SavingInterestSettings.AsNoTracking().Select(s => s.InterestPayableLedgerID).ToListAsync());
+            AddIds(await _context.ShareSchemes.AsNoTracking().Select(s => s.ShareCapitalLedgerID).ToListAsync());
+            AddIds(await _context.ShareSchemes.AsNoTracking().Select(s => s.DividendPayableLedgerID).ToListAsync());
+            AddIds(await _context.LockerTypes.AsNoTracking().Select(l => l.DepositLiabilityLedgerID).ToListAsync());
+            AddIds(await _context.InvestmentSchemes.AsNoTracking().Select(i => i.InvestmentAssetLedgerID).ToListAsync());
+            AddIds(await _context.InvestmentSchemes.AsNoTracking().Select(i => i.InterestReceivableLedgerID).ToListAsync());
+
+            foreach (var id in await _context.SavingAccountMasters.AsNoTracking().Select(s => s.LedgerID).Distinct().ToListAsync())
+                if (id > 0) blocked.Add(id);
+
+            foreach (var id in await _context.SansthaBorrowings.AsNoTracking().Select(b => b.BorrowingLiabilityLedgerID).Distinct().ToListAsync())
+                if (id > 0) blocked.Add(id);
+
+            foreach (var id in await _context.CustomerOpeningBalances.AsNoTracking().Select(o => o.LedgerID).Distinct().ToListAsync())
+                if (id > 0) blocked.Add(id);
+
+            foreach (var id in await _context.MemberOpeningBalances.AsNoTracking().Select(o => o.LedgerID).Distinct().ToListAsync())
+                if (id > 0) blocked.Add(id);
+
+            return blocked;
+        }
+
+        private static bool IsStrictIncomeFeeLedger(Ledger ledger, HashSet<int> personalControlIds, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            if (ledger == null || !ledger.IsActive)
+            {
+                errorMessage = "निवडलेले इतर वसूल खाते डेटाबेसमध्ये सक्रिय आढळले नाही.";
+                return false;
+            }
+
+            if (Helpers.BankLedgerHelper.IsCashLedger(ledger)
+                || Helpers.BankLedgerHelper.IsBankLedger(ledger)
+                || Helpers.BankLedgerHelper.IsBankAccountType(ledger.AccountType))
+            {
+                errorMessage = $"'{ledger.LedgerName}' हे रोख/बँक खाते आहे. इतर वसुलीमध्ये फक्त उत्पन्नाची खाती वापरता येतात.";
+                return false;
+            }
+
+            if (personalControlIds.Contains(ledger.LedgerID))
+            {
+                errorMessage = $"'{ledger.LedgerName}' ({ledger.LedgerID}) हे वैयक्तिक / ठेव / कर्ज / भाग नियंत्रण खाते आहे. यादी व ताळेबंदामध्ये फरक पडू नये म्हणून इतर वसुलीत फक्त उत्पन्नाची खाती निवडा.";
+                return false;
+            }
+
+            var reportType = (ledger.ReportType ?? string.Empty).Trim();
+            if (reportType.Contains("ताळेबंद") || reportType.Contains("Balance Sheet", StringComparison.OrdinalIgnoreCase))
+            {
+                errorMessage = $"'{ledger.LedgerName}' ({ledger.LedgerID}) हे ताळेबंद खाते आहे. इतर वसुलीत फक्त नफातोटा पत्रकातील उत्पन्नाची खाती निवडा.";
+                return false;
+            }
+
+            var groupNature = (ledger.AccountGroup?.NatureOfGroup ?? string.Empty).Trim();
+            var accType = (ledger.AccountType ?? string.Empty).Trim();
+            bool isIncomeGroup =
+                string.Equals(groupNature, "Income", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(groupNature, "Revenue", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(groupNature, "उत्पन्न", StringComparison.OrdinalIgnoreCase) ||
+                (string.IsNullOrEmpty(groupNature) && (
+                    string.Equals(accType, "Income", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(accType, "Revenue", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(accType, "Direct Income", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(accType, "Indirect Income", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(accType, "उत्पन्न", StringComparison.OrdinalIgnoreCase)));
+
+            if (!isIncomeGroup)
+            {
+                string groupLabel = ledger.AccountGroup?.GroupName ?? ledger.AccountType ?? "अज्ञात";
+                errorMessage = $"'{ledger.LedgerName}' ({ledger.LedgerID}) हे '{groupLabel}' गटातील आहे. यादी व ताळेबंदात फरक टाळण्यासाठी इतर वसुलीत फक्त उत्पन्नाची खाती निवडा.";
+                return false;
+            }
+
+            return true;
+        }
+
+        // GET: api/LoanCollections/fee-ledgers
+        [HttpGet("fee-ledgers")]
+        public async Task<ActionResult<IEnumerable<Ledger>>> GetFeeIncomeLedgers()
+        {
+            var blockedControlIds = await GetPersonalOrControlLedgerIdsAsync();
+            var allLedgers = await _context.Ledgers
+                .AsNoTracking()
+                .Include(l => l.AccountGroup)
+                .Where(l => l.IsActive)
+                .OrderBy(l => l.LedgerID)
+                .ToListAsync();
+
+            var validIncomeLedgers = allLedgers
+                .Where(l => IsStrictIncomeFeeLedger(l, blockedControlIds, out _))
+                .ToList();
+
+            return Ok(validIncomeLedgers);
+        }
+
         [HttpGet]
         public async Task<ActionResult<IEnumerable<LoanCollection>>> GetLoanCollections(
             [FromQuery] int? branchId = null,
@@ -114,8 +230,10 @@ namespace Bhisi.Api.Controllers
                         .AsNoTracking()
                         .AsSplitQuery()
                         .Include(c => c.Branch)
-                    .Include(c => c.Voucher)
-                    .Include(c => c.HomeBranchVoucher)
+                        .Include(c => c.Voucher)
+                        .Include(c => c.HomeBranchVoucher)
+                        .Include(c => c.Fees)
+                            .ThenInclude(f => f.Ledger)
                         .Include(c => c.LoanAccount)
                             .ThenInclude(l => l!.Customer)
                         .AsQueryable();
@@ -254,6 +372,53 @@ namespace Bhisi.Api.Controllers
                 if (collection.IsOTS && string.IsNullOrWhiteSpace(collection.ResolutionNo))
                 {
                     return BadRequest("एकरकम तडजोड (OTS) साठी संचालक मंडळाचा ठराव क्रमांक (Resolution No.) प्रविष्ट करणे अनिवार्य आहे.");
+                }
+
+                if (collection.Fees != null)
+                {
+                    if (collection.Fees.Any(f => f.Amount < 0))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "इतर वसूल फी रक्कम ऋण (Negative) असू शकत नाही." });
+                    }
+                    if (collection.Fees.Any(f => f.Amount > 0 && f.LedgerID <= 0))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "वसुली शुल्कासाठी (Other Fee Ledger) वैध जी.एल. खाते निवडलेले नाही." });
+                    }
+
+                    collection.Fees = collection.Fees.Where(f => f.Amount > 0 && f.LedgerID > 0).ToList();
+                    if (collection.Fees.Any())
+                    {
+                        var blockedControlIds = await GetPersonalOrControlLedgerIdsAsync();
+                        var feeLedgerIds = collection.Fees.Select(f => f.LedgerID).Distinct().ToList();
+                        var feeLedgers = await _context.Ledgers
+                            .AsNoTracking()
+                            .Include(l => l.AccountGroup)
+                            .Where(l => feeLedgerIds.Contains(l.LedgerID))
+                            .ToDictionaryAsync(l => l.LedgerID);
+
+                        foreach (var fee in collection.Fees)
+                        {
+                            if (!feeLedgers.TryGetValue(fee.LedgerID, out var feeLedger))
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest(new { message = $"निवडलेले इतर वसूल खाते (LedgerID: {fee.LedgerID}) डेटाबेसमध्ये सापडले नाही." });
+                            }
+                            if (!IsStrictIncomeFeeLedger(feeLedger, blockedControlIds, out string validationMsg))
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest(new { message = validationMsg });
+                            }
+                        }
+                    }
+                }
+
+                decimal earlyFeesTotal = collection.Fees?.Sum(f => f.Amount) ?? 0m;
+                if (!collection.IsOTS && collection.TotalAmountReceived <= 0m && earlyFeesTotal <= 0m)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = "कृपया कर्ज वसुली रक्कम किंवा इतर वसूल फी प्रविष्ट करा." });
                 }
 
                 if (string.IsNullOrWhiteSpace(collection.ReceiptNo) || collection.ReceiptNo.StartsWith("REC-"))
@@ -544,7 +709,10 @@ namespace Bhisi.Api.Controllers
                     collection.PrincipalCollected = principalPaid;
                     collection.SurchargeCollected = surchargeCollected;
 
-                    loanAccount.LastInstallmentPaidDate = collection.CollectionDate;
+                    if (collection.TotalAmountReceived > 0m)
+                    {
+                        loanAccount.LastInstallmentPaidDate = collection.CollectionDate;
+                    }
 
                     // Deduct Waived Amounts if any
                     if (collection.InterestWaived > 0)
@@ -637,7 +805,7 @@ namespace Bhisi.Api.Controllers
                     .OrderBy(s => s.InstallmentNo)
                     .ToListAsync();
 
-                if (allSchedules.Any())
+                if (allSchedules.Any() && collection.TotalAmountReceived > 0m)
                 {
                     var allCollections = await _context.LoanCollections
                         .Where(c => c.LoanAccountID == collection.LoanAccountID)
@@ -729,11 +897,6 @@ namespace Bhisi.Api.Controllers
 
                 int surchargeLedgerId = await Helpers.Step4AccountingHelper.ResolveSurchargeLedgerIdAsync(_context, loanRate?.SurchargeLedgerID ?? 0, overdueInterestLedgerId, collection.SurchargeCollected);
                 int recoveryExpenseLedgerId = await Helpers.Step4AccountingHelper.ResolveRecoveryExpenseLedgerIdAsync(_context, loanRate, expensesPaid);
-                if (collection.Fees != null && collection.Fees.Any(f => f.Amount > 0 && f.LedgerID <= 0))
-                {
-                    await transaction.RollbackAsync();
-                    return BadRequest(new { message = "वसुली शुल्कासाठी (Collection Fee) वैध जी.एल. खाते निवडलेले नाही." });
-                }
                 int cashLedgerId;
                 if (isBankMode)
                 {
@@ -1323,6 +1486,9 @@ namespace Bhisi.Api.Controllers
                         collection.ReceiptNo,
                         collection.CollectionDate,
                         collection.TotalAmountReceived,
+                        collection.Fees,
+                        feesTotal = totalFees,
+                        totalReceiptAmount,
                         collection.PrincipalCollected,
                         collection.ReceivableInterestCollected,
                         collection.InterestCollected,

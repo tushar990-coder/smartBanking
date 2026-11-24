@@ -162,10 +162,10 @@ export default function SystemUpdateMaster() {
     setStagedPatch(null);
 
     const formData = new FormData();
-    formData.append('patchZip', selectedFile);
+    formData.append('patchFile', selectedFile);
 
     try {
-      const res = await axios.post('/api/SystemUpdate/stage-offline', formData, {
+      const res = await axios.post('/api/SystemUpdate/upload-patch', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -212,7 +212,7 @@ export default function SystemUpdateMaster() {
         setApplyStatusText('नवीन सॉफ्टवेअर फाईल्स व कंपोनंट्स डिप्लॉय होत आहेत...');
       }, 3500);
 
-      const res = await axios.post('/api/SystemUpdate/apply-staged');
+      const res = await axios.post('/api/SystemUpdate/apply');
 
       if (res.data.success) {
         setApplyStep(4);
@@ -591,7 +591,10 @@ export default function SystemUpdateMaster() {
               </h3>
               
               <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                डेव्हलपरकडून मिळालेली <span className="font-mono font-semibold">SmartBanking_Update_vX.X.X.zip</span> फाईल सिलेक्ट करा.
+                डेव्हलपरकडून मिळालेली सिंगल-सर्व्हर <span className="font-mono font-semibold">SmartBanking_Update_vX.X.X.zip</span> फाईल सिलेक्ट करा.
+              </p>
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 mt-2 max-w-lg mx-auto font-medium">
+                टीप: Testing किंवा मल्टी-अ‍ॅप VPS सर्व्हरवर स्वतंत्र IIS फ्रंटएंड असल्याने <span className="font-mono font-bold">SmartBanking_VPS_Multi_App_Master_Patch_vX.X.X.zip</span> सर्व्हरवर Extract करून <span className="font-mono font-bold">1_Click_Update_Testing.bat</span> (Run as Administrator) द्वारेच लागू करा.
               </p>
 
               <div className="mt-4 flex items-center justify-center gap-2">

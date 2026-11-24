@@ -3,7 +3,8 @@ import axios from 'axios';
 import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award, Lock, Unlock, Coins, Landmark, UserCheck, Users, RotateCcw, RefreshCw, Share2, ShieldCheck, Zap, ArrowLeft } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
-import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
+import SearchableSelect, { SearchableSelectOption } from './SearchableSelect';
+import { filterBankAccountLedgers, isBankAccountLedger, isCashLedgerOption } from '../utils/bankLedgerUtils';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
 import { useAuth } from '../context/AuthContext';
 import { getCachedMasterData, markCustomer360Dirty } from '../utils/apiCache';
@@ -132,10 +133,18 @@ interface AccountDetailsAndSchedule {
 
 interface Ledger {
     ledgerID: number;
+    ledgerCode?: string;
     ledgerName: string;
+    ledgerNameEnglish?: string;
+    accountType?: string;
+    reportType?: string;
+    isActive?: boolean;
     accountGroup?: {
         groupID: number;
+        groupCode?: string;
         groupName: string;
+        groupNameEnglish?: string;
+        natureOfGroup?: string;
     };
 }
 
@@ -314,6 +323,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const cached = getCachedMasterData<Ledger[]>('/api/Ledgers');
         return Array.isArray(cached) ? cached : [];
     });
+    const [feeIncomeLedgers, setFeeIncomeLedgers] = useState<Ledger[]>([]);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [allowDateOverride, setAllowDateOverride] = useState(false);
@@ -708,6 +718,76 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
     const bankLedgers = useMemo(() => filterBankAccountLedgers(ledgers), [ledgers]);
 
+    const isStrictIncomeLedgerClient = (l: Ledger | undefined | null): boolean => {
+        if (!l) return false;
+        if (l.isActive === false) return false;
+        if (isCashLedgerOption(l as any) || isBankAccountLedger(l as any)) return false;
+
+        const rptType = String(l.reportType || '').trim().toLowerCase();
+        if (rptType.includes('ताळेबंद') || rptType.includes('balance sheet')) return false;
+
+        const nature = String(l.accountGroup?.natureOfGroup || '').trim().toLowerCase();
+        const accType = String(l.accountType || '').trim().toLowerCase();
+        if (nature) {
+            return nature === 'income' || nature === 'revenue' || nature === 'उत्पन्न';
+        }
+        return (
+            accType === 'income' ||
+            accType === 'revenue' ||
+            accType === 'direct income' ||
+            accType === 'indirect income' ||
+            accType === 'उत्पन्न'
+        );
+    };
+
+    const feeLedgerOptions = useMemo<SearchableSelectOption[]>(() => {
+        const pool = feeIncomeLedgers.length > 0
+            ? feeIncomeLedgers
+            : ledgers.filter(isStrictIncomeLedgerClient);
+
+        const sorted = [...pool].sort((a, b) => (a.ledgerID || 0) - (b.ledgerID || 0));
+        const options: SearchableSelectOption[] = sorted.map((l) => {
+            const codePart = l.ledgerCode && String(l.ledgerCode).trim() !== String(l.ledgerID)
+                ? ` (${String(l.ledgerCode).trim()})`
+                : '';
+            const metaParts = [
+                `लेजर नं.: ${l.ledgerID}`,
+                l.ledgerCode ? `कोड: ${l.ledgerCode}` : '',
+                l.accountGroup?.groupName ? `गट: ${l.accountGroup.groupName}` : '',
+                l.ledgerNameEnglish || ''
+            ].filter(Boolean);
+
+            return {
+                value: String(l.ledgerID),
+                label: `[${l.ledgerID}] ${l.ledgerName}${codePart}`,
+                subLabel: metaParts.join(' | '),
+                badge: l.accountGroup?.groupName || 'उत्पन्न खाते',
+                badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300'
+            };
+        });
+
+        // In Passing Mode only, keep previously saved legacy fee ledger visible if it wasn't an Income ledger
+        if (isPassingMode && formData.fees && formData.fees.length > 0) {
+            formData.fees.forEach((f) => {
+                const fId = Number(f.ledgerID) || 0;
+                if (fId > 0 && !options.some((o) => Number(o.value) === fId)) {
+                    const legacyLedger = f.ledger || ledgers.find((l) => l.ledgerID === fId);
+                    if (legacyLedger) {
+                        options.unshift({
+                            value: String(legacyLedger.ledgerID),
+                            label: `⚠️ [${legacyLedger.ledgerID}] ${legacyLedger.ledgerName}`,
+                            subLabel: `लेजर नं.: ${legacyLedger.ledgerID} | गट: ${legacyLedger.accountGroup?.groupName || legacyLedger.accountType || 'अज्ञात'}`,
+                            badge: 'जुनी नोंद',
+                            badgeColor: 'bg-amber-100 text-amber-800 border-amber-300'
+                        });
+                    }
+                }
+            });
+        }
+
+        return options;
+    }, [feeIncomeLedgers, ledgers, isPassingMode, formData.fees]);
+
     const fetchBranches = async () => {
         try {
             const res = await axios.get('/api/Branches');
@@ -743,9 +823,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
             setPassingCollection(col);
             setPassingVoucher((col as any).voucher || null);
+            const loadedFeesSum = Math.round(((col.fees || []).reduce((acc, f) => acc + (Number(f.amount) || 0), 0)) * 100) / 100;
             setFormData({
                 ...col,
                 collectionDate: col.collectionDate ? col.collectionDate.split('T')[0] : activeBusinessDate,
+                totalAmountReceived: Math.round(((Number(col.totalAmountReceived) || 0) + loadedFeesSum) * 100) / 100,
                 fees: col.fees || []
             });
             setLastSavedCollectionId(col.loanCollectionID);
@@ -908,8 +990,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             let bank = 0;
             res.data.forEach((c: any) => {
                 if (c.collectionDate && c.collectionDate.split('T')[0] === todayStr) {
-                    if (c.paymentMode === 'Cash') cash += c.totalAmountReceived;
-                    else bank += c.totalAmountReceived;
+                    const colFees = (c.fees || []).reduce((sum: number, f: any) => sum + (Number(f.amount) || 0), 0);
+                    const receiptAmt = (Number(c.totalAmountReceived) || 0) + colFees;
+                    if (c.paymentMode === 'Cash') cash += receiptAmt;
+                    else bank += receiptAmt;
                 }
             });
             setTodayTotalCash(cash);
@@ -1145,8 +1229,16 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
     const fetchLedgers = async () => {
         try {
-            const res = await axios.get('/api/Ledgers');
-            setLedgers(res.data);
+            const [allRes, feeRes] = await Promise.allSettled([
+                axios.get('/api/Ledgers'),
+                axios.get('/api/LoanCollections/fee-ledgers')
+            ]);
+            if (allRes.status === 'fulfilled' && Array.isArray(allRes.value.data)) {
+                setLedgers(allRes.value.data);
+            }
+            if (feeRes.status === 'fulfilled' && Array.isArray(feeRes.value.data)) {
+                setFeeIncomeLedgers(feeRes.value.data);
+            }
         } catch (err) {
             console.error(err);
         }
@@ -1676,6 +1768,9 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         return { bookedPenal, accruedPenal, totalPenal, penalDays, penalRate, allowManualPenal };
     };
 
+    const getFeesSum = (fees?: LoanCollectionFee[]) =>
+        Math.round(((fees || []).reduce((acc, f) => acc + (Number(f.amount) || 0), 0)) * 100) / 100;
+
     const calculateInterest = (acc: any, dateStr: string) => {
         if (!acc) return;
         const loanRate = acc.loanRate;
@@ -1727,8 +1822,9 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         }
 
-        // Auto-select 1 Installment (१ हप्ता): 1 Installment principal + old receivable interest + current days/schedule interest + penalty
-        const totalDue = installment + yeneVyaj + currentInterestDue + penal;
+        // Auto-select 1 Installment (१ हप्ता): 1 Installment principal + old receivable interest + current days/schedule interest + penalty + fees
+        const currentFeesSum = getFeesSum(formData.fees);
+        const totalDue = Math.round((installment + yeneVyaj + currentInterestDue + penal + currentFeesSum) * 100) / 100;
         setIsManualInterestOverride(false);
         autoApportion(totalDue, formData.fees || [], acc, dateStr, false);
     };
@@ -1797,19 +1893,20 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         }
 
+        const currentFeesSum = getFeesSum(formData.fees);
         if (type === 'INTEREST_ONLY') {
-            const total = penal + yeneVyaj + currentInterestDue;
+            const total = Math.round((penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
             autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === 'OVERDUE_ONLY') {
             const overduePrin = paikiThakbaki > 0 ? paikiThakbaki : vasulpatra;
-            const total = overduePrin + penal + yeneVyaj + currentInterestDue;
+            const total = Math.round((overduePrin + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
             autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === '1_INST') {
-            const total = oneInstallmentPrincipal + penal + yeneVyaj + currentInterestDue;
+            const total = Math.round((oneInstallmentPrincipal + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
             autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === 'FULL_DUE') {
             const maxPrincipal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (account.principalBalance || 0);
-            const total = maxPrincipal + penal + yeneVyaj + currentInterestDue;
+            const total = Math.round((maxPrincipal + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
             autoApportion(total, formData.fees || [], undefined, undefined, false);
         }
     };
@@ -1830,7 +1927,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         if (!account) return;
         
         const dateStr = dateOverride || formData.collectionDate || new Date().toISOString().split('T')[0];
-        let remaining = Math.max(0, totalAmt);
+        const feesSum = getFeesSum(currentFees);
+        let remaining = Math.max(0, Math.round((totalAmt - feesSum) * 100) / 100);
 
         // 1. Penalty Interest (Booked Overdue + Scheme-Accrued Penal)
         const { totalPenal: penaltyDue } = getEffectivePenalBreakdown(account);
@@ -1911,7 +2009,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
         setFormData(p => ({
             ...p,
-            totalAmountReceived: totalAmt,
+            totalAmountReceived: Math.round(totalAmt * 100) / 100,
             penaltyInterestCollected: penaltyCollected,
             receivableInterestCollected: receivableCollected,
             interestCollected: currentInterestCollected,
@@ -1940,13 +2038,14 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
 
             // मेंबर व्याज (interestCollected), येणे व्याज, दंड व्याज किंवा सरचार्ज बदलल्यास:
-            // एकूण जमा (totalAmountReceived) रक्कम कधीही बदलू नये; फक्त मुद्दल (principalCollected) रक्कम बदलावी!
+            // एकूण जमा (totalAmountReceived) रक्कम कधीही बदलू नये; इतर वसुली वजा करून मुद्दल (principalCollected) रक्कम बदलावी!
             const currentTotal = Number(p.totalAmountReceived) || 0;
+            const currentFeesSum = getFeesSum(p.fees);
             const newReceivable = Number(name === 'receivableInterestCollected' ? val : p.receivableInterestCollected) || 0;
             const newInterest = Number(name === 'interestCollected' ? val : p.interestCollected) || 0;
             const newPenalty = Number(name === 'penaltyInterestCollected' ? val : p.penaltyInterestCollected) || 0;
             const newSurcharge = Number(name === 'surchargeCollected' ? val : p.surchargeCollected) || 0;
-            const nonPrincipalSum = Math.round((newReceivable + newInterest + newPenalty + newSurcharge) * 100) / 100;
+            const nonPrincipalSum = Math.round((newReceivable + newInterest + newPenalty + newSurcharge + currentFeesSum) * 100) / 100;
 
             nextState.principalCollected = Math.max(0, Math.round((currentTotal - nonPrincipalSum) * 100) / 100);
             return nextState;
@@ -1954,12 +2053,26 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     };
 
     const handleFeeChange = (index: number, field: string, val: any) => {
-        const newFees = [...(formData.fees || [])];
-        newFees[index] = { ...newFees[index], [field]: field === 'amount' ? (parseFloat(val) || 0) : parseInt(val) };
-        setFormData(p => ({
-            ...p,
-            fees: newFees
-        }));
+        setFormData(p => {
+            const prevFees = p.fees || [];
+            const oldFeesSum = getFeesSum(prevFees);
+            const newFees = [...prevFees];
+            newFees[index] = {
+                ...newFees[index],
+                [field]: field === 'amount' ? Math.max(0, parseFloat(val) || 0) : (parseInt(val, 10) || 0)
+            };
+            const newFeesSum = getFeesSum(newFees);
+            const feeDelta = newFeesSum - oldFeesSum;
+            const nextTotal = field === 'amount'
+                ? Math.max(0, Math.round(((Number(p.totalAmountReceived) || 0) + feeDelta) * 100) / 100)
+                : p.totalAmountReceived;
+
+            return {
+                ...p,
+                totalAmountReceived: nextTotal,
+                fees: newFees
+            };
+        });
     };
 
     const addFeeRow = () => {
@@ -1970,11 +2083,18 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     };
 
     const removeFeeRow = (index: number) => {
-        const newFees = formData.fees?.filter((_, i) => i !== index) || [];
-        setFormData(p => ({
-            ...p,
-            fees: newFees
-        }));
+        setFormData(p => {
+            const prevFees = p.fees || [];
+            const oldFeesSum = getFeesSum(prevFees);
+            const newFees = prevFees.filter((_, i) => i !== index);
+            const newFeesSum = getFeesSum(newFees);
+            const feeDelta = newFeesSum - oldFeesSum;
+            return {
+                ...p,
+                totalAmountReceived: Math.max(0, Math.round(((Number(p.totalAmountReceived) || 0) + feeDelta) * 100) / 100),
+                fees: newFees
+            };
+        });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1988,13 +2108,36 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             return;
         }
 
-        const enteredTotalAmt = Number(formData.totalAmountReceived) || 0;
+        const rawFees = formData.fees || [];
+        if (rawFees.some(f => (Number(f.amount) || 0) < 0)) {
+            alert('इतर वसूल फी रक्कम शून्यापेक्षा कमी असू शकत नाही.');
+            return;
+        }
+        const unmappedFee = rawFees.find(f => (Number(f.amount) || 0) > 0 && (!f.ledgerID || Number(f.ledgerID) <= 0));
+        if (unmappedFee) {
+            alert(`कृपया ₹${(Number(unmappedFee.amount) || 0).toLocaleString('en-IN')} इतर वसुली रकमेसाठी संबंधित 'उत्पन्नाचे लेजर खाते' निवडा किंवा ती ओळ हटवा.`);
+            return;
+        }
+        const validFees = rawFees
+            .filter(f => (Number(f.amount) || 0) > 0 && Number(f.ledgerID) > 0)
+            .map(f => ({ ledgerID: Number(f.ledgerID), amount: Math.round((Number(f.amount) || 0) * 100) / 100 }));
+        const validFeesTotal = getFeesSum(validFees);
+
+        const enteredTotalAmt = Math.round((Number(formData.totalAmountReceived) || 0) * 100) / 100;
+        if (!formData.isOTS && enteredTotalAmt <= 0) {
+            alert('कृपया जमा रक्कम किंवा इतर वसूल फी प्रविष्ट करा.');
+            return;
+        }
+
         const allocatedSplitSum =
-            (Number(formData.principalCollected) || 0) +
-            (Number(formData.receivableInterestCollected) || 0) +
-            (Number(formData.interestCollected) || 0) +
-            (Number(formData.penaltyInterestCollected) || 0) +
-            (Number(formData.surchargeCollected) || 0);
+            Math.round(((
+                (Number(formData.principalCollected) || 0) +
+                (Number(formData.receivableInterestCollected) || 0) +
+                (Number(formData.interestCollected) || 0) +
+                (Number(formData.penaltyInterestCollected) || 0) +
+                (Number(formData.surchargeCollected) || 0) +
+                validFeesTotal
+            )) * 100) / 100;
         const splitDiff = Math.round((enteredTotalAmt - allocatedSplitSum) * 100) / 100;
 
         if (!formData.isOTS && Math.abs(splitDiff) > 0.01) {
@@ -2024,7 +2167,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
             if (selectedPigmyAccount) {
                 const avail = Math.max(0, (selectedPigmyAccount.totalDepositedAmount || 0) - (selectedPigmyAccount.isLienMarked ? (selectedPigmyAccount.lienAmount || 0) : 0));
-                const totalReq = (formData.totalAmountReceived || 0) + (formData.fees?.reduce((acc, f) => acc + (f.amount || 0), 0) || 0);
+                const totalReq = enteredTotalAmt;
                 if (totalReq > avail + 0.01) {
                     alert(`पिग्मी खात्यात शिल्लक कमी आहे! उपलब्ध शिल्लक: ₹${avail.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
                     return;
@@ -2039,7 +2182,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
             if (selectedSavingAccount) {
                 const avail = Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0));
-                const totalReq = (formData.totalAmountReceived || 0) + (formData.fees?.reduce((acc, f) => acc + (f.amount || 0), 0) || 0);
+                const totalReq = enteredTotalAmt;
                 if (totalReq > avail + 0.01) {
                     alert(`बचत खात्यात शिल्लक कमी आहे! उपलब्ध शिल्लक: ₹${avail.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
                     return;
@@ -2069,8 +2212,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             const isBankOrCheque = formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque';
             const isPigmy = formData.paymentMode === 'Pigmy Transfer';
             const isSaving = formData.paymentMode === 'Saving Transfer';
+            const loanOnlyTotalAmountReceived = Math.max(0, Math.round((enteredTotalAmt - validFeesTotal) * 100) / 100);
             const payload = {
                 ...formData,
+                totalAmountReceived: loanOnlyTotalAmountReceived,
+                fees: validFees,
                 bankAccountLedgerID: isBankOrCheque ? Number(formData.bankAccountLedgerID) : null,
                 bankName: isBankOrCheque ? (formData.bankName || null) : null,
                 chequeNo: isBankOrCheque ? (formData.chequeNo?.trim() || null) : null,
@@ -2218,8 +2364,15 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const memberName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'खातेदार';
         const mobileNo = borrower?.mobileNo || '';
 
-        const totalFees = c.fees?.reduce((acc: number, f: any) => acc + (f.amount || 0), 0) || 0;
+        const feesList = (c.fees || []).filter((f: any) => (Number(f.amount) || 0) > 0);
+        const totalFees = feesList.reduce((acc: number, f: any) => acc + (Number(f.amount) || 0), 0);
         const totalAmount = (c.totalAmountReceived || 0) + totalFees;
+        const feesTextBlock = feesList
+            .map((f: any) => {
+                const lName = f.ledger?.ledgerName || ledgers.find((l) => l.ledgerID === Number(f.ledgerID))?.ledgerName || `इतर वसूल #${f.ledgerID}`;
+                return `• ${lName}: ₹ ${Number(f.amount).toLocaleString('en-IN')}\n`;
+            })
+            .join('');
 
         const message = 
 `🏦 *${sansthaName}*
@@ -2237,7 +2390,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 💵 *जमा रक्कम तपशील:*
 • मुद्दल जमा: ₹ ${c.principalCollected?.toLocaleString('en-IN') || '0.00'}
 ${(c.receivableInterestCollected || 0) > 0 ? `• थकीत येणे व्याज: ₹ ${(c.receivableInterestCollected || 0).toLocaleString('en-IN')}\n` : ''}• चालू व्याज जमा: ₹ ${c.interestCollected?.toLocaleString('en-IN') || '0.00'}
-${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.penaltyInterestCollected?.toLocaleString('en-IN')}\n` : ''}${c.surchargeCollected > 0 ? `• सरचार्ज: ₹ ${c.surchargeCollected?.toLocaleString('en-IN')}\n` : ''}💰 *एकूण जमा रक्कम:* ₹ ${totalAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.penaltyInterestCollected?.toLocaleString('en-IN')}\n` : ''}${c.surchargeCollected > 0 ? `• सरचार्ज: ₹ ${c.surchargeCollected?.toLocaleString('en-IN')}\n` : ''}${feesTextBlock}💰 *एकूण जमा रक्कम:* ₹ ${totalAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
 💳 *पेमेंट पद्धत:* ${c.paymentMode}
 
 सदर पावती संगणक प्रणालीद्वारे तयार करण्यात आली आहे.
@@ -2348,13 +2501,15 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
     const effectiveSchemeId = selectedSchemeId || selectedAccount?.loanRateID || selectedAccount?.loanRate?.loanRateID || '';
     const totalMatchingLoansCount = Math.max(borrowerLoans.length, customerMatchingLoans.length);
 
-    const allocatedRecoveryTotal =
+    const totalFeesAmount = getFeesSum(formData.fees);
+    const allocatedLoanRecoveryTotal =
         (Number(formData.principalCollected) || 0) +
         (Number(formData.receivableInterestCollected) || 0) +
         (Number(formData.interestCollected) || 0) +
         (Number(formData.penaltyInterestCollected) || 0) +
         (Number(formData.surchargeCollected) || 0);
-    const enteredTotalAmount = Number(formData.totalAmountReceived) || 0;
+    const allocatedRecoveryTotal = Math.round((allocatedLoanRecoveryTotal + totalFeesAmount) * 100) / 100;
+    const enteredTotalAmount = Math.round((Number(formData.totalAmountReceived) || 0) * 100) / 100;
     const allocationDifference = Math.round((enteredTotalAmount - allocatedRecoveryTotal) * 100) / 100;
     const hasAllocationMismatch = !formData.isOTS && Math.abs(allocationDifference) > 0.01;
 
@@ -2496,6 +2651,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             fromDateStrGrid,
             days,
             shillakKarjRakkam,
+            vasuliFee,
             ekunVasulpatra,
             regularInstallmentAmount,
             isMultiInstallmentLoan,
@@ -2612,7 +2768,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 {passingVoucher?.createdByUser?.username && (
                                     <span>नोंद करणारा (Maker): <strong>{passingVoucher.createdByUser.username}</strong></span>
                                 )}
-                                <span>जमा रक्कम: <strong className="font-mono text-emerald-800">₹{(formData.totalAmountReceived || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                                <span>जमा रक्कम: <strong className="font-mono text-emerald-800">₹{(formData.totalAmountReceived || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>{totalFeesAmount > 0 && <span className="ml-1 text-[10px] text-amber-800 font-semibold">(कर्ज: ₹{allocatedLoanRecoveryTotal.toLocaleString('en-IN')} + फी: ₹{totalFeesAmount.toLocaleString('en-IN')})</span>}</span>
                             </div>
                         </div>
                     </div>
@@ -3512,9 +3668,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 {/* Total Amount + 5 Split Inputs Grid */}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 items-end">
                                     <div className="p-1.5 rounded-sm bg-sky-50/90 border border-sky-200">
-                                        <label className="block text-[11px] font-bold text-sky-950 mb-0.5">
-                                            एकूण जमा (Total ₹) <span className="text-rose-600">*</span>
-                                        </label>
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <label className="block text-[11px] font-bold text-sky-950">
+                                                एकूण जमा (Total ₹) <span className="text-rose-600">*</span>
+                                            </label>
+                                            {totalFeesAmount > 0 && (
+                                                <span className="text-[9.5px] font-mono font-bold text-emerald-700" title="या रकमेत इतर वसुली फी समाविष्ट आहे">
+                                                    +फी ₹{totalFeesAmount.toLocaleString('en-IN')}
+                                                </span>
+                                            )}
+                                        </div>
                                         <input
                                             type="number"
                                             name="totalAmountReceived"
@@ -3702,7 +3865,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 {(showFeesPanel || (formData.fees && formData.fees.length > 0)) && (
                                     <div className="p-2 bg-white rounded-sm border border-gray-200 space-y-1.5">
                                         <div className="flex items-center justify-between text-[10.5px] font-bold text-gray-600">
-                                            <span>इतर वसूल खाते तपशील (Other Fee Ledgers)</span>
+                                            <span>इतर वसूल खाते तपशील (Other Fee Ledgers — फक्त उत्पन्न खाती)</span>
                                             {(!formData.fees || formData.fees.length === 0) && (
                                                 <button
                                                     type="button"
@@ -3716,17 +3879,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         {formData.fees?.map((fee, index) => (
                                             <div key={index} className="grid grid-cols-12 gap-2 items-center">
                                                 <div className="col-span-8">
-                                                    <select
-                                                        value={fee.ledgerID}
+                                                    <SearchableSelect
+                                                        options={feeLedgerOptions}
+                                                        value={fee.ledgerID ? String(fee.ledgerID) : ''}
                                                         onChange={(e) => handleFeeChange(index, 'ledgerID', e.target.value)}
                                                         disabled={isPassingMode}
-                                                        className={inputClass}
-                                                    >
-                                                        <option value="0">-- इतर वसूल खाते निवडा --</option>
-                                                        {ledgers.map(l => (
-                                                            <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
-                                                        ))}
-                                                    </select>
+                                                        placeholder="-- लेजर क्र. / उत्पन्नाचे खाते शोधा --"
+                                                        searchPlaceholder="लेजर नंबर, कोड किंवा उत्पन्नाचे नाव टाइप करा..."
+                                                        countLabel="उत्पन्न खाती"
+                                                        minMenuWidth={380}
+                                                    />
                                                 </div>
                                                 <div className="col-span-3">
                                                     <input
@@ -3821,6 +3983,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     }`}>
                                         घेतलेला वसूल: <b className={`font-mono ${hasAllocationMismatch ? 'text-rose-700' : 'text-gray-900'}`}>₹{allocatedRecoveryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
                                     </span>
+                                    {totalFeesAmount > 0 && (
+                                        <span className="px-2 py-1 rounded-sm bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold">
+                                            (कर्ज: <b className="font-mono">₹{allocatedLoanRecoveryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> + इतर फी: <b className="font-mono text-emerald-800">₹{totalFeesAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>)
+                                        </span>
+                                    )}
                                     {hasAllocationMismatch && (
                                         <span className="px-2.5 py-1 rounded-sm bg-rose-100 border border-rose-400 text-rose-900 font-bold">
                                             तफावत: <b className="font-mono text-rose-700">{allocationDifference > 0 ? '+' : '-'}₹{Math.abs(allocationDifference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
@@ -4050,6 +4217,9 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             {(duesSummary.yeneVyaj + duesSummary.dandVyaj) > 0 && (
                                                 <span className="whitespace-nowrap">+ इतर: ₹{(duesSummary.yeneVyaj + duesSummary.dandVyaj).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                                             )}
+                                            {duesSummary.vasuliFee > 0 && (
+                                                <span className="whitespace-nowrap text-emerald-800">+ फी: ₹{duesSummary.vasuliFee.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                            )}
                                         </div>
                                     </div>
 
@@ -4180,6 +4350,15 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             <span className="text-purple-950 font-semibold">३१/३ अखेर बाकी</span>
                                             <span className="font-mono font-bold text-purple-950">
                                                 ₹{accountDetails.march31Balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {duesSummary.vasuliFee > 0 && (
+                                        <div className="px-2.5 py-1.5 flex items-center justify-between bg-emerald-50/70">
+                                            <span className="text-emerald-950 font-semibold">इतर वसूल फी</span>
+                                            <span className="font-mono font-bold text-emerald-800">
+                                                ₹{duesSummary.vasuliFee.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                     )}
@@ -4779,6 +4958,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 <tbody>
                                     {paginatedReceipts.map(c => {
                                         const isEditing = editingReceiptId === c.loanCollectionID;
+                                        const cFeesSum = (c.fees || []).reduce((acc, f) => acc + (Number(f.amount) || 0), 0);
+                                        const cGrandTotal = (Number(c.totalAmountReceived) || 0) + cFeesSum;
+                                        const cFeeTip = cFeesSum > 0
+                                            ? ` | इतर फी: ₹${cFeesSum.toFixed(2)} (${(c.fees || []).map(f => f.ledger?.ledgerName || `#${f.ledgerID}`).join(', ')})`
+                                            : '';
                                         return (
                                             <tr key={c.loanCollectionID} className="border-b hover:bg-blue-50/30 transition-colors">
                                                 <td className="p-1 border-r">
@@ -4793,8 +4977,13 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         {c.loanAccount?.loanAccountNo} {c.loanAccount?.legacyAccountNumber ? `| जुना क्र: ${c.loanAccount.legacyAccountNumber}` : ''} {c.loanAccount?.customer?.cifNo ? `| CIF: ${c.loanAccount.customer.cifNo}` : (c.loanAccount?.member?.memberCode ? `| ${c.loanAccount.member.memberCode}` : '')}
                                                     </span>
                                                 </td>
-                                                <td className="p-1 border-r text-right font-bold text-green-700" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | मेंबर व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}`}>
-                                                    ₹{c.totalAmountReceived.toFixed(2)}
+                                                <td className="p-1 border-r text-right font-bold text-green-700" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | मेंबर व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}${cFeeTip}`}>
+                                                    <div>₹{cGrandTotal.toFixed(2)}</div>
+                                                    {cFeesSum > 0 && (
+                                                        <span className="text-[9.5px] font-normal text-amber-800 block">
+                                                            (फी: ₹{cFeesSum.toFixed(2)})
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="p-1 border-r min-w-[140px]">
                                                     {isEditing ? (

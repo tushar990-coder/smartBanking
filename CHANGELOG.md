@@ -1,5 +1,21 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-24] - आवृत्ती v2.6.42 (Loan Recovery Other Fee Ledgers Search & Totals Reflection + Testing/VPS Patch IIS Discovery, Verification & Cache-Busting Fix)
+
+### 🧾 1. कर्ज वसुली इतर वसुली खाते तपशील (`Other Fee Ledgers`) सुधारणा
+- **`LoanCollectionMaster.tsx`, `LoanCollectionReceiptPrint.tsx`, `LoanCollectionsController.cs`, `ReportsController.cs`, `ReportDtos.cs`, `CustomerPortalController.cs`, `LoanCollectionRegister.tsx`, `LoanLedgerReport.tsx`, `InterestWaiverRegister.tsx`:**
+  - **फक्त उत्पन्नाची (Income) खाती व लेजर क्र. शोध:** इतर वसुली ड्रॉपडाऊनमध्ये वैयक्तिक ठेवी/कर्जे/संपत्ती/दायित्वे खाती वगळून फक्त उत्पन्न (`Income`) गटातील लेजर्स लेजर नंबरसह Searchable यादीत दाखवले जेणेकरून यादी व ताळेबंदामध्ये कोणताही फरक पडणार नाही.
+  - **तिन्ही फील्ड व अहवालांत परावर्तन:** इतर वसुलीतील रक्कम `एकूण जमा (Total ₹)`, `पावती एकूण`, व `घेतलेला वसूल` या तिन्ही फील्डमध्ये तसेच पावती प्रिंट, चेकर व्हाउचर प्रिव्ह्यू व सर्व रजिस्टर्स/खतावण्यांमध्ये अचूक समाविष्ट केली.
+
+### 🚀 2. Testing / VPS पॅच डिप्लॉयमेंट, IIS पडताळणी व Browser/IIS कॅश-बस्टिंग सुधारणा
+- **`tools/build_vps_multi_app_patch.ps1` (`apply_patch.ps1`, `reverse_patch.ps1`, Batch Launchers) व `tools/build_vps_testing_patch.ps1`:**
+  - `1_Click_Update_Testing.bat` साठी Exact/Boundary Target Matching लागू करून `Testing` व `Testing1` यामधील गोंधळ कायमचा बंद केला व `Vidyasagar Kavathesar` साठी स्वतंत्र `.bat` जोडले.
+  - `Get-AllTargetFolders` मध्ये `SmartBanking_Testing` या DB नावाऐवजी प्रत्यक्ष IIS Sites/Bindings (`testing.hellomindspace.in`, `api.testing.hellomindspace.in`) व AppPools तपासून अचूक Backend/Frontend फोल्डर्स शोधले व संबंधित सर्व IIS AppPools रिसायकल केले.
+  - Silent failures बंद करण्यासाठी `robocopy` exit-code (`>= 8` वर hard failure), `sqlcmd` त्रुटी लॉगिंग, आणि **Step 7 Post-Deploy Verification** (`frontend/version.json`, `frontend/index.html` asset bundle, `backend/Bhisi.Api.dll`, आणि `LoanRates.AllowManualPenalInRecovery` SQL कॉलम तपासणी) जोडले, तसेच `SmartBanking_VPS_Multi_App_Master_Patch_v2.6.42.zip` थेट तयार केले.
+- **`client/public/web.config`, `SystemUpdateMaster.tsx` & `SystemUpdateService.cs`:**
+  - `React SPA Routes` मध्ये `/settings` सह सर्व राउट्स थेट `/index.html` वर रीराइट केले व `version.json` साठी स्वतंत्र `<location path="version.json">` No-Cache हेडर (`no-cache, no-store, must-revalidate`) लागू केले.
+  - `SystemUpdateMaster.tsx` आणि `SystemUpdateController.cs` मधील route/field mismatch (`/upload-patch` + `patchFile` + `/apply`) दुरुस्त केले व मल्टी-अ‍ॅप VPS पॅचसाठी स्पष्ट मार्गदर्शन/सुरक्षा तपासणी जोडली (**२२९/२२९ xUnit चाचण्या व Vite प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-24] - आवृत्ती v2.6.41 (Employee Demand Deposit Ledgers / Pigmy / Non-Members & CORS Fix, FD Posted Interest Reversal, Loan Penal Settings & Pigmy Multi-Scheme DayBook)
 
 ### 🧾 1. कर्मचारी पगार डिमांड (`DEPOSIT_LEDGER`, `PIGMY`, अ-सभासद व CORS सुधारणा)

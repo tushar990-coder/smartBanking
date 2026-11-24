@@ -559,6 +559,28 @@ try
                 IF COL_LENGTH('Customers', 'PortalSessionToken') IS NULL ALTER TABLE [dbo].[Customers] ADD [PortalSessionToken] nvarchar(2000) NULL;
             END
 
+            IF OBJECT_ID(N'[dbo].[CustomerServiceRequests]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[CustomerServiceRequests] (
+                    [RequestID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [CustomerID] int NOT NULL,
+                    [BranchID] int NOT NULL DEFAULT 1,
+                    [ReferenceNo] nvarchar(40) NOT NULL,
+                    [RequestType] nvarchar(30) NOT NULL DEFAULT 'SUPPORT_TICKET',
+                    [Title] nvarchar(200) NOT NULL,
+                    [Subtitle] nvarchar(500) NULL,
+                    [Amount] decimal(18,2) NULL,
+                    [PreferredSlot] nvarchar(100) NULL,
+                    [Status] nvarchar(20) NOT NULL DEFAULT 'PENDING',
+                    [ReviewedByUserID] int NULL,
+                    [ReviewedOn] datetime2 NULL,
+                    [Remarks] nvarchar(500) NULL,
+                    [CreatedOn] datetime2 NOT NULL DEFAULT GETUTCDATE()
+                );
+                CREATE NONCLUSTERED INDEX [IX_CustomerServiceRequests_CustomerID] ON [dbo].[CustomerServiceRequests] ([CustomerID]);
+                CREATE NONCLUSTERED INDEX [IX_CustomerServiceRequests_BranchID_Status] ON [dbo].[CustomerServiceRequests] ([BranchID], [Status]);
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections') AND COL_LENGTH('LoanCollections', 'RemittanceDepositId') IS NULL
                 ALTER TABLE [dbo].[LoanCollections] ADD [RemittanceDepositId] int NULL;
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingTransactions')

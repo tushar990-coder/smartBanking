@@ -28,6 +28,7 @@ namespace Bhisi.Api.Data
         public DbSet<AccountGroup> AccountGroups { get; set; }
         public DbSet<Ledger> Ledgers { get; set; }
         public DbSet<Customer> Customers { get; set; }
+        public DbSet<CustomerServiceRequest> CustomerServiceRequests { get; set; }
         public DbSet<CifSequence> CifSequences { get; set; }
         public DbSet<CustomerImportBatch> CustomerImportBatches { get; set; }
         public DbSet<Member> Members { get; set; }

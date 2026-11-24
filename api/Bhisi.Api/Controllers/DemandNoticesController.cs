@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
+using Bhisi.Api.Services;
 
 namespace Bhisi.Api.Controllers
 {
@@ -174,7 +175,31 @@ namespace Bhisi.Api.Controllers
                 .ThenBy(d => d.DemandMemberDetailId)
                 .ToList();
 
+            var detailCustomerIds = orderedDetails
+                .Select(d => d.CustomerId ?? d.Member?.CustomerID ?? 0)
+                .Where(cid => cid > 0)
+                .Distinct()
+                .ToList();
+            var detailCustomersMap = detailCustomerIds.Any()
+                ? await _context.Customers
+                    .AsNoTracking()
+                    .Where(c => detailCustomerIds.Contains(c.CustomerID))
+                    .ToDictionaryAsync(c => c.CustomerID)
+                : new Dictionary<int, Customer>();
+
             var allItems = orderedDetails.SelectMany(d => d.ColumnItems).ToList();
+            var referencedSettingIds = allItems
+                .Where(i => i.DemandColumnSettingId.HasValue && i.DemandColumnSettingId.Value > 0)
+                .Select(i => i.DemandColumnSettingId!.Value)
+                .Distinct()
+                .ToList();
+            var settingShowBalMap = referencedSettingIds.Any()
+                ? await _context.DemandColumnSettings
+                    .AsNoTracking()
+                    .Where(s => referencedSettingIds.Contains(s.DemandColumnSettingId))
+                    .ToDictionaryAsync(s => s.DemandColumnSettingId, s => s.ShowBalanceColumn)
+                : new Dictionary<int, bool>();
+
             var settingsMeta = allItems
                 .Where(i => !string.Equals(i.ItemType, "RD", StringComparison.OrdinalIgnoreCase))
                 .GroupBy(i => new { i.DemandColumnSettingId, i.SequenceOrder, i.ItemType, i.ColumnHeaderMr, i.SchemeId })
@@ -186,7 +211,9 @@ namespace Bhisi.Api.Controllers
                     itemType = g.Key.ItemType,
                     columnHeaderMr = g.Key.ColumnHeaderMr,
                     schemeId = g.Key.SchemeId,
-                    showBalanceColumn = g.Key.ItemType == "LOAN"
+                    showBalanceColumn = g.Key.DemandColumnSettingId.HasValue && settingShowBalMap.TryGetValue(g.Key.DemandColumnSettingId.Value, out bool showBal)
+                        ? showBal
+                        : (g.Key.ItemType == "LOAN")
                 })
                 .ToList();
 
@@ -222,7 +249,7 @@ namespace Bhisi.Api.Controllers
                         c.RecoveredInterest,
                         c.RecoveredPenalInterest,
                         PendingPrincipalOrDeposit = Math.Max(0m, Math.Round(c.DemandPrincipalOrDeposit - c.RecoveredPrincipalOrDeposit, 2, MidpointRounding.AwayFromZero)),
-                        PendingInterest = Math.Max(0m, Math.Round((c.DemandInterest + c.DemandPenalInterest) - (c.RecoveredInterest + c.RecoveredPenalInterest), 2, MidpointRounding.AwayFromZero))
+                        PendingInterest = Math.Max(0m, Math.Round(c.DemandInterest - c.RecoveredInterest - c.RecoveredPenalInterest, 2, MidpointRounding.AwayFromZero))
                     })
                     .ToList();
 
@@ -253,15 +280,20 @@ namespace Bhisi.Api.Controllers
 
                 decimal rowPending = Math.Max(0m, Math.Round(md.TotalDeduction - rowRecovered, 2, MidpointRounding.AwayFromZero));
 
+                int resolvedCustId = md.CustomerId ?? md.Member?.CustomerID ?? 0;
+                detailCustomersMap.TryGetValue(resolvedCustId, out var custEntity);
+                var resolvedCustomer = md.Member?.Customer ?? custEntity;
+
                 return new
                 {
                     srNo = idx + 1,
                     md.DemandMemberDetailId,
                     md.MemberId,
-                    CustomerId = md.CustomerId ?? md.Member?.CustomerID ?? 0,
+                    CustomerId = resolvedCustId,
+                    IsMember = md.MemberId.HasValue && md.MemberId.Value > 0,
                     EmpCode = md.EmpCode ?? string.Empty,
-                    CIFNo = md.CIFNo ?? md.Member?.Customer?.CIFNo ?? string.Empty,
-                    MemberName = md.MemberName ?? md.Member?.Customer?.FullName ?? $"Member #{md.MemberId}",
+                    CIFNo = md.CIFNo ?? resolvedCustomer?.CIFNo ?? string.Empty,
+                    MemberName = md.MemberName ?? resolvedCustomer?.FullName ?? $"Customer #{resolvedCustId}",
                     md.IsSelected,
                     md.TotalDeduction,
                     RecoveredAmount = rowRecovered,
@@ -280,9 +312,12 @@ namespace Bhisi.Api.Controllers
                         c.DisplaySubLabel,
                         c.SubRowIndex,
                         c.AccountId,
-                        DemandAmount = Math.Round(c.DemandPrincipalOrDeposit + c.DemandInterest + c.DemandPenalInterest, 2, MidpointRounding.AwayFromZero),
+                        c.LoanIntraAllocationOrder,
+                        DemandAmount = Math.Round(c.DemandPrincipalOrDeposit + c.DemandInterest, 2, MidpointRounding.AwayFromZero),
                         RecoveredAmount = Math.Round(c.RecoveredPrincipalOrDeposit + c.RecoveredInterest + c.RecoveredPenalInterest, 2, MidpointRounding.AwayFromZero),
-                        PendingAmount = Math.Max(0m, Math.Round((c.DemandPrincipalOrDeposit + c.DemandInterest + c.DemandPenalInterest) - (c.RecoveredPrincipalOrDeposit + c.RecoveredInterest + c.RecoveredPenalInterest), 2, MidpointRounding.AwayFromZero)),
+                        PendingAmount = Math.Max(0m, Math.Round((c.DemandPrincipalOrDeposit - c.RecoveredPrincipalOrDeposit) + (c.DemandInterest - c.RecoveredInterest - c.RecoveredPenalInterest), 2, MidpointRounding.AwayFromZero)),
+                        PendingPrincipalOrDeposit = Math.Max(0m, Math.Round(c.DemandPrincipalOrDeposit - c.RecoveredPrincipalOrDeposit, 2, MidpointRounding.AwayFromZero)),
+                        PendingInterest = Math.Max(0m, Math.Round(c.DemandInterest - c.RecoveredInterest - c.RecoveredPenalInterest, 2, MidpointRounding.AwayFromZero)),
                         DemandPrincipalOrDeposit = c.DemandPrincipalOrDeposit,
                         DemandInterest = c.DemandInterest,
                         DemandPenalInterest = c.DemandPenalInterest,
@@ -360,32 +395,54 @@ namespace Bhisi.Api.Controllers
             }
 
             DateTime targetDate = request.DemandDate.Date;
+            DateTime monthEndDate = new DateTime(targetDate.Year, targetDate.Month, DateTime.DaysInMonth(targetDate.Year, targetDate.Month));
 
-            var memberQuery = _context.Members
+            var customers = await _context.Customers
                 .AsNoTracking()
-                .Include(m => m.Customer)
-                .Where(m => m.Customer != null &&
-                            m.Customer.EmployerId == request.EmployerId &&
-                            !m.Customer.IsDeleted &&
-                            m.Status == "Active");
+                .Where(c => c.EmployerId == request.EmployerId &&
+                            !c.IsDeleted &&
+                            c.Status == "Active")
+                .ToListAsync();
+
+            var rawCustomerIds = customers.Select(c => c.CustomerID).ToList();
+            var activeMembersByCust = rawCustomerIds.Any()
+                ? (await _context.Members
+                    .AsNoTracking()
+                    .Where(m => m.CustomerID.HasValue && rawCustomerIds.Contains(m.CustomerID.Value) && m.Status == "Active")
+                    .OrderBy(m => m.MemberID)
+                    .ToListAsync())
+                    .GroupBy(m => m.CustomerID!.Value)
+                    .ToDictionary(g => g.Key, g => g.First())
+                : new Dictionary<int, Member>();
 
             if (request.BranchId > 0)
             {
-                memberQuery = memberQuery.Where(m => m.Customer!.BranchID == request.BranchId || m.BranchID == request.BranchId);
+                customers = customers
+                    .Where(c => c.BranchID == request.BranchId ||
+                                (activeMembersByCust.TryGetValue(c.CustomerID, out var am) && am.BranchID == request.BranchId))
+                    .ToList();
             }
 
-            var members = await memberQuery.ToListAsync();
-            var customerIds = members.Select(m => m.CustomerID).Distinct().ToList();
-            var memberIds = members.Select(m => m.MemberID).Distinct().ToList();
-            var cifNos = members.Where(m => m.Customer != null && !string.IsNullOrWhiteSpace(m.Customer.CIFNo))
-                .Select(m => m.Customer!.CIFNo!.Trim())
+            var customerIds = customers.Select(c => c.CustomerID).Distinct().ToList();
+            var memberIds = customerIds
+                .Where(cid => activeMembersByCust.ContainsKey(cid))
+                .Select(cid => activeMembersByCust[cid].MemberID)
+                .Distinct()
+                .ToList();
+            var cifNos = customers
+                .Where(c => !string.IsNullOrWhiteSpace(c.CIFNo))
+                .Select(c => c.CIFNo!.Trim())
                 .Distinct()
                 .ToList();
 
-            var empBankMap = await _context.EmployeeBankDetails
-                .AsNoTracking()
-                .Where(e => cifNos.Contains(e.CIFNo))
-                .ToDictionaryAsync(e => e.CIFNo.Trim(), e => e.EmployeeID);
+            var empBankMap = cifNos.Any()
+                ? (await _context.EmployeeBankDetails
+                    .AsNoTracking()
+                    .Where(e => cifNos.Contains(e.CIFNo))
+                    .ToListAsync())
+                    .GroupBy(e => e.CIFNo.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First().EmployeeID, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             // Preload Loans + Schedules + Collections for these members/customers
             var configuredLoanRateIds = settings.Where(s => s.ItemType == "LOAN" && s.LoanRateID.HasValue)
@@ -425,10 +482,78 @@ namespace Bhisi.Api.Controllers
                 : new Dictionary<int, List<LoanCollection>>();
 
             // Preload Saving accounts (for संजीवनी / वर्गणी ठेव)
-            var savingAccounts = await _context.SavingAccountMasters
-                .AsNoTracking()
-                .Where(s => customerIds.Contains(s.CustomerID) && s.Status == "Active")
-                .ToListAsync();
+            var savingAccounts = customerIds.Any()
+                ? await _context.SavingAccountMasters
+                    .AsNoTracking()
+                    .Where(s => customerIds.Contains(s.CustomerID) && s.Status == "Active")
+                    .ToListAsync()
+                : new List<SavingAccountMaster>();
+
+            // Preload Pigmy accounts (for पिग्मी ठेव)
+            var configuredPigmySchemeIds = settings.Where(s => s.ItemType == "PIGMY" && s.PigmySchemeID.HasValue)
+                .Select(s => s.PigmySchemeID!.Value)
+                .Distinct()
+                .ToList();
+            var pigmyAccounts = (customerIds.Any() && configuredPigmySchemeIds.Any())
+                ? await _context.PigmyAccounts
+                    .AsNoTracking()
+                    .Where(p => customerIds.Contains(p.CustomerID) &&
+                                p.Status == "Active" &&
+                                configuredPigmySchemeIds.Contains(p.PigmySchemeID))
+                    .OrderBy(p => p.OpeningDate)
+                    .ThenBy(p => p.PigmyAccountID)
+                    .ToListAsync()
+                : new List<PigmyAccount>();
+
+            // Preload Deposit Ledger sub-ledger balances (CustomerOpeningBalances + Approved/Pending non-rejected VoucherDetails)
+            var configuredDepositLedgerIds = settings
+                .Where(s => s.ItemType == "DEPOSIT_LEDGER" && s.PrincipalOrDepositLedgerID.HasValue)
+                .Select(s => s.PrincipalOrDepositLedgerID!.Value)
+                .Distinct()
+                .ToList();
+
+            var depositCustObMap = new Dictionary<(int CustomerId, int LedgerId), decimal>();
+            var depositVchCustMap = new Dictionary<(int CustomerId, int LedgerId), decimal>();
+            var depositVchMemMap = new Dictionary<(int MemberId, int LedgerId), decimal>();
+
+            if (configuredDepositLedgerIds.Any() && customerIds.Any())
+            {
+                var obs = await _context.CustomerOpeningBalances
+                    .AsNoTracking()
+                    .Where(ob => configuredDepositLedgerIds.Contains(ob.LedgerID) && customerIds.Contains(ob.CustomerID))
+                    .ToListAsync();
+                foreach (var ob in obs)
+                {
+                    decimal signed = string.Equals(ob.BalanceType, "Cr", StringComparison.OrdinalIgnoreCase) ? ob.Amount : -ob.Amount;
+                    var key = (ob.CustomerID, ob.LedgerID);
+                    depositCustObMap[key] = (depositCustObMap.TryGetValue(key, out decimal cur) ? cur : 0m) + signed;
+                }
+
+                var depVds = await _context.VoucherDetails
+                    .AsNoTracking()
+                    .Include(vd => vd.Voucher)
+                    .Where(vd => configuredDepositLedgerIds.Contains(vd.LedgerID) &&
+                                 vd.Voucher != null &&
+                                 vd.Voucher.Status != "Rejected" &&
+                                 vd.Voucher.Status != "Cancelled" &&
+                                 ((vd.CustomerID.HasValue && customerIds.Contains(vd.CustomerID.Value)) ||
+                                  (vd.MemberID.HasValue && memberIds.Contains(vd.MemberID.Value))))
+                    .ToListAsync();
+                foreach (var vd in depVds)
+                {
+                    decimal signed = string.Equals(vd.DrCr, "Cr", StringComparison.OrdinalIgnoreCase) ? vd.Amount : -vd.Amount;
+                    if (vd.CustomerID.HasValue && vd.CustomerID.Value > 0)
+                    {
+                        var key = (vd.CustomerID.Value, vd.LedgerID);
+                        depositVchCustMap[key] = (depositVchCustMap.TryGetValue(key, out decimal cur) ? cur : 0m) + signed;
+                    }
+                    else if (vd.MemberID.HasValue && vd.MemberID.Value > 0)
+                    {
+                        var key = (vd.MemberID.Value, vd.LedgerID);
+                        depositVchMemMap[key] = (depositVchMemMap.TryGetValue(key, out decimal cur) ? cur : 0m) + signed;
+                    }
+                }
+            }
 
             // Preload RD accounts (only active RDs matching configured RD settings)
             var configuredRdSchemeIds = settings.Where(s => s.ItemType == "RD" && s.RdSchemeID.HasValue)
@@ -448,10 +573,12 @@ namespace Bhisi.Api.Controllers
                     .ToListAsync()
                 : new List<RdAccount>();
 
-            var shareAccounts = await _context.ShareAccounts
-                .AsNoTracking()
-                .Where(s => (customerIds.Contains(s.CustomerID) || memberIds.Contains(s.MemberId)) && s.Status == "Active")
-                .ToListAsync();
+            var shareAccounts = (customerIds.Any() || memberIds.Any())
+                ? await _context.ShareAccounts
+                    .AsNoTracking()
+                    .Where(s => (customerIds.Contains(s.CustomerID) || memberIds.Contains(s.MemberId)) && s.Status == "Active")
+                    .ToListAsync()
+                : new List<ShareAccount>();
 
             var nonRdSettings = settings.Where(s => s.ItemType != "RD").OrderBy(s => s.SequenceOrder).ToList();
             var rdSettings = settings.Where(s => s.ItemType == "RD").OrderBy(s => s.SequenceOrder).ToList();
@@ -462,9 +589,9 @@ namespace Bhisi.Api.Controllers
 
             var previewRows = new List<PreviewMemberRowDto>();
 
-            foreach (var m in members)
+            foreach (var c in customers)
             {
-                var c = m.Customer!;
+                activeMembersByCust.TryGetValue(c.CustomerID, out var m);
                 string empCode = DemandPayrollHelper.ResolveEmpCode(c, empBankMap);
                 string cif = c.CIFNo ?? string.Empty;
                 string fullName = c.FullName;
@@ -477,7 +604,7 @@ namespace Bhisi.Api.Controllers
                     if (!matches) continue;
                 }
 
-                var mLoans = loans.Where(l => (l.CustomerID == c.CustomerID) || (l.MemberID == m.MemberID)).ToList();
+                var mLoans = loans.Where(l => (l.CustomerID == c.CustomerID) || (m != null && l.MemberID == m.MemberID)).ToList();
                 bool hasAnyActiveLoan = mLoans.Any(l => l.PrincipalBalance > 0m || l.InterestBalance > 0m || l.OverdueInterestBalance > 0m);
 
                 if (request.OnlyBorrowers && !hasAnyActiveLoan)
@@ -513,7 +640,21 @@ namespace Bhisi.Api.Controllers
                             var snap = LegalRecoveryTrackerHelper.ComputeLoanDuesSnapshot(loan, lSchedules, lCollections, targetDate);
 
                             decimal duePrin = snap.OverduePrincipal;
-                            if (!lSchedules.Any() && duePrin <= 0m && loan.PrincipalBalance > 0m && loan.InstallmentAmount > 0m)
+                            if (request.IncludeCurrentMonthInstallments && duePrin <= 0m && loan.PrincipalBalance > 0m)
+                            {
+                                decimal monthDue = lSchedules
+                                    .Where(s => !string.Equals(s.Status, "Paid", StringComparison.OrdinalIgnoreCase)
+                                                && !(loan.IsOpeningBalance && s.DueDate.Date <= loan.OpeningDate.Date)
+                                                && s.DueDate.Date <= monthEndDate)
+                                    .Sum(s => s.PrincipalAmount);
+                                if (monthDue > 0m)
+                                {
+                                    duePrin = Math.Min(loan.PrincipalBalance, monthDue);
+                                }
+                            }
+
+                            if (duePrin <= 0m && loan.PrincipalBalance > 0m && loan.InstallmentAmount > 0m &&
+                                (!lSchedules.Any() || request.IncludeCurrentMonthInstallments))
                             {
                                 bool paidInDemandMonth = loan.LastInstallmentPaidDate.HasValue &&
                                     loan.LastInstallmentPaidDate.Value.Year == targetDate.Year &&
@@ -584,9 +725,63 @@ namespace Bhisi.Api.Controllers
                             PrincipalOrDepositLedgerID = st.PrincipalOrDepositLedgerID
                         });
                     }
+                    else if (st.ItemType == "DEPOSIT_LEDGER")
+                    {
+                        int depLedgerId = st.PrincipalOrDepositLedgerID ?? 0;
+                        decimal obBal = depLedgerId > 0 && depositCustObMap.TryGetValue((c.CustomerID, depLedgerId), out var obVal) ? obVal : 0m;
+                        decimal vchBal = depLedgerId > 0
+                            ? ((depositVchCustMap.TryGetValue((c.CustomerID, depLedgerId), out var cVal) ? cVal : 0m) +
+                               (m != null && depositVchMemMap.TryGetValue((m.MemberID, depLedgerId), out var mVal) ? mVal : 0m))
+                            : 0m;
+                        decimal curDepBal = Math.Max(0m, Math.Round(obBal + vchBal, 2, MidpointRounding.AwayFromZero));
+
+                        decimal prefillDep = st.IsContributionTarget && contributionInput > 0m
+                            ? contributionInput
+                            : st.DefaultAmount;
+
+                        cells.Add(new PreviewCellDto
+                        {
+                            DemandColumnSettingId = st.DemandColumnSettingId,
+                            SequenceOrder = st.SequenceOrder,
+                            ItemType = st.ItemType,
+                            ColumnHeaderMr = st.ColumnHeaderMr,
+                            AccountCount = curDepBal > 0m ? 1 : 0,
+                            HasSubLedgerAccount = true,
+                            CurrentBalanceAmount = curDepBal,
+                            DemandPrincipalOrDeposit = Math.Round(prefillDep, 2, MidpointRounding.AwayFromZero),
+                            PrincipalOrDepositLedgerID = st.PrincipalOrDepositLedgerID
+                        });
+                    }
+                    else if (st.ItemType == "PIGMY")
+                    {
+                        var pgAcc = pigmyAccounts
+                            .Where(p => p.CustomerID == c.CustomerID &&
+                                        (!st.PigmySchemeID.HasValue || p.PigmySchemeID == st.PigmySchemeID.Value))
+                            .OrderBy(p => p.PigmyAccountID)
+                            .FirstOrDefault();
+
+                        decimal prefillPigmy = st.IsContributionTarget && contributionInput > 0m
+                            ? contributionInput
+                            : st.DefaultAmount;
+
+                        cells.Add(new PreviewCellDto
+                        {
+                            DemandColumnSettingId = st.DemandColumnSettingId,
+                            SequenceOrder = st.SequenceOrder,
+                            ItemType = st.ItemType,
+                            ColumnHeaderMr = st.ColumnHeaderMr,
+                            SchemeId = st.PigmySchemeID,
+                            AccountId = pgAcc?.PigmyAccountID,
+                            AccountCount = pgAcc != null ? 1 : 0,
+                            HasSubLedgerAccount = pgAcc != null,
+                            CurrentBalanceAmount = pgAcc?.TotalDepositedAmount ?? 0m,
+                            DemandPrincipalOrDeposit = Math.Round(prefillPigmy, 2, MidpointRounding.AwayFromZero),
+                            PrincipalOrDepositLedgerID = st.PrincipalOrDepositLedgerID
+                        });
+                    }
                     else if (st.ItemType == "SHARE")
                     {
-                        var shAcc = shareAccounts.FirstOrDefault(s => s.CustomerID == c.CustomerID || s.MemberId == m.MemberID);
+                        var shAcc = shareAccounts.FirstOrDefault(s => s.CustomerID == c.CustomerID || (m != null && s.MemberId == m.MemberID));
                         cells.Add(new PreviewCellDto
                         {
                             DemandColumnSettingId = st.DemandColumnSettingId,
@@ -671,8 +866,9 @@ namespace Bhisi.Api.Controllers
 
                 previewRows.Add(new PreviewMemberRowDto
                 {
-                    MemberId = m.MemberID,
+                    MemberId = m?.MemberID,
                     CustomerId = c.CustomerID,
+                    IsMember = m != null,
                     EmpCode = empCode,
                     CIFNo = cif,
                     MemberName = fullName,
@@ -790,6 +986,10 @@ namespace Bhisi.Api.Controllers
 
             foreach (var r in selectedRows)
             {
+                int rowIssueKey = (r.MemberId.HasValue && r.MemberId.Value > 0)
+                    ? r.MemberId.Value
+                    : (r.CustomerId ?? 0);
+
                 decimal memberSum = 0m;
                 foreach (var cell in r.Cells ?? new List<SaveDemandCellDto>())
                 {
@@ -797,12 +997,12 @@ namespace Bhisi.Api.Controllers
                     decimal i = Math.Round(cell.DemandInterest, 2, MidpointRounding.AwayFromZero);
                     if (p < 0m || i < 0m)
                     {
-                        AddRowIssue(r.MemberId, $"{r.MemberName} (Emp {r.EmpCode}): ऋण (Negative) रक्कम चालणार नाही.", true);
+                        AddRowIssue(rowIssueKey, $"{r.MemberName} (Emp {r.EmpCode}): ऋण (Negative) रक्कम चालणार नाही.", true);
                     }
 
                     if (cell.ItemType == "LOAN" && p > cell.CurrentBalanceAmount + 0.01m)
                     {
-                        AddRowIssue(r.MemberId, $"{r.MemberName} (Emp {r.EmpCode}): '{cell.ColumnHeaderMr}' हप्ता (₹{p:N2}) कर्ज बाकीपेक्षा (₹{cell.CurrentBalanceAmount:N2}) जास्त आहे.", true);
+                        AddRowIssue(rowIssueKey, $"{r.MemberName} (Emp {r.EmpCode}): '{cell.ColumnHeaderMr}' हप्ता (₹{p:N2}) कर्ज बाकीपेक्षा (₹{cell.CurrentBalanceAmount:N2}) जास्त आहे.", true);
                     }
 
                     if ((p > 0m || i > 0m) && allSettingsMap.TryGetValue(cell.DemandColumnSettingId, out var setting))
@@ -814,15 +1014,27 @@ namespace Bhisi.Api.Controllers
 
                         if (!setting.PrincipalOrDepositLedgerID.HasValue || setting.PrincipalOrDepositLedgerID.Value <= 0)
                         {
-                            AddRowIssue(r.MemberId, $"'{setting.ColumnHeaderMr}' साठी डिमांड सेटिंग्जमध्ये जमा लेजर मॅप केलेले नाही.", true);
+                            AddRowIssue(rowIssueKey, $"'{setting.ColumnHeaderMr}' साठी डिमांड सेटिंग्जमध्ये जमा लेजर मॅप केलेले नाही.", true);
                         }
                         if (cell.ItemType == "LOAN" && i > 0m && (!setting.InterestLedgerID.HasValue || setting.InterestLedgerID.Value <= 0))
                         {
-                            AddRowIssue(r.MemberId, $"'{setting.ColumnHeaderMr}' साठी डिमांड सेटिंग्जमध्ये व्याज लेजर मॅप केलेले नाही.", true);
+                            AddRowIssue(rowIssueKey, $"'{setting.ColumnHeaderMr}' साठी डिमांड सेटिंग्जमध्ये व्याज लेजर मॅप केलेले नाही.", true);
+                        }
+                        if (cell.ItemType == "LOAN" && cell.DemandPenalInterest > 0m && (!setting.OverdueInterestLedgerID.HasValue || setting.OverdueInterestLedgerID.Value <= 0))
+                        {
+                            AddRowIssue(rowIssueKey, $"'{setting.ColumnHeaderMr}' साठी थकीत दंडव्याज लेजर मॅप नसल्यामुळे वसुली चालू व्याज लेजरवर जमा होईल.", false);
                         }
                         if (cell.ItemType == "THRIFT_SAVING" && p > 0m && (!cell.AccountId.HasValue || cell.AccountId.Value <= 0))
                         {
-                            AddRowIssue(r.MemberId, $"{r.MemberName} (Emp {r.EmpCode}): '{setting.ColumnHeaderMr}' खाते अद्याप उघडलेले नाही — वसुलीवेळी नवीन खाते आपोआप तयार होईल.", false);
+                            AddRowIssue(rowIssueKey, $"{r.MemberName} (Emp {r.EmpCode}): '{setting.ColumnHeaderMr}' खाते अद्याप उघडलेले नाही — वसुलीवेळी नवीन खाते आपोआप तयार होईल.", false);
+                        }
+                        if (cell.ItemType == "PIGMY" && p > 0m && (!cell.AccountId.HasValue || cell.AccountId.Value <= 0))
+                        {
+                            AddRowIssue(rowIssueKey, $"{r.MemberName} (Emp {r.EmpCode}): '{setting.ColumnHeaderMr}' साठी सक्रिय पिग्मी खाते आढळले नाही.", true);
+                        }
+                        if (cell.ItemType == "SHARE" && p > 0m && (!cell.AccountId.HasValue || cell.AccountId.Value <= 0))
+                        {
+                            AddRowIssue(rowIssueKey, $"{r.MemberName} (Emp {r.EmpCode}): '{setting.ColumnHeaderMr}' साठी सक्रिय शेअर्स खाते आढळले नाही.", true);
                         }
                     }
 
@@ -838,11 +1050,11 @@ namespace Bhisi.Api.Controllers
                     decimal rdAmt = Math.Round(rd.DemandPrincipalOrDeposit, 2, MidpointRounding.AwayFromZero);
                     if (rdAmt < 0m)
                     {
-                        AddRowIssue(r.MemberId, $"{r.MemberName} (Emp {r.EmpCode}): RD रक्कम ऋण असू शकत नाही.", true);
+                        AddRowIssue(rowIssueKey, $"{r.MemberName} (Emp {r.EmpCode}): RD रक्कम ऋण असू शकत नाही.", true);
                     }
                     if (rdAmt > 0m && (!rd.AccountId.HasValue || rd.AccountId.Value <= 0))
                     {
-                        AddRowIssue(r.MemberId, $"{r.MemberName} (Emp {r.EmpCode}): '{rd.ColumnHeaderMr}' साठी सक्रिय RD खाते आढळले नाही.", true);
+                        AddRowIssue(rowIssueKey, $"{r.MemberName} (Emp {r.EmpCode}): '{rd.ColumnHeaderMr}' साठी सक्रिय RD खाते आढळले नाही.", true);
                     }
 
                     if (rdAmt > 0m)
@@ -866,7 +1078,7 @@ namespace Bhisi.Api.Controllers
 
                         if (!rdLedgerId.HasValue || rdLedgerId.Value <= 0)
                         {
-                            AddRowIssue(r.MemberId, $"'{rd.ColumnHeaderMr}' साठी डिमांड सेटिंग्ज किंवा RD स्कीममध्ये जमा लेजर मॅप केलेले नाही.", true);
+                            AddRowIssue(rowIssueKey, $"'{rd.ColumnHeaderMr}' साठी डिमांड सेटिंग्ज किंवा RD स्कीममध्ये जमा लेजर मॅप केलेले नाही.", true);
                         }
                     }
 
@@ -951,19 +1163,33 @@ namespace Bhisi.Api.Controllers
                 else
                 {
                     string prefix = $"DEM-{branchId}-{request.EmployerId}-{year}{month:D2}-";
-                    int existingCount = await _context.DemandNotices
-                        .CountAsync(d => d.EmployerId == request.EmployerId && d.BranchId == branchId && d.Month == month && d.Year == year);
+                    var existingNos = await _context.DemandNotices
+                        .AsNoTracking()
+                        .Where(d => d.EmployerId == request.EmployerId && d.BranchId == branchId && d.Month == month && d.Year == year)
+                        .Select(d => d.NoticeNumber)
+                        .ToListAsync();
 
+                    int maxSeq = 0;
+                    foreach (var eno in existingNos)
+                    {
+                        if (!string.IsNullOrWhiteSpace(eno) && eno.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        {
+                            string suffix = eno.Substring(prefix.Length);
+                            if (int.TryParse(suffix, out int parsedSeq) && parsedSeq > maxSeq) maxSeq = parsedSeq;
+                        }
+                    }
+
+                    int createdByUserId = User?.GetUserId() is int uid && uid > 0 ? uid : 1;
                     notice = new DemandNotice
                     {
-                        NoticeNumber = $"{prefix}{(existingCount + 1):D2}",
+                        NoticeNumber = $"{prefix}{(maxSeq + 1):D2}",
                         Month = month,
                         Year = year,
                         EmployerId = request.EmployerId,
                         BranchId = branchId,
                         Status = "Pending",
                         CreatedDate = DateTime.UtcNow,
-                        CreatedBy = 1
+                        CreatedBy = createdByUserId
                     };
                     _context.DemandNotices.Add(notice);
                 }
@@ -980,6 +1206,7 @@ namespace Bhisi.Api.Controllers
                 {
                     decimal loanTotal = 0m;
                     decimal savingTotal = 0m;
+                    decimal pigmyTotal = 0m;
                     decimal rdTotal = 0m;
                     decimal shareTotal = 0m;
                     var colItems = new List<DemandMemberColumnItem>();
@@ -993,7 +1220,8 @@ namespace Bhisi.Api.Controllers
                         decimal penAmt = Math.Max(0m, Math.Round(cell.DemandPenalInterest, 2, MidpointRounding.AwayFromZero));
 
                         if (cell.ItemType == "LOAN") loanTotal += pAmt + iAmt;
-                        else if (cell.ItemType == "THRIFT_SAVING" || cell.ItemType == "LEDGER_OTHER") savingTotal += pAmt;
+                        else if (cell.ItemType == "THRIFT_SAVING" || cell.ItemType == "DEPOSIT_LEDGER" || cell.ItemType == "LEDGER_OTHER") savingTotal += pAmt;
+                        else if (cell.ItemType == "PIGMY") pigmyTotal += pAmt;
                         else if (cell.ItemType == "SHARE") shareTotal += pAmt;
 
                         colItems.Add(new DemandMemberColumnItem
@@ -1002,7 +1230,7 @@ namespace Bhisi.Api.Controllers
                             SequenceOrder = seq,
                             ItemType = cell.ItemType,
                             ColumnHeaderMr = st?.ColumnHeaderMr ?? cell.ColumnHeaderMr,
-                            SchemeId = cell.SchemeId ?? st?.LoanRateID ?? st?.SavingSchemeID ?? st?.ShareSchemeId,
+                            SchemeId = cell.SchemeId ?? st?.LoanRateID ?? st?.SavingSchemeID ?? st?.PigmySchemeID ?? st?.ShareSchemeId,
                             AccountId = cell.AccountId,
                             SourceAccountIdsCsv = cell.SourceAccountIdsCsv,
                             SubRowIndex = 0,
@@ -1046,14 +1274,14 @@ namespace Bhisi.Api.Controllers
                         });
                     }
 
-                    decimal rowDeduction = Math.Round(loanTotal + savingTotal + rdTotal + shareTotal, 2, MidpointRounding.AwayFromZero);
+                    decimal rowDeduction = Math.Round(loanTotal + savingTotal + pigmyTotal + rdTotal + shareTotal, 2, MidpointRounding.AwayFromZero);
                     if (rowDeduction <= 0m) continue;
 
                     totalDemand += rowDeduction;
 
                     newMemberDetails.Add(new DemandMemberDetail
                     {
-                        MemberId = row.MemberId,
+                        MemberId = row.MemberId.HasValue && row.MemberId.Value > 0 ? row.MemberId.Value : null,
                         CustomerId = row.CustomerId,
                         EmpCode = row.EmpCode,
                         CIFNo = row.CIFNo,
@@ -1061,6 +1289,7 @@ namespace Bhisi.Api.Controllers
                         IsSelected = true,
                         LoanInstallment = loanTotal,
                         SavingDeposit = savingTotal,
+                        PigmyDeposit = pigmyTotal,
                         ShareDeposit = shareTotal,
                         RdDeposit = rdTotal,
                         TotalDeduction = rowDeduction,
@@ -1099,11 +1328,15 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        // Legacy compatibility endpoint kept intact
+        // Legacy compatibility endpoint guarded when modern DemandColumnSettings exist
         [HttpPost("generate")]
         [Authorize(Roles = "Admin,SuperAdmin,Super Admin,SystemAdmin,HeadOffice,HO_Manager,HO Manager,GeneralManager,CEO,Chairman,Manager,BranchManager,Branch_Manager")]
         public async Task<ActionResult<DemandNotice>> GenerateDemand([FromBody] GenerateDemandDto request)
         {
+            if (await _context.DemandColumnSettings.AsNoTracking().AnyAsync(s => s.IsActive))
+            {
+                return BadRequest("संस्थेची आधुनिक पगार डिमांड सेटिंग्ज सक्रिय असल्यामुळे कृपया 'कर्मचारी पगार डिमांड (Employee Salary Demand)' फॉर्मवरूनच डिमांड तयार करा.");
+            }
             var existing = await _context.DemandNotices
                 .FirstOrDefaultAsync(d => d.EmployerId == request.EmployerId && d.Month == request.Month && d.Year == request.Year && d.Status != "Cancelled");
 
@@ -1210,6 +1443,7 @@ namespace Bhisi.Api.Controllers
         public int EmployerId { get; set; }
         public DateTime DemandDate { get; set; } = DateTime.Today;
         public bool OnlyBorrowers { get; set; }
+        public bool IncludeCurrentMonthInstallments { get; set; } = false;
         public decimal ContributionAmount { get; set; }
         public string? SearchQuery { get; set; }
     }
@@ -1217,8 +1451,9 @@ namespace Bhisi.Api.Controllers
     public class PreviewMemberRowDto
     {
         public int SrNo { get; set; }
-        public int MemberId { get; set; }
+        public int? MemberId { get; set; }
         public int CustomerId { get; set; }
+        public bool IsMember { get; set; } = true;
         public string EmpCode { get; set; } = string.Empty;
         public string CIFNo { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
@@ -1280,7 +1515,7 @@ namespace Bhisi.Api.Controllers
 
     public class SaveDemandMemberRowDto
     {
-        public int MemberId { get; set; }
+        public int? MemberId { get; set; }
         public int? CustomerId { get; set; }
         public string? EmpCode { get; set; }
         public string? CIFNo { get; set; }

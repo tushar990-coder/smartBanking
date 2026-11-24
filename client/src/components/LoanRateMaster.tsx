@@ -31,6 +31,7 @@ interface Ledger {
   ledgerName: string;
   accountGroup?: {
     groupName?: string;
+    natureOfGroup?: string;
   };
 }
 
@@ -47,6 +48,9 @@ interface LoanRate {
   processingFeeLedgerID: number | null;
   interestRate: number;
   overdueInterestRate: number;
+  penalInterestGraceDays?: number;
+  penalInterestBasis?: string;
+  allowManualPenalInRecovery?: boolean;
   interestPostingType: string;
   interestPostingFrequency?: string;
   interestCalculationMethod: string;
@@ -105,6 +109,9 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
     processingFeeLedgerID: '',
     interestRate: '',
     overdueInterestRate: '',
+    penalInterestGraceDays: '0',
+    penalInterestBasis: 'OverduePrincipal',
+    allowManualPenalInRecovery: true,
     interestPostingType: 'कर्जावर',
     interestPostingFrequency: 'मासिक (Monthly)',
     interestCalculationMethod: 'Flat (फ्लॅट)',
@@ -270,6 +277,9 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       processingFeeLedgerID: '',
       interestRate: '',
       overdueInterestRate: '',
+      penalInterestGraceDays: '0',
+      penalInterestBasis: 'OverduePrincipal',
+      allowManualPenalInRecovery: true,
       interestPostingType: 'कर्जावर',
       interestPostingFrequency: 'मासिक (Monthly)',
       interestCalculationMethod: 'Flat (फ्लॅट)',
@@ -378,6 +388,9 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       processingFeeLedgerID: formData.processingFeeLedgerID ? parseInt(formData.processingFeeLedgerID) : null,
       interestRate: formData.interestRate ? parseFloat(formData.interestRate) : 0,
       overdueInterestRate: formData.overdueInterestRate ? parseFloat(formData.overdueInterestRate) : 0,
+      penalInterestGraceDays: formData.penalInterestGraceDays ? Math.max(0, parseInt(formData.penalInterestGraceDays, 10) || 0) : 0,
+      penalInterestBasis: formData.penalInterestBasis || 'OverduePrincipal',
+      allowManualPenalInRecovery: Boolean(formData.allowManualPenalInRecovery),
       interestPostingType: formData.interestPostingType,
       interestPostingFrequency: formData.interestPostingFrequency,
       interestCalculationMethod: formData.interestCalculationMethod,
@@ -442,6 +455,9 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       processingFeeLedgerID: rate.processingFeeLedgerID?.toString() || '',
       interestRate: rate.interestRate?.toString() || '',
       overdueInterestRate: rate.overdueInterestRate?.toString() || '',
+      penalInterestGraceDays: (rate.penalInterestGraceDays ?? 0).toString(),
+      penalInterestBasis: rate.penalInterestBasis || 'OverduePrincipal',
+      allowManualPenalInRecovery: rate.allowManualPenalInRecovery !== undefined ? rate.allowManualPenalInRecovery : true,
       interestPostingType: rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') 
         ? (rate.interestPostingType.startsWith('कर्ज') ? 'कर्जावर' : rate.interestPostingType.includes('येणे') ? 'येणे व्याजावर' : rate.interestPostingType) 
         : 'कर्जावर',
@@ -547,7 +563,9 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       "संक्षिप्त नाव": rate.shortName || '-',
       "तारणी प्रकार": rate.securityType || '-',
       "व्याजदर (%)": rate.interestRate ? `${rate.interestRate.toFixed(2)}%` : '0.00%',
-      "थकीत दर (%)": rate.overdueInterestRate ? `${rate.overdueInterestRate.toFixed(2)}%` : '0.00%',
+      "थकीत / दंड दर (%)": rate.overdueInterestRate ? `${rate.overdueInterestRate.toFixed(2)}%` : '0.00%',
+      "दंड सवलत दिवस": rate.penalInterestGraceDays ?? 0,
+      "दंड व्याज आधार": rate.penalInterestBasis || 'OverduePrincipal',
       "मुदत (महिने)": rate.durationMonths || 0,
       "हप्ता प्रकार": rate.installmentType || '-',
       "हप्ता संख्या": rate.installmentCount || 0,
@@ -1033,7 +1051,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
               </div>
 
               <div>
-                <label className={labelClass}>थकीत व्याजदर (% p.a.)</label>
+                <label className={labelClass}>थकीत / दंड व्याजदर (% p.a. Penal Interest)</label>
                 <input type="number" step="0.01" name="overdueInterestRate" value={formData.overdueInterestRate} onChange={handleChange} className={`${inputClass} font-bold text-rose-700 font-mono`} placeholder="उदा. 2.00" />
               </div>
 
@@ -1047,6 +1065,48 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                     className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded cursor-pointer"
                   />
                   <span className="text-xs font-bold text-gray-800">ही कर्ज योजना सक्रीय ठेवा (Is Active)</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-dashed border-rose-200 bg-rose-50/40 p-2 rounded-sm">
+              <div>
+                <label className={labelClass}>दंड व्याज सवलत दिवस (Grace Days)</label>
+                <input
+                  type="number"
+                  min="0"
+                  name="penalInterestGraceDays"
+                  value={formData.penalInterestGraceDays}
+                  onChange={handleChange}
+                  className={`${inputClass} font-mono font-bold text-rose-900`}
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>दंड व्याज आकारणी आधार (Penal Basis)</label>
+                <select
+                  name="penalInterestBasis"
+                  value={formData.penalInterestBasis}
+                  onChange={handleChange}
+                  className={inputClass}
+                >
+                  <option value="OverduePrincipal">थकीत मुद्दल (Overdue Principal)</option>
+                  <option value="TotalPrincipal">संपूर्ण चालू मुद्दल (Total Principal)</option>
+                  <option value="OverdueEmi">थकीत हप्ता (Overdue EMI Amount)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center pt-3">
+                <label className="flex items-center space-x-2 cursor-pointer bg-white p-1.5 rounded-sm border border-rose-200 w-full hover:bg-rose-50 transition-colors">
+                  <input
+                    type="checkbox"
+                    name="allowManualPenalInRecovery"
+                    checked={formData.allowManualPenalInRecovery}
+                    onChange={handleCheckboxChange}
+                    className="h-4 w-4 text-rose-600 focus:ring-rose-500 border-gray-300 rounded cursor-pointer"
+                  />
+                  <span className="text-[11px] font-bold text-rose-950">वसुलीत मॅन्युअल जादा/दंड व्याजास परवानगी</span>
                 </label>
               </div>
             </div>
@@ -1235,9 +1295,27 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
-                  ३. थकीत व्याज खाते (Overdue Interest)
+                  ३. थकीत / दंड व्याज खाते (Overdue / Penal Interest)
                 </label>
                 <SearchableSelect name="overdueInterestLedgerID" value={formData.overdueInterestLedgerID} onChange={handleChange} options={ledgerOptions} />
+                {(() => {
+                  const selOvdId = Number(formData.overdueInterestLedgerID || 0);
+                  const selOvd = selOvdId > 0 ? ledgers.find((l) => l.ledgerID === selOvdId) : undefined;
+                  const nat = (selOvd?.accountGroup?.natureOfGroup || '').trim().toLowerCase();
+                  if (selOvd && nat && nat !== 'income') {
+                    return (
+                      <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-300 rounded px-1.5 py-1 font-semibold mt-1">
+                        ⚠️ निवडलेले दंड व्याज लेजर '{selOvd.accountGroup?.groupName || selOvd.accountGroup?.natureOfGroup}' ({selOvd.accountGroup?.natureOfGroup}) गटातील आहे. कृपया 'Income' गटातील उत्पन्न लेजर निवडा किंवा रिकामे ठेवा (न निवडल्यास नियमित व्याज लेजर वापरले जाते).
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+                {currentOverdue > 0 && !formData.overdueInterestLedgerID && (
+                  <p className="text-[10px] text-amber-700 font-semibold mt-0.5">
+                    ℹ️ स्वतंत्र दंड व्याज खाते न निवडल्यास नियमित व्याज खात्यात जमा होईल.
+                  </p>
+                )}
               </div>
 
               <div>

@@ -377,6 +377,14 @@ namespace Bhisi.Api.Controllers
                         {
                             warnings.Add($"{detail.MemberName} (Emp {detail.EmpCode}): '{ci.ColumnHeaderMr}' नवीन बचत खाते वसुलीवेळी आपोआप उघडले जाईल.");
                         }
+                        else if (ci.ItemType == "PIGMY" && (!ci.AccountId.HasValue || ci.AccountId.Value <= 0))
+                        {
+                            errors.Add($"{detail.MemberName} (Emp {detail.EmpCode}): '{ci.ColumnHeaderMr}' साठी सक्रिय पिग्मी खाते आढळले नाही.");
+                        }
+                        else if (ci.ItemType == "SHARE" && (!ci.AccountId.HasValue || ci.AccountId.Value <= 0))
+                        {
+                            errors.Add($"{detail.MemberName} (Emp {detail.EmpCode}): '{ci.ColumnHeaderMr}' साठी सक्रिय शेअर्स खाते आढळले नाही.");
+                        }
                     }
 
                     totalGrandReceived += memIn.ActualReceivedAmount;
@@ -581,8 +589,10 @@ namespace Bhisi.Api.Controllers
                         Amount = branchVoucherTotal
                     });
 
-                    // Aggregate Credits by LedgerID so 500-employee payroll stays clean & fast in Voucher Passing
+                    // Aggregate Credits by LedgerID so 500-employee payroll stays clean & fast in Voucher Passing;
+                    // DEPOSIT_LEDGER preserves per-customer lines (with CustomerID/MemberID) for customer sub-ledger continuity.
                     var creditByLedger = new Dictionary<int, decimal>();
+                    var customerCreditVoucherLines = new List<(int LedgerId, int? CustomerId, int? MemberId, decimal Amount)>();
                     void AddCreditLedger(int ledgerId, decimal amt)
                     {
                         if (amt <= 0m) return;
@@ -636,20 +646,31 @@ namespace Bhisi.Api.Controllers
                             }
 
                             decimal memberPool = Math.Round(memIn.ActualReceivedAmount, 2, MidpointRounding.AwayFromZero);
-                            var member = detail.Member ?? await _context.Members
-                                .Include(m => m.Customer)
-                                .FirstOrDefaultAsync(m => m.MemberID == detail.MemberId);
-
-                            if (member == null)
+                            Member? member = null;
+                            if (detail.MemberId.HasValue && detail.MemberId.Value > 0)
                             {
-                                await transaction.RollbackAsync();
-                                return BadRequest($"सभासद ID {detail.MemberId} आढळला नाही.");
+                                member = detail.Member ?? await _context.Members
+                                    .Include(m => m.Customer)
+                                    .FirstOrDefaultAsync(m => m.MemberID == detail.MemberId.Value);
                             }
 
+                            Customer? customer = member?.Customer;
+                            if (customer == null && detail.CustomerId.HasValue && detail.CustomerId.Value > 0)
+                            {
+                                customer = await _context.Customers
+                                    .FirstOrDefaultAsync(c => c.CustomerID == detail.CustomerId.Value);
+                            }
+
+                            if (member == null && customer == null)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest($"खातेदार / सभासद ID {detail.CustomerId ?? detail.MemberId} आढळला नाही.");
+                            }
+
+                            int custId = detail.CustomerId ?? member?.CustomerID ?? customer?.CustomerID ?? 0;
                             string memberName = !string.IsNullOrWhiteSpace(detail.MemberName)
                                 ? detail.MemberName
-                                : (member.Customer?.FullName ?? $"Member #{member.MemberID}");
-                            int custId = detail.CustomerId ?? member.CustomerID ?? 0;
+                                : (customer?.FullName ?? $"Customer #{custId}");
 
                             var orderedItems = detail.ColumnItems
                                 .OrderBy(c => c.SequenceOrder)
@@ -680,7 +701,7 @@ namespace Bhisi.Api.Controllers
                                         .Include(l => l.LoanRate)
                                         .Where(l => loanIds.Any()
                                             ? loanIds.Contains(l.LoanAccountID)
-                                            : ((l.MemberID == member.MemberID || (custId > 0 && l.CustomerID == custId)) &&
+                                            : (((detail.MemberId.HasValue && l.MemberID == detail.MemberId.Value) || (custId > 0 && l.CustomerID == custId)) &&
                                                (!ci.SchemeId.HasValue || l.LoanRateID == ci.SchemeId.Value)));
 
                                     var memberLoans = await loanQuery
@@ -1002,7 +1023,15 @@ namespace Bhisi.Api.Controllers
                                     subType = "SHARE";
                                     var shareAcc = ci.AccountId.HasValue && ci.AccountId.Value > 0
                                         ? await _context.ShareAccounts.FirstOrDefaultAsync(s => s.ShareAccountId == ci.AccountId.Value)
-                                        : await _context.ShareAccounts.FirstOrDefaultAsync(s => (s.MemberId == member.MemberID || (custId > 0 && s.CustomerID == custId)) && s.Status == "Active");
+                                        : await _context.ShareAccounts.FirstOrDefaultAsync(s =>
+                                            ((member != null && s.MemberId == member.MemberID) || (custId > 0 && s.CustomerID == custId)) &&
+                                            s.Status == "Active");
+
+                                    if (shareAcc == null)
+                                    {
+                                        await transaction.RollbackAsync();
+                                        return BadRequest($"{memberName} (Emp {detail.EmpCode}): '{ci.ColumnHeaderMr}' साठी सक्रिय शेअर्स खाते आढळले नाही.");
+                                    }
 
                                     int shareLedgerId = ci.PrincipalOrDepositLedgerID ?? 0;
                                     if (shareLedgerId <= 0)
@@ -1010,34 +1039,83 @@ namespace Bhisi.Api.Controllers
                                         shareLedgerId = (await ShareLedgerHelper.GetShareCapitalLedgerAsync(_context, ci.SchemeId)).LedgerID;
                                     }
 
-                                    if (shareAcc != null)
+                                    var shScheme = ci.SchemeId.HasValue
+                                        ? await _context.ShareSchemes.AsNoTracking().FirstOrDefaultAsync(s => s.ShareSchemeId == ci.SchemeId.Value)
+                                        : await _context.ShareSchemes.AsNoTracking().OrderByDescending(s => s.IsActive).FirstOrDefaultAsync();
+
+                                    decimal faceVal = (shScheme != null && shScheme.ShareFaceValue > 0m) ? shScheme.ShareFaceValue : 100m;
+                                    int addedShares = (int)Math.Floor(allocPrin / faceVal);
+                                    shareAcc.TotalShareAmount = Math.Round(shareAcc.TotalShareAmount + allocPrin, 2, MidpointRounding.AwayFromZero);
+                                    shareAcc.TotalShareCount += addedShares;
+
+                                    var shTx = new ShareTransaction
                                     {
-                                        var shScheme = ci.SchemeId.HasValue
-                                            ? await _context.ShareSchemes.AsNoTracking().FirstOrDefaultAsync(s => s.ShareSchemeId == ci.SchemeId.Value)
-                                            : await _context.ShareSchemes.AsNoTracking().OrderByDescending(s => s.IsActive).FirstOrDefaultAsync();
-
-                                        decimal faceVal = (shScheme != null && shScheme.ShareFaceValue > 0m) ? shScheme.ShareFaceValue : 100m;
-                                        int addedShares = (int)Math.Floor(allocPrin / faceVal);
-                                        shareAcc.TotalShareAmount = Math.Round(shareAcc.TotalShareAmount + allocPrin, 2, MidpointRounding.AwayFromZero);
-                                        shareAcc.TotalShareCount += addedShares;
-
-                                        var shTx = new ShareTransaction
-                                        {
-                                            ShareAccountId = shareAcc.ShareAccountId,
-                                            CustomerID = shareAcc.CustomerID,
-                                            TransactionDate = recoveryDate,
-                                            TransactionType = "Allotment",
-                                            NumberOfShares = addedShares,
-                                            Amount = allocPrin,
-                                            Narration = $"बल्क डिमान्ड शेअर्स जमा - नोटीस {notice.NoticeNumber}",
-                                            VoucherId = voucher.VoucherID
-                                        };
-                                        _context.ShareTransactions.Add(shTx);
-                                        await _context.SaveChangesAsync();
-                                        generatedSubIds.Add(shTx.TransactionId);
-                                    }
+                                        ShareAccountId = shareAcc.ShareAccountId,
+                                        CustomerID = shareAcc.CustomerID,
+                                        TransactionDate = recoveryDate,
+                                        TransactionType = "Allotment",
+                                        NumberOfShares = addedShares,
+                                        Amount = allocPrin,
+                                        Narration = $"बल्क डिमान्ड शेअर्स जमा - नोटीस {notice.NoticeNumber}",
+                                        VoucherId = voucher.VoucherID
+                                    };
+                                    _context.ShareTransactions.Add(shTx);
+                                    await _context.SaveChangesAsync();
+                                    generatedSubIds.Add(shTx.TransactionId);
 
                                     AddCreditLedger(shareLedgerId, allocPrin);
+                                }
+                                else if (ci.ItemType == "PIGMY")
+                                {
+                                    subType = "PIGMY";
+                                    var pgAcc = ci.AccountId.HasValue && ci.AccountId.Value > 0
+                                        ? await _context.PigmyAccounts.Include(p => p.PigmyScheme).FirstOrDefaultAsync(p => p.PigmyAccountID == ci.AccountId.Value)
+                                        : await _context.PigmyAccounts.Include(p => p.PigmyScheme).FirstOrDefaultAsync(p => p.CustomerID == custId && (!ci.SchemeId.HasValue || p.PigmySchemeID == ci.SchemeId.Value) && p.Status == "Active");
+
+                                    if (pgAcc == null)
+                                    {
+                                        await transaction.RollbackAsync();
+                                        return BadRequest($"{memberName} (Emp {detail.EmpCode}): '{ci.ColumnHeaderMr}' साठी सक्रिय पिग्मी खाते आढळले नाही.");
+                                    }
+
+                                    int pgLiabLedgerId = ci.PrincipalOrDepositLedgerID ?? pgAcc.PigmyScheme?.PigmyLiabilityLedgerID ?? 0;
+                                    if (pgLiabLedgerId <= 0)
+                                    {
+                                        await transaction.RollbackAsync();
+                                        return BadRequest($"पिग्मी खाते #{pgAcc.AccountNo} योजनेला 'पिग्मी देयता लेजर' जोडलेले नाही.");
+                                    }
+
+                                    pgAcc.TotalDepositedAmount = Math.Round(pgAcc.TotalDepositedAmount + allocPrin, 2, MidpointRounding.AwayFromZero);
+
+                                    var pgTx = new PigmyTransaction
+                                    {
+                                        PigmyAccountID = pgAcc.PigmyAccountID,
+                                        TransactionDate = recoveryDate,
+                                        ValueDate = recoveryDate,
+                                        TransactionType = "DEPOSIT",
+                                        DrAmount = 0m,
+                                        CrAmount = allocPrin,
+                                        BalanceAmount = pgAcc.TotalDepositedAmount,
+                                        Narration = $"बल्क डिमान्ड पिग्मी ठेव ({ci.ColumnHeaderMr}) - नोटीस {notice.NoticeNumber}",
+                                        ReferenceId = vchNo,
+                                        MakerId = createdByUserId,
+                                        PostedOn = DateTime.UtcNow
+                                    };
+                                    _context.PigmyTransactions.Add(pgTx);
+                                    await _context.SaveChangesAsync();
+                                    generatedSubIds.Add(pgTx.PigmyTransactionID);
+                                    AddCreditLedger(pgLiabLedgerId, allocPrin);
+                                }
+                                else if (ci.ItemType == "DEPOSIT_LEDGER")
+                                {
+                                    subType = "DEPOSIT_LEDGER";
+                                    int depLedgerId = ci.PrincipalOrDepositLedgerID ?? 0;
+                                    if (depLedgerId <= 0)
+                                    {
+                                        await transaction.RollbackAsync();
+                                        return BadRequest($"{memberName} ({ci.ColumnHeaderMr}): ठेव जमा लेजर मॅप केलेले नाही.");
+                                    }
+                                    customerCreditVoucherLines.Add((depLedgerId, custId > 0 ? custId : (int?)null, member?.MemberID, allocPrin));
                                 }
                                 else // LEDGER_OTHER
                                 {
@@ -1123,6 +1201,28 @@ namespace Bhisi.Api.Controllers
                             LedgerID = kv.Key,
                             DrCr = "Cr",
                             Amount = kv.Value
+                        });
+                    }
+
+                    foreach (var custLine in customerCreditVoucherLines
+                        .GroupBy(x => (x.LedgerId, x.CustomerId, x.MemberId))
+                        .Select(g => new
+                        {
+                            g.Key.LedgerId,
+                            g.Key.CustomerId,
+                            g.Key.MemberId,
+                            Amount = Math.Round(g.Sum(i => i.Amount), 2, MidpointRounding.AwayFromZero)
+                        })
+                        .Where(x => x.Amount > 0m))
+                    {
+                        _context.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = custLine.LedgerId,
+                            CustomerID = custLine.CustomerId,
+                            MemberID = custLine.MemberId,
+                            DrCr = "Cr",
+                            Amount = custLine.Amount
                         });
                     }
 

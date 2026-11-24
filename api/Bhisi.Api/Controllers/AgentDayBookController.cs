@@ -44,6 +44,20 @@ namespace Bhisi.Api.Controllers
             public bool IsRemitted { get; set; }
         }
 
+        public class PigmySchemeBreakupItem
+        {
+            public int PigmySchemeID { get; set; }
+            public string SchemeCode { get; set; } = string.Empty;
+            public string SchemeName { get; set; } = string.Empty;
+            public int? LiabilityLedgerID { get; set; }
+            public string LiabilityLedgerName { get; set; } = string.Empty;
+            public int AccountsCount { get; set; }
+            public int CollectionsCount { get; set; }
+            public decimal CollectedAmount { get; set; }
+            public decimal RemittedAmount { get; set; }
+            public decimal PendingAmount { get; set; }
+        }
+
         public class DayBookSummary
         {
             public decimal OpeningBalance { get; set; }
@@ -63,6 +77,8 @@ namespace Bhisi.Api.Controllers
             public decimal LoanRangeAmount { get; set; }
             public decimal SavingRangeAmount { get; set; }
             public decimal RdRangeAmount { get; set; }
+            public int ActiveSchemesCount { get; set; }
+            public List<PigmySchemeBreakupItem> SchemeBreakup { get; set; } = new List<PigmySchemeBreakupItem>();
             public List<DayBreakupDto> DayBreakup { get; set; } = new List<DayBreakupDto>();
             public List<RemittanceItemDto> RecentRemittances { get; set; } = new List<RemittanceItemDto>();
         }
@@ -245,6 +261,139 @@ namespace Bhisi.Api.Controllers
             return allocations;
         }
 
+        private async Task<(List<PigmySchemeBreakupItem> breakup, int activeSchemesCount)> ComputePigmySchemeBreakupAsync(
+            int agentId,
+            DateTime effectiveFromDate,
+            DateTime effectiveToDate,
+            List<DayAllocationItem> rangeAllocations)
+        {
+            var activeSchemes = await _context.PigmySchemes
+                .AsNoTracking()
+                .Include(s => s.PigmyLiabilityLedger)
+                .Where(s => s.Status == "Active")
+                .ToListAsync();
+
+            var rangePigmyCols = await _context.PigmyCollections
+                .AsNoTracking()
+                .Include(c => c.PigmyAccount)
+                    .ThenInclude(a => a!.PigmyScheme)
+                        .ThenInclude(s => s!.PigmyLiabilityLedger)
+                .Where(c => c.AgentId == agentId &&
+                            c.CollectionDate.Date >= effectiveFromDate &&
+                            c.CollectionDate.Date <= effectiveToDate &&
+                            c.CollectionAmount > 0 &&
+                            (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .ToListAsync();
+
+            if (!rangePigmyCols.Any())
+            {
+                return (new List<PigmySchemeBreakupItem>(), activeSchemes.Count);
+            }
+
+            var depositVoucherIds = (await _context.PigmyAgentCashDeposits
+                .AsNoTracking()
+                .Where(d => d.AgentId == agentId && d.VoucherId.HasValue)
+                .Select(d => d.VoucherId!.Value)
+                .ToListAsync()).ToHashSet();
+
+            var linkedLoanByDate = await _context.LoanCollections
+                .AsNoTracking()
+                .Where(l => l.AgentID == agentId && l.CollectionSource == "AGENT_MOBILE" && l.RemittanceDepositId != null &&
+                            l.CollectionDate.Date >= effectiveFromDate && l.CollectionDate.Date <= effectiveToDate &&
+                            (l.PaymentMode == null || l.PaymentMode == "" || l.PaymentMode.ToUpper() == "CASH"))
+                .GroupBy(l => l.CollectionDate.Date)
+                .Select(g => new { Date = g.Key, Amount = g.Sum(x => x.TotalAmountReceived) })
+                .ToDictionaryAsync(x => x.Date, x => x.Amount);
+
+            var linkedSavingByDate = await _context.SavingTransactions
+                .AsNoTracking()
+                .Where(s => s.AgentID == agentId && s.CollectionSource == "AGENT_MOBILE" && s.TransactionType == "Deposit" && s.RemittanceDepositId != null &&
+                            s.TransactionDate.Date >= effectiveFromDate && s.TransactionDate.Date <= effectiveToDate &&
+                            (s.PaymentMode == null || s.PaymentMode == "" || s.PaymentMode.ToUpper() == "CASH"))
+                .GroupBy(s => s.TransactionDate.Date)
+                .Select(g => new { Date = g.Key, Amount = g.Sum(x => x.Amount) })
+                .ToDictionaryAsync(x => x.Date, x => x.Amount);
+
+            var linkedRdByDate = await _context.RdTransactions
+                .AsNoTracking()
+                .Where(r => r.AgentID == agentId && r.CollectionSource == "AGENT_MOBILE" && r.TransactionType == "Installment" && r.RemittanceDepositId != null &&
+                            r.TransactionDate.Date >= effectiveFromDate && r.TransactionDate.Date <= effectiveToDate)
+                .GroupBy(r => r.TransactionDate.Date)
+                .Select(g => new { Date = g.Key, Amount = g.Sum(x => x.PrincipalAmount) })
+                .ToDictionaryAsync(x => x.Date, x => x.Amount);
+
+            var allocByDate = rangeAllocations.ToDictionary(a => a.Date, a => a);
+
+            var schemeAgg = new Dictionary<int, (PigmySchemeBreakupItem Item, HashSet<int> AccountIds)>();
+
+            foreach (var dayGroup in rangePigmyCols.GroupBy(c => c.CollectionDate.Date))
+            {
+                DateTime dDate = dayGroup.Key;
+                var dayCols = dayGroup.ToList();
+
+                bool IsColExplicitlyRemitted(PigmyCollection c) =>
+                    c.RemittanceDepositId.HasValue ||
+                    (c.IsVoucherGenerated && c.VoucherId.HasValue && depositVoucherIds.Contains(c.VoucherId.Value));
+
+                decimal explicitLinkedPigmy = dayCols.Where(IsColExplicitlyRemitted).Sum(c => c.CollectionAmount);
+                decimal explicitLinkedNonPigmy =
+                    (linkedLoanByDate.TryGetValue(dDate, out var lAmt) ? lAmt : 0m) +
+                    (linkedSavingByDate.TryGetValue(dDate, out var sAmt) ? sAmt : 0m) +
+                    (linkedRdByDate.TryGetValue(dDate, out var rAmt) ? rAmt : 0m);
+
+                var unlinkedCols = dayCols.Where(c => !IsColExplicitlyRemitted(c)).ToList();
+                decimal unlinkedPigmyTotal = unlinkedCols.Sum(c => c.CollectionAmount);
+
+                decimal dayRemittedTotal = allocByDate.TryGetValue(dDate, out var da) ? da.RemittedAmount : 0m;
+                decimal partialPigmyRemittedOnDay = Math.Max(0m, dayRemittedTotal - explicitLinkedPigmy - explicitLinkedNonPigmy);
+                decimal unlinkedPendingRatio = unlinkedPigmyTotal > 0m
+                    ? Math.Clamp((unlinkedPigmyTotal - partialPigmyRemittedOnDay) / unlinkedPigmyTotal, 0m, 1m)
+                    : 0m;
+
+                foreach (var col in dayCols)
+                {
+                    var scheme = col.PigmyAccount?.PigmyScheme;
+                    int sId = scheme?.PigmySchemeID ?? col.PigmyAccount?.PigmySchemeID ?? 0;
+
+                    if (!schemeAgg.TryGetValue(sId, out var bucket))
+                    {
+                        var item = new PigmySchemeBreakupItem
+                        {
+                            PigmySchemeID = sId,
+                            SchemeCode = scheme?.SchemeCode ?? (sId > 0 ? sId.ToString("D3") : "-"),
+                            SchemeName = scheme?.SchemeName ?? (sId > 0 ? $"पिग्मी योजना #{sId}" : "अनिर्दिष्ट योजना"),
+                            LiabilityLedgerID = scheme?.PigmyLiabilityLedgerID,
+                            LiabilityLedgerName = scheme?.PigmyLiabilityLedger?.LedgerName ?? (scheme?.PigmyLiabilityLedgerID.HasValue == true ? $"लेजर #{scheme.PigmyLiabilityLedgerID}" : "(लेजर मॅप नाही)")
+                        };
+                        bucket = (item, new HashSet<int>());
+                        schemeAgg[sId] = bucket;
+                    }
+
+                    bucket.Item.CollectionsCount++;
+                    bucket.AccountIds.Add(col.PigmyAccountId);
+                    bucket.Item.CollectedAmount += col.CollectionAmount;
+
+                    decimal pendingShare = IsColExplicitlyRemitted(col)
+                        ? 0m
+                        : Math.Round(col.CollectionAmount * unlinkedPendingRatio, 2, MidpointRounding.AwayFromZero);
+
+                    bucket.Item.PendingAmount += pendingShare;
+                    bucket.Item.RemittedAmount += (col.CollectionAmount - pendingShare);
+                }
+            }
+
+            var breakup = schemeAgg.Values.Select(v =>
+            {
+                v.Item.AccountsCount = v.AccountIds.Count;
+                v.Item.CollectedAmount = Math.Round(v.Item.CollectedAmount, 2, MidpointRounding.AwayFromZero);
+                v.Item.RemittedAmount = Math.Round(v.Item.RemittedAmount, 2, MidpointRounding.AwayFromZero);
+                v.Item.PendingAmount = Math.Max(0m, Math.Round(v.Item.CollectedAmount - v.Item.RemittedAmount, 2, MidpointRounding.AwayFromZero));
+                return v.Item;
+            }).OrderBy(x => x.PigmySchemeID).ToList();
+
+            return (breakup, activeSchemes.Count);
+        }
+
         // GET: api/AgentDayBook/Summary/5/2024-03-20
         // GET: api/AgentDayBook/Summary/5?fromDate=2024-03-01&toDate=2024-03-05&depositDate=2024-03-06
         [HttpGet("Summary/{agentId}/{date?}")]
@@ -420,6 +569,9 @@ namespace Bhisi.Api.Controllers
                 };
             }).ToList();
 
+            var (schemeBreakup, activeSchemesCount) = await ComputePigmySchemeBreakupAsync(
+                agentId, effectiveFromDate, effectiveToDate, rangeAllocations);
+
             return Ok(new DayBookSummary
             {
                 OpeningBalance = openingBalance,
@@ -439,6 +591,8 @@ namespace Bhisi.Api.Controllers
                 LoanRangeAmount = loanRangeAmount,
                 SavingRangeAmount = savingRangeAmount,
                 RdRangeAmount = rdRangeAmount,
+                ActiveSchemesCount = activeSchemesCount,
+                SchemeBreakup = schemeBreakup,
                 DayBreakup = dayBreakup,
                 RecentRemittances = historyItems
             });
@@ -456,6 +610,7 @@ namespace Bhisi.Api.Controllers
             public string? Narration { get; set; }
             public int BranchId { get; set; } = 1;
             public int? CashierId { get; set; }
+            public int? FallbackPigmySchemeId { get; set; }
 
             // Denominations
             public int? Count500 { get; set; }
@@ -649,12 +804,24 @@ namespace Bhisi.Api.Controllers
                 var debitLedger = isBankMode
                     ? await _context.Ledgers.FindAsync(resolvedBankLedgerId)
                     : (await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand"));
-                
-                var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == request.BranchId && m.IsActive);
-                int pigmyCrLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense")))?.LedgerID ?? 47;
-                var pigmyCreditLedger = await _context.Ledgers.FindAsync(pigmyCrLedgerId) ?? await _context.Ledgers.FirstAsync();
-                
+
                 if (debitLedger == null) debitLedger = await _context.Ledgers.FirstAsync();
+
+                var branchFallbackMapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == request.BranchId && m.IsActive);
+                async Task<int> ResolveNonPigmyFallbackLedgerIdAsync()
+                {
+                    if (branchFallbackMapping != null && branchFallbackMapping.CreditLedgerId > 0)
+                    {
+                        return branchFallbackMapping.CreditLedgerId;
+                    }
+                    var firstSchemeLedger = await _context.PigmySchemes
+                        .Where(s => s.PigmyLiabilityLedgerID.HasValue && s.PigmyLiabilityLedgerID > 0)
+                        .Select(s => s.PigmyLiabilityLedgerID)
+                        .FirstOrDefaultAsync();
+                    if (firstSchemeLedger.HasValue && firstSchemeLedger.Value > 0) return firstSchemeLedger.Value;
+                    var anyPigmyLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense"));
+                    return anyPigmyLedger?.LedgerID ?? (await _context.Ledgers.FirstAsync()).LedgerID;
+                }
 
                 var creditTotalsByLedger = new Dictionary<int, decimal>();
                 void AddCredit(int ledgerId, decimal amt)
@@ -674,7 +841,7 @@ namespace Bhisi.Api.Controllers
                     if (allocatedNonPigmy + lc.TotalAmountReceived > request.Amount) continue;
                     int pLedger = (lc.LoanAccount?.LoanRate?.LoanLedgerID ?? 0) > 0
                         ? lc.LoanAccount!.LoanRate!.LoanLedgerID!.Value
-                        : pigmyCreditLedger.LedgerID;
+                        : await ResolveNonPigmyFallbackLedgerIdAsync();
                     int iLedger = (lc.LoanAccount?.LoanRate?.InterestLedgerID ?? 0) > 0
                         ? lc.LoanAccount!.LoanRate!.InterestLedgerID!.Value
                         : pLedger;
@@ -700,7 +867,7 @@ namespace Bhisi.Api.Controllers
                 foreach (var st in unremittedSavings)
                 {
                     if (allocatedNonPigmy + st.Amount > request.Amount) continue;
-                    int sLedger = st.SavingAccount?.LedgerID ?? (await _context.SavingInterestSettings.Select(x => (int?)x.SavingLiabilityLedgerID).FirstOrDefaultAsync()) ?? pigmyCreditLedger.LedgerID;
+                    int sLedger = st.SavingAccount?.LedgerID ?? (await _context.SavingInterestSettings.Select(x => (int?)x.SavingLiabilityLedgerID).FirstOrDefaultAsync()) ?? await ResolveNonPigmyFallbackLedgerIdAsync();
                     AddCredit(sLedger, st.Amount);
                     allocatedNonPigmy += st.Amount;
                     settledSavings.Add(st);
@@ -709,16 +876,324 @@ namespace Bhisi.Api.Controllers
                 foreach (var rt in unremittedRds)
                 {
                     if (allocatedNonPigmy + rt.PrincipalAmount > request.Amount) continue;
-                    int rLedger = rt.RdAccount?.RdScheme?.RdLiabilityLedgerID ?? pigmyCreditLedger.LedgerID;
+                    int rLedger = rt.RdAccount?.RdScheme?.RdLiabilityLedgerID ?? await ResolveNonPigmyFallbackLedgerIdAsync();
                     AddCredit(rLedger, rt.PrincipalAmount);
                     allocatedNonPigmy += rt.PrincipalAmount;
                     settledRds.Add(rt);
                 }
 
+                var otherDepositVoucherIds = (await _context.PigmyAgentCashDeposits
+                    .AsNoTracking()
+                    .Where(d => d.AgentId == request.AgentId && d.VoucherId.HasValue)
+                    .Select(d => d.VoucherId!.Value)
+                    .ToListAsync()).ToHashSet();
+
+                var settledFullPigmyCols = new List<PigmyCollection>();
+                var postedSchemeSummary = new Dictionary<int, (int SchemeId, string SchemeName, string LedgerName, decimal Amount)>();
                 decimal pigmyOrRemainder = request.Amount - allocatedNonPigmy;
+
                 if (pigmyOrRemainder > 0)
                 {
-                    AddCredit(pigmyCreditLedger.LedgerID, pigmyOrRemainder);
+                    var ledgerCache = new Dictionary<int, Ledger>();
+                    async Task<(bool Ok, Ledger? Ledger, string? Error)> ValidateLiabilityLedgerAsync(int? ledgerId, string schemeLabel)
+                    {
+                        if (!ledgerId.HasValue || ledgerId.Value <= 0)
+                        {
+                            return (false, null, $"पिग्मी योजना '{schemeLabel}' ला 'पिग्मी ठेव देयता लेजर (Liability Ledger)' मॅप केलेले नाही. कृपया पिग्मी योजना सेटिंगमध्ये लेजर निवडा.");
+                        }
+                        if (!ledgerCache.TryGetValue(ledgerId.Value, out var l))
+                        {
+                            l = await _context.Ledgers.FindAsync(ledgerId.Value);
+                            if (l != null) ledgerCache[ledgerId.Value] = l;
+                        }
+                        if (l == null || !l.IsActive)
+                        {
+                            return (false, null, $"पिग्मी योजना '{schemeLabel}' चे देयता लेजर (#{ledgerId.Value}) सापडले नाही किंवा निष्क्रिय आहे.");
+                        }
+                        return (true, l, null);
+                    }
+
+                    var allPigmySchemes = await _context.PigmySchemes
+                        .Include(s => s.PigmyLiabilityLedger)
+                        .ToListAsync();
+                    var schemeById = allPigmySchemes.ToDictionary(s => s.PigmySchemeID, s => s);
+
+                    var allAgentPigmyColsUpToDeposit = await _context.PigmyCollections
+                        .Include(c => c.PigmyAccount)
+                            .ThenInclude(a => a!.PigmyScheme)
+                                .ThenInclude(s => s!.PigmyLiabilityLedger)
+                        .Where(c => c.AgentId == request.AgentId &&
+                                    c.CollectionAmount > 0 &&
+                                    c.CollectionDate.Date <= request.DepositDate.Date &&
+                                    c.CollectionDate.Date > new DateTime(2026, 3, 31) &&
+                                    c.CollectionSource != "OPENING_IMPORT" &&
+                                    (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                        .OrderBy(c => c.CollectionDate)
+                        .ThenBy(c => c.CollectionId)
+                        .ToListAsync();
+
+                    bool IsColRemittedBeforeThisDeposit(PigmyCollection c) =>
+                        c.RemittanceDepositId.HasValue ||
+                        (c.IsVoucherGenerated && c.VoucherId.HasValue && otherDepositVoucherIds.Contains(c.VoucherId.Value));
+
+                    var candidateUnremittedCols = allAgentPigmyColsUpToDeposit
+                        .Where(c => !IsColRemittedBeforeThisDeposit(c))
+                        .ToList();
+
+                    var priorDayAllocations = (await ComputeAgentDayAllocations(request.AgentId))
+                        .ToDictionary(a => a.Date, a => a);
+
+                    var priorLinkedLoanByDate = await _context.LoanCollections
+                        .AsNoTracking()
+                        .Where(l => l.AgentID == request.AgentId && l.CollectionSource == "AGENT_MOBILE" && l.RemittanceDepositId != null &&
+                                    l.CollectionDate.Date <= request.DepositDate.Date &&
+                                    (l.PaymentMode == null || l.PaymentMode == "" || l.PaymentMode.ToUpper() == "CASH"))
+                        .GroupBy(l => l.CollectionDate.Date)
+                        .Select(g => new { Date = g.Key, Amount = g.Sum(x => x.TotalAmountReceived) })
+                        .ToDictionaryAsync(x => x.Date, x => x.Amount);
+
+                    var priorLinkedSavingByDate = await _context.SavingTransactions
+                        .AsNoTracking()
+                        .Where(s => s.AgentID == request.AgentId && s.CollectionSource == "AGENT_MOBILE" && s.TransactionType == "Deposit" && s.RemittanceDepositId != null &&
+                                    s.TransactionDate.Date <= request.DepositDate.Date &&
+                                    (s.PaymentMode == null || s.PaymentMode == "" || s.PaymentMode.ToUpper() == "CASH"))
+                        .GroupBy(s => s.TransactionDate.Date)
+                        .Select(g => new { Date = g.Key, Amount = g.Sum(x => x.Amount) })
+                        .ToDictionaryAsync(x => x.Date, x => x.Amount);
+
+                    var priorLinkedRdByDate = await _context.RdTransactions
+                        .AsNoTracking()
+                        .Where(r => r.AgentID == request.AgentId && r.CollectionSource == "AGENT_MOBILE" && r.TransactionType == "Installment" && r.RemittanceDepositId != null &&
+                                    r.TransactionDate.Date <= request.DepositDate.Date)
+                        .GroupBy(r => r.TransactionDate.Date)
+                        .Select(g => new { Date = g.Key, Amount = g.Sum(x => x.PrincipalAmount) })
+                        .ToDictionaryAsync(x => x.Date, x => x.Amount);
+
+                    var explicitPigmyByDate = allAgentPigmyColsUpToDeposit
+                        .Where(IsColRemittedBeforeThisDeposit)
+                        .GroupBy(c => c.CollectionDate.Date)
+                        .ToDictionary(g => g.Key, g => g.Sum(c => c.CollectionAmount));
+
+                    var orderedDays = candidateUnremittedCols
+                        .GroupBy(c => c.CollectionDate.Date)
+                        .OrderBy(g => (g.Key >= rangeFrom && g.Key <= rangeTo) ? 0 : 1)
+                        .ThenBy(g => g.Key)
+                        .ToList();
+
+                    decimal remainingPigmy = pigmyOrRemainder;
+
+                    foreach (var dayGroup in orderedDays)
+                    {
+                        if (remainingPigmy <= 0m) break;
+
+                        DateTime dDate = dayGroup.Key;
+                        var dayCols = dayGroup.ToList();
+                        decimal rawUnlinkedPigmyOnDay = dayCols.Sum(c => c.CollectionAmount);
+                        if (rawUnlinkedPigmyOnDay <= 0m) continue;
+
+                        decimal priorRemittedOnDay = priorDayAllocations.TryGetValue(dDate, out var da) ? da.RemittedAmount : 0m;
+                        decimal priorExplicitOnDay =
+                            (explicitPigmyByDate.TryGetValue(dDate, out var ep) ? ep : 0m) +
+                            (priorLinkedLoanByDate.TryGetValue(dDate, out var el) ? el : 0m) +
+                            (priorLinkedSavingByDate.TryGetValue(dDate, out var es) ? es : 0m) +
+                            (priorLinkedRdByDate.TryGetValue(dDate, out var er) ? er : 0m);
+
+                        decimal priorPartialPigmyOnDay = Math.Max(0m, priorRemittedOnDay - priorExplicitOnDay);
+                        decimal availablePoolOnDay = Math.Max(0m, rawUnlinkedPigmyOnDay - priorPartialPigmyOnDay);
+                        if (availablePoolOnDay <= 0m) continue;
+
+                        decimal takeFromDay = Math.Min(remainingPigmy, availablePoolOnDay);
+                        bool completesDay = takeFromDay >= availablePoolOnDay;
+
+                        // Resolve exact PigmyScheme Liability Ledger for every collection row on this day
+                        var colBuckets = new Dictionary<int, (int SchemeId, string SchemeName, Ledger Ledger, decimal RawAmount)>();
+                        foreach (var col in dayCols)
+                        {
+                            PigmyScheme? scheme = col.PigmyAccount?.PigmyScheme;
+                            if (scheme == null && col.PigmyAccount != null && schemeById.TryGetValue(col.PigmyAccount.PigmySchemeID, out var foundScheme))
+                            {
+                                scheme = foundScheme;
+                            }
+
+                            int resolvedLedgerId;
+                            Ledger resolvedLedger;
+                            int sId = scheme?.PigmySchemeID ?? col.PigmyAccount?.PigmySchemeID ?? 0;
+                            string sName = scheme?.SchemeName ?? (sId > 0 ? $"पिग्मी योजना #{sId}" : "पिग्मी योजना");
+
+                            if (col.PigmyAccount != null)
+                            {
+                                var vCheck = await ValidateLiabilityLedgerAsync(scheme?.PigmyLiabilityLedgerID, sName);
+                                if (!vCheck.Ok || vCheck.Ledger == null)
+                                {
+                                    await transaction.RollbackAsync();
+                                    return BadRequest(vCheck.Error);
+                                }
+                                resolvedLedgerId = vCheck.Ledger.LedgerID;
+                                resolvedLedger = vCheck.Ledger;
+                            }
+                            else
+                            {
+                                // Orphan collection without PigmyAccount row (e.g., legacy test fixture mapped via PigmyVoucherMapping)
+                                if (branchFallbackMapping != null && branchFallbackMapping.CreditLedgerId > 0)
+                                {
+                                    var vMapCheck = await ValidateLiabilityLedgerAsync(branchFallbackMapping.CreditLedgerId, "PigmyVoucherMapping");
+                                    if (!vMapCheck.Ok || vMapCheck.Ledger == null)
+                                    {
+                                        await transaction.RollbackAsync();
+                                        return BadRequest(vMapCheck.Error);
+                                    }
+                                    resolvedLedgerId = vMapCheck.Ledger.LedgerID;
+                                    resolvedLedger = vMapCheck.Ledger;
+                                    sName = vMapCheck.Ledger.LedgerName;
+                                }
+                                else if (allPigmySchemes.Count(s => s.Status == "Active") == 1)
+                                {
+                                    var singleScheme = allPigmySchemes.First(s => s.Status == "Active");
+                                    var vSingle = await ValidateLiabilityLedgerAsync(singleScheme.PigmyLiabilityLedgerID, singleScheme.SchemeName);
+                                    if (!vSingle.Ok || vSingle.Ledger == null)
+                                    {
+                                        await transaction.RollbackAsync();
+                                        return BadRequest(vSingle.Error);
+                                    }
+                                    resolvedLedgerId = vSingle.Ledger.LedgerID;
+                                    resolvedLedger = vSingle.Ledger;
+                                    sId = singleScheme.PigmySchemeID;
+                                    sName = singleScheme.SchemeName;
+                                }
+                                else
+                                {
+                                    await transaction.RollbackAsync();
+                                    return BadRequest($"पिग्मी संकलन क्र. {col.CollectionId} साठी पिग्मी खाते किंवा योजना लेजर सापडले नाही.");
+                                }
+                            }
+
+                            if (!colBuckets.TryGetValue(resolvedLedgerId, out var existingBucket))
+                            {
+                                colBuckets[resolvedLedgerId] = (sId, sName, resolvedLedger, col.CollectionAmount);
+                            }
+                            else
+                            {
+                                colBuckets[resolvedLedgerId] = (existingBucket.SchemeId, existingBucket.SchemeName, existingBucket.Ledger, existingBucket.RawAmount + col.CollectionAmount);
+                            }
+                        }
+
+                        var orderedBuckets = colBuckets.OrderBy(k => k.Key).ToList();
+                        if (Math.Abs(takeFromDay - rawUnlinkedPigmyOnDay) < 0.005m)
+                        {
+                            // Exact 100% day allocation: zero rounding adjustments needed
+                            foreach (var kv in orderedBuckets)
+                            {
+                                var b = kv.Value;
+                                AddCredit(kv.Key, b.RawAmount);
+                                if (!postedSchemeSummary.TryGetValue(kv.Key, out var cur))
+                                    postedSchemeSummary[kv.Key] = (b.SchemeId, b.SchemeName, b.Ledger.LedgerName, b.RawAmount);
+                                else
+                                    postedSchemeSummary[kv.Key] = (cur.SchemeId, cur.SchemeName, cur.LedgerName, cur.Amount + b.RawAmount);
+                            }
+                        }
+                        else
+                        {
+                            // Pro-rata distribution across scheme buckets on partially/completed day
+                            decimal distributed = 0m;
+                            for (int bi = 0; bi < orderedBuckets.Count; bi++)
+                            {
+                                var kv = orderedBuckets[bi];
+                                var b = kv.Value;
+                                decimal allocAmt = (bi == orderedBuckets.Count - 1)
+                                    ? Math.Max(0m, Math.Round(takeFromDay - distributed, 2, MidpointRounding.AwayFromZero))
+                                    : Math.Round(takeFromDay * (b.RawAmount / rawUnlinkedPigmyOnDay), 2, MidpointRounding.AwayFromZero);
+
+                                distributed += allocAmt;
+                                AddCredit(kv.Key, allocAmt);
+                                if (allocAmt > 0m)
+                                {
+                                    if (!postedSchemeSummary.TryGetValue(kv.Key, out var cur))
+                                        postedSchemeSummary[kv.Key] = (b.SchemeId, b.SchemeName, b.Ledger.LedgerName, allocAmt);
+                                    else
+                                        postedSchemeSummary[kv.Key] = (cur.SchemeId, cur.SchemeName, cur.LedgerName, cur.Amount + allocAmt);
+                                }
+                            }
+                        }
+
+                        if (completesDay)
+                        {
+                            settledFullPigmyCols.AddRange(dayCols);
+                        }
+
+                        remainingPigmy -= takeFromDay;
+                    }
+
+                    // Any unbacked advance cash remainder beyond all unremitted Pigmy collections
+                    if (remainingPigmy > 0m)
+                    {
+                        PigmyScheme? advScheme = null;
+                        if (request.FallbackPigmySchemeId.HasValue && request.FallbackPigmySchemeId.Value > 0)
+                        {
+                            schemeById.TryGetValue(request.FallbackPigmySchemeId.Value, out advScheme);
+                            if (advScheme == null)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest("निवडलेली पिग्मी योजना सापडली नाही.");
+                            }
+                        }
+                        else
+                        {
+                            var activeSchemes = allPigmySchemes.Where(s => s.Status == "Active").ToList();
+                            if (activeSchemes.Count == 1)
+                            {
+                                advScheme = activeSchemes[0];
+                            }
+                            else if (activeSchemes.Count > 1)
+                            {
+                                var agentDistinctSchemeIds = await _context.PigmyAccounts
+                                    .AsNoTracking()
+                                    .Where(a => a.PigmyAgentID == request.AgentId && a.Status == "Active")
+                                    .Select(a => a.PigmySchemeID)
+                                    .Distinct()
+                                    .ToListAsync();
+
+                                if (agentDistinctSchemeIds.Count == 1 && schemeById.TryGetValue(agentDistinctSchemeIds[0], out var singleAgentScheme))
+                                {
+                                    advScheme = singleAgentScheme;
+                                }
+                                else
+                                {
+                                    await transaction.RollbackAsync();
+                                    return BadRequest("या एजंटकडे एकापेक्षा जास्त पिग्मी योजनांची खाती आहेत आणि अतिरिक्त रकमेसाठी संकलन नोंदी सापडल्या नाहीत. कृपया भरणा करताना पिग्मी योजना निवडा.");
+                                }
+                            }
+                        }
+
+                        if (advScheme != null)
+                        {
+                            var vAdv = await ValidateLiabilityLedgerAsync(advScheme.PigmyLiabilityLedgerID, advScheme.SchemeName);
+                            if (!vAdv.Ok || vAdv.Ledger == null)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest(vAdv.Error);
+                            }
+                            AddCredit(vAdv.Ledger.LedgerID, remainingPigmy);
+                            if (!postedSchemeSummary.TryGetValue(vAdv.Ledger.LedgerID, out var cur))
+                                postedSchemeSummary[vAdv.Ledger.LedgerID] = (advScheme.PigmySchemeID, advScheme.SchemeName, vAdv.Ledger.LedgerName, remainingPigmy);
+                            else
+                                postedSchemeSummary[vAdv.Ledger.LedgerID] = (cur.SchemeId, cur.SchemeName, cur.LedgerName, cur.Amount + remainingPigmy);
+                        }
+                        else if (branchFallbackMapping != null && branchFallbackMapping.CreditLedgerId > 0)
+                        {
+                            var vMap = await ValidateLiabilityLedgerAsync(branchFallbackMapping.CreditLedgerId, "PigmyVoucherMapping");
+                            if (!vMap.Ok || vMap.Ledger == null)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest(vMap.Error);
+                            }
+                            AddCredit(vMap.Ledger.LedgerID, remainingPigmy);
+                        }
+                        else
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest("संस्थेमध्ये कोणतीही सक्रिय पिग्मी योजना व देयता लेजर मॅप केलेले नाही.");
+                        }
+                    }
                 }
 
                 var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == request.AgentId);
@@ -740,6 +1215,10 @@ namespace Bhisi.Api.Controllers
                     voucherDetailsList.Add(new VoucherDetail { LedgerID = kv.Key, DrCr = "Cr", Amount = kv.Value });
                 }
 
+                string schemeNarrationSuffix = postedSchemeSummary.Count > 0
+                    ? " [योजना: " + string.Join(", ", postedSchemeSummary.Values.Select(s => $"{s.SchemeName} ₹{s.Amount:N0}")) + "]"
+                    : string.Empty;
+
                 var voucher = new Voucher
                 {
                     BranchID = request.BranchId,
@@ -748,7 +1227,7 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Receipt",
                     Status = "Pending",
                     TotalAmount = request.Amount,
-                    Narration = $"एजंट संकलन भरणा (एजंट: {agentName}). पावती: {receiptNo} {combinedNarration}".Trim(),
+                    Narration = $"एजंट संकलन भरणा (एजंट: {agentName}). पावती: {receiptNo} {combinedNarration}{schemeNarrationSuffix}".Trim(),
                     CreatedBy = 1,
                     CreatedOn = DateTime.Now,
                     VoucherDetails = voucherDetailsList
@@ -792,37 +1271,24 @@ namespace Bhisi.Api.Controllers
                     rt.VoucherID = voucher.VoucherID;
                 }
 
-                // Link collections for this agent within this deposit date range to this consolidated voucher,
+                // Link exact settled full-day Pigmy collections with RemittanceDepositId & consolidated VoucherId,
                 // and remove any superseded individual per-customer import/bulk vouchers so Daybook never double-counts.
-                DateTime fromDate = (request.CollectionDateFrom ?? request.DepositDate).Date;
-                DateTime toDate = (request.CollectionDateTo ?? request.DepositDate).Date;
-                var rangeCollections = await _context.PigmyCollections
-                    .Where(c => c.AgentId == request.AgentId &&
-                                c.CollectionDate.Date >= fromDate &&
-                                c.CollectionDate.Date <= toDate &&
-                                c.CollectionDate.Date > new DateTime(2026, 3, 31))
-                    .ToListAsync();
-
-                var otherDepositVoucherIds = (await _context.PigmyAgentCashDeposits
-                    .Where(d => d.DepositId != deposit.DepositId && d.VoucherId.HasValue)
-                    .Select(d => d.VoucherId!.Value)
-                    .ToListAsync()).ToHashSet();
-
                 var supersededVoucherIds = new HashSet<int>();
-                foreach (var col in rangeCollections)
+                foreach (var col in settledFullPigmyCols)
                 {
                     if (col.VoucherId.HasValue && col.VoucherId.Value != voucher.VoucherID && !otherDepositVoucherIds.Contains(col.VoucherId.Value))
                     {
                         supersededVoucherIds.Add(col.VoucherId.Value);
                     }
+                    col.RemittanceDepositId = deposit.DepositId;
                     col.VoucherId = voucher.VoucherID;
                     col.IsVoucherGenerated = true;
                 }
-                if (rangeCollections.Any())
+                if (settledFullPigmyCols.Any())
                 {
                     // Update PigmyTransactions: Stamp TransactionDate = DepositDate (शाखेत भरणा दिनांक) and ReferenceId = VoucherNo
-                    var rcpts = rangeCollections.Where(c => !string.IsNullOrEmpty(c.ReceiptNo)).Select(c => c.ReceiptNo).Distinct().ToList();
-                    var accIds = rangeCollections.Select(c => c.PigmyAccountId).Distinct().ToList();
+                    var rcpts = settledFullPigmyCols.Where(c => !string.IsNullOrEmpty(c.ReceiptNo)).Select(c => c.ReceiptNo).Distinct().ToList();
+                    var accIds = settledFullPigmyCols.Select(c => c.PigmyAccountId).Distinct().ToList();
 
                     if (accIds.Any())
                     {
@@ -838,7 +1304,7 @@ namespace Bhisi.Api.Controllers
                             if (!isMatch)
                             {
                                 // Fallback match by account, value date, and amount
-                                isMatch = rangeCollections.Any(c => c.PigmyAccountId == pt.PigmyAccountID && c.CollectionDate.Date == pt.ValueDate.Date && c.CollectionAmount == pt.CrAmount);
+                                isMatch = settledFullPigmyCols.Any(c => c.PigmyAccountId == pt.PigmyAccountID && c.CollectionDate.Date == pt.ValueDate.Date && c.CollectionAmount == pt.CrAmount);
                             }
 
                             if (isMatch)
@@ -850,6 +1316,10 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
+                    await _context.SaveChangesAsync();
+                }
+                else
+                {
                     await _context.SaveChangesAsync();
                 }
 
@@ -918,7 +1388,14 @@ namespace Bhisi.Api.Controllers
                     message = "एजंट रोख रक्कम यशस्वीरीत्या भरणा झाली व पेंडिंग व्हाउचर जनरेट झाले!", 
                     depositId = deposit.DepositId, 
                     receiptNo = deposit.ReceiptNo,
-                    voucherNo = voucher.VoucherNo
+                    voucherNo = voucher.VoucherNo,
+                    schemeBreakup = postedSchemeSummary.Select(kv => new {
+                        ledgerId = kv.Key,
+                        pigmySchemeId = kv.Value.SchemeId,
+                        schemeName = kv.Value.SchemeName,
+                        ledgerName = kv.Value.LedgerName,
+                        amount = kv.Value.Amount
+                    }).ToList()
                 });
             }
             catch (Exception ex)
@@ -1046,6 +1523,8 @@ namespace Bhisi.Api.Controllers
                 .AsNoTracking()
                 .Include(c => c.PigmyAccount)
                     .ThenInclude(a => a!.Customer)
+                .Include(c => c.PigmyAccount)
+                    .ThenInclude(a => a!.PigmyScheme)
                 .Where(c => c.AgentId == agentId && c.CollectionDate >= targetDate && c.CollectionDate < nextDate && c.CollectionAmount > 0)
                 .OrderBy(c => c.CollectionDate)
                 .ThenBy(c => c.CollectionId)
@@ -1059,6 +1538,9 @@ namespace Bhisi.Api.Controllers
                     accountId = c.PigmyAccountId,
                     accountNo = c.PigmyAccount != null ? c.PigmyAccount.AccountNo : "",
                     legacyAccountNumber = c.PigmyAccount != null ? (c.PigmyAccount.LegacyAccountNumber ?? c.PigmyAccount.OldAccountNo) : null,
+                    pigmySchemeID = c.PigmyAccount != null ? c.PigmyAccount.PigmySchemeID : 0,
+                    schemeCode = c.PigmyAccount != null && c.PigmyAccount.PigmyScheme != null ? c.PigmyAccount.PigmyScheme.SchemeCode : null,
+                    schemeName = c.PigmyAccount != null && c.PigmyAccount.PigmyScheme != null ? c.PigmyAccount.PigmyScheme.SchemeName : null,
                     customerName = c.PigmyAccount != null && c.PigmyAccount.Customer != null 
                         ? (c.PigmyAccount.Customer.FirstName + " " + (c.PigmyAccount.Customer.MiddleName != null ? c.PigmyAccount.Customer.MiddleName + " " : "") + c.PigmyAccount.Customer.LastName).Trim() 
                         : "खातेदार",
@@ -1092,49 +1574,51 @@ namespace Bhisi.Api.Controllers
             try
             {
                 // Check if linked to a voucher
-                if (deposit.VoucherId.HasValue)
+                var linkedCols = await _context.PigmyCollections
+                    .Where(c => c.RemittanceDepositId == deposit.DepositId ||
+                                (deposit.VoucherId.HasValue && c.VoucherId == deposit.VoucherId.Value))
+                    .ToListAsync();
+
+                if (linkedCols.Any())
                 {
-                    var linkedCols = await _context.PigmyCollections
-                        .Where(c => c.VoucherId == deposit.VoucherId.Value)
-                        .ToListAsync();
+                    var rcpts = linkedCols.Where(c => !string.IsNullOrEmpty(c.ReceiptNo)).Select(c => c.ReceiptNo).Distinct().ToList();
+                    var accIds = linkedCols.Select(c => c.PigmyAccountId).Distinct().ToList();
 
-                    if (linkedCols.Any())
+                    foreach (var col in linkedCols)
                     {
-                        var rcpts = linkedCols.Where(c => !string.IsNullOrEmpty(c.ReceiptNo)).Select(c => c.ReceiptNo).Distinct().ToList();
-                        var accIds = linkedCols.Select(c => c.PigmyAccountId).Distinct().ToList();
+                        col.RemittanceDepositId = null;
+                        col.VoucherId = null;
+                        col.IsVoucherGenerated = false;
+                    }
 
-                        foreach (var col in linkedCols)
+                    if (accIds.Any())
+                    {
+                        var matchingTxs = await _context.PigmyTransactions
+                            .Where(pt => accIds.Contains(pt.PigmyAccountID) && pt.TransactionType == "DEPOSIT")
+                            .ToListAsync();
+
+                        var rcptSet = new HashSet<string>(rcpts, StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var pt in matchingTxs)
                         {
-                            col.VoucherId = null;
-                            col.IsVoucherGenerated = false;
-                        }
-
-                        if (accIds.Any())
-                        {
-                            var matchingTxs = await _context.PigmyTransactions
-                                .Where(pt => accIds.Contains(pt.PigmyAccountID) && pt.TransactionType == "DEPOSIT")
-                                .ToListAsync();
-
-                            var rcptSet = new HashSet<string>(rcpts, StringComparer.OrdinalIgnoreCase);
-
-                            foreach (var pt in matchingTxs)
+                            bool isMatch = rcptSet.Any(r => !string.IsNullOrEmpty(r) && pt.Narration.Contains(r));
+                            if (!isMatch && !string.IsNullOrEmpty(pt.ReferenceId))
                             {
-                                bool isMatch = rcptSet.Any(r => !string.IsNullOrEmpty(r) && pt.Narration.Contains(r));
-                                if (!isMatch && !string.IsNullOrEmpty(pt.ReferenceId))
-                                {
-                                    isMatch = pt.ReferenceId == deposit.ReceiptNo || (deposit.VoucherId.HasValue && pt.ReferenceId.Contains(deposit.DepositDate.ToString("yyyyMMdd")));
-                                }
+                                isMatch = pt.ReferenceId == deposit.ReceiptNo || (deposit.VoucherId.HasValue && pt.ReferenceId.Contains(deposit.DepositDate.ToString("yyyyMMdd")));
+                            }
 
-                                if (isMatch)
-                                {
-                                    pt.TransactionDate = pt.ValueDate; // revert to collection date
-                                    pt.ReferenceId = null;
-                                    _context.Entry(pt).State = EntityState.Modified;
-                                }
+                            if (isMatch)
+                            {
+                                pt.TransactionDate = pt.ValueDate; // revert to collection date
+                                pt.ReferenceId = null;
+                                _context.Entry(pt).State = EntityState.Modified;
                             }
                         }
                     }
+                }
 
+                if (deposit.VoucherId.HasValue)
+                {
                     var voucher = await _context.Vouchers
                         .Include(v => v.VoucherDetails)
                         .FirstOrDefaultAsync(v => v.VoucherID == deposit.VoucherId.Value);

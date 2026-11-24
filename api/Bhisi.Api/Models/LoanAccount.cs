@@ -94,6 +94,7 @@ namespace Bhisi.Api.Models
 
         public DateTime? LastInstallmentPaidDate { get; set; }
         public DateTime? LastInterestPostingDate { get; set; }
+        public DateTime? LastPenalPostingDate { get; set; }
 
         public int NoOfInstallments { get; set; }
 

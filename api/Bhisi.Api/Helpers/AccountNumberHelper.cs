@@ -125,17 +125,28 @@ namespace Bhisi.Api.Helpers
                 }
             }
 
-            // 2. Scheme Code: 3 numeric digits (e.g. 301, 302)
+            // 2. Scheme Code: 3 numeric digits (e.g. 301, 302...)
             int schemeCodeNum = 301;
             if (schemeId.HasValue && schemeId.Value > 0)
             {
                 var scheme = await context.PigmySchemes.FindAsync(schemeId.Value);
-                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
+                if (scheme != null)
                 {
-                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
-                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                    if (!string.IsNullOrWhiteSpace(scheme.SchemeCode))
                     {
-                        schemeCodeNum = parsedScheme;
+                        var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                        if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                        {
+                            schemeCodeNum = parsedScheme;
+                        }
+                        else
+                        {
+                            schemeCodeNum = 300 + (scheme.PigmySchemeID % 100);
+                        }
+                    }
+                    else
+                    {
+                        schemeCodeNum = 300 + (scheme.PigmySchemeID % 100);
                     }
                 }
             }

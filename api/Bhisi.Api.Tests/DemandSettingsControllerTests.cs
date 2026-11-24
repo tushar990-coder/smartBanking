@@ -441,5 +441,176 @@ namespace Bhisi.Api.Tests
             Assert.Equal(1, reactivatedRd.SequenceOrder);
             Assert.Equal(1200m, reactivatedRd.DefaultAmount);
         }
+
+        [Fact]
+        public async Task GetDemandSettings_ReturnsDepositLedgersPigmySchemes_AndOmitsNonIncomeOverdueLedgerInSuggestedDefaults()
+        {
+            using var db = GetInMemoryDbContext(nameof(GetDemandSettings_ReturnsDepositLedgersPigmySchemes_AndOmitsNonIncomeOverdueLedgerInSuggestedDefaults));
+            SeedSettingsMasters(db);
+
+            // Simulate RITemployee scenario: LoanRate points OverdueInterestLedgerID to an Assets ledger (247)
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 247, GroupID = 30, LedgerCode = "247", LedgerName = "थकीत व्याजयेणे", AccountType = "Assets", IsActive = true },
+                new Ledger { LedgerID = 470, GroupID = 10, LedgerCode = "70", LedgerName = "मेंबर ठेव", AccountType = "Deposits", OpeningBalanceType = "Cr", IsActive = true },
+                new Ledger { LedgerID = 471, GroupID = 10, LedgerCode = "68", LedgerName = "ब वर्ग ठेव", AccountType = "Deposits", OpeningBalanceType = "Cr", IsActive = true },
+                new Ledger { LedgerID = 472, GroupID = 10, LedgerCode = "PG-L1", LedgerName = "पिग्मी ठेव देयता", AccountType = "Deposits", OpeningBalanceType = "Cr", IsActive = true }
+            );
+            var lr = await db.LoanRates.FindAsync(1);
+            lr!.OverdueInterestLedgerID = 247;
+
+            db.Customers.Add(new Customer { CustomerID = 1, BranchID = 1, CIFNo = "CIF1", FirstName = "Test", LastName = "Cust", Status = "Active" });
+            db.CustomerOpeningBalances.AddRange(
+                new CustomerOpeningBalance { CustomerOpeningBalanceID = 1, CustomerID = 1, LedgerID = 470, BalanceType = "Cr", Amount = 5000m, SourceModule = "CustomerOpeningBalance" },
+                new CustomerOpeningBalance { CustomerOpeningBalanceID = 2, CustomerID = 1, LedgerID = 471, BalanceType = "Cr", Amount = 2000m, SourceModule = "CustomerOpeningBalance" }
+            );
+            db.PigmySchemes.Add(new PigmyScheme
+            {
+                PigmySchemeID = 1,
+                SchemeCode = "PG01",
+                SchemeName = "दैनिक पिग्मी ठेव",
+                InterestRate = 6m,
+                DurationMonths = 12,
+                PigmyLiabilityLedgerID = 472,
+                Status = "Active"
+            });
+            await db.SaveChangesAsync();
+
+            var ctrl = new DemandSettingsController(db) { ControllerContext = BuildRoleContext("Admin") };
+            using var doc = ParseResultJson(await ctrl.GetDemandSettings());
+
+            Assert.False(doc.RootElement.GetProperty("isConfigured").GetBoolean());
+            var pigmySchemes = doc.RootElement.GetProperty("pigmySchemes");
+            Assert.Equal(1, pigmySchemes.GetArrayLength());
+            Assert.Equal(1, pigmySchemes[0].GetProperty("pigmySchemeID").GetInt32());
+
+            var depositLedgers = doc.RootElement.GetProperty("depositLedgers").EnumerateArray().ToList();
+            Assert.Contains(depositLedgers, l => l.GetProperty("ledgerID").GetInt32() == 470 && l.GetProperty("isDepositLedger").GetBoolean());
+            Assert.Contains(depositLedgers, l => l.GetProperty("ledgerID").GetInt32() == 471 && !string.IsNullOrEmpty(l.GetProperty("linkedSchemeSource").GetString()));
+            Assert.Contains(depositLedgers, l => l.GetProperty("ledgerID").GetInt32() == 472);
+
+            var suggested = doc.RootElement.GetProperty("suggestedDefaults").EnumerateArray().ToList();
+            var loanSuggestion = Assert.Single(suggested, s => s.GetProperty("itemType").GetString() == "LOAN");
+            Assert.Equal(JsonValueKind.Null, loanSuggestion.GetProperty("overdueInterestLedgerID").ValueKind);
+
+            var depSuggestions = suggested.Where(s => s.GetProperty("itemType").GetString() == "DEPOSIT_LEDGER").ToList();
+            Assert.Contains(depSuggestions, s => s.GetProperty("principalOrDepositLedgerID").GetInt32() == 470);
+            Assert.Contains(depSuggestions, s => s.GetProperty("principalOrDepositLedgerID").GetInt32() == 471);
+        }
+
+        [Fact]
+        public async Task SaveDemandSettings_SupportsDepositLedgerAndPigmy_EnforcesUniqueness_AndReactivatesArchived()
+        {
+            using var db = GetInMemoryDbContext(nameof(SaveDemandSettings_SupportsDepositLedgerAndPigmy_EnforcesUniqueness_AndReactivatesArchived));
+            SeedSettingsMasters(db);
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 470, GroupID = 10, LedgerCode = "70", LedgerName = "मेंबर ठेव", AccountType = "Deposits", OpeningBalanceType = "Cr", IsActive = true },
+                new Ledger { LedgerID = 472, GroupID = 10, LedgerCode = "PG-L1", LedgerName = "पिग्मी ठेव देयता", AccountType = "Deposits", OpeningBalanceType = "Cr", IsActive = true }
+            );
+            db.PigmySchemes.Add(new PigmyScheme
+            {
+                PigmySchemeID = 1,
+                SchemeCode = "PG01",
+                SchemeName = "दैनिक पिग्मी",
+                InterestRate = 6m,
+                DurationMonths = 12,
+                PigmyLiabilityLedgerID = 472,
+                Status = "Active"
+            });
+            await db.SaveChangesAsync();
+
+            var ctrl = new DemandSettingsController(db) { ControllerContext = BuildRoleContext("Admin") };
+
+            // 1. Valid save with DEPOSIT_LEDGER + PIGMY
+            using var saveDoc = ParseResultJson(await ctrl.SaveDemandSettings(new SaveDemandSettingsDto
+            {
+                Items = new List<DemandColumnSettingDto>
+                {
+                    new DemandColumnSettingDto
+                    {
+                        SequenceOrder = 1,
+                        ItemType = "DEPOSIT_LEDGER",
+                        ColumnHeaderMr = "मेंबर ठेव",
+                        PrincipalOrDepositLedgerID = 470,
+                        IsContributionTarget = true,
+                        DefaultAmount = 500m
+                    },
+                    new DemandColumnSettingDto
+                    {
+                        SequenceOrder = 2,
+                        ItemType = "PIGMY",
+                        ColumnHeaderMr = "दैनिक पिग्मी",
+                        PigmySchemeID = 1,
+                        PrincipalOrDepositLedgerID = 472,
+                        DefaultAmount = 200m
+                    }
+                }
+            }));
+
+            var savedSettings = saveDoc.RootElement.GetProperty("settings");
+            Assert.Equal(2, savedSettings.GetArrayLength());
+            Assert.Equal("DEPOSIT_LEDGER", savedSettings[0].GetProperty("itemType").GetString());
+            Assert.Equal("PIGMY", savedSettings[1].GetProperty("itemType").GetString());
+            Assert.Equal(1, savedSettings[1].GetProperty("pigmySchemeID").GetInt32());
+
+            int pigmySettingId = savedSettings[1].GetProperty("demandColumnSettingId").GetInt32();
+
+            // 2. Reject duplicate DEPOSIT_LEDGER
+            var dupDep = await ctrl.SaveDemandSettings(new SaveDemandSettingsDto
+            {
+                Items = new List<DemandColumnSettingDto>
+                {
+                    new DemandColumnSettingDto { SequenceOrder = 1, ItemType = "DEPOSIT_LEDGER", ColumnHeaderMr = "मेंबर ठेव 1", PrincipalOrDepositLedgerID = 470 },
+                    new DemandColumnSettingDto { SequenceOrder = 2, ItemType = "DEPOSIT_LEDGER", ColumnHeaderMr = "मेंबर ठेव 2", PrincipalOrDepositLedgerID = 470 }
+                }
+            });
+            Assert.IsType<BadRequestObjectResult>(dupDep.Result);
+
+            // 3. Reject duplicate PIGMY scheme
+            var dupPigmy = await ctrl.SaveDemandSettings(new SaveDemandSettingsDto
+            {
+                Items = new List<DemandColumnSettingDto>
+                {
+                    new DemandColumnSettingDto { SequenceOrder = 1, ItemType = "PIGMY", ColumnHeaderMr = "पिग्मी 1", PigmySchemeID = 1, PrincipalOrDepositLedgerID = 472 },
+                    new DemandColumnSettingDto { SequenceOrder = 2, ItemType = "PIGMY", ColumnHeaderMr = "पिग्मी 2", PigmySchemeID = 1, PrincipalOrDepositLedgerID = 472 }
+                }
+            });
+            Assert.IsType<BadRequestObjectResult>(dupPigmy.Result);
+
+            // 4. Archive referenced PIGMY row, then restore cleanly without duplicate row
+            db.DemandMemberColumnItems.Add(new DemandMemberColumnItem
+            {
+                DemandMemberDetailId = 1,
+                DemandColumnSettingId = pigmySettingId,
+                SequenceOrder = 2,
+                ItemType = "PIGMY",
+                ColumnHeaderMr = "दैनिक पिग्मी",
+                SchemeId = 1,
+                DemandPrincipalOrDeposit = 200m
+            });
+            await db.SaveChangesAsync();
+
+            ParseResultJson(await ctrl.SaveDemandSettings(new SaveDemandSettingsDto
+            {
+                Items = new List<DemandColumnSettingDto>
+                {
+                    new DemandColumnSettingDto { SequenceOrder = 1, ItemType = "DEPOSIT_LEDGER", ColumnHeaderMr = "मेंबर ठेव", PrincipalOrDepositLedgerID = 470, IsContributionTarget = true }
+                }
+            }));
+            Assert.False((await db.DemandColumnSettings.FindAsync(pigmySettingId))!.IsActive);
+
+            ParseResultJson(await ctrl.SaveDemandSettings(new SaveDemandSettingsDto
+            {
+                Items = new List<DemandColumnSettingDto>
+                {
+                    new DemandColumnSettingDto { SequenceOrder = 1, ItemType = "DEPOSIT_LEDGER", ColumnHeaderMr = "मेंबर ठेव", PrincipalOrDepositLedgerID = 470, IsContributionTarget = true },
+                    new DemandColumnSettingDto { SequenceOrder = 2, ItemType = "PIGMY", ColumnHeaderMr = "दैनिक पिग्मी", PigmySchemeID = 1, PrincipalOrDepositLedgerID = 472, DefaultAmount = 300m }
+                }
+            }));
+
+            var restoredPigmy = await db.DemandColumnSettings.FindAsync(pigmySettingId);
+            Assert.True(restoredPigmy!.IsActive);
+            Assert.Equal(300m, restoredPigmy.DefaultAmount);
+            Assert.Equal(2, await db.DemandColumnSettings.CountAsync());
+        }
     }
 }

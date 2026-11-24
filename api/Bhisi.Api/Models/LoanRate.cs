@@ -29,7 +29,14 @@ namespace Bhisi.Api.Models
         public decimal InterestRate { get; set; } // व्याजदर
 
         [Column(TypeName = "decimal(18, 2)")]
-        public decimal OverdueInterestRate { get; set; } // थकीत व्याजदर
+        public decimal OverdueInterestRate { get; set; } // थकीत / दंड व्याजदर
+
+        public int PenalInterestGraceDays { get; set; } = 0; // दंड व्याज सवलत दिवस (Grace Days)
+
+        [StringLength(40)]
+        public string PenalInterestBasis { get; set; } = "OverduePrincipal"; // OverduePrincipal, TotalPrincipal, OverdueEmi
+
+        public bool AllowManualPenalInRecovery { get; set; } = true; // वसुली वेळी मॅन्युअल / जादा दंड व्याज परवानगी
 
         [StringLength(100)]
         public string? InterestPostingType { get; set; } = string.Empty; // व्याज पोस्टींग प्रकार

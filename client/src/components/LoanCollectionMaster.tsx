@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award, Lock, Unlock, Coins, Landmark, UserCheck, Users, RotateCcw, RefreshCw, Share2, ShieldCheck, Zap, ArrowLeft } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
@@ -118,6 +118,14 @@ interface AccountDetailsAndSchedule {
     pendingSanctionedAmount?: number;
     lastInstallmentPaidDate?: string;
     lastInterestPostingDate?: string;
+    lastPenalPostingDate?: string;
+    accruedPenalInterest?: number;
+    effectivePenalInterestDue?: number;
+    penalInterestRate?: number;
+    penalOverdueDays?: number;
+    penalGraceDays?: number;
+    penalInterestBasis?: string;
+    allowManualPenalInRecovery?: boolean;
     tranches?: LoanTrancheDetail[];
     schedule: LoanInstallmentScheduleDto[];
 }
@@ -344,6 +352,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [showFeesPanel, setShowFeesPanel] = useState(false);
     const [showAllocationMismatchModal, setShowAllocationMismatchModal] = useState(false);
     const [isManualInterestOverride, setIsManualInterestOverride] = useState(false);
+    const lastFetchedAsOfRef = useRef<string>('');
 
     const [formData, setFormData] = useState<Partial<LoanCollection>>({
         collectionDate: activeBusinessDate,
@@ -1185,8 +1194,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         }
 
         try {
+            const targetAsOf = formData.collectionDate || activeBusinessDate;
+            lastFetchedAsOfRef.current = `${accId}|${targetAsOf}`;
             const [scheduleOutcome, npaOutcome] = await Promise.allSettled([
-                axios.get(`/api/LoanAccounts/${accId}/AccountDetailsAndSchedule`),
+                axios.get(`/api/LoanAccounts/${accId}/AccountDetailsAndSchedule?asOfDate=${encodeURIComponent(targetAsOf)}`),
                 axios.get(`/api/Npa/status/${accId}`)
             ]);
 
@@ -1230,6 +1241,30 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             fetchCustomerSavingAccounts(Number(selectedCustomerId));
         }
     }, [formData.paymentMode, selectedCustomerId]);
+
+    useEffect(() => {
+        if (isPassingMode || !selectedAccount?.loanAccountID) return;
+        const accId = selectedAccount.loanAccountID;
+        const targetAsOf = formData.collectionDate || activeBusinessDate;
+        const fetchKey = `${accId}|${targetAsOf}`;
+        if (lastFetchedAsOfRef.current === fetchKey) return;
+
+        lastFetchedAsOfRef.current = fetchKey;
+        let cancelled = false;
+        axios
+            .get(`/api/LoanAccounts/${accId}/AccountDetailsAndSchedule?asOfDate=${encodeURIComponent(targetAsOf)}`)
+            .then((res) => {
+                if (!cancelled && res.data && lastFetchedAsOfRef.current === fetchKey) {
+                    setAccountDetails(res.data);
+                }
+            })
+            .catch((err) => {
+                if (!cancelled) console.error('Failed to refresh penal dues for collectionDate:', err);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [formData.collectionDate, selectedAccount?.loanAccountID, isPassingMode, activeBusinessDate]);
 
     const handleSchemeChange = (schemeId: number | null) => {
         setSelectedSchemeId(schemeId);
@@ -1629,6 +1664,18 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         return { paikiThakbaki, vasulpatra, oneInstallmentPrincipal, regularInstallmentAmount, isMultiInstallmentLoan };
     };
 
+    const getEffectivePenalBreakdown = (acc: any) => {
+        const bookedPenal = accountDetails?.currentOverdueInterestBalance !== undefined
+            ? accountDetails.currentOverdueInterestBalance
+            : (acc?.overdueInterestBalance || 0);
+        const accruedPenal = accountDetails?.accruedPenalInterest || 0;
+        const totalPenal = Math.round((Math.max(0, bookedPenal) + Math.max(0, accruedPenal)) * 100) / 100;
+        const penalDays = accountDetails?.penalOverdueDays || 0;
+        const penalRate = accountDetails?.penalInterestRate ?? acc?.loanRate?.overdueInterestRate ?? 0;
+        const allowManualPenal = accountDetails?.allowManualPenalInRecovery ?? acc?.loanRate?.allowManualPenalInRecovery ?? true;
+        return { bookedPenal, accruedPenal, totalPenal, penalDays, penalRate, allowManualPenal };
+    };
+
     const calculateInterest = (acc: any, dateStr: string) => {
         if (!acc) return;
         const loanRate = acc.loanRate;
@@ -1641,7 +1688,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const rate = acc.loanRate?.interestRate || acc.interestRate || 0;
         const principal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (acc.principalBalance || 0);
         const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (acc.interestBalance || 0);
-        const penal = accountDetails?.currentOverdueInterestBalance !== undefined ? accountDetails.currentOverdueInterestBalance : (acc.overdueInterestBalance || 0);
+        const { totalPenal: penal } = getEffectivePenalBreakdown(acc);
 
         const { oneInstallmentPrincipal } = getPrincipalDuesBreakdown(acc, dateStr);
         const installment = oneInstallmentPrincipal > 0 ? oneInstallmentPrincipal : Math.min(principal, acc.installmentAmount || principal);
@@ -1699,7 +1746,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         if (!account) return;
         setIsManualInterestOverride(false);
         const dateStr = formData.collectionDate || new Date().toISOString().split('T')[0];
-        const penal = account.overdueInterestBalance || 0;
+        const { totalPenal: penal } = getEffectivePenalBreakdown(account);
         const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (account.interestBalance || 0);
 
         const loanRate = account.loanRate;
@@ -1785,8 +1832,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const dateStr = dateOverride || formData.collectionDate || new Date().toISOString().split('T')[0];
         let remaining = Math.max(0, totalAmt);
 
-        // 1. Penalty Interest (Overdue)
-        const penaltyDue = account.overdueInterestBalance || 0;
+        // 1. Penalty Interest (Booked Overdue + Scheme-Accrued Penal)
+        const { totalPenal: penaltyDue } = getEffectivePenalBreakdown(account);
         const penaltyCollected = Math.min(remaining, penaltyDue);
         remaining -= penaltyCollected;
 
@@ -1958,6 +2005,14 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         if (!formData.isOTS && selectedAccount && formData.principalCollected && selectedAccount.principalBalance !== undefined) {
             if (formData.principalCollected > selectedAccount.principalBalance + 0.01) {
                 alert(`जमा मुद्दल रक्कम (₹${formData.principalCollected.toLocaleString('en-IN')}) ही शिल्लक मुद्दल रक्कमेपेक्षा (₹${selectedAccount.principalBalance.toLocaleString('en-IN')}) जास्त असू शकत नाही.`);
+                return;
+            }
+        }
+
+        if (!formData.isOTS && duesSummary && !duesSummary.allowManualPenal) {
+            const enteredPenalty = Number(formData.penaltyInterestCollected) || 0;
+            if (enteredPenalty > duesSummary.dandVyaj + 0.01) {
+                alert(`या कर्ज योजनेत थकीत व मोजलेल्या दंड व्याजापेक्षा (₹${duesSummary.dandVyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) जास्त जादा/दंड व्याज (₹${enteredPenalty.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) घेण्याची परवानगी सेटिंगमध्ये बंद आहे.`);
                 return;
             }
         }
@@ -2263,6 +2318,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         setSelectedBorrowerKey(null);
         setSelectedAccount(null);
         setAccountDetails(null);
+        lastFetchedAsOfRef.current = '';
         setNpaStatus(null);
         setCustomerPigmyAccounts([]);
         setSelectedPigmyAccount(null);
@@ -2322,12 +2378,28 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         const { paikiThakbaki, vasulpatra, regularInstallmentAmount, isMultiInstallmentLoan } = getPrincipalDuesBreakdown(selectedAccount, formData.collectionDate);
         let vyaj = 0;
         const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0);
-        const dandVyaj = accountDetails?.currentOverdueInterestBalance !== undefined ? accountDetails.currentOverdueInterestBalance : (selectedAccount.overdueInterestBalance || 0);
+        const {
+            bookedPenal,
+            accruedPenal,
+            totalPenal: dandVyaj,
+            penalDays,
+            penalRate,
+            allowManualPenal
+        } = getEffectivePenalBreakdown(selectedAccount);
         const surcharge = formData.surchargeCollected || 0;
         const vasuliFee = (formData.fees || []).reduce((acc, f) => acc + (Number(f.amount) || 0), 0);
 
         const collectionDateObj = parseDateSafe(formData.collectionDate || new Date());
         collectionDateObj.setHours(0, 0, 0, 0);
+
+        let isCollectionBeforeDisbursement = false;
+        if (disbursementDate && formData.collectionDate) {
+            const disbObj = parseDateSafe(disbursementDate);
+            disbObj.setHours(0, 0, 0, 0);
+            if (!isNaN(disbObj.getTime()) && !isNaN(collectionDateObj.getTime()) && collectionDateObj < disbObj) {
+                isCollectionBeforeDisbursement = true;
+            }
+        }
 
         let thakitHapteCount = 0;
         if (accountDetails?.schedule && accountDetails.schedule.length > 0) {
@@ -2414,6 +2486,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             systemVyaj,
             yeneVyaj,
             dandVyaj,
+            bookedPenal,
+            accruedPenal,
+            penalDays,
+            penalRate,
+            allowManualPenal,
+            isCollectionBeforeDisbursement,
             thakitHapteCount,
             fromDateStrGrid,
             days,
@@ -2807,6 +2885,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     {allowDateOverride && formData.collectionDate !== activeBusinessDate && (
                                         <p className="text-[9.5px] text-amber-700 font-semibold mt-0.5">
                                             लॉगिन तारीख: {activeBusinessDate}
+                                        </p>
+                                    )}
+                                    {duesSummary?.isCollectionBeforeDisbursement && (
+                                        <p className="text-[9.5px] text-rose-700 bg-rose-50 border border-rose-200 rounded-xs px-1.5 py-0.5 font-bold mt-0.5">
+                                            ⚠️ वसुली दिनांक कर्ज उचल दिनांकापूर्वीची ({formatDateSafe(duesSummary.disbursementDate)}) आहे!
                                         </p>
                                     )}
                                 </div>
@@ -3526,13 +3609,20 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </div>
 
                                     <div className="p-1.5 rounded-sm bg-rose-50/70 border border-rose-200">
-                                        <div className="flex items-center justify-between mb-0.5">
+                                        <div className="flex items-center justify-between mb-0.5 gap-1">
                                             <label className="text-[11px] font-bold text-rose-900">जादा/दंड व्याज</label>
-                                            {duesSummary && duesSummary.dandVyaj > 0 && (
-                                                <span className="text-[9.5px] font-mono font-bold text-rose-700">
-                                                    ₹{duesSummary.dandVyaj.toLocaleString('en-IN')}
-                                                </span>
-                                            )}
+                                            <div className="flex items-center gap-1">
+                                                {duesSummary && duesSummary.penalDays > 0 && duesSummary.accruedPenal > 0 && (
+                                                    <span className="text-[9px] font-mono font-semibold text-rose-800">
+                                                        {duesSummary.penalDays} दि.
+                                                    </span>
+                                                )}
+                                                {duesSummary && duesSummary.dandVyaj > 0 && (
+                                                    <span className="text-[9.5px] font-mono font-bold text-rose-700">
+                                                        ₹{duesSummary.dandVyaj.toLocaleString('en-IN')}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                         <input
                                             type="number"
@@ -3544,6 +3634,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             placeholder="0.00"
                                             className={`${inputClass} h-[30px] text-right font-mono font-semibold border-rose-300 text-rose-950 bg-white focus:border-rose-500`}
                                         />
+                                        {duesSummary && !duesSummary.allowManualPenal && (
+                                            <div className="text-[9px] text-rose-700 font-semibold mt-0.5">
+                                                कमाल अनुज्ञेय: ₹{duesSummary.dandVyaj.toLocaleString('en-IN')}
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="p-1.5 rounded-sm bg-purple-50/70 border border-purple-200">
@@ -4066,7 +4161,15 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </div>
 
                                     <div className="px-2.5 py-1.5 flex items-center justify-between bg-pink-50/60">
-                                        <span className="text-pink-950 font-semibold">दंड / जादा व्याज</span>
+                                        <span className="text-pink-950 font-semibold">
+                                            दंड / जादा व्याज
+                                            {duesSummary.accruedPenal > 0 && (
+                                                <span className="text-[9.5px] text-rose-800/80 font-normal ml-1">
+                                                    ({duesSummary.penalRate}% · {duesSummary.penalDays} दि.
+                                                    {duesSummary.bookedPenal > 0 ? ` + बुक ₹${duesSummary.bookedPenal.toLocaleString('en-IN')}` : ''})
+                                                </span>
+                                            )}
+                                        </span>
                                         <span className="font-mono font-bold text-rose-700">
                                             ₹{duesSummary.dandVyaj.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>

@@ -256,7 +256,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/LoanAccounts/5/AccountDetailsAndSchedule
         [HttpGet("{id:int}/AccountDetailsAndSchedule")]
-        public async Task<ActionResult<AccountDetailsAndScheduleDto>> GetAccountDetailsAndSchedule(int id)
+        public async Task<ActionResult<AccountDetailsAndScheduleDto>> GetAccountDetailsAndSchedule(int id, [FromQuery] DateTime? asOfDate = null)
         {
             var account = await _context.LoanAccounts
                 .Include(a => a.LoanRate)
@@ -446,6 +446,24 @@ namespace Bhisi.Api.Controllers
                 resolvedPurePrincipal = Math.Max(0m, account.PrincipalBalance - resolvedCapInterest);
             }
 
+            DateTime effectiveAsOfDate = (asOfDate ?? DateTime.Today).Date;
+            var effectiveSchedules = scheduleDtos.Select(dto => new LoanInstallmentSchedule
+            {
+                LoanAccountID = account.LoanAccountID,
+                InstallmentNo = dto.InstallmentNo,
+                DueDate = dto.DueDate,
+                PrincipalAmount = string.Equals(dto.Status, "Paid", StringComparison.OrdinalIgnoreCase) ? 0m : dto.RemainingPrincipal,
+                InterestAmount = string.Equals(dto.Status, "Paid", StringComparison.OrdinalIgnoreCase) ? 0m : Math.Max(0m, dto.InterestAmount - dto.PaidInterest),
+                TotalAmount = dto.TotalAmount,
+                Status = dto.Status
+            }).ToList();
+
+            var penalSnapshot = Helpers.LoanPenalInterestHelper.ComputePenalSnapshot(
+                account,
+                account.LoanRate,
+                effectiveSchedules,
+                effectiveAsOfDate);
+
             var dto = new AccountDetailsAndScheduleDto
             {
                 SanctionedAmount = account.SanctionedAmount,
@@ -462,6 +480,14 @@ namespace Bhisi.Api.Controllers
                 PendingSanctionedAmount = pendingLimit,
                 LastInstallmentPaidDate = account.LastInstallmentPaidDate,
                 LastInterestPostingDate = account.LastInterestPostingDate,
+                LastPenalPostingDate = account.LastPenalPostingDate,
+                AccruedPenalInterest = penalSnapshot.EstimatedAccruedPenalInterest,
+                EffectivePenalInterestDue = Math.Round(Math.Max(0m, account.OverdueInterestBalance) + penalSnapshot.EstimatedAccruedPenalInterest, 2, MidpointRounding.AwayFromZero),
+                PenalInterestRate = penalSnapshot.PenalRate,
+                PenalOverdueDays = penalSnapshot.EffectivePenalDays,
+                PenalGraceDays = penalSnapshot.GraceDays,
+                PenalInterestBasis = penalSnapshot.PenalBasis,
+                AllowManualPenalInRecovery = account.LoanRate?.AllowManualPenalInRecovery ?? true,
                 Tranches = allDisbursements.Select(d => new LoanTrancheDetailDto
                 {
                     DisbursementID = d.LoanDisbursementID,
@@ -2842,6 +2868,18 @@ namespace Bhisi.Api.Controllers
                 .Where(l => ledgerIdsToFetch.Contains(l.LedgerID))
                 .ToDictionaryAsync(l => l.LedgerID, l => l.LedgerName);
 
+            Dictionary<int, List<LoanInstallmentSchedule>> schedulesByAccount = new();
+            if (request.IncludePenalInterest && activeAccounts.Any())
+            {
+                var accIds = activeAccounts.Select(a => a.LoanAccountID).ToList();
+                var dbScheds = await _context.LoanInstallmentSchedules
+                    .AsNoTracking()
+                    .Where(s => accIds.Contains(s.LoanAccountID))
+                    .OrderBy(s => s.InstallmentNo)
+                    .ToListAsync();
+                schedulesByAccount = dbScheds.GroupBy(s => s.LoanAccountID).ToDictionary(g => g.Key, g => g.ToList());
+            }
+
             foreach (var acc in activeAccounts)
             {
                 DateTime lastDate = acc.LastInstallmentPaidDate ?? acc.LoanDisbursementDate ?? acc.OpeningDate;
@@ -2855,6 +2893,20 @@ namespace Bhisi.Api.Controllers
                     : 0m;
 
                 var currentRate = acc.LoanRate ?? (schemeRates.TryGetValue(acc.LoanRateID, out var sr) ? sr : null);
+                decimal calculatedPenalInterest = 0m;
+                int penalDaysAccrued = 0;
+                decimal penalRate = Math.Max(0m, currentRate?.OverdueInterestRate ?? 0m);
+                if (request.IncludePenalInterest)
+                {
+                    var accScheds = schedulesByAccount.TryGetValue(acc.LoanAccountID, out var foundScheds) && foundScheds.Any()
+                        ? foundScheds
+                        : Services.LoanScheduleGenerator.GenerateSchedules(acc, currentRate);
+                    var penalSnap = Helpers.LoanPenalInterestHelper.ComputePenalSnapshot(acc, currentRate, accScheds, request.PostingDate);
+                    calculatedPenalInterest = penalSnap.EstimatedAccruedPenalInterest;
+                    penalDaysAccrued = penalSnap.EffectivePenalDays;
+                    penalRate = penalSnap.PenalRate;
+                }
+
                 bool isSchemeCapitalize = currentRate?.InterestPostingType == "कर्जावर" || currentRate?.InterestPostingType?.Contains("कर्ज") == true;
                 bool shouldCapitalize = request.PostingMode == "ForceCapitalize" 
                     ? true 
@@ -2894,15 +2946,25 @@ namespace Bhisi.Api.Controllers
                     DaysAccrued = daysAccrued,
                     CalculatedInterest = calculatedInterest,
                     NewPrincipal = newPrincipal,
-                    NewInterest = newInterest
+                    NewInterest = newInterest,
+                    PenalInterestRate = penalRate,
+                    PenalDaysAccrued = penalDaysAccrued,
+                    CurrentOverdueInterest = acc.OverdueInterestBalance,
+                    CalculatedPenalInterest = calculatedPenalInterest,
+                    NewOverdueInterest = acc.OverdueInterestBalance + calculatedPenalInterest
                 });
             }
+
+            decimal totalRegularInterest = items.Sum(i => i.CalculatedInterest);
+            decimal totalPenalInterest = items.Sum(i => i.CalculatedPenalInterest);
 
             return Ok(new
             {
                 postingDate = request.PostingDate,
                 totalAccounts = items.Count,
-                totalCalculatedInterest = items.Sum(i => i.CalculatedInterest),
+                totalRegularInterest,
+                totalPenalInterest,
+                totalCalculatedInterest = totalRegularInterest + totalPenalInterest,
                 items
             });
         }
@@ -2957,56 +3019,101 @@ namespace Bhisi.Api.Controllers
                 }
 
                 decimal totalBatchInterest = 0;
+                decimal totalBatchPenal = 0;
                 var schemeInterestTotals = new Dictionary<int, decimal>();
+                var schemePenalTotals = new Dictionary<int, decimal>();
                 var batchSnapshots = new List<Services.LoanInterestBatchAccountSnapshot>();
                 int processedCount = 0;
+
+                Dictionary<int, List<LoanInstallmentSchedule>> schedulesByAccount = new();
+                if (request.IncludePenalInterest)
+                {
+                    var accIds = activeAccounts.Select(a => a.LoanAccountID).ToList();
+                    var dbScheds = await _context.LoanInstallmentSchedules
+                        .AsNoTracking()
+                        .Where(s => accIds.Contains(s.LoanAccountID))
+                        .OrderBy(s => s.InstallmentNo)
+                        .ToListAsync();
+                    schedulesByAccount = dbScheds.GroupBy(s => s.LoanAccountID).ToDictionary(g => g.Key, g => g.ToList());
+                }
 
                 foreach (var acc in activeAccounts)
                 {
                     DateTime lastDate = acc.LastInstallmentPaidDate ?? acc.LoanDisbursementDate ?? acc.OpeningDate;
                     int daysAccrued = Math.Max(0, (request.PostingDate.Date - lastDate.Date).Days);
-                    if (daysAccrued <= 0) continue;
 
                     var currentRate = acc.LoanRate ?? (schemeRates.TryGetValue(acc.LoanRateID, out var sr) ? sr : null);
                     decimal rate = currentRate?.InterestRate ?? acc.InterestRate;
                     decimal effectivePrincipal = GetEffectiveInterestBearingPrincipal(acc);
-                    decimal calculatedInterest = Math.Round((effectivePrincipal * rate * daysAccrued) / 36500m, 2, MidpointRounding.AwayFromZero);
+                    decimal calculatedInterest = daysAccrued > 0
+                        ? Math.Round((effectivePrincipal * rate * daysAccrued) / 36500m, 2, MidpointRounding.AwayFromZero)
+                        : 0m;
 
-                    if (calculatedInterest <= 0) continue;
+                    decimal calculatedPenal = 0m;
+                    if (request.IncludePenalInterest)
+                    {
+                        var accScheds = schedulesByAccount.TryGetValue(acc.LoanAccountID, out var foundScheds) && foundScheds.Any()
+                            ? foundScheds
+                            : Services.LoanScheduleGenerator.GenerateSchedules(acc, currentRate);
+                        calculatedPenal = Helpers.LoanPenalInterestHelper.ComputePenalSnapshot(acc, currentRate, accScheds, request.PostingDate).EstimatedAccruedPenalInterest;
+                    }
+
+                    if (calculatedInterest <= 0 && calculatedPenal <= 0) continue;
 
                     bool isSchemeCapitalize = currentRate?.InterestPostingType == "कर्जावर" || currentRate?.InterestPostingType?.Contains("कर्ज") == true;
                     bool shouldCapitalize = request.PostingMode == "ForceCapitalize" ? true : (request.PostingMode == "ForceSeparate" ? false : (request.CapitalizeToPrincipal ? true : isSchemeCapitalize));
 
-                    if (shouldCapitalize)
-                    {
-                        if (acc.PurePrincipalBalance <= 0 && acc.PrincipalBalance > 0)
-                        {
-                            acc.PurePrincipalBalance = Math.Max(0m, acc.PrincipalBalance - acc.CapitalizedInterestAmount);
-                        }
-                        acc.PrincipalBalance += calculatedInterest;
-                        acc.CapitalizedInterestAmount += calculatedInterest;
-                    }
-                    else
-                    {
-                        acc.InterestBalance += calculatedInterest;
-                    }
-
-                    batchSnapshots.Add(new Services.LoanInterestBatchAccountSnapshot
+                    var snap = new Services.LoanInterestBatchAccountSnapshot
                     {
                         LoanAccountID = acc.LoanAccountID,
                         Interest = calculatedInterest,
                         Capitalized = shouldCapitalize,
-                        PrevLastPaidDate = acc.LastInstallmentPaidDate
-                    });
-                    acc.LastInstallmentPaidDate = request.PostingDate;
+                        HasRegularInterest = calculatedInterest > 0m,
+                        PrevLastPaidDate = acc.LastInstallmentPaidDate,
+                        PenalInterest = calculatedPenal,
+                        PrevLastPenalPostingDate = acc.LastPenalPostingDate
+                    };
+
+                    if (calculatedInterest > 0)
+                    {
+                        if (shouldCapitalize)
+                        {
+                            if (acc.PurePrincipalBalance <= 0 && acc.PrincipalBalance > 0)
+                            {
+                                acc.PurePrincipalBalance = Math.Max(0m, acc.PrincipalBalance - acc.CapitalizedInterestAmount);
+                            }
+                            acc.PrincipalBalance += calculatedInterest;
+                            acc.CapitalizedInterestAmount += calculatedInterest;
+                        }
+                        else
+                        {
+                            acc.InterestBalance += calculatedInterest;
+                        }
+                        acc.LastInstallmentPaidDate = request.PostingDate;
+                    }
+
+                    if (calculatedPenal > 0)
+                    {
+                        acc.OverdueInterestBalance += calculatedPenal;
+                        acc.LastPenalPostingDate = request.PostingDate.Date;
+                    }
+
+                    batchSnapshots.Add(snap);
                     _context.Entry(acc).State = EntityState.Modified;
 
                     totalBatchInterest += calculatedInterest;
-                    if (acc.LoanRateID > 0) { schemeInterestTotals[acc.LoanRateID] = schemeInterestTotals.GetValueOrDefault(acc.LoanRateID, 0m) + calculatedInterest; }
+                    totalBatchPenal += calculatedPenal;
+                    if (acc.LoanRateID > 0)
+                    {
+                        if (calculatedInterest > 0)
+                            schemeInterestTotals[acc.LoanRateID] = schemeInterestTotals.GetValueOrDefault(acc.LoanRateID, 0m) + calculatedInterest;
+                        if (calculatedPenal > 0)
+                            schemePenalTotals[acc.LoanRateID] = schemePenalTotals.GetValueOrDefault(acc.LoanRateID, 0m) + calculatedPenal;
+                    }
                     processedCount++;
                 }
 
-                if (totalBatchInterest <= 0)
+                if (totalBatchInterest <= 0 && totalBatchPenal <= 0)
                 {
                     return Ok(new { message = "नमुद केलेल्या तारखेपर्यंत नवीन व्याज आकारणी झाली नाही.", processedCount = 0, totalInterest = 0 });
                 }
@@ -3033,8 +3140,8 @@ namespace Bhisi.Api.Controllers
                     VoucherNo = voucherNo,
                     VoucherDate = request.PostingDate,
                     VoucherType = "Journal",
-                    Narration = $"बॅच कर्ज व्याज आकारणी (Loan Interest Run): {request.PostingDate:dd/MM/yyyy} - एकूण खाती: {processedCount} {(request.PostingMode == "ForceCapitalize" ? "[सर्व मुद्दलात]" : (request.PostingMode == "ForceSeparate" ? "[सर्व स्वतंत्र येणे व्याजात]" : "[योजनेनुसार स्वयंचलित]"))}",
-                    TotalAmount = totalBatchInterest,
+                    Narration = $"बॅच कर्ज व्याज आकारणी (Loan Interest Run): {request.PostingDate:dd/MM/yyyy} - एकूण खाती: {processedCount} {(request.PostingMode == "ForceCapitalize" ? "[सर्व मुद्दलात]" : (request.PostingMode == "ForceSeparate" ? "[सर्व स्वतंत्र येणे व्याजात]" : "[योजनेनुसार स्वयंचलित]"))}{(totalBatchPenal > 0 ? $" [दंड व्याज: ₹{totalBatchPenal:N2}]" : "")}",
+                    TotalAmount = totalBatchInterest + totalBatchPenal,
                     Status = "Pending",
                     ApprovedBy = null,
                     ApprovedOn = null
@@ -3052,34 +3159,44 @@ namespace Bhisi.Api.Controllers
                 {
                     if (!schemeRates.TryGetValue(group.Key, out var rate)) continue;
 
-                    decimal schemeTotal = 0;
-                    foreach (var acc in group)
+                    decimal schemeTotal = schemeInterestTotals.GetValueOrDefault(group.Key, 0m);
+                    if (schemeTotal > 0)
                     {
-                        DateTime lastDate = acc.LastInstallmentPaidDate ?? acc.LoanDisbursementDate ?? acc.OpeningDate;
-                        int daysAccrued = Math.Max(0, (request.PostingDate.Date - lastDate.Date).Days);
-                        if (daysAccrued <= 0) continue;
-                        decimal r = rate.InterestRate;
-                        decimal effP = GetEffectiveInterestBearingPrincipal(acc);
-                        decimal cInt = Math.Round((effP * r * daysAccrued) / 36500m, 2, MidpointRounding.AwayFromZero);
-                        schemeTotal += cInt;
+                        bool isSchemeCapitalize = rate.InterestPostingType == "कर्जावर" || rate.InterestPostingType?.Contains("कर्ज") == true;
+                        bool shouldCapitalize = request.PostingMode == "ForceCapitalize" ? true : (request.PostingMode == "ForceSeparate" ? false : (request.CapitalizeToPrincipal ? true : isSchemeCapitalize));
+
+                        int debitLedgerId = shouldCapitalize
+                            ? (rate.LoanLedgerID ?? 0)
+                            : (rate.ReceivableInterestLedgerID ?? rate.LoanLedgerID ?? 0);
+                        int creditLedgerId = rate.InterestLedgerID ?? 0;
+
+                        if (debitLedgerId <= 0 || creditLedgerId <= 0) { await transaction.RollbackAsync(); return BadRequest($"कर्ज योजना '{rate.LoanType}' साठी मुद्दल/येणे व्याज किंवा व्याज उत्पन्न जी.एल. लेजर जोडलेले नाही."); }
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = schemeTotal });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = creditLedgerId, DrCr = "Cr", Amount = schemeTotal });
                     }
 
-                    schemeTotal = schemeInterestTotals.GetValueOrDefault(group.Key, 0m);
-                    if (schemeTotal <= 0) continue;
+                    decimal schemePenalTotal = schemePenalTotals.GetValueOrDefault(group.Key, 0m);
+                    if (schemePenalTotal > 0)
+                    {
+                        int penalDebitLedgerId = rate.ReceivableInterestLedgerID ?? 0;
+                        int penalCreditLedgerId = (rate.OverdueInterestLedgerID ?? 0) > 0
+                            ? rate.OverdueInterestLedgerID!.Value
+                            : (rate.InterestLedgerID ?? 0);
 
-                    bool isSchemeCapitalize = rate.InterestPostingType == "कर्जावर" || rate.InterestPostingType?.Contains("कर्ज") == true;
-                    bool shouldCapitalize = request.PostingMode == "ForceCapitalize" ? true : (request.PostingMode == "ForceSeparate" ? false : (request.CapitalizeToPrincipal ? true : isSchemeCapitalize));
+                        if (penalDebitLedgerId <= 0)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"कर्ज योजना '{rate.LoanType}' साठी दंड व्याज बुक करण्यासाठी 'येणे व्याज खाते (Receivable Interest Ledger)' कर्ज दर पत्रकात जोडलेले नाही.");
+                        }
+                        if (penalCreditLedgerId <= 0)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"कर्ज योजना '{rate.LoanType}' साठी दंड / व्याज उत्पन्न खाते जोडलेले नाही.");
+                        }
 
-                    int debitLedgerId = shouldCapitalize 
-                        ? (rate.LoanLedgerID ?? 0) 
-                        : (rate.ReceivableInterestLedgerID ?? rate.LoanLedgerID ?? 0);
-                    int creditLedgerId = rate.InterestLedgerID ?? 0;
-
-                    // Debit Scheme Dynamic Ledger (Principal or Receivable Interest)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = schemeTotal });
-                    // Credit Scheme Dynamic Interest Income Ledger
-                    if (debitLedgerId <= 0 || creditLedgerId <= 0) { await transaction.RollbackAsync(); return BadRequest($"कर्ज योजना '{rate.LoanType}' साठी मुद्दल/येणे व्याज किंवा व्याज उत्पन्न जी.एल. लेजर जोडलेले नाही."); }
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = creditLedgerId, DrCr = "Cr", Amount = schemeTotal });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = penalDebitLedgerId, DrCr = "Dr", Amount = schemePenalTotal });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = penalCreditLedgerId, DrCr = "Cr", Amount = schemePenalTotal });
+                    }
                 }
 
                 await _context.SaveChangesAsync();
@@ -3093,7 +3210,7 @@ namespace Bhisi.Api.Controllers
                     EntityName = "LoanAccount",
                     Timestamp = DateTime.Now,
                     EntityID = voucher.VoucherNo,
-                    Details = $"Batch Loan Interest Posted: ₹{totalBatchInterest:N2} across {processedCount} accounts on {request.PostingDate:dd/MM/yyyy}. Mode: {request.PostingMode} {Services.VoucherRollbackAndDeleteService.BatchSnapshotPrefix}{System.Text.Json.JsonSerializer.Serialize(batchSnapshots)}]"
+                    Details = $"Batch Loan Interest Posted: ₹{totalBatchInterest:N2} (Penal: ₹{totalBatchPenal:N2}) across {processedCount} accounts on {request.PostingDate:dd/MM/yyyy}. Mode: {request.PostingMode} {Services.VoucherRollbackAndDeleteService.BatchSnapshotPrefix}{System.Text.Json.JsonSerializer.Serialize(batchSnapshots)}]"
                 });
                 await Helpers.VoucherBalanceHelper.EnsureBalancedInContextAsync(_context, voucher.VoucherID, voucher.VoucherNo);
                 _context.AuditLogs.Add(new AuditLog { UserID = 1, Username = "System", Action = "LOAN_INTEREST_BALANCE_VERIFIED", EntityName = "Voucher", EntityID = voucher.VoucherNo, Timestamp = DateTime.Now,
@@ -3104,9 +3221,10 @@ namespace Bhisi.Api.Controllers
 
                 return Ok(new
                 {
-                    message = $"एकूण {processedCount} कर्ज खात्यांवर ₹{totalBatchInterest:N2} व्याज आकारणी यशस्वीरित्या पोस्ट झाली!",
+                    message = $"एकूण {processedCount} कर्ज खात्यांवर ₹{(totalBatchInterest + totalBatchPenal):N2} व्याज आकारणी यशस्वीरित्या पोस्ट झाली!{(totalBatchPenal > 0 ? $" (दंड व्याज: ₹{totalBatchPenal:N2})" : "")}",
                     processedCount,
                     totalBatchInterest,
+                    totalBatchPenal,
                     voucherNo = voucherNo
                 });
             }
@@ -3125,6 +3243,7 @@ namespace Bhisi.Api.Controllers
         public DateTime PostingDate { get; set; } = DateTime.Today;
         public bool CapitalizeToPrincipal { get; set; } = false;
         public string PostingMode { get; set; } = "SchemeDefault"; // SchemeDefault, ForceCapitalize, ForceSeparate
+        public bool IncludePenalInterest { get; set; } = false;
         public string? Remarks { get; set; }
     }
 
@@ -3147,6 +3266,11 @@ namespace Bhisi.Api.Controllers
         public decimal CalculatedInterest { get; set; }
         public decimal NewPrincipal { get; set; }
         public decimal NewInterest { get; set; }
+        public decimal PenalInterestRate { get; set; }
+        public int PenalDaysAccrued { get; set; }
+        public decimal CurrentOverdueInterest { get; set; }
+        public decimal CalculatedPenalInterest { get; set; }
+        public decimal NewOverdueInterest { get; set; }
     }
 
     public class LoanImportRowDto

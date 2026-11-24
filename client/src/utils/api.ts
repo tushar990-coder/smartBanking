@@ -69,18 +69,26 @@ api.interceptors.request.use((config) => {
       }
     }
 
-    // 3. Attach Auth token & Branch ID
-    const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
-    if (savedUser) {
-      const user = JSON.parse(savedUser);
-      if (user?.token) {
-        config.headers.Authorization = `Bearer ${user.token}`;
+    // 3. Attach Auth token & Branch ID (skip anonymous license/health endpoints so browser avoids CORS preflight)
+    const lowerUrl = (config.url || '').toLowerCase();
+    const isAnonymousHealthEndpoint = lowerUrl.includes('/license/status');
+    if (isAnonymousHealthEndpoint) {
+      if (config.headers) {
+        delete config.headers['Content-Type'];
       }
-      if (user?.branchID) {
-        config.headers['X-Branch-ID'] = user.branchID.toString();
-      }
-      if (user?.businessDate) {
-        config.headers['X-Business-Date'] = String(user.businessDate).split('T')[0];
+    } else {
+      const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
+      if (savedUser) {
+        const user = JSON.parse(savedUser);
+        if (user?.token) {
+          config.headers.Authorization = `Bearer ${user.token}`;
+        }
+        if (user?.branchID) {
+          config.headers['X-Branch-ID'] = user.branchID.toString();
+        }
+        if (user?.businessDate) {
+          config.headers['X-Business-Date'] = String(user.businessDate).split('T')[0];
+        }
       }
     }
   } catch (err) {

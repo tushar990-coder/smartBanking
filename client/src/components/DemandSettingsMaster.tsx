@@ -57,23 +57,37 @@ interface ShareSchemeOption {
   shareCapitalLedgerID?: number;
 }
 
+interface PigmySchemeOption {
+  pigmySchemeID: number;
+  schemeCode: string;
+  schemeName: string;
+  durationMonths?: number;
+  interestRate: number;
+  pigmyLiabilityLedgerID?: number;
+}
+
 interface LedgerOption {
   ledgerID: number;
   ledgerCode: string;
   ledgerName: string;
   accountType?: string;
+  groupID?: number;
+  groupName?: string;
   natureOfGroup?: string;
+  isDepositLedger?: boolean;
+  linkedSchemeSource?: string;
 }
 
 export interface DemandColumnSettingRow {
   demandColumnSettingId: number;
   sequenceOrder: number;
   columnHeaderMr: string;
-  itemType: 'LOAN' | 'THRIFT_SAVING' | 'RD' | 'SHARE' | 'LEDGER_OTHER';
+  itemType: 'LOAN' | 'THRIFT_SAVING' | 'DEPOSIT_LEDGER' | 'RD' | 'PIGMY' | 'SHARE' | 'LEDGER_OTHER';
   loanRateID?: number | null;
   savingSchemeID?: number | null;
   rdSchemeID?: number | null;
   shareSchemeId?: number | null;
+  pigmySchemeID?: number | null;
   principalOrDepositLedgerID?: number | null;
   interestLedgerID?: number | null;
   receivableInterestLedgerID?: number | null;
@@ -120,6 +134,7 @@ const toPayloadRow = (row: DemandColumnSettingUiRow, seq: number): DemandColumnS
   savingSchemeID: row.itemType === 'THRIFT_SAVING' ? (row.savingSchemeID ?? null) : null,
   rdSchemeID: row.itemType === 'RD' ? (row.rdSchemeID ?? null) : null,
   shareSchemeId: row.itemType === 'SHARE' ? (row.shareSchemeId ?? null) : null,
+  pigmySchemeID: row.itemType === 'PIGMY' ? (row.pigmySchemeID ?? null) : null,
   principalOrDepositLedgerID: row.principalOrDepositLedgerID ?? null,
   interestLedgerID: row.itemType === 'LOAN' ? (row.interestLedgerID ?? null) : null,
   receivableInterestLedgerID: row.itemType === 'LOAN' ? (row.receivableInterestLedgerID ?? null) : null,
@@ -128,7 +143,12 @@ const toPayloadRow = (row: DemandColumnSettingUiRow, seq: number): DemandColumnS
   includeOverduePenalInterest: row.itemType === 'LOAN' ? row.includeOverduePenalInterest : false,
   loanIntraAllocationOrder: row.loanIntraAllocationOrder || 'INTEREST_FIRST',
   isContributionTarget:
-    row.itemType === 'THRIFT_SAVING' || row.itemType === 'LEDGER_OTHER' ? row.isContributionTarget : false,
+    row.itemType === 'THRIFT_SAVING' ||
+    row.itemType === 'DEPOSIT_LEDGER' ||
+    row.itemType === 'PIGMY' ||
+    row.itemType === 'LEDGER_OTHER'
+      ? row.isContributionTarget
+      : false,
   defaultAmount: Math.max(0, Math.round((Number(row.defaultAmount) || 0) * 100) / 100),
   isActive: true
 });
@@ -180,7 +200,18 @@ const buildDemandLedgerOptions = (
   clearLabel?: string
 ): SearchableSelectOption[] => {
   const expected = getExpectedNatures(itemType, slotRole);
-  const matching = ledgers.filter((l) => !isCashOrBankLedger(l) && expected.some((n) => n.toLowerCase() === (l.natureOfGroup || '').trim().toLowerCase()));
+  const matching = ledgers
+    .filter((l) => !isCashOrBankLedger(l) && expected.some((n) => n.toLowerCase() === (l.natureOfGroup || '').trim().toLowerCase()))
+    .slice()
+    .sort((a, b) => {
+      if (slotRole === 'principal' && itemType !== 'LOAN') {
+        const depDiff = (b.isDepositLedger ? 1 : 0) - (a.isDepositLedger ? 1 : 0);
+        if (depDiff !== 0) return depDiff;
+        const srcDiff = (b.linkedSchemeSource ? 1 : 0) - (a.linkedSchemeSource ? 1 : 0);
+        if (srcDiff !== 0) return srcDiff;
+      }
+      return (a.ledgerName || '').localeCompare(b.ledgerName || '');
+    });
 
   const options: SearchableSelectOption[] = [];
   if (clearLabel) {
@@ -192,11 +223,18 @@ const buildDemandLedgerOptions = (
   }
 
   matching.forEach((l) => {
+    const metaParts = [
+      `ID: ${l.ledgerID}`,
+      l.groupName || l.accountType || '',
+      l.linkedSchemeSource || ''
+    ].filter(Boolean);
+    const isPrioritizedDeposit = Boolean(l.isDepositLedger) && slotRole === 'principal' && itemType !== 'LOAN';
+
     options.push({
       value: l.ledgerID,
       label: `${l.ledgerName} (${l.ledgerCode || l.ledgerID})`,
-      subLabel: `ID: ${l.ledgerID}${l.accountType ? ` | ${l.accountType}` : ''}`,
-      badge: l.natureOfGroup || 'Ledger',
+      subLabel: metaParts.join(' | '),
+      badge: isPrioritizedDeposit ? 'ठेव लेजर' : (l.natureOfGroup || 'Ledger'),
       badgeColor: getNatureBadgeColor(l.natureOfGroup, false)
     });
   });
@@ -260,7 +298,9 @@ const validateSettingsRows = (
 
   const seenLoans = new Set<number>();
   const seenSavings = new Set<number>();
+  const seenDepositLedgers = new Set<number>();
   const seenRds = new Set<number>();
+  const seenPigmy = new Set<number>();
   const seenShares = new Set<number>();
   let seenGenericShare = false;
   let contribCount = 0;
@@ -271,8 +311,13 @@ const validateSettingsRows = (
     const header = r.columnHeaderMr.trim();
 
     if (r.isContributionTarget) {
-      if (r.itemType !== 'THRIFT_SAVING' && r.itemType !== 'LEDGER_OTHER') {
-        return `क्रम ${seq}: 'वर्गणी ठेव Auto-Fill लक्ष्य' फक्त ठेव किंवा इतर लेजर कॉलमसाठीच निवडता येते.`;
+      if (
+        r.itemType !== 'THRIFT_SAVING' &&
+        r.itemType !== 'DEPOSIT_LEDGER' &&
+        r.itemType !== 'PIGMY' &&
+        r.itemType !== 'LEDGER_OTHER'
+      ) {
+        return `क्रम ${seq}: 'वर्गणी ठेव Auto-Fill लक्ष्य' फक्त ठेव, पिग्मी किंवा इतर लेजर कॉलमसाठीच निवडता येते.`;
       }
       contribCount++;
     }
@@ -285,10 +330,20 @@ const validateSettingsRows = (
       if (!r.savingSchemeID) return `क्रम ${seq}: कृपया वैध संजीवनी / बचत ठेव योजना निवडा.`;
       if (seenSavings.has(r.savingSchemeID)) return `क्रम ${seq} (${header || 'ठेव'}): ही ठेव योजना एकापेक्षा जास्त वेळा जोडता येत नाही.`;
       seenSavings.add(r.savingSchemeID);
+    } else if (r.itemType === 'DEPOSIT_LEDGER') {
+      if (!r.principalOrDepositLedgerID) return `क्रम ${seq}: कृपया वैध ठेवीचे लेजर निवडा.`;
+      if (seenDepositLedgers.has(r.principalOrDepositLedgerID)) {
+        return `क्रम ${seq} (${header || 'ठेव लेजर'}): हे ठेवीचे लेजर एकापेक्षा जास्त वेळा जोडता येत नाही.`;
+      }
+      seenDepositLedgers.add(r.principalOrDepositLedgerID);
     } else if (r.itemType === 'RD') {
       if (!r.rdSchemeID) return `क्रम ${seq}: कृपया वैध आवर्ती ठेव (RD) योजना निवडा.`;
       if (seenRds.has(r.rdSchemeID)) return `क्रम ${seq} (${header || 'RD'}): ही RD योजना एकापेक्षा जास्त वेळा जोडता येत नाही.`;
       seenRds.add(r.rdSchemeID);
+    } else if (r.itemType === 'PIGMY') {
+      if (!r.pigmySchemeID) return `क्रम ${seq}: कृपया वैध पिग्मी (Pigmy) ठेव योजना निवडा.`;
+      if (seenPigmy.has(r.pigmySchemeID)) return `क्रम ${seq} (${header || 'पिग्मी'}): ही पिग्मी योजना एकापेक्षा जास्त वेळा जोडता येत नाही.`;
+      seenPigmy.add(r.pigmySchemeID);
     } else if (r.itemType === 'SHARE') {
       if (r.shareSchemeId) {
         if (seenShares.has(r.shareSchemeId)) return `क्रम ${seq} (${header || 'शेअर्स'}): ही शेअर योजना एकापेक्षा जास्त वेळा जोडता येत नाही.`;
@@ -354,7 +409,9 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
   const [loanRates, setLoanRates] = useState<LoanRateOption[]>([]);
   const [savingSchemes, setSavingSchemes] = useState<SavingSchemeOption[]>([]);
   const [rdSchemes, setRdSchemes] = useState<RdSchemeOption[]>([]);
+  const [pigmySchemes, setPigmySchemes] = useState<PigmySchemeOption[]>([]);
   const [shareSchemes, setShareSchemes] = useState<ShareSchemeOption[]>([]);
+  const [depositLedgers, setDepositLedgers] = useState<LedgerOption[]>([]);
   const [ledgers, setLedgers] = useState<LedgerOption[]>([]);
   const [isConfigured, setIsConfigured] = useState(false);
   const [savedSnapshotJson, setSavedSnapshotJson] = useState<string>('[]');
@@ -401,7 +458,9 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
       setLoanRates(data.loanRates || []);
       setSavingSchemes(data.savingSchemes || []);
       setRdSchemes(data.rdSchemes || []);
+      setPigmySchemes(data.pigmySchemes || []);
       setShareSchemes(data.shareSchemes || []);
+      setDepositLedgers(data.depositLedgers || []);
       setLedgers(data.ledgers || []);
       setSuggestedDefaults(data.suggestedDefaults || []);
       setInactiveSettings(Array.isArray(data.inactiveSettings) ? data.inactiveSettings : []);
@@ -533,6 +592,7 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
           loanRateID: null,
           savingSchemeID: null,
           rdSchemeID: null,
+          pigmySchemeID: null,
           shareSchemeId: null,
           principalOrDepositLedgerID: null,
           interestLedgerID: null,
@@ -543,7 +603,12 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
           showBalanceColumn: newType === 'LOAN',
           includeOverduePenalInterest: false,
           isContributionTarget:
-            newType === 'THRIFT_SAVING' || newType === 'LEDGER_OTHER' ? row.isContributionTarget : false,
+            newType === 'THRIFT_SAVING' ||
+            newType === 'DEPOSIT_LEDGER' ||
+            newType === 'PIGMY' ||
+            newType === 'LEDGER_OTHER'
+              ? row.isContributionTarget
+              : false,
           defaultAmount: nextAmt,
           defaultAmountDraft: nextAmt === 0 ? '' : String(nextAmt)
         };
@@ -585,6 +650,18 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
           };
         }
 
+        if (row.itemType === 'DEPOSIT_LEDGER') {
+          const dep = (depositLedgers.length > 0 ? depositLedgers : ledgers).find((l) => l.ledgerID === schemeId);
+          const autoName = dep ? dep.ledgerName : '';
+          const headerWasAuto = !row.columnHeaderMr.trim() || row.columnHeaderMr === row.lastAutoHeader;
+          return {
+            ...row,
+            principalOrDepositLedgerID: schemeId,
+            columnHeaderMr: dep && headerWasAuto ? autoName : row.columnHeaderMr,
+            lastAutoHeader: dep ? autoName : row.lastAutoHeader
+          };
+        }
+
         if (row.itemType === 'RD') {
           const rd = rdSchemes.find((r) => r.rdSchemeID === schemeId);
           const autoName = rd ? rd.schemeName : '';
@@ -597,6 +674,18 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
             principalOrDepositLedgerID: rd?.rdLiabilityLedgerID ?? null,
             defaultAmount: minInst,
             defaultAmountDraft: minInst === 0 ? '' : String(minInst)
+          };
+        }
+
+        if (row.itemType === 'PIGMY') {
+          const pg = pigmySchemes.find((p) => p.pigmySchemeID === schemeId);
+          const autoName = pg ? pg.schemeName : '';
+          return {
+            ...row,
+            pigmySchemeID: schemeId,
+            columnHeaderMr: pg ? autoName : row.columnHeaderMr,
+            lastAutoHeader: pg ? autoName : row.lastAutoHeader,
+            principalOrDepositLedgerID: pg?.pigmyLiabilityLedgerID ?? null
           };
         }
 
@@ -945,7 +1034,9 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
                         >
                           <option value="LOAN">कर्ज (Loan)</option>
                           <option value="THRIFT_SAVING">संजीवनी / वर्गणी ठेव</option>
+                          <option value="DEPOSIT_LEDGER">ठेवीचे लेजर (Deposit Ledger)</option>
                           <option value="RD">आवर्ती ठेव (RD)</option>
+                          <option value="PIGMY">पिग्मी / दैनिक ठेव (Pigmy)</option>
                           <option value="SHARE">शेअर्स (Share)</option>
                           <option value="LEDGER_OTHER">इतर सामान्य लेजर</option>
                         </select>
@@ -957,7 +1048,7 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
                           <select
                             disabled={!canEditSettings}
                             value={row.loanRateID ?? ''}
-                            onChange={(e) => handleSchemeChange(row.clientKey, e.target.value)}
+                            onChange={(e) => handleSchemeChange(row.clientKey, String(e.target.value ?? ''))}
                             className={`w-full border rounded px-1.5 py-1 bg-white disabled:bg-slate-100 ${
                               !row.loanRateID ? 'border-red-400 bg-red-50' : 'border-slate-300'
                             }`}
@@ -975,7 +1066,7 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
                           <select
                             disabled={!canEditSettings}
                             value={row.savingSchemeID ?? ''}
-                            onChange={(e) => handleSchemeChange(row.clientKey, e.target.value)}
+                            onChange={(e) => handleSchemeChange(row.clientKey, String(e.target.value ?? ''))}
                             className={`w-full border rounded px-1.5 py-1 bg-white disabled:bg-slate-100 ${
                               !row.savingSchemeID ? 'border-red-400 bg-red-50' : 'border-slate-300'
                             }`}
@@ -989,11 +1080,30 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
                           </select>
                         )}
 
+                        {row.itemType === 'DEPOSIT_LEDGER' && (
+                          <SearchableSelect
+                            disabled={!canEditSettings}
+                            value={row.principalOrDepositLedgerID ?? ''}
+                            options={buildDemandLedgerOptions(
+                              depositLedgers.length > 0 ? depositLedgers : ledgers,
+                              'DEPOSIT_LEDGER',
+                              'principal',
+                              row.principalOrDepositLedgerID
+                            )}
+                            onChange={(e) => handleSchemeChange(row.clientKey, String(e.target.value ?? ''))}
+                            placeholder="-- ठेवीचे लेजर निवडा --"
+                            searchPlaceholder="लेजर नाव, कोड, गट शोधा..."
+                            countLabel="ठेव लेजर"
+                            minMenuWidth={360}
+                            className={`rounded ${!row.principalOrDepositLedgerID ? 'ring-1 ring-red-400 bg-red-50' : ''}`}
+                          />
+                        )}
+
                         {row.itemType === 'RD' && (
                           <select
                             disabled={!canEditSettings}
                             value={row.rdSchemeID ?? ''}
-                            onChange={(e) => handleSchemeChange(row.clientKey, e.target.value)}
+                            onChange={(e) => handleSchemeChange(row.clientKey, String(e.target.value ?? ''))}
                             className={`w-full border rounded px-1.5 py-1 bg-white disabled:bg-slate-100 ${
                               !row.rdSchemeID ? 'border-red-400 bg-red-50' : 'border-slate-300'
                             }`}
@@ -1007,11 +1117,29 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
                           </select>
                         )}
 
+                        {row.itemType === 'PIGMY' && (
+                          <select
+                            disabled={!canEditSettings}
+                            value={row.pigmySchemeID ?? ''}
+                            onChange={(e) => handleSchemeChange(row.clientKey, String(e.target.value ?? ''))}
+                            className={`w-full border rounded px-1.5 py-1 bg-white disabled:bg-slate-100 ${
+                              !row.pigmySchemeID ? 'border-red-400 bg-red-50' : 'border-slate-300'
+                            }`}
+                          >
+                            <option value="">-- पिग्मी योजना निवडा --</option>
+                            {pigmySchemes.map((p) => (
+                              <option key={p.pigmySchemeID} value={p.pigmySchemeID}>
+                                {p.schemeName} ({p.schemeCode}) - {p.interestRate}%
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
                         {row.itemType === 'SHARE' && (
                           <select
                             disabled={!canEditSettings}
                             value={row.shareSchemeId ?? ''}
-                            onChange={(e) => handleSchemeChange(row.clientKey, e.target.value)}
+                            onChange={(e) => handleSchemeChange(row.clientKey, String(e.target.value ?? ''))}
                             className="w-full border border-slate-300 rounded px-1.5 py-1 bg-white disabled:bg-slate-100"
                           >
                             <option value="">-- शेअर योजना (ऐच्छिक) --</option>
@@ -1171,6 +1299,11 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
                                   : ''
                               }`}
                             />
+                            {ovdInvalid && ovdLedger && (
+                              <div className="text-[10px] text-red-700 font-medium leading-tight">
+                                ⚠️ '{ovdLedger.ledgerName}' हे '{ovdLedger.natureOfGroup || ovdLedger.accountType}' गटात आहे; दंडव्याजासाठी Income लेजर निवडा किंवा रिकामे ठेवा.
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <span className="text-slate-400 text-[10px]">फक्त कर्जासाठी लागू</span>
@@ -1233,7 +1366,10 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
                           </>
                         ) : (
                           <>
-                            {(row.itemType === 'THRIFT_SAVING' || row.itemType === 'LEDGER_OTHER') && (
+                            {(row.itemType === 'THRIFT_SAVING' ||
+                              row.itemType === 'DEPOSIT_LEDGER' ||
+                              row.itemType === 'PIGMY' ||
+                              row.itemType === 'LEDGER_OTHER') && (
                               <div className="flex items-center justify-between gap-1">
                                 <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-emerald-800">
                                   <input

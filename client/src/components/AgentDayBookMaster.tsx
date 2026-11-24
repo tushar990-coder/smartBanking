@@ -32,6 +32,19 @@ interface DayBreakupItem {
   isRemitted?: boolean;
 }
 
+interface PigmySchemeBreakupItem {
+  pigmySchemeID: number;
+  schemeCode: string;
+  schemeName: string;
+  liabilityLedgerID?: number;
+  liabilityLedgerName: string;
+  accountsCount: number;
+  collectionsCount: number;
+  collectedAmount: number;
+  remittedAmount: number;
+  pendingAmount: number;
+}
+
 interface DayCollectionItem {
   collectionId: number;
   receiptNo: string;
@@ -44,6 +57,9 @@ interface DayCollectionItem {
   accountId: number;
   accountNo: string;
   legacyAccountNumber: string;
+  pigmySchemeID?: number;
+  schemeCode?: string;
+  schemeName?: string;
   customerName: string;
   mobileNo: string;
   voucherId?: number;
@@ -64,6 +80,8 @@ interface DayBookSummary {
   rangeAlreadyRemitted?: number;
   isFullyRemitted?: boolean;
   totalPendingCash?: number;
+  activeSchemesCount?: number;
+  schemeBreakup?: PigmySchemeBreakupItem[];
   dayBreakup?: DayBreakupItem[];
   recentRemittances: RemittanceItem[];
 }
@@ -87,7 +105,9 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
 
   const { user } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [schemes, setSchemes] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
+  const [fallbackPigmySchemeId, setFallbackPigmySchemeId] = useState<number | ''>('');
   
   // 3-Date States
   const todayStr = getBusinessDateStr(user?.businessDate);
@@ -309,6 +329,11 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
   };
 
   useEffect(() => {
+    fetch('/api/PigmySchemes')
+      .then((res) => res.ok ? res.json() : [])
+      .then((data) => setSchemes(Array.isArray(data) ? data : []))
+      .catch(() => setSchemes([]));
+
     fetch('/api/PigmyAgents')
       .then((res) => res.json())
       .then((data) => {
@@ -395,6 +420,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
   const clearForm = () => {
     setDepositAmount('');
     setAutoFilledFromExcel(false);
+    setFallbackPigmySchemeId('');
     setNarration('');
     setPaymentMode('CASH');
     setBankLedgerId(0);
@@ -432,6 +458,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         amount: Number(depositAmount),
         paymentMode: paymentMode,
         bankLedgerId: paymentMode !== 'CASH' ? bankLedgerId : null,
+        fallbackPigmySchemeId: fallbackPigmySchemeId ? Number(fallbackPigmySchemeId) : null,
         narration: narration,
         branchId: user?.branchID || 1
       };
@@ -719,6 +746,41 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
               ))
             )}
           </div>
+
+          {/* Scheme-Wise GL Ledger Breakup */}
+          {summary.schemeBreakup && summary.schemeBreakup.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-blue-200/80 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-wide mr-1">
+                योजनेनिहाय व लेजरनिहाय विभागणी (Scheme GL Breakup):
+              </span>
+              {summary.schemeBreakup.map((sb) => (
+                <div
+                  key={`sb-${sb.pigmySchemeID}`}
+                  className={`px-2.5 py-1 rounded border text-[11px] flex flex-wrap items-center gap-1.5 shadow-2xs ${
+                    !sb.liabilityLedgerID
+                      ? 'bg-red-50 border-red-300 text-red-900'
+                      : sb.pendingAmount > 0
+                        ? 'bg-indigo-50/90 border-indigo-300 text-indigo-950'
+                        : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                  }`}
+                >
+                  <span className="font-bold">{sb.schemeName}</span>
+                  <span className="text-[10px] font-mono bg-white/80 px-1 rounded border border-indigo-200">
+                    Cr: {sb.liabilityLedgerID ? `#${sb.liabilityLedgerID} ${sb.liabilityLedgerName}` : '⚠️ लेजर मॅप नाही'}
+                  </span>
+                  <span className="text-[10px] text-gray-600">({sb.accountsCount} खाती)</span>
+                  <span className="font-mono font-bold text-indigo-900">
+                    एकूण: ₹{sb.collectedAmount.toLocaleString('en-IN')}
+                  </span>
+                  {sb.pendingAmount > 0 && (
+                    <span className="bg-amber-100 text-amber-900 text-[9.5px] font-bold px-1.5 py-0.2 rounded border border-amber-300">
+                      बाकी: ₹{sb.pendingAmount.toLocaleString('en-IN')}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -843,6 +905,36 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                 setAutoFilledFromExcel(false);
               }}
             />
+            {summary?.schemeBreakup && summary.schemeBreakup.filter(s => s.pendingAmount > 0).length > 0 && (
+              <div className="mt-1.5 bg-indigo-50/70 border border-indigo-200 rounded-sm px-2 py-1 text-[10px] text-indigo-900 space-y-0.5">
+                <div className="font-bold">Daybook Cr लेजर्स (संकलनानुसार आपोआप विभागले जाईल):</div>
+                {summary.schemeBreakup.filter(s => s.pendingAmount > 0).map(sb => (
+                  <div key={`form-sb-${sb.pigmySchemeID}`} className="flex justify-between font-mono">
+                    <span>• {sb.liabilityLedgerID ? `${sb.liabilityLedgerName} (#${sb.liabilityLedgerID})` : `${sb.schemeName} (⚠️ लेजर नाही)`}</span>
+                    <span className="font-bold">₹{sb.pendingAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {schemes.filter(s => s.status === 'Active').length > 1 && (!summary?.schemeBreakup || summary.schemeBreakup.filter(s => s.pendingAmount > 0).length === 0) && (
+              <div className="mt-1.5">
+                <label className="block text-[10px] font-bold text-amber-800 mb-0.5">
+                  अतिरिक्त / संकलनाविना रकमेसाठी पिग्मी योजना (Fallback Scheme)
+                </label>
+                <select
+                  className="w-full border border-amber-300 px-2 py-1 rounded-sm text-[11px] bg-amber-50/40 font-semibold"
+                  value={fallbackPigmySchemeId}
+                  onChange={(e) => setFallbackPigmySchemeId(e.target.value ? Number(e.target.value) : '')}
+                >
+                  <option value="">-- योजना निवडा (एकापेक्षा जास्त योजना असल्यास) --</option>
+                  {schemes.filter(s => s.status === 'Active').map((s: any) => (
+                    <option key={s.pigmySchemeID} value={s.pigmySchemeID}>
+                      {s.schemeName} {s.pigmyLiabilityLedger?.ledgerName ? `(${s.pigmyLiabilityLedger.ledgerName})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Cash Denomination Counter Grid (Active when Cash Mode is selected) */}
@@ -1261,6 +1353,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                         <th className="px-3 py-2 text-center w-10">#</th>
                         <th className="px-3 py-2">पावती क्र. (Receipt No)</th>
                         <th className="px-3 py-2">खाते क्र. (Account No)</th>
+                        <th className="px-3 py-2">पिग्मी योजना (Scheme)</th>
                         <th className="px-3 py-2">खातेदाराचे नाव</th>
                         <th className="px-3 py-2 text-center">वेळ</th>
                         <th className="px-3 py-2 text-center">स्रोत / माध्यम</th>
@@ -1286,6 +1379,11 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                                 जुना: <span className="font-semibold text-gray-700">{col.legacyAccountNumber}</span>
                               </div>
                             )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-bold">
+                              {col.schemeName || (col.pigmySchemeID ? `योजना #${col.pigmySchemeID}` : '-')}
+                            </span>
                           </td>
                           <td className="px-3 py-2">
                             <div className="font-medium text-gray-900">{col.customerName || 'N/A'}</div>
@@ -1315,7 +1413,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                     </tbody>
                     <tfoot className="bg-gray-100 font-bold border-t-2 border-gray-300">
                       <tr>
-                        <td colSpan={6} className="px-3 py-2 text-right text-gray-700">
+                        <td colSpan={7} className="px-3 py-2 text-right text-gray-700">
                           एकूण संकलन ({dayCollections.length} पावत्या):
                         </td>
                         <td className="px-3 py-2 text-right font-mono text-emerald-800 text-sm">

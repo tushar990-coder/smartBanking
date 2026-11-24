@@ -42,7 +42,10 @@ namespace Bhisi.Api.Services
         public int LoanAccountID { get; set; }
         public decimal Interest { get; set; }
         public bool Capitalized { get; set; }
+        public bool HasRegularInterest { get; set; } = true;
         public DateTime? PrevLastPaidDate { get; set; }
+        public decimal PenalInterest { get; set; }
+        public DateTime? PrevLastPenalPostingDate { get; set; }
     }
 
     internal sealed class VoucherRollbackDomainException : Exception
@@ -1691,8 +1694,10 @@ namespace Bhisi.Api.Services
 
             if (agentDeposits.Any())
             {
+                var depositIds = agentDeposits.Select(d => d.DepositId).ToList();
                 var remittedCols = await _context.PigmyCollections
-                    .Where(c => c.VoucherId.HasValue && voucherIds.Contains(c.VoucherId.Value))
+                    .Where(c => (c.VoucherId.HasValue && voucherIds.Contains(c.VoucherId.Value)) ||
+                                (c.RemittanceDepositId.HasValue && depositIds.Contains(c.RemittanceDepositId.Value)))
                     .ToListAsync();
 
                 if (remittedCols.Any())
@@ -1702,6 +1707,7 @@ namespace Bhisi.Api.Services
 
                     foreach (var col in remittedCols)
                     {
+                        col.RemittanceDepositId = null;
                         col.VoucherId = null;
                         col.IsVoucherGenerated = false;
                         _context.Entry(col).State = EntityState.Modified;
@@ -2556,10 +2562,17 @@ namespace Bhisi.Api.Services
                     loanAccount.PrincipalBalance,
                     Math.Round(loanAccount.PurePrincipalBalance + collection.PrincipalCollected, 2, MidpointRounding.AwayFromZero));
 
-                decimal penaltyToRestore = collection.PenaltyInterestCollected + collection.PenaltyWaived;
+                decimal bookedPenaltyToRestore = collection.BookedPenaltySettled ?? collection.PenaltyInterestCollected;
+                decimal penaltyToRestore = bookedPenaltyToRestore + collection.PenaltyWaived;
                 if (penaltyToRestore > 0)
                 {
                     loanAccount.OverdueInterestBalance = Math.Round(loanAccount.OverdueInterestBalance + penaltyToRestore, 2, MidpointRounding.AwayFromZero);
+                }
+                if (collection.PenaltyInterestCollected > 0 &&
+                    loanAccount.LastPenalPostingDate.HasValue &&
+                    loanAccount.LastPenalPostingDate.Value.Date == collection.CollectionDate.Date)
+                {
+                    loanAccount.LastPenalPostingDate = collection.PrevLastPenalPostingDate;
                 }
 
                 // Check for exact pre-settlement snapshot tag [PreIntBal:...|PreIntDt:...] from FD Settlement
@@ -2777,17 +2790,26 @@ namespace Bhisi.Api.Services
                                     var loan = await _context.LoanAccounts.FindAsync(snap.LoanAccountID);
                                     if (loan == null) continue;
 
-                                    if (snap.Capitalized)
+                                    if (snap.HasRegularInterest && snap.Interest > 0)
                                     {
-                                        loan.PrincipalBalance = Math.Max(0m, Math.Round(loan.PrincipalBalance - snap.Interest, 2, MidpointRounding.AwayFromZero));
-                                        loan.CapitalizedInterestAmount = Math.Max(0m, Math.Round(loan.CapitalizedInterestAmount - snap.Interest, 2, MidpointRounding.AwayFromZero));
-                                    }
-                                    else
-                                    {
-                                        loan.InterestBalance = Math.Max(0m, Math.Round(loan.InterestBalance - snap.Interest, 2, MidpointRounding.AwayFromZero));
+                                        if (snap.Capitalized)
+                                        {
+                                            loan.PrincipalBalance = Math.Max(0m, Math.Round(loan.PrincipalBalance - snap.Interest, 2, MidpointRounding.AwayFromZero));
+                                            loan.CapitalizedInterestAmount = Math.Max(0m, Math.Round(loan.CapitalizedInterestAmount - snap.Interest, 2, MidpointRounding.AwayFromZero));
+                                        }
+                                        else
+                                        {
+                                            loan.InterestBalance = Math.Max(0m, Math.Round(loan.InterestBalance - snap.Interest, 2, MidpointRounding.AwayFromZero));
+                                        }
+
+                                        loan.LastInterestPostingDate = snap.PrevLastPaidDate;
                                     }
 
-                                    loan.LastInterestPostingDate = snap.PrevLastPaidDate;
+                                    if (snap.PenalInterest > 0)
+                                    {
+                                        loan.OverdueInterestBalance = Math.Max(0m, Math.Round(loan.OverdueInterestBalance - snap.PenalInterest, 2, MidpointRounding.AwayFromZero));
+                                        loan.LastPenalPostingDate = snap.PrevLastPenalPostingDate;
+                                    }
                                     _context.Entry(loan).State = EntityState.Modified;
                                 }
                                 reversedFromSnapshot = true;

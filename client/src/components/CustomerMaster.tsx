@@ -1110,7 +1110,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     if (req.openPigmyAccount) {
       setPigmyFormData({
         openPigmyAccount: true,
-        pigmySchemeID: req.pigmySchemeID ? String(req.pigmySchemeID) : (pigmySchemes.length > 0 ? String(pigmySchemes[0].pigmySchemeID) : ''),
+        pigmySchemeID: req.pigmySchemeID ? String(req.pigmySchemeID) : '',
         pigmyAgentID: req.pigmyAgentID ? String(req.pigmyAgentID) : '',
         dailyDepositAmount: req.dailyDepositAmount || 100,
         initialDepositAmount: req.initialDepositAmount || 0

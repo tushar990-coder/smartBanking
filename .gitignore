@@ -87,3 +87,6 @@ VPS_DB_Clean_Patch*/
 
 
 appsettings.json
+
+# Runtime KYC / upload storage
+api/Bhisi.Api/App_Data/

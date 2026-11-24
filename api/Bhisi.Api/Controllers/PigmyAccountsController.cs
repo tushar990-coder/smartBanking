@@ -29,6 +29,32 @@ namespace Bhisi.Api.Controllers
         public DateTime? AsOfDate { get; set; }
     }
 
+    public class PigmyOpeningImportRowDto
+    {
+        public int RowNumber { get; set; }
+        public int? CustomerID { get; set; }
+        public string? CustomerCif { get; set; }
+        public int? PigmySchemeID { get; set; }
+        public string? SchemeCodeOrName { get; set; }
+        public int? PigmyAgentID { get; set; }
+        public string? AgentCodeOrName { get; set; }
+        public string? AccountNo { get; set; }
+        public string? LegacyAccountNumber { get; set; }
+        public DateTime? OpeningDate { get; set; }
+        public decimal OpeningBalance { get; set; }
+        public decimal DailyDepositAmount { get; set; } = 100m;
+        public string? FinancialYear { get; set; }
+        public DateTime? AsOfDate { get; set; }
+    }
+
+    public class PigmyOpeningImportRequestDto
+    {
+        public int BranchID { get; set; } = 1;
+        public string? FinancialYear { get; set; }
+        public DateTime? AsOfDate { get; set; }
+        public List<PigmyOpeningImportRowDto> Rows { get; set; } = new List<PigmyOpeningImportRowDto>();
+    }
+
     [Route("api/[controller]")]
     [ApiController]
     [Microsoft.AspNetCore.Authorization.Authorize]
@@ -643,6 +669,19 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        private static int ResolveSchemeCodeNumeric(PigmyScheme scheme)
+        {
+            if (!string.IsNullOrWhiteSpace(scheme.SchemeCode))
+            {
+                var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                {
+                    return parsedScheme;
+                }
+            }
+            return scheme.PigmySchemeID > 0 ? 300 + (scheme.PigmySchemeID % 100) : 301;
+        }
+
         // POST: api/PigmyAccounts/Migrate
         [HttpPost("Migrate")]
         [MigrationLockFilter]
@@ -667,15 +706,7 @@ namespace Bhisi.Api.Controllers
                 var agent = await _context.PigmyAgents.FindAsync(request.PigmyAgentID);
                 if (agent == null || agent.Status != "Active") return BadRequest("Invalid or inactive Agent.");
 
-                int schemeCodeNum = 301;
-                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
-                {
-                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
-                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
-                    {
-                        schemeCodeNum = parsedScheme;
-                    }
-                }
+                int schemeCodeNum = ResolveSchemeCodeNumeric(scheme);
 
                 string accountNo;
                 if (!string.IsNullOrWhiteSpace(request.AccountNo))
@@ -780,6 +811,316 @@ namespace Bhisi.Api.Controllers
             {
                 await transaction.RollbackAsync();
                 return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
+        // POST: api/PigmyAccounts/Import
+        [HttpPost("Import")]
+        [MigrationLockFilter]
+        public async Task<IActionResult> ImportPigmyOpeningBalances([FromBody] PigmyOpeningImportRequestDto request)
+        {
+            if (request == null || request.Rows == null || request.Rows.Count == 0)
+            {
+                return BadRequest(new { message = "आयात करण्यासाठी एक्सेलमध्ये किमान एक नोंद असणे आवश्यक आहे." });
+            }
+
+            int branchId = User?.Identity?.IsAuthenticated == true
+                ? User.ResolveRequiredBranchId(request.BranchID > 0 ? request.BranchID : null)
+                : (request.BranchID > 0 ? request.BranchID : 1);
+
+            var allSchemes = await _context.PigmySchemes
+                .Include(s => s.Slabs)
+                .Where(s => s.Status == "Active")
+                .ToListAsync();
+
+            if (!allSchemes.Any())
+            {
+                return BadRequest(new { message = "सिस्टीममध्ये कोणतीही सक्रिय पिग्मी योजना उपलब्ध नाही." });
+            }
+
+            var allAgents = await _context.PigmyAgents
+                .Where(a => a.Status == "Active")
+                .ToListAsync();
+
+            var allCustomers = await _context.Customers
+                .Where(c => !c.IsDeleted)
+                .ToListAsync();
+
+            var memberToCustomerId = await _context.Members
+                .AsNoTracking()
+                .Where(m => m.CustomerID.HasValue && m.CustomerID.Value > 0)
+                .Select(m => new { m.MemberCode, m.LegacyMemberNo, CustomerID = m.CustomerID!.Value })
+                .ToListAsync();
+
+            var existingAccounts = await _context.PigmyAccounts
+                .AsNoTracking()
+                .Where(a => a.BranchID == branchId)
+                .Select(a => new { a.AccountNo, a.PreviousAccountNo, a.PigmySchemeID, a.LegacyAccountNumber, a.OldAccountNo })
+                .ToListAsync();
+
+            var usedAccountNos = new HashSet<string>(
+                existingAccounts.SelectMany(a => new[] { a.AccountNo, a.PreviousAccountNo }).Where(x => !string.IsNullOrWhiteSpace(x))!,
+                StringComparer.OrdinalIgnoreCase);
+
+            var usedLegacyByScheme = new HashSet<(int SchemeId, string LegacyNo)>();
+            foreach (var exAcc in existingAccounts)
+            {
+                if (!string.IsNullOrWhiteSpace(exAcc.LegacyAccountNumber))
+                    usedLegacyByScheme.Add((exAcc.PigmySchemeID, exAcc.LegacyAccountNumber.Trim().ToUpperInvariant()));
+                if (!string.IsNullOrWhiteSpace(exAcc.OldAccountNo))
+                    usedLegacyByScheme.Add((exAcc.PigmySchemeID, exAcc.OldAccountNo.Trim().ToUpperInvariant()));
+            }
+
+            PigmyScheme? ResolveScheme(PigmyOpeningImportRowDto row)
+            {
+                if (row.PigmySchemeID.HasValue && row.PigmySchemeID.Value > 0)
+                {
+                    return allSchemes.FirstOrDefault(s => s.PigmySchemeID == row.PigmySchemeID.Value);
+                }
+                if (string.IsNullOrWhiteSpace(row.SchemeCodeOrName))
+                {
+                    return null; // NEVER default to Scheme #1 when scheme is omitted
+                }
+                string clean = row.SchemeCodeOrName.Trim();
+                var exact = allSchemes.FirstOrDefault(s =>
+                    (!string.IsNullOrWhiteSpace(s.SchemeCode) && s.SchemeCode.Trim().Equals(clean, StringComparison.OrdinalIgnoreCase)) ||
+                    s.SchemeName.Trim().Equals(clean, StringComparison.OrdinalIgnoreCase) ||
+                    s.PigmySchemeID.ToString() == clean ||
+                    $"{s.SchemeCode ?? ""} - {s.SchemeName}".Trim().Equals(clean, StringComparison.OrdinalIgnoreCase));
+                if (exact != null) return exact;
+
+                string prefix = clean.Split(new[] { '-', '|', ':' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? "";
+                return allSchemes.FirstOrDefault(s =>
+                    (!string.IsNullOrWhiteSpace(s.SchemeCode) && s.SchemeCode.Trim().Equals(prefix, StringComparison.OrdinalIgnoreCase)) ||
+                    s.PigmySchemeID.ToString() == prefix ||
+                    clean.Contains(s.SchemeName.Trim(), StringComparison.OrdinalIgnoreCase));
+            }
+
+            Customer? ResolveCustomer(PigmyOpeningImportRowDto row)
+            {
+                if (row.CustomerID.HasValue && row.CustomerID.Value > 0)
+                {
+                    return allCustomers.FirstOrDefault(c => c.CustomerID == row.CustomerID.Value);
+                }
+                if (string.IsNullOrWhiteSpace(row.CustomerCif)) return null;
+                string key = row.CustomerCif.Trim();
+                var cust = allCustomers.FirstOrDefault(c =>
+                    (!string.IsNullOrWhiteSpace(c.CIFNo) && c.CIFNo.Trim().Equals(key, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrWhiteSpace(c.LegacyCustomerNo) && c.LegacyCustomerNo.Trim().Equals(key, StringComparison.OrdinalIgnoreCase)));
+                if (cust != null) return cust;
+
+                var mLink = memberToCustomerId.FirstOrDefault(m =>
+                    (!string.IsNullOrWhiteSpace(m.MemberCode) && m.MemberCode.Trim().Equals(key, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrWhiteSpace(m.LegacyMemberNo) && m.LegacyMemberNo.Trim().Equals(key, StringComparison.OrdinalIgnoreCase)));
+                return mLink != null ? allCustomers.FirstOrDefault(c => c.CustomerID == mLink.CustomerID) : null;
+            }
+
+            PigmyAgent? ResolveAgent(PigmyOpeningImportRowDto row)
+            {
+                if (row.PigmyAgentID.HasValue && row.PigmyAgentID.Value > 0)
+                {
+                    return allAgents.FirstOrDefault(a => a.PigmyAgentID == row.PigmyAgentID.Value);
+                }
+                if (string.IsNullOrWhiteSpace(row.AgentCodeOrName)) return null;
+                string clean = row.AgentCodeOrName.Trim();
+                return allAgents.FirstOrDefault(a =>
+                    (a.AgentName != null && a.AgentName.Trim().Equals(clean, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrWhiteSpace(a.Username) && a.Username.Trim().Equals(clean, StringComparison.OrdinalIgnoreCase)) ||
+                    a.PigmyAgentID.ToString() == clean ||
+                    $"AGT-{a.PigmyAgentID}".Equals(clean, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var validationErrors = new List<string>();
+            var validatedEntries = new List<(PigmyOpeningImportRowDto Row, Customer Cust, PigmyScheme Scheme, PigmyAgent Agent, DateTime OpeningDate, DateTime AsOfDate, string FinYear)>();
+
+            for (int idx = 0; idx < request.Rows.Count; idx++)
+            {
+                var row = request.Rows[idx];
+                int rowNum = row.RowNumber > 0 ? row.RowNumber : (idx + 2);
+
+                var cust = ResolveCustomer(row);
+                if (cust == null)
+                {
+                    validationErrors.Add($"ओळ {rowNum}: खातेदार सापडला नाही (CIF/ID: '{row.CustomerCif ?? row.CustomerID?.ToString() ?? "-"}').");
+                    continue;
+                }
+
+                var scheme = ResolveScheme(row);
+                if (scheme == null)
+                {
+                    validationErrors.Add($"ओळ {rowNum}: पिग्मी योजना अनिवार्य आहे किंवा सापडली नाही ('{row.SchemeCodeOrName ?? row.PigmySchemeID?.ToString() ?? "रिकामी"}').");
+                    continue;
+                }
+
+                if (!scheme.PigmyLiabilityLedgerID.HasValue || scheme.PigmyLiabilityLedgerID.Value <= 0)
+                {
+                    validationErrors.Add($"ओळ {rowNum}: पिग्मी योजना '{scheme.SchemeName}' ला देयता लेजर (Liability Ledger) मॅप केलेले नाही.");
+                    continue;
+                }
+
+                var agent = ResolveAgent(row);
+                if (agent == null)
+                {
+                    validationErrors.Add($"ओळ {rowNum}: पिग्मी एजंट सापडला नाही ('{row.AgentCodeOrName ?? row.PigmyAgentID?.ToString() ?? "रिकामे"}').");
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(row.AccountNo) && usedAccountNos.Contains(row.AccountNo.Trim()))
+                {
+                    validationErrors.Add($"ओळ {rowNum}: खाते क्र. '{row.AccountNo}' आधीच अस्तित्वात किंवा दुबार आहे.");
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(row.LegacyAccountNumber))
+                {
+                    var legKey = (scheme.PigmySchemeID, row.LegacyAccountNumber.Trim().ToUpperInvariant());
+                    if (usedLegacyByScheme.Contains(legKey))
+                    {
+                        validationErrors.Add($"ओळ {rowNum}: जुना खाते क्र. '{row.LegacyAccountNumber}' योजना '{scheme.SchemeName}' मध्ये आधीच नोंदवला आहे.");
+                        continue;
+                    }
+                    usedLegacyByScheme.Add(legKey);
+                }
+
+                if (row.OpeningBalance < 0)
+                {
+                    validationErrors.Add($"ओळ {rowNum}: आरंभिक शिल्लक शून्यापेक्षा कमी असू शकत नाही.");
+                    continue;
+                }
+
+                DateTime opDate = row.OpeningDate?.Date ?? (request.AsOfDate?.Date ?? new DateTime(2026, 3, 31));
+                DateTime asOfDate = row.AsOfDate?.Date ?? request.AsOfDate?.Date ?? opDate;
+                string finYear = !string.IsNullOrWhiteSpace(row.FinancialYear) ? row.FinancialYear.Trim() : (request.FinancialYear ?? "Legacy");
+
+                if (!string.IsNullOrWhiteSpace(row.AccountNo))
+                {
+                    usedAccountNos.Add(row.AccountNo.Trim());
+                }
+
+                validatedEntries.Add((row, cust, scheme, agent, opDate, asOfDate, finYear));
+            }
+
+            if (validationErrors.Any())
+            {
+                return BadRequest(new
+                {
+                    message = $"एक्सेल डेटा पडताळणीत {validationErrors.Count} त्रुटी आढळल्या; कोणतीही नोंद सेव्ह केली नाही.",
+                    errors = validationErrors
+                });
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var importedByScheme = new Dictionary<int, (string SchemeName, int Count, decimal Balance)>();
+                var affectedSchemeIds = new HashSet<int>();
+
+                foreach (var item in validatedEntries)
+                {
+                    int schemeCodeNum = ResolveSchemeCodeNumeric(item.Scheme);
+                    string accountNo;
+                    if (!string.IsNullOrWhiteSpace(item.Row.AccountNo))
+                    {
+                        accountNo = item.Row.AccountNo.Trim();
+                        await SyncSequenceWithAccountNoAsync(branchId, schemeCodeNum, accountNo);
+                    }
+                    else
+                    {
+                        accountNo = await GenerateNextPigmyAccountNo(branchId, item.Scheme.PigmySchemeID, incrementSequence: true);
+                    }
+
+                    int tenureDays = Services.PigmyInterestCalculationService.ResolveSchemeTenureDays(item.Scheme);
+                    string? cleanLegacy = string.IsNullOrWhiteSpace(item.Row.LegacyAccountNumber) ? null : item.Row.LegacyAccountNumber.Trim();
+
+                    var pigmyAccount = new PigmyAccount
+                    {
+                        AccountNo = accountNo,
+                        LegacyAccountNumber = cleanLegacy,
+                        OldAccountNo = cleanLegacy,
+                        CustomerID = item.Cust.CustomerID,
+                        BranchID = branchId,
+                        PigmySchemeID = item.Scheme.PigmySchemeID,
+                        PigmyAgentID = item.Agent.PigmyAgentID,
+                        OpeningDate = item.OpeningDate,
+                        InterestRate = item.Scheme.InterestRate,
+                        MaturityDate = item.OpeningDate.AddDays(tenureDays),
+                        TotalDepositedAmount = item.Row.OpeningBalance,
+                        DailyDepositAmount = item.Row.DailyDepositAmount > 0 ? item.Row.DailyDepositAmount : 100m,
+                        Status = "Active",
+                        CreatedDate = DateTime.Now,
+                        CreatedBy = 1
+                    };
+
+                    _context.PigmyAccounts.Add(pigmyAccount);
+                    await _context.SaveChangesAsync();
+
+                    if (item.Row.OpeningBalance > 0)
+                    {
+                        _context.PigmyOpeningBalances.Add(new PigmyOpeningBalance
+                        {
+                            PigmyAccountID = pigmyAccount.PigmyAccountID,
+                            FinancialYear = item.FinYear,
+                            AsOfDate = item.AsOfDate,
+                            MigratedBalanceAmount = item.Row.OpeningBalance,
+                            MigrationRemarks = "Multi-Scheme Excel Opening Balance Import",
+                            IsPostedToLedger = true,
+                            MigratedOn = DateTime.Now,
+                            MigratedBy = 1
+                        });
+
+                        _context.PigmyTransactions.Add(new PigmyTransaction
+                        {
+                            PigmyAccountID = pigmyAccount.PigmyAccountID,
+                            TransactionDate = item.AsOfDate,
+                            ValueDate = item.AsOfDate,
+                            TransactionType = "OPENING_BALANCE",
+                            CrAmount = item.Row.OpeningBalance,
+                            DrAmount = 0,
+                            BalanceAmount = item.Row.OpeningBalance,
+                            Narration = $"Account Opening Deposit / Excel Import (As Of {item.AsOfDate:dd/MM/yyyy})",
+                            ReferenceId = "SYS-OP-BAL",
+                            PostedOn = DateTime.Now,
+                            MakerId = 1
+                        });
+
+                        await _context.SaveChangesAsync();
+                    }
+
+                    affectedSchemeIds.Add(item.Scheme.PigmySchemeID);
+                    if (!importedByScheme.TryGetValue(item.Scheme.PigmySchemeID, out var agg))
+                    {
+                        importedByScheme[item.Scheme.PigmySchemeID] = (item.Scheme.SchemeName, 1, item.Row.OpeningBalance);
+                    }
+                    else
+                    {
+                        importedByScheme[item.Scheme.PigmySchemeID] = (agg.SchemeName, agg.Count + 1, agg.Balance + item.Row.OpeningBalance);
+                    }
+                }
+
+                await transaction.CommitAsync();
+
+                foreach (int sId in affectedSchemeIds)
+                {
+                    await SyncPigmyGlOpeningBalanceAsync(sId);
+                }
+
+                return Ok(new
+                {
+                    message = $"एकूण {validatedEntries.Count} पिग्मी खाती ({affectedSchemeIds.Count} योजना) यशस्वीरीत्या आयात करून खतावणी सिंक झाली!",
+                    importedCount = validatedEntries.Count,
+                    schemes = importedByScheme.Select(kv => new
+                    {
+                        pigmySchemeID = kv.Key,
+                        schemeName = kv.Value.SchemeName,
+                        count = kv.Value.Count,
+                        totalBalance = kv.Value.Balance
+                    }).ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { message = $"पिग्मी एक्सेल आयात करताना त्रुटी आली: {ex.Message}" });
             }
         }
 

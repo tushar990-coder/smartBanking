@@ -188,8 +188,11 @@ export default function PigmyAccountOpening() {
   }, [formData.customerID, customers]);
 
   useEffect(() => {
-    if (formData.branchID) {
-      fetchNextAccountNo(parseInt(formData.branchID), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1);
+    if (formData.branchID && formData.pigmySchemeID) {
+      fetchNextAccountNo(parseInt(formData.branchID), parseInt(formData.pigmySchemeID));
+    } else if (!formData.pigmySchemeID) {
+      setFormData(prev => ({ ...prev, accountNo: '' }));
+      setPigmyLegacyHint({ last: '0', next: '1' });
     }
   }, [formData.branchID, formData.pigmySchemeID]);
 
@@ -443,7 +446,9 @@ export default function PigmyAccountOpening() {
           customerID: '',
           openingBalance: '0'
         }));
-        await fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1);
+        if (formData.pigmySchemeID) {
+          await fetchNextAccountNo(parseInt(formData.branchID || '1'), parseInt(formData.pigmySchemeID));
+        }
         setPaymentMode('Cash');
         setBankLedgerId(0);
         setSelectedCustomer(null);

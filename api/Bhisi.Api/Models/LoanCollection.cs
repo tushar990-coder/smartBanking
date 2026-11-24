@@ -47,6 +47,11 @@ namespace Bhisi.Api.Models
         public decimal PenaltyInterestCollected { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
+        public decimal? BookedPenaltySettled { get; set; } // आधीच बुक केलेल्या OverdueInterestBalance मधून सेटल झालेली दंड रक्कम (Lossless Rollback साठी)
+
+        public DateTime? PrevLastPenalPostingDate { get; set; } // पावती जतन करताना LastPenalPostingDate बदलल्यास rollback साठी मागील तारीख
+
+        [Column(TypeName = "decimal(18,2)")]
         public decimal ReceivableInterestCollected { get; set; } = 0; // जमा झालेले थकीत येणे व्याज (Cr. Receivable Ledger)
 
         [Column(TypeName = "decimal(18,2)")]

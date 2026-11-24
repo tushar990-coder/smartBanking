@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +11,7 @@ using Bhisi.Api.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -25,6 +28,7 @@ namespace Bhisi.Api.Services
         private readonly IHttpContextAccessor _httpContextAccessor;
         private static LicenseStatusDto? _cachedStatus;
         private static DateTime _lastChecked = DateTime.MinValue;
+        private static readonly ConcurrentDictionary<string, (string Name, DateTime CachedAtUtc)> _wildcardSansthaCache = new(StringComparer.OrdinalIgnoreCase);
 
         public LicenseService(ILogger<LicenseService> logger, IServiceProvider serviceProvider, IWebHostEnvironment env, IHttpContextAccessor httpContextAccessor)
         {
@@ -120,6 +124,7 @@ namespace Bhisi.Api.Services
             // 2. Online Wildcard Domain Authorization (*.hellomindspace.in for cloud VPS testing)
             if (IsAuthorizedWildcardDomain(currentHost))
             {
+                string resolvedSansthaName = ResolveSansthaDisplayName(currentHost);
                 return new LicenseStatusDto
                 {
                     IsValid = true,
@@ -127,8 +132,8 @@ namespace Bhisi.Api.Services
                     LicenseType = "ONLINE_VPS",
                     Message = $"ऑनलाइन चाचणी परवाना सक्रिय आहे ({currentHost})",
                     MachineCode = GetMachineCode(),
-                    ClientName = "Hellomindspace Cloud Testing",
-                    SansthaName = "श्री जोतिर्लिंग नागरी सहकारी पतसंस्था",
+                    ClientName = "Hellomindspace Cloud",
+                    SansthaName = resolvedSansthaName,
                     ActiveDomain = currentHost,
                     IssuedDate = DateTime.Today.AddDays(-30),
                     ExpiryDate = DateTime.Today.AddYears(5),
@@ -411,6 +416,40 @@ namespace Bhisi.Api.Services
                    host == "::1" ||
                    host == "0.0.0.0" ||
                    host.EndsWith(".local", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string ResolveSansthaDisplayName(string hostKey)
+        {
+            string key = string.IsNullOrWhiteSpace(hostKey) ? "_default" : hostKey.Trim().ToLowerInvariant();
+            if (_wildcardSansthaCache.TryGetValue(key, out var cached) &&
+                (DateTime.UtcNow - cached.CachedAtUtc).TotalMinutes < 10 &&
+                !string.IsNullOrWhiteSpace(cached.Name))
+            {
+                return cached.Name;
+            }
+
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var db = scope.ServiceProvider.GetService<AppDbContext>();
+                string? dbName = db?.SansthaDetails
+                    .AsNoTracking()
+                    .OrderBy(s => s.SansthaID)
+                    .Select(s => s.SansthaName)
+                    .FirstOrDefault();
+
+                if (!string.IsNullOrWhiteSpace(dbName))
+                {
+                    _wildcardSansthaCache[key] = (dbName.Trim(), DateTime.UtcNow);
+                    return dbName.Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not resolve SansthaName from SansthaDetails for host {Host}", key);
+            }
+
+            return "SmartBanking Cloud";
         }
 
         private bool IsAuthorizedWildcardDomain(string host)

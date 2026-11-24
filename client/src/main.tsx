@@ -78,7 +78,14 @@ axios.interceptors.request.use((config) => {
     }
   }
 
-  const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
+  const axiosReqUrl = (config.url || '').toLowerCase();
+  const isAnonymousHealthAxios = axiosReqUrl.includes('/license/status');
+  if (isAnonymousHealthAxios && config.headers) {
+    delete config.headers['Content-Type'];
+  }
+  const savedUser = isAnonymousHealthAxios
+    ? null
+    : (sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user'));
   if (savedUser) {
     try {
       const user = JSON.parse(savedUser);
@@ -158,7 +165,10 @@ window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
     }
   }
 
-  const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
+  const isAnonymousHealthFetch = urlStr.toLowerCase().includes('/license/status');
+  const savedUser = isAnonymousHealthFetch
+    ? null
+    : (sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user'));
   if (savedUser) {
     try {
       const user = JSON.parse(savedUser);

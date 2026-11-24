@@ -156,6 +156,13 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "दंड व्याजदर ऋण (Negative) असू शकत नाही." });
             }
 
+            if (loanRate.PenalInterestGraceDays < 0)
+            {
+                return BadRequest(new { message = "दंड व्याज सवलत दिवस ऋण (Negative) असू शकत नाहीत." });
+            }
+
+            loanRate.PenalInterestBasis = Helpers.LoanPenalInterestHelper.NormalizePenalInterestBasis(loanRate.PenalInterestBasis);
+
             if (loanRate.DurationMonths < 0)
             {
                 return BadRequest(new { message = "कर्ज मुदत (महिने) अवैध आहे." });
@@ -181,6 +188,24 @@ namespace Bhisi.Api.Controllers
             if (!interestLedgerExists)
             {
                 return BadRequest(new { message = "निवडलेले कर्ज व्याज खाते (Interest Ledger) अस्तित्वात नाही." });
+            }
+
+            if (loanRate.OverdueInterestLedgerID.HasValue && loanRate.OverdueInterestLedgerID.Value > 0)
+            {
+                bool overdueLedgerExists = await _context.Ledgers.AnyAsync(l => l.LedgerID == loanRate.OverdueInterestLedgerID.Value);
+                if (!overdueLedgerExists)
+                {
+                    return BadRequest(new { message = "निवडलेले थकीत / दंड व्याज खाते (Overdue Interest Ledger) अस्तित्वात नाही." });
+                }
+            }
+
+            if (loanRate.SurchargeLedgerID.HasValue && loanRate.SurchargeLedgerID.Value > 0)
+            {
+                bool surchargeLedgerExists = await _context.Ledgers.AnyAsync(l => l.LedgerID == loanRate.SurchargeLedgerID.Value);
+                if (!surchargeLedgerExists)
+                {
+                    return BadRequest(new { message = "निवडलेले सरचार्ज खाते (Surcharge Ledger) अस्तित्वात नाही." });
+                }
             }
 
             bool isAccrueToReceivable = (loanRate.InterestPostingType?.Trim() == "येणे व्याजावर") 
@@ -278,14 +303,8 @@ namespace Bhisi.Api.Controllers
             loanRate.LoanType = loanRate.LoanType.Trim();
             loanRate.LoanCode = loanRate.LoanCode?.Trim() ?? string.Empty;
 
-            // 1. Case-insensitive LoanType conflict check
-            bool typeConflict = await _context.LoanRates.AnyAsync(r => r.LoanRateID != id && r.LoanType.ToLower() == loanRate.LoanType.ToLower());
-            if (typeConflict)
-            {
-                return BadRequest(new { message = $"कर्ज योजना प्रकार / नाव '{loanRate.LoanType}' इतर कर्ज योजनेसाठी आधीपासून वापरले गेले आहे." });
-            }
-
-            // 2. Case-insensitive LoanCode conflict check
+            // Multiple schemes under the same LoanType category are supported (uniqueness enforced on LoanCode & ShortName)
+            // 1. Case-insensitive LoanCode conflict check
             if (!string.IsNullOrWhiteSpace(loanRate.LoanCode))
             {
                 bool codeConflict = await _context.LoanRates.AnyAsync(r => r.LoanRateID != id && r.LoanCode.ToLower() == loanRate.LoanCode.ToLower());
@@ -315,6 +334,13 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "दंड व्याजदर ऋण (Negative) असू शकत नाही." });
             }
 
+            if (loanRate.PenalInterestGraceDays < 0)
+            {
+                return BadRequest(new { message = "दंड व्याज सवलत दिवस ऋण (Negative) असू शकत नाहीत." });
+            }
+
+            loanRate.PenalInterestBasis = Helpers.LoanPenalInterestHelper.NormalizePenalInterestBasis(loanRate.PenalInterestBasis);
+
             if (loanRate.DurationMonths < 0)
             {
                 return BadRequest(new { message = "कर्ज मुदत (महिने) अवैध आहे." });
@@ -340,6 +366,24 @@ namespace Bhisi.Api.Controllers
             if (!interestLedgerExists)
             {
                 return BadRequest(new { message = "निवडलेले कर्ज व्याज खाते (Interest Ledger) अस्तित्वात नाही." });
+            }
+
+            if (loanRate.OverdueInterestLedgerID.HasValue && loanRate.OverdueInterestLedgerID.Value > 0)
+            {
+                bool overdueLedgerExists = await _context.Ledgers.AnyAsync(l => l.LedgerID == loanRate.OverdueInterestLedgerID.Value);
+                if (!overdueLedgerExists)
+                {
+                    return BadRequest(new { message = "निवडलेले थकीत / दंड व्याज खाते (Overdue Interest Ledger) अस्तित्वात नाही." });
+                }
+            }
+
+            if (loanRate.SurchargeLedgerID.HasValue && loanRate.SurchargeLedgerID.Value > 0)
+            {
+                bool surchargeLedgerExists = await _context.Ledgers.AnyAsync(l => l.LedgerID == loanRate.SurchargeLedgerID.Value);
+                if (!surchargeLedgerExists)
+                {
+                    return BadRequest(new { message = "निवडलेले सरचार्ज खाते (Surcharge Ledger) अस्तित्वात नाही." });
+                }
             }
 
             bool isAccrueToReceivable = (loanRate.InterestPostingType?.Trim() == "येणे व्याजावर") 
@@ -377,6 +421,11 @@ namespace Bhisi.Api.Controllers
             if (existing.InterestCalculationMethod != loanRate.InterestCalculationMethod) changes.Add($"गणना: '{existing.InterestCalculationMethod}' -> '{loanRate.InterestCalculationMethod}'");
             if (existing.LoanLedgerID != loanRate.LoanLedgerID) changes.Add($"मुद्दल खाते ID: {existing.LoanLedgerID} -> {loanRate.LoanLedgerID}");
             if (existing.InterestLedgerID != loanRate.InterestLedgerID) changes.Add($"व्याज खाते ID: {existing.InterestLedgerID} -> {loanRate.InterestLedgerID}");
+            if (existing.OverdueInterestLedgerID != loanRate.OverdueInterestLedgerID) changes.Add($"थकीत/दंड व्याज खाते ID: {existing.OverdueInterestLedgerID} -> {loanRate.OverdueInterestLedgerID}");
+            if (existing.SurchargeLedgerID != loanRate.SurchargeLedgerID) changes.Add($"सरचार्ज खाते ID: {existing.SurchargeLedgerID} -> {loanRate.SurchargeLedgerID}");
+            if (existing.PenalInterestGraceDays != loanRate.PenalInterestGraceDays) changes.Add($"दंड व्याज सवलत दिवस: {existing.PenalInterestGraceDays} -> {loanRate.PenalInterestGraceDays}");
+            if (existing.PenalInterestBasis != loanRate.PenalInterestBasis) changes.Add($"दंड व्याज आधार: '{existing.PenalInterestBasis}' -> '{loanRate.PenalInterestBasis}'");
+            if (existing.AllowManualPenalInRecovery != loanRate.AllowManualPenalInRecovery) changes.Add($"वसुली मॅन्युअल दंड परवानगी: {existing.AllowManualPenalInRecovery} -> {loanRate.AllowManualPenalInRecovery}");
             if (existing.IsActive != loanRate.IsActive) changes.Add($"स्थिती (Active): {existing.IsActive} -> {loanRate.IsActive}");
 
             // Track Interest Rate and/or Overdue Interest Rate Revisions into LoanRateHistories
@@ -420,6 +469,11 @@ namespace Bhisi.Api.Controllers
                 _context.LoanRateHistories.Add(history);
             }
 
+            var trackedEntry = _context.ChangeTracker.Entries<LoanRate>().FirstOrDefault(e => e.Entity.LoanRateID == id);
+            if (trackedEntry != null && !ReferenceEquals(trackedEntry.Entity, loanRate))
+            {
+                trackedEntry.State = EntityState.Detached;
+            }
             _context.Entry(loanRate).State = EntityState.Modified;
 
             try

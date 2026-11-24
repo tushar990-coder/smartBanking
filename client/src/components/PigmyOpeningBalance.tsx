@@ -24,7 +24,9 @@ import {
   Printer,
   Sparkles,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  Upload,
+  Download
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
@@ -53,6 +55,34 @@ export default function PigmyOpeningBalance() {
   const [successModalData, setSuccessModalData] = useState<any | null>(null);
   const [glRecon, setGlRecon] = useState<any | null>(null);
   const [reconciling, setReconciling] = useState(false);
+
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importingExcel, setImportingExcel] = useState(false);
+  const [excelImportPreview, setExcelImportPreview] = useState<{
+    fileName: string;
+    rows: Array<{
+      rowNumber: number;
+      customerCif: string;
+      customerID?: number;
+      customerName: string;
+      schemeCodeOrName: string;
+      pigmySchemeID?: number;
+      schemeName: string;
+      agentCodeOrName: string;
+      pigmyAgentID?: number;
+      agentName: string;
+      legacyAccountNumber: string;
+      openingDate: string;
+      openingBalance: number;
+      dailyDepositAmount: number;
+      financialYear: string;
+      asOfDate: string;
+      isValid: boolean;
+      error?: string;
+    }>;
+    schemeSummary: Array<{ schemeId: number; schemeName: string; count: number; totalBalance: number }>;
+  } | null>(null);
 
   const formContainerRef = useRef<HTMLDivElement>(null);
   const balanceInputRef = useRef<HTMLInputElement>(null);
@@ -384,6 +414,289 @@ export default function PigmyOpeningBalance() {
     XLSX.writeFile(wb, `Pigmy_Opening_Balances_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  const parseExcelImportDate = (val: any, fallback: string): string => {
+    if (val === undefined || val === null || val === '') return fallback;
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      const y = val.getFullYear();
+      const m = String(val.getMonth() + 1).padStart(2, '0');
+      const d = String(val.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    if (typeof val === 'number' && val > 20000) {
+      const utcDays = Math.floor(val - 25569);
+      const dt = new Date(utcDays * 86400 * 1000);
+      if (!isNaN(dt.getTime())) {
+        return dt.toISOString().split('T')[0];
+      }
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.substring(0, 10);
+    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (dmy) {
+      const d = String(parseInt(dmy[1], 10)).padStart(2, '0');
+      const m = String(parseInt(dmy[2], 10)).padStart(2, '0');
+      let y = parseInt(dmy[3], 10);
+      if (y < 100) y += 2000;
+      return `${y}-${m}-${d}`;
+    }
+    return fallback;
+  };
+
+  const handleDownloadImportTemplate = () => {
+    const activeSchemes = safeArray(schemes).filter((s: any) => !s.status || s.status === 'Active');
+    const activeAgents = safeArray(agents).filter((a: any) => !a.status || a.status === 'Active');
+    const s1 = activeSchemes[0];
+    const s2 = activeSchemes[1] || s1;
+    const a1 = activeAgents[0];
+
+    const sampleRows = [
+      {
+        'खातेदार CIF (Customer CIF)': 'CIF000001',
+        'पिग्मी योजना (Pigmy Scheme - अनिवार्य)': s1 ? (s1.schemeCode ? `${s1.schemeCode} - ${s1.schemeName}` : s1.schemeName) : 'पिग्मी ठेव 1',
+        'पिग्मी एजंट (Agent Name / ID)': a1 ? a1.agentName : 'Agent 1',
+        'जुना खाते क्र. (Legacy A/c No)': '101',
+        'उघडल्याचा दिनांक (Opening Date)': formData.asOfDate || '2026-03-31',
+        'आरंभिक शिल्लक (Opening Balance)': 5000,
+        'दैनिक रक्कम (Daily Deposit)': 100,
+        'आर्थिक वर्ष (Financial Year)': formData.financialYear || '2025-2026',
+        'शिल्लक दिनांक (As Of Date)': formData.asOfDate || '2026-03-31'
+      },
+      {
+        'खातेदार CIF (Customer CIF)': 'CIF000002',
+        'पिग्मी योजना (Pigmy Scheme - अनिवार्य)': s2 ? (s2.schemeCode ? `${s2.schemeCode} - ${s2.schemeName}` : s2.schemeName) : 'पिग्मी ठेव 2',
+        'पिग्मी एजंट (Agent Name / ID)': a1 ? a1.agentName : 'Agent 1',
+        'जुना खाते क्र. (Legacy A/c No)': '101',
+        'उघडल्याचा दिनांक (Opening Date)': formData.asOfDate || '2026-03-31',
+        'आरंभिक शिल्लक (Opening Balance)': 8000,
+        'दैनिक रक्कम (Daily Deposit)': 200,
+        'आर्थिक वर्ष (Financial Year)': formData.financialYear || '2025-2026',
+        'शिल्लक दिनांक (As Of Date)': formData.asOfDate || '2026-03-31'
+      }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(sampleRows);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Pigmy_Opening_Import');
+
+    const masterInfo = [
+      ...activeSchemes.map((s: any) => ({
+        'प्रकार': 'पिग्मी योजना (Scheme)',
+        'ID': s.pigmySchemeID,
+        'कोड (Code)': s.schemeCode || '-',
+        'नाव (Name)': s.schemeName,
+        'एक्सेलमध्ये लिहिण्याचे नाव': s.schemeCode ? `${s.schemeCode} - ${s.schemeName}` : s.schemeName
+      })),
+      ...activeAgents.map((a: any) => ({
+        'प्रकार': 'पिग्मी एजंट (Agent)',
+        'ID': a.pigmyAgentID,
+        'कोड (Code)': a.username || `AGT-${a.pigmyAgentID}`,
+        'नाव (Name)': a.agentName,
+        'एक्सेलमध्ये लिहिण्याचे नाव': a.agentName
+      }))
+    ];
+    const ws2 = XLSX.utils.json_to_sheet(masterInfo);
+    XLSX.utils.book_append_sheet(wb, ws2, 'Schemes_&_Agents_Reference');
+
+    XLSX.writeFile(wb, `Pigmy_MultiScheme_Opening_Template.xlsx`);
+    toast.success('मल्टी-स्कीम पिग्मी एक्सेल टेम्पलेट डाउनलोड झाले!');
+  };
+
+  const handleImportExcelFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (!rawRows || rawRows.length === 0) {
+          toast.error('एक्सेल शीटमध्ये डेटा आढळला नाही.');
+          return;
+        }
+
+        const activeSchemes = safeArray(schemes).filter((s: any) => !s.status || s.status === 'Active');
+        const activeAgents = safeArray(agents).filter((a: any) => !a.status || a.status === 'Active');
+        const custList = safeArray(customers);
+        const existingLegacySet = new Set<string>();
+        safeArray(migratedAccounts).forEach((m: any) => {
+          const sId = Number(m.pigmySchemeID || 0);
+          const leg = String(m.legacyAccountNumber || m.oldAccountNo || '').trim().toUpperCase();
+          if (sId > 0 && leg) existingLegacySet.add(`${sId}|${leg}`);
+        });
+        const fileLegacySet = new Set<string>();
+
+        const parsedRows = rawRows.map((row, idx) => {
+          const keys = Object.keys(row);
+          const pick = (re: RegExp) => {
+            const k = keys.find(key => re.test(key));
+            return k ? row[k] : '';
+          };
+
+          const rawCif = String(pick(/cif|member|खातेदार.*कोड|customer/i) || '').trim();
+          const rawScheme = String(pick(/योजना|scheme/i) || '').trim();
+          const rawAgent = String(pick(/एजंट|agent/i) || '').trim();
+          const rawLegacy = String(pick(/जुना|legacy|old/i) || '').trim();
+          const rawOpDate = pick(/उघड|opening\s*date/i);
+          const rawBal = parseFloat(String(pick(/शिल्लक|balance|opening\s*balance/i) || '0')) || 0;
+          const rawDaily = parseFloat(String(pick(/दैनिक|daily/i) || '100')) || 100;
+          const rawFy = String(pick(/वर्ष|financial|fy/i) || formData.financialYear || 'Legacy').trim();
+          const rawAsOf = pick(/शिल्लक दिनांक|as\s*of/i);
+
+          // Resolve Customer
+          const lowerCif = rawCif.toLowerCase();
+          const matchedCust = custList.find((c: any) =>
+            (c.cifNo && String(c.cifNo).trim().toLowerCase() === lowerCif) ||
+            (c.legacyCustomerNo && String(c.legacyCustomerNo).trim().toLowerCase() === lowerCif) ||
+            String(c.customerID) === rawCif
+          );
+
+          // Resolve Scheme STRICTLY (Never default to Scheme 1)
+          const lowerScheme = rawScheme.toLowerCase();
+          const prefixScheme = rawScheme.split(/[-–|:]/)[0].trim().toLowerCase();
+          const matchedScheme = rawScheme
+            ? activeSchemes.find((s: any) =>
+                (s.schemeCode && String(s.schemeCode).trim().toLowerCase() === lowerScheme) ||
+                (s.schemeName && String(s.schemeName).trim().toLowerCase() === lowerScheme) ||
+                String(s.pigmySchemeID) === rawScheme ||
+                `${s.schemeCode || ''} - ${s.schemeName || ''}`.trim().toLowerCase() === lowerScheme ||
+                (s.schemeCode && String(s.schemeCode).trim().toLowerCase() === prefixScheme) ||
+                String(s.pigmySchemeID) === prefixScheme
+              )
+            : undefined;
+
+          // Resolve Agent
+          const lowerAgent = rawAgent.toLowerCase();
+          const matchedAgent = rawAgent
+            ? activeAgents.find((a: any) =>
+                (a.agentName && String(a.agentName).trim().toLowerCase() === lowerAgent) ||
+                (a.username && String(a.username).trim().toLowerCase() === lowerAgent) ||
+                String(a.pigmyAgentID) === rawAgent ||
+                `agt-${a.pigmyAgentID}` === lowerAgent
+              )
+            : undefined;
+
+          const opDateStr = parseExcelImportDate(rawOpDate, formData.asOfDate || '2026-03-31');
+          const asOfStr = parseExcelImportDate(rawAsOf, opDateStr);
+
+          let err: string | undefined;
+          if (!rawCif) err = 'खातेदार CIF रिकामा आहे';
+          else if (custList.length > 0 && !matchedCust) err = `खातेदार '${rawCif}' सापडला नाही`;
+          else if (!rawScheme) err = 'पिग्मी योजना अनिवार्य आहे (Default घेतली जाणार नाही)';
+          else if (!matchedScheme) err = `योजना '${rawScheme}' सापडली नाही`;
+          else if (!matchedScheme.pigmyLiabilityLedgerID) err = `योजना '${matchedScheme.schemeName}' ला देयता लेजर मॅप नाही`;
+          else if (!rawAgent) err = 'पिग्मी एजंट रिकामा आहे';
+          else if (!matchedAgent) err = `एजंट '${rawAgent}' सापडला नाही`;
+          else if (rawBal < 0) err = 'शिल्लक 0 पेक्षा कमी असू शकत नाही';
+          else if (rawLegacy && matchedScheme) {
+            const legKey = `${matchedScheme.pigmySchemeID}|${rawLegacy.toUpperCase()}`;
+            if (existingLegacySet.has(legKey)) {
+              err = `जुना क्र. '${rawLegacy}' या योजनेत आधीच अस्तित्वात आहे`;
+            } else if (fileLegacySet.has(legKey)) {
+              err = `जुना क्र. '${rawLegacy}' या एक्सेल फाईलमध्ये दोनदा आला आहे`;
+            } else {
+              fileLegacySet.add(legKey);
+            }
+          }
+
+          return {
+            rowNumber: idx + 2,
+            customerCif: rawCif,
+            customerID: matchedCust?.customerID,
+            customerName: matchedCust ? `${matchedCust.firstName || ''} ${matchedCust.lastName || ''}`.trim() : rawCif || '-',
+            schemeCodeOrName: rawScheme,
+            pigmySchemeID: matchedScheme?.pigmySchemeID,
+            schemeName: matchedScheme?.schemeName || rawScheme || '(योजना नाही)',
+            agentCodeOrName: rawAgent,
+            pigmyAgentID: matchedAgent?.pigmyAgentID,
+            agentName: matchedAgent?.agentName || rawAgent || '-',
+            legacyAccountNumber: rawLegacy,
+            openingDate: opDateStr,
+            openingBalance: rawBal,
+            dailyDepositAmount: rawDaily,
+            financialYear: rawFy,
+            asOfDate: asOfStr,
+            isValid: !err,
+            error: err
+          };
+        });
+
+        const summaryMap = new Map<number, { schemeId: number; schemeName: string; count: number; totalBalance: number }>();
+        parsedRows.filter(r => r.isValid && r.pigmySchemeID).forEach(r => {
+          const sId = Number(r.pigmySchemeID);
+          const cur = summaryMap.get(sId) || { schemeId: sId, schemeName: r.schemeName, count: 0, totalBalance: 0 };
+          cur.count += 1;
+          cur.totalBalance += Number(r.openingBalance || 0);
+          summaryMap.set(sId, cur);
+        });
+
+        setExcelImportPreview({
+          fileName: file.name,
+          rows: parsedRows,
+          schemeSummary: Array.from(summaryMap.values()).sort((a, b) => a.schemeId - b.schemeId)
+        });
+        setShowImportModal(true);
+      } catch (err) {
+        console.error('Pigmy opening Excel parse failed', err);
+        toast.error('एक्सेल फाईल वाचताना त्रुटी आली.');
+      } finally {
+        if (importFileInputRef.current) importFileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleConfirmExcelImport = async () => {
+    if (!excelImportPreview) return;
+    const validRows = excelImportPreview.rows.filter(r => r.isValid);
+    if (validRows.length === 0) {
+      toast.error('आयात करण्यासाठी वैध नोंदी नाहीत.');
+      return;
+    }
+    if (excelImportPreview.rows.some(r => !r.isValid)) {
+      toast.error('कृपया प्रथम एक्सेलमधील सर्व त्रुटी दुरुस्त करून पुन्हा अपलोड करा.');
+      return;
+    }
+
+    setImportingExcel(true);
+    try {
+      const payload = {
+        branchID: Number(formData.branchID || 1),
+        financialYear: formData.financialYear,
+        asOfDate: formData.asOfDate,
+        rows: validRows.map(r => ({
+          rowNumber: r.rowNumber,
+          customerID: r.customerID || null,
+          customerCif: r.customerCif,
+          pigmySchemeID: r.pigmySchemeID || null,
+          schemeCodeOrName: r.schemeCodeOrName,
+          pigmyAgentID: r.pigmyAgentID || null,
+          agentCodeOrName: r.agentCodeOrName,
+          legacyAccountNumber: r.legacyAccountNumber,
+          openingDate: r.openingDate,
+          openingBalance: r.openingBalance,
+          dailyDepositAmount: r.dailyDepositAmount,
+          financialYear: r.financialYear,
+          asOfDate: r.asOfDate
+        }))
+      };
+
+      const res = await api.post('/api/PigmyAccounts/Import', payload);
+      toast.success(res.data?.message || 'पिग्मी खाती यशस्वीरीत्या आयात झाली!');
+      setShowImportModal(false);
+      setExcelImportPreview(null);
+      await Promise.all([fetchMigratedAccounts(), fetchGlReconciliation()]);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data || 'एक्सेल आयात करताना त्रुटी आली.';
+      toast.error(msg, { duration: 6000 });
+    } finally {
+      setImportingExcel(false);
+    }
+  };
+
   const formatCustomerLabel = (c: any) => {
     const cifPart = c.cifNo ? `[CIF: ${c.cifNo}] ` : '';
     return `${cifPart}${c.firstName} ${c.middleName ? c.middleName + ' ' : ''}${c.lastName}`;
@@ -456,6 +769,33 @@ export default function PigmyOpeningBalance() {
               <span>संपादन रद्द करा</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={handleDownloadImportTemplate}
+            className="px-2.5 py-1 bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            title="मल्टी-स्कीम पिग्मी ओपनिंग एक्सेल टेम्पलेट डाउनलोड करा"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>📥 एक्सेल सॅम्पल</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => importFileInputRef.current?.click()}
+            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            title="एकापेक्षा जास्त पिग्मी योजनांची खाती एक्सेलमधून आयात करा"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>📤 मल्टी-स्कीम एक्सेल आयात</span>
+          </button>
+          <input
+            type="file"
+            ref={importFileInputRef}
+            onChange={handleImportExcelFile}
+            accept=".xlsx, .xls, .csv"
+            className="hidden"
+          />
 
           <button
             type="button"
@@ -1063,6 +1403,119 @@ export default function PigmyOpeningBalance() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: MULTI-SCHEME PIGMY EXCEL IMPORT PREVIEW                            */}
+      {/* ========================================================================= */}
+      {showImportModal && excelImportPreview && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="bg-emerald-700 text-white px-4 py-2.5 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5" />
+                <h2 className="text-sm font-bold">
+                  मल्टी-स्कीम पिग्मी आरंभिक शिल्लक एक्सेल आयात ({excelImportPreview.fileName})
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowImportModal(false); setExcelImportPreview(null); }}
+                className="text-white/80 hover:text-white p-1 rounded cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-white border border-gray-300 font-bold">
+                  एकूण ओळी: {excelImportPreview.rows.length}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold">
+                  ✓ वैध: {excelImportPreview.rows.filter(r => r.isValid).length}
+                </span>
+                {excelImportPreview.rows.some(r => !r.isValid) && (
+                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-900 border border-red-300 font-bold">
+                    ✕ अवैध: {excelImportPreview.rows.filter(r => !r.isValid).length}
+                  </span>
+                )}
+              </div>
+
+              {excelImportPreview.schemeSummary.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {excelImportPreview.schemeSummary.map(ss => (
+                    <span key={`imp-ss-${ss.schemeId}`} className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-900 border border-indigo-200 font-bold">
+                      {ss.schemeName}: {ss.count} खाती (₹{ss.totalBalance.toLocaleString('en-IN')})
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-auto p-2 bg-slate-100">
+              <table className="w-full text-left border-collapse text-[11px] bg-white border border-gray-200">
+                <thead className="bg-slate-100 sticky top-0 text-gray-700 font-bold border-b border-gray-300">
+                  <tr>
+                    <th className="p-1.5 border-r border-gray-200 text-center">ओळ</th>
+                    <th className="p-1.5 border-r border-gray-200">खातेदार (CIF)</th>
+                    <th className="p-1.5 border-r border-gray-200">पिग्मी योजना</th>
+                    <th className="p-1.5 border-r border-gray-200">एजंट</th>
+                    <th className="p-1.5 border-r border-gray-200">जुना क्र.</th>
+                    <th className="p-1.5 border-r border-gray-200 text-right">शिल्लक (₹)</th>
+                    <th className="p-1.5">स्थिती / त्रुटी</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {excelImportPreview.rows.map((r) => (
+                    <tr key={`imp-row-${r.rowNumber}`} className={r.isValid ? 'hover:bg-emerald-50/40' : 'bg-red-50'}>
+                      <td className="p-1.5 border-r border-gray-200 text-center font-mono">{r.rowNumber}</td>
+                      <td className="p-1.5 border-r border-gray-200">
+                        <div className="font-bold text-gray-900">{r.customerName}</div>
+                        <div className="text-[10px] font-mono text-gray-500">{r.customerCif}</div>
+                      </td>
+                      <td className="p-1.5 border-r border-gray-200">
+                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold">
+                          {r.schemeName}
+                        </span>
+                      </td>
+                      <td className="p-1.5 border-r border-gray-200">{r.agentName}</td>
+                      <td className="p-1.5 border-r border-gray-200 font-mono">{r.legacyAccountNumber || '-'}</td>
+                      <td className="p-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">
+                        ₹{r.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-1.5">
+                        {r.isValid ? (
+                          <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">✓ वैध</span>
+                        ) : (
+                          <span className="text-red-700 font-bold">❌ {r.error}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-3 bg-white border-t border-gray-200 flex justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => { setShowImportModal(false); setExcelImportPreview(null); }}
+                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-xs font-bold cursor-pointer"
+              >
+                रद्द करा
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExcelImport}
+                disabled={importingExcel || excelImportPreview.rows.some(r => !r.isValid) || excelImportPreview.rows.length === 0}
+                className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold disabled:opacity-50 cursor-pointer"
+              >
+                {importingExcel ? 'आयात सुरू आहे...' : `सर्व ${excelImportPreview.rows.filter(r => r.isValid).length} खाती आयात करा`}
+              </button>
+            </div>
           </div>
         </div>
       )}

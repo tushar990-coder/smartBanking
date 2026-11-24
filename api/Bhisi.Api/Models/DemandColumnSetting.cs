@@ -22,7 +22,7 @@ namespace Bhisi.Api.Models
         public string ColumnHeaderMr { get; set; } = string.Empty;
 
         /// <summary>
-        /// LOAN | THRIFT_SAVING | RD | SHARE | LEDGER_OTHER
+        /// LOAN | THRIFT_SAVING | DEPOSIT_LEDGER | RD | PIGMY | SHARE | LEDGER_OTHER
         /// </summary>
         [Required]
         [MaxLength(30)]
@@ -39,6 +39,10 @@ namespace Bhisi.Api.Models
         public int? RdSchemeID { get; set; }
         [ForeignKey("RdSchemeID")]
         public virtual RdScheme? RdScheme { get; set; }
+
+        public int? PigmySchemeID { get; set; }
+        [ForeignKey("PigmySchemeID")]
+        public virtual PigmyScheme? PigmyScheme { get; set; }
 
         public int? ShareSchemeId { get; set; }
         [ForeignKey("ShareSchemeId")]
@@ -86,7 +90,7 @@ namespace Bhisi.Api.Models
         public string LoanIntraAllocationOrder { get; set; } = "INTEREST_FIRST";
 
         /// <summary>
-        /// Marks which THRIFT_SAVING / LEDGER_OTHER column receives the top-bar "वर्गणी ठेव" auto-fill amount.
+        /// Marks which THRIFT_SAVING / DEPOSIT_LEDGER / PIGMY / LEDGER_OTHER column receives the top-bar "वर्गणी ठेव" auto-fill amount.
         /// </summary>
         public bool IsContributionTarget { get; set; } = false;
 

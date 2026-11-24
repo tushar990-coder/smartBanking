@@ -21,10 +21,51 @@ namespace Bhisi.Api.Controllers
         {
             "LOAN",
             "THRIFT_SAVING",
+            "DEPOSIT_LEDGER",
             "RD",
+            "PIGMY",
             "SHARE",
             "LEDGER_OTHER"
         };
+
+        private static bool IsCashOrBankLedger(Ledger? ledger)
+        {
+            if (ledger == null) return false;
+            string acctType = (ledger.AccountType ?? string.Empty).Trim();
+            return acctType.Contains("Cash", StringComparison.OrdinalIgnoreCase) ||
+                   acctType.Contains("Bank", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int? FilterSuggestedLedger(
+            Dictionary<int, Ledger> ledgersMap,
+            int? candidateLedgerId,
+            params string[] allowedNatures)
+        {
+            if (!candidateLedgerId.HasValue || candidateLedgerId.Value <= 0) return null;
+            if (!ledgersMap.TryGetValue(candidateLedgerId.Value, out var ledger)) return null;
+            if (IsCashOrBankLedger(ledger)) return null;
+            string nature = (ledger.AccountGroup?.NatureOfGroup ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(nature)) return null;
+            return allowedNatures.Any(n => string.Equals(n, nature, StringComparison.OrdinalIgnoreCase))
+                ? candidateLedgerId.Value
+                : null;
+        }
+
+        private static bool IsDepositCategoryLedger(Ledger ledger, HashSet<int> schemeOrCustObLedgerIds)
+        {
+            if (IsCashOrBankLedger(ledger)) return false;
+            string nature = (ledger.AccountGroup?.NatureOfGroup ?? string.Empty).Trim();
+            if (!string.Equals(nature, "Liabilities", StringComparison.OrdinalIgnoreCase)) return false;
+
+            if (schemeOrCustObLedgerIds.Contains(ledger.LedgerID)) return true;
+
+            string grpName = (ledger.AccountGroup?.GroupName ?? string.Empty).Trim();
+            string acctType = (ledger.AccountType ?? string.Empty).Trim();
+            return grpName.Contains("ठेव", StringComparison.OrdinalIgnoreCase) ||
+                   grpName.Contains("Deposit", StringComparison.OrdinalIgnoreCase) ||
+                   acctType.Contains("Deposit", StringComparison.OrdinalIgnoreCase) ||
+                   acctType.Contains("Saving", StringComparison.OrdinalIgnoreCase);
+        }
 
         public DemandSettingsController(AppDbContext context)
         {
@@ -115,20 +156,98 @@ namespace Bhisi.Api.Controllers
                 })
                 .ToListAsync();
 
-            var ledgers = await _context.Ledgers
+            var pigmySchemes = await _context.PigmySchemes
+                .AsNoTracking()
+                .Where(p => p.Status == "Active")
+                .OrderBy(p => p.PigmySchemeID)
+                .Select(p => new
+                {
+                    p.PigmySchemeID,
+                    p.SchemeCode,
+                    p.SchemeName,
+                    p.DurationMonths,
+                    p.InterestRate,
+                    p.PigmyLiabilityLedgerID
+                })
+                .ToListAsync();
+
+            var fdSchemes = await _context.FdSchemes
+                .AsNoTracking()
+                .Where(f => f.IsActive)
+                .OrderBy(f => f.FdSchemeID)
+                .Select(f => new
+                {
+                    f.FdSchemeID,
+                    f.SchemeCode,
+                    f.SchemeName,
+                    f.FdLiabilityLedgerID
+                })
+                .ToListAsync();
+
+            var custObDepositStats = await _context.CustomerOpeningBalances
+                .AsNoTracking()
+                .Where(c => c.BalanceType == "Cr" && c.Amount > 0m)
+                .GroupBy(c => c.LedgerID)
+                .Select(g => new
+                {
+                    LedgerID = g.Key,
+                    AccountCount = g.Select(x => x.CustomerID).Distinct().Count(),
+                    TotalAmount = g.Sum(x => x.Amount)
+                })
+                .ToDictionaryAsync(x => x.LedgerID);
+
+            var schemeSourcesByLedger = new Dictionary<int, List<string>>();
+            void AddLedgerSourceTag(int? lid, string tag)
+            {
+                if (!lid.HasValue || lid.Value <= 0) return;
+                if (!schemeSourcesByLedger.TryGetValue(lid.Value, out var list))
+                {
+                    list = new List<string>();
+                    schemeSourcesByLedger[lid.Value] = list;
+                }
+                if (!list.Contains(tag)) list.Add(tag);
+            }
+
+            foreach (var ss in savingSchemes) AddLedgerSourceTag(ss.SavingLiabilityLedgerID ?? ss.LedgerID, $"बचत योजना: {ss.SchemeName ?? ss.SchemeCode}");
+            foreach (var rd in rdSchemes) AddLedgerSourceTag(rd.RdLiabilityLedgerID, $"RD योजना: {rd.SchemeName}");
+            foreach (var fd in fdSchemes) AddLedgerSourceTag(fd.FdLiabilityLedgerID, $"मुदत ठेव योजना: {fd.SchemeName}");
+            foreach (var pg in pigmySchemes) AddLedgerSourceTag(pg.PigmyLiabilityLedgerID, $"पिग्मी योजना: {pg.SchemeName}");
+            foreach (var kv in custObDepositStats) AddLedgerSourceTag(kv.Key, $"ठेव शिल्लक ({kv.Value.AccountCount} खाती)");
+
+            var schemeOrCustObLedgerIds = schemeSourcesByLedger.Keys.ToHashSet();
+
+            var activeLedgerEntities = await _context.Ledgers
                 .AsNoTracking()
                 .Include(l => l.AccountGroup)
                 .Where(l => l.IsActive)
                 .OrderBy(l => l.LedgerName)
+                .ToListAsync();
+
+            var ledgersMap = activeLedgerEntities.ToDictionary(l => l.LedgerID);
+
+            var ledgers = activeLedgerEntities
                 .Select(l => new
                 {
                     l.LedgerID,
                     l.LedgerCode,
                     l.LedgerName,
                     l.AccountType,
-                    NatureOfGroup = l.AccountGroup != null ? l.AccountGroup.NatureOfGroup : ""
+                    GroupID = l.GroupID,
+                    GroupName = l.AccountGroup != null ? l.AccountGroup.GroupName : "",
+                    NatureOfGroup = l.AccountGroup != null ? l.AccountGroup.NatureOfGroup : "",
+                    IsDepositLedger = IsDepositCategoryLedger(l, schemeOrCustObLedgerIds),
+                    LinkedSchemeSource = schemeSourcesByLedger.TryGetValue(l.LedgerID, out var tags)
+                        ? string.Join(" | ", tags)
+                        : string.Empty
                 })
-                .ToListAsync();
+                .ToList();
+
+            var depositLedgers = ledgers
+                .Where(l => l.IsDepositLedger)
+                .OrderByDescending(l => !string.IsNullOrEmpty(l.LinkedSchemeSource) ? 1 : 0)
+                .ThenBy(l => l.GroupID)
+                .ThenBy(l => l.LedgerName)
+                .ToList();
 
             // Build non-persisted suggested defaults if institution has not saved settings yet
             var suggestedDefaults = new List<object>();
@@ -137,6 +256,11 @@ namespace Bhisi.Api.Controllers
                 int seq = 1;
                 foreach (var lr in loanRates)
                 {
+                    int? safePrinLedger = FilterSuggestedLedger(ledgersMap, lr.LoanLedgerID, "Assets") ?? lr.LoanLedgerID;
+                    int? safeIntLedger = FilterSuggestedLedger(ledgersMap, lr.InterestLedgerID, "Income") ?? lr.InterestLedgerID;
+                    int? safeRecLedger = FilterSuggestedLedger(ledgersMap, lr.ReceivableInterestLedgerID, "Assets");
+                    int? safeOvdLedger = FilterSuggestedLedger(ledgersMap, lr.OverdueInterestLedgerID, "Income");
+
                     suggestedDefaults.Add(new
                     {
                         demandColumnSettingId = 0,
@@ -146,11 +270,12 @@ namespace Bhisi.Api.Controllers
                         loanRateID = (int?)lr.LoanRateID,
                         savingSchemeID = (int?)null,
                         rdSchemeID = (int?)null,
+                        pigmySchemeID = (int?)null,
                         shareSchemeId = (int?)null,
-                        principalOrDepositLedgerID = lr.LoanLedgerID,
-                        interestLedgerID = lr.InterestLedgerID,
-                        receivableInterestLedgerID = lr.ReceivableInterestLedgerID,
-                        overdueInterestLedgerID = lr.OverdueInterestLedgerID,
+                        principalOrDepositLedgerID = safePrinLedger,
+                        interestLedgerID = safeIntLedger,
+                        receivableInterestLedgerID = safeRecLedger,
+                        overdueInterestLedgerID = safeOvdLedger,
                         showBalanceColumn = true,
                         includeOverduePenalInterest = false,
                         loanIntraAllocationOrder = "INTEREST_FIRST",
@@ -178,6 +303,7 @@ namespace Bhisi.Api.Controllers
                         loanRateID = (int?)null,
                         savingSchemeID = (int?)preferredThrift.SettingID,
                         rdSchemeID = (int?)null,
+                        pigmySchemeID = (int?)null,
                         shareSchemeId = (int?)null,
                         principalOrDepositLedgerID = preferredThrift.SavingLiabilityLedgerID ?? preferredThrift.LedgerID,
                         interestLedgerID = (int?)null,
@@ -187,6 +313,48 @@ namespace Bhisi.Api.Controllers
                         includeOverduePenalInterest = false,
                         loanIntraAllocationOrder = "INTEREST_FIRST",
                         isContributionTarget = true,
+                        defaultAmount = 0m,
+                        isActive = true
+                    });
+                }
+
+                // Suggest active Liability Customer Opening Deposit Ledgers (e.g. मेंबर ठेव / ब वर्ग ठेव) not covered by Saving/FD/RD/Pigmy/Share schemes
+                var schemeMappedIds = savingSchemes.Select(s => s.SavingLiabilityLedgerID ?? s.LedgerID ?? 0)
+                    .Concat(rdSchemes.Select(r => r.RdLiabilityLedgerID ?? 0))
+                    .Concat(fdSchemes.Select(f => f.FdLiabilityLedgerID ?? 0))
+                    .Concat(pigmySchemes.Select(p => p.PigmyLiabilityLedgerID ?? 0))
+                    .Concat(shareSchemes.Select(s => s.ShareCapitalLedgerID ?? 0))
+                    .Where(x => x > 0)
+                    .ToHashSet();
+
+                bool hasContribTarget = preferredThrift != null;
+                foreach (var depL in depositLedgers.Where(d =>
+                    custObDepositStats.ContainsKey(d.LedgerID) &&
+                    !schemeMappedIds.Contains(d.LedgerID) &&
+                    !(d.GroupName ?? "").Contains("देणे", StringComparison.OrdinalIgnoreCase) &&
+                    !(d.LedgerName ?? "").Contains("अनामत", StringComparison.OrdinalIgnoreCase)))
+                {
+                    bool setContrib = !hasContribTarget;
+                    hasContribTarget = true;
+                    suggestedDefaults.Add(new
+                    {
+                        demandColumnSettingId = 0,
+                        sequenceOrder = seq++,
+                        columnHeaderMr = depL.LedgerName,
+                        itemType = "DEPOSIT_LEDGER",
+                        loanRateID = (int?)null,
+                        savingSchemeID = (int?)null,
+                        rdSchemeID = (int?)null,
+                        pigmySchemeID = (int?)null,
+                        shareSchemeId = (int?)null,
+                        principalOrDepositLedgerID = (int?)depL.LedgerID,
+                        interestLedgerID = (int?)null,
+                        receivableInterestLedgerID = (int?)null,
+                        overdueInterestLedgerID = (int?)null,
+                        showBalanceColumn = false,
+                        includeOverduePenalInterest = false,
+                        loanIntraAllocationOrder = "INTEREST_FIRST",
+                        isContributionTarget = setContrib,
                         defaultAmount = 0m,
                         isActive = true
                     });
@@ -203,6 +371,7 @@ namespace Bhisi.Api.Controllers
                         loanRateID = (int?)null,
                         savingSchemeID = (int?)null,
                         rdSchemeID = (int?)rd.RdSchemeID,
+                        pigmySchemeID = (int?)null,
                         shareSchemeId = (int?)null,
                         principalOrDepositLedgerID = rd.RdLiabilityLedgerID,
                         interestLedgerID = (int?)null,
@@ -227,7 +396,10 @@ namespace Bhisi.Api.Controllers
                 loanRates,
                 savingSchemes,
                 rdSchemes,
+                pigmySchemes,
+                fdSchemes,
                 shareSchemes,
+                depositLedgers,
                 ledgers
             });
         }
@@ -283,8 +455,10 @@ namespace Bhisi.Api.Controllers
             {
                 "LOAN" => entity.LoanRateID.HasValue && entity.LoanRateID == row.LoanRateID,
                 "THRIFT_SAVING" => entity.SavingSchemeID.HasValue && entity.SavingSchemeID == row.SavingSchemeID,
+                "DEPOSIT_LEDGER" => entity.PrincipalOrDepositLedgerID.HasValue && entity.PrincipalOrDepositLedgerID == row.PrincipalOrDepositLedgerID,
                 "RD" => entity.RdSchemeID.HasValue && entity.RdSchemeID == row.RdSchemeID,
-                "SHARE" => entity.ShareSchemeId.HasValue && entity.ShareSchemeId == row.ShareSchemeId,
+                "PIGMY" => entity.PigmySchemeID.HasValue && entity.PigmySchemeID == row.PigmySchemeID,
+                "SHARE" => entity.ShareSchemeId == row.ShareSchemeId,
                 _ => false
             };
         }
@@ -318,6 +492,7 @@ namespace Bhisi.Api.Controllers
             var loanRatesMap = await _context.LoanRates.AsNoTracking().ToDictionaryAsync(r => r.LoanRateID);
             var savingSchemesMap = await _context.SavingInterestSettings.AsNoTracking().ToDictionaryAsync(s => s.SettingID);
             var rdSchemesMap = await _context.RdSchemes.AsNoTracking().ToDictionaryAsync(r => r.RdSchemeID);
+            var pigmySchemesMap = await _context.PigmySchemes.AsNoTracking().Where(p => p.Status == "Active").ToDictionaryAsync(p => p.PigmySchemeID);
             var shareSchemesMap = await _context.ShareSchemes.AsNoTracking().ToDictionaryAsync(s => s.ShareSchemeId);
             var validLedgersMap = await _context.Ledgers
                 .AsNoTracking()
@@ -329,7 +504,9 @@ namespace Bhisi.Api.Controllers
             int seqCounter = 1;
             var usedLoanIds = new HashSet<int>();
             var usedSavingIds = new HashSet<int>();
+            var usedDepositLedgerIds = new HashSet<int>();
             var usedRdIds = new HashSet<int>();
+            var usedPigmyIds = new HashSet<int>();
             var usedShareIds = new HashSet<int>();
             bool usedGenericShare = false;
 
@@ -341,9 +518,13 @@ namespace Bhisi.Api.Controllers
                     return BadRequest($"अवैध प्रकार: '{item.ItemType}'.");
                 }
 
-                if (item.IsContributionTarget && type != "THRIFT_SAVING" && type != "LEDGER_OTHER")
+                if (item.IsContributionTarget &&
+                    type != "THRIFT_SAVING" &&
+                    type != "DEPOSIT_LEDGER" &&
+                    type != "PIGMY" &&
+                    type != "LEDGER_OTHER")
                 {
-                    return BadRequest("'वर्गणी ठेव Auto-Fill लक्ष्य' फक्त 'संजीवनी / वर्गणी ठेव' किंवा 'इतर सामान्य लेजर' कॉलमसाठीच निवडता येते.");
+                    return BadRequest("'वर्गणी ठेव Auto-Fill लक्ष्य' फक्त ठेव, पिग्मी किंवा इतर सामान्य लेजर कॉलमसाठीच निवडता येते.");
                 }
 
                 string header = (item.ColumnHeaderMr ?? string.Empty).Trim();
@@ -385,6 +566,18 @@ namespace Bhisi.Api.Controllers
                     }
                     if (string.IsNullOrWhiteSpace(header)) header = ss.SchemeName ?? "संजीवनी ठेव";
                 }
+                else if (type == "DEPOSIT_LEDGER")
+                {
+                    if (!prinLedger.HasValue || prinLedger.Value <= 0 || !validLedgersMap.TryGetValue(prinLedger.Value, out var depL))
+                    {
+                        return BadRequest($"क्रम {seqCounter}: कृपया वैध ठेव लेजर निवडा.");
+                    }
+                    if (!usedDepositLedgerIds.Add(depL.LedgerID))
+                    {
+                        return BadRequest($"ठेव लेजर '{depL.LedgerName}' एकापेक्षा जास्त वेळा जोडता येत नाही.");
+                    }
+                    if (string.IsNullOrWhiteSpace(header)) header = depL.LedgerName ?? "ठेव";
+                }
                 else if (type == "RD")
                 {
                     if (!item.RdSchemeID.HasValue || !rdSchemesMap.TryGetValue(item.RdSchemeID.Value, out var rds))
@@ -396,6 +589,18 @@ namespace Bhisi.Api.Controllers
                         return BadRequest($"RD योजना '{rds.SchemeName}' एकापेक्षा जास्त वेळा जोडता येत नाही.");
                     }
                     if (string.IsNullOrWhiteSpace(header)) header = rds.SchemeName;
+                }
+                else if (type == "PIGMY")
+                {
+                    if (!item.PigmySchemeID.HasValue || !pigmySchemesMap.TryGetValue(item.PigmySchemeID.Value, out var pgs))
+                    {
+                        return BadRequest($"क्रम {seqCounter}: कृपया वैध पिग्मी ठेव योजना निवडा.");
+                    }
+                    if (!usedPigmyIds.Add(pgs.PigmySchemeID))
+                    {
+                        return BadRequest($"पिग्मी योजना '{pgs.SchemeName}' एकापेक्षा जास्त वेळा जोडता येत नाही.");
+                    }
+                    if (string.IsNullOrWhiteSpace(header)) header = pgs.SchemeName;
                 }
                 else if (type == "SHARE")
                 {
@@ -445,6 +650,7 @@ namespace Bhisi.Api.Controllers
                     LoanRateID = type == "LOAN" ? item.LoanRateID : null,
                     SavingSchemeID = type == "THRIFT_SAVING" ? item.SavingSchemeID : null,
                     RdSchemeID = type == "RD" ? item.RdSchemeID : null,
+                    PigmySchemeID = type == "PIGMY" ? item.PigmySchemeID : null,
                     ShareSchemeId = type == "SHARE" ? item.ShareSchemeId : null,
                     PrincipalOrDepositLedgerID = prinLedger,
                     InterestLedgerID = type == "LOAN" ? intLedger : null,
@@ -455,7 +661,7 @@ namespace Bhisi.Api.Controllers
                     LoanIntraAllocationOrder = string.Equals(item.LoanIntraAllocationOrder, "PRINCIPAL_FIRST", StringComparison.OrdinalIgnoreCase)
                         ? "PRINCIPAL_FIRST"
                         : "INTEREST_FIRST",
-                    IsContributionTarget = (type == "THRIFT_SAVING" || type == "LEDGER_OTHER") && item.IsContributionTarget,
+                    IsContributionTarget = (type == "THRIFT_SAVING" || type == "DEPOSIT_LEDGER" || type == "PIGMY" || type == "LEDGER_OTHER") && item.IsContributionTarget,
                     DefaultAmount = Math.Max(0m, Math.Round(item.DefaultAmount, 2, MidpointRounding.AwayFromZero)),
                     IsActive = true
                 });
@@ -499,6 +705,7 @@ namespace Bhisi.Api.Controllers
                     entity.LoanRateID = row.LoanRateID;
                     entity.SavingSchemeID = row.SavingSchemeID;
                     entity.RdSchemeID = row.RdSchemeID;
+                    entity.PigmySchemeID = row.PigmySchemeID;
                     entity.ShareSchemeId = row.ShareSchemeId;
                     entity.PrincipalOrDepositLedgerID = row.PrincipalOrDepositLedgerID;
                     entity.InterestLedgerID = row.InterestLedgerID;
@@ -581,6 +788,7 @@ namespace Bhisi.Api.Controllers
         public int? LoanRateID { get; set; }
         public int? SavingSchemeID { get; set; }
         public int? RdSchemeID { get; set; }
+        public int? PigmySchemeID { get; set; }
         public int? ShareSchemeId { get; set; }
         public int? PrincipalOrDepositLedgerID { get; set; }
         public int? InterestLedgerID { get; set; }

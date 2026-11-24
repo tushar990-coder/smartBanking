@@ -41,7 +41,10 @@ interface AllocationItemPreview {
   itemType: string;
   columnHeaderMr: string;
   displaySubLabel?: string | null;
+  loanIntraAllocationOrder?: string;
   pendingAmount: number;
+  pendingPrincipalOrDeposit: number;
+  pendingInterest: number;
   allocatedPrincipalOrDeposit: number;
   allocatedInterest: number;
   totalAllocated: number;
@@ -52,6 +55,7 @@ interface BulkMemberRow {
   demandNoticeId: number;
   noticeNumber: string;
   demandMemberDetailId: number;
+  isMember?: boolean;
   empCode: string;
   cifNo: string;
   memberName: string;
@@ -171,24 +175,38 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
           if ((r.pendingAmount || 0) <= 0.009) continue;
           const items: AllocationItemPreview[] = (r.allItemsBySequence || [])
             .filter((x: any) => (x.pendingAmount || 0) > 0.009)
-            .map((x: any) => ({
-              demandMemberColumnItemId: x.demandMemberColumnItemId,
-              sequenceOrder: x.sequenceOrder,
-              subRowIndex: x.subRowIndex,
-              itemType: x.itemType,
-              columnHeaderMr: x.columnHeaderMr,
-              displaySubLabel: x.displaySubLabel,
-              pendingAmount: x.pendingAmount,
-              allocatedPrincipalOrDeposit: Math.max(0, (x.demandPrincipalOrDeposit || 0) - (x.recoveredPrincipalOrDeposit || 0)),
-              allocatedInterest: Math.max(0, (x.demandInterest || 0) + (x.demandPenalInterest || 0) - (x.recoveredInterest || 0) - (x.recoveredPenalInterest || 0)),
-              totalAllocated: x.pendingAmount,
-              remainingAfter: 0
-            }));
+            .map((x: any) => {
+              const pendPrin = Math.max(
+                0,
+                Math.round((x.pendingPrincipalOrDeposit ?? ((x.demandPrincipalOrDeposit || 0) - (x.recoveredPrincipalOrDeposit || 0))) * 100) / 100
+              );
+              const pendIntr = Math.max(
+                0,
+                Math.round((x.pendingInterest ?? ((x.demandInterest || 0) - (x.recoveredInterest || 0) - (x.recoveredPenalInterest || 0))) * 100) / 100
+              );
+              return {
+                demandMemberColumnItemId: x.demandMemberColumnItemId,
+                sequenceOrder: x.sequenceOrder,
+                subRowIndex: x.subRowIndex,
+                itemType: x.itemType,
+                columnHeaderMr: x.columnHeaderMr,
+                displaySubLabel: x.displaySubLabel,
+                loanIntraAllocationOrder: x.loanIntraAllocationOrder || 'INTEREST_FIRST',
+                pendingAmount: x.pendingAmount,
+                pendingPrincipalOrDeposit: pendPrin,
+                pendingInterest: pendIntr,
+                allocatedPrincipalOrDeposit: pendPrin,
+                allocatedInterest: pendIntr,
+                totalAllocated: x.pendingAmount,
+                remainingAfter: 0
+              };
+            });
 
           allLoaded.push({
             demandNoticeId: nId,
             noticeNumber: noticeMeta?.noticeNumber || '',
             demandMemberDetailId: r.demandMemberDetailId,
+            isMember: r.isMember ?? true,
             empCode: r.empCode || '',
             cifNo: r.cifNo || '',
             memberName: r.memberName || '',
@@ -216,8 +234,23 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
       const pend = item.pendingAmount;
       const alloc = Math.min(pool, pend);
       pool = Math.max(0, Math.round((pool - alloc) * 100) / 100);
+
+      let allocPrin = 0;
+      let allocIntr = 0;
+      if (item.itemType !== 'LOAN') {
+        allocPrin = alloc;
+      } else if (item.loanIntraAllocationOrder === 'PRINCIPAL_FIRST') {
+        allocPrin = Math.min(alloc, item.pendingPrincipalOrDeposit);
+        allocIntr = Math.max(0, Math.round((alloc - allocPrin) * 100) / 100);
+      } else {
+        allocIntr = Math.min(alloc, item.pendingInterest);
+        allocPrin = Math.max(0, Math.round((alloc - allocIntr) * 100) / 100);
+      }
+
       return {
         ...item,
+        allocatedPrincipalOrDeposit: Math.round(allocPrin * 100) / 100,
+        allocatedInterest: Math.round(allocIntr * 100) / 100,
         totalAllocated: alloc,
         remainingAfter: Math.max(0, Math.round((pend - alloc) * 100) / 100)
       };
@@ -703,6 +736,11 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                             <td className="border border-slate-200 px-2 py-1 text-center font-mono">{row.empCode}</td>
                             <td className="border border-slate-200 px-2 py-1 font-semibold">
                               {row.memberName} <span className="text-[10px] text-slate-500">({row.cifNo})</span>
+                              {row.isMember === false && (
+                                <span className="ml-1 px-1 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
+                                  अ-सभासद
+                                </span>
+                              )}
                             </td>
                             <td className="border border-slate-200 px-2 py-1 text-right font-mono font-semibold">
                               ₹{fmtDec(row.pendingAmount)}

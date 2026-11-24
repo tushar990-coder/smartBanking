@@ -72,8 +72,9 @@ interface DemandRdItem {
 
 interface DemandRow {
   srNo: number;
-  memberId: number;
+  memberId?: number | null;
   customerId: number;
+  isMember?: boolean;
   empCode: string;
   cifNo: string;
   memberName: string;
@@ -83,6 +84,9 @@ interface DemandRow {
   rdSubRows: DemandRdItem[];
   totalDeduction: number;
 }
+
+const getRowKey = (row: Pick<DemandRow, 'customerId' | 'memberId'>): number =>
+  row.customerId > 0 ? row.customerId : Number(row.memberId || 0);
 
 interface SavedNoticeSummary {
   demandNoticeId: number;
@@ -125,6 +129,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
   const [employerId, setEmployerId] = useState<number>(0);
   const [demandDate, setDemandDate] = useState<string>(activeBizStr);
   const [onlyBorrowers, setOnlyBorrowers] = useState<boolean>(false);
+  const [includeCurrentMonthInstallments, setIncludeCurrentMonthInstallments] = useState<boolean>(true);
   const [contributionAmount, setContributionAmount] = useState<string>('0');
   const [searchEmp, setSearchEmp] = useState<string>('');
 
@@ -214,6 +219,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
         employerId,
         demandDate,
         onlyBorrowers,
+        includeCurrentMonthInstallments,
         contributionAmount: Number(contributionAmount || 0),
         searchQuery: ''
       });
@@ -236,6 +242,8 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
       setRows(
         (data.rows || []).map((r: DemandRow) => ({
           ...r,
+          memberId: r.memberId ?? null,
+          isMember: r.isMember ?? Boolean(r.memberId && r.memberId > 0),
           isSelected: true,
           rdSubRows: r.rdSubRows || []
         }))
@@ -263,18 +271,18 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
   const allVisibleSelected = visibleRows.length > 0 && visibleRows.every((r) => r.isSelected);
 
   const handleToggleAll = (checked: boolean) => {
-    const visibleMemberIds = new Set(visibleRows.map((r) => r.memberId));
+    const visibleKeys = new Set(visibleRows.map((r) => getRowKey(r)));
     setRows((prev) =>
-      prev.map((r) => (visibleMemberIds.has(r.memberId) ? { ...r, isSelected: checked } : r))
+      prev.map((r) => (visibleKeys.has(getRowKey(r)) ? { ...r, isSelected: checked } : r))
     );
   };
 
-  const handleToggleRow = (memberId: number, checked: boolean) => {
-    setRows((prev) => prev.map((r) => (r.memberId === memberId ? { ...r, isSelected: checked } : r)));
+  const handleToggleRow = (rowKey: number, checked: boolean) => {
+    setRows((prev) => prev.map((r) => (getRowKey(r) === rowKey ? { ...r, isSelected: checked } : r)));
   };
 
   const handleCellChange = (
-    memberId: number,
+    rowKey: number,
     settingId: number,
     field: 'demandPrincipalOrDeposit' | 'demandInterest',
     rawVal: string
@@ -282,7 +290,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
     const num = Math.max(0, Number(rawVal) || 0);
     setRows((prev) =>
       prev.map((row) => {
-        if (row.memberId !== memberId) return row;
+        if (getRowKey(row) !== rowKey) return row;
         const nextCells = row.cells.map((c) =>
           c.demandColumnSettingId === settingId ? { ...c, [field]: num } : c
         );
@@ -293,11 +301,11 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
     );
   };
 
-  const handleRdAmountChange = (memberId: number, rdSubIndex: number, rawVal: string) => {
+  const handleRdAmountChange = (rowKey: number, rdSubIndex: number, rawVal: string) => {
     const num = Math.max(0, Number(rawVal) || 0);
     setRows((prev) =>
       prev.map((row) => {
-        if (row.memberId !== memberId) return row;
+        if (getRowKey(row) !== rowKey) return row;
         let nextPrimary = row.primaryRd;
         let nextSubs = row.rdSubRows;
 
@@ -405,6 +413,12 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
   const handleSave = async () => {
     setErrorMsg('');
     setSuccessMsg('');
+    if (searchEmp.trim() && visibleRows.length < rows.length) {
+      const proceed = window.confirm(
+        `सध्या शोध फिल्टर ("${searchEmp.trim()}") सुरू आहे (${visibleRows.length}/${rows.length} दिसत आहेत). जतन केल्यास सर्व निवडलेले ${footerTotals.selectedEmployees} खातेदार जतन होतील. पुढे जायचे का?`
+      );
+      if (!proceed) return;
+    }
     const ok = await runValidation();
     if (!ok) return;
 
@@ -479,8 +493,9 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
       setRows(
         (data.rows || []).map((r: any) => ({
           srNo: r.srNo,
-          memberId: r.memberId,
+          memberId: r.memberId ?? null,
           customerId: r.customerId,
+          isMember: r.isMember ?? Boolean(r.memberId && r.memberId > 0),
           empCode: r.empCode,
           cifNo: r.cifNo,
           memberName: r.memberName,
@@ -807,6 +822,19 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
             <span>कर्जदार</span>
           </label>
 
+          <label
+            className="flex items-center gap-1.5 cursor-pointer select-none font-bold text-slate-700 px-1"
+            title="महिना सुरू होताच थकबाकी नसल्यास चालू महिन्याचा नियमित कर्ज हप्ता (EMI) समाविष्ट करा"
+          >
+            <input
+              type="checkbox"
+              checked={includeCurrentMonthInstallments}
+              onChange={(e) => setIncludeCurrentMonthInstallments(e.target.checked)}
+              className="w-4 h-4 accent-primary"
+            />
+            <span>चालू महिन्याचा हप्ता धरा</span>
+          </label>
+
           <div className="flex items-center gap-1.5 ml-auto">
             <label className="font-bold text-slate-700">वर्गणी ठेव</label>
             <input
@@ -837,6 +865,11 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
               placeholder="कोड / नाव / CIF"
               className="bg-white border border-slate-300 rounded px-2 py-0.5 w-32 text-xs focus:outline-none focus:border-primary"
             />
+            {searchEmp.trim() && rows.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">
+                {visibleRows.length}/{rows.length}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -991,18 +1024,21 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
               </tr>
             ) : (
               visibleRows.map((row) => {
-                const rowErr = validationReport?.rowIssues?.[String(row.memberId)];
+                const rowKey = getRowKey(row);
+                const rowErr =
+                  validationReport?.rowIssues?.[String(rowKey)] ||
+                  (row.memberId ? validationReport?.rowIssues?.[String(row.memberId)] : undefined);
                 const rowHighlight = rowErr && rowErr.length > 0 ? 'bg-red-50/70' : row.isSelected ? 'bg-white' : 'bg-slate-100/70 opacity-75';
 
                 return (
-                  <React.Fragment key={row.memberId}>
+                  <React.Fragment key={rowKey}>
                     {/* Primary Employee Row */}
                     <tr className={`${rowHighlight} hover:bg-blue-50/40`}>
                       <td className="border border-slate-300 px-1.5 py-1 text-center">
                         <input
                           type="checkbox"
                           checked={row.isSelected}
-                          onChange={(e) => handleToggleRow(row.memberId, e.target.checked)}
+                          onChange={(e) => handleToggleRow(rowKey, e.target.checked)}
                           className="w-3.5 h-3.5 accent-primary cursor-pointer"
                         />
                       </td>
@@ -1013,6 +1049,11 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                       </td>
                       <td className="border border-slate-300 px-2 py-1 font-semibold text-slate-800">
                         {row.memberName}
+                        {row.isMember === false && (
+                          <span className="ml-1.5 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
+                            ब-वर्ग / अ-सभासद
+                          </span>
+                        )}
                         {rowErr && rowErr.length > 0 && (
                           <div className="text-[10px] text-red-700 font-normal">{rowErr[0]}</div>
                         )}
@@ -1040,7 +1081,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                     step="1"
                                     disabled={!row.isSelected}
                                     value={row.primaryRd.demandPrincipalOrDeposit}
-                                    onChange={(e) => handleRdAmountChange(row.memberId, 0, e.target.value)}
+                                    onChange={(e) => handleRdAmountChange(rowKey, 0, e.target.value)}
                                     className="w-full px-1.5 py-0.5 text-right font-mono bg-transparent focus:bg-yellow-50 focus:outline-none border border-transparent focus:border-primary rounded-2xs"
                                   />
                                 ) : (
@@ -1094,7 +1135,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                   disabled={!row.isSelected}
                                   value={cell.demandPrincipalOrDeposit}
                                   onChange={(e) =>
-                                    handleCellChange(row.memberId, col.demandColumnSettingId, 'demandPrincipalOrDeposit', e.target.value)
+                                    handleCellChange(rowKey, col.demandColumnSettingId, 'demandPrincipalOrDeposit', e.target.value)
                                   }
                                   className="w-full px-1.5 py-0.5 text-right font-mono bg-transparent focus:bg-yellow-50 focus:outline-none border border-transparent focus:border-primary rounded-2xs"
                                 />
@@ -1107,7 +1148,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                   disabled={!row.isSelected}
                                   value={cell.demandInterest}
                                   onChange={(e) =>
-                                    handleCellChange(row.memberId, col.demandColumnSettingId, 'demandInterest', e.target.value)
+                                    handleCellChange(rowKey, col.demandColumnSettingId, 'demandInterest', e.target.value)
                                   }
                                   className="w-full px-1.5 py-0.5 text-right font-mono bg-transparent focus:bg-yellow-50 focus:outline-none border border-transparent focus:border-primary rounded-2xs"
                                 />
@@ -1121,10 +1162,18 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                             <div className="flex items-center">
                               {col.itemType === 'THRIFT_SAVING' && cell.hasSubLedgerAccount === false && (
                                 <span
-                                  title="या कर्मचाऱ्याचे नवीन खाते वसुलीवेळी तयार होईल"
+                                  title="या खातेदाराचे नवीन खाते वसुलीवेळी तयार होईल"
                                   className="ml-1 px-1 rounded bg-amber-100 text-amber-800 text-[9px] shrink-0"
                                 >
                                   नवीन
+                                </span>
+                              )}
+                              {col.itemType === 'PIGMY' && cell.hasSubLedgerAccount === false && (
+                                <span
+                                  title="या खातेदाराचे सक्रिय पिग्मी खाते आढळले नाही"
+                                  className="ml-1 px-1 rounded bg-red-100 text-red-700 text-[9px] shrink-0"
+                                >
+                                  खाते नाही
                                 </span>
                               )}
                               <input
@@ -1134,7 +1183,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                 disabled={!row.isSelected}
                                 value={cell.demandPrincipalOrDeposit}
                                 onChange={(e) =>
-                                  handleCellChange(row.memberId, col.demandColumnSettingId, 'demandPrincipalOrDeposit', e.target.value)
+                                  handleCellChange(rowKey, col.demandColumnSettingId, 'demandPrincipalOrDeposit', e.target.value)
                                 }
                                 className="w-full px-1.5 py-0.5 text-right font-mono bg-transparent focus:bg-yellow-50 focus:outline-none border border-transparent focus:border-primary rounded-2xs"
                               />
@@ -1153,7 +1202,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                     {hasRdZone &&
                       (row.rdSubRows || []).map((sr) => (
                         <tr
-                          key={`${row.memberId}-rd-${sr.subRowIndex}-${sr.accountId}`}
+                          key={`${rowKey}-rd-${sr.subRowIndex}-${sr.accountId}`}
                           className="bg-indigo-50/50 hover:bg-indigo-100/50 text-slate-700"
                         >
                           <td className="border border-slate-300"></td>
@@ -1179,7 +1228,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                       step="1"
                                       disabled={!row.isSelected}
                                       value={sr.demandPrincipalOrDeposit}
-                                      onChange={(e) => handleRdAmountChange(row.memberId, sr.subRowIndex, e.target.value)}
+                                      onChange={(e) => handleRdAmountChange(rowKey, sr.subRowIndex, e.target.value)}
                                       className="w-full px-1.5 py-0.5 text-right font-mono font-semibold text-indigo-950 bg-white/80 focus:bg-yellow-50 focus:outline-none border border-indigo-200 focus:border-primary rounded-2xs"
                                     />
                                   </td>

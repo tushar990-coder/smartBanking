@@ -1,5 +1,27 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-24] - आवृत्ती v2.6.41 (Employee Demand Deposit Ledgers / Pigmy / Non-Members & CORS Fix, FD Posted Interest Reversal, Loan Penal Settings & Pigmy Multi-Scheme DayBook)
+
+### 🧾 1. कर्मचारी पगार डिमांड (`DEPOSIT_LEDGER`, `PIGMY`, अ-सभासद व CORS सुधारणा)
+- **`DemandColumnSetting.cs`, `DemandMemberDetail.cs`, `DemandSettingsController.cs`, `DemandNoticesController.cs`, `DemandRecoveriesController.cs`, `DemandSettingsMaster.tsx`, `EmployeeDemandForm.tsx`, `DemandRecoveryMaster.tsx`, `LoanRateMaster.tsx`:**
+  - `प्रकार (Type)` मध्ये **`ठेवीचे लेजर (Deposit Ledger)`** व **`पिग्मी / दैनिक ठेव (Pigmy)`** समाविष्ट केले व संस्थेच्या सर्व सक्रिय ठेव लेजर्स (`CustomerOpeningBalances` व स्कीम लिंक्ड ठेवी) Searchable यादीत दाखवले.
+  - `LoanRates` मध्ये चुकून `Assets` गटातील दंडव्याज लेजर (`247`) असल्यास `SuggestedDefaults` मध्ये सुरक्षितपणे `null` ठेवणे व `LoanRateMaster` / `DemandSettingsMaster` मध्ये चेतावणी देणे.
+  - `Customers` वर आधारित (`MemberId` ऐच्छिक `int?`) ब-वर्ग / अ-सभासद कर्मचाऱ्यांची संपूर्ण डिमांड, `DEPOSIT_LEDGER` थेट शिल्लक व वैयक्तिक `CustomerID` क्रेडिट, `PIGMY` वसुली (`PigmyTransaction`) व लॉसलेस रोलबॅक, तसेच महिना-सुरुवात `IncludeCurrentMonthInstallments` EMI गणना.
+- **CORS, Heartbeat व `LicenseService` (`Program.cs`, `web.config`, `LicenseService.cs`, `api.ts`, `main.tsx`, `NetworkStatusBanner.tsx`):**
+  - `UseCors` क्रम `UseExceptionHandler` पूर्वी हलवला, IIS `WebDAVModule` काढला, `/api/license/status` ला Simple CORS Request ठेवून preflight त्रुटी बंद केल्या, आणि `SansthaDetails.SansthaName` वरून होस्ट-निहाय डायनॅमिक नाव दाखवले.
+
+### 💰 2. मुदत ठेव क्लोजर पोस्टिंग व्याज व मुदतपूर्व रिव्हर्सल
+- **`FdAccountsController.cs`, `FdInterestSettlementHelper.cs`, `FdWithdrawalMaturity.tsx`:**
+  - व्याजवर व्याज (`CompoundPosting`) असणाऱ्या FD क्लोजर व मुदतपूर्व ठेव मोडताना `POSTING_INTR` व `NAFATOTA DEY VYAJ INTR` लेजर निवड व अचूक पोस्टिंग व्याज रिव्हर्सल.
+
+### 📈 3. कर्ज दंडव्याज सेटिंग व वसुली दुरुस्ती
+- **`LoanRatesController.cs`, `LoanCollectionsController.cs`, `LoanPenalInterestHelper.cs`, `LoanRateMaster.tsx`, `LoanCollectionMaster.tsx`, `LoanInterestPostingMaster.tsx`:**
+  - कर्ज दरांमध्ये `PenalInterestGraceDays`, `PenalInterestBasis` व `AllowManualPenalInRecovery` सेटिंग्ज आणि कर्ज वसुलीमध्ये अचूक दंडव्याज गणना व समायोजन.
+
+### 🐷 4. पिग्मी मल्टी-स्कीम डे-बुक आयात व कलेक्शन सुधारणा
+- **`AgentDayBookController.cs`, `PigmyCollectionsController.cs`, `PigmyMobileApiController.cs`, `AgentDayBookMaster.tsx`, `PigmyCollectionMaster.tsx`, `AccountNumberHelper.cs`:**
+  - `PigmyCollections.RemittanceDepositId` व मल्टी-स्कीम डे-बुक आयात सुधारणा (**२१८/२१८ xUnit चाचण्या व Vite प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-23] - आवृत्ती v2.6.40 (Standalone Bank Borrowing Lifecycle & EMI Tracker, Pigmy Settlement Overhaul, Scheme GL Mapping & Pigmy Interest Engine)
 
 ### 🏦 1. स्वतंत्र बाह्य कर्जे व सोने पुनर्गहाण मॉड्यूल (`🏛️ बँकिंग व्यवहार` खाली)

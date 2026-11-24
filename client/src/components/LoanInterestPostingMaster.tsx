@@ -14,6 +14,7 @@ interface LoanRate {
   loanType: string;
   shortName?: string;
   interestRate: number;
+  overdueInterestRate?: number;
 }
 
 interface InterestPostingItem {
@@ -31,6 +32,11 @@ interface InterestPostingItem {
   calculatedInterest: number;
   newPrincipal: number;
   newInterest: number;
+  penalInterestRate?: number;
+  penalDaysAccrued?: number;
+  currentOverdueInterest?: number;
+  calculatedPenalInterest?: number;
+  newOverdueInterest?: number;
 }
 
 const LoanInterestPostingMaster: React.FC = () => {
@@ -47,6 +53,8 @@ const LoanInterestPostingMaster: React.FC = () => {
   
   const [previewItems, setPreviewItems] = useState<InterestPostingItem[]>([]);
   const [totalCalculatedInterest, setTotalCalculatedInterest] = useState<number>(0);
+  const [totalPenalInterest, setTotalPenalInterest] = useState<number>(0);
+  const [includePenalInterest, setIncludePenalInterest] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [postingLoading, setPostingLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -91,11 +99,13 @@ const LoanInterestPostingMaster: React.FC = () => {
         loanRateID: loanRateID || undefined,
         postingDate,
         postingMode,
-        capitalizeToPrincipal: postingMode === 'ForceCapitalize'
+        capitalizeToPrincipal: postingMode === 'ForceCapitalize',
+        includePenalInterest
       };
       const res = await axios.post('/api/LoanAccounts/PreviewInterestPosting', payload);
       setPreviewItems(res.data.items || []);
       setTotalCalculatedInterest(res.data.totalCalculatedInterest || 0);
+      setTotalPenalInterest(res.data.totalPenalInterest || 0);
     } catch (err: any) {
       setError(err.response?.data?.message || err.response?.data || 'व्याज अंदाजपत्रक तयार करताना त्रुटी आली.');
     } finally {
@@ -113,7 +123,7 @@ const LoanInterestPostingMaster: React.FC = () => {
       ? '🌟 योजनेच्या धोरणानुसार स्वयंचलित (As per Scheme Policy)' 
       : (postingMode === 'ForceCapitalize' ? 'मुद्दलामध्ये प्लस (Capitalize to Principal)' : 'येणे व्याजामध्ये (Separate Interest Balance)');
 
-    if (!window.confirm(`तुम्हाला खरोखर ${previewItems.length} कर्ज खात्यांवर एकत्रीत ₹${totalCalculatedInterest.toLocaleString('en-IN')} व्याज आकारणी पोस्ट करायची आहे का?\n\nपद्धत: ${modeText}`)) {
+    if (!window.confirm(`तुम्हाला खरोखर ${previewItems.length} कर्ज खात्यांवर एकत्रीत ₹${totalCalculatedInterest.toLocaleString('en-IN')}${totalPenalInterest > 0 ? ` (दंड व्याज: ₹${totalPenalInterest.toLocaleString('en-IN')})` : ''} व्याज आकारणी पोस्ट करायची आहे का?\n\nपद्धत: ${modeText}`)) {
       return;
     }
 
@@ -126,13 +136,15 @@ const LoanInterestPostingMaster: React.FC = () => {
         loanRateID: loanRateID || undefined,
         postingDate,
         postingMode,
-        capitalizeToPrincipal: postingMode === 'ForceCapitalize'
+        capitalizeToPrincipal: postingMode === 'ForceCapitalize',
+        includePenalInterest
       };
       const res = await axios.post('/api/LoanAccounts/PostInterestBatch', payload);
       const vNoMsg = res.data.voucherNo ? ` (व्हाऊचर क्र: ${res.data.voucherNo})` : '';
       setSuccess((res.data.message || 'व्याज आकारणी यशस्वीरित्या पोस्ट झाली!') + vNoMsg);
       setPreviewItems([]);
       setTotalCalculatedInterest(0);
+      setTotalPenalInterest(0);
     } catch (err: any) {
       setError(err.response?.data?.message || err.response?.data || 'व्याज आकारणी पोस्ट करताना त्रुटी आली.');
     } finally {
@@ -265,6 +277,18 @@ const LoanInterestPostingMaster: React.FC = () => {
               </div>
             </label>
           </div>
+
+          <label className="flex items-center gap-2 pt-2 border-t border-blue-200 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includePenalInterest}
+              onChange={(e) => setIncludePenalInterest(e.target.checked)}
+              className="w-4 h-4 text-rose-600 focus:ring-rose-500 border-gray-300 rounded cursor-pointer"
+            />
+            <span className="text-xs font-bold text-rose-900">
+              थकीत खात्यांवर योजनेनुसार दंड व्याज देखील आकारा व बुक करा (Include Overdue / Penal Interest)
+            </span>
+          </label>
         </div>
 
         {/* Buttons */}
@@ -303,6 +327,9 @@ const LoanInterestPostingMaster: React.FC = () => {
               </h2>
               <p className="text-[10px] text-gray-500">
                 पद्धत: <strong className="text-gray-800">{postingMode === 'SchemeDefault' ? 'योजनेनुसार स्वयंचलित' : (postingMode === 'ForceCapitalize' ? 'मुद्दलामध्ये प्लस' : 'स्वतंत्र येणे व्याज')}</strong> | एकूण आकारलेले व्याज: <strong className="text-emerald-700">₹{totalCalculatedInterest.toLocaleString('en-IN')}</strong>
+                {totalPenalInterest > 0 && (
+                  <> | दंड व्याज: <strong className="text-rose-700">₹{totalPenalInterest.toLocaleString('en-IN')}</strong></>
+                )}
               </p>
             </div>
 
@@ -332,6 +359,12 @@ const LoanInterestPostingMaster: React.FC = () => {
                   <th className="p-2 border-r text-center">व्याजदर</th>
                   <th className="p-2 border-r text-center">दिवस</th>
                   <th className="p-2 border-r text-right bg-emerald-50 text-emerald-800">आकारणी व्याज</th>
+                  {(includePenalInterest || totalPenalInterest > 0) && (
+                    <>
+                      <th className="p-2 border-r text-right bg-rose-50 text-rose-900">दंड व्याज</th>
+                      <th className="p-2 border-r text-right bg-rose-50 text-rose-950">नवीन दंड शिल्लक</th>
+                    </>
+                  )}
                   <th className="p-2 border-r text-right bg-amber-50 text-amber-900">नवीन मुद्दल</th>
                   <th className="p-2 text-right bg-blue-50 text-blue-900">नवीन येणे व्याज</th>
                 </tr>
@@ -356,6 +389,16 @@ const LoanInterestPostingMaster: React.FC = () => {
                     <td className="p-2 border-r text-right font-bold text-emerald-700 bg-emerald-50/50">
                       ₹{item.calculatedInterest.toLocaleString('en-IN')}
                     </td>
+                    {(includePenalInterest || totalPenalInterest > 0) && (
+                      <>
+                        <td className="p-2 border-r text-right font-bold text-rose-700 bg-rose-50/50">
+                          ₹{(item.calculatedPenalInterest || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="p-2 border-r text-right font-bold text-rose-950 bg-rose-50/30">
+                          ₹{(item.newOverdueInterest ?? item.currentOverdueInterest ?? 0).toLocaleString('en-IN')}
+                        </td>
+                      </>
+                    )}
                     <td className="p-2 border-r text-right font-bold text-amber-900 bg-amber-50/40">
                       ₹{item.newPrincipal.toLocaleString('en-IN')}
                     </td>

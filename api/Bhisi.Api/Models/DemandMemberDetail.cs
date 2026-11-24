@@ -16,8 +16,7 @@ namespace Bhisi.Api.Models
         [ForeignKey("DemandNoticeId")]
         public virtual DemandNotice? DemandNotice { get; set; }
 
-        [Required]
-        public int MemberId { get; set; }
+        public int? MemberId { get; set; }
 
         [ForeignKey("MemberId")]
         public virtual Member? Member { get; set; }

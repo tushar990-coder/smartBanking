@@ -21,7 +21,7 @@ export default function NetworkStatusBanner() {
         return;
       }
 
-      // 2. Perform heartbeat check via configured API client
+      // 2. Perform lightweight simple-CORS heartbeat check (no custom headers -> zero OPTIONS preflight)
       try {
         const res = await api.get('/license/status', { timeout: 7000 });
         if (res.status < 500) {
@@ -37,22 +37,7 @@ export default function NetworkStatusBanner() {
           return;
         }
       } catch {
-        // Fallback relative ping check in case of base URL routing variations
-        try {
-          const fallback = await fetch('/api/license/status', { cache: 'no-store' });
-          if (fallback.ok || fallback.status < 500) {
-            consecutiveFailuresRef.current = 0;
-            if (isMounted && isServerDisconnected) {
-              setIsServerDisconnected(false);
-              setShowRestoredMessage(true);
-              if (timerId) clearTimeout(timerId);
-              timerId = setTimeout(() => {
-                if (isMounted) setShowRestoredMessage(false);
-              }, 4000);
-            }
-            return;
-          }
-        } catch {}
+        // Handled cleanly below without triggering duplicate cross-origin fetch calls
       }
 
       // 3. Only trigger disconnect alert after 3 consecutive failed checks (prevents momentary false alarms)
@@ -98,16 +83,7 @@ export default function NetworkStatusBanner() {
         return;
       }
     } catch {
-      try {
-        const fallback = await fetch('/api/license/status', { cache: 'no-store' });
-        if (fallback.ok || fallback.status < 500) {
-          consecutiveFailuresRef.current = 0;
-          setIsServerDisconnected(false);
-          setShowRestoredMessage(true);
-          setTimeout(() => setShowRestoredMessage(false), 4000);
-          return;
-        }
-      } catch {}
+      // Handled below
     } finally {
       setIsChecking(false);
     }

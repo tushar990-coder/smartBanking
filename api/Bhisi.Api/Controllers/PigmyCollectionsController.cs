@@ -85,6 +85,7 @@ namespace Bhisi.Api.Controllers
         public class BulkMonthlyChartRequestDto
         {
             public int AgentId { get; set; }
+            public int? PigmySchemeId { get; set; }
             public string MonthYear { get; set; } = string.Empty; // e.g. "2026-04"
             public DateTime? ActiveBusinessDate { get; set; }
             public string? PaymentMode { get; set; }
@@ -630,9 +631,9 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        // GET: api/PigmyCollections/CheckMonthlyExists?agentId=1&monthYear=2026-08
+        // GET: api/PigmyCollections/CheckMonthlyExists?agentId=1&monthYear=2026-08&schemeId=2
         [HttpGet("CheckMonthlyExists")]
-        public async Task<IActionResult> CheckMonthlyExists([FromQuery] int agentId, [FromQuery] string monthYear)
+        public async Task<IActionResult> CheckMonthlyExists([FromQuery] int agentId, [FromQuery] string monthYear, [FromQuery] int? schemeId = null)
         {
             if (agentId <= 0 || string.IsNullOrWhiteSpace(monthYear))
             {
@@ -648,9 +649,28 @@ namespace Bhisi.Api.Controllers
             var startDate = new DateTime(year, month, 1);
             var endDate = startDate.AddMonths(1);
 
-            var collections = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionDate >= startDate && c.CollectionDate < endDate && c.CollectionAmount > 0)
-                .Select(c => new { c.PigmyAccountId, c.CollectionAmount })
+            var query = _context.PigmyCollections
+                .AsNoTracking()
+                .Include(c => c.PigmyAccount)
+                    .ThenInclude(a => a!.PigmyScheme)
+                .Where(c => c.AgentId == agentId &&
+                            c.CollectionDate >= startDate &&
+                            c.CollectionDate < endDate &&
+                            c.CollectionAmount > 0);
+
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                query = query.Where(c => c.PigmyAccount != null && c.PigmyAccount.PigmySchemeID == schemeId.Value);
+            }
+
+            var collections = await query
+                .Select(c => new
+                {
+                    c.PigmyAccountId,
+                    c.CollectionAmount,
+                    SchemeId = c.PigmyAccount != null ? c.PigmyAccount.PigmySchemeID : 0,
+                    SchemeName = c.PigmyAccount != null && c.PigmyAccount.PigmyScheme != null ? c.PigmyAccount.PigmyScheme.SchemeName : ""
+                })
                 .ToListAsync();
 
             if (collections.Any())
@@ -661,6 +681,8 @@ namespace Bhisi.Api.Controllers
                     count = collections.Count,
                     totalAmount = collections.Sum(c => c.CollectionAmount),
                     accountsCount = collections.Select(c => c.PigmyAccountId).Distinct().Count(),
+                    schemeIds = collections.Where(c => c.SchemeId > 0).Select(c => c.SchemeId).Distinct().ToList(),
+                    schemeNames = collections.Where(c => !string.IsNullOrWhiteSpace(c.SchemeName)).Select(c => c.SchemeName).Distinct().ToList(),
                     monthYear = $"{month:D2}/{year}"
                 });
             }
@@ -671,6 +693,8 @@ namespace Bhisi.Api.Controllers
                 count = 0,
                 totalAmount = 0m,
                 accountsCount = 0,
+                schemeIds = new List<int>(),
+                schemeNames = new List<string>(),
                 monthYear = $"{month:D2}/{year}"
             });
         }
@@ -702,21 +726,59 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("निवडलेला पिग्मी एजंट सापडले नाही.");
             }
 
-            // Duplicate Prevention: Check if collections already exist for this agent and month
+            // Duplicate Prevention: Scope per PigmyScheme so separate scheme sheets can be imported independently for the same agent & month
+            var targetAccountIds = validEntries.Select(e => e.PigmyAccountId).Distinct().ToList();
+            var targetAccountsList = await _context.PigmyAccounts
+                .AsNoTracking()
+                .Include(a => a.PigmyScheme)
+                .Where(a => targetAccountIds.Contains(a.PigmyAccountID))
+                .ToListAsync();
+
+            if (request.PigmySchemeId.HasValue && request.PigmySchemeId.Value > 0)
+            {
+                var wrongSchemeAcc = targetAccountsList.FirstOrDefault(a => a.PigmySchemeID != request.PigmySchemeId.Value);
+                if (wrongSchemeAcc != null)
+                {
+                    return BadRequest($"खाते क्र. '{wrongSchemeAcc.AccountNo}' हे निवडलेल्या योजनेशी संबंधित नाही.");
+                }
+            }
+
+            var uploadedSchemeIds = (request.PigmySchemeId.HasValue && request.PigmySchemeId.Value > 0)
+                ? new List<int> { request.PigmySchemeId.Value }
+                : targetAccountsList.Select(a => a.PigmySchemeID).Distinct().ToList();
+
             var parts = request.MonthYear?.Split('-');
             if (parts != null && parts.Length == 2 && int.TryParse(parts[0], out int year) && int.TryParse(parts[1], out int month))
             {
                 var startDate = new DateTime(year, month, 1);
                 var endDate = startDate.AddMonths(1);
-                var existingCount = await _context.PigmyCollections.CountAsync(c => 
-                    c.AgentId == request.AgentId && 
-                    c.CollectionDate >= startDate && 
-                    c.CollectionDate < endDate && 
-                    c.CollectionAmount > 0);
+                var dupQuery = _context.PigmyCollections
+                    .AsNoTracking()
+                    .Include(c => c.PigmyAccount)
+                        .ThenInclude(a => a!.PigmyScheme)
+                    .Where(c => c.AgentId == request.AgentId &&
+                                c.CollectionDate >= startDate &&
+                                c.CollectionDate < endDate &&
+                                c.CollectionAmount > 0);
 
-                if (existingCount > 0)
+                if (uploadedSchemeIds.Any())
                 {
-                    return BadRequest($"या एजंटसाठी {month:D2}/{year} महिन्याचे कलेक्शन आधीच सिस्टीममध्ये जमा आहे ({existingCount} नोंदी आढळल्या). खात्यांवर दुबार (Duplicate) रक्कम जमा होऊ नये म्हणून आयात रोखण्यात आली आहे.");
+                    dupQuery = dupQuery.Where(c => c.PigmyAccount != null && uploadedSchemeIds.Contains(c.PigmyAccount.PigmySchemeID));
+                }
+
+                var existingDups = await dupQuery
+                    .Select(c => new
+                    {
+                        c.PigmyAccountId,
+                        SchemeName = c.PigmyAccount != null && c.PigmyAccount.PigmyScheme != null ? c.PigmyAccount.PigmyScheme.SchemeName : ""
+                    })
+                    .ToListAsync();
+
+                if (existingDups.Any())
+                {
+                    var dupSchemesStr = string.Join(", ", existingDups.Where(x => !string.IsNullOrWhiteSpace(x.SchemeName)).Select(x => x.SchemeName).Distinct());
+                    string schemeText = string.IsNullOrWhiteSpace(dupSchemesStr) ? "" : $" ({dupSchemesStr})";
+                    return BadRequest($"या एजंटसाठी {month:D2}/{year} महिन्याचे कलेक्शन{schemeText} आधीच सिस्टीममध्ये जमा आहे ({existingDups.Count} नोंदी आढळल्या). खात्यांवर दुबार (Duplicate) रक्कम जमा होऊ नये म्हणून आयात रोखण्यात आली आहे.");
                 }
             }
 
@@ -757,12 +819,14 @@ namespace Bhisi.Api.Controllers
                     int itemIdx = 0;
 
                     decimal dayTotalAmount = 0;
-                    var dayCollections = new List<PigmyCollection>();
+                    var dayCollections = new List<(PigmyCollection Collection, PigmyAccount Account, decimal DeltaAmount)>();
                     int targetBranchId = 1;
 
                     foreach (var item in dateGroup)
                     {
-                        var account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == item.PigmyAccountId);
+                        var account = await _context.PigmyAccounts
+                            .Include(a => a.PigmyScheme)
+                            .FirstOrDefaultAsync(a => a.PigmyAccountID == item.PigmyAccountId);
                         if (account == null || account.Status != "Active") continue;
 
                         if (account.OpeningDate.Date > targetDate) continue;
@@ -832,7 +896,7 @@ namespace Bhisi.Api.Controllers
                         account.TotalDepositedAmount = updatedAccountBalance;
                         _context.PigmyAccounts.Update(account);
 
-                        dayCollections.Add(collection);
+                        dayCollections.Add((collection, account, item.CollectionAmount));
                         dayTotalAmount += item.CollectionAmount;
 
                         processedEntriesCount++;
@@ -858,7 +922,20 @@ namespace Bhisi.Api.Controllers
                     {
                         var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == targetBranchId && m.IsActive);
                         int drLedgerId = isBankMonthly ? validatedMonthlyBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranchId, "PIGMY"));
-                        int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
+
+                        var crByLedger = new Dictionary<int, decimal>();
+                        foreach (var dc in dayCollections)
+                        {
+                            var accScheme = dc.Account.PigmyScheme ?? await _context.PigmySchemes.FindAsync(dc.Account.PigmySchemeID);
+                            int? liabId = accScheme?.PigmyLiabilityLedgerID;
+                            if (!liabId.HasValue || liabId.Value <= 0)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest($"पिग्मी योजना '{accScheme?.SchemeName ?? ("#" + dc.Account.PigmySchemeID)}' ला 'पिग्मी ठेव देयता लेजर' मॅप केलेले नाही. कृपया पिग्मी योजना सेटिंगमध्ये लेजर निवडा.");
+                            }
+                            if (!crByLedger.ContainsKey(liabId.Value)) crByLedger[liabId.Value] = 0m;
+                            crByLedger[liabId.Value] += dc.DeltaAmount;
+                        }
 
                         string uniqueVoucherNo = $"PV-{targetBranchId}-{targetDate:yyyyMMdd}-OP-IMP-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
 
@@ -882,20 +959,26 @@ namespace Bhisi.Api.Controllers
                             Amount = dayTotalAmount
                         });
 
-                        voucher.VoucherDetails.Add(new VoucherDetail
+                        foreach (var kv in crByLedger)
                         {
-                            LedgerID = crLedgerId,
-                            DrCr = "Cr",
-                            Amount = dayTotalAmount
-                        });
+                            if (kv.Value > 0m)
+                            {
+                                voucher.VoucherDetails.Add(new VoucherDetail
+                                {
+                                    LedgerID = kv.Key,
+                                    DrCr = "Cr",
+                                    Amount = kv.Value
+                                });
+                            }
+                        }
 
                         _context.Vouchers.Add(voucher);
                         await _context.SaveChangesAsync();
 
-                        foreach (var col in dayCollections)
+                        foreach (var dc in dayCollections)
                         {
-                            col.VoucherId = voucher.VoucherID;
-                            col.IsVoucherGenerated = true;
+                            dc.Collection.VoucherId = voucher.VoucherID;
+                            dc.Collection.IsVoucherGenerated = true;
                         }
                         await _context.SaveChangesAsync();
                     }
@@ -939,6 +1022,7 @@ namespace Bhisi.Api.Controllers
 
             var query = _context.PigmyCollections
                 .Include(c => c.PigmyAccount)
+                    .ThenInclude(a => a!.PigmyScheme)
                 .Where(c => c.CollectionSource == "APP" && !c.IsVoucherGenerated);
 
             if (request.CollectionIds != null && request.CollectionIds.Any())
@@ -1006,7 +1090,35 @@ namespace Bhisi.Api.Controllers
                     int drLedgerId = anyItemIsBank
                         ? validatedSyncBankLedgerId
                         : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, groupBranchId, "PIGMY"));
-                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
+
+                    var crByLedger = new Dictionary<int, decimal>();
+                    foreach (var col in group)
+                    {
+                        if (col.CollectionAmount <= 0) continue;
+                        int liabId = 0;
+                        if (col.PigmyAccount != null)
+                        {
+                            var accScheme = col.PigmyAccount.PigmyScheme ?? await _context.PigmySchemes.FindAsync(col.PigmyAccount.PigmySchemeID);
+                            if (accScheme == null || !accScheme.PigmyLiabilityLedgerID.HasValue || accScheme.PigmyLiabilityLedgerID.Value <= 0)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest($"पिग्मी योजना '{accScheme?.SchemeName ?? ("#" + col.PigmyAccount.PigmySchemeID)}' ला 'पिग्मी ठेव देयता लेजर' मॅप केलेले नाही. कृपया पिग्मी योजना सेटिंगमध्ये लेजर निवडा.");
+                            }
+                            liabId = accScheme.PigmyLiabilityLedgerID.Value;
+                        }
+                        else if (mapping != null && mapping.CreditLedgerId > 0)
+                        {
+                            liabId = mapping.CreditLedgerId;
+                        }
+                        else
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"पिग्मी संकलन क्र. {col.CollectionId} साठी पिग्मी खाते किंवा देयता लेजर सापडले नाही.");
+                        }
+
+                        if (!crByLedger.ContainsKey(liabId)) crByLedger[liabId] = 0m;
+                        crByLedger[liabId] += col.CollectionAmount;
+                    }
 
                     generatedVouchersCount++;
                     string uniqueVoucherNo = $"PV-{groupBranchId}-{groupDate:yyyyMMdd}-APP-AGT-{groupAgentId}";
@@ -1035,28 +1147,18 @@ namespace Bhisi.Api.Controllers
                         Amount = groupTotal
                     });
 
-                    voucher.VoucherDetails.Add(new VoucherDetail
+                    foreach (var kv in crByLedger)
                     {
-                        LedgerID = crLedgerId,
-                        CustomerID = null,
-                        DrCr = "Cr",
-                        Amount = groupTotal
-                    });
+                        voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = kv.Key,
+                            CustomerID = null,
+                            DrCr = "Cr",
+                            Amount = kv.Value
+                        });
+                    }
 
                     _context.Vouchers.Add(voucher);
-                    await _context.SaveChangesAsync();
-
-                    foreach (var col in group)
-                    {
-                        col.VoucherId = voucher.VoucherID;
-                        col.IsVoucherGenerated = true;
-                        if (anyItemIsBank)
-                        {
-                            col.PaymentMode = NormalizePigmyPaymentMode(requestForcesBank ? request.PaymentMode : col.PaymentMode, true);
-                        }
-                        _context.PigmyCollections.Update(col);
-                        totalProcessedCollections++;
-                    }
                     await _context.SaveChangesAsync();
 
                     // Record PigmyAgentCashDeposit so Agent Day Book reflects this remittance
@@ -1075,6 +1177,20 @@ namespace Bhisi.Api.Controllers
                         CreatedOn = DateTime.Now
                     };
                     _context.PigmyAgentCashDeposits.Add(deposit);
+                    await _context.SaveChangesAsync();
+
+                    foreach (var col in group)
+                    {
+                        col.RemittanceDepositId = deposit.DepositId;
+                        col.VoucherId = voucher.VoucherID;
+                        col.IsVoucherGenerated = true;
+                        if (anyItemIsBank)
+                        {
+                            col.PaymentMode = NormalizePigmyPaymentMode(requestForcesBank ? request.PaymentMode : col.PaymentMode, true);
+                        }
+                        _context.PigmyCollections.Update(col);
+                        totalProcessedCollections++;
+                    }
                     await _context.SaveChangesAsync();
                 }
 

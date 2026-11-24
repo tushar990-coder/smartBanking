@@ -289,6 +289,14 @@ namespace Bhisi.Api.Models
         public decimal PendingSanctionedAmount { get; set; }
         public DateTime? LastInstallmentPaidDate { get; set; }
         public DateTime? LastInterestPostingDate { get; set; }
+        public DateTime? LastPenalPostingDate { get; set; }
+        public decimal AccruedPenalInterest { get; set; }
+        public decimal EffectivePenalInterestDue { get; set; }
+        public decimal PenalInterestRate { get; set; }
+        public int PenalOverdueDays { get; set; }
+        public int PenalGraceDays { get; set; }
+        public string PenalInterestBasis { get; set; } = "OverduePrincipal";
+        public bool AllowManualPenalInRecovery { get; set; } = true;
         public List<LoanTrancheDetailDto> Tranches { get; set; } = new();
         public List<LoanInstallmentScheduleDto> Schedule { get; set; } = new();
     }

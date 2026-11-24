@@ -519,6 +519,10 @@ try
                     ALTER TABLE [dbo].[LoanCollections] ADD [SourceSavingAccountID] int NULL;
                 IF COL_LENGTH('LoanCollections', 'SavingCustomerName') IS NULL
                     ALTER TABLE [dbo].[LoanCollections] ADD [SavingCustomerName] nvarchar(150) NULL;
+                IF COL_LENGTH('LoanCollections', 'BookedPenaltySettled') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [BookedPenaltySettled] decimal(18,2) NULL;
+                IF COL_LENGTH('LoanCollections', 'PrevLastPenalPostingDate') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [PrevLastPenalPostingDate] datetime2 NULL;
             END
 
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollectionFees')
@@ -568,6 +572,15 @@ try
                 IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.RdTransactions') AND name = 'VoucherID' AND is_nullable = 0)
                     ALTER TABLE [dbo].[RdTransactions] ALTER COLUMN [VoucherID] int NULL;
             END
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyCollections')
+               AND COL_LENGTH('PigmyCollections', 'RemittanceDepositId') IS NULL
+            BEGIN
+                ALTER TABLE [dbo].[PigmyCollections] ADD [RemittanceDepositId] int NULL;
+            END
+            IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'PigmyCollections')
+               AND COL_LENGTH('PigmyCollections', 'RemittanceDepositId') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmyCollections_RemittanceDepositId' AND object_id = OBJECT_ID('dbo.PigmyCollections'))
+                CREATE NONCLUSTERED INDEX [IX_PigmyCollections_RemittanceDepositId] ON [dbo].[PigmyCollections] ([RemittanceDepositId]);
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAccounts') AND COL_LENGTH('PigmyAccounts', 'RowVersion') IS NULL
                 ALTER TABLE [dbo].[PigmyAccounts] ADD [RowVersion] rowversion NOT NULL;
@@ -738,6 +751,12 @@ try
                 ALTER TABLE [dbo].[LoanRates] ADD [IsLienRequired] bit NOT NULL DEFAULT 0;
             IF COL_LENGTH('LoanRates', 'IsCollateralMandatoryForOpeningBalance') IS NULL
                 ALTER TABLE [dbo].[LoanRates] ADD [IsCollateralMandatoryForOpeningBalance] bit NOT NULL DEFAULT 0;
+            IF COL_LENGTH('LoanRates', 'PenalInterestGraceDays') IS NULL
+                ALTER TABLE [dbo].[LoanRates] ADD [PenalInterestGraceDays] int NOT NULL DEFAULT 0;
+            IF COL_LENGTH('LoanRates', 'PenalInterestBasis') IS NULL
+                ALTER TABLE [dbo].[LoanRates] ADD [PenalInterestBasis] nvarchar(40) NOT NULL DEFAULT 'OverduePrincipal';
+            IF COL_LENGTH('LoanRates', 'AllowManualPenalInRecovery') IS NULL
+                ALTER TABLE [dbo].[LoanRates] ADD [AllowManualPenalInRecovery] bit NOT NULL DEFAULT 1;
 
             -- Gold Loan Collateral & Valuer Tracking Migration Checks
             IF COL_LENGTH('GoldLoanDetails', 'LoanApplicationID') IS NULL
@@ -2125,6 +2144,10 @@ try
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'LastInterestPostingDate')
                 BEGIN
                     ALTER TABLE [LoanAccounts] ADD [LastInterestPostingDate] datetime2 NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'LastPenalPostingDate')
+                BEGIN
+                    ALTER TABLE [LoanAccounts] ADD [LastPenalPostingDate] datetime2 NULL;
                 END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'PurePrincipalBalance')
                 BEGIN
@@ -3938,7 +3961,7 @@ try
                 CREATE TABLE [dbo].[DemandMemberDetails] (
                     [DemandMemberDetailId] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
                     [DemandNoticeId] int NOT NULL,
-                    [MemberId] int NOT NULL,
+                    [MemberId] int NULL,
                     [CustomerId] int NULL,
                     [EmpCode] nvarchar(50) NULL,
                     [CIFNo] nvarchar(20) NULL,
@@ -3990,6 +4013,17 @@ try
                     ALTER TABLE [dbo].[DemandMemberDetails] ADD [Remarks] nvarchar(250) NULL;
                 IF COL_LENGTH('DemandMemberDetails', 'IsProcessed') IS NULL
                     ALTER TABLE [dbo].[DemandMemberDetails] ADD [IsProcessed] bit NOT NULL CONSTRAINT [DF_DemandMemberDetails_IsProcessed] DEFAULT 0;
+                IF COLUMNPROPERTY(OBJECT_ID(N'[dbo].[DemandMemberDetails]'), N'MemberId', 'AllowsNull') = 0
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_DemandMemberDetails_Members_MemberId' AND parent_object_id = OBJECT_ID(N'[dbo].[DemandMemberDetails]'))
+                        ALTER TABLE [dbo].[DemandMemberDetails] DROP CONSTRAINT [FK_DemandMemberDetails_Members_MemberId];
+                    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_DemandMemberDetails_MemberId' AND object_id = OBJECT_ID(N'[dbo].[DemandMemberDetails]'))
+                        DROP INDEX [IX_DemandMemberDetails_MemberId] ON [dbo].[DemandMemberDetails];
+                    ALTER TABLE [dbo].[DemandMemberDetails] ALTER COLUMN [MemberId] int NULL;
+                    CREATE NONCLUSTERED INDEX [IX_DemandMemberDetails_MemberId] ON [dbo].[DemandMemberDetails] ([MemberId]);
+                    IF OBJECT_ID(N'[dbo].[Members]', N'U') IS NOT NULL
+                        ALTER TABLE [dbo].[DemandMemberDetails] WITH CHECK ADD CONSTRAINT [FK_DemandMemberDetails_Members_MemberId] FOREIGN KEY ([MemberId]) REFERENCES [dbo].[Members] ([MemberID]);
+                END
             END
 
             IF OBJECT_ID(N'[dbo].[DemandRecoveries]', N'U') IS NULL
@@ -4057,6 +4091,7 @@ try
                     [LoanRateID] int NULL,
                     [SavingSchemeID] int NULL,
                     [RdSchemeID] int NULL,
+                    [PigmySchemeID] int NULL,
                     [ShareSchemeId] int NULL,
                     [PrincipalOrDepositLedgerID] int NULL,
                     [InterestLedgerID] int NULL,
@@ -4071,6 +4106,11 @@ try
                     [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
                     [UpdatedAt] datetime2 NULL
                 );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('DemandColumnSettings', 'PigmySchemeID') IS NULL
+                    ALTER TABLE [dbo].[DemandColumnSettings] ADD [PigmySchemeID] int NULL;
             END
 
             IF OBJECT_ID(N'[dbo].[DemandMemberColumnItems]', N'U') IS NULL
@@ -4134,6 +4174,14 @@ try
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Rd' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
                    AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'RD' AND [RdSchemeID] IS NOT NULL GROUP BY [RdSchemeID] HAVING COUNT(*) > 1)
                     EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_Rd] ON [dbo].[DemandColumnSettings] ([RdSchemeID]) WHERE [IsActive] = 1 AND [ItemType] = ''RD'' AND [RdSchemeID] IS NOT NULL;');
+
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Pigmy' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+                   AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'PIGMY' AND [PigmySchemeID] IS NOT NULL GROUP BY [PigmySchemeID] HAVING COUNT(*) > 1)
+                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_Pigmy] ON [dbo].[DemandColumnSettings] ([PigmySchemeID]) WHERE [IsActive] = 1 AND [ItemType] = ''PIGMY'' AND [PigmySchemeID] IS NOT NULL;');
+
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_DepositLedger' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+                   AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'DEPOSIT_LEDGER' AND [PrincipalOrDepositLedgerID] IS NOT NULL GROUP BY [PrincipalOrDepositLedgerID] HAVING COUNT(*) > 1)
+                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_DepositLedger] ON [dbo].[DemandColumnSettings] ([PrincipalOrDepositLedgerID]) WHERE [IsActive] = 1 AND [ItemType] = ''DEPOSIT_LEDGER'' AND [PrincipalOrDepositLedgerID] IS NOT NULL;');
 
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Share' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
                    AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'SHARE' AND [ShareSchemeId] IS NOT NULL GROUP BY [ShareSchemeId] HAVING COUNT(*) > 1)
@@ -4838,14 +4886,21 @@ try
         });
     }
 
+    app.UseCors("AllowReactApp");
+
     // Global Exception Handler — catches ALL unhandled exceptions (including SqlNullValueException)
     // and returns a clean JSON error response with full logging
     app.UseExceptionHandler(exApp =>
     {
+        exApp.UseCors("AllowReactApp");
         exApp.Run(async context =>
         {
             context.Response.StatusCode = 500;
             context.Response.ContentType = "application/json";
+            if (!context.Response.Headers.ContainsKey("Access-Control-Allow-Origin"))
+            {
+                context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+            }
 
             var exFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
             if (exFeature != null)
@@ -4872,8 +4927,6 @@ try
         // app.UseHsts();
         // app.UseHttpsRedirection(); // Temporarily disabled for HTTP API calls
     }
-
-    app.UseCors("AllowReactApp");
 
     // Marathi Devanagari Unicode Numerals Normalization Middleware (Converts ०-९ to 0-9 in Path, Query & Body)
     app.Use(async (context, next) =>

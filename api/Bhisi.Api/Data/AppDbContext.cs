@@ -453,6 +453,8 @@ namespace Bhisi.Api.Data
                       .HasFilter("[TransactionId] IS NOT NULL");
 
                 entity.HasIndex(p => new { p.AgentId, p.CollectionDate });
+
+                entity.HasIndex(p => p.RemittanceDepositId);
             });
 
             modelBuilder.Entity<FdScheme>(entity =>

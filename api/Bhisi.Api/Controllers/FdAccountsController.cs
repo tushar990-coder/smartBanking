@@ -110,14 +110,7 @@ namespace Bhisi.Api.Controllers
         }
 
         private static bool IsClosureOrRenewalVoucherNo(string? voucherNo)
-        {
-            if (string.IsNullOrWhiteSpace(voucherNo)) return false;
-            string v = voucherNo.Trim();
-            return v.Contains("-FD-CLOSE-", StringComparison.OrdinalIgnoreCase) ||
-                   v.Contains("-FD-PRECLOSE-", StringComparison.OrdinalIgnoreCase) ||
-                   v.Contains("-FD-REN-", StringComparison.OrdinalIgnoreCase) ||
-                   v.Contains("-FD-AUTOREN-", StringComparison.OrdinalIgnoreCase);
-        }
+            => Helpers.FdInterestSettlementHelper.IsClosureOrRenewalVoucherNo(voucherNo);
 
         /// <summary>
         /// Returns ONLY genuinely verified Interest Payable Provisions currently standing in
@@ -126,171 +119,17 @@ namespace Bhisi.Api.Controllers
         /// </summary>
         private async Task<decimal> ResolveVerifiedProvisionedInterestAsync(int fdAccountId, int? interestPayableLedgerId = null)
         {
-            var accrualVoucherIds = await _context.FdInterestAccruals
-                .AsNoTracking()
-                .Where(a => a.FdAccountID == fdAccountId &&
-                            a.IsPosted &&
-                            a.PostingTarget != "Principal" &&
-                            a.VoucherID > 0)
-                .Select(a => new { a.VoucherID, a.InterestAmount })
-                .ToListAsync();
-
-            decimal accrualTableProvision = 0m;
-            var validAccrualVoucherIdSet = new HashSet<int>();
-            if (accrualVoucherIds.Any())
-            {
-                var ids = accrualVoucherIds.Select(x => x.VoucherID).Distinct().ToList();
-                var existingIds = await _context.Vouchers
-                    .AsNoTracking()
-                    .Where(v => ids.Contains(v.VoucherID))
-                    .Select(v => v.VoucherID)
-                    .ToListAsync();
-                foreach (var eid in existingIds) validAccrualVoucherIdSet.Add(eid);
-                accrualTableProvision = accrualVoucherIds
-                    .Where(x => validAccrualVoucherIdSet.Contains(x.VoucherID))
-                    .Sum(x => x.InterestAmount);
-            }
-
-            var rawAccrualTxs = await _context.FdTransactions
-                .AsNoTracking()
-                .Where(t => t.FdAccountID == fdAccountId &&
-                            t.TransactionType == "Accrual" &&
-                            t.VoucherID > 0)
-                .Select(t => new { t.VoucherID, t.Amount })
-                .ToListAsync();
-
-            decimal txProvision = 0m;
-            if (rawAccrualTxs.Any())
-            {
-                var txVoucherIds = rawAccrualTxs.Select(x => x.VoucherID).Distinct().ToList();
-                var liveVouchers = await _context.Vouchers
-                    .AsNoTracking()
-                    .Where(v => txVoucherIds.Contains(v.VoucherID))
-                    .Select(v => new { v.VoucherID, v.VoucherNo })
-                    .ToListAsync();
-
-                var nonClosureVoucherIds = liveVouchers
-                    .Where(v => !IsClosureOrRenewalVoucherNo(v.VoucherNo))
-                    .Select(v => v.VoucherID)
-                    .ToHashSet();
-
-                if (nonClosureVoucherIds.Any())
-                {
-                    HashSet<int> verifiedVoucherIds;
-                    if (interestPayableLedgerId.HasValue && interestPayableLedgerId.Value > 0)
-                    {
-                        var creditedPayableIds = await _context.VoucherDetails
-                            .AsNoTracking()
-                            .Where(d => nonClosureVoucherIds.Contains(d.VoucherID) &&
-                                        d.DrCr == "Cr" &&
-                                        d.LedgerID == interestPayableLedgerId.Value)
-                            .Select(d => d.VoucherID)
-                            .Distinct()
-                            .ToListAsync();
-                        verifiedVoucherIds = creditedPayableIds.ToHashSet();
-                        foreach (var aid in validAccrualVoucherIdSet) verifiedVoucherIds.Add(aid);
-                    }
-                    else
-                    {
-                        verifiedVoucherIds = nonClosureVoucherIds;
-                    }
-
-                    txProvision = rawAccrualTxs
-                        .Where(t => verifiedVoucherIds.Contains(t.VoucherID))
-                        .Sum(t => t.Amount);
-                }
-            }
-
-            return Math.Round(Math.Max(accrualTableProvision, txProvision), 2, MidpointRounding.AwayFromZero);
+            var breakdown = await Helpers.FdInterestSettlementHelper.ResolveVerifiedPostingBreakdownAsync(
+                _context, fdAccountId, interestPayableLedgerId ?? 0);
+            return breakdown.VerifiedProvision;
         }
 
         private async Task<Dictionary<int, decimal>> ResolveVerifiedProvisionedInterestMapAsync(List<int> fdAccountIds)
         {
-            var result = new Dictionary<int, decimal>();
-            if (fdAccountIds == null || fdAccountIds.Count == 0) return result;
-
-            var accruals = await _context.FdInterestAccruals
-                .AsNoTracking()
-                .Where(a => fdAccountIds.Contains(a.FdAccountID) &&
-                            a.IsPosted &&
-                            a.PostingTarget != "Principal" &&
-                            a.VoucherID > 0)
-                .Select(a => new { a.FdAccountID, a.VoucherID, a.InterestAmount })
-                .ToListAsync();
-
-            var txs = await _context.FdTransactions
-                .AsNoTracking()
-                .Where(t => fdAccountIds.Contains(t.FdAccountID) &&
-                            t.TransactionType == "Accrual" &&
-                            t.VoucherID > 0)
-                .Select(t => new { t.FdAccountID, t.VoucherID, t.Amount })
-                .ToListAsync();
-
-            var allVoucherIds = accruals.Select(a => a.VoucherID)
-                .Concat(txs.Select(t => t.VoucherID))
-                .Distinct()
-                .ToList();
-
-            if (!allVoucherIds.Any()) return result;
-
-            var liveVouchers = await _context.Vouchers
-                .AsNoTracking()
-                .Where(v => allVoucherIds.Contains(v.VoucherID))
-                .Select(v => new { v.VoucherID, v.VoucherNo })
-                .ToListAsync();
-
-            var liveVoucherIds = liveVouchers.Select(v => v.VoucherID).ToHashSet();
-            var nonClosureVoucherIds = liveVouchers
-                .Where(v => !IsClosureOrRenewalVoucherNo(v.VoucherNo))
-                .Select(v => v.VoucherID)
-                .ToHashSet();
-
-            var accrualSums = accruals
-                .Where(a => liveVoucherIds.Contains(a.VoucherID))
-                .GroupBy(a => a.FdAccountID)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.InterestAmount));
-
-            var accrualVchIds = accruals
-                .Where(a => liveVoucherIds.Contains(a.VoucherID))
-                .Select(a => a.VoucherID)
-                .ToHashSet();
-
-            // Check which non-closure vouchers actually credited any scheme's InterestPayableLedger
-            var payableLedgerIds = await _context.FdSchemes
-                .AsNoTracking()
-                .Where(s => s.InterestPayableLedgerID.HasValue && s.InterestPayableLedgerID.Value > 0)
-                .Select(s => s.InterestPayableLedgerID!.Value)
-                .Distinct()
-                .ToListAsync();
-
-            var payableCreditedVchIds = new HashSet<int>(accrualVchIds);
-            if (nonClosureVoucherIds.Any() && payableLedgerIds.Any())
-            {
-                var matchedVch = await _context.VoucherDetails
-                    .AsNoTracking()
-                    .Where(d => nonClosureVoucherIds.Contains(d.VoucherID) &&
-                                d.DrCr == "Cr" &&
-                                payableLedgerIds.Contains(d.LedgerID))
-                    .Select(d => d.VoucherID)
-                    .Distinct()
-                    .ToListAsync();
-                foreach (var vid in matchedVch) payableCreditedVchIds.Add(vid);
-            }
-
-            var txSums = txs
-                .Where(t => nonClosureVoucherIds.Contains(t.VoucherID) && payableCreditedVchIds.Contains(t.VoucherID))
-                .GroupBy(t => t.FdAccountID)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
-
-            foreach (int id in fdAccountIds)
-            {
-                decimal aSum = accrualSums.TryGetValue(id, out var av) ? av : 0m;
-                decimal tSum = txSums.TryGetValue(id, out var tv) ? tv : 0m;
-                decimal finalProv = Math.Round(Math.Max(aSum, tSum), 2, MidpointRounding.AwayFromZero);
-                if (finalProv > 0m) result[id] = finalProv;
-            }
-
-            return result;
+            var breakdownMap = await Helpers.FdInterestSettlementHelper.ResolveVerifiedPostingBreakdownMapAsync(_context, fdAccountIds);
+            return breakdownMap
+                .Where(kv => kv.Value.VerifiedProvision > 0m)
+                .ToDictionary(kv => kv.Key, kv => kv.Value.VerifiedProvision);
         }
 
         private static string? TruncateMax(string? value, int maxLength)
@@ -336,6 +175,24 @@ namespace Bhisi.Api.Controllers
             if (!ledgerId.HasValue || ledgerId.Value <= 0) return null;
             var ledger = await _context.Ledgers.FindAsync(ledgerId.Value);
             return (ledger != null && ledger.IsActive) ? ledger : null;
+        }
+
+        private async Task<(bool IsValid, Ledger? Ledger, string? ErrorMessage)> ResolveCustomOrDefaultLedgerAsync(
+            int? customLedgerId,
+            Func<Task<Ledger?>> defaultResolver,
+            string ledgerTitle)
+        {
+            if (customLedgerId.HasValue && customLedgerId.Value > 0)
+            {
+                var customLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerID == customLedgerId.Value && l.IsActive);
+                if (customLedger == null)
+                {
+                    return (false, null, $"निवडलेले {ledgerTitle} लेजर (ID: {customLedgerId.Value}) सापडले नाही किंवा ते निष्क्रिय आहे.");
+                }
+                return (true, customLedger, null);
+            }
+
+            return (true, await defaultResolver(), null);
         }
 
         private (bool isHO, int? userBranchId) GetUserBranchInfoLegacyUnused()
@@ -600,6 +457,8 @@ namespace Bhisi.Api.Controllers
                     SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "",
                     SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
                     InterestType = f.FdScheme != null ? f.FdScheme.InterestType : "Simple",
+                    InterestPostingMethod = f.FdScheme != null ? f.FdScheme.InterestPostingMethod : "On Principal",
+                    InterestCompoundingFrequency = f.FdScheme != null ? f.FdScheme.InterestCompoundingFrequency : "Quarterly",
                     MonthlyInterestAmount = (f.FdScheme != null && (f.FdScheme.InterestType == "MIS" || f.FdScheme.InterestType == "Monthly Interest"))
                         ? Math.Round((f.DepositAmount * f.InterestRate) / 1200.0m, 0, MidpointRounding.AwayFromZero)
                         : 0m,
@@ -642,10 +501,14 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var accIds = accountsList.Select(x => x.FdAccountID).ToList();
-            var verifiedProvisions = await ResolveVerifiedProvisionedInterestMapAsync(accIds);
+            var postingBreakdowns = await Helpers.FdInterestSettlementHelper.ResolveVerifiedPostingBreakdownMapAsync(_context, accIds);
 
             var accounts = accountsList.Select(f => {
-                decimal posted = verifiedProvisions.TryGetValue(f.FdAccountID, out var val) ? val : 0m;
+                var breakdown = postingBreakdowns.TryGetValue(f.FdAccountID, out var bd)
+                    ? bd
+                    : new Helpers.FdPostingBreakdown();
+                decimal posted = breakdown.VerifiedProvision;
+                decimal capitalized = breakdown.VerifiedCapitalized;
                 return new {
                     f.FdAccountID,
                     f.BranchID,
@@ -660,6 +523,8 @@ namespace Bhisi.Api.Controllers
                     f.SchemeName,
                     f.SchemeCode,
                     f.InterestType,
+                    f.InterestPostingMethod,
+                    f.InterestCompoundingFrequency,
                     f.MonthlyInterestAmount,
                     f.FdLiabilityLedgerID,
                     f.FdLiabilityLedgerName,
@@ -688,6 +553,8 @@ namespace Bhisi.Api.Controllers
                     f.IsLegacyAccount,
                     f.LegacyAccruedInt,
                     AlreadyPostedInterest = posted,
+                    AlreadyCapitalizedInterest = capitalized,
+                    TotalPostedInterest = posted + capitalized,
                     f.PaymentMode,
                     f.LastInterestPostingDate,
                     f.Status,
@@ -724,7 +591,10 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
-            decimal alreadyPosted = await ResolveVerifiedProvisionedInterestAsync(id, f.FdScheme?.InterestPayableLedgerID);
+            var postingBreakdown = await Helpers.FdInterestSettlementHelper.ResolveVerifiedPostingBreakdownAsync(
+                _context, id, f.FdScheme?.InterestPayableLedgerID ?? 0);
+            decimal alreadyPosted = postingBreakdown.VerifiedProvision;
+            decimal alreadyCapitalized = postingBreakdown.VerifiedCapitalized;
 
             return Ok(new {
                 f.FdAccountID,
@@ -740,6 +610,8 @@ namespace Bhisi.Api.Controllers
                 SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "",
                 SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
                 InterestType = f.FdScheme != null ? f.FdScheme.InterestType : "Simple",
+                InterestPostingMethod = f.FdScheme != null ? f.FdScheme.InterestPostingMethod : "On Principal",
+                InterestCompoundingFrequency = f.FdScheme != null ? f.FdScheme.InterestCompoundingFrequency : "Quarterly",
                 MonthlyInterestAmount = (f.FdScheme != null && (f.FdScheme.InterestType == "MIS" || f.FdScheme.InterestType == "Monthly Interest"))
                     ? Math.Round((f.DepositAmount * f.InterestRate) / 1200.0m, 0, MidpointRounding.AwayFromZero)
                     : 0m,
@@ -760,6 +632,8 @@ namespace Bhisi.Api.Controllers
                 f.IsLegacyAccount,
                 f.LegacyAccruedInt,
                 AlreadyPostedInterest = alreadyPosted,
+                AlreadyCapitalizedInterest = alreadyCapitalized,
+                TotalPostedInterest = alreadyPosted + alreadyCapitalized,
                 f.LastInterestPostingDate,
                 f.Status,
                 f.IsLienMarked,
@@ -3132,20 +3006,33 @@ namespace Bhisi.Api.Controllers
 
             decimal totalMaturityPayout = account.DepositAmount + totalInterest + overdueInterest;
 
-            // CBS Rule: Split contracted interest between Capitalized Deposit Liability, verified Interest Payable (clearing provision), and Interest Expense (current period P&L)
-            decimal dbCapitalized = await _context.FdTransactions
-                .Where(t => t.FdAccountID == id && t.TransactionType == "Interest_Capitalized")
-                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
-            decimal verifiedProvision = await ResolveVerifiedProvisionedInterestAsync(id, account.FdScheme?.InterestPayableLedgerID);
-            string debitMode = (req?.InterestDebitMode ?? "Expense").Trim();
-            decimal clearedCapitalizedInterest = Math.Min(totalInterest, dbCapitalized);
+            // CBS Rule: Split contracted interest between Capitalized Deposit Liability (On Interest), verified Interest Payable (POSTING_INTR), and Interest Expense (NAFATOTA DEY VYAJ / P&L)
+            var postingBreakdown = await Helpers.FdInterestSettlementHelper.ResolveVerifiedPostingBreakdownAsync(
+                _context, id, account.FdScheme?.InterestPayableLedgerID ?? 0);
+            var allocation = Helpers.FdInterestSettlementHelper.ResolveClosureInterestAllocation(new Helpers.FdInterestAllocationRequest
+            {
+                TargetInterest = totalInterest,
+                OverdueInterest = overdueInterest,
+                VerifiedProvision = postingBreakdown.VerifiedProvision,
+                VerifiedCapitalized = postingBreakdown.VerifiedCapitalized,
+                LegacyAccruedInt = account.LegacyAccruedInt,
+                IsPremature = false,
+                IsPeriodicPayout = false,
+                IsManualAmountOverride = req?.IsManualAmountOverride == true,
+                InterestDebitMode = req?.InterestDebitMode,
+                PostedInterestDebitAmount = req?.PostedInterestDebitAmount,
+                ExpenseInterestDebitAmount = req?.ExpenseInterestDebitAmount
+            });
+            if (!allocation.IsValid)
+            {
+                return BadRequest(new { message = allocation.ErrorMessage });
+            }
+
+            decimal clearedCapitalizedInterest = allocation.ClearedCapitalizedInterest;
             decimal fdLiabilityDebitAmount = account.DepositAmount + clearedCapitalizedInterest;
-            decimal alreadyPosted = string.Equals(debitMode, "Provision", StringComparison.OrdinalIgnoreCase)
-                ? Math.Max(verifiedProvision, account.LegacyAccruedInt)
-                : 0m;
-            decimal payableInterestAmount = Math.Min(Math.Max(0m, totalInterest - clearedCapitalizedInterest), alreadyPosted);
-            decimal expenseInterestAmount = Math.Max(0m, totalInterest - clearedCapitalizedInterest - payableInterestAmount);
-            decimal totalExpenseInterest = expenseInterestAmount + overdueInterest;
+            decimal payableInterestAmount = allocation.PostedInterestDebitAmount;
+            decimal expenseInterestAmount = allocation.ExpenseInterestDebitAmount;
+            decimal totalExpenseInterest = allocation.TotalExpenseInterest;
 
             LoanAccount? targetLoan = null;
             decimal loanAdjustAmount = 0m;
@@ -3215,21 +3102,41 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(account.FdScheme);
-                    var payableLedger = await ResolveInterestPayableLedgerAsync(account.FdScheme);
-                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(account.FdScheme);
+                    var (payableValid, payableLedger, payableErr) = await ResolveCustomOrDefaultLedgerAsync(
+                        req?.PostedInterestDebitLedgerID,
+                        () => ResolveInterestPayableLedgerAsync(account.FdScheme),
+                        "POSTING_INTR / देणे व्याज");
+                    if (!payableValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(payableErr);
+                    }
+
+                    var (expenseValid, expenseLedger, expenseErr) = await ResolveCustomOrDefaultLedgerAsync(
+                        req?.ExpenseInterestDebitLedgerID,
+                        () => ResolveInterestExpenseLedgerAsync(account.FdScheme),
+                        "नफा-तोटा / व्याज खर्च");
+                    if (!expenseValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(expenseErr);
+                    }
 
                     if (fdLiabilityLedger == null)
                     {
+                        await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
                     if (payableInterestAmount > 0 && payableLedger == null)
                     {
+                        await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेवीच्या देणे व्याजासाठी लेजर (FD Interest Payable Ledger) उपलब्ध नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
                     if (totalExpenseInterest > 0 && expenseLedger == null)
                     {
+                        await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेवीवरील व्याज खर्चासाठी लेजर (FD Interest Expense Ledger) उपलब्ध नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
@@ -3834,7 +3741,11 @@ namespace Bhisi.Api.Controllers
             bool isPeriodicPayout = account.FdScheme != null &&
                 (account.FdScheme.InterestType == "MIS" || account.FdScheme.InterestType == "Monthly Interest");
 
-            decimal verifiedProvision = await ResolveVerifiedProvisionedInterestAsync(id, account.FdScheme?.InterestPayableLedgerID);
+            var postingBreakdown = await Helpers.FdInterestSettlementHelper.ResolveVerifiedPostingBreakdownAsync(
+                _context, id, account.FdScheme?.InterestPayableLedgerID ?? 0);
+            decimal verifiedProvision = postingBreakdown.VerifiedProvision;
+            decimal capitalizedInterest = postingBreakdown.VerifiedCapitalized;
+
             decimal misPayoutSum = 0m;
             if (isPeriodicPayout)
             {
@@ -3850,7 +3761,9 @@ namespace Bhisi.Api.Controllers
                     .SumAsync(t => (decimal?)t.Amount) ?? 0m;
                 misPayoutSum = Math.Max(misPayoutSum, misTxSum);
             }
-            decimal alreadyAccruedInt = isPeriodicPayout ? misPayoutSum : verifiedProvision;
+            decimal verifiedProvEff = isPeriodicPayout ? 0m : verifiedProvision;
+            decimal totalPostedInterest = verifiedProvEff + capitalizedInterest;
+            decimal alreadyAccruedInt = isPeriodicPayout ? (misPayoutSum + capitalizedInterest) : totalPostedInterest;
 
             decimal penaltyClawback = 0m;
             decimal netPayoutAmount = account.DepositAmount + recalculatedInterest;
@@ -3888,6 +3801,11 @@ namespace Bhisi.Api.Controllers
                 prematureRate = prematureRate,
                 recalculatedInterest = recalculatedInterest,
                 alreadyAccruedInterest = alreadyAccruedInt,
+                verifiedProvisionInterest = verifiedProvision,
+                alreadyCapitalizedInterest = capitalizedInterest,
+                legacyAccruedInterest = account.LegacyAccruedInt,
+                totalPostedInterest = totalPostedInterest,
+                interestPostingMethod = account.FdScheme?.InterestPostingMethod ?? "On Principal",
                 penaltyClawback = penaltyClawback,
                 netPayoutAmount = netPayoutAmount,
                 isPeriodicPayout = isPeriodicPayout,
@@ -4040,9 +3958,9 @@ namespace Bhisi.Api.Controllers
                     bool isPeriodicPayout = account.FdScheme != null &&
                         (account.FdScheme.InterestType == "MIS" || account.FdScheme.InterestType == "Monthly Interest");
 
-                    decimal dbCapitalizedInt = await _context.FdTransactions
-                        .Where(t => t.FdAccountID == id && t.TransactionType == "Interest_Capitalized")
-                        .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                    var postingBreakdown = await Helpers.FdInterestSettlementHelper.ResolveVerifiedPostingBreakdownAsync(
+                        _context, id, account.FdScheme?.InterestPayableLedgerID ?? 0);
+                    decimal dbCapitalizedInt = postingBreakdown.VerifiedCapitalized;
                     decimal misPayoutSum = 0m;
                     if (isPeriodicPayout)
                     {
@@ -4059,61 +3977,46 @@ namespace Bhisi.Api.Controllers
                         misPayoutSum = Math.Max(misPayoutSum, misTxSum);
                     }
 
-                    decimal verifiedProvision = isPeriodicPayout
-                        ? 0m
-                        : await ResolveVerifiedProvisionedInterestAsync(id, account.FdScheme?.InterestPayableLedgerID);
+                    decimal verifiedProvision = isPeriodicPayout ? 0m : postingBreakdown.VerifiedProvision;
 
-                    string debitMode = (req?.InterestDebitMode ?? "Expense").Trim();
-                    decimal provisionedToClear;
-                    if (isPeriodicPayout)
+                    var allocation = Helpers.FdInterestSettlementHelper.ResolveClosureInterestAllocation(new Helpers.FdInterestAllocationRequest
                     {
-                        provisionedToClear = misPayoutSum;
-                    }
-                    else if (string.Equals(debitMode, "Provision", StringComparison.OrdinalIgnoreCase))
+                        TargetInterest = recalculatedInterest,
+                        OverdueInterest = 0m,
+                        VerifiedProvision = verifiedProvision,
+                        VerifiedCapitalized = dbCapitalizedInt,
+                        LegacyAccruedInt = account.LegacyAccruedInt,
+                        MisPayoutSum = misPayoutSum,
+                        IsPremature = true,
+                        IsPeriodicPayout = isPeriodicPayout,
+                        IsManualAmountOverride = req?.IsManualAmountOverride == true,
+                        InterestDebitMode = req?.InterestDebitMode,
+                        PostedInterestDebitAmount = req?.PostedInterestDebitAmount,
+                        ExpenseInterestDebitAmount = req?.ExpenseInterestDebitAmount,
+                        ReversePostedInterestAmount = req?.ReversePostedInterestAmount
+                    });
+                    if (!allocation.IsValid)
                     {
-                        decimal rawProv = Math.Max(verifiedProvision, account.LegacyAccruedInt);
-                        provisionedToClear = req?.IsManualAmountOverride == true
-                            ? Math.Min(rawProv, Math.Max(0m, recalculatedInterest - dbCapitalizedInt))
-                            : rawProv;
-                    }
-                    else
-                    {
-                        // Default / Expense mode: debit exact entered/calculated interest directly to मुदतठेवीवरील व्याज (zero Interest Payable / zero Clawback)
-                        provisionedToClear = 0m;
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = allocation.ErrorMessage });
                     }
 
-                    decimal alreadyAccruedInt = provisionedToClear + dbCapitalizedInt;
-                    decimal fdLiabilityDebitAmtPremature = isPeriodicPayout
-                        ? account.DepositAmount
-                        : account.DepositAmount + dbCapitalizedInt;
+                    decimal provisionedToClear = allocation.PostedInterestDebitAmount;
+                    decimal expenseInterestToDebit = allocation.ExpenseInterestDebitAmount;
+                    decimal unpaidMisInterest = allocation.UnpaidMisInterest;
+                    decimal penaltyClawback = allocation.ReversePostedInterestAmount;
+                    decimal alreadyAccruedInt = allocation.AlreadyAccruedEffective;
+                    decimal fdLiabilityDebitAmtPremature = account.DepositAmount + allocation.ClearedCapitalizedInterest;
 
                     // 5. Final payable calculations
-                    decimal penaltyClawback = 0;
-                    decimal unpaidMisInterest = isPeriodicPayout ? Math.Max(0m, recalculatedInterest - alreadyAccruedInt) : 0m;
-                    decimal netPayoutAmount = account.DepositAmount + recalculatedInterest;
-
-                    if (isPeriodicPayout)
-                    {
-                        // In MIS: interest was physically disbursed to customer monthly.
-                        netPayoutAmount = account.DepositAmount + unpaidMisInterest;
-                        // If already paid interest exceeds recalculated interest, recover from Principal payout.
-                        if (alreadyAccruedInt > recalculatedInterest)
-                        {
-                            penaltyClawback = alreadyAccruedInt - recalculatedInterest;
-                            netPayoutAmount = account.DepositAmount - penaltyClawback;
-                        }
-                    }
-                    else
-                    {
-                        // In Cumulative / Simple FD: customer never received cash interest periodically.
-                        // Customer is legally entitled to full Principal + Recalculated Interest!
-                        // Any excess internal provision in Interest Payable is reversed to the Society's P&L / Expense.
-                        netPayoutAmount = account.DepositAmount + recalculatedInterest;
-                        if (alreadyAccruedInt > recalculatedInterest)
-                        {
-                            penaltyClawback = alreadyAccruedInt - recalculatedInterest;
-                        }
-                    }
+                    decimal misPrincipalClawback = isPeriodicPayout
+                        ? Math.Max(0m, (misPayoutSum + allocation.ClearedCapitalizedInterest) - recalculatedInterest)
+                        : 0m;
+                    decimal netPayoutAmount = isPeriodicPayout
+                        ? (misPrincipalClawback > 0m
+                            ? Math.Max(0m, account.DepositAmount - misPrincipalClawback)
+                            : account.DepositAmount + unpaidMisInterest)
+                        : account.DepositAmount + recalculatedInterest;
 
                     LoanAccount? targetLoan = null;
                     decimal loanAdjustAmount = 0m;
@@ -4183,15 +4086,42 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(account.FdScheme);
-                    var payableLedger = await ResolveInterestPayableLedgerAsync(account.FdScheme);
-                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(account.FdScheme);
-                    var clawbackLedger = await ResolveClawbackLedgerAsync(account.FdScheme);
-                    if (!isPeriodicPayout && provisionedToClear > 0 && payableLedger == null)
+                    var (payableValid, payableLedger, payableErr) = await ResolveCustomOrDefaultLedgerAsync(
+                        req?.PostedInterestDebitLedgerID,
+                        () => ResolveInterestPayableLedgerAsync(account.FdScheme),
+                        "POSTING_INTR / देणे व्याज");
+                    if (!payableValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(payableErr);
+                    }
+
+                    var (expenseValid, expenseLedger, expenseErr) = await ResolveCustomOrDefaultLedgerAsync(
+                        req?.ExpenseInterestDebitLedgerID,
+                        () => ResolveInterestExpenseLedgerAsync(account.FdScheme),
+                        "नफा-तोटा / व्याज खर्च");
+                    if (!expenseValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(expenseErr);
+                    }
+
+                    var (clawbackValid, clawbackLedger, clawbackErr) = await ResolveCustomOrDefaultLedgerAsync(
+                        req?.ReversalCreditLedgerID,
+                        () => ResolveClawbackLedgerAsync(account.FdScheme),
+                        "रिव्हर्सल जमा / दंड");
+                    if (!clawbackValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(clawbackErr);
+                    }
+
+                    if (provisionedToClear > 0 && payableLedger == null)
                     {
                         await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेव देय व्याज लेजर (FD Interest Payable Ledger) सापडले नाही. कृपया मुदत ठेव योजनेत लेजर मॅपिंग तपासा.");
                     }
-                    if ((isPeriodicPayout ? unpaidMisInterest > 0 : recalculatedInterest > alreadyAccruedInt) && expenseLedger == null)
+                    if ((isPeriodicPayout ? unpaidMisInterest > 0 : expenseInterestToDebit > 0) && expenseLedger == null)
                     {
                         await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेव व्याज खर्च लेजर (FD Interest Expense Ledger) सापडले नाही. कृपया मुदत ठेव योजनेत लेजर मॅपिंग तपासा.");
@@ -4204,6 +4134,7 @@ namespace Bhisi.Api.Controllers
                     
                     if (fdLiabilityLedger == null)
                     {
+                        await transaction.RollbackAsync();
                         return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
@@ -4322,6 +4253,10 @@ namespace Bhisi.Api.Controllers
                         if (isPeriodicPayout)
                         {
                             // In MIS:
+                            if (provisionedToClear > 0 && payableLedger != null)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = provisionedToClear, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            }
                             if (unpaidMisInterest > 0 && expenseLedger != null)
                             {
                                 _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unpaidMisInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
@@ -4334,22 +4269,16 @@ namespace Bhisi.Api.Controllers
                         }
                         else
                         {
-                            // In Cumulative / Simple FD:
-                            if (payableLedger != null && provisionedToClear > 0)
-                            {
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = provisionedToClear, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                            }
-
-                            if (recalculatedInterest > alreadyAccruedInt && expenseLedger != null)
-                            {
-                                decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                            }
-
-                            if (penaltyClawback > 0 && clawbackLedger != null)
-                            {
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                            }
+                            // In Cumulative / Simple / On Interest FD:
+                            Helpers.FdInterestSettlementHelper.AppendInterestAllocationVoucherDetails(
+                                _context,
+                                voucher.VoucherID,
+                                account.CustomerID,
+                                linkedMemberId,
+                                allocation,
+                                payableLedger,
+                                expenseLedger,
+                                clawbackLedger);
                         }
 
                         // Cr Loan Ledgers
@@ -4522,7 +4451,11 @@ namespace Bhisi.Api.Controllers
 
                             if (isPeriodicPayout)
                             {
-                                // In MIS: Periodic cash payouts already took place, so no Interest Payable balance to clear.
+                                // In MIS: Periodic cash payouts already took place, unless manual POSTING_INTR reversal is added.
+                                if (provisionedToClear > 0 && payableLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = provisionedToClear, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
                                 // Cr Payout Ledger (Net payout)
                                 _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
@@ -4534,28 +4467,19 @@ namespace Bhisi.Api.Controllers
                             }
                             else
                             {
-                                // In Cumulative / Simple FD:
-                                // Dr Interest Payable (Interest already provisioned in payable ledger is fully debited to clear balance sheet liability)
-                                if (payableLedger != null && provisionedToClear > 0)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = provisionedToClear, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
-
-                                // Dr Additional Current Interest Expense (if recalculated interest exceeds already accrued)
-                                if (recalculatedInterest > alreadyAccruedInt && expenseLedger != null)
-                                {
-                                    decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
+                                // In Cumulative / Simple / On Interest FD:
+                                Helpers.FdInterestSettlementHelper.AppendInterestAllocationVoucherDetails(
+                                    _context,
+                                    voucher.VoucherID,
+                                    account.CustomerID,
+                                    linkedMemberId,
+                                    allocation,
+                                    payableLedger,
+                                    expenseLedger,
+                                    clawbackLedger);
 
                                 // Cr Payout Ledger (Net payout = Principal + recalculatedInterest)
                                 _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-
-                                // Cr Interest Expense / Clawback Income (Reversing excess prior year provisions back to P&L)
-                                if (penaltyClawback > 0 && clawbackLedger != null)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
                             }
 
                             finalVoucherId = voucher.VoucherID;
@@ -4618,6 +4542,10 @@ namespace Bhisi.Api.Controllers
 
                             if (isPeriodicPayout)
                             {
+                                if (provisionedToClear > 0 && payableLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = provisionedToClear, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
                                 // Cr IBT Ledger
                                 _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
@@ -4629,27 +4557,18 @@ namespace Bhisi.Api.Controllers
                             }
                             else
                             {
-                                // Dr Interest Payable
-                                if (payableLedger != null && provisionedToClear > 0)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = provisionedToClear, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
-
-                                // Dr Additional Current Interest Expense
-                                if (recalculatedInterest > alreadyAccruedInt && expenseLedger != null)
-                                {
-                                    decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
+                                Helpers.FdInterestSettlementHelper.AppendInterestAllocationVoucherDetails(
+                                    _context,
+                                    homeVoucher.VoucherID,
+                                    account.CustomerID,
+                                    linkedMemberId,
+                                    allocation,
+                                    payableLedger,
+                                    expenseLedger,
+                                    clawbackLedger);
 
                                 // Cr IBT Ledger
                                 _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = homeIbtLedgerId, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-
-                                // Cr Interest Expense / Clawback Income
-                                if (penaltyClawback > 0 && clawbackLedger != null)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
                             }
 
                             finalVoucherId = counterVoucher.VoucherID;
@@ -5146,13 +5065,32 @@ namespace Bhisi.Api.Controllers
                         await _context.SaveChangesAsync();
                     }
 
-                    // 3. Post Renewal Vouchers (Strict Scheme Ledger Mapping - zero cross-scheme fallback)
+                    // 3. Post Renewal Vouchers (Strict Scheme Ledger Mapping + Optional Custom Debit Ledgers)
                     var ledgerSourceScheme = oldAccount.FdScheme;
                     var targetLedgerScheme = scheme ?? oldAccount.FdScheme;
+                    var fallbackSchemeForInterest = ledgerSourceScheme ?? targetLedgerScheme;
                     var oldLiabilityLedger = await ResolveStrictSchemeLedgerByIdAsync(ledgerSourceScheme?.FdLiabilityLedgerID);
                     var targetLiabilityLedger = await ResolveStrictSchemeLedgerByIdAsync(targetLedgerScheme?.FdLiabilityLedgerID);
-                    var payableLedger = await ResolveStrictSchemeLedgerByIdAsync((ledgerSourceScheme ?? targetLedgerScheme)?.InterestPayableLedgerID);
-                    var expenseLedger = await ResolveStrictSchemeLedgerByIdAsync((ledgerSourceScheme ?? targetLedgerScheme)?.InterestExpenseLedgerID);
+
+                    var (payableValid, payableLedger, payableErr) = await ResolveCustomOrDefaultLedgerAsync(
+                        request.PostedInterestDebitLedgerID,
+                        () => ResolveStrictSchemeLedgerByIdAsync(fallbackSchemeForInterest?.InterestPayableLedgerID),
+                        "POSTING_INTR / देणे व्याज");
+                    if (!payableValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(payableErr);
+                    }
+
+                    var (expenseValid, expenseLedger, expenseErr) = await ResolveCustomOrDefaultLedgerAsync(
+                        request.ExpenseInterestDebitLedgerID,
+                        () => ResolveStrictSchemeLedgerByIdAsync(fallbackSchemeForInterest?.InterestExpenseLedgerID),
+                        "नफा-तोटा / व्याज खर्च");
+                    if (!expenseValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(expenseErr);
+                    }
 
                     if (oldLiabilityLedger == null || targetLiabilityLedger == null)
                     {
@@ -5160,19 +5098,32 @@ namespace Bhisi.Api.Controllers
                         return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
-                    // CBS Rule: Split contracted interest between Capitalized Deposit Liability, verified Interest Payable (clearing provision), and Interest Expense (current period P&L)
-                    decimal dbCapitalized = await _context.FdTransactions
-                        .Where(t => t.FdAccountID == id && t.TransactionType == "Interest_Capitalized")
-                        .SumAsync(t => (decimal?)t.Amount) ?? 0m;
-                    decimal verifiedProvision = await ResolveVerifiedProvisionedInterestAsync(id, (ledgerSourceScheme ?? targetLedgerScheme)?.InterestPayableLedgerID);
-                    string renDebitMode = (request.InterestDebitMode ?? "Expense").Trim();
-                    decimal clearedCapitalizedInterest = Math.Min(accruedInt, dbCapitalized);
-                    decimal alreadyPosted = string.Equals(renDebitMode, "Provision", StringComparison.OrdinalIgnoreCase)
-                        ? Math.Max(verifiedProvision, oldAccount.LegacyAccruedInt)
-                        : 0m;
-                    decimal payableInterestAmount = Math.Min(Math.Max(0m, accruedInt - clearedCapitalizedInterest), alreadyPosted);
-                    decimal expenseInterestAmount = Math.Max(0m, accruedInt - clearedCapitalizedInterest - payableInterestAmount);
-                    decimal totalExpenseInterest = expenseInterestAmount + overdueInterest;
+                    // CBS Rule: Split contracted interest between Capitalized Deposit Liability (On Interest), verified Interest Payable (POSTING_INTR), and Interest Expense (NAFATOTA DEY VYAJ / P&L)
+                    var postingBreakdown = await Helpers.FdInterestSettlementHelper.ResolveVerifiedPostingBreakdownAsync(
+                        _context, id, fallbackSchemeForInterest?.InterestPayableLedgerID ?? 0);
+                    var allocation = Helpers.FdInterestSettlementHelper.ResolveClosureInterestAllocation(new Helpers.FdInterestAllocationRequest
+                    {
+                        TargetInterest = accruedInt,
+                        OverdueInterest = overdueInterest,
+                        VerifiedProvision = postingBreakdown.VerifiedProvision,
+                        VerifiedCapitalized = postingBreakdown.VerifiedCapitalized,
+                        LegacyAccruedInt = oldAccount.LegacyAccruedInt,
+                        IsPremature = false,
+                        IsPeriodicPayout = false,
+                        IsManualAmountOverride = request.IsManualAmountOverride,
+                        InterestDebitMode = request.InterestDebitMode,
+                        PostedInterestDebitAmount = request.PostedInterestDebitAmount,
+                        ExpenseInterestDebitAmount = request.ExpenseInterestDebitAmount
+                    });
+                    if (!allocation.IsValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = allocation.ErrorMessage });
+                    }
+
+                    decimal clearedCapitalizedInterest = allocation.ClearedCapitalizedInterest;
+                    decimal payableInterestAmount = allocation.PostedInterestDebitAmount;
+                    decimal totalExpenseInterest = allocation.TotalExpenseInterest;
 
                     if (payableInterestAmount > 0 && payableLedger == null)
                     {
@@ -8112,8 +8063,16 @@ namespace Bhisi.Api.Controllers
         public decimal? CustomTotalPayout { get; set; }
         public string? ManualOverrideReason { get; set; }
 
-        // 🧾 Interest Debit Head Control: "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज) | "Auto"
+        // 🧾 Interest Debit Head Control: "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज) | "Auto" | "Split"
         public string? InterestDebitMode { get; set; } = "Expense";
+
+        // Dual-Head Split & Custom GL Debit / Reversal Controls (POSTING_INTR vs NAFATOTA DEY VYAJ)
+        public decimal? PostedInterestDebitAmount { get; set; }
+        public int? PostedInterestDebitLedgerID { get; set; }
+        public decimal? ExpenseInterestDebitAmount { get; set; }
+        public int? ExpenseInterestDebitLedgerID { get; set; }
+        public decimal? ReversePostedInterestAmount { get; set; }
+        public int? ReversalCreditLedgerID { get; set; }
     }
 
     public class FdRenewalRequest
@@ -8152,8 +8111,14 @@ namespace Bhisi.Api.Controllers
         public decimal? CustomInterestRate { get; set; }
         public string? InterestRateOverrideReason { get; set; }
 
-        // 🧾 Interest Debit Head Control: "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज) | "Auto"
+        // 🧾 Interest Debit Head Control: "Expense" (Direct मुदतठेवीवरील व्याज) | "Provision" (Clear देणे व्याज) | "Auto" | "Split"
         public string? InterestDebitMode { get; set; } = "Expense";
+
+        // Dual-Head Split & Custom GL Debit Controls (POSTING_INTR vs NAFATOTA DEY VYAJ)
+        public decimal? PostedInterestDebitAmount { get; set; }
+        public int? PostedInterestDebitLedgerID { get; set; }
+        public decimal? ExpenseInterestDebitAmount { get; set; }
+        public int? ExpenseInterestDebitLedgerID { get; set; }
     }
 
     public class AutoRenewalCandidateDto

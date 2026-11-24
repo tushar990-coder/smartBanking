@@ -856,5 +856,379 @@ namespace Bhisi.Api.Tests
             Assert.Contains(errors, e => e.Contains("अपूर्ण लेजर RD"));
             Assert.Contains(warnings, w => w.Contains("जुनी वर्गणी ठेव") && w.Contains("निष्क्रिय"));
         }
+
+        [Fact]
+        public async Task NonMemberCustomer_DepositLedgerAndPigmy_EndToEndPreviewSaveRecoveryAndRollback()
+        {
+            using var db = GetInMemoryDbContext(nameof(NonMemberCustomer_DepositLedgerAndPigmy_EndToEndPreviewSaveRecoveryAndRollback));
+            SeedCoreMasters(db);
+
+            // Configure Loan setting ShowBalanceColumn = false to verify GetDemandNoticeGrid honors setting instead of hardcoding true
+            var loanSetting = await db.DemandColumnSettings.FindAsync(1);
+            loanSetting!.ShowBalanceColumn = false;
+
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 470, GroupID = 10, LedgerCode = "68", LedgerName = "ब वर्ग ठेव", AccountType = "Deposits", OpeningBalanceType = "Cr", IsActive = true },
+                new Ledger { LedgerID = 472, GroupID = 10, LedgerCode = "PG-L1", LedgerName = "पिग्मी ठेव देयता", AccountType = "Deposits", OpeningBalanceType = "Cr", IsActive = true }
+            );
+            db.PigmySchemes.Add(new PigmyScheme
+            {
+                PigmySchemeID = 1,
+                SchemeCode = "PG01",
+                SchemeName = "दैनिक पिग्मी",
+                InterestRate = 6m,
+                DurationMonths = 12,
+                PigmyLiabilityLedgerID = 472,
+                Status = "Active"
+            });
+
+            db.DemandColumnSettings.AddRange(
+                new DemandColumnSetting
+                {
+                    DemandColumnSettingId = 10,
+                    SequenceOrder = 10,
+                    ColumnHeaderMr = "ब वर्ग ठेव",
+                    ItemType = "DEPOSIT_LEDGER",
+                    PrincipalOrDepositLedgerID = 470,
+                    ShowBalanceColumn = false,
+                    DefaultAmount = 300m,
+                    IsActive = true
+                },
+                new DemandColumnSetting
+                {
+                    DemandColumnSettingId = 11,
+                    SequenceOrder = 11,
+                    ColumnHeaderMr = "दैनिक पिग्मी",
+                    ItemType = "PIGMY",
+                    PigmySchemeID = 1,
+                    PrincipalOrDepositLedgerID = 472,
+                    DefaultAmount = 200m,
+                    IsActive = true
+                }
+            );
+
+            // Non-member (B-Class) Customer 50 with NO Member row in Members table
+            db.Customers.Add(new Customer
+            {
+                CustomerID = 50,
+                BranchID = 1,
+                CIFNo = "CIF0050",
+                FirstName = "विजय",
+                LastName = "पाटील",
+                EmployerId = 1,
+                EmployeeCode = "B50",
+                Status = "Active"
+            });
+
+            // Opening balance Cr 5000 + approved Voucher Cr 500 on DEPOSIT_LEDGER 470 => live balance Cr 5500
+            db.CustomerOpeningBalances.Add(new CustomerOpeningBalance
+            {
+                CustomerOpeningBalanceID = 1,
+                CustomerID = 50,
+                LedgerID = 470,
+                BalanceType = "Cr",
+                Amount = 5000m,
+                SourceModule = "CustomerOpeningBalance"
+            });
+            db.Vouchers.Add(new Voucher
+            {
+                VoucherID = 9001,
+                BranchID = 1,
+                VoucherNo = "RCP-9001",
+                VoucherDate = new DateTime(2026, 9, 15),
+                VoucherType = "Receipt",
+                TotalAmount = 500m,
+                Status = "Approved"
+            });
+            db.VoucherDetails.AddRange(
+                new VoucherDetail { VoucherDetailID = 1, VoucherID = 9001, LedgerID = 101, DrCr = "Dr", Amount = 500m },
+                new VoucherDetail { VoucherDetailID = 2, VoucherID = 9001, LedgerID = 470, CustomerID = 50, DrCr = "Cr", Amount = 500m }
+            );
+
+            db.PigmyAccounts.Add(new PigmyAccount
+            {
+                PigmyAccountID = 601,
+                BranchID = 1,
+                CustomerID = 50,
+                PigmySchemeID = 1,
+                PigmyAgentID = 1,
+                AccountNo = "PG-50",
+                OpeningDate = new DateTime(2026, 4, 1),
+                InterestRate = 6m,
+                MaturityDate = new DateTime(2027, 4, 1),
+                TotalDepositedAmount = 1200m,
+                Status = "Active"
+            });
+
+            await db.SaveChangesAsync();
+
+            var noticeCtrl = new DemandNoticesController(db) { ControllerContext = BuildAdminContext() };
+
+            // 1. PreviewDemandGrid includes non-member Customer 50 with live DEPOSIT_LEDGER balance 5500 and PIGMY account 601
+            using var prevDoc = ParseResultJson(await noticeCtrl.PreviewDemandGrid(new DemandPreviewRequestDto
+            {
+                BranchId = 1,
+                EmployerId = 1,
+                DemandDate = new DateTime(2026, 10, 31),
+                OnlyBorrowers = false
+            }));
+
+            var rows = prevDoc.RootElement.GetProperty("rows");
+            Assert.Equal(1, rows.GetArrayLength());
+            var nonMemberRow = rows[0];
+            Assert.Equal(JsonValueKind.Null, nonMemberRow.GetProperty("memberId").ValueKind);
+            Assert.Equal(50, nonMemberRow.GetProperty("customerId").GetInt32());
+            Assert.False(nonMemberRow.GetProperty("isMember").GetBoolean());
+            Assert.Equal(500m, nonMemberRow.GetProperty("totalDeduction").GetDecimal());
+
+            var cells = nonMemberRow.GetProperty("cells").EnumerateArray().ToList();
+            var depCell = Assert.Single(cells, c => c.GetProperty("itemType").GetString() == "DEPOSIT_LEDGER");
+            Assert.Equal(5500m, depCell.GetProperty("currentBalanceAmount").GetDecimal());
+            Assert.Equal(300m, depCell.GetProperty("demandPrincipalOrDeposit").GetDecimal());
+
+            var pgCell = Assert.Single(cells, c => c.GetProperty("itemType").GetString() == "PIGMY");
+            Assert.Equal(601, pgCell.GetProperty("accountId").GetInt32());
+            Assert.Equal(1200m, pgCell.GetProperty("currentBalanceAmount").GetDecimal());
+            Assert.Equal(200m, pgCell.GetProperty("demandPrincipalOrDeposit").GetDecimal());
+
+            // 2. Validate & Save non-member Demand Notice
+            var saveRows = new List<SaveDemandMemberRowDto>
+            {
+                new SaveDemandMemberRowDto
+                {
+                    MemberId = null,
+                    CustomerId = 50,
+                    EmpCode = "B50",
+                    CIFNo = "CIF0050",
+                    MemberName = "विजय पाटील",
+                    IsSelected = true,
+                    Cells = new List<SaveDemandCellDto>
+                    {
+                        new SaveDemandCellDto
+                        {
+                            DemandColumnSettingId = 10,
+                            SequenceOrder = 10,
+                            ItemType = "DEPOSIT_LEDGER",
+                            ColumnHeaderMr = "ब वर्ग ठेव",
+                            CurrentBalanceAmount = 5500m,
+                            DemandPrincipalOrDeposit = 300m,
+                            PrincipalOrDepositLedgerID = 470
+                        },
+                        new SaveDemandCellDto
+                        {
+                            DemandColumnSettingId = 11,
+                            SequenceOrder = 11,
+                            ItemType = "PIGMY",
+                            ColumnHeaderMr = "दैनिक पिग्मी",
+                            SchemeId = 1,
+                            AccountId = 601,
+                            CurrentBalanceAmount = 1200m,
+                            DemandPrincipalOrDeposit = 200m,
+                            PrincipalOrDepositLedgerID = 472
+                        }
+                    }
+                }
+            };
+
+            using var valDoc = ParseResultJson(await noticeCtrl.ValidateDemandGrid(new SaveDemandGridRequestDto
+            {
+                BranchId = 1,
+                EmployerId = 1,
+                DemandDate = new DateTime(2026, 10, 31),
+                Rows = saveRows
+            }));
+            Assert.True(valDoc.RootElement.GetProperty("isValid").GetBoolean());
+
+            using var saveDoc = ParseResultJson(await noticeCtrl.SaveDemandGrid(new SaveDemandGridRequestDto
+            {
+                BranchId = 1,
+                EmployerId = 1,
+                DemandDate = new DateTime(2026, 10, 31),
+                Rows = saveRows
+            }));
+            int noticeId = saveDoc.RootElement.GetProperty("demandNoticeId").GetInt32();
+            var savedMd = await db.DemandMemberDetails.FirstAsync(m => m.DemandNoticeId == noticeId);
+            Assert.Null(savedMd.MemberId);
+            Assert.Equal(50, savedMd.CustomerId);
+            Assert.Equal(200m, savedMd.PigmyDeposit);
+            Assert.Equal(300m, savedMd.SavingDeposit);
+
+            // 3. GetDemandNoticeGrid preserves ShowBalanceColumn=false on Loan col & non-member flag
+            using var gridDoc = ParseResultJson(await noticeCtrl.GetDemandNoticeGrid(noticeId));
+            var gridCols = gridDoc.RootElement.GetProperty("columns").EnumerateArray().ToList();
+            var depCol = Assert.Single(gridCols, c => c.GetProperty("itemType").GetString() == "DEPOSIT_LEDGER");
+            Assert.False(depCol.GetProperty("showBalanceColumn").GetBoolean());
+            var gridRow = gridDoc.RootElement.GetProperty("rows")[0];
+            Assert.False(gridRow.GetProperty("isMember").GetBoolean());
+            Assert.Equal(JsonValueKind.Null, gridRow.GetProperty("memberId").ValueKind);
+
+            // 4. Bulk recovery creates per-customer VoucherDetail on 470 and PigmyTransaction DEPOSIT on 601
+            var recCtrl = new DemandRecoveriesController(db) { ControllerContext = BuildAdminContext() };
+            using var recDoc = ParseResultJson(await recCtrl.ProcessBulkRecovery(new BulkDemandRecoveryRequestDto
+            {
+                RecoveryDate = new DateTime(2026, 11, 1),
+                PaymentMode = "Bank",
+                BankLedgerID = 101,
+                ReferenceNo = "UTR-NONMEM-01",
+                Notices = new List<BulkNoticeRecoveryInputDto>
+                {
+                    new BulkNoticeRecoveryInputDto
+                    {
+                        DemandNoticeId = noticeId,
+                        Members = new List<BulkMemberRecoveryInputDto>
+                        {
+                            new BulkMemberRecoveryInputDto { DemandMemberDetailId = savedMd.DemandMemberDetailId, IsSelected = true, ActualReceivedAmount = 500m }
+                        }
+                    }
+                }
+            }));
+
+            int vchId = recDoc.RootElement.GetProperty("recoveries")[0].GetProperty("voucherId").GetInt32();
+            string vchNo = recDoc.RootElement.GetProperty("recoveries")[0].GetProperty("voucherNo").GetString()!;
+
+            var depVchLine = await db.VoucherDetails.FirstOrDefaultAsync(d => d.VoucherID == vchId && d.LedgerID == 470 && d.DrCr == "Cr");
+            Assert.NotNull(depVchLine);
+            Assert.Equal(50, depVchLine!.CustomerID);
+            Assert.Null(depVchLine.MemberID);
+            Assert.Equal(300m, depVchLine.Amount);
+
+            var pgAcc = await db.PigmyAccounts.FindAsync(601);
+            Assert.Equal(1400m, pgAcc!.TotalDepositedAmount);
+            var pgTxn = await db.PigmyTransactions.FirstOrDefaultAsync(t => t.PigmyAccountID == 601 && t.ReferenceId == vchNo && t.TransactionType == "DEPOSIT");
+            Assert.NotNull(pgTxn);
+            Assert.Equal(200m, pgTxn!.CrAmount);
+
+            // 5. Lossless rollback reverses PigmyAccount balance, removes PigmyTransaction, and resets DemandNotice
+            var rollbackSvc = new VoucherRollbackAndDeleteService(db);
+            var rb = await rollbackSvc.DeleteVoucherWithRollbackAsync(vchId, new VoucherDeleteRequestContext
+            {
+                UserId = 99,
+                Username = "Checker",
+                UserRole = "Admin",
+                UserBranchId = 1,
+                IsHeadOfficeAdmin = true,
+                Reason = "Rollback non-member demand voucher"
+            });
+            Assert.True(rb.Success, rb.Message);
+            Assert.Equal(1200m, (await db.PigmyAccounts.FindAsync(601))!.TotalDepositedAmount);
+            Assert.False(await db.PigmyTransactions.AnyAsync(t => t.PigmyAccountID == 601 && t.ReferenceId == vchNo));
+            Assert.Equal("Pending", (await db.DemandNotices.FindAsync(noticeId))!.Status);
+        }
+
+        [Fact]
+        public async Task Preview_IncludeCurrentMonthInstallments_CalculatesCurrentMonthEmi_AndGuardsShareAndLegacy()
+        {
+            using var db = GetInMemoryDbContext(nameof(Preview_IncludeCurrentMonthInstallments_CalculatesCurrentMonthEmi_AndGuardsShareAndLegacy));
+            SeedCoreMasters(db);
+
+            db.Ledgers.Add(new Ledger { LedgerID = 505, GroupID = 10, LedgerCode = "SHR-01", LedgerName = "भाग भांडवल", AccountType = "Share Capital", OpeningBalanceType = "Cr", IsActive = true });
+            db.DemandColumnSettings.Add(new DemandColumnSetting
+            {
+                DemandColumnSettingId = 12,
+                SequenceOrder = 12,
+                ColumnHeaderMr = "शेअर्स",
+                ItemType = "SHARE",
+                PrincipalOrDepositLedgerID = 505,
+                DefaultAmount = 100m,
+                IsActive = true
+            });
+
+            db.Customers.Add(new Customer { CustomerID = 60, BranchID = 1, CIFNo = "CIF0060", FirstName = "समीर", LastName = "कुलकर्णी", EmployerId = 1, EmployeeCode = "60", Status = "Active" });
+            db.Members.Add(new Member { MemberID = 160, CustomerID = 60, BranchID = 1, MemberCode = "M160", Status = "Active" });
+            db.LoanAccounts.Add(new LoanAccount
+            {
+                LoanAccountID = 2001,
+                BranchID = 1,
+                CustomerID = 60,
+                MemberID = 160,
+                LoanRateID = 1,
+                LoanAccountNo = "LN-2001",
+                PrincipalBalance = 50000m,
+                PurePrincipalBalance = 50000m,
+                InterestBalance = 0m,
+                InterestRate = 12m,
+                InstallmentAmount = 2000m,
+                OpeningDate = new DateTime(2026, 9, 1),
+                LastInterestPostingDate = new DateTime(2026, 9, 1),
+                MaturityDate = new DateTime(2028, 9, 1),
+                Status = "Active"
+            });
+            // Schedule due later in the month (2026-10-05) while preview runs on 2026-10-01
+            db.LoanInstallmentSchedules.Add(new LoanInstallmentSchedule
+            {
+                ScheduleID = 201,
+                LoanAccountID = 2001,
+                InstallmentNo = 1,
+                DueDate = new DateTime(2026, 10, 5),
+                PrincipalAmount = 2000m,
+                InterestAmount = 0m,
+                TotalAmount = 2000m,
+                Status = "Pending"
+            });
+            await db.SaveChangesAsync();
+
+            var noticeCtrl = new DemandNoticesController(db) { ControllerContext = BuildAdminContext() };
+
+            // 1. Month-start preview WITHOUT IncludeCurrentMonthInstallments -> 0 EMI
+            using var prevWithoutEmi = ParseResultJson(await noticeCtrl.PreviewDemandGrid(new DemandPreviewRequestDto
+            {
+                BranchId = 1,
+                EmployerId = 1,
+                DemandDate = new DateTime(2026, 10, 1),
+                IncludeCurrentMonthInstallments = false
+            }));
+            var loanCellNoEmi = prevWithoutEmi.RootElement.GetProperty("rows")[0].GetProperty("cells")[0];
+            Assert.Equal(0m, loanCellNoEmi.GetProperty("demandPrincipalOrDeposit").GetDecimal());
+
+            // 2. Month-start preview WITH IncludeCurrentMonthInstallments = true -> includes current month 2000 EMI
+            using var prevWithEmi = ParseResultJson(await noticeCtrl.PreviewDemandGrid(new DemandPreviewRequestDto
+            {
+                BranchId = 1,
+                EmployerId = 1,
+                DemandDate = new DateTime(2026, 10, 1),
+                IncludeCurrentMonthInstallments = true
+            }));
+            var loanCellWithEmi = prevWithEmi.RootElement.GetProperty("rows")[0].GetProperty("cells")[0];
+            Assert.Equal(2000m, loanCellWithEmi.GetProperty("demandPrincipalOrDeposit").GetDecimal());
+
+            // 3. SHARE demand without active ShareAccount fails ValidateDemandGrid cleanly
+            using var shareValDoc = ParseResultJson(await noticeCtrl.ValidateDemandGrid(new SaveDemandGridRequestDto
+            {
+                BranchId = 1,
+                EmployerId = 1,
+                DemandDate = new DateTime(2026, 10, 1),
+                Rows = new List<SaveDemandMemberRowDto>
+                {
+                    new SaveDemandMemberRowDto
+                    {
+                        MemberId = 160,
+                        CustomerId = 60,
+                        EmpCode = "60",
+                        MemberName = "समीर कुलकर्णी",
+                        IsSelected = true,
+                        Cells = new List<SaveDemandCellDto>
+                        {
+                            new SaveDemandCellDto
+                            {
+                                DemandColumnSettingId = 12,
+                                SequenceOrder = 12,
+                                ItemType = "SHARE",
+                                ColumnHeaderMr = "शेअर्स",
+                                AccountId = null,
+                                DemandPrincipalOrDeposit = 100m,
+                                PrincipalOrDepositLedgerID = 505
+                            }
+                        }
+                    }
+                }
+            }));
+            Assert.False(shareValDoc.RootElement.GetProperty("isValid").GetBoolean());
+            var shareErrs = shareValDoc.RootElement.GetProperty("errors").EnumerateArray().Select(e => e.GetString() ?? "").ToList();
+            Assert.Contains(shareErrs, e => e.Contains("शेअर्स खाते"));
+
+            // 4. Legacy GenerateDemand endpoint blocks generation when modern DemandColumnSettings exist
+            var legacyRes = await noticeCtrl.GenerateDemand(new GenerateDemandDto { EmployerId = 1, Month = 10, Year = 2026 });
+            Assert.IsType<BadRequestObjectResult>(legacyRes.Result);
+        }
     }
 }

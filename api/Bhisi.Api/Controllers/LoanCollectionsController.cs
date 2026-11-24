@@ -347,6 +347,7 @@ namespace Bhisi.Api.Controllers
                     decimal extraOtsInterest = Math.Max(0m, remaining - principalPaid);
 
                     collection.PenaltyInterestCollected = penaltyPaid;
+                    collection.BookedPenaltySettled = penaltyPaid;
                     collection.ReceivableInterestCollected = regularInterestPaid;
                     collection.InterestCollected = extraOtsInterest;
                     collection.PrincipalCollected = principalPaid;
@@ -459,22 +460,50 @@ namespace Bhisi.Api.Controllers
                         });
                     }
 
-                    if (collection.PenaltyInterestCollected > loanAccount.OverdueInterestBalance + 0.01m)
+                    var scheduleListForPenal = await _context.LoanInstallmentSchedules
+                        .AsNoTracking()
+                        .Where(s => s.LoanAccountID == loanAccount.LoanAccountID)
+                        .OrderBy(s => s.InstallmentNo)
+                        .ToListAsync();
+                    if (!scheduleListForPenal.Any())
+                    {
+                        scheduleListForPenal = Services.LoanScheduleGenerator.GenerateSchedules(loanAccount, loanRate);
+                    }
+                    var penalSnapshot = Helpers.LoanPenalInterestHelper.ComputePenalSnapshot(
+                        loanAccount,
+                        loanRate,
+                        scheduleListForPenal,
+                        collection.CollectionDate);
+
+                    decimal preBookedPenaltyAvailable = Math.Max(0m, loanAccount.OverdueInterestBalance);
+                    decimal maxSystemPenal = Math.Round(preBookedPenaltyAvailable + penalSnapshot.EstimatedAccruedPenalInterest, 2, MidpointRounding.AwayFromZero);
+                    bool allowManualPenal = loanRate?.AllowManualPenalInRecovery ?? true;
+
+                    if (!allowManualPenal && collection.PenaltyInterestCollected > maxSystemPenal + 0.01m)
                     {
                         await transaction.RollbackAsync();
                         return BadRequest(new
                         {
-                            message = $"जादा/दंड व्याज वसुली रक्कम (₹{collection.PenaltyInterestCollected:N2}) ही थकीत दंड व्याजापेक्षा (₹{loanAccount.OverdueInterestBalance:N2}) जास्त असू शकत नाही."
+                            message = $"या कर्ज योजनेत थकीत व मोजलेल्या दंड व्याजापेक्षा (₹{maxSystemPenal:N2}) जास्त जादा/दंड व्याज वसुली रक्कम (₹{collection.PenaltyInterestCollected:N2}) घेण्याची परवानगी सेटिंगमध्ये बंद आहे."
                         });
                     }
 
                     penaltyPaid = collection.PenaltyInterestCollected;
+                    decimal preBookedPenaltyPaid = Math.Min(penaltyPaid, preBookedPenaltyAvailable);
                     receivablePaid = collection.ReceivableInterestCollected;
                     regularInterestPaid = collection.InterestCollected;
                     principalPaid = collection.PrincipalCollected;
                     surchargeCollected = collection.SurchargeCollected;
 
-                    loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - penaltyPaid);
+                    collection.BookedPenaltySettled = preBookedPenaltyPaid;
+                    collection.PrevLastPenalPostingDate = loanAccount.LastPenalPostingDate;
+                    loanAccount.OverdueInterestBalance = Math.Max(0m, preBookedPenaltyAvailable - preBookedPenaltyPaid);
+                    if (penalSnapshot.EstimatedAccruedPenalInterest > 0m &&
+                        penaltyPaid >= preBookedPenaltyPaid + penalSnapshot.EstimatedAccruedPenalInterest - 0.01m &&
+                        (!loanAccount.LastPenalPostingDate.HasValue || loanAccount.LastPenalPostingDate.Value.Date < collection.CollectionDate.Date))
+                    {
+                        loanAccount.LastPenalPostingDate = collection.CollectionDate.Date;
+                    }
                     // When the user manually overrides interest (IsManualInterestOverride) or collects principal (principalPaid > 0),
                     // the current period's interest is settled at regularInterestPaid; do NOT push (currentPeriodInterest - regularInterestPaid) into InterestBalance (येणे व्याज).
                     // Only carry forward unpaid current-period interest when PrincipalCollected == 0 and interest was not manually overridden (genuine partial interest-only payment).
@@ -1565,9 +1594,16 @@ namespace Bhisi.Api.Controllers
                 {
                     loanAccount.PrincipalBalance += collection.PrincipalCollected;
                     loanAccount.PurePrincipalBalance = Math.Min(loanAccount.PrincipalBalance, loanAccount.PurePrincipalBalance + collection.PrincipalCollected);
-                    if (collection.PenaltyInterestCollected > 0)
+                    decimal bookedPenaltyToRestore = collection.BookedPenaltySettled ?? collection.PenaltyInterestCollected;
+                    if (bookedPenaltyToRestore > 0)
                     {
-                        loanAccount.OverdueInterestBalance += collection.PenaltyInterestCollected;
+                        loanAccount.OverdueInterestBalance += bookedPenaltyToRestore;
+                    }
+                    if (collection.PenaltyInterestCollected > 0 &&
+                        loanAccount.LastPenalPostingDate.HasValue &&
+                        loanAccount.LastPenalPostingDate.Value.Date == collection.CollectionDate.Date)
+                    {
+                        loanAccount.LastPenalPostingDate = collection.PrevLastPenalPostingDate;
                     }
                     if (collection.ReceivableInterestCollected > 0)
                     {

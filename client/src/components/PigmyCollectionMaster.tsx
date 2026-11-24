@@ -46,13 +46,25 @@ interface Agent {
   branch?: { branchName: string };
 }
 
+interface PigmyScheme {
+  pigmySchemeID: number;
+  schemeCode?: string;
+  schemeName: string;
+  interestRate?: number;
+  status?: string;
+  pigmyLiabilityLedgerID?: number;
+}
+
 interface PigmyAccount {
   pigmyAccountID: number;
   accountNo: string;
   legacyAccountNumber?: string;
+  oldAccountNo?: string;
   openingDate?: string;
   customerID: number;
   pigmyAgentID: number;
+  pigmySchemeID?: number;
+  pigmyScheme?: PigmyScheme;
   totalDepositedAmount: number;
   status: string;
   customer?: Customer;
@@ -93,6 +105,9 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
   // Data States
   const [agents, setAgents] = useState<Agent[]>(
     () => getCachedMasterData<Agent[]>('/api/PigmyAgents') || []
+  );
+  const [schemes, setSchemes] = useState<PigmyScheme[]>(
+    () => getCachedMasterData<PigmyScheme[]>('/api/PigmySchemes') || []
   );
   const [accounts, setAccounts] = useState<PigmyAccount[]>(
     () => getCachedMasterData<PigmyAccount[]>('/api/PigmyAccounts') || []
@@ -201,6 +216,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
   // Bulk Sheet States
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
+  const [selectedBulkSchemeId, setSelectedBulkSchemeId] = useState<number | ''>('');
   const [collectionDate, setCollectionDate] = useState<string>(activeBusinessDate);
   const [bulkAmounts, setBulkAmounts] = useState<{ [accountId: number]: string }>({});
   const [sheetSearchTerm, setSheetSearchTerm] = useState<string>('');
@@ -218,6 +234,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
   // Monthly Matrix States
   const [selectedMonthlyAgentId, setSelectedMonthlyAgentId] = useState<number | ''>('');
+  const [selectedMonthlySchemeId, setSelectedMonthlySchemeId] = useState<number | ''>('');
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [monthlySuccessBanner, setMonthlySuccessBanner] = useState<string | null>(null);
   const [lastImportedRemittanceInfo, setLastImportedRemittanceInfo] = useState<{
@@ -231,6 +248,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     totalAmount: number;
     accountsCount: number;
     monthYear: string;
+    schemeNames?: string[];
   } | null>(null);
   const [monthlyImportPreview, setMonthlyImportPreview] = useState<{
     fileName: string;
@@ -239,9 +257,17 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     totalDepositEntries: number;
     totalAmount: number;
     columns: string[];
+    schemeSummary?: Array<{
+      schemeId: number;
+      schemeName: string;
+      accountsCount: number;
+      totalAmount: number;
+    }>;
     rows: Array<{
       accountNo: string;
       legacyAccountNumber?: string;
+      pigmySchemeID?: number;
+      schemeName?: string;
       customerName: string;
       pigmyAccountId: number;
       openingDate?: string;
@@ -301,6 +327,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
   useEffect(() => {
     fetchAgents();
+    fetchSchemes();
     fetchAccounts();
     fetchHistory();
   }, []);
@@ -330,6 +357,15 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       setAgents(res.data || []);
     } catch (err) {
       console.error('Failed to fetch agents', err);
+    }
+  };
+
+  const fetchSchemes = async () => {
+    try {
+      const res = await api.get('/api/PigmySchemes');
+      setSchemes(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch pigmy schemes', err);
     }
   };
 
@@ -599,8 +635,117 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     return false;
   };
 
-  // Filter accounts belonging to the selected agent (only opened on or before collectionDate)
-  const agentAccounts = accounts.filter(acc => {
+  const getAccountSchemeId = (acc: any): number => {
+    if (!acc) return 0;
+    return Number(acc.pigmySchemeID ?? acc.pigmySchemeId ?? acc.PigmySchemeID ?? acc.pigmyScheme?.pigmySchemeID ?? 0);
+  };
+
+  const getAccountSchemeName = (acc: any): string => {
+    if (!acc) return '';
+    if (acc.pigmyScheme?.schemeName) return acc.pigmyScheme.schemeName;
+    const sId = getAccountSchemeId(acc);
+    const matched = schemes.find(s => Number(s.pigmySchemeID) === sId);
+    return matched?.schemeName || (sId > 0 ? `योजना #${sId}` : '');
+  };
+
+  const getAccountSchemeExcelLabel = (acc: any): string => {
+    const sId = getAccountSchemeId(acc);
+    const sObj = acc?.pigmyScheme || schemes.find(s => Number(s.pigmySchemeID) === sId);
+    const sName = sObj?.schemeName || (sId > 0 ? `योजना #${sId}` : '');
+    const sCode = sObj?.schemeCode;
+    return sCode ? `${sCode} - ${sName}` : sName;
+  };
+
+  const resolveSchemeIdFromExcelText = (rawText?: string): number => {
+    const txt = String(rawText || '').trim();
+    if (!txt) return 0;
+    const lower = txt.toLowerCase();
+
+    const exact = schemes.find(s =>
+      (s.schemeCode && s.schemeCode.trim().toLowerCase() === lower) ||
+      (s.schemeName && s.schemeName.trim().toLowerCase() === lower) ||
+      String(s.pigmySchemeID) === txt ||
+      `${s.schemeCode || ''} - ${s.schemeName || ''}`.trim().toLowerCase() === lower
+    );
+    if (exact) return Number(exact.pigmySchemeID);
+
+    // Handle formats like "302 - पिग्मी ठेव 2" or "Scheme 2"
+    const prefixCode = txt.split(/[-–|:]/)[0].trim().toLowerCase();
+    const byPrefix = schemes.find(s =>
+      (s.schemeCode && s.schemeCode.trim().toLowerCase() === prefixCode) ||
+      String(s.pigmySchemeID) === prefixCode ||
+      (s.schemeName && lower.includes(s.schemeName.trim().toLowerCase()))
+    );
+    if (byPrefix) return Number(byPrefix.pigmySchemeID);
+
+    return -1; // Non-empty scheme text did not match any known scheme
+  };
+
+  const resolvePigmyAccountForExcelRow = (
+    candidatePool: PigmyAccount[],
+    rawCbsAcc: string,
+    rawLegacyAcc: string,
+    rawSchemeText: string,
+    selectedFilterSchemeId: number | ''
+  ): { account?: PigmyAccount; error?: string } => {
+    const excelSchemeId = resolveSchemeIdFromExcelText(rawSchemeText);
+    if (excelSchemeId === -1) {
+      return { error: `एक्सेलमधील पिग्मी योजना '${rawSchemeText}' सिस्टीममध्ये सापडली नाही` };
+    }
+    const filterSchemeId = selectedFilterSchemeId ? Number(selectedFilterSchemeId) : 0;
+    if (filterSchemeId > 0 && excelSchemeId > 0 && filterSchemeId !== excelSchemeId) {
+      return { error: `एक्सेलमधील योजना '${rawSchemeText}' निवडलेल्या योजनेशी जुळत नाही` };
+    }
+    const targetSchemeId = excelSchemeId > 0 ? excelSchemeId : filterSchemeId;
+
+    // 1. Exact 14-digit CBS AccountNo match (globally unique & encodes scheme)
+    const normCbs = String(rawCbsAcc || '').replace(/\D/g, '');
+    if (normCbs.length === 14) {
+      const cbsMatch = candidatePool.find(a => String(a.accountNo || '').replace(/\D/g, '') === normCbs);
+      if (cbsMatch) {
+        if (targetSchemeId > 0 && getAccountSchemeId(cbsMatch) !== targetSchemeId) {
+          return { error: `खाते क्र. '${rawCbsAcc}' हे दुसऱ्या योजनेचे (${getAccountSchemeName(cbsMatch)}) आहे` };
+        }
+        return { account: cbsMatch };
+      }
+    }
+
+    // 2. Also check if primary identifier column holds 14-digit CBS AccountNo
+    const lookupRaw = String(rawLegacyAcc || rawCbsAcc || '').trim();
+    const lookupDigits = lookupRaw.replace(/\D/g, '');
+    if (lookupDigits.length === 14) {
+      const cbsMatch = candidatePool.find(a => String(a.accountNo || '').replace(/\D/g, '') === lookupDigits);
+      if (cbsMatch) {
+        if (targetSchemeId > 0 && getAccountSchemeId(cbsMatch) !== targetSchemeId) {
+          return { error: `खाते क्र. '${lookupRaw}' हे दुसऱ्या योजनेचे (${getAccountSchemeName(cbsMatch)}) आहे` };
+        }
+        return { account: cbsMatch };
+      }
+    }
+
+    // 3. Match scoped by Scheme if provided, detecting ambiguity across schemes cleanly
+    const scopedPool = targetSchemeId > 0
+      ? candidatePool.filter(a => getAccountSchemeId(a) === targetSchemeId)
+      : candidatePool;
+
+    if (!lookupRaw) return {};
+
+    const matches = scopedPool.filter(a => isPigmyAccountMatch(a, lookupRaw));
+    if (matches.length === 1) {
+      return { account: matches[0] };
+    }
+    if (matches.length > 1) {
+      const schemeList = Array.from(new Set(matches.map(m => getAccountSchemeName(m) || `#${getAccountSchemeId(m)}`))).join(', ');
+      return {
+        error: `अस्पष्ट खाते क्र. '${lookupRaw}': एकापेक्षा जास्त योजनांमध्ये (${schemeList}) समान खाते सापडले. कृपया 'पिग्मी योजना' कॉलम किंवा १४-अंकी CBS खाते क्र. द्या.`
+      };
+    }
+
+    return {};
+  };
+
+  // Filter accounts belonging to the selected agent & scheme (only opened on or before collectionDate)
+  const agentAllActiveAccounts = accounts.filter(acc => {
     const accAgentId = acc.pigmyAgentID || getAgentId(acc.pigmyAgent) || getAgentId(acc.agent);
     const matchesAgent = selectedAgentId ? accAgentId === Number(selectedAgentId) : false;
     const isActive = acc.status === 'Active';
@@ -608,6 +753,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       ? new Date(acc.openingDate.split('T')[0]) <= new Date(collectionDate)
       : true;
     return matchesAgent && isActive && isOpenedOnOrBeforeDate;
+  });
+
+  const agentAccounts = agentAllActiveAccounts.filter(acc => {
+    if (!selectedBulkSchemeId) return true;
+    return getAccountSchemeId(acc) === Number(selectedBulkSchemeId);
   });
 
   const filteredAgentAccounts = agentAccounts.filter(acc => {
@@ -716,6 +866,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     const rows: any[] = agentAccounts.map(acc => ({
       'खाते क्र. (Account No)': format14DigitDisplay(acc.accountNo),
       'मागील / जुना खाते क्र. (Old Acc No)': (acc as any).legacyAccountNumber || '',
+      'पिग्मी योजना (Pigmy Scheme)': getAccountSchemeExcelLabel(acc),
       'ग्राहक नाव (Customer Name)': getCustomerFullName(acc.customer),
       'खाते उघडल्याची तारीख (Opening Date)': acc.openingDate ? acc.openingDate.split('T')[0] : '',
       'चालू शिल्लक (Current Balance)': acc.totalDepositedAmount || 0,
@@ -726,6 +877,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     rows.push({
       'खाते क्र. (Account No)': 'एकूण (TOTAL)',
       'मागील / जुना खाते क्र. (Old Acc No)': '',
+      'पिग्मी योजना (Pigmy Scheme)': '',
       'ग्राहक नाव (Customer Name)': 'एकूण दैनिक संकलन',
       'खाते उघडल्याची तारीख (Opening Date)': '',
       'चालू शिल्लक (Current Balance)': '',
@@ -734,14 +886,16 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
     const ws = XLSX.utils.json_to_sheet(rows);
 
-    // Inject live vertical SUM formula for collection amount column (Column F, index 5)
+    // Inject live vertical SUM formula for collection amount column dynamically
+    const amtColIdx = Object.keys(rows[0]).length - 1;
+    const amtColLetter = XLSX.utils.encode_col(amtColIdx);
     const lastDailyAccRow = agentAccounts.length + 1;
     const dailySummaryRowIdx = agentAccounts.length + 1;
-    const dailyTotalCellRef = XLSX.utils.encode_cell({ r: dailySummaryRowIdx, c: 5 });
+    const dailyTotalCellRef = XLSX.utils.encode_cell({ r: dailySummaryRowIdx, c: amtColIdx });
     ws[dailyTotalCellRef] = {
       t: 'n',
       v: 0,
-      f: `SUM(F2:F${lastDailyAccRow})`
+      f: `SUM(${amtColLetter}2:${amtColLetter}${lastDailyAccRow})`
     };
 
     const wb = XLSX.utils.book_new();
@@ -783,38 +937,52 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
         data.forEach((row: any) => {
           const keys = Object.keys(row);
-          const accKey = keys.find(k => /acc|खाते|account/i.test(k));
+          const cbsAccKey = keys.find(k => /^(खाते क्र|account\s*no)/i.test(k.trim()));
+          const oldAccKey = keys.find(k => /(जुना|old|legacy)/i.test(k));
+          const accKey = cbsAccKey || oldAccKey || keys.find(k => /acc|खाते|account/i.test(k));
+          const schemeKey = keys.find(k => /योजना|scheme/i.test(k));
           const amtKey = keys.find(k => /amount|रक्कम|जमा/i.test(k));
 
-          const rawAcc = accKey ? String(row[accKey]).trim() : '';
+          const rawCbs = cbsAccKey ? String(row[cbsAccKey]).trim() : '';
+          const rawLegacy = oldAccKey ? String(row[oldAccKey]).trim() : (accKey ? String(row[accKey]).trim() : '');
+          const rawAcc = rawCbs || rawLegacy;
+          const rawScheme = schemeKey ? String(row[schemeKey]).trim() : '';
           const rawAmt = amtKey ? parseFloat(row[amtKey]) : 0;
 
           if (!rawAcc || isNaN(rawAmt) || rawAmt <= 0) return;
           if (/^(एकूण|total)/i.test(rawAcc)) return;
 
-          const matchedAcc = agentAccounts.find(a => isPigmyAccountMatch(a, rawAcc));
+          const resolved = resolvePigmyAccountForExcelRow(
+            agentAllActiveAccounts,
+            rawCbs,
+            rawLegacy,
+            rawScheme,
+            selectedBulkSchemeId
+          );
 
-          if (matchedAcc) {
-            newAmounts[matchedAcc.pigmyAccountID] = rawAmt.toString();
+          if (resolved.account) {
+            newAmounts[resolved.account.pigmyAccountID] = rawAmt.toString();
             matchedCount++;
             totalAmt += rawAmt;
           } else {
-            let reason = 'या एजंटकडे हे खाते सापडले नाही';
-            const thisAgentAcc = accounts.find(a => {
-              const aId = a.pigmyAgentID || getAgentId(a.pigmyAgent) || getAgentId(a.agent);
-              if (aId !== Number(selectedAgentId)) return false;
-              return isPigmyAccountMatch(a, rawAcc);
-            });
+            let reason = resolved.error || 'या एजंटकडे हे खाते सापडले नाही';
+            if (!resolved.error) {
+              const thisAgentAcc = accounts.find(a => {
+                const aId = a.pigmyAgentID || getAgentId(a.pigmyAgent) || getAgentId(a.agent);
+                if (aId !== Number(selectedAgentId)) return false;
+                return isPigmyAccountMatch(a, rawAcc);
+              });
 
-            if (thisAgentAcc) {
-              if (thisAgentAcc.openingDate && new Date(thisAgentAcc.openingDate.split('T')[0]) > new Date(collectionDate)) {
-                reason = `खाते उघडल्याची तारीख (${thisAgentAcc.openingDate.split('T')[0]}) ${collectionDate} नंतरची आहे`;
-                skippedFuture++;
-              } else if (thisAgentAcc.status !== 'Active') {
-                reason = `या एजंटचे हे खाते ${thisAgentAcc.status === 'Closed' ? 'बंद' : thisAgentAcc.status} आहे`;
+              if (thisAgentAcc) {
+                if (thisAgentAcc.openingDate && new Date(thisAgentAcc.openingDate.split('T')[0]) > new Date(collectionDate)) {
+                  reason = `खाते उघडल्याची तारीख (${thisAgentAcc.openingDate.split('T')[0]}) ${collectionDate} नंतरची आहे`;
+                  skippedFuture++;
+                } else if (thisAgentAcc.status !== 'Active') {
+                  reason = `या एजंटचे हे खाते ${thisAgentAcc.status === 'Closed' ? 'बंद' : thisAgentAcc.status} आहे`;
+                }
               }
             }
-            invalidDailyList.push({ rawAcc, rawAmt, reason });
+            invalidDailyList.push({ rawAcc: rawScheme ? `${rawAcc} [${rawScheme}]` : rawAcc, rawAmt, reason });
           }
         });
 
@@ -868,11 +1036,12 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       const isAgent = aId === Number(selectedMonthlyAgentId);
       const isActive = acc.status === 'Active';
       const isOpened = acc.openingDate ? new Date(acc.openingDate.split('T')[0]) <= new Date(endOfMonth) : true;
-      return isAgent && isActive && isOpened;
+      const matchesScheme = !selectedMonthlySchemeId || getAccountSchemeId(acc) === Number(selectedMonthlySchemeId);
+      return isAgent && isActive && isOpened && matchesScheme;
     });
 
     if (eligibleAccounts.length === 0) {
-      toast.error(`या महिन्यासाठी (${selectedMonth}) एजंटचे कोणतेही सक्रिय खाते उपलब्ध नाही.`);
+      toast.error(`या महिन्यासाठी (${selectedMonth}) निवडलेल्या एजंट व योजनेचे कोणतेही सक्रिय खाते उपलब्ध नाही.`);
       return;
     }
 
@@ -885,7 +1054,9 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       const oldNo = (acc as any).legacyAccountNumber || '';
       const cName = getCustomerFullName(acc.customer);
       const rowObj: any = {
+        'खाते क्र. (Account No)': format14DigitDisplay(acc.accountNo),
         'पिग्मि जुना acc  no ': oldNo,
+        'पिग्मी योजना (Pigmy Scheme)': getAccountSchemeExcelLabel(acc),
         'खातेदाराचे नाव': cName,
         'एजंट': agentName
       };
@@ -900,7 +1071,9 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
     // Append summary total row at the bottom for vertical column additions
     const totalRowObj: any = {
-      'पिग्मि जुना acc  no ': 'एकूण (TOTAL)',
+      'खाते क्र. (Account No)': 'एकूण (TOTAL)',
+      'पिग्मि जुना acc  no ': '',
+      'पिग्मी योजना (Pigmy Scheme)': '',
       'खातेदाराचे नाव': 'एकूण दैनिक संकलन (Daily Total)',
       'एजंट': agentName
     };
@@ -914,9 +1087,10 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
     const ws = XLSX.utils.json_to_sheet(rows);
 
-    const startColLetter = XLSX.utils.encode_col(3); // Column D (Day 1)
-    const endColLetter = XLSX.utils.encode_col(3 + daysInMonth - 1); // Column for Last Day
-    const totalColIdx = 3 + daysInMonth; // Column index for TOTAL
+    const metaColsCount = 5; // Account No, Old Acc No, Pigmy Scheme, Name, Agent
+    const startColLetter = XLSX.utils.encode_col(metaColsCount); // Column F (Day 1)
+    const endColLetter = XLSX.utils.encode_col(metaColsCount + daysInMonth - 1); // Column for Last Day
+    const totalColIdx = metaColsCount + daysInMonth; // Column index for TOTAL
     const totalColLetter = XLSX.utils.encode_col(totalColIdx);
     const lastAccountRowNumber = eligibleAccounts.length + 1; // Last data row (1-indexed in Excel)
     const summaryRowIdx = eligibleAccounts.length + 1; // 0-indexed row for ws
@@ -934,7 +1108,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
     // 2. Vertical SUM formula for each day column in the summary row
     for (let dayIdx = 0; dayIdx < daysInMonth; dayIdx++) {
-      const colIdx = 3 + dayIdx;
+      const colIdx = metaColsCount + dayIdx;
       const colLetter = XLSX.utils.encode_col(colIdx);
       const dayTotalCellRef = XLSX.utils.encode_cell({ r: summaryRowIdx, c: colIdx });
       ws[dayTotalCellRef] = {
@@ -984,8 +1158,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         }
 
         const headerRow = rawRows[0] || [];
+        let cbsAccColIdx = -1;
         let accColIdx = 0;
+        let schemeColIdx = -1;
         let nameColIdx = 1;
+        let agentColIdx = -1;
         let totalColIdx = -1;
 
         let detectedMonth: number | null = null;
@@ -1066,12 +1243,32 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             totalColIdx = cIdx;
             return;
           }
-          if (cIdx === 0 && (/acc|खाते|जुना/i.test(str) || !str)) {
+          if (/^(खाते क्र|account\s*no)/i.test(str)) {
+            cbsAccColIdx = cIdx;
+            if (accColIdx === 0 && cIdx !== 0) accColIdx = cIdx;
+            return;
+          }
+          if (/(योजना|scheme)/i.test(str)) {
+            schemeColIdx = cIdx;
+            return;
+          }
+          if (/^(एजंट|agent)/i.test(str)) {
+            agentColIdx = cIdx;
+            return;
+          }
+          if (/(जुना|old|legacy|acc|खाते)/i.test(str) && !/नाव|name|खातेदार/i.test(str)) {
             accColIdx = cIdx;
             return;
           }
-          if (cIdx === 1 && (/नाव|name|खातेदार/i.test(str) || !str)) {
+          if (/नाव|name|खातेदार/i.test(str)) {
             nameColIdx = cIdx;
+            return;
+          }
+          if (cIdx === 0 && !str) {
+            accColIdx = cIdx;
+            return;
+          }
+          if (cIdx === 1 && !str && nameColIdx === 1) {
             return;
           }
 
@@ -1084,7 +1281,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               const fullDateStr = `${effectiveYear}-${String(colMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
               dayColMap.push({ colIdx: cIdx, day: d, dateStr: fullDateStr, label: str });
             }
-          } else {
+          } else if (cIdx > 1) {
             const num = parseInt(str);
             if (!isNaN(num) && num >= 1 && num <= 31) {
               const fullDateStr = `${effectiveYear}-${String(effectiveMonth).padStart(2, '0')}-${String(num).padStart(2, '0')}`;
@@ -1107,33 +1304,45 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           const rowData = rawRows[r];
           if (!rowData || rowData.length === 0) continue;
 
-          const rawAcc = String(rowData[accColIdx] || '').trim();
+          const rawCbsAcc = cbsAccColIdx >= 0 ? String(rowData[cbsAccColIdx] || '').trim() : '';
+          const rawLegacyAcc = String(rowData[accColIdx] || '').trim();
+          const rawAcc = rawCbsAcc || rawLegacyAcc;
+          const rawSchemeText = schemeColIdx >= 0 ? String(rowData[schemeColIdx] || '').trim() : '';
           const rawName = String(rowData[nameColIdx] || '').trim();
           if (!rawAcc && !rawName) continue;
 
           // Safely ignore bottom summary / total row
-          if (/^(एकूण|total|grand\s*total)/i.test(rawAcc) || /^(एकूण|total|grand\s*total)/i.test(rawName)) {
+          if (/^(एकूण|total|grand\s*total)/i.test(rawAcc) || /^(एकूण|total|grand\s*total)/i.test(rawLegacyAcc) || /^(एकूण|total|grand\s*total)/i.test(rawName)) {
             continue;
           }
 
-          const matchedAcc = agentEligibleAccounts.find(a => isPigmyAccountMatch(a, rawAcc));
+          const resolved = resolvePigmyAccountForExcelRow(
+            agentEligibleAccounts,
+            rawCbsAcc,
+            rawLegacyAcc,
+            rawSchemeText,
+            selectedMonthlySchemeId
+          );
+          const matchedAcc = resolved.account;
 
           if (!matchedAcc) {
-            let failureReason = 'या एजंटकडे हे खाते सापडले नाही';
-            const thisAgentAcc = accounts.find(a => {
-              const aId = a.pigmyAgentID || getAgentId(a.pigmyAgent) || getAgentId(a.agent);
-              if (aId !== Number(selectedMonthlyAgentId)) return false;
-              return isPigmyAccountMatch(a, rawAcc);
-            });
+            let failureReason = resolved.error || 'या एजंटकडे हे खाते सापडले नाही';
+            if (!resolved.error) {
+              const thisAgentAcc = accounts.find(a => {
+                const aId = a.pigmyAgentID || getAgentId(a.pigmyAgent) || getAgentId(a.agent);
+                if (aId !== Number(selectedMonthlyAgentId)) return false;
+                return isPigmyAccountMatch(a, rawAcc);
+              });
 
-            if (thisAgentAcc) {
-              if (thisAgentAcc.status !== 'Active') {
-                failureReason = `या एजंटचे हे खाते ${thisAgentAcc.status === 'Closed' ? 'बंद' : thisAgentAcc.status} आहे`;
+              if (thisAgentAcc) {
+                if (thisAgentAcc.status !== 'Active') {
+                  failureReason = `या एजंटचे हे खाते ${thisAgentAcc.status === 'Closed' ? 'बंद' : thisAgentAcc.status} आहे`;
+                }
               }
             }
 
             skippedRows.push({
-              rawAccount: rawAcc,
+              rawAccount: rawSchemeText ? `${rawAcc} [${rawSchemeText}]` : rawAcc,
               rawName: rawName,
               reason: failureReason
             });
@@ -1154,7 +1363,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             // Include in preview rows with invalid marking
             previewRows.push({
               accountNo: rawAcc || 'अवैध खाते',
-              legacyAccountNumber: rawAcc,
+              legacyAccountNumber: rawLegacyAcc || rawAcc,
+              schemeName: rawSchemeText || undefined,
               customerName: rawName || 'अज्ञात खातेदार',
               pigmyAccountId: 0,
               dailyAmounts,
@@ -1195,6 +1405,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           previewRows.push({
             accountNo: matchedAcc.accountNo,
             legacyAccountNumber: (matchedAcc as any).legacyAccountNumber || (matchedAcc as any).oldAccountNo,
+            pigmySchemeID: getAccountSchemeId(matchedAcc),
+            schemeName: getAccountSchemeName(matchedAcc),
             customerName: getCustomerFullName(matchedAcc.customer),
             pigmyAccountId: matchedAcc.pigmyAccountID,
             openingDate: matchedAcc.openingDate?.split('T')[0],
@@ -1206,6 +1418,20 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             warning: warningMsg || (excelTotal !== undefined && excelTotal > 0 && Math.abs(excelTotal - rowSum) > 0.01 ? `एक्सेल Total (${excelTotal}) आणि बेरजेमध्ये (${rowSum}) फरक आहे.` : undefined)
           });
         }
+
+        const schemeSummaryMap = new Map<number, { schemeId: number; schemeName: string; accountsCount: number; totalAmount: number }>();
+        previewRows.filter(r => r.isValid && r.pigmyAccountId > 0).forEach(r => {
+          const sId = Number(r.pigmySchemeID || 0);
+          const sName = r.schemeName || (sId > 0 ? `योजना #${sId}` : 'पिग्मी योजना');
+          const cur = schemeSummaryMap.get(sId) || { schemeId: sId, schemeName: sName, accountsCount: 0, totalAmount: 0 };
+          cur.accountsCount += 1;
+          cur.totalAmount += Number(r.rowTotal || 0);
+          schemeSummaryMap.set(sId, cur);
+        });
+        const schemeSummary = Array.from(schemeSummaryMap.values()).sort((a, b) => a.schemeId - b.schemeId);
+        const uploadedDistinctSchemeIds = Array.from(new Set(
+          previewRows.filter(r => r.isValid && r.pigmyAccountId > 0 && r.pigmySchemeID).map(r => Number(r.pigmySchemeID))
+        ));
 
         const dayLabels = dayColMap.map(d => d.label);
 
@@ -1234,6 +1460,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           totalDepositEntries: totalEntries,
           totalAmount: grandTotal,
           columns: dayLabels,
+          schemeSummary,
           rows: previewRows,
           skippedRows,
           hasFutureDates,
@@ -1251,16 +1478,23 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
         toast.success(`एक्सेल वाचले: ${previewRows.length} खाती, एकूण ₹${grandTotal.toLocaleString('en-IN')}`);
 
-        // Check if collection already exists in database for this agent & month
+        // Check if collection already exists in database for this agent, scheme(s) & month
         const checkMonthYear = `${effectiveYear}-${String(effectiveMonth).padStart(2, '0')}`;
-        api.get(`/api/PigmyCollections/CheckMonthlyExists?agentId=${selectedMonthlyAgentId}&monthYear=${checkMonthYear}`)
+        const checkSchemeParam = selectedMonthlySchemeId ? `&schemeId=${selectedMonthlySchemeId}` : '';
+        api.get(`/api/PigmyCollections/CheckMonthlyExists?agentId=${selectedMonthlyAgentId}&monthYear=${checkMonthYear}${checkSchemeParam}`)
           .then(res => {
-            if (res.data?.hasExisting) {
+            const existingSchemeIds: number[] = res.data?.schemeIds || [];
+            const schemeOverlap = selectedMonthlySchemeId
+              ? Boolean(res.data?.hasExisting)
+              : (uploadedDistinctSchemeIds.length > 0 && existingSchemeIds.some(sid => uploadedDistinctSchemeIds.includes(sid)));
+
+            if (res.data?.hasExisting && schemeOverlap) {
               setExistingMonthlyWarning({
                 count: res.data.count,
                 totalAmount: res.data.totalAmount,
                 accountsCount: res.data.accountsCount,
-                monthYear: res.data.monthYear
+                monthYear: res.data.monthYear,
+                schemeNames: res.data.schemeNames
               });
               toast.error(
                 `⚠️ सावधान: या एजंटसाठी ${res.data.monthYear} चे कलेक्शन आधीच सिस्टीममध्ये जमा आहे! दुबार जमा टाळण्यासाठी सेव्ह करणे बंद केले आहे.`,
@@ -1324,6 +1558,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     try {
       const payload = {
         agentId: Number(selectedMonthlyAgentId),
+        pigmySchemeId: selectedMonthlySchemeId ? Number(selectedMonthlySchemeId) : null,
         monthYear: selectedMonth,
         activeBusinessDate: activeBusinessDate || collectionDate,
         paymentMode: monthlyPaymentMode,
@@ -1336,7 +1571,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       toast.success(successMsg, { duration: 6000 });
 
       // Save remittance bridge info for 1-click Agent Day Book transfer
-      const totalAmt = flatEntries.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      const totalAmt = flatEntries.reduce((s, e) => s + (Number(e.collectionAmount) || 0), 0);
       const [y, m] = (selectedMonth || '').split('-');
       const lastDay = (y && m) ? new Date(Number(y), Number(m), 0).getDate() : 30;
       const fDate = (y && m) ? `${y}-${m}-01` : undefined;
@@ -1621,8 +1856,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       {activeTab === 'bulk' && (
         <div className="space-y-3">
           
-          {/* Header Controls: Select Agent & Date */}
-          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-2.5">
+          {/* Header Controls: Select Agent, Scheme & Date */}
+          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-5 gap-2.5">
             
             {/* SELECT AGENT */}
             <div>
@@ -1652,6 +1887,28 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                     </option>
                   );
                 })}
+              </select>
+            </div>
+
+            {/* SELECT SCHEME (Optional Filter) */}
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                पिग्मी योजना (Pigmy Scheme)
+              </label>
+              <select
+                value={selectedBulkSchemeId}
+                onChange={(e) => {
+                  setSelectedBulkSchemeId(e.target.value ? Number(e.target.value) : '');
+                  setBulkAmounts({});
+                }}
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">-- सर्व योजना (All Schemes) --</option>
+                {schemes.filter(s => !s.status || s.status === 'Active').map((s) => (
+                  <option key={`bulk-sch-${s.pigmySchemeID}`} value={s.pigmySchemeID}>
+                    {s.schemeCode ? `${s.schemeCode} - ` : ''}{s.schemeName}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1735,7 +1992,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             </div>
 
             {bulkPaymentMode === 'Bank' && (
-              <div className="md:col-span-4 bg-blue-50/70 p-2 rounded border border-blue-200">
+              <div className="md:col-span-5 bg-blue-50/70 p-2 rounded border border-blue-200">
                 <BankLedgerSelect
                   value={bulkBankLedgerId}
                   onChange={setBulkBankLedgerId}
@@ -1870,6 +2127,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                     <tr className="bg-gray-100 text-gray-700 text-[11px] font-bold uppercase tracking-wider border-b border-gray-200">
                       <th className="py-2 px-2.5 text-center w-10 border-r border-gray-200">#</th>
                       <th className="py-2 px-2.5 border-r border-gray-200">खाते क्रमांक (Account No)</th>
+                      <th className="py-2 px-2.5 border-r border-gray-200">पिग्मी योजना (Scheme)</th>
                       <th className="py-2 px-2.5 border-r border-gray-200">खातेदाराचे नाव (Customer Name)</th>
                       <th className="py-2 px-2.5 border-r border-gray-200">मोबाईल नंबर (Mobile)</th>
                       <th className="py-2 px-2.5 text-right border-r border-gray-200">सध्याची जमा ठेव (Current ₹)</th>
@@ -1901,6 +2159,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                               <div className="text-[10px] text-amber-700 font-bold">जुना: {(acc as any).legacyAccountNumber}</div>
                             )}
                           </td>
+                          <td className="py-1.5 px-2.5 border-r border-gray-200">
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-bold">
+                              {getAccountSchemeName(acc) || '-'}
+                            </span>
+                          </td>
                           <td className="py-1.5 px-2.5 font-bold text-gray-900 border-r border-gray-200">
                             {customerName}
                           </td>
@@ -1929,7 +2192,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   </tbody>
                   <tfoot className="bg-slate-100 border-t-2 border-slate-300 text-xs font-bold text-gray-900">
                     <tr>
-                      <td colSpan={4} className="py-2 px-3 text-right text-gray-800 uppercase tracking-wider border-r border-gray-300">
+                      <td colSpan={5} className="py-2 px-3 text-right text-gray-800 uppercase tracking-wider border-r border-gray-300">
                         एकूण दैनिक संकलन (Total Live Remittance):
                       </td>
                       <td className="py-2 px-2.5 text-right font-mono text-gray-800 border-r border-gray-300">
@@ -2029,8 +2292,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             </div>
           )}
 
-          {/* Header Controls: Select Agent & Month */}
-          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-2.5 items-end">
+          {/* Header Controls: Select Agent, Scheme & Month */}
+          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-5 gap-2.5 items-end">
             
             {/* SELECT AGENT */}
             <div>
@@ -2056,6 +2319,29 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                     </option>
                   );
                 })}
+              </select>
+            </div>
+
+            {/* SELECT SCHEME (Optional for Single-Scheme Upload) */}
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                २. पिग्मी योजना (Scheme)
+              </label>
+              <select
+                value={selectedMonthlySchemeId}
+                onChange={(e) => {
+                  setSelectedMonthlySchemeId(e.target.value ? Number(e.target.value) : '');
+                  setMonthlyImportPreview(null);
+                  setExistingMonthlyWarning(null);
+                }}
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">-- सर्व योजना (All Schemes) --</option>
+                {schemes.filter(s => !s.status || s.status === 'Active').map((s) => (
+                  <option key={`monthly-sch-${s.pigmySchemeID}`} value={s.pigmySchemeID}>
+                    {s.schemeCode ? `${s.schemeCode} - ` : ''}{s.schemeName}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -2126,7 +2412,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             </div>
 
             {monthlyPaymentMode === 'Bank' && (
-              <div className="md:col-span-4 bg-blue-50/70 p-2 rounded border border-blue-200">
+              <div className="md:col-span-5 bg-blue-50/70 p-2 rounded border border-blue-200">
                 <BankLedgerSelect
                   value={monthlyBankLedgerId}
                   onChange={setMonthlyBankLedgerId}
@@ -2184,6 +2470,23 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   </span>
                 </div>
               </div>
+
+              {/* Scheme-Wise Collection Breakup */}
+              {monthlyImportPreview.schemeSummary && monthlyImportPreview.schemeSummary.length > 0 && (
+                <div className="bg-indigo-50/80 border border-indigo-200 rounded p-2.5 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold text-indigo-950">📊 योजनेनिहाय संकलन गोषवारा:</span>
+                  {monthlyImportPreview.schemeSummary.map(ss => (
+                    <span
+                      key={`ms-${ss.schemeId}`}
+                      className="px-2.5 py-0.5 rounded bg-white border border-indigo-300 text-indigo-900 font-semibold shadow-2xs flex items-center gap-1.5"
+                    >
+                      <span>{ss.schemeName}</span>
+                      <span className="text-[10px] text-gray-500">({ss.accountsCount} खाती)</span>
+                      <span className="font-mono font-bold text-emerald-700">₹{ss.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Future Dates Warning Banner if collections beyond business date */}
               {monthlyImportPreview.hasFutureDates && (
@@ -2327,6 +2630,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                                 <span className={isInvalid ? "text-red-700 font-extrabold" : "text-gray-900"}>
                                   {row.pigmyAccountId > 0 ? format14DigitDisplay(row.accountNo) : (row.accountNo || 'अवैध खाते')}
                                 </span>
+                                {row.schemeName && (
+                                  <div className={`text-[10px] font-bold mt-0.5 ${isInvalid ? 'text-red-600' : 'text-indigo-700'}`}>
+                                    {row.schemeName}
+                                  </div>
+                                )}
                                 {row.legacyAccountNumber && (
                                   <div className={`text-[10px] font-bold ${isInvalid ? 'text-red-600' : 'text-amber-700'}`}>
                                     जुना: {row.legacyAccountNumber}

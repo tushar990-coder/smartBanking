@@ -65,6 +65,11 @@ namespace Bhisi.Api.Models
         [ForeignKey("VoucherId")]
         public virtual Voucher? Voucher { get; set; }
 
+        public int? RemittanceDepositId { get; set; }
+
+        [ForeignKey("RemittanceDepositId")]
+        public virtual PigmyAgentCashDeposit? RemittanceDeposit { get; set; }
+
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
     }

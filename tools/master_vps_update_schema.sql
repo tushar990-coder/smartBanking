@@ -7776,6 +7776,76 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- v2.6.41 SCHEMA SYNC: LOAN PENAL SETTINGS, PIGMY REMITTANCE, DEMAND PIGMY & DEPOSIT LEDGERS
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID('dbo.LoanCollections', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('LoanCollections', 'BookedPenaltySettled') IS NULL
+        ALTER TABLE [dbo].[LoanCollections] ADD [BookedPenaltySettled] DECIMAL(18,2) NULL;
+    IF COL_LENGTH('LoanCollections', 'PrevLastPenalPostingDate') IS NULL
+        ALTER TABLE [dbo].[LoanCollections] ADD [PrevLastPenalPostingDate] DATETIME2 NULL;
+END
+GO
+
+IF OBJECT_ID('dbo.LoanRates', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('LoanRates', 'PenalInterestGraceDays') IS NULL
+        ALTER TABLE [dbo].[LoanRates] ADD [PenalInterestGraceDays] INT NOT NULL CONSTRAINT [DF_LoanRates_PenalGraceDays_VPS] DEFAULT 0;
+    IF COL_LENGTH('LoanRates', 'PenalInterestBasis') IS NULL
+        ALTER TABLE [dbo].[LoanRates] ADD [PenalInterestBasis] NVARCHAR(40) NOT NULL CONSTRAINT [DF_LoanRates_PenalBasis_VPS] DEFAULT 'OverduePrincipal';
+    IF COL_LENGTH('LoanRates', 'AllowManualPenalInRecovery') IS NULL
+        ALTER TABLE [dbo].[LoanRates] ADD [AllowManualPenalInRecovery] BIT NOT NULL CONSTRAINT [DF_LoanRates_ManualPenal_VPS] DEFAULT 1;
+END
+GO
+
+IF OBJECT_ID('dbo.LoanAccounts', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('LoanAccounts', 'LastPenalPostingDate') IS NULL
+        ALTER TABLE [dbo].[LoanAccounts] ADD [LastPenalPostingDate] DATETIME2 NULL;
+END
+GO
+
+IF OBJECT_ID('dbo.PigmyCollections', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('PigmyCollections', 'RemittanceDepositId') IS NULL
+        ALTER TABLE [dbo].[PigmyCollections] ADD [RemittanceDepositId] INT NULL;
+    IF COL_LENGTH('PigmyCollections', 'RemittanceDepositId') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmyCollections_RemittanceDepositId' AND object_id = OBJECT_ID('dbo.PigmyCollections'))
+        EXEC(N'CREATE NONCLUSTERED INDEX [IX_PigmyCollections_RemittanceDepositId] ON [dbo].[PigmyCollections] ([RemittanceDepositId]);');
+END
+GO
+
+IF OBJECT_ID('dbo.DemandMemberDetails', 'U') IS NOT NULL
+BEGIN
+    IF COLUMNPROPERTY(OBJECT_ID(N'[dbo].[DemandMemberDetails]'), N'MemberId', 'AllowsNull') = 0
+    BEGIN
+        IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_DemandMemberDetails_Members_MemberId' AND parent_object_id = OBJECT_ID(N'[dbo].[DemandMemberDetails]'))
+            ALTER TABLE [dbo].[DemandMemberDetails] DROP CONSTRAINT [FK_DemandMemberDetails_Members_MemberId];
+        IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_DemandMemberDetails_MemberId' AND object_id = OBJECT_ID(N'[dbo].[DemandMemberDetails]'))
+            DROP INDEX [IX_DemandMemberDetails_MemberId] ON [dbo].[DemandMemberDetails];
+        ALTER TABLE [dbo].[DemandMemberDetails] ALTER COLUMN [MemberId] INT NULL;
+        CREATE NONCLUSTERED INDEX [IX_DemandMemberDetails_MemberId] ON [dbo].[DemandMemberDetails] ([MemberId]);
+        IF OBJECT_ID(N'[dbo].[Members]', N'U') IS NOT NULL
+            ALTER TABLE [dbo].[DemandMemberDetails] WITH CHECK ADD CONSTRAINT [FK_DemandMemberDetails_Members_MemberId] FOREIGN KEY ([MemberId]) REFERENCES [dbo].[Members] ([MemberID]);
+    END
+END
+GO
+
+IF OBJECT_ID('dbo.DemandColumnSettings', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('DemandColumnSettings', 'PigmySchemeID') IS NULL
+        ALTER TABLE [dbo].[DemandColumnSettings] ADD [PigmySchemeID] INT NULL;
+    IF COL_LENGTH('DemandColumnSettings', 'PigmySchemeID') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Pigmy' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+       AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'PIGMY' AND [PigmySchemeID] IS NOT NULL GROUP BY [PigmySchemeID] HAVING COUNT(*) > 1)
+        EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_Pigmy] ON [dbo].[DemandColumnSettings] ([PigmySchemeID]) WHERE [IsActive] = 1 AND [ItemType] = ''PIGMY'' AND [PigmySchemeID] IS NOT NULL;');
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_DepositLedger' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+       AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'DEPOSIT_LEDGER' AND [PrincipalOrDepositLedgerID] IS NOT NULL GROUP BY [PrincipalOrDepositLedgerID] HAVING COUNT(*) > 1)
+        EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_DepositLedger] ON [dbo].[DemandColumnSettings] ([PrincipalOrDepositLedgerID]) WHERE [IsActive] = 1 AND [ItemType] = ''DEPOSIT_LEDGER'' AND [PrincipalOrDepositLedgerID] IS NOT NULL;');
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

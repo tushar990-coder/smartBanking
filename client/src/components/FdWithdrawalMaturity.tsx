@@ -117,6 +117,10 @@ interface FdAccount {
   legacyAccountNumber?: string | null;
   isLegacyAccount?: boolean;
   alreadyPostedInterest?: number;
+  alreadyCapitalizedInterest?: number;
+  totalPostedInterest?: number;
+  interestPostingMethod?: string;
+  interestCompoundingFrequency?: string;
   branchName?: string;
 }
 
@@ -473,16 +477,51 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [customAccruedInterest, setCustomAccruedInterest] = useState<string>('');
   const [customOverdueInterest, setCustomOverdueInterest] = useState<string>('');
   const [customPrematureInterest, setCustomPrematureInterest] = useState<string>('');
-  const [interestDebitMode, setInterestDebitMode] = useState<'Auto' | 'Expense' | 'Provision'>('Expense');
+  const getDefaultDebitModeForAccount = (acc?: FdAccount | null): 'Auto' | 'Expense' => {
+    if (!acc) return 'Expense';
+    const hasVerifiedPostedOrCap =
+      Number(acc.alreadyPostedInterest || 0) > 0 ||
+      Number(acc.alreadyCapitalizedInterest || 0) > 0;
+    return hasVerifiedPostedOrCap ? 'Auto' : 'Expense';
+  };
 
-  const handleResetManualOverride = () => {
+  const [interestDebitMode, setInterestDebitMode] = useState<'Auto' | 'Split' | 'Expense' | 'Provision'>('Expense');
+  const [postedIntrDebitInput, setPostedIntrDebitInput] = useState<string>('');
+  const [postedIntrLedgerId, setPostedIntrLedgerId] = useState<number | ''>('');
+  const [expenseIntrDebitInput, setExpenseIntrDebitInput] = useState<string>('');
+  const [expenseIntrLedgerId, setExpenseIntrLedgerId] = useState<number | ''>('');
+  const [enablePrematureReversal, setEnablePrematureReversal] = useState<boolean>(false);
+  const [prematureReversalInput, setPrematureReversalInput] = useState<string>('');
+  const [reversalCreditLedgerId, setReversalCreditLedgerId] = useState<number | ''>('');
+
+  const handleResetManualOverride = (targetAcc?: FdAccount | null) => {
+    const accRef = targetAcc !== undefined ? targetAcc : selectedAccount;
     setIsManualOverride(false);
     setManualOverrideReason('');
     setCustomAccruedInterest('');
     setCustomOverdueInterest('');
     setCustomPrematureInterest('');
-    setInterestDebitMode('Expense');
+    setInterestDebitMode(getDefaultDebitModeForAccount(accRef));
+    setPostedIntrDebitInput('');
+    setPostedIntrLedgerId('');
+    setExpenseIntrDebitInput('');
+    setExpenseIntrLedgerId('');
+    setEnablePrematureReversal(false);
+    setPrematureReversalInput('');
+    setReversalCreditLedgerId('');
   };
+
+  useEffect(() => {
+    if (!selectedAccount || isPassingMode) return;
+    setInterestDebitMode(getDefaultDebitModeForAccount(selectedAccount));
+    setPostedIntrDebitInput('');
+    setPostedIntrLedgerId('');
+    setExpenseIntrDebitInput('');
+    setExpenseIntrLedgerId('');
+    setEnablePrematureReversal(false);
+    setPrematureReversalInput('');
+    setReversalCreditLedgerId('');
+  }, [selectedAccount?.fdAccountID, isPassingMode]);
 
   useEffect(() => {
     if (isPassingMode && voucherId) {
@@ -1058,7 +1097,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     setSurplusPaymentMode('Cash');
     setSurplusBankLedgerID(0);
     setSurplusChequeNo('');
-    handleResetManualOverride();
+    handleResetManualOverride(selected);
     if (selected) {
       if (paymentMode === 'Transfer' || surplusPaymentMode === 'Transfer') {
         fetchCustomerSavingsAccounts(selected.customerID, selected.memberID);
@@ -1467,6 +1506,15 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   ]);
 
   // Helper to resolve mapped ledgers for selected account scheme
+  const resolveLedgerLabelFromId = (customId: number | '', fallbackName: string) => {
+    if (customId && Number(customId) > 0) {
+      const found = allLedgers.find(l => Number(l.ledgerID ?? l.LedgerID) === Number(customId));
+      const nm = found?.ledgerName ?? found?.LedgerName;
+      if (nm) return `${customId} - ${nm}`;
+    }
+    return fallbackName;
+  };
+
   const getSchemeLedgers = () => {
     if (!selectedAccount) return null;
     const scheme = schemes.find(s => s.fdSchemeID === selectedAccount.fdSchemeID || s.schemeName === selectedAccount.schemeName);
@@ -1476,20 +1524,24 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       || scheme?.fdLiabilityLedgerName 
       || '१२ मुदत ठेव देयता खाते (Fixed Deposit Liability)';
 
-    const interestPayable = selectedAccount.interestPayableLedgerName 
+    const defaultInterestPayable = selectedAccount.interestPayableLedgerName 
       || scheme?.interestPayableLedger?.ledgerName 
       || scheme?.interestPayableLedgerName 
-      || '२३ देणे मुदत ठेव व्याज (Interest Payable)';
+      || '२३ देणे मुदत ठेव व्याज (POSTING_INTR / Interest Payable)';
 
-    const interestExpense = selectedAccount.interestExpenseLedgerName 
+    const defaultInterestExpense = selectedAccount.interestExpenseLedgerName 
       || scheme?.interestExpenseLedger?.ledgerName 
       || scheme?.interestExpenseLedgerName 
-      || '१३२ मुदत ठेवीवरील व्याज (Interest Expense)';
+      || '१३२ मुदत ठेवीवरील व्याज (NAFATOTA DEY VYAJ / Interest Expense)';
 
-    const prematurePenalty = selectedAccount.prematurePenaltyLedgerName 
+    const defaultPrematurePenalty = selectedAccount.prematurePenaltyLedgerName 
       || scheme?.prematurePenaltyLedger?.ledgerName 
       || scheme?.prematurePenaltyLedgerName 
-      || '१३२ मुदत पूर्व कपात दंड उत्पन्न खाते (Premature Clawback)';
+      || defaultInterestExpense;
+
+    const interestPayable = resolveLedgerLabelFromId(postedIntrLedgerId, defaultInterestPayable);
+    const interestExpense = resolveLedgerLabelFromId(expenseIntrLedgerId, defaultInterestExpense);
+    const prematurePenalty = resolveLedgerLabelFromId(reversalCreditLedgerId, defaultPrematurePenalty);
 
     let payoutLedgerName = '५१ हातातील रोख शिल्लक (Cash Account)';
     if (paymentMode === 'Bank') {
@@ -1500,7 +1552,17 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       payoutLedgerName = sAcc ? `७ - बचत ठेव खाते (${sAcc.accountNo})` : '७ - खातेदार बचत ठेव देयता खाते (SB Liability)';
     }
 
-    return { fdLiability, interestPayable, interestExpense, prematurePenalty, cashLedger: payoutLedgerName, scheme };
+    return {
+      fdLiability,
+      interestPayable,
+      interestExpense,
+      prematurePenalty,
+      defaultInterestPayable,
+      defaultInterestExpense,
+      defaultPrematurePenalty,
+      cashLedger: payoutLedgerName,
+      scheme
+    };
   };
 
   // Helper to calculate total FD payout for the current action
@@ -1534,62 +1596,111 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         ? Math.max(0, parseFloat(customPrematureInterest) || 0)
         : systemRecalcInt;
 
-      const alreadyAccrued = interestDebitMode === 'Provision'
-        ? Math.max(Number(prematurePreview?.alreadyAccruedInterest ?? selectedAccount.alreadyPostedInterest ?? 0), Number(selectedAccount.legacyAccruedInt ?? 0))
-        : 0;
       const isPeriodic = ledgers?.scheme?.interestType === 'MIS' || ledgers?.scheme?.interestType === 'Monthly Interest';
-      if (isPeriodic && alreadyAccrued > effRecalcInt) {
-        return Math.max(0, principal - (alreadyAccrued - effRecalcInt));
+      if (isPeriodic) {
+        const cap = Number(prematurePreview?.alreadyCapitalizedInterest ?? selectedAccount.alreadyCapitalizedInterest ?? 0);
+        const misPaid = Number(prematurePreview?.alreadyAccruedInterest ?? 0);
+        const misAlready = misPaid + cap;
+        if (misAlready > effRecalcInt) {
+          return Math.max(0, principal - (misAlready - effRecalcInt));
+        }
+        return principal + Math.max(0, effRecalcInt - misAlready);
       }
       return principal + effRecalcInt;
     }
     return 0;
   };
 
-  // Resolves 1-to-1 with Backend FdAccountsController how interest is split between Interest Payable (Provision) and Interest Expense
+  // Resolves 1-to-1 with Backend FdInterestSettlementHelper how interest is split across Capitalized (On Interest),
+  // POSTING_INTR (Provision), NAFATOTA DEY VYAJ (Expense), and Premature Reversal (Clawback)
   const resolveInterestAccountingSplit = (
     acc: FdAccount,
     currentInterest: number,
     isPremature: boolean
   ) => {
-    const safeInt = Math.max(0, Number.isFinite(currentInterest) ? currentInterest : 0);
-    const verifiedProvision = isPremature
-      ? Number(prematurePreview?.alreadyAccruedInterest ?? acc.alreadyPostedInterest ?? 0)
-      : Number(acc.alreadyPostedInterest ?? 0);
-    const legacyProvisionFallback = Math.max(verifiedProvision, Number(acc.legacyAccruedInt ?? 0));
+    const r2 = (n: number) => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
+    const safeInt = r2(Math.max(0, Number.isFinite(currentInterest) ? currentInterest : 0));
+    const verifiedProvision = r2(
+      isPremature
+        ? Number(prematurePreview?.verifiedProvisionInterest ?? acc.alreadyPostedInterest ?? 0)
+        : Number(acc.alreadyPostedInterest ?? 0)
+    );
+    const verifiedCapitalized = r2(
+      isPremature
+        ? Number(prematurePreview?.alreadyCapitalizedInterest ?? acc.alreadyCapitalizedInterest ?? 0)
+        : Number(acc.alreadyCapitalizedInterest ?? 0)
+    );
+    const legacyProvisionFallback = r2(
+      Math.max(
+        verifiedProvision,
+        Number(isPremature ? (prematurePreview?.legacyAccruedInterest ?? acc.legacyAccruedInt ?? 0) : (acc.legacyAccruedInt ?? 0))
+      )
+    );
+    const totalPostedAvailable = r2(legacyProvisionFallback + verifiedCapitalized);
+    const accountScheme = schemes.find(s => s.fdSchemeID === acc.fdSchemeID || s.schemeName === acc.schemeName);
+    const isPeriodic = accountScheme?.interestType === 'MIS' || accountScheme?.interestType === 'Monthly Interest';
 
-    if (interestDebitMode !== 'Provision') {
+    const hasExplicitInputs =
+      interestDebitMode === 'Split' ||
+      postedIntrDebitInput !== '' ||
+      expenseIntrDebitInput !== '' ||
+      (isPremature && (enablePrematureReversal || prematureReversalInput !== ''));
+
+    if (isPremature && isPeriodic) {
+      const misPaid = r2(Number(prematurePreview?.alreadyAccruedInterest ?? 0));
+      const misAlready = r2(misPaid + verifiedCapitalized);
+      const baseClawback = r2(Math.max(0, misAlready - safeInt));
+      const extraPosted = postedIntrDebitInput !== '' ? r2(Math.max(0, parseFloat(postedIntrDebitInput) || 0)) : 0;
+      const baseUnpaid = r2(Math.max(0, safeInt - misAlready));
+      const expensePortion = expenseIntrDebitInput !== '' ? r2(Math.max(0, parseFloat(expenseIntrDebitInput) || 0)) : baseUnpaid;
+      const extraRev = enablePrematureReversal && prematureReversalInput !== ''
+        ? r2(Math.max(0, parseFloat(prematureReversalInput) || 0))
+        : extraPosted;
       return {
         verifiedProvision,
+        verifiedCapitalized,
+        clearedCapitalized: verifiedCapitalized,
         legacyProvisionFallback,
-        payablePortion: 0,
-        expensePortion: safeInt,
-        clawbackAmount: 0,
-        effectiveMode: 'Expense' as const
+        totalPostedAvailable,
+        payablePortion: extraPosted > 0 ? extraPosted : Math.max(0, extraRev - baseClawback),
+        expensePortion,
+        clawbackAmount: r2(baseClawback + (extraPosted > 0 ? extraPosted : Math.max(0, extraRev - baseClawback))),
+        effectiveMode: (misAlready > 0 || extraPosted > 0 ? 'Provision' : 'Expense') as 'Expense' | 'Provision' | 'Split'
       };
     }
 
-    const baseProvision = legacyProvisionFallback;
-
-    if (isPremature) {
-      const isPeriodic = accountScheme?.interestType === 'MIS' || accountScheme?.interestType === 'Monthly Interest';
-      if (isPeriodic) {
+    if (!hasExplicitInputs) {
+      if (interestDebitMode === 'Expense') {
+        const clearedCapitalized = isPremature ? verifiedCapitalized : Math.min(safeInt, verifiedCapitalized);
         return {
           verifiedProvision,
+          verifiedCapitalized,
+          clearedCapitalized,
           legacyProvisionFallback,
+          totalPostedAvailable,
           payablePortion: 0,
-          expensePortion: Math.max(0, safeInt - baseProvision),
-          clawbackAmount: Math.max(0, baseProvision - safeInt),
-          effectiveMode: (baseProvision > 0 ? 'Provision' : 'Expense') as 'Expense' | 'Provision'
+          expensePortion: r2(Math.max(0, safeInt - clearedCapitalized)),
+          clawbackAmount: isPremature ? r2(Math.max(0, clearedCapitalized - safeInt)) : 0,
+          effectiveMode: 'Expense' as const
         };
       }
 
-      if (isManualOverride) {
-        const payablePortion = Math.min(safeInt, baseProvision);
-        const expensePortion = Math.max(0, safeInt - payablePortion);
+      const provBase =
+        interestDebitMode === 'Provision'
+          ? legacyProvisionFallback
+          : (interestDebitMode === 'Auto' ? verifiedProvision : 0);
+
+      if (!isPremature) {
+        const clearedCapitalized = Math.min(safeInt, verifiedCapitalized);
+        const rem = Math.max(0, safeInt - clearedCapitalized);
+        const payablePortion = provBase > 0 ? Math.min(rem, provBase) : 0;
+        const expensePortion = r2(Math.max(0, rem - payablePortion));
         return {
           verifiedProvision,
+          verifiedCapitalized,
+          clearedCapitalized,
           legacyProvisionFallback,
+          totalPostedAvailable,
           payablePortion,
           expensePortion,
           clawbackAmount: 0,
@@ -1597,25 +1708,108 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         };
       }
 
+      const clearedCapitalized = verifiedCapitalized;
+      const payablePortion = provBase;
+      const alreadyEffective = r2(clearedCapitalized + payablePortion);
+      const expensePortion = r2(Math.max(0, safeInt - alreadyEffective));
+      const clawbackAmount = r2(Math.max(0, alreadyEffective - safeInt));
       return {
         verifiedProvision,
+        verifiedCapitalized,
+        clearedCapitalized,
         legacyProvisionFallback,
-        payablePortion: baseProvision,
-        expensePortion: Math.max(0, safeInt - baseProvision),
-        clawbackAmount: Math.max(0, baseProvision - safeInt),
-        effectiveMode: (baseProvision > 0 ? 'Provision' : 'Expense') as 'Expense' | 'Provision'
+        totalPostedAvailable,
+        payablePortion,
+        expensePortion,
+        clawbackAmount,
+        effectiveMode: (payablePortion > 0 ? 'Provision' : 'Expense') as 'Expense' | 'Provision'
       };
     }
 
-    const payablePortion = Math.min(safeInt, baseProvision);
-    const expensePortion = Math.max(0, safeInt - payablePortion);
+    // Explicit Split / Dual-Head (POSTING_INTR + NAFATOTA DEY VYAJ + Premature Reversal)
+    if (!isPremature) {
+      const clearedCapitalized = Math.min(safeInt, verifiedCapitalized);
+      const rem = r2(Math.max(0, safeInt - clearedCapitalized));
+      let payablePortion = 0;
+      let expensePortion = rem;
+
+      if (postedIntrDebitInput !== '' && expenseIntrDebitInput !== '') {
+        payablePortion = r2(Math.max(0, parseFloat(postedIntrDebitInput) || 0));
+        expensePortion = r2(Math.max(0, parseFloat(expenseIntrDebitInput) || 0));
+      } else if (postedIntrDebitInput !== '') {
+        payablePortion = Math.min(rem, r2(Math.max(0, parseFloat(postedIntrDebitInput) || 0)));
+        expensePortion = r2(Math.max(0, rem - payablePortion));
+      } else if (expenseIntrDebitInput !== '') {
+        expensePortion = Math.min(rem, r2(Math.max(0, parseFloat(expenseIntrDebitInput) || 0)));
+        payablePortion = r2(Math.max(0, rem - expensePortion));
+      } else {
+        payablePortion = Math.min(rem, legacyProvisionFallback);
+        expensePortion = r2(Math.max(0, rem - payablePortion));
+      }
+
+      return {
+        verifiedProvision,
+        verifiedCapitalized,
+        clearedCapitalized,
+        legacyProvisionFallback,
+        totalPostedAvailable,
+        payablePortion,
+        expensePortion,
+        clawbackAmount: 0,
+        effectiveMode: 'Split' as const
+      };
+    }
+
+    // Premature Explicit Split / Reversal
+    const clearedCapitalized = verifiedCapitalized;
+    const hasPostedStr = postedIntrDebitInput !== '';
+    const hasExpenseStr = expenseIntrDebitInput !== '';
+    const hasRevStr = enablePrematureReversal && prematureReversalInput !== '';
+
+    let payablePortion = 0;
+    let expensePortion = 0;
+    let clawbackAmount = 0;
+
+    if (hasPostedStr) {
+      payablePortion = r2(Math.max(0, parseFloat(postedIntrDebitInput) || 0));
+      const revTarget = hasRevStr ? r2(Math.max(0, parseFloat(prematureReversalInput) || 0)) : 0;
+      expensePortion = hasExpenseStr
+        ? r2(Math.max(0, parseFloat(expenseIntrDebitInput) || 0))
+        : r2(Math.max(0, safeInt + revTarget - clearedCapitalized - payablePortion));
+      clawbackAmount = r2(Math.max(0, clearedCapitalized + payablePortion + expensePortion - safeInt));
+    } else if (hasRevStr) {
+      const targetRev = r2(Math.max(0, parseFloat(prematureReversalInput) || 0));
+      expensePortion = hasExpenseStr
+        ? r2(Math.max(0, parseFloat(expenseIntrDebitInput) || 0))
+        : r2(Math.max(0, safeInt - clearedCapitalized));
+      const neededTotalDr = safeInt + targetRev;
+      let candPosted = r2(neededTotalDr - clearedCapitalized - expensePortion);
+      if (candPosted < 0 && !hasExpenseStr) {
+        expensePortion = r2(Math.max(0, neededTotalDr - clearedCapitalized));
+        candPosted = r2(Math.max(0, neededTotalDr - clearedCapitalized - expensePortion));
+      }
+      payablePortion = Math.max(0, candPosted);
+      clawbackAmount = r2(Math.max(0, clearedCapitalized + payablePortion + expensePortion - safeInt));
+    } else if (hasExpenseStr) {
+      expensePortion = r2(Math.max(0, parseFloat(expenseIntrDebitInput) || 0));
+      payablePortion = r2(Math.max(0, Math.max(legacyProvisionFallback, safeInt - clearedCapitalized - expensePortion)));
+      clawbackAmount = r2(Math.max(0, clearedCapitalized + payablePortion + expensePortion - safeInt));
+    } else {
+      payablePortion = legacyProvisionFallback;
+      expensePortion = r2(Math.max(0, safeInt - clearedCapitalized - payablePortion));
+      clawbackAmount = r2(Math.max(0, clearedCapitalized + payablePortion - safeInt));
+    }
+
     return {
       verifiedProvision,
+      verifiedCapitalized,
+      clearedCapitalized,
       legacyProvisionFallback,
+      totalPostedAvailable,
       payablePortion,
       expensePortion,
-      clawbackAmount: 0,
-      effectiveMode: (payablePortion > 0 ? 'Provision' : 'Expense') as 'Expense' | 'Provision'
+      clawbackAmount,
+      effectiveMode: 'Split' as const
     };
   };
 
@@ -1737,6 +1931,43 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       }
     }
 
+    const submitPrincipal = selectedAccount.depositAmount;
+    const submitTotalMat = selectedAccount.maturityAmount && selectedAccount.maturityAmount > submitPrincipal
+      ? selectedAccount.maturityAmount
+      : (submitPrincipal + (selectedAccount.legacyAccruedInt || 0));
+    const submitSysAccrued = Math.max(0, submitTotalMat - submitPrincipal);
+    const submitActualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
+    const submitLedgers = getSchemeLedgers();
+    const submitRes = resolvePrematureRateDetails(selectedAccount, submitLedgers?.scheme, submitActualDays);
+    const submitPremRate = prematurePreview?.prematureRate ?? submitRes.prematureRate;
+    const submitSysRecalc = prematurePreview?.recalculatedInterest ?? Math.round((submitPrincipal * submitPremRate * submitActualDays) / 36500);
+    const submitEffInterest = actionType === 'PrematureClose'
+      ? (customPrematureInterest !== '' ? Math.max(0, parseFloat(customPrematureInterest) || 0) : (isManualOverride && customAccruedInterest !== '' ? Math.max(0, parseFloat(customAccruedInterest) || 0) : submitSysRecalc))
+      : (isManualOverride && customAccruedInterest !== '' ? Math.max(0, parseFloat(customAccruedInterest) || 0) : submitSysAccrued);
+    const submitSplit = resolveInterestAccountingSplit(selectedAccount, submitEffInterest, actionType === 'PrematureClose');
+    const effectiveDebitModeToSend: 'Auto' | 'Split' | 'Expense' | 'Provision' =
+      (interestDebitMode === 'Split' ||
+       postedIntrDebitInput !== '' ||
+       expenseIntrDebitInput !== '' ||
+       (actionType === 'PrematureClose' && (enablePrematureReversal || prematureReversalInput !== '')))
+        ? 'Split'
+        : interestDebitMode;
+
+    if (effectiveDebitModeToSend === 'Split') {
+      const drSum = submitSplit.clearedCapitalized + submitSplit.payablePortion + submitSplit.expensePortion;
+      if (actionType === 'PrematureClose') {
+        if (drSum + 0.05 < submitEffInterest) {
+          setError(`⚠️ नावे केलेले एकूण व्याज (₹${drSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) हे मुदतपूर्व व्याजापेक्षा (₹${submitEffInterest.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) कमी आहे.`);
+          return;
+        }
+      } else {
+        if (Math.abs(drSum - submitEffInterest) > 0.05) {
+          setError(`⚠️ POSTING_INTR आणि नफा-तोटा/खर्च व्याज यांची एकूण नावे विभागणी (₹${drSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) ही देय व्याजाशी (₹${submitEffInterest.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) जुळत नाही.`);
+          return;
+        }
+      }
+    }
+
     setLoading(true);
     try {
       const basePayload: any = {
@@ -1765,7 +1996,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           : null,
         customOverdueInterest: (isManualOverride || customOverdueInterest !== '') && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
         manualOverrideReason: (isManualOverride || customPrematureInterest !== '' || customAccruedInterest !== '' || customOverdueInterest !== '') ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null,
-        interestDebitMode: interestDebitMode === 'Provision' ? 'Provision' : 'Expense'
+        interestDebitMode: effectiveDebitModeToSend,
+        postedInterestDebitAmount: effectiveDebitModeToSend === 'Split' ? submitSplit.payablePortion : null,
+        postedInterestDebitLedgerID: postedIntrLedgerId && Number(postedIntrLedgerId) > 0 ? Number(postedIntrLedgerId) : null,
+        expenseInterestDebitAmount: effectiveDebitModeToSend === 'Split' ? submitSplit.expensePortion : null,
+        expenseInterestDebitLedgerID: expenseIntrLedgerId && Number(expenseIntrLedgerId) > 0 ? Number(expenseIntrLedgerId) : null,
+        reversePostedInterestAmount: actionType === 'PrematureClose' && effectiveDebitModeToSend === 'Split' ? submitSplit.clawbackAmount : null,
+        reversalCreditLedgerID: actionType === 'PrematureClose' && reversalCreditLedgerId && Number(reversalCreditLedgerId) > 0 ? Number(reversalCreditLedgerId) : null
       };
 
       if (actionType === 'MaturityClose') {
@@ -1858,7 +2095,11 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
             : null,
           customOverdueInterest: (isManualOverride || customOverdueInterest !== '') && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
           manualOverrideReason: (isManualOverride || customAccruedInterest !== '' || customPrematureInterest !== '' || customOverdueInterest !== '') ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null,
-          interestDebitMode: interestDebitMode === 'Provision' ? 'Provision' : 'Expense',
+          interestDebitMode: effectiveDebitModeToSend,
+          postedInterestDebitAmount: effectiveDebitModeToSend === 'Split' ? submitSplit.payablePortion : null,
+          postedInterestDebitLedgerID: postedIntrLedgerId && Number(postedIntrLedgerId) > 0 ? Number(postedIntrLedgerId) : null,
+          expenseInterestDebitAmount: effectiveDebitModeToSend === 'Split' ? submitSplit.expensePortion : null,
+          expenseInterestDebitLedgerID: expenseIntrLedgerId && Number(expenseIntrLedgerId) > 0 ? Number(expenseIntrLedgerId) : null,
           // Auto-populated & Editable Renewal Interest Rate
           customInterestRate:
             isRenewalRateManuallyEdited && renewalInterestRateInput.trim() !== '' && Number.isFinite(parsedEditedRate) && parsedEditedRate > 0
@@ -1976,6 +2217,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         : systemOverdueInt;
 
       const split = resolveInterestAccountingSplit(selectedAccount, accruedInt, false);
+      const clearedCapitalized = split.clearedCapitalized;
       const payableAmount = split.payablePortion;
       const expenseAmount = split.expensePortion;
 
@@ -1984,8 +2226,10 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       entries.push({
         drCr: 'Dr',
         ledgerName: ledgers.fdLiability,
-        note: 'मुदत ठेव मुद्दल खाते कमी करणे (Principal Liability Cleared)',
-        amount: principal,
+        note: clearedCapitalized > 0
+          ? `मुद्दल ₹${principal.toLocaleString('en-IN')} + व्याजवर व्याज (On Interest) कॅपिटलाइझ्ड ₹${clearedCapitalized.toLocaleString('en-IN')} निरंक`
+          : 'मुदत ठेव मुद्दल खाते कमी करणे (Principal Liability Cleared)',
+        amount: principal + clearedCapitalized,
         isLockedPrincipal: true
       });
 
@@ -1993,7 +2237,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestPayable,
-          note: 'पूर्वी तरतूद झालेले देणे व्याज चुकता करणे (Provisioned Interest Payable Cleared)',
+          note: 'आधी पोस्ट/तरतूद केलेले व्याज (POSTING_INTR) नावे करणे',
           amount: payableAmount
         });
       }
@@ -2002,7 +2246,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       if (totalExpense > 0 || isManualOverride) {
         const noteParts: string[] = [];
         if (expenseAmount > 0) {
-          noteParts.push('चालू कालावधीतील मुदत ठेव व्याज खर्च');
+          noteParts.push('चालू खर्च / नफा-तोटा देय व्याज (NAFATOTA DEY VYAJ)');
         }
         if (effOverdueInt > 0) {
           noteParts.push(`ओव्हरड्यू व्याज (@ ${effectiveOverdueRate}%)`);
@@ -2034,32 +2278,41 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const prematureRate = prematurePreview?.prematureRate ?? resolution.prematureRate;
       const systemRecalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
 
-      const recalculatedInterest = isManualOverride && customPrematureInterest !== ''
+      const recalculatedInterest = (isManualOverride || customPrematureInterest !== '') && customPrematureInterest !== ''
         ? Math.max(0, parseFloat(customPrematureInterest) || 0)
         : systemRecalcInt;
 
       const split = resolveInterestAccountingSplit(selectedAccount, recalculatedInterest, true);
       const isPeriodicPayout = ledgers.scheme?.interestType === 'MIS' || ledgers.scheme?.interestType === 'Monthly Interest';
+      const clearedCapitalized = split.clearedCapitalized;
       const payableAmount = split.payablePortion;
       const expenseAmount = split.expensePortion;
       const clawback = split.clawbackAmount;
-      const netPayout = isPeriodicPayout && clawback > 0
-        ? Math.max(0, principal - clawback)
+      const misAlready = isPeriodicPayout
+        ? Number(prematurePreview?.alreadyAccruedInterest ?? 0) + clearedCapitalized
+        : 0;
+      const misPrincipalClawback = isPeriodicPayout ? Math.max(0, misAlready - recalculatedInterest) : 0;
+      const netPayout = isPeriodicPayout
+        ? (misPrincipalClawback > 0
+            ? Math.max(0, principal - misPrincipalClawback)
+            : principal + Math.max(0, recalculatedInterest - misAlready))
         : (principal + recalculatedInterest);
 
       entries.push({
         drCr: 'Dr',
         ledgerName: ledgers.fdLiability,
-        note: 'मुदत ठेव मुद्दल खाते निरंक करणे (Principal Liability Cleared)',
-        amount: principal,
+        note: clearedCapitalized > 0
+          ? `मुद्दल ₹${principal.toLocaleString('en-IN')} + व्याजवर व्याज (On Interest) कॅपिटलाइझ्ड ₹${clearedCapitalized.toLocaleString('en-IN')} निरंक`
+          : 'मुदत ठेव मुद्दल खाते निरंक करणे (Principal Liability Cleared)',
+        amount: principal + clearedCapitalized,
         isLockedPrincipal: true
       });
 
-      if (!isPeriodicPayout && payableAmount > 0) {
+      if (payableAmount > 0) {
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestPayable,
-          note: 'आधी तरतूद केलेले देय व्याज निरंक करणे (Accrued Interest Payable Debited)',
+          note: 'आधी पोस्ट/तरतूद केलेले व्याज (POSTING_INTR) नावे करणे',
           amount: payableAmount
         });
       }
@@ -2068,7 +2321,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestExpense,
-          note: 'चालू कालावधीचे पुनर्गणना केलेले मुदत ठेव व्याज खर्च (Interest Expense)' + (isManualOverride && customPrematureInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
+          note: 'चालू कालावधीचे / नफा-तोटा देय व्याज (NAFATOTA DEY VYAJ / Interest Expense)' + (isManualOverride && customPrematureInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
           amount: expenseAmount,
           isEditable: isManualOverride,
           editKey: 'premature'
@@ -2087,9 +2340,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         entries.push({
           drCr: 'Cr',
           ledgerName: ledgers.prematurePenalty,
-          note: isPeriodicPayout 
+          note: isPeriodicPayout && misPrincipalClawback >= clawback
             ? 'मासिक मिळालेल्या जास्तीच्या व्याजाची मुद्दलातून कपात (Clawback Deduction)'
-            : 'जास्तीच्या व्याज तरतुदीची नफा-तोट्यात जमा (Excess Provision Reversal to P&L)',
+            : 'जास्तीच्या पोस्टिंग व्याजाची रिव्हर्सल जमा (POSTING_INTR / Capitalized Reversal to P&L / Expense)',
           amount: clawback
         });
       }
@@ -2117,6 +2370,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         : systemOverdueInt;
 
       const split = resolveInterestAccountingSplit(selectedAccount, accruedInt, false);
+      const clearedCapitalized = split.clearedCapitalized;
       const payableAmount = split.payablePortion;
       const expenseAmount = split.expensePortion;
 
@@ -2147,14 +2401,24 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         });
 
         // Voucher 2: व्याज परतावा (Payment / JV)
-        if (interestPayout > 0 || isManualOverride) {
+        if (interestPayout > 0 || isManualOverride || clearedCapitalized > 0) {
           const v2Group = `व्हाउचर २ (${paymentMode === 'Transfer' ? 'कीर्द - JV' : 'पेमेंट - Payment'}): व्याज परतावा (${paymentMode === 'Cash' ? 'रोख' : paymentMode === 'Bank' ? 'बँक' : 'बचत'})`;
+
+          if (clearedCapitalized > 0) {
+            entries.push({
+              drCr: 'Dr',
+              ledgerName: ledgers.fdLiability,
+              note: 'पूर्वी व्याजवर व्याज (On Interest) कॅपिटलाइझ्ड रक्कम समायोजित करणे',
+              amount: clearedCapitalized,
+              voucherGroup: v2Group
+            });
+          }
 
           if (payableAmount > 0) {
             entries.push({
               drCr: 'Dr',
               ledgerName: ledgers.interestPayable,
-              note: 'पूर्वी तरतूद झालेले देणे व्याज चुकता करणे (Provisioned Interest Payable Cleared)',
+              note: 'आधी पोस्ट/तरतूद केलेले व्याज (POSTING_INTR) नावे करणे',
               amount: payableAmount,
               voucherGroup: v2Group
             });
@@ -2164,7 +2428,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           if (totalExpense > 0 || isManualOverride) {
             const noteParts: string[] = [];
             if (expenseAmount > 0) {
-              noteParts.push('चालू कालावधीतील व्याज खर्च');
+              noteParts.push('चालू कालावधीतील / नफा-तोटा देय व्याज (NAFATOTA DEY VYAJ)');
             }
             if (effOverdueInt > 0) {
               noteParts.push(`ओव्हरड्यू व्याज (@ ${effectiveOverdueRate}%)`);
@@ -2196,8 +2460,10 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.fdLiability,
-          note: 'जुने मुदत ठेव खाते बंद करणे (Old FD Liability Cleared)',
-          amount: principal,
+          note: clearedCapitalized > 0
+            ? `जुने मुद्दल ₹${principal.toLocaleString('en-IN')} + व्याजवर व्याज (On Interest) कॅपिटलाइझ्ड ₹${clearedCapitalized.toLocaleString('en-IN')} निरंक`
+            : 'जुने मुदत ठेव खाते बंद करणे (Old FD Liability Cleared)',
+          amount: principal + clearedCapitalized,
           isLockedPrincipal: true
         });
 
@@ -2205,7 +2471,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           entries.push({
             drCr: 'Dr',
             ledgerName: ledgers.interestPayable,
-            note: 'पूर्वी तरतूद झालेले देणे व्याज मुद्दलात पुनर्गठित करणे (Provisioned Interest Capitalized to New FD)',
+            note: 'आधी पोस्ट/तरतूद केलेले व्याज (POSTING_INTR) नावे करणे',
             amount: payableAmount
           });
         }
@@ -2214,7 +2480,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         if (totalExpense > 0 || isManualOverride) {
           const noteParts: string[] = [];
           if (expenseAmount > 0) {
-            noteParts.push('चालू कालावधीतील व्याज खर्च नवीन मुद्दलात पुनर्गठित');
+            noteParts.push('चालू कालावधीतील / नफा-तोटा देय व्याज (NAFATOTA DEY VYAJ) नवीन मुद्दलात');
           }
           if (effOverdueInt > 0) {
             noteParts.push(`ओव्हरड्यू व्याज (@ ${effectiveOverdueRate}%)`);
@@ -2241,6 +2507,19 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
     return entries;
   };
+
+  const settlementLedgerOptions = allLedgers
+    .filter(l => (l.isActive ?? l.IsActive ?? true))
+    .map(l => {
+      const lid = Number(l.ledgerID ?? l.LedgerID ?? 0);
+      const lName = l.ledgerName ?? l.LedgerName ?? `Ledger #${lid}`;
+      const lType = l.accountType ?? l.AccountType ?? '';
+      return {
+        value: String(lid),
+        label: `${lid} - ${lName}`,
+        subLabel: lType || undefined
+      };
+    });
 
   const labelClass = 'block text-xs font-bold text-gray-700 mb-1';
   const inputClass = 'w-full text-xs border border-gray-300 rounded-sm px-2.5 py-1.5 focus:outline-none focus:border-primary bg-white';
@@ -3739,50 +4018,95 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                             <dd className="font-mono font-semibold text-slate-900">{fmt(principal)}</dd>
                           </div>
 
-                          {/* Row 2: Editable Interest with Posting Audit Split & Debit Head Selector */}
+                          {/* Row 1B: Posted / Capitalized Posting Interest Audit (Visible for On Interest & Provision) */}
+                          {(() => {
+                            const previewSplit = resolveInterestAccountingSplit(acc, interestPayable, actionType === 'PrematureClose');
+                            const hasCap = previewSplit.verifiedCapitalized > 0;
+                            const hasProv = previewSplit.legacyProvisionFallback > 0;
+                            const isOnInterestMethod = (acc.interestPostingMethod || '').toLowerCase().includes('interest');
+                            if (!hasCap && !hasProv && !isOnInterestMethod) return null;
+                            return (
+                              <div className="py-1.5 bg-indigo-50/60 -mx-2 px-2 rounded-sm border border-indigo-200 my-1">
+                                <div className="flex justify-between items-center text-[11px]">
+                                  <dt className="text-indigo-900 font-bold">
+                                    आधी पोस्ट केलेले व्याज (Posting Intr Audit):
+                                  </dt>
+                                  <dd className="font-mono font-bold text-indigo-900">
+                                    ₹ {fmt(previewSplit.totalPostedAvailable)}
+                                  </dd>
+                                </div>
+                                <div className="text-[10px] text-indigo-800 mt-0.5 space-y-0.5">
+                                  {(hasCap || isOnInterestMethod) && (
+                                    <div className="flex justify-between">
+                                      <span>• व्याजवर व्याज (On Interest) कॅपिटलाइझ्ड:</span>
+                                      <span className="font-mono font-semibold">₹ {fmt(previewSplit.verifiedCapitalized)}</span>
+                                    </div>
+                                  )}
+                                  {hasProv && (
+                                    <div className="flex justify-between">
+                                      <span>• देणे व्याज तरतूद (POSTING_INTR):</span>
+                                      <span className="font-mono font-semibold">₹ {fmt(previewSplit.legacyProvisionFallback)}</span>
+                                    </div>
+                                  )}
+                                  {hasCap && (
+                                    <div className="text-[9.5px] text-indigo-700">
+                                      * कॅपिटलाइझ्ड व्याज FD दायित्वातून (₹{fmt(principal + previewSplit.clearedCapitalized)}) क्लिअर केले जाईल.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Row 2: Editable Interest with Posting Audit Split & Dual-Head Debit Selector */}
                           {(() => {
                             const currentInt = actionType === 'PrematureClose'
                               ? (customPrematureInterest !== '' ? (parseFloat(customPrematureInterest) || 0) : systemRecalcInt)
                               : (customAccruedInterest !== '' ? (parseFloat(customAccruedInterest) || 0) : systemAccruedInt);
                             const split = resolveInterestAccountingSplit(acc, currentInt, actionType === 'PrematureClose');
+                            const clearedCap = split.clearedCapitalized;
                             const payablePortion = split.payablePortion;
                             const expensePortion = split.expensePortion;
-                            const hasAnyProvisionOption = split.legacyProvisionFallback > 0;
-                            const isExpenseSelected = interestDebitMode === 'Expense' || (interestDebitMode === 'Auto' && split.effectiveMode === 'Expense');
-                            const isProvisionSelected = interestDebitMode === 'Provision' || (interestDebitMode === 'Auto' && split.effectiveMode === 'Provision');
+                            const isAutoSelected = interestDebitMode === 'Auto';
+                            const isSplitSelected = interestDebitMode === 'Split';
+                            const isExpenseSelected = interestDebitMode === 'Expense';
+                            const isProvisionSelected = interestDebitMode === 'Provision';
                             const ledgersPreview = getSchemeLedgers();
+
+                            const ledgerOptions = settlementLedgerOptions;
 
                             let rowLabel = 'करारानुसार साचलेले व्याज:';
                             let badgeContent = null;
 
-                            if (payablePortion === 0) {
-                              rowLabel = actionType === 'PrematureClose'
-                                ? 'मुदतठेवीवरील व्याज (चालू खर्च):'
-                                : 'मुदतठेवीवरील व्याज (चालू खर्च):';
+                            if (payablePortion === 0 && clearedCap === 0) {
+                              rowLabel = 'मुदतठेवीवरील व्याज (चालू खर्च):';
                               badgeContent = (
                                 <div className="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-1">
                                   थेट <span className="font-bold">{ledgersPreview?.interestExpense || 'मुदतठेवीवरील व्याज'}</span> खात्याला नावे (₹{fmt(expensePortion)})
                                 </div>
                               );
-                            } else if (expensePortion === 0 && currentInt > 0) {
-                              rowLabel = 'देणे व्याज (साचलेली तरतूद):';
+                            } else if (expensePortion === 0 && payablePortion > 0 && clearedCap === 0) {
+                              rowLabel = 'पोस्टिंग / देणे व्याज (POSTING_INTR):';
                               badgeContent = (
                                 <div className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-1">
-                                  पूर्वी तरतूद झालेले <span className="font-bold">{ledgersPreview?.interestPayable || 'देणे व्याज'}</span> खात्याला नावे (₹{fmt(payablePortion)})
+                                  <span className="font-bold">{ledgersPreview?.interestPayable || 'POSTING_INTR'}</span> खात्याला नावे (₹{fmt(payablePortion)})
                                 </div>
                               );
                             } else {
                               rowLabel = actionType === 'PrematureClose'
-                                ? 'पुनर्गणना सवलतीचे व्याज:'
+                                ? 'पुनर्गणना / एकूण व्याज:'
                                 : 'करारानुसार एकूण व्याज:';
                               badgeContent = (
                                 <div className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 mt-1 flex flex-wrap gap-x-2">
-                                  <span>देणे व्याज: ₹{fmt(payablePortion)} (तरतूद कमी)</span>
-                                  <span>•</span>
-                                  <span>चालू खर्च: ₹{fmt(expensePortion)} (नफा-तोटा)</span>
+                                  {clearedCap > 0 && <span>कॅपिटलाइझ्ड: ₹{fmt(clearedCap)} (FD दायित्व)</span>}
+                                  {payablePortion > 0 && <span>• POSTING_INTR: ₹{fmt(payablePortion)}</span>}
+                                  {expensePortion > 0 && <span>• नफा-तोटा/खर्च: ₹{fmt(expensePortion)}</span>}
                                 </div>
                               );
                             }
+
+                            const remainingAfterCapForSplit = Math.max(0, Number((currentInt - clearedCap).toFixed(2)));
+                            const showDualInputs = isSplitSelected || isProvisionSelected || postedIntrDebitInput !== '' || expenseIntrDebitInput !== '';
 
                             return (
                               <div className="py-1.5">
@@ -3831,56 +4155,232 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   </dd>
                                 </div>
 
-                                {/* व्याज नावे खाते (Interest Debit Head) Selector */}
-                                <div className="mt-1.5 flex items-center justify-between gap-1.5">
+                                {/* व्याज नावे खाते (Interest Debit Head) Selector — Always supports POSTING_INTR, NAFATOTA DEY VYAJ, Split, Auto */}
+                                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5">
                                   <span className="text-[10px] font-semibold text-slate-500 shrink-0">व्याज नावे लेजर:</span>
-                                  <div className="inline-flex rounded-sm border border-slate-300 overflow-hidden bg-white">
+                                  <div className="inline-flex flex-wrap rounded-sm border border-slate-300 overflow-hidden bg-white">
                                     <button
                                       type="button"
-                                      onClick={() => setInterestDebitMode('Expense')}
+                                      onClick={() => {
+                                        setInterestDebitMode('Auto');
+                                        setPostedIntrDebitInput('');
+                                        setExpenseIntrDebitInput('');
+                                      }}
                                       className={`px-2 py-0.5 text-[10px] font-bold transition cursor-pointer ${
+                                        isAutoSelected
+                                          ? 'bg-indigo-600 text-white'
+                                          : 'bg-white text-slate-600 hover:bg-slate-50'
+                                      }`}
+                                      title="आधीचे पोस्टिंग/कॅपिटलाइझ्ड व्याज आपोआप समायोजित करा"
+                                    >
+                                      स्वयंचलित
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setInterestDebitMode('Split')}
+                                      className={`px-2 py-0.5 text-[10px] font-bold border-l border-slate-300 transition cursor-pointer ${
+                                        isSplitSelected
+                                          ? 'bg-blue-600 text-white'
+                                          : 'bg-white text-slate-600 hover:bg-slate-50'
+                                      }`}
+                                      title="POSTING_INTR आणि नफा-तोटा देय व्याज दोन्ही खात्यांवर विभागून नावे करा"
+                                    >
+                                      विभागणी (POSTING + नफा-तोटा)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setInterestDebitMode('Expense');
+                                        setPostedIntrDebitInput('');
+                                        setExpenseIntrDebitInput('');
+                                      }}
+                                      className={`px-2 py-0.5 text-[10px] font-bold border-l border-slate-300 transition cursor-pointer ${
                                         isExpenseSelected
                                           ? 'bg-primary text-white'
                                           : 'bg-white text-slate-600 hover:bg-slate-50'
                                       }`}
-                                      title="संपूर्ण व्याज थेट मुदतठेवीवरील व्याज (Interest Expense) खात्याला नावे करा"
+                                      title="नफा-तोटा देय व्याज / चालू खर्च (NAFATOTA DEY VYAJ) खात्याला नावे करा"
                                     >
-                                      मुदतठेवीवरील व्याज (खर्च)
+                                      नफा-तोटा / खर्च
                                     </button>
                                     <button
                                       type="button"
-                                      disabled={!hasAnyProvisionOption}
-                                      onClick={() => setInterestDebitMode('Provision')}
-                                      className={`px-2 py-0.5 text-[10px] font-bold border-l border-slate-300 transition ${
-                                        !hasAnyProvisionOption
-                                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                          : isProvisionSelected
-                                            ? 'bg-emerald-600 text-white cursor-pointer'
-                                            : 'bg-white text-slate-600 hover:bg-slate-50 cursor-pointer'
+                                      onClick={() => {
+                                        setInterestDebitMode('Provision');
+                                        setPostedIntrDebitInput('');
+                                        setExpenseIntrDebitInput('');
+                                      }}
+                                      className={`px-2 py-0.5 text-[10px] font-bold border-l border-slate-300 transition cursor-pointer ${
+                                        isProvisionSelected
+                                          ? 'bg-emerald-600 text-white'
+                                          : 'bg-white text-slate-600 hover:bg-slate-50'
                                       }`}
-                                      title={
-                                        hasAnyProvisionOption
-                                          ? `उपलब्ध तरतूद: ₹${fmt(split.verifiedProvision > 0 ? split.verifiedProvision : split.legacyProvisionFallback)} (देणे व्याज तरतूद)`
-                                          : 'या खात्यावर कोणतीही देणे व्याज तरतूद उपलब्ध नाही'
-                                      }
+                                      title="POSTING_INTR / देणे व्याज तरतूद खात्याला नावे करा (मॅन्युअल व सिस्टम तरतूद)"
                                     >
-                                      देणे व्याज तरतूद{split.verifiedProvision > 0 ? ` (₹${fmt(split.verifiedProvision)})` : ''}
+                                      POSTING_INTR{split.legacyProvisionFallback > 0 ? ` (₹${fmt(split.legacyProvisionFallback)})` : ''}
                                     </button>
                                   </div>
                                 </div>
+
+                                {/* Explicit Dual-Head Inputs + Custom GL Selectors for POSTING_INTR & NAFATOTA DEY VYAJ */}
+                                {(showDualInputs || isExpenseSelected || isAutoSelected) && (
+                                  <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded-sm space-y-2">
+                                    {(isSplitSelected || isProvisionSelected || payablePortion > 0 || postedIntrDebitInput !== '') && (
+                                      <div className="space-y-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <label className="text-[10px] font-bold text-emerald-900">
+                                            १) POSTING_INTR नावे (आधी पोस्ट/तरतूद व्याज Dr):
+                                          </label>
+                                          {isSplitSelected ? (
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-[10px] font-mono text-slate-500">₹</span>
+                                              <input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={postedIntrDebitInput !== '' ? postedIntrDebitInput : payablePortion.toFixed(2)}
+                                                onChange={(e) => {
+                                                  const v = e.target.value;
+                                                  setInterestDebitMode('Split');
+                                                  setPostedIntrDebitInput(v);
+                                                  if (actionType !== 'PrematureClose' && v !== '') {
+                                                    const num = Math.max(0, parseFloat(v) || 0);
+                                                    const autoExp = Math.max(0, Number((remainingAfterCapForSplit - num).toFixed(2)));
+                                                    setExpenseIntrDebitInput(autoExp.toFixed(2));
+                                                  }
+                                                }}
+                                                className="w-24 h-6 text-right font-mono font-bold text-[11px] bg-white border border-emerald-300 rounded-sm px-1.5 text-slate-900"
+                                              />
+                                            </div>
+                                          ) : (
+                                            <span className="font-mono font-bold text-[11px] text-emerald-800">₹ {fmt(payablePortion)}</span>
+                                          )}
+                                        </div>
+                                        <SearchableSelect
+                                          options={[{ value: '', label: `डीफॉल्ट: ${ledgersPreview?.defaultInterestPayable || 'POSTING_INTR'}` }, ...ledgerOptions]}
+                                          value={postedIntrLedgerId ? String(postedIntrLedgerId) : ''}
+                                          onChange={(e) => setPostedIntrLedgerId(e.target.value ? Number(e.target.value) : '')}
+                                          placeholder="POSTING_INTR लेजर निवडा..."
+                                          searchPlaceholder="लेजर शोधा..."
+                                          className="text-[11px]"
+                                        />
+                                      </div>
+                                    )}
+
+                                    {(isSplitSelected || isExpenseSelected || expensePortion > 0 || expenseIntrDebitInput !== '') && (
+                                      <div className="space-y-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <label className="text-[10px] font-bold text-amber-900">
+                                            २) नफा-तोटा देय व्याज / चालू खर्च (NAFATOTA DEY VYAJ Dr):
+                                          </label>
+                                          {isSplitSelected ? (
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-[10px] font-mono text-slate-500">₹</span>
+                                              <input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={expenseIntrDebitInput !== '' ? expenseIntrDebitInput : expensePortion.toFixed(2)}
+                                                onChange={(e) => {
+                                                  const v = e.target.value;
+                                                  setInterestDebitMode('Split');
+                                                  setExpenseIntrDebitInput(v);
+                                                  if (actionType !== 'PrematureClose' && v !== '') {
+                                                    const num = Math.max(0, parseFloat(v) || 0);
+                                                    const autoPost = Math.max(0, Number((remainingAfterCapForSplit - num).toFixed(2)));
+                                                    setPostedIntrDebitInput(autoPost.toFixed(2));
+                                                  }
+                                                }}
+                                                className="w-24 h-6 text-right font-mono font-bold text-[11px] bg-white border border-amber-300 rounded-sm px-1.5 text-slate-900"
+                                              />
+                                            </div>
+                                          ) : (
+                                            <span className="font-mono font-bold text-[11px] text-amber-800">₹ {fmt(expensePortion)}</span>
+                                          )}
+                                        </div>
+                                        <SearchableSelect
+                                          options={[{ value: '', label: `डीफॉल्ट: ${ledgersPreview?.defaultInterestExpense || 'NAFATOTA DEY VYAJ'}` }, ...ledgerOptions]}
+                                          value={expenseIntrLedgerId ? String(expenseIntrLedgerId) : ''}
+                                          onChange={(e) => setExpenseIntrLedgerId(e.target.value ? Number(e.target.value) : '')}
+                                          placeholder="नफा-तोटा देय व्याज / खर्च लेजर निवडा..."
+                                          searchPlaceholder="लेजर शोधा..."
+                                          className="text-[11px]"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
 
                                 {badgeContent}
                               </div>
                             );
                           })()}
 
-                          {/* Row 3: Clawback (Premature only) */}
-                          {actionType === 'PrematureClose' && clawback > 0 && (
-                            <div className="flex justify-between items-center py-1.5">
-                              <dt className="text-slate-600">जादा व्याज कपात (Clawback)</dt>
-                              <dd className="font-mono font-semibold text-red-700">- {fmt(clawback)}</dd>
-                            </div>
-                          )}
+                          {/* Row 3: Premature Posted Interest Reversal (POSTING_INTR Reverse Cr / Clawback) */}
+                          {actionType === 'PrematureClose' && (() => {
+                            const ledgersPreview = getSchemeLedgers();
+                            const ledgerOptions = settlementLedgerOptions;
+                            const showRevControls = clawback > 0 || enablePrematureReversal || prematureReversalInput !== '';
+                            return (
+                              <div className="py-1.5 space-y-1.5">
+                                <div className="flex justify-between items-center gap-2">
+                                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-red-800 select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={showRevControls}
+                                      onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setEnablePrematureReversal(checked);
+                                        if (!checked) {
+                                          setPrematureReversalInput('');
+                                          setReversalCreditLedgerId('');
+                                        }
+                                      }}
+                                      className="rounded border-red-400 text-red-600 focus:ring-red-500"
+                                    />
+                                    <span>POSTING_INTR रिव्हर्सल / जादा व्याज कपात (Cr)</span>
+                                  </label>
+                                  <span className={`font-mono font-bold text-xs ${clawback > 0 ? 'text-red-700' : 'text-slate-400'}`}>
+                                    {clawback > 0 ? `- ₹${fmt(clawback)}` : '₹ 0.00'}
+                                  </span>
+                                </div>
+
+                                {showRevControls && (
+                                  <div className="p-2 bg-red-50/70 border border-red-200 rounded-sm space-y-1.5">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[10px] font-semibold text-red-900">
+                                        रिव्हर्स करावयाची रक्कम (Cr ₹):
+                                      </span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={enablePrematureReversal && prematureReversalInput !== '' ? prematureReversalInput : clawback.toFixed(2)}
+                                        onChange={(e) => {
+                                          setEnablePrematureReversal(true);
+                                          setPrematureReversalInput(e.target.value);
+                                        }}
+                                        className="w-24 h-6 text-right font-mono font-bold text-[11px] bg-white border border-red-300 rounded-sm px-1.5 text-red-900"
+                                      />
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] font-semibold text-red-900 mb-0.5">
+                                        रिव्हर्सल जमा लेजर (Cr — परत खर्च / नफा-तोटा / दंड खाते):
+                                      </div>
+                                      <SearchableSelect
+                                        options={[{ value: '', label: `डीफॉल्ट: ${ledgersPreview?.defaultPrematurePenalty || 'व्याज खर्च परत / दंड खाते'}` }, ...ledgerOptions]}
+                                        value={reversalCreditLedgerId ? String(reversalCreditLedgerId) : ''}
+                                        onChange={(e) => setReversalCreditLedgerId(e.target.value ? Number(e.target.value) : '')}
+                                        placeholder="रिव्हर्सल क्रेडिट लेजर निवडा..."
+                                        searchPlaceholder="लेजर शोधा..."
+                                        className="text-[11px]"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Row 4: Editable Overdue Interest (if applicable) */}
                           {(isOverdue || effOverdue > 0) && (
@@ -3934,7 +4434,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                             </span>
                             <button
                               type="button"
-                              onClick={handleResetManualOverride}
+                              onClick={() => handleResetManualOverride()}
                               className="text-amber-900 underline font-bold hover:text-amber-950 cursor-pointer text-[10px]"
                             >
                               सर्व पूर्ववत करा

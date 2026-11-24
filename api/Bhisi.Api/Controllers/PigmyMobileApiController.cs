@@ -1595,6 +1595,7 @@ namespace Bhisi.Api.Controllers
                     ReceivableInterestCollected = receivablePaid,
                     InterestCollected = regularInterestPaid,
                     PenaltyInterestCollected = overduePaid,
+                    BookedPenaltySettled = overduePaid,
                     CreatedByUserID = targetAgentId,
                     Remarks = $"डोअरस्टेप एजंट वसुली: {agent?.AgentName ?? targetAgentId.ToString()}" + 
                               (string.IsNullOrWhiteSpace(request.Remarks) ? "" : $" - {request.Remarks}"),

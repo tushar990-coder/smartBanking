@@ -178,54 +178,20 @@ namespace Bhisi.Api.Helpers
 
             decimal totalRegular = Math.Round(Math.Max(0m, loan.InterestBalance) + Math.Max(0m, accruedRegular), 2, MidpointRounding.AwayFromZero);
 
-            var validUnpaid = schedules
-                .Where(s => !string.Equals(s.Status, "Paid", StringComparison.OrdinalIgnoreCase)
-                            && !(loan.IsOpeningBalance && s.DueDate.Date <= loan.OpeningDate.Date))
-                .OrderBy(s => s.DueDate)
-                .ToList();
-
-            var overdueScheds = validUnpaid.Where(s => s.DueDate.Date <= target).ToList();
-            decimal overduePrincipal = overdueScheds.Sum(s => s.PrincipalAmount);
-            if (effectiveMaturity.HasValue && effectiveMaturity.Value.Date <= target && loan.PrincipalBalance > overduePrincipal)
-            {
-                overduePrincipal = loan.PrincipalBalance;
-            }
-            if (overduePrincipal > loan.PrincipalBalance)
-            {
-                overduePrincipal = loan.PrincipalBalance;
-            }
-            if (overduePrincipal <= 0m && !validUnpaid.Any() && effectiveMaturity.HasValue && effectiveMaturity.Value.Date <= target)
-            {
-                overduePrincipal = loan.PrincipalBalance;
-            }
-
-            int totalInstallments = Math.Max(loan.NoOfInstallments, schedules.Count);
-            int overdueInstallments = overdueScheds.Count > 0
-                ? overdueScheds.Count
-                : (effectiveMaturity.HasValue && effectiveMaturity.Value.Date <= target && loan.PrincipalBalance > 0
-                    ? Math.Max(1, totalInstallments)
-                    : 0);
-
-            DateTime? overdueSinceDate = overdueScheds.Any()
-                ? overdueScheds.Min(s => s.DueDate.Date)
-                : (effectiveMaturity.HasValue && effectiveMaturity.Value.Date <= target && loan.PrincipalBalance > 0
-                    ? effectiveMaturity.Value.Date
-                    : null);
-            int overdueDays = overdueSinceDate.HasValue ? Math.Max(0, (target - overdueSinceDate.Value).Days) : 0;
-
-            decimal postedPenal = Math.Max(0m, loan.OverdueInterestBalance);
-            decimal penalBase = overduePrincipal > 0 ? overduePrincipal : (overdueDays > 0 ? loan.PrincipalBalance : 0m);
-            decimal estPenal = (postedPenal <= 0m && penalRate > 0 && overdueDays > 0 && penalBase > 0)
-                ? Math.Round((penalBase * penalRate * overdueDays) / 36500m, 0, MidpointRounding.AwayFromZero)
-                : 0m;
-            decimal totalPenal = postedPenal > 0m ? postedPenal : estPenal;
+            var penalSnapshot = LoanPenalInterestHelper.ComputePenalSnapshot(
+                loan,
+                loan.LoanRate,
+                schedules,
+                target,
+                effectiveMaturityOverride: effectiveMaturity,
+                skipIfPreBookedExists: true);
 
             return new LoanDuesSnapshot
             {
                 PrincipalBalance = loan.PrincipalBalance,
                 PurePrincipalBalance = loan.PurePrincipalBalance,
                 CapitalizedInterestAmount = loan.CapitalizedInterestAmount,
-                OverduePrincipal = Math.Round(Math.Max(0m, overduePrincipal), 2, MidpointRounding.AwayFromZero),
+                OverduePrincipal = penalSnapshot.OverduePrincipal,
                 PostedInterestBalance = Math.Round(Math.Max(0m, loan.InterestBalance), 2, MidpointRounding.AwayFromZero),
                 AccruedRegularInterest = Math.Round(Math.Max(0m, accruedRegular), 2, MidpointRounding.AwayFromZero),
                 TotalRegularInterestDue = totalRegular,
@@ -234,13 +200,13 @@ namespace Bhisi.Api.Helpers
                 EffectiveRate = rate,
                 PenalRate = penalRate,
                 IsFlatMethod = isFlatMethod,
-                PostedPenalInterestBalance = postedPenal,
-                EstimatedAccruedPenalInterest = estPenal,
-                TotalPenalInterestDue = totalPenal,
-                OverdueInstallmentsCount = overdueInstallments,
-                TotalInstallments = totalInstallments,
-                OverdueSinceDate = overdueSinceDate,
-                OverdueDays = overdueDays
+                PostedPenalInterestBalance = penalSnapshot.PostedPenalInterestBalance,
+                EstimatedAccruedPenalInterest = penalSnapshot.EstimatedAccruedPenalInterest,
+                TotalPenalInterestDue = penalSnapshot.TotalPenalInterestDue,
+                OverdueInstallmentsCount = penalSnapshot.OverdueInstallmentsCount,
+                TotalInstallments = penalSnapshot.TotalInstallments,
+                OverdueSinceDate = penalSnapshot.OverdueSinceDate,
+                OverdueDays = penalSnapshot.OverdueDays
             };
         }
         public static int? ResolveLoanCustomerId(LoanAccount? loan)

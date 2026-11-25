@@ -39,6 +39,9 @@ interface InvestmentAccount {
   accruedInterest: number;
   receivedInterest: number;
   interestReceivable: number;
+  reversedPostingInterest?: number;
+  clawbackAmount?: number;
+  reversalMode?: string | null;
   bookValue: number;
   status: string;
 }
@@ -262,6 +265,10 @@ const InvestmentReports: React.FC = () => {
         'व्याजदर': a.investmentType === 'Share' ? 'लाभांश' : `${a.interestRate}%`,
         'मुदतपूर्ती तारीख': a.investmentType === 'Share' ? 'कायमस्वरूपी' : a.maturityDate?.split('T')[0],
         'संचित व्याज ₹': a.accruedInterest || 0,
+        'प्राप्त व्याज ₹': a.receivedInterest || 0,
+        'येणे व्याज ₹': a.status === 'Active' ? (a.interestReceivable || 0) : 0,
+        'रिव्हर्स पोस्टिंग व्याज ₹': a.reversedPostingInterest || 0,
+        'व्याज कपात (Clawback) ₹': a.clawbackAmount || 0,
         'पुस्तकी मूल्य ₹': a.bookValue,
         'स्थिती': a.status
       }));
@@ -768,13 +775,30 @@ const InvestmentReports: React.FC = () => {
                 {filteredAccounts.map((a, idx) => (
                   <tr key={a.investmentAccountID} className="hover:bg-green-50/50 border-b border-slate-300">
                     <td className="border border-slate-900 py-1.5 px-2 text-center font-bold">{idx + 1}</td>
-                    <td className="border border-slate-900 py-1.5 px-2 text-center font-mono font-bold text-primary">{a.investmentNo}</td>
+                    <td className="border border-slate-900 py-1.5 px-2 text-center font-mono font-bold text-primary">
+                      {a.investmentNo}
+                      {a.status !== 'Active' && (
+                        <div className="text-[9px] font-sans font-bold text-slate-600">{a.status}</div>
+                      )}
+                    </td>
                     <td className="border border-slate-900 py-1.5 px-3 font-semibold">{a.institutionName}</td>
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold cbs-num-cell">₹{formatCurrency(a.principalAmount)}</td>
                     <td className="border border-slate-900 py-1.5 px-1 text-center font-mono text-emerald-800 font-bold">{a.interestRate > 0 ? `${a.interestRate}%` : 'लाभांश'}</td>
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-emerald-800 cbs-num-cell">₹{formatCurrency(a.accruedInterest)}</td>
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-blue-800 cbs-num-cell">₹{formatCurrency(a.receivedInterest)}</td>
-                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-amber-800 cbs-num-cell">₹{formatCurrency(a.interestReceivable)}</td>
+                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-amber-800 cbs-num-cell">
+                      <div>₹{formatCurrency(a.status === 'Active' ? a.interestReceivable : 0)}</div>
+                      {(a.reversedPostingInterest || 0) > 0 && (
+                        <div className="text-[9px] font-sans font-bold text-rose-700">
+                          रिव्हर्सल: ₹{formatCurrency(a.reversedPostingInterest || 0)}
+                        </div>
+                      )}
+                      {(a.clawbackAmount || 0) > 0 && (
+                        <div className="text-[9px] font-sans font-bold text-orange-700">
+                          कपात: ₹{formatCurrency(a.clawbackAmount || 0)}
+                        </div>
+                      )}
+                    </td>
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-primary cbs-num-cell">₹{formatCurrency(a.bookValue)}</td>
                   </tr>
                 ))}
@@ -786,7 +810,7 @@ const InvestmentReports: React.FC = () => {
                   <td className="border border-slate-900"></td>
                   <td className="border border-slate-900 py-2 px-2 text-right font-mono text-emerald-900 cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.accruedInterest, 0))}</td>
                   <td className="border border-slate-900 py-2 px-2 text-right font-mono text-blue-900 cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.receivedInterest, 0))}</td>
-                  <td className="border border-slate-900 py-2 px-2 text-right font-mono text-amber-900 cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.interestReceivable, 0))}</td>
+                  <td className="border border-slate-900 py-2 px-2 text-right font-mono text-amber-900 cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.status === 'Active' ? a.interestReceivable : 0), 0))}</td>
                   <td className="border border-slate-900 py-2 px-2 text-right font-mono text-primary cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.bookValue, 0))}</td>
                 </tr>
               </tfoot>

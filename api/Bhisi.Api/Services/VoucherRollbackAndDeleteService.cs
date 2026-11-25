@@ -2969,14 +2969,10 @@ namespace Bhisi.Api.Services
                 {
                     var invAcc = await _context.InvestmentAccounts.FindAsync(invId);
                     if (invAcc == null) continue;
-                    decimal accrued = await _context.InvestmentInterestAccruals
-                        .Where(a => a.InvestmentAccountID == invId)
-                        .SumAsync(a => (decimal?)a.InterestAmount) ?? 0m;
-                    decimal received = await _context.InvestmentInterestReceipts
-                        .Where(r => r.InvestmentAccountID == invId)
-                        .SumAsync(r => (decimal?)(r.GrossAmount > 0m ? r.GrossAmount : r.ReceivedAmount)) ?? 0m;
-                    decimal outstanding = Math.Max(0m, invAcc.AccruedInterestTillMigration + accrued - received);
-                    invAcc.BookValue = invAcc.Status == "Active" ? Math.Round(invAcc.PrincipalAmount + outstanding, 2, MidpointRounding.AwayFromZero) : 0m;
+                    var summary = await InvestmentInterestSettlementHelper.ResolveVerifiedInterestSummaryAsync(_context, invId, invAcc);
+                    invAcc.BookValue = invAcc.Status == "Active"
+                        ? Math.Round(invAcc.PrincipalAmount + summary.OutstandingReceivable, 2, MidpointRounding.AwayFromZero)
+                        : 0m;
                     _context.Entry(invAcc).State = EntityState.Modified;
                 }
                 await _context.SaveChangesAsync();
@@ -3010,14 +3006,8 @@ namespace Bhisi.Api.Services
                     if (oldInv != null)
                     {
                         oldInv.Status = "Active";
-                        decimal accruedOnOld = await _context.InvestmentInterestAccruals
-                            .Where(a => a.InvestmentAccountID == oldInv.InvestmentAccountID)
-                            .SumAsync(a => (decimal?)a.InterestAmount) ?? 0m;
-                        decimal receivedOnOld = await _context.InvestmentInterestReceipts
-                            .Where(r => r.InvestmentAccountID == oldInv.InvestmentAccountID)
-                            .SumAsync(r => (decimal?)(r.GrossAmount > 0m ? r.GrossAmount : r.ReceivedAmount)) ?? 0m;
-                        decimal outReceivable = Math.Max(0m, oldInv.AccruedInterestTillMigration + accruedOnOld - receivedOnOld);
-                        oldInv.BookValue = Math.Round(oldInv.PrincipalAmount + outReceivable, 2, MidpointRounding.AwayFromZero);
+                        var oldSummary = await InvestmentInterestSettlementHelper.ResolveVerifiedInterestSummaryAsync(_context, oldInv.InvestmentAccountID, oldInv);
+                        oldInv.BookValue = Math.Round(oldInv.PrincipalAmount + oldSummary.OutstandingReceivable, 2, MidpointRounding.AwayFromZero);
                         _context.Entry(oldInv).State = EntityState.Modified;
                     }
 

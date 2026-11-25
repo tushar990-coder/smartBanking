@@ -55,6 +55,11 @@ interface InvestmentAccountItem {
   receivedInterest?: number;
   interestReceivable?: number;
   lastAccrualDate?: string | null;
+  pendingAccruedInterest?: number;
+  pendingAccrualCount?: number;
+  reversedPostingInterest?: number;
+  clawbackAmount?: number;
+  reversalMode?: string | null;
   bookValue: number;
   status: string;
 }
@@ -123,6 +128,19 @@ const InvestmentMaturityClaim: React.FC = () => {
   const [isPreInterestManual, setIsPreInterestManual] = useState<boolean>(false);
   const [prePenalty, setPrePenalty] = useState<number>(0);
   const [preTds, setPreTds] = useState<number>(0);
+  const [enablePostingReversal, setEnablePostingReversal] = useState<boolean>(false);
+  const [reversalMode, setReversalMode] = useState<'ReceivableReversal' | 'PayoutDeduction'>('ReceivableReversal');
+  const [reversePostingAmount, setReversePostingAmount] = useState<number>(0);
+  const [reversePostingInput, setReversePostingInput] = useState<string>('');
+  const [isReverseAmtManual, setIsReverseAmtManual] = useState<boolean>(false);
+  const [reversalDebitLedgerID, setReversalDebitLedgerID] = useState<number>(0);
+  const [postingCreditLedgerID, setPostingCreditLedgerID] = useState<number>(0);
+
+  const syncReversePostingAmount = (amount: number, explicitText?: string) => {
+    const clean = Math.max(0, round2(amount || 0));
+    setReversePostingAmount(clean);
+    setReversePostingInput(explicitText !== undefined ? explicitText : clean > 0 ? String(clean) : '');
+  };
 
   // Mode 3: Renewal state
   const [renewalType, setRenewalType] = useState<'PrincipalOnly' | 'PrincipalAndInterest'>('PrincipalOnly');
@@ -219,6 +237,11 @@ const InvestmentMaturityClaim: React.FC = () => {
 
     const matchedScheme = schemes.find((s) => Number(s.schemeID) === Number(acc.schemeID));
     const defaultTdsLedger = Number(acc.tdsLedgerID || matchedScheme?.tdsLedgerID || 0);
+    const branchMap = voucherMappings.find(
+      (m: any) =>
+        Number(m.branchID || m.BranchID) === Number(acc.branchID) &&
+        (!m.investmentType || m.investmentType === acc.investmentType)
+    );
 
     const matDateClean = acc.maturityDate ? acc.maturityDate.split('T')[0] : '';
     const isBeforeMaturity = Boolean(matDateClean && effectiveDate < matDateClean);
@@ -233,12 +256,25 @@ const InvestmentMaturityClaim: React.FC = () => {
     const schemePremRate = Number(acc.prematureWithdrawalRate ?? matchedScheme?.prematureWithdrawalRate ?? 0);
     const defaultPremRate = schemePremRate > 0 ? schemePremRate : Math.max(0, round2((acc.interestRate || 0) - 1));
     const daysHeld = calcElapsedDays(acc.investmentDate, effectiveDate);
+    const initPreInterest = computeAutoPrematureInterest(principal, defaultPremRate, daysHeld);
     setPrePrincipalPaid(principal);
     setPreRevisedRate(defaultPremRate);
-    setPreInterestPaid(computeAutoPrematureInterest(principal, defaultPremRate, daysHeld));
+    setPreInterestPaid(initPreInterest);
     setIsPreInterestManual(false);
     setPrePenalty(0);
     setPreTds(0);
+
+    const standingRecv = round2(acc.interestReceivable || 0);
+    const autoExcessRev = round2(Math.max(0, standingRecv - Math.min(initPreInterest, standingRecv)));
+    const defaultRevDrId = Number(acc.interestIncomeLedgerID || branchMap?.interestIncomeLedgerID || 0);
+    const defaultPostCrId = Number(acc.interestReceivableLedgerID || branchMap?.interestReceivableLedgerID || 0);
+
+    setEnablePostingReversal(autoExcessRev > 0);
+    setReversalMode('ReceivableReversal');
+    syncReversePostingAmount(autoExcessRev);
+    setIsReverseAmtManual(false);
+    setReversalDebitLedgerID(defaultRevDrId);
+    setPostingCreditLedgerID(defaultPostCrId);
 
     // Renewal defaults
     const targetScheme = matchedScheme || schemes[0] || null;
@@ -281,6 +317,16 @@ const InvestmentMaturityClaim: React.FC = () => {
     const days = calcElapsedDays(selectedAccount.investmentDate, txnDate);
     setPreInterestPaid(computeAutoPrematureInterest(selectedAccount.principalAmount || 0, preRevisedRate, days));
   }, [selectedAccount, txnDate, preRevisedRate, isPreInterestManual]);
+
+  // Keep auto-reversal amount synced when in ReceivableReversal mode and not manually edited
+  useEffect(() => {
+    if (!selectedAccount || !enablePostingReversal || reversalMode !== 'ReceivableReversal' || isReverseAmtManual) {
+      return;
+    }
+    const standing = round2(selectedAccount.interestReceivable || 0);
+    const autoExcess = round2(Math.max(0, standing - Math.min(preInterestPaid || 0, standing)));
+    syncReversePostingAmount(autoExcess);
+  }, [selectedAccount, preInterestPaid, enablePostingReversal, reversalMode, isReverseAmtManual]);
 
   // Recalculate renewal amount when renewalType or renTds changes (unless manually edited)
   useEffect(() => {
@@ -336,6 +382,16 @@ const InvestmentMaturityClaim: React.FC = () => {
       receivableId: Number(selectedAccount.interestReceivableLedgerID || branchMap?.interestReceivableLedgerID || 0)
     };
   }, [selectedAccount, voucherMappings]);
+
+  useEffect(() => {
+    if (!selectedAccount) return;
+    if (reversalDebitLedgerID === 0 && resolvedOldGlIds.incomeId > 0) {
+      setReversalDebitLedgerID(resolvedOldGlIds.incomeId);
+    }
+    if (postingCreditLedgerID === 0 && resolvedOldGlIds.receivableId > 0) {
+      setPostingCreditLedgerID(resolvedOldGlIds.receivableId);
+    }
+  }, [selectedAccount, resolvedOldGlIds.incomeId, resolvedOldGlIds.receivableId, reversalDebitLedgerID, postingCreditLedgerID]);
 
   // Renewal live maturity preview
   const renewalPreview = useMemo(() => {
@@ -458,6 +514,9 @@ const InvestmentMaturityClaim: React.FC = () => {
         receivableCleared,
         accruedReversed,
         interestClawback: 0,
+        payoutDeductionAmount: 0,
+        manualPostingReversal: 0,
+        sysExtraRev: 0,
         totalReversalDr: accruedReversed,
         freshIncome,
         penalty: 0,
@@ -473,13 +532,62 @@ const InvestmentMaturityClaim: React.FC = () => {
       const grossInterest = round2(Math.max(0, preInterestPaid || 0));
       const penalty = round2(Math.max(0, prePenalty || 0));
       const tds = round2(Math.max(0, preTds || 0));
-      const netReceipt = round2(principalIn + grossInterest - penalty - tds);
+      const principalClawback = round2(Math.max(0, originalPrincipal - principalIn));
+      const effRevDrId = reversalDebitLedgerID > 0 ? reversalDebitLedgerID : resolvedOldGlIds.incomeId;
+      const effPostCrId = postingCreditLedgerID > 0 ? postingCreditLedgerID : resolvedOldGlIds.receivableId;
 
-      const receivableCleared = Math.min(grossInterest, standingReceivable);
-      const accruedReversed = round2(Math.max(0, standingReceivable - receivableCleared));
-      const totalReceivableCr = round2(receivableCleared + accruedReversed);
-      const freshIncome = round2(Math.max(0, grossInterest - receivableCleared));
-      const interestClawback = round2(Math.max(0, originalPrincipal - principalIn));
+      let receivableCleared = 0;
+      let accruedReversed = 0;
+      let schemeReceivableCr = 0;
+      let postingCreditAmt = 0;
+      let freshIncome = 0;
+      let payoutDeductionAmount = 0;
+      let manualPostingReversal = 0;
+      let sysExtraRev = 0;
+      let interestClawback = principalClawback;
+      let netReceipt = round2(principalIn + grossInterest - penalty - tds);
+
+      if (!enablePostingReversal) {
+        receivableCleared = Math.min(grossInterest, standingReceivable);
+        accruedReversed = round2(Math.max(0, standingReceivable - receivableCleared));
+        schemeReceivableCr = round2(receivableCleared + accruedReversed);
+        freshIncome = round2(Math.max(0, grossInterest - receivableCleared));
+      } else if (reversalMode === 'ReceivableReversal') {
+        const manualRev = round2(Math.max(0, reversePostingAmount || 0));
+        manualPostingReversal = manualRev;
+        const targetsCustomPostingLedger =
+          (postingCreditLedgerID > 0 && postingCreditLedgerID !== resolvedOldGlIds.receivableId) ||
+          resolvedOldGlIds.receivableId <= 0;
+
+        if (targetsCustomPostingLedger) {
+          receivableCleared = Math.min(grossInterest, standingReceivable);
+          sysExtraRev = round2(Math.max(0, standingReceivable - receivableCleared));
+          schemeReceivableCr = round2(receivableCleared + sysExtraRev);
+          freshIncome = round2(Math.max(0, grossInterest - receivableCleared));
+          postingCreditAmt = manualRev;
+        } else {
+          const remainingRecvForInterest = round2(Math.max(0, standingReceivable - manualRev));
+          receivableCleared = Math.min(grossInterest, remainingRecvForInterest);
+          sysExtraRev = round2(Math.max(0, standingReceivable - manualRev - receivableCleared));
+          freshIncome = round2(Math.max(0, grossInterest - receivableCleared));
+          schemeReceivableCr = round2(manualRev + receivableCleared + sysExtraRev);
+          postingCreditAmt = 0;
+        }
+        accruedReversed = round2(manualRev + sysExtraRev);
+      } else {
+        // PayoutDeduction mode: bank deducts previously credited/posted interest from net bank payout
+        const payoutDed = round2(Math.max(0, reversePostingAmount || 0));
+        payoutDeductionAmount = payoutDed;
+        manualPostingReversal = payoutDed;
+        netReceipt = round2(principalIn + grossInterest - payoutDed - penalty - tds);
+        receivableCleared = Math.min(grossInterest, standingReceivable);
+        sysExtraRev = round2(Math.max(0, standingReceivable - receivableCleared));
+        schemeReceivableCr = round2(receivableCleared + sysExtraRev);
+        freshIncome = round2(Math.max(0, grossInterest - receivableCleared));
+        accruedReversed = sysExtraRev;
+        interestClawback = round2(payoutDed + principalClawback);
+      }
+
       const totalReversalDr = round2(accruedReversed + interestClawback);
 
       const voucherLines: { drCr: 'Dr' | 'Cr'; ledger: string; note: string; amount: number; isReversal?: boolean }[] = [];
@@ -495,15 +603,14 @@ const InvestmentMaturityClaim: React.FC = () => {
         });
       }
       if (totalReversalDr > 0) {
+        const revNotes: string[] = [];
+        if (accruedReversed > 0) revNotes.push(`पोस्टिंग/येणे व्याज रिव्हर्सल ₹${accruedReversed.toFixed(2)}`);
+        if (payoutDeductionAmount > 0) revNotes.push(`परतावा पोस्टिंग व्याज वजावट ₹${payoutDeductionAmount.toFixed(2)}`);
+        if (principalClawback > 0) revNotes.push(`मुद्दल व्याज कपात ₹${principalClawback.toFixed(2)}`);
         voucherLines.push({
           drCr: 'Dr',
-          ledger: getLedgerDisplayName(resolvedOldGlIds.incomeId, 'गुंतवणूक व्याज उत्पन्न (Reverse)'),
-          note:
-            accruedReversed > 0 && interestClawback > 0
-              ? `येणे व्याज रिव्हर्सल ₹${accruedReversed.toFixed(2)} + मुद्दल व्याज कपात ₹${interestClawback.toFixed(2)}`
-              : accruedReversed > 0
-              ? 'मुदतपूर्व येणे व्याज रिव्हर्सल एंट्री'
-              : 'पूर्वी मिळालेल्या व्याजाची मुद्दल कपात रिव्हर्सल',
+          ledger: getLedgerDisplayName(effRevDrId, 'गुंतवणूक व्याज उत्पन्न / समायोजन (Reverse)'),
+          note: revNotes.join(' + ') || 'मुदतपूर्व व्याज रिव्हर्सल एंट्री',
           amount: totalReversalDr,
           isReversal: true
         });
@@ -524,19 +631,29 @@ const InvestmentMaturityClaim: React.FC = () => {
           amount: originalPrincipal
         });
       }
-      if (totalReceivableCr > 0) {
+      if (schemeReceivableCr > 0) {
         voucherLines.push({
           drCr: 'Cr',
           ledger: getLedgerDisplayName(resolvedOldGlIds.receivableId, 'येणे व्याज गुंतवणुकीवरील'),
-          note: `संपूर्ण येणे व्याज शून्य (प्राप्त ₹${receivableCleared.toFixed(2)} + रिव्हर्स ₹${accruedReversed.toFixed(2)})`,
-          amount: totalReceivableCr
+          note: `येणे व्याज समायोजन (प्राप्त ₹${receivableCleared.toFixed(2)} + रिव्हर्स ₹${round2(schemeReceivableCr - receivableCleared).toFixed(2)})`,
+          amount: schemeReceivableCr,
+          isReversal: enablePostingReversal && reversalMode === 'ReceivableReversal' && postingCreditAmt === 0
+        });
+      }
+      if (postingCreditAmt > 0) {
+        voucherLines.push({
+          drCr: 'Cr',
+          ledger: getLedgerDisplayName(effPostCrId, 'पोस्टिंग व्याज / येणे व्याज (Reverse Cr)'),
+          note: 'निवडलेल्या पोस्टिंग व्याज खात्यावर रिव्हर्सल जमा',
+          amount: postingCreditAmt,
+          isReversal: true
         });
       }
       if (freshIncome > 0) {
         voucherLines.push({
           drCr: 'Cr',
           ledger: getLedgerDisplayName(resolvedOldGlIds.incomeId, 'गुंतवणूक व्याज उत्पन्न'),
-          note: 'येणे व्याजावरील अतिरिक्त व्याज उत्पन्न',
+          note: 'चालू / अतिरिक्त व्याज उत्पन्न',
           amount: freshIncome
         });
       }
@@ -549,6 +666,9 @@ const InvestmentMaturityClaim: React.FC = () => {
         receivableCleared,
         accruedReversed,
         interestClawback,
+        payoutDeductionAmount,
+        manualPostingReversal,
+        sysExtraRev,
         totalReversalDr,
         freshIncome,
         penalty,
@@ -644,6 +764,9 @@ const InvestmentMaturityClaim: React.FC = () => {
       receivableCleared,
       accruedReversed,
       interestClawback: 0,
+      payoutDeductionAmount: 0,
+      manualPostingReversal: 0,
+      sysExtraRev: 0,
       totalReversalDr: accruedReversed,
       freshIncome,
       penalty: 0,
@@ -662,6 +785,11 @@ const InvestmentMaturityClaim: React.FC = () => {
     preInterestPaid,
     prePenalty,
     preTds,
+    enablePostingReversal,
+    reversalMode,
+    reversePostingAmount,
+    reversalDebitLedgerID,
+    postingCreditLedgerID,
     renewalType,
     renewalAmount,
     renInterestPayout,
@@ -685,21 +813,39 @@ const InvestmentMaturityClaim: React.FC = () => {
     else setRenTds(clean);
   };
 
-  const ledgerOptions = useMemo(
-    () => [
-      { value: 0, label: '-- डायनॅमिक TDS / कपात जी.एल. लेजर निवडा --' },
-      ...ledgers.map((l: any) => {
-        const id = Number(l.ledgerID || l.LedgerID || 0);
-        const code = l.ledgerCode || l.LedgerCode || id;
-        const name = l.ledgerName || l.LedgerName || '';
-        const grp = l.accountGroup?.groupName || (typeof l.accountGroup === 'string' ? l.accountGroup : '');
-        return {
-          value: id,
-          label: `${code} - ${name}${grp ? ` (${grp})` : ''}`
-        };
-      })
-    ],
+  const baseLedgerItems = useMemo(
+    () =>
+      ledgers
+        .filter((l: any) => l.isActive !== false && l.IsActive !== false)
+        .map((l: any) => {
+          const id = Number(l.ledgerID || l.LedgerID || 0);
+          const code = l.ledgerCode || l.LedgerCode || id;
+          const name = l.ledgerName || l.LedgerName || '';
+          const grp = l.accountGroup?.groupName || (typeof l.accountGroup === 'string' ? l.accountGroup : '');
+          return {
+            value: id,
+            label: `${code} - ${name}${grp ? ` (${grp})` : ''}`
+          };
+        }),
     [ledgers]
+  );
+
+  const buildLedgerOptions = (placeholderLabel: string) => [
+    { value: 0, label: placeholderLabel },
+    ...baseLedgerItems
+  ];
+
+  const ledgerOptions = useMemo(
+    () => buildLedgerOptions('-- डायनॅमिक TDS / कपात जी.एल. लेजर निवडा --'),
+    [baseLedgerItems]
+  );
+  const reversalDrLedgerOptions = useMemo(
+    () => buildLedgerOptions('-- स्कीम डीफॉल्ट व्याज उत्पन्न लेजर (किंवा इतर निवडा) --'),
+    [baseLedgerItems]
+  );
+  const postingCrLedgerOptions = useMemo(
+    () => buildLedgerOptions('-- स्कीम येणे व्याज लेजर (किंवा POSTING_INTR निवडा) --'),
+    [baseLedgerItems]
   );
 
   const accountOptions = useMemo(
@@ -750,8 +896,20 @@ const InvestmentMaturityClaim: React.FC = () => {
       setError('TDS कपात रक्कम नोंदवण्यासाठी कृपया डायनॅमिक TDS जी.एल. लेजर निवडा.');
       return;
     }
+    if (activeMode === 'premature' && enablePostingReversal) {
+      if ((reversePostingAmount || 0) <= 0) {
+        setError('बँकेचे पोस्टिंग व्याज रिव्हर्सल चालू असल्यास कृपया ₹0 पेक्षा जास्त रक्कम प्रविष्ट करा.');
+        return;
+      }
+      const effDrId = reversalDebitLedgerID > 0 ? reversalDebitLedgerID : resolvedOldGlIds.incomeId;
+      const effCrId = postingCreditLedgerID > 0 ? postingCreditLedgerID : resolvedOldGlIds.receivableId;
+      if (reversalMode === 'ReceivableReversal' && effDrId > 0 && effCrId > 0 && effDrId === effCrId) {
+        setError('रिव्हर्सल नावे (Dr) आणि पोस्टिंग व्याज जमा (Cr) जी.एल. लेजर एकच असू शकत नाही.');
+        return;
+      }
+    }
     if (settlement.netCashOrBankReceipt < 0) {
-      setError('दंड व TDS कपात रक्कम ही एकूण मुद्दल व व्याजापेक्षा जास्त असू शकत नाही.');
+      setError('पोस्टिंग व्याज वजावट, दंड व TDS कपात रक्कम ही एकूण मुद्दल व व्याजापेक्षा जास्त असू शकत नाही.');
       return;
     }
     if (
@@ -798,6 +956,15 @@ const InvestmentMaturityClaim: React.FC = () => {
           tdsAmount: preTds || 0,
           tdsLedgerID: (preTds || 0) > 0 ? Number(tdsLedgerID) : null,
           netPayout: settlement.netCashOrBankReceipt,
+          enablePostingInterestReversal: enablePostingReversal,
+          reversalMode: enablePostingReversal ? reversalMode : 'Auto',
+          reversePostingInterestAmount: enablePostingReversal ? round2(reversePostingAmount || 0) : null,
+          reversalDebitLedgerID:
+            enablePostingReversal && reversalDebitLedgerID > 0 ? Number(reversalDebitLedgerID) : null,
+          postingCreditLedgerID:
+            enablePostingReversal && reversalMode === 'ReceivableReversal' && postingCreditLedgerID > 0
+              ? Number(postingCreditLedgerID)
+              : null,
           paymentMode,
           bankLedgerID: paymentMode === 'Bank' ? Number(bankLedgerID) : null,
           referenceNo: referenceNo.trim() || null,
@@ -1082,7 +1249,7 @@ const InvestmentMaturityClaim: React.FC = () => {
                             </span>
                           </td>
                         </tr>
-                        <tr>
+                        <tr className="border-b border-slate-200">
                           <th className="bg-slate-50 px-2.5 py-1.5 text-left font-semibold text-slate-600 border-r border-slate-200">
                             मूळ मुद्दल व दर
                           </th>
@@ -1102,6 +1269,31 @@ const InvestmentMaturityClaim: React.FC = () => {
                                 पूर्वी प्राप्त: ₹{fmt(selectedAccount.receivedInterest || 0)}
                               </span>
                             )}
+                          </td>
+                        </tr>
+                        <tr>
+                          <th className="bg-slate-50 px-2.5 py-1.5 text-left font-semibold text-slate-600 border-r border-slate-200">
+                            एकूण पोस्टिंग व्याज
+                          </th>
+                          <td colSpan={3} className="px-2.5 py-1.5 font-mono">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <strong className="text-slate-900">₹{fmt(selectedAccount.accruedInterest || 0)}</strong>
+                              {(selectedAccount.accruedInterestTillMigration || 0) > 0 && (
+                                <span className="text-[10px] bg-slate-100 text-slate-700 border border-slate-300 px-1.5 py-0.2 rounded">
+                                  स्थलांतर व्याज: ₹{fmt(selectedAccount.accruedInterestTillMigration || 0)}
+                                </span>
+                              )}
+                              {selectedAccount.lastAccrualDate && (
+                                <span className="text-[10px] bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.2 rounded">
+                                  शेवटची तरतूद: {formatDate(selectedAccount.lastAccrualDate)}
+                                </span>
+                              )}
+                              {(selectedAccount.pendingAccruedInterest || 0) > 0 && (
+                                <span className="text-[10px] bg-amber-50 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded font-bold">
+                                  ⚠️ प्रलंबित (Pending) तरतूद ({selectedAccount.pendingAccrualCount || 1}): ₹{fmt(selectedAccount.pendingAccruedInterest || 0)}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       </tbody>
@@ -1304,27 +1496,196 @@ const InvestmentMaturityClaim: React.FC = () => {
                           </div>
                         </FormRow>
 
-                        {settlement && settlement.totalReversalDr > 0 && (
-                          <div className="bg-rose-50 border border-rose-300 border-l-4 border-l-rose-600 rounded-sm p-2.5 text-[11px] text-rose-950 space-y-0.5">
-                            <div className="font-bold flex items-center justify-between">
-                              <span>🔄 स्वयंचलित मुदतपूर्व व्याज रिव्हर्सल एंट्री (Interest Reversal Active)</span>
-                              <span className="font-mono font-black text-rose-800">₹{fmt(settlement.totalReversalDr)} Dr</span>
-                            </div>
-                            <p className="text-[10.5px] text-rose-800">
-                              {settlement.accruedReversed > 0 && (
-                                <>
-                                  पूर्वी तरतूद केलेले येणे व्याज (₹{fmt(settlement.standingReceivable)}) प्रत्यक्ष व्याजापेक्षा (₹{fmt(settlement.grossInterest)}) जास्त असल्याने{' '}
-                                  <b>₹{fmt(settlement.accruedReversed)}</b> ची <b>Dr व्याज उत्पन्न / Cr येणे व्याज</b> रिव्हर्सल नोंद पडेल.{' '}
-                                </>
-                              )}
-                              {settlement.interestClawback > 0 && (
-                                <>
-                                  मूळ मुद्दलातून कपात केलेले <b>₹{fmt(settlement.interestClawback)}</b> व्याज उत्पन्नाला रिव्हर्स (Dr) करून संपूर्ण मुद्दल निरंक केले जाईल.
-                                </>
-                              )}
-                            </p>
+                        {/* Posting Interest Reversal Panel */}
+                        <div className="border border-rose-300 rounded-sm bg-rose-50/40 p-2.5 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <label className="inline-flex items-center gap-2 cursor-pointer select-none font-bold text-rose-950 text-[11.5px]">
+                              <input
+                                type="checkbox"
+                                checked={enablePostingReversal}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setEnablePostingReversal(checked);
+                                  if (!checked) {
+                                    setIsReverseAmtManual(false);
+                                    syncReversePostingAmount(0, '');
+                                  } else if ((reversePostingAmount || 0) <= 0) {
+                                    const standingRecv = round2(selectedAccount.interestReceivable || 0);
+                                    const autoRev = round2(Math.max(0, standingRecv - Math.min(preInterestPaid || 0, standingRecv)));
+                                    const suggested = autoRev > 0 ? autoRev : standingRecv;
+                                    syncReversePostingAmount(suggested);
+                                    setIsReverseAmtManual(false);
+                                  }
+                                }}
+                                className="w-3.5 h-3.5 text-rose-600 rounded border-rose-400"
+                              />
+                              <span>🔄 बँकेने केलेले पोस्टिंग व्याज रिव्हर्स करा (Reverse Posting Interest)</span>
+                            </label>
+                            {settlement && settlement.totalReversalDr > 0 && (
+                              <span className="font-mono font-black text-[11px] px-2 py-0.5 rounded bg-rose-100 text-rose-900 border border-rose-300">
+                                एकूण रिव्हर्सल: ₹{fmt(settlement.totalReversalDr)} Dr
+                              </span>
+                            )}
                           </div>
-                        )}
+
+                          <div className="pt-1.5 border-t border-rose-200/80 space-y-2">
+                            <FormRow
+                              label="रिव्हर्स पोस्टिंग व्याज (₹)"
+                              hint={
+                                !enablePostingReversal
+                                  ? 'थेट रक्कम बदला / टाका — ₹0 पेक्षा जास्त रक्कम टाकताच रिव्हर्सल सक्रिय होईल'
+                                  : reversalMode === 'ReceivableReversal'
+                                  ? 'बुक्समधील येणे/पोस्टिंग व्याज रिव्हर्सल (रोख परतावा बदलत नाही)'
+                                  : 'आधी जमा केलेले व्याज बँक परताव्यातून वजा होईल (Net Receipt कमी होईल)'
+                              }
+                            >
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={reversePostingInput}
+                                  placeholder="0.00 (रिव्हर्सल असल्यास रक्कम टाका)"
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    setReversePostingInput(raw);
+                                    setIsReverseAmtManual(true);
+                                    const parsed = raw.trim() === '' ? 0 : Math.max(0, round2(parseFloat(raw) || 0));
+                                    setReversePostingAmount(parsed);
+                                    if (parsed > 0 && !enablePostingReversal) {
+                                      setEnablePostingReversal(true);
+                                    }
+                                  }}
+                                  onBlur={() => {
+                                    const clean = Math.max(0, round2(parseFloat(reversePostingInput) || 0));
+                                    syncReversePostingAmount(clean);
+                                    if (clean <= 0) {
+                                      setEnablePostingReversal(false);
+                                    }
+                                  }}
+                                  className={`${ctrl} flex-1 min-w-[120px] font-mono font-bold text-rose-900 border-rose-300`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const standingRecv = round2(selectedAccount.interestReceivable || 0);
+                                    const autoBal = round2(Math.max(0, standingRecv - Math.min(preInterestPaid || 0, standingRecv)));
+                                    setIsReverseAmtManual(false);
+                                    setEnablePostingReversal(autoBal > 0);
+                                    syncReversePostingAmount(autoBal);
+                                  }}
+                                  className="h-8 px-2 text-[10px] font-bold bg-white hover:bg-rose-100 text-rose-900 border border-rose-300 rounded-sm shrink-0 cursor-pointer"
+                                  title="येणे व्याज वजा प्राप्त व्याज"
+                                >
+                                  ↺ ऑटो शिल्लक
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const fullRecv = round2(selectedAccount.interestReceivable || 0);
+                                    setIsReverseAmtManual(true);
+                                    setEnablePostingReversal(fullRecv > 0);
+                                    syncReversePostingAmount(fullRecv);
+                                  }}
+                                  className="h-8 px-2 text-[10px] font-bold bg-white hover:bg-indigo-50 text-indigo-900 border border-indigo-300 rounded-sm shrink-0 cursor-pointer"
+                                  title="संपूर्ण येणे व्याज रक्कम रिव्हर्स करा"
+                                >
+                                  ↺ पूर्ण (₹{fmt(selectedAccount.interestReceivable || 0)})
+                                </button>
+                              </div>
+                            </FormRow>
+
+                            {enablePostingReversal ? (
+                              <div className="space-y-2 pt-1">
+                                <FormRow label="रिव्हर्सल प्रकार (Mode)" required>
+                                  <div className="flex w-full">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReversalMode('ReceivableReversal');
+                                        setIsReverseAmtManual(false);
+                                      }}
+                                      className={`${segBase} ${
+                                        reversalMode === 'ReceivableReversal'
+                                          ? 'bg-rose-700 text-white border-rose-700'
+                                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      १. बुक्स / येणे व्याज रिव्हर्स करा
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReversalMode('PayoutDeduction');
+                                        setIsReverseAmtManual(true);
+                                      }}
+                                      className={`${segBase} ${
+                                        reversalMode === 'PayoutDeduction'
+                                          ? 'bg-orange-700 text-white border-orange-700'
+                                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      २. बँक परतावा रकमेतून वजा करा
+                                    </button>
+                                  </div>
+                                </FormRow>
+
+                                <FormRow label="रिव्हर्सल नावे लेजर (Dr)" hint="व्याज उत्पन्न / मागील वर्ष समायोजन" align="start">
+                                  <SearchableSelect
+                                    name="reversalDebitLedgerID"
+                                    value={reversalDebitLedgerID}
+                                    onChange={(e) => setReversalDebitLedgerID(Number(e.target.value))}
+                                    options={reversalDrLedgerOptions}
+                                    placeholder="-- रिव्हर्सल नावे (Dr) जी.एल. लेजर निवडा --"
+                                  />
+                                </FormRow>
+
+                                {reversalMode === 'ReceivableReversal' && (
+                                  <FormRow label="पोस्टिंग व्याज जमा लेजर (Cr)" hint="येणे व्याज किंवा मॅन्युअल POSTING_INTR" align="start">
+                                    <SearchableSelect
+                                      name="postingCreditLedgerID"
+                                      value={postingCreditLedgerID}
+                                      onChange={(e) => setPostingCreditLedgerID(Number(e.target.value))}
+                                      options={postingCrLedgerOptions}
+                                      placeholder="-- पोस्टिंग व्याज जमा (Cr) जी.एल. लेजर निवडा --"
+                                    />
+                                  </FormRow>
+                                )}
+
+                                {reversalMode === 'ReceivableReversal' &&
+                                  (reversalDebitLedgerID > 0 ? reversalDebitLedgerID : resolvedOldGlIds.incomeId) > 0 &&
+                                  (reversalDebitLedgerID > 0 ? reversalDebitLedgerID : resolvedOldGlIds.incomeId) ===
+                                    (postingCreditLedgerID > 0 ? postingCreditLedgerID : resolvedOldGlIds.receivableId) && (
+                                    <div className="text-[10.5px] bg-red-50 border border-red-300 text-red-800 px-2 py-1 rounded-sm font-semibold">
+                                      ⚠️ रिव्हर्सल नावे (Dr) आणि पोस्टिंग व्याज जमा (Cr) लेजर एकच असू शकत नाही. कृपया वेगवेगळी लेजर्स निवडा.
+                                    </div>
+                                  )}
+
+                                {settlement && settlement.sysExtraRev > 0 && (
+                                  <div className="text-[10.5px] bg-amber-50 border border-amber-300 text-amber-900 px-2 py-1 rounded-sm font-medium">
+                                    ℹ️ सिस्टीममधील उर्वरित येणे व्याज <b>₹{fmt(settlement.sysExtraRev)}</b> देखील खाते बंद करताना स्वयंचलित रिव्हर्स होऊन येणे व्याज शून्य (₹0.00) केले जाईल.
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              settlement && settlement.totalReversalDr > 0 && (
+                                <p className="text-[10.5px] text-rose-800">
+                                  {settlement.accruedReversed > 0 && (
+                                    <>
+                                      ऑटो रिव्हर्सल सक्रिय: पूर्वी तरतूद केलेले येणे व्याज (₹{fmt(settlement.standingReceivable)}) प्रत्यक्ष व्याजापेक्षा (₹{fmt(settlement.grossInterest)}) जास्त असल्याने{' '}
+                                      <b>₹{fmt(settlement.accruedReversed)}</b> ची <b>Dr व्याज उत्पन्न / Cr येणे व्याज</b> रिव्हर्सल नोंद पडेल.{' '}
+                                    </>
+                                  )}
+                                  {settlement.interestClawback > 0 && (
+                                    <>
+                                      मूळ मुद्दलातून कपात केलेले <b>₹{fmt(settlement.interestClawback)}</b> व्याज उत्पन्नाला रिव्हर्स (Dr) करून संपूर्ण मुद्दल निरंक केले जाईल.
+                                    </>
+                                  )}
+                                </p>
+                              )
+                            )}
+                          </div>
+                        </div>
                       </>
                     )}
 
@@ -1615,12 +1976,35 @@ const InvestmentMaturityClaim: React.FC = () => {
                     )}
                   </div>
 
+                  {settlement.payoutDeductionAmount > 0 && (
+                    <div className="flex justify-between items-center py-1.5 bg-orange-50/70 px-2 -mx-2 rounded-xs">
+                      <dt className="text-orange-800 font-bold">वजा: परतावा पोस्टिंग व्याज कपात</dt>
+                      <dd className="font-mono font-black text-orange-800">- ₹{fmt(settlement.payoutDeductionAmount)}</dd>
+                    </div>
+                  )}
+
                   {settlement.totalReversalDr > 0 && (
-                    <div className="flex justify-between items-center py-1.5 bg-rose-50/70 px-2 -mx-2 rounded-xs">
-                      <dt className="text-rose-800 font-bold">
-                        व्याज रिव्हर्सल एंट्री (Dr व्याज उत्पन्न)
-                      </dt>
-                      <dd className="font-mono font-black text-rose-800">₹{fmt(settlement.totalReversalDr)}</dd>
+                    <div className="py-1.5 bg-rose-50/70 px-2 -mx-2 rounded-xs">
+                      <div className="flex justify-between items-center">
+                        <dt className="text-rose-800 font-bold">
+                          व्याज रिव्हर्सल एंट्री (Dr{' '}
+                          {activeMode === 'premature' && reversalDebitLedgerID > 0
+                            ? getLedgerDisplayName(reversalDebitLedgerID, 'रिव्हर्सल लेजर')
+                            : 'व्याज उत्पन्न'}
+                          )
+                        </dt>
+                        <dd className="font-mono font-black text-rose-800">₹{fmt(settlement.totalReversalDr)}</dd>
+                      </div>
+                      {(settlement.manualPostingReversal > 0 || settlement.sysExtraRev > 0 || settlement.interestClawback > 0) && (
+                        <div className="text-[10px] text-rose-700 font-mono mt-0.5 flex flex-wrap justify-end gap-2">
+                          {settlement.accruedReversed > 0 && (
+                            <span>येणे/पोस्टिंग रिव्हर्सल: ₹{fmt(settlement.accruedReversed)}</span>
+                          )}
+                          {settlement.interestClawback > 0 && (
+                            <span>परतावा/मुद्दल कपात: ₹{fmt(settlement.interestClawback)}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 

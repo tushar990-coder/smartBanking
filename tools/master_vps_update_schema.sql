@@ -5325,64 +5325,122 @@ BEGIN
     );');
     PRINT '  + Recorded Version v2.5.26 in SystemVersionHistories';
 END
--- 14.5 Auto-Heal & Purge Non-Shareholder MemberCodes & Resequence Active Shareholders
+GO
+
+IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL AND COL_LENGTH('Members', 'UpdatedOn') IS NULL
+    ALTER TABLE [dbo].[Members] ADD [UpdatedOn] datetime2 NULL;
+GO
+
+-- 14.5 Auto-Heal & Purge Non-Shareholder MemberCodes & Resequence Active Shareholders (Only if needed)
 IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL AND OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL
 BEGIN
-    PRINT '------------------------------------------------------------------------';
-    PRINT 'Clearing invalid MemberCodes for non-shareholders & resequencing active...';
-    PRINT '------------------------------------------------------------------------';
     BEGIN TRY
-        -- Step 1: Clear MemberCode and set Nominal for non-shareholders (Zero shares)
-        UPDATE [dbo].[Members]
-        SET [MemberCode] = NULL,
-            [MembershipType] = 'Nominal',
-            [ModifiedDate] = GETDATE()
-        WHERE [MemberID] NOT IN (
-            SELECT DISTINCT sa.[MemberId] 
-            FROM [dbo].[ShareAccounts] sa 
-            WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
-        )
-        AND ([MemberCode] IS NOT NULL AND [MemberCode] <> '');
+        DECLARE @NeedsMemberCodeHeal BIT = 0;
 
-        -- Step 2: Temporary code for active shareholders to avoid unique index conflict
-        UPDATE [dbo].[Members]
-        SET [MemberCode] = 'TMP_' + CAST([MemberID] AS VARCHAR(10)) + '_' + SUBSTRING(CONVERT(VARCHAR(40), NEWID()), 1, 8)
-        WHERE [MemberID] IN (
-            SELECT DISTINCT sa.[MemberId] 
-            FROM [dbo].[ShareAccounts] sa 
-            WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
-        );
+        -- 1) Non-shareholders still holding a MemberCode / Regular status
+        IF EXISTS (
+            SELECT 1 FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] FROM [dbo].[ShareAccounts] sa
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+            AND ([MemberCode] IS NOT NULL AND [MemberCode] <> '')
+        ) SET @NeedsMemberCodeHeal = 1;
 
-        -- Step 3: Resequence active shareholders sequentially (MEM0001, MEM0002...)
-        ;WITH ActiveShareholders AS (
-            SELECT sa.[MemberId], sa.[ShareAccountId],
-                   ROW_NUMBER() OVER (
-                       ORDER BY TRY_CAST(m.[LegacyMemberNo] AS INT) ASC,
-                                TRY_CAST(REPLACE(REPLACE(COALESCE(sc.[CertificateNo], ''), 'CERT-', ''), 'CERT', '') AS INT) ASC,
-                                sa.[ShareAccountId] ASC
-                   ) as SeqNo
+        -- 2) Duplicate MemberCodes among active shareholders or missing MEM code
+        IF @NeedsMemberCodeHeal = 0 AND EXISTS (
+            SELECT 1 FROM [dbo].[Members] m
+            INNER JOIN [dbo].[ShareAccounts] sa ON m.[MemberID] = sa.[MemberId]
+            WHERE sa.[TotalShareCount] > 0
+              AND (m.[MemberCode] IS NULL OR LTRIM(RTRIM(m.[MemberCode])) = '')
+        ) SET @NeedsMemberCodeHeal = 1;
+
+        IF @NeedsMemberCodeHeal = 0 AND EXISTS (
+            SELECT 1 FROM [dbo].[Members]
+            WHERE [MemberCode] IS NOT NULL AND LTRIM(RTRIM([MemberCode])) <> ''
+            GROUP BY [MemberCode] HAVING COUNT(*) > 1
+        ) SET @NeedsMemberCodeHeal = 1;
+
+        -- 3) ShareAccounts AccountNo unaligned with 'SA-' + MemberCode
+        IF @NeedsMemberCodeHeal = 0 AND EXISTS (
+            SELECT 1 FROM [dbo].[ShareAccounts] sa
+            INNER JOIN [dbo].[Members] m ON sa.[MemberId] = m.[MemberID]
+            WHERE sa.[TotalShareCount] > 0 AND m.[MemberCode] IS NOT NULL
+              AND ISNULL(sa.[AccountNo], '') <> ('SA-' + m.[MemberCode])
+        ) SET @NeedsMemberCodeHeal = 1;
+
+        IF @NeedsMemberCodeHeal = 1
+        BEGIN
+            PRINT '------------------------------------------------------------------------';
+            PRINT 'Clearing invalid MemberCodes for non-shareholders & healing codes...';
+            PRINT '------------------------------------------------------------------------';
+            -- Step 1: Clear MemberCode and set Nominal for non-shareholders (Zero shares; CustomerID untouched)
+            UPDATE [dbo].[Members]
+            SET [MemberCode] = NULL,
+                [MembershipType] = 'Nominal',
+                [UpdatedOn] = GETDATE()
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+            AND ([MemberCode] IS NOT NULL AND [MemberCode] <> '');
+
+            -- Resequence ONLY if active members actually have missing or duplicate MemberCodes
+            IF EXISTS (
+                SELECT 1 FROM [dbo].[Members] m
+                INNER JOIN [dbo].[ShareAccounts] sa ON m.[MemberID] = sa.[MemberId]
+                WHERE sa.[TotalShareCount] > 0 AND (m.[MemberCode] IS NULL OR LTRIM(RTRIM(m.[MemberCode])) = '')
+            ) OR EXISTS (
+                SELECT 1 FROM [dbo].[Members]
+                WHERE [MemberCode] IS NOT NULL AND LTRIM(RTRIM([MemberCode])) <> ''
+                GROUP BY [MemberCode] HAVING COUNT(*) > 1
+            )
+            BEGIN
+                UPDATE [dbo].[Members]
+                SET [MemberCode] = 'TMP_' + CAST([MemberID] AS VARCHAR(10)) + '_' + SUBSTRING(CONVERT(VARCHAR(40), NEWID()), 1, 8)
+                WHERE [MemberID] IN (
+                    SELECT DISTINCT sa.[MemberId] 
+                    FROM [dbo].[ShareAccounts] sa 
+                    WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+                );
+
+                ;WITH ActiveShareholders AS (
+                    SELECT sa.[MemberId], sa.[ShareAccountId],
+                           ROW_NUMBER() OVER (
+                               ORDER BY TRY_CAST(m.[LegacyMemberNo] AS INT) ASC,
+                                        TRY_CAST(REPLACE(REPLACE(COALESCE(sc.[CertificateNo], ''), 'CERT-', ''), 'CERT', '') AS INT) ASC,
+                                        sa.[ShareAccountId] ASC
+                           ) as SeqNo
+                    FROM [dbo].[ShareAccounts] sa
+                    INNER JOIN [dbo].[Members] m ON sa.[MemberId] = m.[MemberID]
+                    OUTER APPLY (
+                        SELECT TOP 1 [CertificateNo] FROM [dbo].[ShareCertificates] WHERE [ShareAccountId] = sa.[ShareAccountId] ORDER BY [CertificateId] ASC
+                    ) sc
+                    WHERE sa.[TotalShareCount] > 0
+                )
+                UPDATE m
+                SET m.[MemberCode] = 'MEM' + RIGHT('0000' + CAST(ash.SeqNo AS VARCHAR(10)), 4),
+                    m.[MembershipType] = 'Regular',
+                    m.[UpdatedOn] = GETDATE()
+                FROM [dbo].[Members] m
+                INNER JOIN ActiveShareholders ash ON m.[MemberID] = ash.[MemberId];
+            END
+
+            -- Step 4: Synchronize ShareAccounts.AccountNo = 'SA-' + MemberCode (preserves LegacyAccountNumber)
+            UPDATE sa
+            SET sa.[AccountNo] = 'SA-' + m.[MemberCode]
             FROM [dbo].[ShareAccounts] sa
             INNER JOIN [dbo].[Members] m ON sa.[MemberId] = m.[MemberID]
-            OUTER APPLY (
-                SELECT TOP 1 [CertificateNo] FROM [dbo].[ShareCertificates] WHERE [ShareAccountId] = sa.[ShareAccountId] ORDER BY [CertificateId] ASC
-            ) sc
-            WHERE sa.[TotalShareCount] > 0
-        )
-        UPDATE m
-        SET m.[MemberCode] = 'MEM' + RIGHT('0000' + CAST(ash.SeqNo AS VARCHAR(10)), 4),
-            m.[MembershipType] = 'Regular',
-            m.[UpdatedOn] = GETDATE()
-        FROM [dbo].[Members] m
-        INNER JOIN ActiveShareholders ash ON m.[MemberID] = ash.[MemberId];
+            WHERE m.[MemberCode] IS NOT NULL
+              AND ISNULL(sa.[AccountNo], '') <> ('SA-' + m.[MemberCode]);
 
-        -- Step 4: Synchronize ShareAccounts.AccountNo = 'SA-' + MemberCode
-        UPDATE sa
-        SET sa.[AccountNo] = 'SA-' + m.[MemberCode]
-        FROM [dbo].[ShareAccounts] sa
-        INNER JOIN [dbo].[Members] m ON sa.[MemberId] = m.[MemberID]
-        WHERE m.[MemberCode] IS NOT NULL;
-
-        PRINT '  -> All non-shareholder MemberCodes cleared and active shareholders aligned!';
+            PRINT '  -> Non-shareholder MemberCodes cleared and active shareholders verified!';
+        END
+        ELSE
+        BEGIN
+            PRINT '  -> Share/Member codes already valid and unique. Skipping resequence (preserving existing codes).';
+        END
     END TRY
     BEGIN CATCH
         PRINT '  [WARN] Shareholder alignment non-critical warning: ' + ERROR_MESSAGE();
@@ -5391,13 +5449,14 @@ END
 GO
 
 -- ==============================================================================
--- 14.6 FD OPENING BALANCE & BALANCE SHEET (GL-SL) AUTO-HEALER
+-- 14.6 FD OPENING BALANCE SCHEME LEDGER MAPPING (Safe Non-Destructive Mode)
 -- ==============================================================================
 IF OBJECT_ID(N'[dbo].[FdAccounts]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[CustomerOpeningBalances]', N'U') IS NOT NULL
 BEGIN
-    PRINT '>> [SECTION 14.6] Reconciling FD Opening Balances with General Ledger...';
+    PRINT '>> [SECTION 14.6] Ensuring FD scheme FdLiabilityLedgerID mappings (preserving existing opening balances)...';
     BEGIN TRY
-        -- 1. Ensure all FD schemes have their FdLiabilityLedgerID mapped
+        -- Ensure all FD schemes have their FdLiabilityLedgerID mapped when NULL/0;
+        -- Skip destructive deletion of CustomerOpeningBalances/Ledgers.OpeningBalance so Matured/Closed/Multi-Branch FDs remain untouched.
         UPDATE s
         SET s.FdLiabilityLedgerID = l.LedgerID
         FROM [dbo].[FdSchemes] s
@@ -5412,101 +5471,10 @@ BEGIN
         ) l
         WHERE s.FdLiabilityLedgerID IS NULL OR s.FdLiabilityLedgerID = 0;
 
-        -- 2. Process each distinct Liability Ledger
-        DECLARE @cLedgerId INT;
-        DECLARE cur_fd_ledger CURSOR FOR 
-        SELECT DISTINCT s.FdLiabilityLedgerID
-        FROM [dbo].[FdSchemes] s
-        WHERE s.FdLiabilityLedgerID IS NOT NULL AND s.FdLiabilityLedgerID > 0;
-
-        OPEN cur_fd_ledger;
-        FETCH NEXT FROM cur_fd_ledger INTO @cLedgerId;
-
-        WHILE @@FETCH_STATUS = 0
-        BEGIN
-            -- Update / sync active customers
-            ;WITH ActiveCustFd AS (
-                SELECT a.CustomerID, SUM(a.DepositAmount) AS TrueTotal
-                FROM [dbo].[FdAccounts] a
-                JOIN [dbo].[FdSchemes] s ON a.FdSchemeID = s.FdSchemeID
-                WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @cLedgerId
-                GROUP BY a.CustomerID
-            )
-            UPDATE cob
-            SET cob.Amount = act.TrueTotal,
-                cob.BalanceType = 'Cr',
-                cob.UpdatedOn = GETDATE()
-            FROM [dbo].[CustomerOpeningBalances] cob
-            JOIN ActiveCustFd act ON cob.CustomerID = act.CustomerID AND cob.LedgerID = @cLedgerId
-            WHERE cob.Amount <> act.TrueTotal OR cob.BalanceType <> 'Cr';
-
-            -- Insert missing CustomerOpeningBalances for active customers
-            ;WITH ActiveCustFd AS (
-                SELECT a.CustomerID, SUM(a.DepositAmount) AS TrueTotal
-                FROM [dbo].[FdAccounts] a
-                JOIN [dbo].[FdSchemes] s ON a.FdSchemeID = s.FdSchemeID
-                WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @cLedgerId
-                GROUP BY a.CustomerID
-            )
-            INSERT INTO [dbo].[CustomerOpeningBalances] (CustomerID, LedgerID, Amount, BalanceType, CreatedBy, CreatedOn)
-            SELECT act.CustomerID, @cLedgerId, act.TrueTotal, 'Cr', 1, GETDATE()
-            FROM ActiveCustFd act
-            LEFT JOIN [dbo].[CustomerOpeningBalances] cob ON act.CustomerID = cob.CustomerID AND cob.LedgerID = @cLedgerId
-            WHERE cob.CustomerOpeningBalanceID IS NULL AND act.TrueTotal > 0;
-
-            -- Purge ORPHAN CustomerOpeningBalances
-            DELETE FROM [dbo].[CustomerOpeningBalances]
-            WHERE LedgerID = @cLedgerId
-              AND CustomerID NOT IN (
-                  SELECT DISTINCT a.CustomerID
-                  FROM [dbo].[FdAccounts] a
-                  JOIN [dbo].[FdSchemes] s ON a.FdSchemeID = s.FdSchemeID
-                  WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @cLedgerId
-              );
-
-            -- Purge ORPHAN MemberOpeningBalances
-            IF OBJECT_ID(N'[dbo].[MemberOpeningBalances]', N'U') IS NOT NULL
-            BEGIN
-                DELETE mob
-                FROM [dbo].[MemberOpeningBalances] mob
-                WHERE mob.LedgerID = @cLedgerId
-                  AND mob.CustomerID NOT IN (
-                      SELECT DISTINCT a.CustomerID
-                      FROM [dbo].[FdAccounts] a
-                      JOIN [dbo].[FdSchemes] s ON a.FdSchemeID = s.FdSchemeID
-                      WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @cLedgerId
-                  );
-
-                UPDATE mob
-                SET mob.Amount = cob.Amount,
-                    mob.BalanceType = cob.BalanceType,
-                    mob.UpdatedOn = GETDATE()
-                FROM [dbo].[MemberOpeningBalances] mob
-                JOIN [dbo].[CustomerOpeningBalances] cob ON mob.CustomerID = cob.CustomerID AND mob.LedgerID = cob.LedgerID
-                WHERE mob.LedgerID = @cLedgerId AND (mob.Amount <> cob.Amount OR mob.BalanceType <> cob.BalanceType);
-            END
-
-            -- Reconcile and set Ledger.OpeningBalance to match true subledger total
-            DECLARE @reconciledBal DECIMAL(18,2) = 0;
-            SELECT @reconciledBal = ISNULL(SUM(CASE WHEN BalanceType = 'Cr' THEN Amount ELSE -Amount END), 0)
-            FROM [dbo].[CustomerOpeningBalances]
-            WHERE LedgerID = @cLedgerId;
-
-            UPDATE [dbo].[Ledgers]
-            SET OpeningBalance = CASE WHEN @reconciledBal >= 0 THEN @reconciledBal ELSE -@reconciledBal END,
-                OpeningBalanceType = CASE WHEN @reconciledBal >= 0 THEN 'Cr' ELSE 'Dr' END
-            WHERE LedgerID = @cLedgerId;
-
-            FETCH NEXT FROM cur_fd_ledger INTO @cLedgerId;
-        END;
-
-        CLOSE cur_fd_ledger;
-        DEALLOCATE cur_fd_ledger;
-
-        PRINT '  -> FD Opening Balances reconciled with General Ledger successfully!';
+        PRINT '  -> FD scheme liability ledger mappings verified cleanly.';
     END TRY
     BEGIN CATCH
-        PRINT '  [WARN] FD Opening Balance reconciliation non-critical warning: ' + ERROR_MESSAGE();
+        PRINT '  [WARN] FD scheme mapping non-critical warning: ' + ERROR_MESSAGE();
     END CATCH
 END
 GO
@@ -5600,6 +5568,9 @@ BEGIN
       AND (la.LastInstallmentPaidDate IS NULL OR la.LastInstallmentPaidDate <> latest.MaxDate);
 
     PRINT '  -> Self-healed LoanAccounts.LastInstallmentPaidDate against LoanCollections';
+END
+GO
+
 -- -----------------------------------------------------------------------------------------
 -- LOAN DEPOSIT COLLATERAL & LIEN TRACKING SCHEMA (v2.5.36)
 -- -----------------------------------------------------------------------------------------
@@ -5835,7 +5806,10 @@ BEGIN
         ALTER TABLE [SavingTransactions] ADD [BranchID] int NOT NULL CONSTRAINT DF_SavingTransactions_BranchID DEFAULT 1;
         PRINT '  -> Added BranchID to SavingTransactions';
     END
-
+END
+GO
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingTransactions') AND COL_LENGTH('SavingTransactions', 'BranchID') IS NOT NULL
+BEGIN
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_SavingTransactions_BranchID' AND object_id = OBJECT_ID(N'[SavingTransactions]'))
     BEGIN
         CREATE NONCLUSTERED INDEX [IX_SavingTransactions_BranchID] ON [SavingTransactions] ([BranchID]);
@@ -5852,7 +5826,10 @@ BEGIN
         ALTER TABLE [LoanApplications] ADD [BranchID] int NOT NULL CONSTRAINT DF_LoanApplications_BranchID DEFAULT 1;
         PRINT '  -> Added BranchID to LoanApplications';
     END
-
+END
+GO
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanApplications') AND COL_LENGTH('LoanApplications', 'BranchID') IS NOT NULL
+BEGIN
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanApplications_BranchID' AND object_id = OBJECT_ID(N'[LoanApplications]'))
     BEGIN
         CREATE NONCLUSTERED INDEX [IX_LoanApplications_BranchID] ON [LoanApplications] ([BranchID]);
@@ -5881,7 +5858,10 @@ BEGIN
         ALTER TABLE [LoanCollections] ADD [IsCrossBranch] bit NOT NULL CONSTRAINT DF_LoanCollections_IsCrossBranch DEFAULT 0;
         PRINT '  -> Added IsCrossBranch to LoanCollections';
     END
-
+END
+GO
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections') AND COL_LENGTH('LoanCollections', 'BranchID') IS NOT NULL AND COL_LENGTH('LoanCollections', 'HomeBranchID') IS NOT NULL
+BEGIN
     -- Backfill BranchID from LoanAccount if default
     EXEC(N'
     UPDATE lc
@@ -5913,7 +5893,10 @@ BEGIN
         ALTER TABLE [LoanDisbursements] ADD [BranchID] int NOT NULL CONSTRAINT DF_LoanDisbursements_BranchID DEFAULT 1;
         PRINT '  -> Added BranchID to LoanDisbursements';
     END
-
+END
+GO
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanDisbursements') AND COL_LENGTH('LoanDisbursements', 'BranchID') IS NOT NULL
+BEGIN
     -- Backfill BranchID from LoanAccount if default
     EXEC(N'
     UPDATE ld
@@ -5939,6 +5922,10 @@ BEGIN
         ALTER TABLE [Branches] ADD [DefaultCashLedgerID] int NULL;
         PRINT '  -> Added DefaultCashLedgerID to Branches';
     END
+END
+GO
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Branches') AND COL_LENGTH('Branches', 'DefaultCashLedgerID') IS NOT NULL
+BEGIN
 
     -- Auto-assign Main / Head Office cash ledger
     UPDATE b
@@ -6110,7 +6097,7 @@ GO
 -- Auto-migrate legacy Ledgers.OpeningBalance to HeadOffice (BranchID = 1) for active FY if empty
 IF EXISTS (SELECT * FROM sys.tables WHERE name = 'BranchLedgerOpeningBalances')
 BEGIN
-    DECLARE @ActiveFY INT = (SELECT TOP 1 FinancialYearID FROM FinancialYears WHERE IsCurrent = 1 ORDER BY FinancialYearID DESC);
+    DECLARE @ActiveFY INT = (SELECT TOP 1 FinancialYearID FROM FinancialYears WHERE IsActive = 1 ORDER BY FinancialYearID DESC);
     IF @ActiveFY IS NULL SET @ActiveFY = (SELECT TOP 1 FinancialYearID FROM FinancialYears ORDER BY FinancialYearID DESC);
 
     IF @ActiveFY IS NOT NULL
@@ -6152,6 +6139,8 @@ BEGIN
     );
     PRINT '  -> Logged v2.5.51 in SystemVersionHistories';
 END
+GO
+
 -- 7.10 Vouchers & LoanCollections IBT Columns Fix for Multi-Branch Trial Balance
 IF OBJECT_ID(N'[Vouchers]', N'U') IS NOT NULL
 BEGIN
@@ -6172,7 +6161,11 @@ BEGIN
         ALTER TABLE [dbo].[Vouchers] ADD [TargetBranchID] INT NULL;
         PRINT '  -> Added [TargetBranchID] to Vouchers';
     END
+END
+GO
 
+IF OBJECT_ID(N'[Vouchers]', N'U') IS NOT NULL AND COL_LENGTH('Vouchers', 'IsIbtVoucher') IS NOT NULL AND COL_LENGTH('Vouchers', 'RelatedVoucherID') IS NOT NULL
+BEGIN
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Vouchers_IsIbtVoucher' AND object_id = OBJECT_ID('Vouchers'))
     BEGIN
         CREATE NONCLUSTERED INDEX [IX_Vouchers_IsIbtVoucher] 
@@ -6831,6 +6824,21 @@ BEGIN
         ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [InterestClawbackAmount] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_InvestmentPrematureWithdrawals_InterestClawback] DEFAULT 0.00;
         PRINT 'Added InterestClawbackAmount to InvestmentPrematureWithdrawals';
     END
+    IF COL_LENGTH('InvestmentPrematureWithdrawals', 'ReversalMode') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [ReversalMode] NVARCHAR(30) NULL CONSTRAINT [DF_InvestmentPrematureWithdrawals_ReversalMode] DEFAULT N'Auto';
+        PRINT 'Added ReversalMode to InvestmentPrematureWithdrawals';
+    END
+    IF COL_LENGTH('InvestmentPrematureWithdrawals', 'ReversalDebitLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [ReversalDebitLedgerID] INT NULL;
+        PRINT 'Added ReversalDebitLedgerID to InvestmentPrematureWithdrawals';
+    END
+    IF COL_LENGTH('InvestmentPrematureWithdrawals', 'PostingCreditLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [PostingCreditLedgerID] INT NULL;
+        PRINT 'Added PostingCreditLedgerID to InvestmentPrematureWithdrawals';
+    END
 END
 GO
 
@@ -7272,6 +7280,11 @@ BEGIN
     IF COL_LENGTH('DemandRecoveries', 'RecoveredMemberCount') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [RecoveredMemberCount] INT NOT NULL CONSTRAINT [DF_DemandRecoveries_RMC_VPS] DEFAULT 0;
     IF COL_LENGTH('DemandRecoveries', 'CreatedDate') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [CreatedDate] DATETIME2 NOT NULL CONSTRAINT [DF_DemandRecoveries_CD_VPS] DEFAULT GETUTCDATE();
     IF COL_LENGTH('DemandRecoveries', 'CreatedBy') IS NULL ALTER TABLE [dbo].[DemandRecoveries] ADD [CreatedBy] INT NOT NULL CONSTRAINT [DF_DemandRecoveries_CB_VPS] DEFAULT 1;
+END
+GO
+
+IF OBJECT_ID('dbo.DemandRecoveries', 'U') IS NOT NULL AND COL_LENGTH('DemandRecoveries', 'IdempotencyKey') IS NOT NULL
+BEGIN
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandRecoveries_IdempotencyKey' AND object_id = OBJECT_ID('dbo.DemandRecoveries'))
         CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandRecoveries_IdempotencyKey] ON [dbo].[DemandRecoveries] ([IdempotencyKey]) WHERE [IdempotencyKey] IS NOT NULL;
 END
@@ -7836,11 +7849,17 @@ IF OBJECT_ID('dbo.DemandColumnSettings', 'U') IS NOT NULL
 BEGIN
     IF COL_LENGTH('DemandColumnSettings', 'PigmySchemeID') IS NULL
         ALTER TABLE [dbo].[DemandColumnSettings] ADD [PigmySchemeID] INT NULL;
+END
+GO
+
+IF OBJECT_ID('dbo.DemandColumnSettings', 'U') IS NOT NULL
+BEGIN
     IF COL_LENGTH('DemandColumnSettings', 'PigmySchemeID') IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_Pigmy' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
        AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'PIGMY' AND [PigmySchemeID] IS NOT NULL GROUP BY [PigmySchemeID] HAVING COUNT(*) > 1)
         EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_Pigmy] ON [dbo].[DemandColumnSettings] ([PigmySchemeID]) WHERE [IsActive] = 1 AND [ItemType] = ''PIGMY'' AND [PigmySchemeID] IS NOT NULL;');
-    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_DepositLedger' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
+    IF COL_LENGTH('DemandColumnSettings', 'PrincipalOrDepositLedgerID') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_DemandColumnSettings_Active_DepositLedger' AND object_id = OBJECT_ID('dbo.DemandColumnSettings'))
        AND NOT EXISTS (SELECT 1 FROM [dbo].[DemandColumnSettings] WHERE [IsActive] = 1 AND [ItemType] = 'DEPOSIT_LEDGER' AND [PrincipalOrDepositLedgerID] IS NOT NULL GROUP BY [PrincipalOrDepositLedgerID] HAVING COUNT(*) > 1)
         EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UQ_DemandColumnSettings_Active_DepositLedger] ON [dbo].[DemandColumnSettings] ([PrincipalOrDepositLedgerID]) WHERE [IsActive] = 1 AND [ItemType] = ''DEPOSIT_LEDGER'' AND [PrincipalOrDepositLedgerID] IS NOT NULL;');
 END

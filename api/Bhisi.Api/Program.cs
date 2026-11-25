@@ -3655,6 +3655,12 @@ try
                     ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [AccruedInterestReversed] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentPrematureWithdrawals_AccruedIntReversed DEFAULT 0.00;
                 IF COL_LENGTH('InvestmentPrematureWithdrawals', 'InterestClawbackAmount') IS NULL
                     ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [InterestClawbackAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_InvestmentPrematureWithdrawals_InterestClawback DEFAULT 0.00;
+                IF COL_LENGTH('InvestmentPrematureWithdrawals', 'ReversalMode') IS NULL
+                    ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [ReversalMode] NVARCHAR(30) NULL CONSTRAINT DF_InvestmentPrematureWithdrawals_ReversalMode DEFAULT N'Auto';
+                IF COL_LENGTH('InvestmentPrematureWithdrawals', 'ReversalDebitLedgerID') IS NULL
+                    ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [ReversalDebitLedgerID] INT NULL;
+                IF COL_LENGTH('InvestmentPrematureWithdrawals', 'PostingCreditLedgerID') IS NULL
+                    ALTER TABLE [dbo].[InvestmentPrematureWithdrawals] ADD [PostingCreditLedgerID] INT NULL;
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentRenewals')

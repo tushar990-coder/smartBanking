@@ -54,6 +54,13 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal InterestClawbackAmount { get; set; } = 0;
 
+        [StringLength(30)]
+        public string? ReversalMode { get; set; }
+
+        public int? ReversalDebitLedgerID { get; set; }
+
+        public int? PostingCreditLedgerID { get; set; }
+
         [Column(TypeName = "decimal(18,2)")]
         public decimal TdsAmount { get; set; } = 0;
 

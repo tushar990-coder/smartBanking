@@ -1053,13 +1053,11 @@ namespace Bhisi.Api.Helpers
             }
 
             // Split recognized interest between already-accrued Interest Receivable and fresh Interest Income
-            decimal totalAccruedOnOld = await context.InvestmentInterestAccruals
-                .Where(a => a.InvestmentAccountID == oldAccount.InvestmentAccountID)
-                .SumAsync(a => (decimal?)a.InterestAmount) ?? 0m;
-            decimal totalReceiptsOnOld = await context.InvestmentInterestReceipts
-                .Where(r => r.InvestmentAccountID == oldAccount.InvestmentAccountID)
-                .SumAsync(r => (decimal?)(r.GrossAmount > 0m ? r.GrossAmount : r.ReceivedAmount)) ?? 0m;
-            decimal outstandingReceivable = Math.Max(0m, Math.Round(oldAccount.AccruedInterestTillMigration + totalAccruedOnOld - totalReceiptsOnOld, 2, MidpointRounding.AwayFromZero));
+            var oldSummary = await InvestmentInterestSettlementHelper.ResolveVerifiedInterestSummaryAsync(
+                context,
+                oldAccount.InvestmentAccountID,
+                oldAccount);
+            decimal outstandingReceivable = oldSummary.OutstandingReceivable;
 
             decimal receivableCleared = (totalInterestRecognized > 0m && oldMapping.InterestReceivableLedgerID > 0)
                 ? Math.Min(totalInterestRecognized, outstandingReceivable)

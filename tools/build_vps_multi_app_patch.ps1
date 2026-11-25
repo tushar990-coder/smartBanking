@@ -1,4 +1,4 @@
-﻿# =========================================================================================
+# =========================================================================================
 # SmartBanking ERP - 1-Click Multi-App Master VPS Patch Package Builder
 # Automates: Build Frontend + Publish Backend + Database SQL Patch + Multi-Target Packaging + Reverse Patch Engine
 # =========================================================================================
@@ -487,7 +487,7 @@ function Get-AllTargetFolders {
         $folders.Add($baseFolder)
     }
 
-    $tokens = if ($targetObj) { Get-TargetDiscoveryTokens -Target $targetObj } else { @($sansthaKey.ToLower()) }
+    $tokens = @(if ($targetObj) { Get-TargetDiscoveryTokens -Target $targetObj } else { @($sansthaKey.ToLower()) })
 
     # Query live IIS sites/apps/vdirs by domain binding, site name, or physicalPath token (not DB name alone)
     $appcmd = "$env:SystemRoot\system32\inetsrv\appcmd.exe"
@@ -616,6 +616,64 @@ function Get-AllTargetFolders {
     }
 }
 
+function Invoke-SqlQueryRaw {
+    param(
+        [string]$Query,
+        [string]$DatabaseName,
+        [object]$Config
+    )
+    $prevPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $outText = ""
+    $ok = $false
+    try {
+        if ($Config.SqlUser -and $Config.SqlPassword) {
+            $lines = & sqlcmd -I -S $Config.SqlServerInstance -U $Config.SqlUser -P $Config.SqlPassword -d $DatabaseName -h -1 -W -Q $Query 2>&1
+            if ($LASTEXITCODE -eq 0) { $ok = $true; $outText = ($lines -join "`n").Trim() }
+        }
+        if (-not $ok) {
+            $lines = & sqlcmd -I -S $Config.SqlServerInstance -d $DatabaseName -E -h -1 -W -Q $Query 2>&1
+            if ($LASTEXITCODE -eq 0) { $ok = $true; $outText = ($lines -join "`n").Trim() }
+        }
+    } catch {} finally {
+        $ErrorActionPreference = $prevPref
+    }
+    return [PSCustomObject]@{ Ok = $ok; Output = $outText }
+}
+
+function Get-DbIntegritySnapshot {
+    param([string]$DatabaseName, [object]$Config)
+    $q = @"
+SET NOCOUNT ON;
+SELECT
+    ISNULL((SELECT COUNT(*) FROM dbo.Customers), 0) AS CustomersTotal,
+    ISNULL((SELECT COUNT(*) FROM dbo.Customers WHERE LegacyCustomerNo IS NOT NULL AND LTRIM(RTRIM(LegacyCustomerNo)) <> ''), 0) AS CustomersLegacy,
+    ISNULL((SELECT COUNT(*) FROM dbo.Members WHERE LegacyMemberNo IS NOT NULL AND LTRIM(RTRIM(LegacyMemberNo)) <> ''), 0) AS MembersLegacy,
+    ISNULL((SELECT COUNT(*) FROM dbo.SavingAccountMasters WHERE (OldAccountNo IS NOT NULL AND LTRIM(RTRIM(OldAccountNo)) <> '') OR (LegacyAccountNumber IS NOT NULL AND LTRIM(RTRIM(LegacyAccountNumber)) <> '')), 0) AS SavingLegacy,
+    ISNULL((SELECT COUNT(*) FROM dbo.FdAccounts WHERE LegacyAccountNumber IS NOT NULL AND LTRIM(RTRIM(LegacyAccountNumber)) <> ''), 0) AS FdLegacy,
+    ISNULL((SELECT COUNT(*) FROM dbo.RdAccounts WHERE LegacyAccountNumber IS NOT NULL AND LTRIM(RTRIM(LegacyAccountNumber)) <> ''), 0) AS RdLegacy,
+    ISNULL((SELECT COUNT(*) FROM dbo.PigmyAccounts WHERE (LegacyAccountNumber IS NOT NULL AND LTRIM(RTRIM(LegacyAccountNumber)) <> '') OR (OldAccountNo IS NOT NULL AND LTRIM(RTRIM(OldAccountNo)) <> '')), 0) AS PigmyLegacy,
+    ISNULL((SELECT COUNT(*) FROM dbo.LoanAccounts WHERE LegacyAccountNumber IS NOT NULL AND LTRIM(RTRIM(LegacyAccountNumber)) <> ''), 0) AS LoanLegacy,
+    ISNULL((SELECT COUNT(*) FROM dbo.ShareAccounts WHERE LegacyAccountNumber IS NOT NULL AND LTRIM(RTRIM(LegacyAccountNumber)) <> ''), 0) AS ShareLegacy;
+"@
+    $res = Invoke-SqlQueryRaw -Query $q -DatabaseName $DatabaseName -Config $Config
+    if (-not $res.Ok -or [string]::IsNullOrWhiteSpace($res.Output)) { return $null }
+    $lastLine = [string]($res.Output -split "`r?`n" | Where-Object { $_ -match '^\s*\d+(\s+\d+){8}\s*$' } | Select-Object -Last 1)
+    if ([string]::IsNullOrWhiteSpace($lastLine)) { return $null }
+    $parts = ($lastLine.Trim() -split '\s+')
+    return [PSCustomObject]@{
+        CustomersTotal  = [int]$parts[0]
+        CustomersLegacy = [int]$parts[1]
+        MembersLegacy   = [int]$parts[2]
+        SavingLegacy    = [int]$parts[3]
+        FdLegacy        = [int]$parts[4]
+        RdLegacy        = [int]$parts[5]
+        PigmyLegacy     = [int]$parts[6]
+        LoanLegacy      = [int]$parts[7]
+        ShareLegacy     = [int]$parts[8]
+    }
+}
+
 function Invoke-SqlPatchStep {
     param(
         [string]$StepLabel,
@@ -633,11 +691,11 @@ function Invoke-SqlPatchStep {
     $ok = $false
     try {
         if ($Config.SqlUser -and $Config.SqlPassword) {
-            $lastOutput = & sqlcmd -S $Config.SqlServerInstance -U $Config.SqlUser -P $Config.SqlPassword -d $DatabaseName -i $SqlPath -f 65001 -b 2>&1
+            $lastOutput = & sqlcmd -I -S $Config.SqlServerInstance -U $Config.SqlUser -P $Config.SqlPassword -d $DatabaseName -i $SqlPath -f 65001 -b 2>&1
             if ($LASTEXITCODE -eq 0) { $ok = $true }
         }
         if (-not $ok) {
-            $lastOutput = & sqlcmd -S $Config.SqlServerInstance -d $DatabaseName -E -i $SqlPath -f 65001 -b 2>&1
+            $lastOutput = & sqlcmd -I -S $Config.SqlServerInstance -d $DatabaseName -E -i $SqlPath -f 65001 -b 2>&1
             if ($LASTEXITCODE -eq 0) { $ok = $true }
         }
     }
@@ -706,8 +764,8 @@ if ($expectedVersion) {
 }
 Write-Host ""
 
-$allTargets = $config.Targets
-$selectedTargets = Resolve-PatchTargets -AllTargets $allTargets -TargetName $TargetName
+$allTargets = @($config.Targets)
+$selectedTargets = @(Resolve-PatchTargets -AllTargets $allTargets -TargetName $TargetName)
 if ($selectedTargets.Count -eq 0) {
     Write-Host "[ERROR] No target matched '$TargetName'. Check patch_config.json or pass -TargetName ALL." -ForegroundColor Red
     Read-Host "Press ENTER to exit"
@@ -839,6 +897,9 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             $statusObj.AppSnapshot = "Warning"
         }
 
+        # Capture Pre-Patch Customer & Per-Module Legacy Numbers baseline
+        $preDbSnap = Get-DbIntegritySnapshot -DatabaseName $target.TargetDatabase -Config $config
+
         # 2. Database Schema Sync & Auto-Heal Scripts
         Invoke-SqlPatchStep -StepLabel "[Step 2.0] Ensuring DefaultIbtLedgerID & Core Branch Columns" -SqlPath $instantFixSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
         Invoke-SqlPatchStep -StepLabel "[Step 2.05] Ensuring Vouchers & LoanCollections IBT Columns" -SqlPath $vouchersIbtSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
@@ -939,25 +1000,37 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             }
         }
 
-        # Verify critical v2.6.41+ LoanRates column exists in target DB
-        $colCheckQuery = "SET NOCOUNT ON; SELECT ISNULL(CASE WHEN COL_LENGTH('dbo.LoanRates','AllowManualPenalInRecovery') IS NOT NULL THEN 1 ELSE 0 END, 0);"
-        $colCheckOk = $false
-        $prevPrefCol = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        try {
-            $colVal = ""
-            if ($config.SqlUser -and $config.SqlPassword) {
-                $colVal = (& sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d $target.TargetDatabase -h -1 -W -Q $colCheckQuery 2>$null) -join ""
-            }
-            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($colVal)) {
-                $colVal = (& sqlcmd -S $config.SqlServerInstance -d $target.TargetDatabase -E -h -1 -W -Q $colCheckQuery 2>$null) -join ""
-            }
-            if ($colVal.Trim() -match '^1') { $colCheckOk = $true }
-        } catch {} finally {
-            $ErrorActionPreference = $prevPrefCol
+        # Verify critical v2.6.41+ DB columns exist cleanly in target DB
+        $colCheckQuery = @"
+SET NOCOUNT ON;
+SELECT CASE
+    WHEN COL_LENGTH('dbo.LoanRates','AllowManualPenalInRecovery') IS NOT NULL
+     AND COL_LENGTH('dbo.LoanRates','PenalInterestGraceDays') IS NOT NULL
+     AND COL_LENGTH('dbo.LoanRates','PenalInterestBasis') IS NOT NULL
+     AND COL_LENGTH('dbo.PigmyCollections','RemittanceDepositId') IS NOT NULL
+     AND COL_LENGTH('dbo.DemandColumnSettings','PigmySchemeID') IS NOT NULL
+    THEN 1 ELSE 0
+END;
+"@
+        $colRes = Invoke-SqlQueryRaw -Query $colCheckQuery -DatabaseName $target.TargetDatabase -Config $config
+        if (-not $colRes.Ok -or $colRes.Output.Trim() -notmatch '(?m)^1\s*$') {
+            $verifyIssues.Add("DB schema columns check failed (LoanRates.AllowManualPenalInRecovery / PigmyCollections / DemandColumnSettings) on $($target.TargetDatabase)")
         }
-        if (-not $colCheckOk) {
-            $verifyIssues.Add("DB column LoanRates.AllowManualPenalInRecovery missing or SQL check failed on $($target.TargetDatabase)")
+
+        # Verify Customer-ID-First & Per-Module Legacy Account Numbers preserved 100%
+        if ($preDbSnap) {
+            $postDbSnap = Get-DbIntegritySnapshot -DatabaseName $target.TargetDatabase -Config $config
+            if ($postDbSnap) {
+                $metrics = @('CustomersTotal', 'CustomersLegacy', 'MembersLegacy', 'SavingLegacy', 'FdLegacy', 'RdLegacy', 'PigmyLegacy', 'LoanLegacy', 'ShareLegacy')
+                foreach ($m in $metrics) {
+                    if ($postDbSnap.$m -lt $preDbSnap.$m) {
+                        $verifyIssues.Add("Integrity count drop in $m ($($preDbSnap.$m) -> $($postDbSnap.$m)) on $($target.TargetDatabase)")
+                    }
+                }
+                if ($verifyIssues.Count -eq 0) {
+                    Write-Host "  -> Customer-ID & Per-Module Legacy Integrity Verified (Customers: $($postDbSnap.CustomersTotal), LegCust: $($postDbSnap.CustomersLegacy), Saving: $($postDbSnap.SavingLegacy), FD: $($postDbSnap.FdLegacy), RD: $($postDbSnap.RdLegacy), Pigmy: $($postDbSnap.PigmyLegacy), Loan: $($postDbSnap.LoanLegacy))" -ForegroundColor Green
+                }
+            }
         }
 
         if ($verifyIssues.Count -eq 0 -and $statusObj.SqlSchema -eq "OK") {
@@ -1135,8 +1208,8 @@ function Resolve-ReverseTargets {
     return @($AllTargets | Where-Object { $_.SansthaName -like "*$needle*" -or $_.TargetDatabase -like "*$needle*" })
 }
 
-$allTargets = $config.Targets
-$selectedTargets = Resolve-ReverseTargets -AllTargets $allTargets -TargetName $TargetName
+$allTargets = @($config.Targets)
+$selectedTargets = @(Resolve-ReverseTargets -AllTargets $allTargets -TargetName $TargetName)
 if ($selectedTargets.Count -eq 0) {
     Write-Host "[ERROR] No rollback target matched '$TargetName'." -ForegroundColor Red
     Read-Host "Press ENTER to exit"
@@ -1587,7 +1660,7 @@ $desktopPaths = @()
 $specialDesktop = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
 if (-not [string]::IsNullOrWhiteSpace($specialDesktop) -and (Test-Path $specialDesktop)) { $desktopPaths += $specialDesktop }
 foreach ($candDesktop in @("C:\Users\$env:USERNAME\Desktop", "C:\Users\$env:USERNAME\OneDrive\Desktop")) {
-    if ((Test-Path $candDesktop) -and ($desktopPaths -notcontains $candDesktop)) { $desktopPaths += $candDesktop }
+    if ((Test-Path $candDesktop -ErrorAction SilentlyContinue) -and ($desktopPaths -notcontains $candDesktop)) { $desktopPaths += $candDesktop }
 }
 $desktopDest = ""
 foreach ($dp in $desktopPaths) {

@@ -5,7 +5,11 @@
 -- Compatible with all Sanstha databases (Pure Multi-Tenant Safe, Zero Data Loss)
 -- =========================================================================================
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
 SET NOCOUNT ON;
+GO
+
 BEGIN TRANSACTION;
 
 PRINT '=============================================================';
@@ -48,6 +52,27 @@ END
 
 IF OBJECT_ID('FdAccounts', 'U') IS NOT NULL AND OBJECT_ID('FdAccountSequences', 'U') IS NOT NULL
 BEGIN
+    -- Idempotent Guard: Only repair FdAccounts.AccountNo when corrupted/placeholder/duplicate AccountNos exist.
+    -- LegacyAccountNumber (Old Receipt No) is NEVER altered.
+    DECLARE @NeedsFdHeal BIT = 0;
+    IF EXISTS (
+        SELECT 1 FROM FdAccounts
+        WHERE IsLegacyAccount = 1
+          AND (AccountNo IS NULL OR LTRIM(RTRIM(AccountNo)) = '' OR AccountNo LIKE '%-FD-%' OR LEN(REPLACE(LTRIM(RTRIM(AccountNo)), '-', '')) <> 14)
+    ) SET @NeedsFdHeal = 1;
+
+    IF @NeedsFdHeal = 0 AND EXISTS (
+        SELECT 1 FROM FdAccounts
+        WHERE AccountNo IS NOT NULL AND LTRIM(RTRIM(AccountNo)) <> ''
+        GROUP BY BranchID, AccountNo HAVING COUNT(*) > 1
+    ) SET @NeedsFdHeal = 1;
+
+    IF @NeedsFdHeal = 0
+    BEGIN
+        PRINT 'ℹ️ सर्व स्थलांतरित FD खात्यांचे १४-अंकी AccountNo आधीपासून अचूक व युनिक आहेत. कोणताही बदल केला नाही (LegacyAccountNumber अबाधित).';
+    END
+    ELSE
+    BEGIN
     -- १. प्रत्येक शाखेतील स्थलांतरित खात्यांना OpeningDate आणि FdAccountID नुसार योग्य क्रम देणे
     IF OBJECT_ID('tempdb..#HealPlan') IS NOT NULL DROP TABLE #HealPlan;
 
@@ -207,6 +232,7 @@ BEGIN
     END
 
     IF OBJECT_ID('tempdb..#HealPlan') IS NOT NULL DROP TABLE #HealPlan;
+    END
 END
 ELSE
 BEGIN

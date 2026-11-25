@@ -7,6 +7,10 @@
 --   This script audits and safely updates existing members who have shares.
 -- ==============================================================================
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 PRINT '----------------------------------------------------------------------';
 PRINT 'STEP 1: Diagnosing Nominal Members holding Share Accounts / Certificates...';
 PRINT '----------------------------------------------------------------------';

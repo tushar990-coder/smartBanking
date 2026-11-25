@@ -1,5 +1,18 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-24] - आवृत्ती v2.6.43 (VPS SQL Patch `ModifiedDate` & `QUOTED_IDENTIFIER` Resolution + Per-Module Legacy Account & Customer-ID-First Guards)
+
+### 🛠️ 1. सर्व संस्था VPS SQL स्क्रिप्ट्स त्रुटी कायमस्वरूपी निवारण (`Msg 207` व `Msg 1934`)
+- **`tools/master_vps_update_schema.sql`, `tools/heal_nominal_and_duplicate_member_codes.sql`, `tools/auto_heal_nominal_shareholders.sql`, `tools/build_vps_multi_app_patch.ps1`:**
+  - Section `14.5` (Line `5339`) व `heal_nominal_and_duplicate_member_codes.sql` मधील चुकीचा `Members.ModifiedDate` स्तंभ अचूक `Members.UpdatedOn` वर संरेखित केला (आणि `COL_LENGTH('Members', 'UpdatedOn')` सुरक्षिततेसह स्वतंत्र `GO` बॅच दिला) जेणेकरून `update_schema.sql` कधीही मध्यंतरी थांबणार नाही व `LoanRates.AllowManualPenalInRecovery` पर्यंतचे सर्व बदल १००% लागू होतील.
+  - `build_vps_multi_app_patch.ps1` मधील सर्व `sqlcmd` कमांड्सना **`-I`** (`QUOTED_IDENTIFIER ON`) जोडले तसेच सर्व SQL हीलर स्क्रिप्ट्सच्या सुरुवातीला `SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON;` देऊन `Members` व `FdAccounts` वरील `Msg 1934` एरर कायमचा बंद केला.
+
+### 🛡️ 2. प्रत्येक मॉड्यूलचे जुने खाते क्रमांक, Customer-ID-First व Step 7 स्वयंचलित पडताळणी संरक्षण
+- **`tools/heal_migrated_fd_account_numbers.sql`, `patches/patch_migrate_saving_accounts_14digit.sql`, `tools/master_vps_update_schema.sql` (Section 14.5 व 14.6):**
+  - आधीपासून वैध व युनिक असलेल्या FD, बचत आणि शेअर खात्यांची अनावश्यक renumbering टाळण्यासाठी कडक Idempotent Guards जोडले (केवळ प्रत्यक्ष डुप्लिकेट/त्रुटिपूर्ण नोंदींपुरतीच दुरुस्ती), आणि जुने खाते क्रमांक (`LegacyAccountNumber`, `OldAccountNo`, `LegacyMemberNo`, `LegacyCustomerNo`) व `CustomerID` लिंक १००% अबाधित ठेवले.
+  - `Section 14.6` मधील जुन्या विनाशकारी `DELETE CustomerOpeningBalances` ला सुरक्षितपणे फक्त गहाळ `FdLiabilityLedgerID` मॅपिंगपुरते मर्यादित करून मुदतपूर्ण (Matured) / बहु-शाखा ठेव ओपनिंग शिल्लक सुरक्षित केली.
+  - **Step 7 Pre/Post Integrity Verification:** पॅचच्या सुरुवातीला व शेवटी `LoanRates.AllowManualPenalInRecovery` सह ५ मुख्य स्तंभ व सर्व मॉड्यूल्सच्या जुन्या खाते/ग्राहक क्रमांक मोजणीची स्वयंचलित तुलना पडताळणी जोडली.
+
 ## 📅 [2026-11-24] - आवृत्ती v2.6.42 (Loan Recovery Other Fee Ledgers Search & Totals Reflection + Testing/VPS Patch IIS Discovery, Verification & Cache-Busting Fix)
 
 ### 🧾 1. कर्ज वसुली इतर वसुली खाते तपशील (`Other Fee Ledgers`) सुधारणा

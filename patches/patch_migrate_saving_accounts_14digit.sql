@@ -1,4 +1,4 @@
-﻿-- ==============================================================================
+-- ==============================================================================
 -- UNIVERSAL PATCH: MIGRATE SAVING ACCOUNTS TO 14-DIGIT CBS STANDARD (STARTS FROM 001)
 -- ==============================================================================
 -- Purpose:
@@ -16,6 +16,8 @@
 --     while keeping the original 9-digit numbers safe in [OldAccountNo].
 -- ==============================================================================
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
 SET NOCOUNT ON;
 
 PRINT '========================================================================';
@@ -67,28 +69,18 @@ BEGIN TRY
         PRINT 'Found ' + CAST(@TotalLegacyAccounts AS VARCHAR(10)) + ' accounts with length < 14 digits. Migration required.';
     END
 
-    -- Condition B: Accounts exist, but sequence 0000001 does not exist in any 14-digit account
-    -- (e.g. on Bambavade where accounts were mistakenly sequenced starting from 408)
+    -- Condition B (Guarded): Only re-number existing 14-digit accounts if actual duplicate AccountNo collisions exist.
+    -- Never renumber valid, unique existing 14-digit CBS accounts just because sequence 0000001 was closed/deleted.
     IF @NeedsUpgrade = 0
     BEGIN
-        DECLARE @HasSequenceOne BIT = 0;
         IF EXISTS (
-            SELECT 1 FROM [dbo].[SavingAccountMasters] 
-            WHERE LEN(LTRIM(RTRIM(AccountNo))) = 14 
-              AND SUBSTRING(LTRIM(RTRIM(AccountNo)), 7, 7) = '0000001'
-        )
-        BEGIN
-            SET @HasSequenceOne = 1;
-        END
-
-        IF @HasSequenceOne = 0 AND EXISTS (
-            SELECT 1 FROM [dbo].[SavingAccountMasters] 
-            WHERE [IsLegacyAccount] = 1 
-               OR ([OldAccountNo] IS NOT NULL AND LTRIM(RTRIM([OldAccountNo])) <> '')
+            SELECT 1 FROM [dbo].[SavingAccountMasters]
+            WHERE AccountNo IS NOT NULL AND LTRIM(RTRIM(AccountNo)) <> ''
+            GROUP BY AccountNo HAVING COUNT(*) > 1
         )
         BEGIN
             SET @NeedsUpgrade = 1;
-            PRINT 'Detected legacy accounts where sequence does NOT start from 0000001. Renumbering to start from 001 is required!';
+            PRINT 'Detected duplicate Saving AccountNo collisions. Repair required!';
         END
     END
 

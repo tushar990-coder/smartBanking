@@ -489,7 +489,7 @@ namespace Bhisi.Api.Controllers
                 if (collection.IsOTS)
                 {
                     // OTS SPECIAL ALLOCATION LOGIC (Avoids double interest accrual and ensures clean closure)
-                    decimal totalOutstanding = loanAccount.PrincipalBalance + loanAccount.InterestBalance + loanAccount.OverdueInterestBalance;
+                    decimal totalOutstanding = loanAccount.PrincipalBalance + loanAccount.InterestBalance + loanAccount.OverdueInterestBalance + overdueExpenses;
                     decimal totalWaiverNeeded = Math.Max(0, totalOutstanding - collection.TotalAmountReceived);
 
                     if (collection.InterestWaived <= 0 && collection.PenaltyWaived <= 0 && totalWaiverNeeded > 0)
@@ -516,12 +516,15 @@ namespace Bhisi.Api.Controllers
                     collection.ReceivableInterestCollected = regularInterestPaid;
                     collection.InterestCollected = extraOtsInterest;
                     collection.PrincipalCollected = principalPaid;
+                    collection.ChargesPrincipalCollected = Math.Min(principalPaid, Math.Max(0m, loanAccount.CapitalizedRecoveryCharges));
+                    collection.ExpensesCollected = expensesPaid;
                     collection.SurchargeCollected = 0;
 
                     // Fully settle account to zero for OTS
                     loanAccount.PrincipalBalance = 0;
                     loanAccount.PurePrincipalBalance = 0;
                     loanAccount.CapitalizedInterestAmount = 0;
+                    loanAccount.CapitalizedRecoveryCharges = 0;
                     loanAccount.InterestBalance = 0;
                     loanAccount.OverdueInterestBalance = 0;
                     loanAccount.InterestProvisionBalance = 0;
@@ -678,19 +681,28 @@ namespace Bhisi.Api.Controllers
                     loanAccount.InterestBalance = Math.Max(0m, (existingReceivableInterest - receivablePaid) + unpaidCurrentPeriodInterest);
                     loanAccount.PrincipalBalance = Math.Max(0, loanAccount.PrincipalBalance - principalPaid);
 
-                    // CBS Waterfall: Settle Capitalized Interest first, then Pure Principal
+                    // CBS Waterfall: Settle Capitalized Recovery/Postage Charges first, then Capitalized Interest, then Pure Principal
+                    decimal chargesPrinPaid = 0m;
                     if (principalPaid > 0)
                     {
-                        if (loanAccount.CapitalizedInterestAmount > 0)
+                        decimal remPrin = principalPaid;
+                        if (loanAccount.CapitalizedRecoveryCharges > 0)
                         {
-                            decimal capDeduction = Math.Min(principalPaid, loanAccount.CapitalizedInterestAmount);
-                            loanAccount.CapitalizedInterestAmount -= capDeduction;
-                            decimal pureDeduction = principalPaid - capDeduction;
+                            chargesPrinPaid = Math.Min(remPrin, loanAccount.CapitalizedRecoveryCharges);
+                            loanAccount.CapitalizedRecoveryCharges = Math.Round(loanAccount.CapitalizedRecoveryCharges - chargesPrinPaid, 2, MidpointRounding.AwayFromZero);
+                            remPrin -= chargesPrinPaid;
+                        }
+
+                        if (remPrin > 0 && loanAccount.CapitalizedInterestAmount > 0)
+                        {
+                            decimal capDeduction = Math.Min(remPrin, loanAccount.CapitalizedInterestAmount);
+                            loanAccount.CapitalizedInterestAmount = Math.Round(loanAccount.CapitalizedInterestAmount - capDeduction, 2, MidpointRounding.AwayFromZero);
+                            decimal pureDeduction = remPrin - capDeduction;
                             loanAccount.PurePrincipalBalance = Math.Max(0, loanAccount.PurePrincipalBalance - pureDeduction);
                         }
-                        else
+                        else if (remPrin > 0)
                         {
-                            loanAccount.PurePrincipalBalance = Math.Max(0, loanAccount.PurePrincipalBalance - principalPaid);
+                            loanAccount.PurePrincipalBalance = Math.Max(0, loanAccount.PurePrincipalBalance - remPrin);
                         }
                     }
 
@@ -707,6 +719,8 @@ namespace Bhisi.Api.Controllers
                     collection.ReceivableInterestCollected = receivablePaid;
                     collection.InterestCollected = regularInterestPaid;
                     collection.PrincipalCollected = principalPaid;
+                    collection.ChargesPrincipalCollected = chargesPrinPaid;
+                    collection.ExpensesCollected = expensesPaid;
                     collection.SurchargeCollected = surchargeCollected;
 
                     if (collection.TotalAmountReceived > 0m)
@@ -724,7 +738,7 @@ namespace Bhisi.Api.Controllers
                         loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - collection.PenaltyWaived);
                     }
 
-                    if (loanAccount.PrincipalBalance <= 0)
+                    if (loanAccount.PrincipalBalance <= 0 && (overdueExpenses - expensesPaid) <= 0m)
                     {
                         loanAccount.Status = "Closed";
                         if (loanAccount.InterestBalance <= 0 && loanAccount.OverdueInterestBalance <= 0)

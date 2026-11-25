@@ -322,11 +322,33 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
             }
 
-            decimal totalPrincipalCollected = collections.Sum(c => c.PrincipalCollected);
+            decimal totalPrincipalCollected = collections.Sum(c => Math.Max(0m, c.PrincipalCollected - c.ChargesPrincipalCollected));
             decimal totalInterestCollected = collections.Sum(c => c.InterestCollected);
 
+            var allRecoveryExpenses = await _context.Sec101LegalExpenses
+                .AsNoTracking()
+                .Include(e => e.Voucher)
+                .Where(e => e.LoanAccountId == id && e.IsDebitedToLoan)
+                .OrderByDescending(e => e.ExpenseDate)
+                .ThenByDescending(e => e.ExpenseId)
+                .ToListAsync();
+
+            decimal unpaidRecoveryExpenses = await _context.OverdueRecoveryLedgers
+                .AsNoTracking()
+                .Where(o => o.LoanAccountID == id)
+                .SumAsync(o => (decimal?)(o.DebitAmount - o.CreditAmount)) ?? 0m;
+            if (unpaidRecoveryExpenses < 0m) unpaidRecoveryExpenses = 0m;
+
+            decimal pendingPrincipalCharges = allRecoveryExpenses
+                .Where(e => e.CapitalizeToLoanPrincipal && !e.IsPrincipalApplied && e.Voucher != null && e.Voucher.Status == "Pending")
+                .Sum(e => e.Amount);
+            decimal pendingRecoveryExpenses = allRecoveryExpenses
+                .Where(e => !e.CapitalizeToLoanPrincipal && e.Voucher != null && e.Voucher.Status == "Pending")
+                .Sum(e => e.Amount);
+
             decimal totalDisbursedOrSanctioned = totalDisbursed > 0 ? totalDisbursed : account.SanctionedAmount;
-            decimal principalPaidFromBalance = Math.Max(0, totalDisbursedOrSanctioned - account.PrincipalBalance);
+            decimal netPrincipalExcludingRecoveryCharges = Math.Max(0m, account.PrincipalBalance - account.CapitalizedRecoveryCharges);
+            decimal principalPaidFromBalance = Math.Max(0, totalDisbursedOrSanctioned - netPrincipalExcludingRecoveryCharges);
             decimal availablePrincipal = Math.Max(totalPrincipalCollected, principalPaidFromBalance);
             if (account.PrincipalBalance <= 0)
             {
@@ -432,18 +454,20 @@ namespace Bhisi.Api.Controllers
             }
 
             decimal baseDisbursedOrSanctioned = totalDisbursed > 0 ? totalDisbursed : account.SanctionedAmount;
+            decimal resolvedRecoveryCharges = Math.Max(0m, account.CapitalizedRecoveryCharges);
             decimal resolvedCapInterest = account.CapitalizedInterestAmount;
             decimal resolvedPurePrincipal = account.PurePrincipalBalance;
-            if (resolvedCapInterest <= 0 && baseDisbursedOrSanctioned > 0 && account.PrincipalBalance > baseDisbursedOrSanctioned)
+            decimal maxNonRecoveryPrincipal = Math.Max(0m, account.PrincipalBalance - resolvedRecoveryCharges);
+            if (resolvedCapInterest <= 0 && baseDisbursedOrSanctioned > 0 && maxNonRecoveryPrincipal > baseDisbursedOrSanctioned)
             {
-                resolvedPurePrincipal = resolvedPurePrincipal > 0 && resolvedPurePrincipal < account.PrincipalBalance
+                resolvedPurePrincipal = resolvedPurePrincipal > 0 && resolvedPurePrincipal < maxNonRecoveryPrincipal
                     ? resolvedPurePrincipal
                     : baseDisbursedOrSanctioned;
-                resolvedCapInterest = Math.Max(0m, account.PrincipalBalance - resolvedPurePrincipal);
+                resolvedCapInterest = Math.Max(0m, maxNonRecoveryPrincipal - resolvedPurePrincipal);
             }
             else if (resolvedPurePrincipal <= 0 && account.PrincipalBalance > 0)
             {
-                resolvedPurePrincipal = Math.Max(0m, account.PrincipalBalance - resolvedCapInterest);
+                resolvedPurePrincipal = Math.Max(0m, account.PrincipalBalance - resolvedCapInterest - resolvedRecoveryCharges);
             }
 
             DateTime effectiveAsOfDate = (asOfDate ?? DateTime.Today).Date;
@@ -473,6 +497,10 @@ namespace Bhisi.Api.Controllers
                 CurrentPrincipalBalance = account.PrincipalBalance,
                 PurePrincipalBalance = resolvedPurePrincipal,
                 CapitalizedInterestAmount = resolvedCapInterest,
+                CapitalizedRecoveryCharges = resolvedRecoveryCharges,
+                PendingPrincipalCharges = pendingPrincipalCharges,
+                UnpaidRecoveryExpenses = unpaidRecoveryExpenses,
+                PendingRecoveryExpenses = pendingRecoveryExpenses,
                 CurrentInterestBalance = account.InterestBalance,
                 CurrentOverdueInterestBalance = account.OverdueInterestBalance,
                 TotalDisbursedAmount = totalDisbursed > 0 ? totalDisbursed : account.PrincipalBalance,
@@ -488,6 +516,22 @@ namespace Bhisi.Api.Controllers
                 PenalGraceDays = penalSnapshot.GraceDays,
                 PenalInterestBasis = penalSnapshot.PenalBasis,
                 AllowManualPenalInRecovery = account.LoanRate?.AllowManualPenalInRecovery ?? true,
+                RecoveryExpenseBreakdown = allRecoveryExpenses
+                    .Where(e => e.Voucher == null || (e.Voucher.Status != "Rejected" && e.Voucher.Status != "Cancelled"))
+                    .Select(e => new LoanRecoveryExpenseBreakdownDto
+                    {
+                        ExpenseId = e.ExpenseId,
+                        ExpenseType = e.ExpenseType,
+                        ExpenseTypeLabel = Helpers.VoucherLoanChargeHelper.GetExpenseTypeMarathiLabel(e.ExpenseType),
+                        Amount = e.Amount,
+                        ExpenseDate = e.ExpenseDate,
+                        CapitalizeToLoanPrincipal = e.CapitalizeToLoanPrincipal,
+                        IsPrincipalApplied = e.IsPrincipalApplied,
+                        VoucherId = e.VoucherId,
+                        VoucherNo = e.Voucher?.VoucherNo ?? "",
+                        VoucherStatus = e.Voucher?.Status ?? "Approved",
+                        Remarks = e.Remarks
+                    }).ToList(),
                 Tranches = allDisbursements.Select(d => new LoanTrancheDetailDto
                 {
                     DisbursementID = d.LoanDisbursementID,

@@ -8202,6 +8202,62 @@ BEGIN
 END
 GO
 
+-- =========================================================================================
+-- v2.6.45: OVERDUE LOAN RECOVERY & POSTAGE CHARGES IN PRINCIPAL + VOUCHER SAVING TRANSFER
+-- =========================================================================================
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
+
+IF OBJECT_ID(N'[dbo].[VoucherDetails]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('dbo.VoucherDetails', 'SavingAccountID') IS NULL
+        ALTER TABLE [dbo].[VoucherDetails] ADD [SavingAccountID] INT NULL;
+    IF COL_LENGTH('dbo.VoucherDetails', 'ChargeLoanAccountID') IS NULL
+        ALTER TABLE [dbo].[VoucherDetails] ADD [ChargeLoanAccountID] INT NULL;
+    IF COL_LENGTH('dbo.VoucherDetails', 'ChargeExpenseType') IS NULL
+        ALTER TABLE [dbo].[VoucherDetails] ADD [ChargeExpenseType] NVARCHAR(50) NULL;
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[VoucherDetails]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[LoanAccounts]', N'U') IS NOT NULL AND COL_LENGTH('dbo.VoucherDetails', 'ChargeLoanAccountID') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_VoucherDetails_ChargeLoanAccountID' AND object_id = OBJECT_ID('dbo.VoucherDetails'))
+        CREATE INDEX [IX_VoucherDetails_ChargeLoanAccountID] ON [dbo].[VoucherDetails]([ChargeLoanAccountID]) WHERE [ChargeLoanAccountID] IS NOT NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_VoucherDetails_LoanAccounts_ChargeLoanAccountID')
+        ALTER TABLE [dbo].[VoucherDetails] ADD CONSTRAINT [FK_VoucherDetails_LoanAccounts_ChargeLoanAccountID] FOREIGN KEY ([ChargeLoanAccountID]) REFERENCES [dbo].[LoanAccounts]([LoanAccountID]);
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[LoanAccounts]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('dbo.LoanAccounts', 'CapitalizedRecoveryCharges') IS NULL
+        ALTER TABLE [dbo].[LoanAccounts] ADD [CapitalizedRecoveryCharges] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_LoanAccounts_CapRecoveryCharges_Vps] DEFAULT 0;
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[LoanCollections]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('dbo.LoanCollections', 'ExpensesCollected') IS NULL
+        ALTER TABLE [dbo].[LoanCollections] ADD [ExpensesCollected] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_LoanCollections_ExpensesCollected_Vps] DEFAULT 0;
+    IF COL_LENGTH('dbo.LoanCollections', 'ChargesPrincipalCollected') IS NULL
+        ALTER TABLE [dbo].[LoanCollections] ADD [ChargesPrincipalCollected] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_LoanCollections_ChargesPrinCollected_Vps] DEFAULT 0;
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[Sec101LegalExpenses]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('dbo.Sec101LegalExpenses', 'CapitalizeToLoanPrincipal') IS NULL
+        ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [CapitalizeToLoanPrincipal] BIT NOT NULL CONSTRAINT [DF_Sec101LegalExp_CapToPrin_Vps] DEFAULT 0;
+    IF COL_LENGTH('dbo.Sec101LegalExpenses', 'IsPrincipalApplied') IS NULL
+        ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [IsPrincipalApplied] BIT NOT NULL CONSTRAINT [DF_Sec101LegalExp_IsPrinApp_Vps] DEFAULT 0;
+    IF COL_LENGTH('dbo.Sec101LegalExpenses', 'DebitLedgerId') IS NULL
+        ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [DebitLedgerId] INT NULL;
+    IF COL_LENGTH('dbo.Sec101LegalExpenses', 'CreditLedgerId') IS NULL
+        ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [CreditLedgerId] INT NULL;
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

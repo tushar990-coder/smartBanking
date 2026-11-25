@@ -29,6 +29,8 @@ interface OverdueLoanRow {
   sanctionedAmount: number;
   principalBalance: number;
   overduePrincipal: number;
+  capitalizedRecoveryCharges?: number;
+  recoveryExpensesDue?: number;
   overdueSinceDate: string | null;
   overdueInstallmentsCount: number;
   installmentAmount: number;
@@ -190,7 +192,8 @@ export default function LoanOverdueReport() {
   const totalPrincipalBal = filteredRows.reduce((sum, r) => sum + (r.principalBalance || 0), 0);
   const totalOverduePrincipal = filteredRows.reduce((sum, r) => sum + (r.overduePrincipal || 0), 0);
   const totalOutstandingInterest = filteredRows.reduce((sum, r) => sum + (r.outstandingInterest || 0), 0);
-  const totalOverdueDemand = totalOverduePrincipal + totalOutstandingInterest;
+  const totalRecoveryDue = filteredRows.reduce((sum, r) => sum + (r.recoveryExpensesDue || 0), 0);
+  const totalOverdueDemand = totalOverduePrincipal + totalOutstandingInterest + totalRecoveryDue;
 
   const handleExportExcel = () => {
     if (filteredRows.length === 0) {
@@ -211,9 +214,11 @@ export default function LoanOverdueReport() {
         'कर्ज दिनांक': formatDisplayDate(r.loanDate),
         'मंजूर रक्कम (₹)': r.sanctionedAmount || 0,
         'मुद्दल शिल्लक (₹)': r.principalBalance || 0,
+        'पैकी वसूली/पोसटेज खर्च (₹)': r.capitalizedRecoveryCharges || 0,
         'थकीत मुद्दल (₹)': r.overduePrincipal || 0,
         'थकीत व्याज (₹)': r.outstandingInterest || 0,
-        'एकूण थकीत मागणी (₹)': (r.overduePrincipal || 0) + (r.outstandingInterest || 0),
+        'येणे कायदेशीर खर्च (₹)': r.recoveryExpensesDue || 0,
+        'एकूण थकीत मागणी (₹)': (r.overduePrincipal || 0) + (r.outstandingInterest || 0) + (r.recoveryExpensesDue || 0),
         'थकीत हप्ते': r.overdueInstallmentsCount || 0,
         'थकीत दिनांक': formatDisplayDate(r.overdueSinceDate),
         'जामीनदार तपशील': r.guarantorDetails || '-'
@@ -230,8 +235,10 @@ export default function LoanOverdueReport() {
       'कर्ज दिनांक': '',
       'मंजूर रक्कम (₹)': totalSanctioned,
       'मुद्दल शिल्लक (₹)': totalPrincipalBal,
+      'पैकी वसूली/पोसटेज खर्च (₹)': filteredRows.reduce((s, r) => s + (r.capitalizedRecoveryCharges || 0), 0),
       'थकीत मुद्दल (₹)': totalOverduePrincipal,
       'थकीत व्याज (₹)': totalOutstandingInterest,
+      'येणे कायदेशीर खर्च (₹)': totalRecoveryDue,
       'एकूण थकीत मागणी (₹)': totalOverdueDemand,
       'थकीत हप्ते': '',
       'थकीत दिनांक': '',
@@ -540,7 +547,8 @@ export default function LoanOverdueReport() {
                     const subBal = rows.reduce((sum, r) => sum + (r.principalBalance || 0), 0);
                     const subOverduePrin = rows.reduce((sum, r) => sum + (r.overduePrincipal || 0), 0);
                     const subOverdueInt = rows.reduce((sum, r) => sum + (r.outstandingInterest || 0), 0);
-                    const subTotalOverdue = subOverduePrin + subOverdueInt;
+                    const subRecoveryDue = rows.reduce((sum, r) => sum + (r.recoveryExpensesDue || 0), 0);
+                    const subTotalOverdue = subOverduePrin + subOverdueInt + subRecoveryDue;
 
                     return (
                       <React.Fragment key={typeStr}>
@@ -575,7 +583,12 @@ export default function LoanOverdueReport() {
                               {fmtCurrency(row.sanctionedAmount)}
                             </td>
                             <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-gray-900">
-                              {fmtCurrency(row.principalBalance)}
+                              <div>{fmtCurrency(row.principalBalance)}</div>
+                              {(row.capitalizedRecoveryCharges || 0) > 0 && (
+                                <div className="text-[9px] text-amber-800 font-semibold">
+                                  (खर्च: ₹{fmtCurrency(row.capitalizedRecoveryCharges || 0)})
+                                </div>
+                              )}
                             </td>
                             <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-red-700">
                               {fmtCurrency(row.overduePrincipal)}
@@ -584,7 +597,12 @@ export default function LoanOverdueReport() {
                               {fmtCurrency(row.outstandingInterest)}
                             </td>
                             <td className="border border-gray-900 py-1 px-2 text-right font-mono font-extrabold text-red-900 bg-red-50/50">
-                              {fmtCurrency((row.overduePrincipal || 0) + (row.outstandingInterest || 0))}
+                              <div>{fmtCurrency((row.overduePrincipal || 0) + (row.outstandingInterest || 0) + (row.recoveryExpensesDue || 0))}</div>
+                              {(row.recoveryExpensesDue || 0) > 0 && (
+                                <div className="text-[9px] text-rose-700 font-semibold">
+                                  (+खर्च: ₹{fmtCurrency(row.recoveryExpensesDue || 0)})
+                                </div>
+                              )}
                             </td>
                             <td className="border border-gray-900 py-1 px-1 text-center font-mono font-bold text-red-600">
                               {row.overdueInstallmentsCount || 0}

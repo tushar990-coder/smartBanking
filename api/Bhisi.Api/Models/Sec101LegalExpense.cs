@@ -57,6 +57,21 @@ namespace Bhisi.Api.Models
 
         public bool IsDebitedToLoan { get; set; } = true;
 
+        /// <summary>
+        /// When true, this recovery / postage charge is added directly to LoanAccount.PrincipalBalance
+        /// (Dr Loan GL / Cr Other Income GL) upon voucher approval instead of separate OverdueRecoveryLedgers.
+        /// </summary>
+        public bool CapitalizeToLoanPrincipal { get; set; } = false;
+
+        /// <summary>
+        /// Idempotency and lossless rollback flag indicating whether CapitalizeToLoanPrincipal was applied to LoanAccount.
+        /// </summary>
+        public bool IsPrincipalApplied { get; set; } = false;
+
+        public int? DebitLedgerId { get; set; }
+
+        public int? CreditLedgerId { get; set; }
+
         public string? Remarks { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

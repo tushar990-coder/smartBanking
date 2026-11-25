@@ -2476,6 +2476,42 @@ namespace Bhisi.Api.Services
 
             if (legalExpenses.Any())
             {
+                var principalLegalExpenses = legalExpenses
+                    .Where(e => e.CapitalizeToLoanPrincipal && e.IsPrincipalApplied && e.LoanAccountId > 0)
+                    .ToList();
+                var rolledBackPrincipalLoanIds = new HashSet<int>();
+                if (principalLegalExpenses.Any())
+                {
+                    var groupedByLoan = principalLegalExpenses
+                        .GroupBy(e => e.LoanAccountId)
+                        .Select(g => new { LoanAccountId = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+                        .ToList();
+
+                    var affectedPrincipalLoans = new Dictionary<int, (LoanAccount Loan, decimal TotalAmount)>();
+                    foreach (var grp in groupedByLoan)
+                    {
+                        var loan = await _context.LoanAccounts.FindAsync(grp.LoanAccountId);
+                        if (loan != null)
+                        {
+                            if (loan.CapitalizedRecoveryCharges < grp.TotalAmount - 0.01m || loan.PrincipalBalance < grp.TotalAmount - 0.01m)
+                            {
+                                throw new VoucherRollbackDomainException(
+                                    StatusCodes.Status400BadRequest,
+                                    $"या खर्चाची मुद्दल रक्कम (₹{grp.TotalAmount:N2}) कर्ज वसुलीतून आधीच वसूल झालेली असल्याने हे व्हाउचर डिलीट करता येत नाही.");
+                            }
+                            affectedPrincipalLoans[grp.LoanAccountId] = (loan, grp.TotalAmount);
+                        }
+                    }
+
+                    foreach (var kv in affectedPrincipalLoans.Values)
+                    {
+                        kv.Loan.PrincipalBalance = Math.Max(0m, Math.Round(kv.Loan.PrincipalBalance - kv.TotalAmount, 2, MidpointRounding.AwayFromZero));
+                        kv.Loan.CapitalizedRecoveryCharges = Math.Max(0m, Math.Round(kv.Loan.CapitalizedRecoveryCharges - kv.TotalAmount, 2, MidpointRounding.AwayFromZero));
+                        _context.Entry(kv.Loan).State = EntityState.Modified;
+                        rolledBackPrincipalLoanIds.Add(kv.Loan.LoanAccountID);
+                    }
+                }
+
                 var legalOverdueRows = await _context.OverdueRecoveryLedgers
                     .Where(o => o.VoucherID.HasValue && voucherIds.Contains(o.VoucherID.Value) && o.DebitAmount > 0)
                     .ToListAsync();
@@ -2534,6 +2570,28 @@ namespace Bhisi.Api.Services
 
                 _context.Sec101LegalExpenses.RemoveRange(legalExpenses);
                 await _context.SaveChangesAsync();
+
+                foreach (int lid in rolledBackPrincipalLoanIds)
+                {
+                    var loanAcc = await _context.LoanAccounts.FirstOrDefaultAsync(l => l.LoanAccountID == lid);
+                    if (loanAcc == null) continue;
+                    var schedules = await _context.LoanInstallmentSchedules
+                        .Where(s => s.LoanAccountID == lid)
+                        .OrderBy(s => s.InstallmentNo)
+                        .ToListAsync();
+                    if (schedules.Any())
+                    {
+                        var loanCollectionsForSync = await _context.LoanCollections
+                            .Where(c => c.LoanAccountID == lid)
+                            .ToListAsync();
+                        LoanScheduleGenerator.SynchronizeSchedules(loanAcc, schedules, loanCollectionsForSync);
+                        foreach (var s in schedules) _context.Entry(s).State = EntityState.Modified;
+                    }
+                }
+                if (rolledBackPrincipalLoanIds.Any())
+                {
+                    await _context.SaveChangesAsync();
+                }
             }
 
             // 7D. Batch Loan Interest Posting (PostInterestBatch) & NPA Contra / Provision (HQ-JV-* / JV-LN-INT-*)
@@ -2557,10 +2615,16 @@ namespace Bhisi.Api.Services
             var loanAccount = await _context.LoanAccounts.FindAsync(collection.LoanAccountID);
             if (loanAccount != null)
             {
+                decimal chargesRestored = Math.Min(collection.PrincipalCollected, Math.Max(0m, collection.ChargesPrincipalCollected));
+                decimal remPrinRestore = Math.Max(0m, collection.PrincipalCollected - chargesRestored);
                 loanAccount.PrincipalBalance = Math.Round(loanAccount.PrincipalBalance + collection.PrincipalCollected, 2, MidpointRounding.AwayFromZero);
+                if (chargesRestored > 0m)
+                {
+                    loanAccount.CapitalizedRecoveryCharges = Math.Round(loanAccount.CapitalizedRecoveryCharges + chargesRestored, 2, MidpointRounding.AwayFromZero);
+                }
                 loanAccount.PurePrincipalBalance = Math.Min(
-                    loanAccount.PrincipalBalance,
-                    Math.Round(loanAccount.PurePrincipalBalance + collection.PrincipalCollected, 2, MidpointRounding.AwayFromZero));
+                    Math.Max(0m, loanAccount.PrincipalBalance - loanAccount.CapitalizedRecoveryCharges - loanAccount.CapitalizedInterestAmount),
+                    Math.Round(loanAccount.PurePrincipalBalance + remPrinRestore, 2, MidpointRounding.AwayFromZero));
 
                 decimal bookedPenaltyToRestore = collection.BookedPenaltySettled ?? collection.PenaltyInterestCollected;
                 decimal penaltyToRestore = bookedPenaltyToRestore + collection.PenaltyWaived;
@@ -3683,8 +3747,20 @@ namespace Bhisi.Api.Services
                 }
             }
 
-            // 11C. General Sweep: Reverse all remaining SavingTransactions matching voucherNos
+            // 11C. General Sweep: Reverse all remaining SavingTransactions matching voucherNos or voucherIds
             await ReverseAllSavingTransactionsByVoucherNosAsync(voucherNos, reversedSavingTxnIds, affectedSavingAccountIds);
+            if (voucherIds.Any())
+            {
+                var idMatchedTxns = await _context.SavingTransactions
+                    .Where(st => st.VoucherID.HasValue && voucherIds.Contains(st.VoucherID.Value))
+                    .OrderByDescending(st => st.TransactionDate)
+                    .ThenByDescending(st => st.TransactionID)
+                    .ToListAsync();
+                foreach (var st in idMatchedTxns)
+                {
+                    await ReverseAndHardDeleteSavingTxnOnceAsync(st, reversedSavingTxnIds, affectedSavingAccountIds);
+                }
+            }
             await _context.SaveChangesAsync();
 
             // 11D. Saving Account Opening Deposit (VCH-SAV-OPN-*)

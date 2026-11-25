@@ -77,6 +77,8 @@ interface LoanLedgerReportDto {
   principalBalance?: number;
   purePrincipalBalance?: number;
   capitalizedInterestAmount?: number;
+  capitalizedRecoveryCharges?: number;
+  unpaidRecoveryExpenses?: number;
   receivableInterestBalance?: number;
   openingBalanceDate?: string | null;
   interestFromDate?: string | null;
@@ -605,21 +607,23 @@ const LoanLedgerReport: React.FC = () => {
   ) => {
     const closingPrincipal = itemTotals.closingBalance;
     const sanctioned = item.sanctionedAmount || 0;
+    const postedRecoveryCharges = Math.min(closingPrincipal, Math.max(0, item.capitalizedRecoveryCharges || 0));
+    const maxNonRecovery = Math.max(0, closingPrincipal - postedRecoveryCharges);
 
     let purePrincipal =
       item.purePrincipalBalance && item.purePrincipalBalance > 0
         ? item.purePrincipalBalance
-        : sanctioned > 0 && closingPrincipal > sanctioned
+        : sanctioned > 0 && maxNonRecovery > sanctioned
         ? sanctioned
-        : closingPrincipal;
-    purePrincipal = Math.min(closingPrincipal, Math.max(0, purePrincipal));
+        : maxNonRecovery;
+    purePrincipal = Math.min(maxNonRecovery, Math.max(0, purePrincipal));
 
     const postedInterest =
       item.capitalizedInterestAmount && item.capitalizedInterestAmount > 0
-        ? Math.min(closingPrincipal, item.capitalizedInterestAmount)
-        : Math.max(0, closingPrincipal - purePrincipal);
+        ? Math.min(maxNonRecovery, item.capitalizedInterestAmount)
+        : Math.max(0, maxNonRecovery - purePrincipal);
 
-    purePrincipal = Math.max(0, closingPrincipal - postedInterest);
+    purePrincipal = Math.max(0, maxNonRecovery - postedInterest);
 
     // Determine interest start date
     let intFromStr = item.interestFromDate || '';
@@ -669,12 +673,15 @@ const LoanLedgerReport: React.FC = () => {
 
     const receivableInterest = item.receivableInterestBalance || 0;
     const penalInterest = item.overdueAmount || 0;
+    const unpaidRecoveryExpenses = item.unpaidRecoveryExpenses || 0;
     const totalPayable =
-      closingPrincipal + calculatedInterest + receivableInterest + penalInterest;
+      closingPrincipal + calculatedInterest + receivableInterest + penalInterest + unpaidRecoveryExpenses;
 
     return {
       purePrincipal,
       postedInterest,
+      postedRecoveryCharges,
+      unpaidRecoveryExpenses,
       closingPrincipal,
       intFromStr,
       intToStr,
@@ -1052,9 +1059,19 @@ const LoanLedgerReport: React.FC = () => {
 
           <div className="sm:text-right">
             <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">सध्याची मुद्दल बाकी</span>
-            <strong className="text-emerald-700 font-mono text-xs">
+            <strong className="text-emerald-700 font-mono text-xs block">
               ₹ {fmtCurrency(itemTotals.closingBalance)}
             </strong>
+            {(item.capitalizedRecoveryCharges || 0) > 0 && (
+              <span className="text-[9.5px] text-amber-800 font-semibold block">
+                (पैकी वसूली/पोसटेज खर्च: ₹ {fmtCurrency(item.capitalizedRecoveryCharges || 0)})
+              </span>
+            )}
+            {(item.unpaidRecoveryExpenses || 0) > 0 && (
+              <span className="text-[9.5px] text-rose-700 font-semibold block">
+                (+ येणे खर्च: ₹ {fmtCurrency(item.unpaidRecoveryExpenses || 0)})
+              </span>
+            )}
           </div>
 
           <div>
@@ -1670,7 +1687,7 @@ const LoanLedgerReport: React.FC = () => {
               const vasulpatra = s.closingPrincipal;
               const thakBaki = 0;
               const yeneVyaj = s.calculatedInterest + s.receivableInterest + s.penalInterest;
-              const ekunYene = loanBaki + yeneVyaj;
+              const ekunYene = loanBaki + yeneVyaj + s.unpaidRecoveryExpenses;
 
               sumLoanAmount += loanAmt;
               sumLoanBaki += loanBaki;

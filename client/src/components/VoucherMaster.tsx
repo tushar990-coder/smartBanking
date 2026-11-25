@@ -44,6 +44,40 @@ interface Customer {
   aadhaarNo?: string;
 }
 
+interface SavingAccountSummary {
+  savingAccountID?: number;
+  accountNo?: string;
+  formattedAccountNo?: string;
+  oldAccountNo?: string;
+  previousAccountNo?: string;
+  legacyAccountNumber?: string;
+  customerID?: number;
+}
+
+interface SavingAccountOption {
+  savingAccountID: number;
+  branchID: number;
+  accountNo: string;
+  formattedAccountNo?: string;
+  previousAccountNo?: string;
+  oldAccountNo?: string;
+  legacyAccountNumber?: string;
+  savingSchemeID?: number | null;
+  schemeName?: string;
+  customerID: number;
+  cifNo?: string;
+  customerName?: string;
+  customerNameEng?: string;
+  mobileNo?: string;
+  ledgerID: number;
+  ledgerName?: string;
+  currentBalance: number;
+  minimumBalance: number;
+  availableBalance: number;
+  lienAmount: number;
+  status: string;
+}
+
 interface VoucherDetail {
   ledgerID: number;
   drCr: 'Dr' | 'Cr';
@@ -54,6 +88,11 @@ interface VoucherDetail {
   ledgerPath?: string;
   isLocked?: boolean;
   customerID?: number | '';
+  savingAccountID?: number | '';
+  savingAccount?: SavingAccountSummary | null;
+  chargeLoanAccountID?: number | '';
+  chargeExpenseType?: string;
+  chargeLoanAccount?: { loanAccountID?: number; loanAccountNo?: string; legacyAccountNumber?: string } | null;
   accountType?: string;
   showCustomerSelect?: boolean;
 }
@@ -64,6 +103,7 @@ interface Voucher {
   scrollNo?: number;
   voucherDate: string;
   voucherType: string;
+  status?: string;
   narration: string;
   totalAmount: number;
   voucherDetails: {
@@ -74,6 +114,11 @@ interface Voucher {
     amount: number;
     customerID?: number;
     customer?: Customer;
+    savingAccountID?: number | null;
+    savingAccount?: SavingAccountSummary | null;
+    chargeLoanAccountID?: number | null;
+    chargeExpenseType?: string | null;
+    chargeLoanAccount?: { loanAccountID?: number; loanAccountNo?: string; legacyAccountNumber?: string } | null;
     memberID?: number;
     member?: any;
   }[];
@@ -116,6 +161,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     if (user?.branchID) {
       setSelectedBranchId(user.branchID);
       fetchCustomers(user.branchID);
+      fetchSavingAccounts(user.branchID);
     }
   }, [user?.branchID]);
   
@@ -187,6 +233,11 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const [voucherPaymentMode, setVoucherPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
   const [narration, setNarration] = useState('');
   const [details, setDetails] = useState<VoucherDetail[]>([]);
+  const [savingControlLedgerIds, setSavingControlLedgerIds] = useState<number[]>([]);
+  const [savingAccounts, setSavingAccounts] = useState<SavingAccountOption[]>([]);
+  const [loanChargeControlLedgerIds, setLoanChargeControlLedgerIds] = useState<number[]>([]);
+  const [dynamicIncomeLedgers, setDynamicIncomeLedgers] = useState<{ ledgerID: number; ledgerName: string; ledgerCode?: string; groupName?: string }[]>([]);
+  const [loanAccountsForCharges, setLoanAccountsForCharges] = useState<any[]>([]);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const narrationInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -194,6 +245,53 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const LEDGER_API = '/api/Ledgers';
   const CUSTOMER_API = '/api/Customers';
   const BRANCH_API = '/api/Branches';
+  const SAVING_ACCOUNTS_API = '/api/SavingAccounts';
+
+  const defaultSavingControlLedgerId = useMemo(() => {
+    if (savingControlLedgerIds.length > 0) return savingControlLedgerIds[0];
+    const fallback = ledgers.find(l => (l.accountType || '').toLowerCase() === 'savings');
+    return fallback ? fallback.ledgerID : 0;
+  }, [savingControlLedgerIds, ledgers]);
+
+  const isSavingControlLedger = (ledgerId: number): boolean => {
+    if (!ledgerId || ledgerId <= 0) return false;
+    if (savingControlLedgerIds.includes(ledgerId)) return true;
+    if (savingControlLedgerIds.length === 0) {
+      const l = ledgers.find(item => item.ledgerID === ledgerId);
+      return (l?.accountType || '').toLowerCase() === 'savings';
+    }
+    return false;
+  };
+
+  const isLoanControlLedger = (ledgerId: number): boolean => {
+    return ledgerId > 0 && loanChargeControlLedgerIds.includes(ledgerId);
+  };
+
+  const buildLoanChargeAccountOptions = (detail: VoucherDetail) => {
+    const todayStr = voucherDate || new Date().toISOString().split('T')[0];
+    return loanAccountsForCharges
+      .filter(a => {
+        if (!a || a.status === 'Closed') return false;
+        const rateLId = Number(a.loanRate?.loanLedgerID || 0);
+        if (detail.ledgerID > 0 && rateLId > 0) {
+          return rateLId === Number(detail.ledgerID);
+        }
+        return true;
+      })
+      .map(a => {
+        const cust = a.customer || a.member?.customer;
+        const name = cust
+          ? [cust.firstName, cust.middleName, cust.lastName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+          : '';
+        const oldTag = a.legacyAccountNumber ? ` [जुना: ${a.legacyAccountNumber}]` : '';
+        const isOverdue = Boolean(a.maturityDate && String(a.maturityDate).split('T')[0] <= todayStr);
+        const overdueTag = isOverdue ? ' [थकबाकी/मुदतपूर्ती]' : '';
+        return {
+          value: String(a.loanAccountID),
+          label: `${a.loanAccountNo}${oldTag} — ${name || 'कर्जदार'}${cust?.cifNo ? ` (${cust.cifNo})` : ''} | मुद्दल: ₹${Number(a.principalBalance || 0).toLocaleString('en-IN')}${overdueTag}`,
+        };
+      });
+  };
 
   useEffect(() => {
     if (user?.businessDate && !editingVoucherId && !isPassingMode) {
@@ -205,8 +303,12 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     fetchNextVoucherNo('Receipt', selectedBranchId);
     fetchBranches();
     fetchLedgers();
+    fetchSavingControlLedgers();
+    fetchLoanChargeLedgers();
     const timer = setTimeout(() => {
       fetchCustomers(selectedBranchId);
+      fetchSavingAccounts(selectedBranchId);
+      fetchLoanAccountsForCharges(selectedBranchId);
       fetchVouchers();
     }, 40);
     return () => clearTimeout(timer);
@@ -431,6 +533,66 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     }
   };
 
+  const fetchSavingControlLedgers = async () => {
+    try {
+      const response = await fetch(`${API_URL}/saving-control-ledgers`);
+      if (response.ok) {
+        const data = await response.json();
+        const rawList = Array.isArray(data?.ledgerIds)
+          ? data.ledgerIds
+          : (Array.isArray(data?.LedgerIds) ? data.LedgerIds : (Array.isArray(data) ? data : []));
+        const ids = rawList
+          .map((x: any) => Number(typeof x === 'object' ? (x?.ledgerID ?? x?.LedgerID ?? 0) : x))
+          .filter((id: number) => id > 0);
+        setSavingControlLedgerIds(ids);
+      }
+    } catch (err) {
+      console.error('Failed to fetch saving control ledgers', err);
+    }
+  };
+
+  const fetchSavingAccounts = async (branchId: number = selectedBranchId) => {
+    try {
+      const url = branchId > 0 ? `${SAVING_ACCOUNTS_API}?branchId=${branchId}` : SAVING_ACCOUNTS_API;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setSavingAccounts(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch saving accounts', err);
+    }
+  };
+
+  const fetchLoanChargeLedgers = async () => {
+    try {
+      const response = await fetch(`${API_URL}/loan-charge-ledgers`);
+      if (response.ok) {
+        const data = await response.json();
+        const lIds = Array.isArray(data?.loanLedgerIds) ? data.loanLedgerIds : [];
+        setLoanChargeControlLedgerIds(lIds.map((x: any) => Number(x)).filter((id: number) => id > 0));
+        setDynamicIncomeLedgers(Array.isArray(data?.incomeLedgers) ? data.incomeLedgers : []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch loan charge ledgers', err);
+    }
+  };
+
+  const fetchLoanAccountsForCharges = async (branchId: number = selectedBranchId) => {
+    try {
+      const url = branchId > 0
+        ? `/api/LoanAccounts?branchId=${branchId}&status=Active&lightweight=true`
+        : `/api/LoanAccounts?status=Active&lightweight=true`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setLoanAccountsForCharges(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch loan accounts for charge link', err);
+    }
+  };
+
   const fetchVouchers = async () => {
     try {
       const response = await fetch(`${API_URL}?pageSize=0`);
@@ -496,6 +658,15 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     setSelectedBranchId(newBranchId);
     fetchNextVoucherNo(voucherType, newBranchId);
     fetchCustomers(newBranchId);
+    fetchSavingAccounts(newBranchId);
+    fetchLoanAccountsForCharges(newBranchId);
+
+    // शाखा बदलल्यावर मागील शाखेची बचत व कर्ज खाते लिंक काढून टाका (Same-Branch सुरक्षा)
+    setDetails(prev =>
+      prev.map(d => (d.savingAccountID || d.chargeLoanAccountID
+        ? { ...d, savingAccountID: '', savingAccount: null, chargeLoanAccountID: '', chargeExpenseType: '', chargeLoanAccount: null, customerID: '', showCustomerSelect: false }
+        : d))
+    );
 
     if ((voucherType === 'Receipt' || voucherType === 'Payment') && voucherPaymentMode === 'Cash') {
       const cashLId = getCashLedger(ledgers, newBranchId, branches);
@@ -550,6 +721,164 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
     if (primaryLId > 0 && lockedRowIdx >= 0) {
       fetchLedgerBalanceAndPath(primaryLId, lockedRowIdx);
+    }
+  };
+
+  // पेमेंट / इतर व्हाउचर थेट 'सेव्हिंग खात्यावर वर्ग (Journal)' मध्ये रूपांतरित करणे (पगार / मानधन इ. साठी)
+  const handleSwitchToSavingTransferMode = () => {
+    if (isStrictlyCashier) {
+      alert("कॅशियरसाठी जर्नल / सेव्हिंग वर्ग व्हाउचर तयार करण्याची परवानगी नाही.");
+      return;
+    }
+
+    const savLId = defaultSavingControlLedgerId;
+    const savLedger = savLId > 0 ? ledgers.find(l => l.ledgerID === savLId) : undefined;
+    const existingDrRows = details
+      .filter(d => !d.isLocked && d.drCr === 'Dr' && d.ledgerID > 0)
+      .map(d => ({ ...d, isLocked: false }));
+
+    const drRows: VoucherDetail[] = existingDrRows.length > 0
+      ? existingDrRows
+      : [{ ledgerID: 0, drCr: 'Dr', amount: 0, searchQuery: '', savingAccountID: '' }];
+
+    const drSum = drRows.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+    const crSavingRow: VoucherDetail = {
+      ledgerID: savLId,
+      drCr: 'Cr',
+      amount: Number(drSum.toFixed(2)),
+      savingAccountID: '',
+      customerID: '',
+      showCustomerSelect: false,
+      isLocked: false,
+      searchQuery: savLedger?.ledgerName || '',
+      accountType: savLedger?.accountType || 'Savings'
+    };
+
+    const nextRows = [...drRows, crSavingRow];
+    setVoucherType('Journal');
+    setVoucherPaymentMode('Cash');
+    fetchNextVoucherNo('Journal', selectedBranchId);
+    setDetails(nextRows);
+
+    if (savLId > 0) {
+      fetchLedgerBalanceAndPath(savLId, nextRows.length - 1);
+    }
+  };
+
+  const handleAddSavingTransferRow = () => {
+    const savLId = defaultSavingControlLedgerId;
+    const savLedger = savLId > 0 ? ledgers.find(l => l.ledgerID === savLId) : undefined;
+    const curDr = details.filter(d => d.drCr === 'Dr').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+    const curCr = details.filter(d => d.drCr === 'Cr').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+    const diff = curDr > curCr ? Number((curDr - curCr).toFixed(2)) : 0;
+
+    const newRowIdx = details.length;
+    const newRow: VoucherDetail = {
+      ledgerID: savLId,
+      drCr: 'Cr',
+      amount: diff,
+      savingAccountID: '',
+      customerID: '',
+      showCustomerSelect: false,
+      isLocked: false,
+      searchQuery: savLedger?.ledgerName || '',
+      accountType: savLedger?.accountType || 'Savings'
+    };
+
+    setDetails(prev => [...prev, newRow]);
+    if (savLId > 0) {
+      fetchLedgerBalanceAndPath(savLId, newRowIdx);
+    }
+  };
+
+  // थकबाकीदार कर्ज वसूली / पोसटेज खर्च थेट कर्जाच्या मुद्दलात (Dr कर्ज / Cr उत्पन्न - Journal) मोड
+  const handleSwitchToLoanRecoveryChargeMode = () => {
+    if (isStrictlyCashier) {
+      alert("कॅशियरसाठी जर्नल / कर्ज खर्च व्हाउचर तयार करण्याची परवानगी नाही.");
+      return;
+    }
+
+    const defaultLoanLId = loanChargeControlLedgerIds[0] || 0;
+    const defaultLoanLedger = defaultLoanLId > 0 ? ledgers.find(l => l.ledgerID === defaultLoanLId) : undefined;
+    const preferredIncome =
+      dynamicIncomeLedgers.find(l => (l.ledgerName || '').includes('इतर उत्पन्न') || (l.ledgerName || '').toLowerCase().includes('other income')) ||
+      dynamicIncomeLedgers[0];
+    const defaultIncLId = preferredIncome?.ledgerID || 0;
+    const defaultIncLedger = defaultIncLId > 0 ? ledgers.find(l => l.ledgerID === defaultIncLId) : undefined;
+
+    const drLoanRow: VoucherDetail = {
+      ledgerID: defaultLoanLId,
+      drCr: 'Dr',
+      amount: 0,
+      chargeLoanAccountID: '',
+      chargeExpenseType: 'RECOVERY_EXPENSE',
+      chargeLoanAccount: null,
+      savingAccountID: '',
+      customerID: '',
+      showCustomerSelect: false,
+      isLocked: false,
+      searchQuery: defaultLoanLedger?.ledgerName || '',
+      accountType: defaultLoanLedger?.accountType || ''
+    };
+    const crIncomeRow: VoucherDetail = {
+      ledgerID: defaultIncLId,
+      drCr: 'Cr',
+      amount: 0,
+      savingAccountID: '',
+      customerID: '',
+      showCustomerSelect: false,
+      isLocked: false,
+      searchQuery: preferredIncome?.ledgerName || defaultIncLedger?.ledgerName || '',
+      accountType: defaultIncLedger?.accountType || 'Income'
+    };
+
+    setVoucherType('Journal');
+    setVoucherPaymentMode('Cash');
+    fetchNextVoucherNo('Journal', selectedBranchId);
+    setDetails([drLoanRow, crIncomeRow]);
+    if (!narration.trim()) {
+      setNarration('थकबाकीदार कर्ज वसूली / पोसटेज खर्च कर्जाच्या मुद्दलात नावे');
+    }
+    if (defaultLoanLId > 0) fetchLedgerBalanceAndPath(defaultLoanLId, 0);
+    if (defaultIncLId > 0) fetchLedgerBalanceAndPath(defaultIncLId, 1);
+  };
+
+  const handleChargeLoanAccountSelect = (index: number, rawValue: string | number, expenseTypeOverride?: string) => {
+    const lAccId = parseInt(String(rawValue), 10) || 0;
+    const matchedLoan = lAccId > 0 ? loanAccountsForCharges.find(a => Number(a.loanAccountID) === lAccId) : undefined;
+
+    setDetails(prev => {
+      if (!prev[index]) return prev;
+      const updated = [...prev];
+      const nextExpType = expenseTypeOverride ?? (updated[index].chargeExpenseType || 'RECOVERY_EXPENSE');
+      updated[index] = {
+        ...updated[index],
+        chargeLoanAccountID: lAccId > 0 ? lAccId : '',
+        chargeExpenseType: lAccId > 0 ? nextExpType : '',
+        chargeLoanAccount: matchedLoan
+          ? {
+              loanAccountID: matchedLoan.loanAccountID,
+              loanAccountNo: matchedLoan.loanAccountNo,
+              legacyAccountNumber: matchedLoan.legacyAccountNumber,
+            }
+          : null,
+        customerID: matchedLoan?.customerID || matchedLoan?.customer?.customerID || matchedLoan?.member?.customerID || '',
+        showCustomerSelect: false,
+      };
+      return updated;
+    });
+
+    if (matchedLoan) {
+      const cust = matchedLoan.customer || matchedLoan.member?.customer;
+      const custName = cust ? [cust.firstName, cust.lastName].filter(Boolean).join(' ').trim() : '';
+      const curExp = expenseTypeOverride ?? (details[index]?.chargeExpenseType || 'RECOVERY_EXPENSE');
+      const expLabel = curExp === 'POSTAGE_EXPENSE' ? 'पोसटेज खर्च' : curExp === 'NOTICE_FEE' ? 'नोटीस फी' : 'वसूली खर्च';
+      setNarration(prev => {
+        if (!prev.trim() || prev.includes('थकबाकीदार कर्ज वसूली / पोसटेज खर्च')) {
+          return `थकबाकीदार ${expLabel} कर्ज खात्यात (${matchedLoan.loanAccountNo}${custName ? ` - ${custName}` : ''}) मुद्दलात नावे`;
+        }
+        return prev;
+      });
     }
   };
 
@@ -709,6 +1038,11 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
         searchQuery: sel?.ledgerName || '',
         accountType: sel?.accountType || '',
         customerID: '',
+        savingAccountID: '',
+        savingAccount: null,
+        chargeLoanAccountID: '',
+        chargeExpenseType: '',
+        chargeLoanAccount: null,
         showCustomerSelect: false,
         ledgerBalance: undefined,
         ledgerBalanceType: undefined,
@@ -720,6 +1054,75 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     if (lId > 0) {
       fetchLedgerBalanceAndPath(lId, index);
     }
+  };
+
+  const handleSavingAccountSelect = (index: number, rawValue: string | number) => {
+    const savId = parseInt(String(rawValue), 10) || 0;
+    const matched = savId > 0 ? savingAccounts.find(a => a.savingAccountID === savId) : undefined;
+
+    setDetails(prev => {
+      if (!prev[index]) return prev;
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        savingAccountID: savId > 0 ? savId : '',
+        savingAccount: matched
+          ? {
+              savingAccountID: matched.savingAccountID,
+              accountNo: matched.formattedAccountNo || matched.accountNo,
+              oldAccountNo: matched.oldAccountNo,
+              previousAccountNo: matched.previousAccountNo,
+              legacyAccountNumber: matched.legacyAccountNumber,
+              customerID: matched.customerID
+            }
+          : null,
+        customerID: matched?.customerID ? matched.customerID : '',
+        showCustomerSelect: false
+      };
+      return updated;
+    });
+  };
+
+  const buildSavingAccountOptions = (detail: VoucherDetail) => {
+    const selectedId = Number(detail.savingAccountID || 0);
+    const filtered = savingAccounts.filter(acc => {
+      if (acc.savingAccountID === selectedId) return true;
+      const statusLower = (acc.status || '').toLowerCase();
+      if (statusLower === 'closed' || statusLower === 'frozen') return false;
+      if (detail.ledgerID > 0 && acc.ledgerID > 0 && acc.ledgerID !== detail.ledgerID) return false;
+      return true;
+    });
+
+    const opts = filtered.map(acc => {
+      const accNo = (acc.formattedAccountNo || acc.accountNo || '').toString().trim();
+      const oldNo = (acc.oldAccountNo || acc.previousAccountNo || acc.legacyAccountNumber || '').toString().trim();
+      const oldPart = oldNo ? ` [जुना: ${oldNo}]` : '';
+      const statusLower = (acc.status || '').toLowerCase();
+      const statusText = statusLower === 'dormant' ? 'निष्क्रिय' : 'सक्रिय';
+      return {
+        value: acc.savingAccountID.toString(),
+        label: `${accNo}${oldPart} - ${acc.customerName || 'खातेदार'}`,
+        subLabel: `${oldNo ? `🏷️ जुना बचत नं.: ${oldNo} | ` : ''}${acc.cifNo ? `CIF: ${acc.cifNo} | ` : ''}शिल्लक: ₹${Number(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} | उपलब्ध: ₹${Number(acc.availableBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}${acc.schemeName ? ` | ${acc.schemeName}` : ''}`,
+        badge: oldNo ? `${statusText} • जुना: ${oldNo}` : (statusLower === 'dormant' ? 'निष्क्रिय (Dormant)' : 'सक्रिय'),
+        badgeColor: statusLower === 'dormant'
+          ? 'bg-amber-50 text-amber-800 border-amber-200'
+          : (oldNo ? 'bg-amber-50 text-amber-900 border-amber-300' : 'bg-emerald-50 text-emerald-700 border-emerald-200')
+      };
+    });
+
+    if (selectedId > 0 && !opts.some(o => Number(o.value) === selectedId)) {
+      const fallbackNo = detail.savingAccount?.formattedAccountNo || detail.savingAccount?.accountNo || `#${selectedId}`;
+      const fallbackOld = (detail.savingAccount?.oldAccountNo || detail.savingAccount?.previousAccountNo || detail.savingAccount?.legacyAccountNumber || '').toString().trim();
+      opts.unshift({
+        value: selectedId.toString(),
+        label: `${fallbackNo}${fallbackOld ? ` [जुना: ${fallbackOld}]` : ''} (संलग्न बचत खाते)`,
+        subLabel: `${fallbackOld ? `🏷️ जुना बचत नं.: ${fallbackOld} | ` : ''}खाते आयडी: #${selectedId}`,
+        badge: fallbackOld ? `सक्रिय • जुना: ${fallbackOld}` : 'सक्रिय',
+        badgeColor: fallbackOld ? 'bg-amber-50 text-amber-900 border-amber-300' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      });
+    }
+
+    return opts;
   };
 
   const handleDetailChange = (index: number, field: keyof VoucherDetail, value: any) => {
@@ -822,9 +1225,42 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       }
     }
 
-    // Prevent debiting and crediting the exact same ledger (with same customer sub-ledger) in one voucher
-    const drKeys = new Set(details.filter(d => d.drCr === 'Dr').map(d => `${d.ledgerID}_${d.customerID || 0}`));
-    const duplicateCr = details.find(d => d.drCr === 'Cr' && drKeys.has(`${d.ledgerID}_${d.customerID || 0}`));
+    // Validate mandatory Saving Account selection for Saving Control Ledgers (e.g. 46 - सेव्हिंग ठेव)
+    const missingSavingRow = details.find(d => isSavingControlLedger(d.ledgerID) && !Number(d.savingAccountID || 0));
+    if (missingSavingRow) {
+      const lName = ledgers.find(item => item.ledgerID === missingSavingRow.ledgerID)?.ledgerName || 'सेव्हिंग ठेव';
+      alert(`बचत खाते निवडा: '${lName}' या बचत खात्यासाठी संबंधित सभासद / कर्मचाऱ्याचे बचत खाते (Saving Account) निवडणे आवश्यक आहे.`);
+      return;
+    }
+
+    const crossBranchSavingRow = details.find(d => {
+      const savId = Number(d.savingAccountID || 0);
+      if (savId <= 0) return false;
+      const matched = savingAccounts.find(a => a.savingAccountID === savId);
+      return matched && matched.branchID !== selectedBranchId;
+    });
+    if (crossBranchSavingRow) {
+      alert("निवडलेले बचत खाते सध्याच्या शाखेतील (Same Branch) नाही. कृपया त्याच शाखेचे बचत खाते निवडा.");
+      return;
+    }
+
+    const crossBranchLoanChargeRow = details.find(d => {
+      const lAccId = Number(d.chargeLoanAccountID || 0);
+      if (lAccId <= 0) return false;
+      if (d.drCr !== 'Dr') return true;
+      const matched = loanAccountsForCharges.find(a => Number(a.loanAccountID) === lAccId);
+      return matched && matched.branchID && Number(matched.branchID) !== Number(selectedBranchId);
+    });
+    if (crossBranchLoanChargeRow) {
+      alert(crossBranchLoanChargeRow.drCr !== 'Dr'
+        ? "कर्जाच्या मुद्दलात वसूली/पोसटेज खर्च जोडताना कर्ज खात्याची ओळ 'Dr' (नावे) असणे आवश्यक आहे."
+        : "निवडलेले कर्ज खाते सध्याच्या शाखेतील (Same Branch) नाही.");
+      return;
+    }
+
+    // Prevent debiting and crediting the exact same ledger (with same customer/saving/loan-charge sub-ledger) in one voucher
+    const drKeys = new Set(details.filter(d => d.drCr === 'Dr').map(d => `${d.ledgerID}_${d.customerID || 0}_${d.savingAccountID || 0}_${d.chargeLoanAccountID || 0}`));
+    const duplicateCr = details.find(d => d.drCr === 'Cr' && drKeys.has(`${d.ledgerID}_${d.customerID || 0}_${d.savingAccountID || 0}_${d.chargeLoanAccountID || 0}`));
     if (duplicateCr) {
       const lName = ledgers.find(item => item.ledgerID === duplicateCr.ledgerID)?.ledgerName || '';
       alert(`एकाच व्हाउचरमध्ये एकाच खात्याला ('${lName}') एकाच वेळी नावे (Dr) आणि जमा (Cr) करता येत नाही.`);
@@ -844,6 +1280,9 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
         drCr: d.drCr,
         amount: d.amount,
         customerID: d.customerID ? Number(d.customerID) : null,
+        savingAccountID: d.savingAccountID ? Number(d.savingAccountID) : null,
+        chargeLoanAccountID: d.chargeLoanAccountID ? Number(d.chargeLoanAccountID) : null,
+        chargeExpenseType: d.chargeLoanAccountID ? (d.chargeExpenseType || 'RECOVERY_EXPENSE') : null,
         memberID: null
       }))
     };
@@ -889,6 +1328,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       setSelectedBranchId((v as any).branchID);
       if ((v as any).branchID !== selectedBranchId) {
         fetchCustomers((v as any).branchID);
+        fetchSavingAccounts((v as any).branchID);
       }
     }
 
@@ -914,13 +1354,19 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       const isAutoCashRow = idx === firstCashPrimaryIdx;
       const isAutoBankRow = idx === firstBankPrimaryIdx;
       const matchedLedger = vd.ledger || ledgers.find(l => l.ledgerID === vd.ledgerID);
-      const resolvedCustId = vd.customerID || vd.customer?.customerID || vd.member?.customerID || vd.member?.customer?.customerID || '';
+      const resolvedSavId = vd.savingAccountID ?? (vd as any).SavingAccountID ?? vd.savingAccount?.savingAccountID ?? '';
+      const resolvedCustId = vd.customerID || vd.customer?.customerID || vd.savingAccount?.customerID || vd.member?.customerID || vd.member?.customer?.customerID || '';
       return {
         ledgerID: vd.ledgerID,
         drCr: vd.drCr as 'Dr' | 'Cr',
         amount: vd.amount,
         customerID: resolvedCustId,
-        showCustomerSelect: Boolean(resolvedCustId),
+        savingAccountID: resolvedSavId,
+        savingAccount: vd.savingAccount || null,
+        chargeLoanAccountID: vd.chargeLoanAccountID ?? (vd as any).ChargeLoanAccountID ?? '',
+        chargeExpenseType: vd.chargeExpenseType ?? (vd as any).ChargeExpenseType ?? '',
+        chargeLoanAccount: vd.chargeLoanAccount || (vd as any).ChargeLoanAccount || null,
+        showCustomerSelect: Boolean(resolvedCustId) && !resolvedSavId && !(vd.chargeLoanAccountID ?? (vd as any).ChargeLoanAccountID),
         isLocked: isAutoCashRow || isAutoBankRow,
         searchQuery: matchedLedger?.ledgerName || '',
         accountType: matchedLedger?.accountType || ''
@@ -1008,7 +1454,10 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       const custStr = cust
         ? `${cust.cifNo || ''} ${cust.legacyCustomerNo || ''} ${cust.firstName || ''} ${cust.middleName || ''} ${cust.lastName || ''}`.toLowerCase()
         : '';
-      return (vd.ledger?.ledgerName || '').toLowerCase().includes(q) || custStr.includes(q);
+      const savStr = vd.savingAccount
+        ? `${vd.savingAccount.accountNo || ''} ${vd.savingAccount.oldAccountNo || ''} ${vd.savingAccount.previousAccountNo || ''} ${vd.savingAccount.legacyAccountNumber || ''}`.toLowerCase()
+        : '';
+      return (vd.ledger?.ledgerName || '').toLowerCase().includes(q) || custStr.includes(q) || savStr.includes(q);
     });
 
     return matchesType && (matchNo || matchType || matchNarration || matchAmount || matchDate || matchBranch || matchLedger);
@@ -1243,28 +1692,118 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                 />
               </div>
             </div>
+
+            {(voucherType === 'Receipt' || voucherType === 'Payment') && (
+              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-700 mr-1">व्यवहार माध्यम (Mode):</span>
+                  <button
+                    type="button"
+                    disabled={isPassingMode}
+                    onClick={() => handleVoucherPaymentModeChange('Cash')}
+                    className={`px-2.5 py-1 rounded-sm text-[11px] font-bold border transition-all cursor-pointer ${
+                      voucherPaymentMode === 'Cash'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    💵 रोख (Cash)
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPassingMode}
+                    onClick={() => handleVoucherPaymentModeChange('Bank')}
+                    className={`px-2.5 py-1 rounded-sm text-[11px] font-bold border transition-all cursor-pointer ${
+                      voucherPaymentMode === 'Bank'
+                        ? 'bg-blue-600 text-white border-blue-700 shadow-2xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    🏦 बँक (Bank)
+                  </button>
+                  {!isPassingMode && editingVoucherId === null && voucherType === 'Payment' && !isStrictlyCashier && (
+                    <button
+                      type="button"
+                      onClick={handleSwitchToSavingTransferMode}
+                      className="px-2.5 py-1 rounded-sm text-[11px] font-bold border bg-teal-50 hover:bg-teal-100 text-teal-900 border-teal-300 transition-all cursor-pointer shadow-2xs"
+                      title="नोकर पगार, वसूली अधिकारी मानधन किंवा इतर खर्च थेट सेव्हिंग खात्यावर वर्ग करण्यासाठी जर्नल व्हाउचर तयार करा"
+                    >
+                      💳 सेव्हिंग खात्यावर वर्ग (Saving Transfer)
+                    </button>
+                  )}
+                  {!isPassingMode && editingVoucherId === null && !isStrictlyCashier && (
+                    <button
+                      type="button"
+                      onClick={handleSwitchToLoanRecoveryChargeMode}
+                      className="px-2.5 py-1 rounded-sm text-[11px] font-bold border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300 transition-all cursor-pointer shadow-2xs"
+                      title="थकबाकीदार कर्जाचे वसूली खर्च किंवा पोसटेज खर्च थेट कर्जाच्या मुद्दलात (Dr कर्ज / Cr उत्पन्न - Journal) जोडण्यासाठी तयार करा"
+                    >
+                      🏷️ कर्जात वसूली/पोसटेज खर्च
+                    </button>
+                  )}
+                </div>
+                {voucherType === 'Payment' && !isPassingMode && !isStrictlyCashier && (
+                  <span className="text-[10.5px] text-slate-500">
+                    टीप: पगार / मानधन सेव्हिंग खात्यावर वर्ग करण्यासाठी <strong>सेव्हिंग खात्यावर वर्ग</strong> निवडा किंवा <strong>Journal</strong> व्हाउचर वापरा.
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* SECTION 2: व्हाउचर खतावणी तपशील */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
-            <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-1.5">
               <div className="flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-primary" />
                 <h2 className="text-xs font-bold text-primary">२. व्हाउचर खतावणी तपशील (Account Ledgers & Amount Allocation)</h2>
               </div>
 
               {!isPassingMode && (
-                <button 
-                  type="button" 
-                  tabIndex={-1}
-                  onClick={handleAddRow} 
-                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>ओळ जोडा (Add Row)</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {voucherType === 'Journal' && !isStrictlyCashier && (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={handleSwitchToLoanRecoveryChargeMode}
+                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      title="थकबाकीदार कर्ज वसूली/पोसटेज खर्च (Dr कर्ज / Cr उत्पन्न)"
+                    >
+                      <span>🏷️ कर्जात वसूली/पोसटेज खर्च</span>
+                    </button>
+                  )}
+                  {voucherType === 'Journal' && defaultSavingControlLedgerId > 0 && (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={handleAddSavingTransferRow}
+                      className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      title="अजून एका कर्मचाऱ्याच्या / वसूली अधिकाऱ्याच्या बचत खात्यात वर्ग ओळ जोडा"
+                    >
+                      <span>💳 + बचत वर्ग ओळ (Add Saving Cr)</span>
+                    </button>
+                  )}
+                  <button 
+                    type="button" 
+                    tabIndex={-1}
+                    onClick={handleAddRow} 
+                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>ओळ जोडा (Add Row)</span>
+                  </button>
+                </div>
               )}
             </div>
+
+            {voucherType === 'Journal' && !isPassingMode && (
+              <div className="px-2.5 py-1.5 bg-teal-50/70 border border-teal-200 rounded-sm text-[11px] text-teal-950 flex items-center gap-2">
+                <span>💡</span>
+                <span>
+                  <strong>पगार / मानधन / सेव्हिंग वर्ग मार्गदर्शन:</strong> खर्चाचे खाते (उदा. <em>नोकर पगार</em> किंवा <em>कर्मचारी मानधन</em>) <strong>Dr</strong> निवडा आणि समोर <strong>सेव्हिंग ठेव (Cr)</strong> निवडून संबंधित कर्मचाऱ्याचे / अधिकाऱ्याचे बचत खाते निवडा. एकाच व्हाउचरमध्ये अनेक कर्मचाऱ्यांच्या खात्यात भाग-वार वर्ग करता येतो.
+                </span>
+              </div>
+            )}
 
             <div className="overflow-x-auto border border-gray-200 rounded-sm max-h-[420px] shadow-2xs">
               <table className="min-w-full divide-y divide-gray-200 text-[11px] text-center border-collapse">
@@ -1321,7 +1860,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                         {detail.ledgerID > 0 && (
                           detail.ledgerPath ||
                           detail.ledgerBalance !== undefined ||
-                          (!isPassingMode && !detail.isLocked && !detail.showCustomerSelect && !detail.customerID && detail.accountType !== 'Cash In Hand')
+                          (!isPassingMode && !detail.isLocked && !isSavingControlLedger(detail.ledgerID) && !detail.showCustomerSelect && !detail.customerID && detail.accountType !== 'Cash In Hand')
                         ) && (
                           <div className="mt-1 flex flex-col gap-0.5">
                             {detail.ledgerPath && (
@@ -1335,7 +1874,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                   शिल्लक (Balance): ₹{Number(detail.ledgerBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {detail.ledgerBalanceType || ''}
                                 </p>
                               ) : <span />}
-                              {!isPassingMode && !detail.isLocked && !detail.showCustomerSelect && !detail.customerID && detail.accountType !== 'Cash In Hand' && (
+                              {!isPassingMode && !detail.isLocked && !isSavingControlLedger(detail.ledgerID) && !detail.showCustomerSelect && !detail.customerID && detail.accountType !== 'Cash In Hand' && (
                                 <button
                                   type="button"
                                   tabIndex={-1}
@@ -1348,8 +1887,163 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                             </div>
                           </div>
                         )}
-                        
-                        {detail.ledgerID > 0 && Boolean(detail.showCustomerSelect || detail.customerID) && (
+
+                        {detail.ledgerID > 0 && !detail.isLocked && isSavingControlLedger(detail.ledgerID) && (() => {
+                          const selectedSavAcc = detail.savingAccountID
+                            ? savingAccounts.find(a => a.savingAccountID === Number(detail.savingAccountID))
+                            : undefined;
+                          const displaySavAccNo = (
+                            selectedSavAcc?.formattedAccountNo ||
+                            selectedSavAcc?.accountNo ||
+                            detail.savingAccount?.formattedAccountNo ||
+                            detail.savingAccount?.accountNo ||
+                            ''
+                          ).toString().trim();
+                          const displaySavOldNo = (
+                            selectedSavAcc?.oldAccountNo ||
+                            selectedSavAcc?.previousAccountNo ||
+                            selectedSavAcc?.legacyAccountNumber ||
+                            detail.savingAccount?.oldAccountNo ||
+                            detail.savingAccount?.previousAccountNo ||
+                            detail.savingAccount?.legacyAccountNumber ||
+                            ''
+                          ).toString().trim();
+                          const isLowBal = Boolean(
+                            selectedSavAcc &&
+                            detail.drCr === 'Dr' &&
+                            Number(detail.amount || 0) > Number(selectedSavAcc.availableBalance || 0)
+                          );
+                          return (
+                            <div className="mt-1.5 p-1.5 bg-teal-50/70 border border-teal-200 rounded-sm space-y-1 text-left">
+                              <div className="flex flex-wrap items-center justify-between gap-1 text-[10.5px]">
+                                <span className="font-bold text-teal-900">
+                                  💳 बचत खाते निवडा ({detail.drCr === 'Dr' ? 'कपात Dr' : 'जमा Cr'}) <span className="text-red-500">*</span>
+                                </span>
+                                {selectedSavAcc && (
+                                  <span className={`font-mono font-bold ${isLowBal ? 'text-rose-700' : 'text-teal-800'}`}>
+                                    उपलब्ध शिल्लक: ₹{Number(selectedSavAcc.availableBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  </span>
+                                )}
+                              </div>
+                              <SearchableSelect
+                                id={`voucher-saving-${index}`}
+                                disabled={isPassingMode}
+                                value={detail.savingAccountID ? detail.savingAccountID.toString() : ''}
+                                onChange={(e) => handleSavingAccountSelect(index, e.target.value)}
+                                options={buildSavingAccountOptions(detail)}
+                                minMenuWidth={440}
+                                searchPlaceholder="बचत खाते क्र., जुना बचत नं, नाव किंवा CIF शोधा..."
+                                countLabel="उपलब्ध बचत खाती"
+                                emptyMessage="या शाखेत व योजनेत कोणतेही सक्रिय बचत खाते आढळले नाही."
+                                emptySubMessage="खाते सक्रिय असणे आणि त्याच शाखेचे असणे आवश्यक आहे."
+                                placeholder="-- सभासद / कर्मचाऱ्याचे बचत खाते निवडा --"
+                                className={isPassingMode
+                                  ? "w-full border border-teal-300 px-2 py-1 rounded-sm text-[11px] bg-slate-100 font-bold text-gray-700 cursor-not-allowed flex justify-between items-center h-[28px]"
+                                  : "w-full border border-teal-400 px-2 py-1 rounded-sm text-[11px] bg-white flex justify-between items-center hover:border-teal-600 cursor-pointer h-[28px]"
+                                }
+                              />
+                              {(selectedSavAcc || displaySavAccNo || displaySavOldNo) && (
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-teal-900">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {displaySavAccNo && (
+                                      <span className="font-mono font-bold text-teal-950">
+                                        खाते: {displaySavAccNo}
+                                      </span>
+                                    )}
+                                    {displaySavOldNo && (
+                                      <span className="px-1.5 py-0.2 rounded-sm bg-amber-100 text-amber-950 border border-amber-300 font-mono font-bold">
+                                        🏷️ जुना बचत नं.: {displaySavOldNo}
+                                      </span>
+                                    )}
+                                    {selectedSavAcc && (
+                                      <span>
+                                        खातेदार: <strong>{selectedSavAcc.customerName || '-'}</strong>
+                                        {selectedSavAcc.cifNo ? ` (${selectedSavAcc.cifNo})` : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {isLowBal && (
+                                    <span className="text-rose-700 font-bold">
+                                      ⚠ उपलब्ध शिल्लक अपुरी आहे!
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {detail.ledgerID > 0 && !detail.isLocked && isLoanControlLedger(detail.ledgerID) && detail.drCr === 'Dr' && (() => {
+                          const selectedChgLoan = detail.chargeLoanAccountID
+                            ? loanAccountsForCharges.find(a => Number(a.loanAccountID) === Number(detail.chargeLoanAccountID))
+                            : undefined;
+                          const dispLoanNo = selectedChgLoan?.loanAccountNo || detail.chargeLoanAccount?.loanAccountNo || '';
+                          const dispOldNo = selectedChgLoan?.legacyAccountNumber || detail.chargeLoanAccount?.legacyAccountNumber || '';
+                          return (
+                            <div className="mt-1.5 p-1.5 bg-blue-50/70 border border-blue-200 rounded-sm space-y-1.5 text-left">
+                              <div className="flex flex-wrap items-center justify-between gap-1 text-[10.5px]">
+                                <span className="font-bold text-blue-900">
+                                  🏷️ कर्जात वसूली / पोसटेज खर्च जोडायचा असल्यास कर्ज खाते निवडा (Dr मुद्दल नावे):
+                                </span>
+                                {selectedChgLoan && (
+                                  <span className="font-mono font-bold text-blue-950">
+                                    चालू मुद्दल: ₹{Number(selectedChgLoan.principalBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-12 gap-1.5">
+                                <div className="sm:col-span-8">
+                                  <SearchableSelect
+                                    id={`voucher-charge-loan-${index}`}
+                                    disabled={isPassingMode}
+                                    value={detail.chargeLoanAccountID ? String(detail.chargeLoanAccountID) : ''}
+                                    onChange={(e) => handleChargeLoanAccountSelect(index, e.target.value)}
+                                    options={buildLoanChargeAccountOptions(detail)}
+                                    minMenuWidth={440}
+                                    searchPlaceholder="कर्ज खाते क्र., जुना नं., नाव शोधा..."
+                                    placeholder="-- कर्ज खाते निवडा (ऐच्छिक / वसूली-पोसटेज खर्चासाठी) --"
+                                    className={isPassingMode
+                                      ? "w-full border border-blue-300 px-2 py-1 rounded-sm text-[11px] bg-slate-100 font-bold text-gray-700 cursor-not-allowed flex justify-between items-center h-[28px]"
+                                      : "w-full border border-blue-400 px-2 py-1 rounded-sm text-[11px] bg-white flex justify-between items-center hover:border-blue-600 cursor-pointer h-[28px]"
+                                    }
+                                  />
+                                </div>
+                                <div className="sm:col-span-4">
+                                  <select
+                                    disabled={isPassingMode || !detail.chargeLoanAccountID}
+                                    value={detail.chargeExpenseType || 'RECOVERY_EXPENSE'}
+                                    onChange={(e) => {
+                                      const nextT = e.target.value;
+                                      setDetails(prev => {
+                                        const next = [...prev];
+                                        if (next[index]) next[index] = { ...next[index], chargeExpenseType: nextT };
+                                        return next;
+                                      });
+                                    }}
+                                    className="w-full h-[28px] border border-blue-300 rounded-sm px-1.5 text-[10.5px] font-bold bg-white disabled:bg-slate-100"
+                                  >
+                                    <option value="RECOVERY_EXPENSE">वसूली खर्च</option>
+                                    <option value="POSTAGE_EXPENSE">पोसटेज / टपाल खर्च</option>
+                                    <option value="NOTICE_FEE">नोटीस फी</option>
+                                    <option value="OTHER_RECOVERY">इतर वसूली खर्च</option>
+                                  </select>
+                                </div>
+                              </div>
+                              {(dispLoanNo || dispOldNo) && (
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-blue-950 font-mono">
+                                  <span className="font-bold">खाते: {dispLoanNo}</span>
+                                  {dispOldNo && (
+                                    <span className="px-1.5 py-0.2 rounded-sm bg-amber-100 text-amber-950 border border-amber-300 font-bold">
+                                      जुना: {dispOldNo}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {detail.ledgerID > 0 && Boolean(detail.showCustomerSelect || detail.customerID) && (!isSavingControlLedger(detail.ledgerID) || (isPassingMode && !detail.savingAccountID)) && !detail.chargeLoanAccountID && (
                           <div className="mt-1.5 flex items-center gap-1">
                             <div className="flex-1 min-w-0">
                               <MemberSearchSelect
@@ -1713,10 +2407,24 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                       const custName = linkedCust
                                         ? [linkedCust.firstName || (linkedCust as any).FirstName, linkedCust.middleName || (linkedCust as any).MiddleName, linkedCust.lastName || (linkedCust as any).LastName].filter(Boolean).join(' ').trim()
                                         : '';
+                                      const linkedSavAccNo = vd.savingAccount?.accountNo || (vd.savingAccountID ? `#${vd.savingAccountID}` : '');
+                                      const linkedSavOldNo = vd.savingAccount?.oldAccountNo || vd.savingAccount?.previousAccountNo || vd.savingAccount?.legacyAccountNumber || '';
                                       return (
                                         <tr key={i} className="hover:bg-slate-50">
                                           <td className="p-1.5 border-r border-gray-200 text-gray-900 font-medium">
                                             <div>{vd.ledger?.ledgerName || 'Unknown Ledger'}</div>
+                                            {linkedSavAccNo && (
+                                              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
+                                                <span className="px-1.5 py-0.5 rounded font-mono font-bold bg-emerald-100 text-emerald-950 border border-emerald-200">
+                                                  💳 बचत खाते: {linkedSavAccNo}
+                                                </span>
+                                                {linkedSavOldNo && (
+                                                  <span className="px-1.5 py-0.5 rounded font-mono font-bold bg-amber-100 text-amber-950 border border-amber-300">
+                                                    जुना बचत नं: {linkedSavOldNo}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            )}
                                             {(custCif || custName) && (
                                               <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
                                                 {custCif && (

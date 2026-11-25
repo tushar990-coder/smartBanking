@@ -523,5 +523,91 @@ namespace Bhisi.Api.Tests
             var fdAfter = await db.FdAccounts.FindAsync(11);
             Assert.Equal("Active", fdAfter!.Status);
         }
+
+        [Fact]
+        public async Task BackedLegacyProvision_ReturnsOpeningBalanceProvision_AndDeductsClosedLegacyDebitsWithoutDoubleCounting()
+        {
+            await using var db = CreateContext();
+            var bizDate = new DateTime(2026, 6, 30);
+            await SeedEnvironmentAsync(
+                db,
+                bizDate,
+                new DateTime(2023, 1, 16),
+                new DateTime(2024, 2, 16),
+                postingMethod: "On Interest",
+                depositAmount: 54870m,
+                maturityAmount: 60228m);
+
+            // Ensure CustomerID and Scheme match seeded FD (ID 11 has LegacyAccruedInt = 0 right now)
+            var fd1 = await db.FdAccounts.FindAsync(11);
+            fd1!.IsLegacyAccount = true;
+            fd1.LegacyAccruedInt = 5000m;
+
+            // Add a second legacy FD under the SAME customer & payable ledger (114)
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 12,
+                BranchID = 1,
+                FinancialYearID = 1,
+                CustomerID = fd1.CustomerID,
+                FdSchemeID = fd1.FdSchemeID,
+                AccountNo = "0014010000012",
+                ReceiptNo = "882",
+                OpeningDate = new DateTime(2023, 2, 1),
+                DepositAmount = 50000m,
+                InterestRate = 7m,
+                MaturityDate = new DateTime(2024, 3, 1),
+                MaturityAmount = 55500m,
+                IsLegacyAccount = true,
+                LegacyAccruedInt = 5000m,
+                Status = "Matured"
+            });
+
+            // CustomerOpeningBalances backs both ₹5,000 provisions on Ledger 114 (POSTING_INTR)
+            db.CustomerOpeningBalances.Add(new CustomerOpeningBalance
+            {
+                CustomerID = fd1.CustomerID,
+                LedgerID = 114,
+                Amount = 10000m,
+                BalanceType = "Cr",
+                SourceModule = "FD"
+            });
+            await db.SaveChangesAsync();
+
+            var controller = new FdAccountsController(db);
+            AttachAdmin(controller, bizDate);
+
+            // 1. Both FDs should surface BackedLegacyProvision = 5000 without polluting AlreadyPostedInterest (VerifiedProvision = 0)
+            var singleRes = await controller.GetFdAccount(11);
+            var singleOk = Assert.IsType<OkObjectResult>(singleRes.Result);
+            var singleJson = JsonDocument.Parse(JsonSerializer.Serialize(singleOk.Value)).RootElement;
+            Assert.Equal(0m, singleJson.GetProperty("AlreadyPostedInterest").GetDecimal());
+            Assert.Equal(5000m, singleJson.GetProperty("BackedLegacyProvision").GetDecimal());
+            Assert.Equal(5000m, singleJson.GetProperty("EffectiveProvisionInterest").GetDecimal());
+
+            var listRes = await controller.GetFdAccounts(1);
+            var listOk = Assert.IsType<OkObjectResult>(listRes.Result);
+            var listArr = JsonDocument.Parse(JsonSerializer.Serialize(listOk.Value)).RootElement.EnumerateArray().ToList();
+            Assert.Equal(5000m, listArr.First(x => x.GetProperty("FdAccountID").GetInt32() == 11).GetProperty("BackedLegacyProvision").GetDecimal());
+            Assert.Equal(5000m, listArr.First(x => x.GetProperty("FdAccountID").GetInt32() == 12).GetProperty("BackedLegacyProvision").GetDecimal());
+
+            // 2. Close FD #11 consuming ₹5,000 from Ledger 114 and ₹358 from Expense (333)
+            var closeRes = await controller.MaturedClose(11, new FdClosureRequest
+            {
+                ClosureDate = bizDate,
+                PaymentMode = "Cash",
+                InterestDebitMode = "Split",
+                PostedInterestDebitAmount = 5000m,
+                ExpenseInterestDebitAmount = 358m
+            });
+            Assert.IsType<OkObjectResult>(closeRes);
+
+            // 3. FD #12 must still surface its own remaining ₹5,000 BackedLegacyProvision (10,000 Opening Cr - 5,000 consumed by FD #11)
+            var prevRes = await controller.GetPrematurePreview(12, bizDate);
+            var prevOk = Assert.IsType<OkObjectResult>(prevRes);
+            var prevJson = JsonDocument.Parse(JsonSerializer.Serialize(prevOk.Value)).RootElement;
+            Assert.Equal(5000m, prevJson.GetProperty("backedLegacyProvision").GetDecimal());
+            Assert.Equal(5000m, prevJson.GetProperty("effectiveProvisionInterest").GetDecimal());
+        }
     }
 }

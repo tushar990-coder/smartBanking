@@ -4115,8 +4115,23 @@ namespace Bhisi.Api.Controllers
                     .Where(d => d.LoanAccountID == loanAccountId && d.DisbursementDate > loanAccount.OpeningDate)
                     .SumAsync(d => (decimal?)d.DisbursementAmount) ?? 0;
 
+                var allApprovedPrincipalCharges = await _context.Sec101LegalExpenses
+                    .Include(e => e.Voucher)
+                    .Where(e => e.LoanAccountId == loanAccountId &&
+                                e.IsDebitedToLoan &&
+                                e.CapitalizeToLoanPrincipal &&
+                                e.IsPrincipalApplied &&
+                                (e.Voucher == null || e.Voucher.Status == "Approved"))
+                    .OrderBy(e => e.ExpenseDate)
+                    .ThenBy(e => e.ExpenseId)
+                    .ToListAsync();
+
+                decimal postOpeningPrincipalCharges = allApprovedPrincipalCharges
+                    .Where(e => e.ExpenseDate > loanAccount.OpeningDate)
+                    .Sum(e => e.Amount);
+
                 decimal openingPrincipal = loanAccount.IsOpeningBalance 
-                    ? (loanAccount.PrincipalBalance + postOpeningCollections - postOpeningDisbursements)
+                    ? (loanAccount.PrincipalBalance + postOpeningCollections - postOpeningDisbursements - postOpeningPrincipalCharges)
                     : sanctionedDisbursement;
 
                 DateTime effectiveDisbursementDate = loanAccount.LoanDisbursementDate ?? loanAccount.OpeningDate;
@@ -4164,6 +4179,28 @@ namespace Bhisi.Api.Controllers
                     });
                 }
 
+                // Approved Recovery & Postage Charges added directly into Loan Principal (CapitalizeToLoanPrincipal)
+                var inRangePrincipalCharges = allApprovedPrincipalCharges
+                    .Where(e => e.ExpenseDate >= fromDate && e.ExpenseDate <= toDate &&
+                                (!loanAccount.IsOpeningBalance || e.ExpenseDate > loanAccount.OpeningDate))
+                    .ToList();
+
+                foreach (var chg in inRangePrincipalCharges)
+                {
+                    string typeLabel = Helpers.VoucherLoanChargeHelper.GetExpenseTypeMarathiLabel(chg.ExpenseType);
+                    string remarkPart = !string.IsNullOrWhiteSpace(chg.Remarks) ? $" - {chg.Remarks}" : "";
+                    transactions.Add(new LoanLedgerTransactionDto
+                    {
+                        Date = chg.ExpenseDate,
+                        ReceiptNo = !string.IsNullOrWhiteSpace(chg.Voucher?.VoucherNo) ? chg.Voucher!.VoucherNo : (chg.VoucherId?.ToString() ?? "-"),
+                        VoucherNo = chg.Voucher?.VoucherNo,
+                        PassingStatus = chg.Voucher != null ? (string.IsNullOrWhiteSpace(chg.Voucher.Status) ? "Approved" : chg.Voucher.Status) : "Approved",
+                        Particulars = $"{typeLabel} (मुद्दल नावे){remarkPart}",
+                        LoanDisbursement = chg.Amount,
+                        RecoveryCharges = chg.Amount
+                    });
+                }
+
                 // Collections
                 var collections = await _context.LoanCollections
                     .Include(c => c.Voucher)
@@ -4190,6 +4227,7 @@ namespace Bhisi.Api.Controllers
                         ReceivableInterest = c.ReceivableInterestCollected,
                         Interest = c.InterestCollected,
                         PenalInterest = c.PenaltyInterestCollected,
+                        RecoveryCharges = c.ExpensesCollected,
                         OtherFees = feesAmt,
                         OtherFeesDetails = feesDetails,
                         Total = c.TotalAmountReceived + feesAmt
@@ -4199,17 +4237,20 @@ namespace Bhisi.Api.Controllers
                 // Sort by Date
                 transactions = transactions
                     .OrderBy(t => t.Date)
-                    .ThenBy(t => t.Particulars.Contains("Disbursement") || t.Particulars.Contains("Opening Balance") || t.Particulars.Contains("ची बाकी") ? 0 : 1)
+                    .ThenBy(t => t.Particulars.Contains("Disbursement") || t.Particulars.Contains("(मुद्दल नावे)") || t.Particulars.Contains("Opening Balance") || t.Particulars.Contains("ची बाकी") ? 0 : 1)
                     .ToList();
 
                 // Calculate running balance and days
+                var hasDisbursementsTableRows = await _context.LoanDisbursements
+                    .AnyAsync(d => d.LoanAccountID == loanAccountId);
+
                 decimal runningBalance = 0;
                 
                 if (loanAccount.IsOpeningBalance && loanAccount.OpeningDate < fromDate)
                 {
                     runningBalance += openingPrincipal;
                 }
-                else if (!loanAccount.IsOpeningBalance && loanAccount.LoanDisbursementDate.HasValue && loanAccount.LoanDisbursementDate.Value < fromDate)
+                else if (!loanAccount.IsOpeningBalance && !hasDisbursementsTableRows && loanAccount.LoanDisbursementDate.HasValue && loanAccount.LoanDisbursementDate.Value < fromDate)
                 {
                     runningBalance += sanctionedDisbursement;
                 }
@@ -4225,16 +4266,20 @@ namespace Bhisi.Api.Controllers
                 var priorDisbursements = await priorDisbursementsQuery
                     .SumAsync(d => (decimal?)d.DisbursementAmount) ?? 0;
 
+                decimal priorPrincipalCharges = allApprovedPrincipalCharges
+                    .Where(e => e.ExpenseDate < fromDate && (!loanAccount.IsOpeningBalance || e.ExpenseDate > loanAccount.OpeningDate))
+                    .Sum(e => e.Amount);
+
                 var priorCollections = await _context.LoanCollections
                     .Where(c => c.LoanAccountID == loanAccountId && c.CollectionDate < fromDate)
                     .SumAsync(c => (decimal?)c.PrincipalCollected) ?? 0;
                     
-                runningBalance += priorDisbursements - priorCollections;
+                runningBalance += priorDisbursements + priorPrincipalCharges - priorCollections;
 
                 // Add an initial row for previous balance ONLY if there is a positive balance brought forward
                 if (runningBalance > 0 && fromDate > loanAccount.OpeningDate)
                 {
-                    DateTime bakiAsOfDate = (loanAccount.IsOpeningBalance && priorDisbursements == 0 && priorCollections == 0)
+                    DateTime bakiAsOfDate = (loanAccount.IsOpeningBalance && priorDisbursements == 0 && priorPrincipalCharges == 0 && priorCollections == 0)
                         ? loanAccount.OpeningDate
                         : fromDate.AddDays(-1);
 
@@ -4283,7 +4328,7 @@ namespace Bhisi.Api.Controllers
                         currentBalance = t.Balance;
                         lastDate = defaultInterestAnchor;
                     }
-                    else if (t.Particulars.Contains("Disbursement"))
+                    else if (t.Particulars.Contains("Disbursement") || t.Particulars.Contains("(मुद्दल नावे)"))
                     {
                         t.Days = 0;
                         currentBalance += t.LoanDisbursement;
@@ -4315,19 +4360,26 @@ namespace Bhisi.Api.Controllers
                     ? transactions.Last().Balance
                     : loanAccount.PrincipalBalance;
 
+                decimal resolvedCapCharges = Math.Max(0m, loanAccount.CapitalizedRecoveryCharges);
                 decimal resolvedCapInt = loanAccount.CapitalizedInterestAmount;
                 decimal resolvedPurePrin = loanAccount.PurePrincipalBalance;
-                if (resolvedCapInt <= 0 && sanctionedDisbursement > 0 && closingPrincipalForSummary > sanctionedDisbursement)
+                decimal maxNonRecovery = Math.Max(0m, closingPrincipalForSummary - resolvedCapCharges);
+                if (resolvedCapInt <= 0 && sanctionedDisbursement > 0 && maxNonRecovery > sanctionedDisbursement)
                 {
-                    resolvedPurePrin = (resolvedPurePrin > 0 && resolvedPurePrin < closingPrincipalForSummary)
+                    resolvedPurePrin = (resolvedPurePrin > 0 && resolvedPurePrin < maxNonRecovery)
                         ? resolvedPurePrin
                         : sanctionedDisbursement;
-                    resolvedCapInt = Math.Max(0m, closingPrincipalForSummary - resolvedPurePrin);
+                    resolvedCapInt = Math.Max(0m, maxNonRecovery - resolvedPurePrin);
                 }
                 else if (resolvedPurePrin <= 0 && closingPrincipalForSummary > 0)
                 {
-                    resolvedPurePrin = Math.Max(0m, closingPrincipalForSummary - resolvedCapInt);
+                    resolvedPurePrin = Math.Max(0m, closingPrincipalForSummary - resolvedCapInt - resolvedCapCharges);
                 }
+
+                decimal unpaidRecoveryExpenses = await _context.OverdueRecoveryLedgers
+                    .Where(o => o.LoanAccountID == loanAccountId && o.TransactionDate <= toDate)
+                    .SumAsync(o => (decimal?)(o.DebitAmount - o.CreditAmount)) ?? 0m;
+                if (unpaidRecoveryExpenses < 0m) unpaidRecoveryExpenses = 0m;
 
                 DateTime? latestCollectionUpToToDate = collections
                     .OrderByDescending(c => c.CollectionDate)
@@ -4359,12 +4411,14 @@ namespace Bhisi.Api.Controllers
                 report.OpeningBalanceDate = loanAccount.IsOpeningBalance ? loanAccount.OpeningDate : fromDate.AddDays(-1);
                 report.PurePrincipalBalance = resolvedPurePrin;
                 report.CapitalizedInterestAmount = resolvedCapInt;
+                report.CapitalizedRecoveryCharges = resolvedCapCharges;
+                report.UnpaidRecoveryExpenses = unpaidRecoveryExpenses;
                 report.ReceivableInterestBalance = loanAccount.InterestBalance;
                 report.InterestFromDate = interestFromDate;
                 report.InterestToDate = toDate.Date;
                 report.InterestDaysToDate = interestDaysToDate;
                 report.CalculatedInterestToDate = calculatedInterestToDate;
-                report.TotalPayableAsOfToDate = closingPrincipalForSummary + calculatedInterestToDate + loanAccount.InterestBalance + loanAccount.OverdueInterestBalance;
+                report.TotalPayableAsOfToDate = closingPrincipalForSummary + calculatedInterestToDate + loanAccount.InterestBalance + loanAccount.OverdueInterestBalance + unpaidRecoveryExpenses;
 
                 // Fetch Schedule
                 var schedule = await _context.LoanInstallmentSchedules
@@ -5019,6 +5073,12 @@ namespace Bhisi.Api.Controllers
                 .Where(s => loanAccountIds.Contains(s.LoanAccountID))
                 .ToListAsync();
 
+            var recoveryDueByLoan = await _context.OverdueRecoveryLedgers
+                .Where(o => loanAccountIds.Contains(o.LoanAccountID) && o.TransactionDate <= toDate)
+                .GroupBy(o => o.LoanAccountID)
+                .Select(g => new { LoanAccountID = g.Key, NetDue = g.Sum(x => x.DebitAmount - x.CreditAmount) })
+                .ToDictionaryAsync(x => x.LoanAccountID, x => Math.Max(0m, x.NetDue));
+
             var rows = new List<OverdueLoanRowDto>();
             foreach (var la in loanAccounts)
             {
@@ -5037,8 +5097,9 @@ namespace Bhisi.Api.Controllers
                     overduePrincipal = la.PrincipalBalance;
                 }
 
-                // Show in Thakit Karj Yadi if there is overdue principal, or interest overdue, or past maturity
-                bool isOverdue = overduePrincipal > 0 || la.OverdueInterestBalance > 0 || (la.MaturityDate.HasValue && la.MaturityDate.Value <= toDate && la.PrincipalBalance > 0);
+                // Show in Thakit Karj Yadi if there is overdue principal, or interest overdue, recovery due, or past maturity
+                decimal recoveryExpensesDue = recoveryDueByLoan.TryGetValue(la.LoanAccountID, out var rDue) ? rDue : 0m;
+                bool isOverdue = overduePrincipal > 0 || la.OverdueInterestBalance > 0 || recoveryExpensesDue > 0 || (la.MaturityDate.HasValue && la.MaturityDate.Value <= toDate && la.PrincipalBalance > 0);
 
                 if (!isOverdue)
                 {
@@ -5091,6 +5152,8 @@ namespace Bhisi.Api.Controllers
                     SanctionedAmount = la.SanctionedAmount,
                     PrincipalBalance = la.PrincipalBalance,
                     OverduePrincipal = overduePrincipal,
+                    CapitalizedRecoveryCharges = la.CapitalizedRecoveryCharges,
+                    RecoveryExpensesDue = recoveryExpensesDue,
                     OverdueSinceDate = overdueSince,
                     OverdueInstallmentsCount = overdueCount > 0 ? overdueCount : (la.MaturityDate.HasValue && la.MaturityDate.Value <= toDate ? la.NoOfInstallments : 1),
                     InstallmentAmount = la.InstallmentAmount,
@@ -8488,6 +8551,20 @@ namespace Bhisi.Api.Controllers
                 .Where(t => accountIds.Contains(t.FdAccountID))
                 .ToListAsync();
 
+            var accrualDateRows = await _context.FdInterestAccruals
+                .AsNoTracking()
+                .Where(a => accountIds.Contains(a.FdAccountID))
+                .Select(a => new { a.FdAccountID, a.AccrualDate })
+                .ToListAsync();
+            var accrualDatesLookup = accrualDateRows.ToLookup(x => x.FdAccountID, x => x.AccrualDate);
+
+            var misDateRows = await _context.FdMisPayouts
+                .AsNoTracking()
+                .Where(m => accountIds.Contains(m.FdAccountID) && m.Status == "Success")
+                .Select(m => new { m.FdAccountID, m.PayoutDate })
+                .ToListAsync();
+            var misDatesLookup = misDateRows.ToLookup(x => x.FdAccountID, x => x.PayoutDate);
+
             var txByAccountLookup = allTransactions.ToLookup(t => t.FdAccountID);
             DateTime? filterFrom = fromDate?.Date;
             DateTime? filterTo = toDate?.Date;
@@ -8501,10 +8578,18 @@ namespace Bhisi.Api.Controllers
                 string custFullName = FormatCustomerFullName(acc.Customer);
                 string cifNo = acc.Customer?.CIFNo ?? string.Empty;
 
-                decimal txAccrualSum = rawTransactions
-                    .Where(t => t.TransactionType == "Accrual" || t.TransactionType == "Closure_Interest" || t.TransactionType == "Interest_Capitalized")
+                // Compare LegacyAccruedInt only against pre-closure accruals/capitalizations so Closure_Interest never hides LEG-INT-MIG
+                decimal preClosureAccrualSum = rawTransactions
+                    .Where(t => string.Equals(t.TransactionType, "Accrual", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(t.TransactionType, "Interest_Capitalized", StringComparison.OrdinalIgnoreCase))
                     .Sum(t => t.Amount);
-                decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
+
+                DateTime resolvedLegacyIntDate = FdLedgerHelper.ResolveLegacyOpeningInterestDate(
+                    acc,
+                    rawTransactions,
+                    accrualDatesLookup[acc.FdAccountID],
+                    misDatesLookup[acc.FdAccountID]);
+                string openingVoucherNo = $"JV-FD-OP-{acc.AccountNo}";
 
                 var fullTxList = rawTransactions.Select(t =>
                 {
@@ -8518,9 +8603,17 @@ namespace Bhisi.Api.Controllers
                     }
 
                     string rawNarration = t.Voucher?.Narration ?? string.Empty;
-                    string vnUpper = (t.Voucher?.VoucherNo ?? string.Empty).ToUpperInvariant();
+                    string rawVoucherNo = t.Voucher?.VoucherNo ?? string.Empty;
+                    string vnUpper = rawVoucherNo.ToUpperInvariant();
                     string ttLower = (t.TransactionType ?? string.Empty).ToLowerInvariant();
                     string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : string.Empty;
+                    bool isOpeningVoucherAccrual = ttLower == "accrual"
+                        && string.Equals(rawVoucherNo, openingVoucherNo, StringComparison.OrdinalIgnoreCase);
+
+                    DateTime effectiveTxDate = (isOpeningVoucherAccrual && t.TransactionDate.Date == acc.OpeningDate.Date && resolvedLegacyIntDate > acc.OpeningDate.Date)
+                        ? resolvedLegacyIntDate
+                        : t.TransactionDate;
+
                     string narration;
 
                     if (ttLower == "closure_interest" || ttLower == "interest_capitalized")
@@ -8530,6 +8623,16 @@ namespace Bhisi.Api.Controllers
                             : (rawNarration.Contains("मुदतपूर्ती") || vnUpper.Contains("MAT") || vnUpper.Contains("CLOSE")
                                 ? "मुदतपूर्ती व्याज जमा"
                                 : "मुदत ठेव व्याज जमा");
+                    }
+                    else if (ttLower == "accrual")
+                    {
+                        narration = isOpeningVoucherAccrual || vnUpper.Contains("LEG-INT")
+                            ? $"साचलेले जुने व्याज जमा{legPart}"
+                            : (rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
+                                ? "मुदतपूर्व व्याज जमा"
+                                : (rawNarration.Contains("मुदतपूर्ती") || vnUpper.Contains("MAT") || vnUpper.Contains("CLOSE")
+                                    ? "मुदतपूर्ती व्याज जमा"
+                                    : "मुदत ठेव व्याज जमा"));
                     }
                     else if (ttLower.Contains("premature") || vnUpper.Contains("PRECLOSE") || rawNarration.Contains("मुदतपूर्व बंद") || rawNarration.Contains("Premature Close"))
                     {
@@ -8541,15 +8644,13 @@ namespace Bhisi.Api.Controllers
                     }
                     else if (ttLower == "opening" || vnUpper.Contains("FD-OP") || rawNarration.Contains("खाते उघडले") || rawNarration.Contains("Account Opened") || rawNarration.Contains("आरंभिक") || rawNarration.Contains("Migration"))
                     {
-                        narration = (!string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) || rawNarration.Contains("स्थलांतर") || rawNarration.Contains("Migration") || rawNarration.Contains("आरंभिक"))
-                            ? $"आरंभिक मुदत ठेव जमा{legPart}"
-                            : "नवीन मुदत ठेव जमा";
+                        narration = FdLedgerHelper.BuildOpeningDepositNarration(acc);
                     }
                     else if (ttLower.Contains("renew") || vnUpper.Contains("REN") || rawNarration.Contains("नूतनीकरण") || rawNarration.Contains("Renewal"))
                     {
                         narration = "मुदत ठेव नूतनीकरण";
                     }
-                    else if (ttLower == "accrual" || vnUpper.Contains("INT") || vnUpper.Contains("PROV") || rawNarration.Contains("व्याज जमा") || rawNarration.Contains("व्याज तरतूद") || rawNarration.Contains("Accrued Interest"))
+                    else if (vnUpper.Contains("INT") || vnUpper.Contains("PROV") || rawNarration.Contains("व्याज जमा") || rawNarration.Contains("व्याज तरतूद") || rawNarration.Contains("Accrued Interest"))
                     {
                         narration = rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
                             ? "मुदतपूर्व व्याज जमा"
@@ -8572,24 +8673,39 @@ namespace Bhisi.Api.Controllers
                     return new
                     {
                         t.FdTransactionID,
-                        t.TransactionDate,
+                        TransactionDate = effectiveTxDate,
                         TransactionType = (string?)t.TransactionType,
                         DebitCredit = drcr,
                         t.Amount,
-                        VoucherNo = (string?)(t.Voucher != null ? t.Voucher.VoucherNo : string.Empty),
+                        VoucherNo = (string?)rawVoucherNo,
                         PassingStatus = (string?)(t.Voucher != null ? (string.IsNullOrWhiteSpace(t.Voucher.Status) ? "Approved" : t.Voucher.Status) : null),
                         Narration = narration
                     };
                 }).ToList();
 
-                if (acc.IsLegacyAccount && acc.LegacyAccruedInt > 0 && txAccrualSum < acc.LegacyAccruedInt)
+                if (acc.DepositAmount > 0 && !rawTransactions.Any(t => string.Equals(t.TransactionType, "Opening", StringComparison.OrdinalIgnoreCase)))
                 {
-                    decimal missingLegacyInt = acc.LegacyAccruedInt - txAccrualSum;
+                    fullTxList.Add(new
+                    {
+                        FdTransactionID = -3,
+                        TransactionDate = acc.OpeningDate,
+                        TransactionType = (string?)"Opening",
+                        DebitCredit = "Cr",
+                        Amount = acc.DepositAmount,
+                        VoucherNo = (string?)openingVoucherNo,
+                        PassingStatus = (string?)null,
+                        Narration = FdLedgerHelper.BuildOpeningDepositNarration(acc)
+                    });
+                }
+
+                if (acc.IsLegacyAccount && acc.LegacyAccruedInt > 0 && preClosureAccrualSum < acc.LegacyAccruedInt)
+                {
+                    decimal missingLegacyInt = acc.LegacyAccruedInt - preClosureAccrualSum;
                     string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : string.Empty;
                     fullTxList.Add(new
                     {
                         FdTransactionID = -1,
-                        TransactionDate = acc.OpeningDate,
+                        TransactionDate = resolvedLegacyIntDate,
                         TransactionType = (string?)"Accrual",
                         DebitCredit = "Cr",
                         Amount = missingLegacyInt,
@@ -8624,7 +8740,7 @@ namespace Bhisi.Api.Controllers
                             {
                                 FdTransactionID = -2,
                                 TransactionDate = closeTx.TransactionDate,
-                                TransactionType = (string?)"Accrual",
+                                TransactionType = (string?)"Closure_Interest",
                                 DebitCredit = "Cr",
                                 Amount = closureInterest,
                                 VoucherNo = closeTx.VoucherNo,
@@ -8635,20 +8751,25 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
+                decimal totalAccruedInt = fullTxList
+                    .Where(t => t.DebitCredit == "Cr" && FdLedgerHelper.IsInterestTransaction(t.TransactionType, t.VoucherNo))
+                    .Sum(t => t.Amount);
+
                 var sortedTxList = fullTxList
                     .OrderBy(t => t.TransactionDate.Date)
-                    .ThenBy(t => t.DebitCredit == "Cr" ? 0 : 1)
+                    .ThenBy(t => FdLedgerHelper.ResolveTransactionSortRank(t.TransactionType, t.DebitCredit, t.VoucherNo))
                     .ThenBy(t => t.FdTransactionID)
                     .ToList();
 
                 decimal openingBal = 0m;
+                decimal openingPrincipalBal = 0m;
+                decimal openingInterestBal = 0m;
                 if (filterFrom.HasValue)
                 {
-                    foreach (var p in sortedTxList.Where(t => t.TransactionDate.Date < filterFrom.Value))
-                    {
-                        if (p.DebitCredit == "Cr") openingBal += p.Amount;
-                        else if (p.DebitCredit == "Dr") openingBal -= p.Amount;
-                    }
+                    var prePeriodTxs = sortedTxList
+                        .Where(t => t.TransactionDate.Date < filterFrom.Value)
+                        .Select(t => (t.TransactionType, t.DebitCredit, t.Amount, t.VoucherNo));
+                    (openingBal, openingPrincipalBal, openingInterestBal) = FdLedgerHelper.SplitOpeningBalances(prePeriodTxs);
                 }
 
                 var periodTxs = sortedTxList.Where(t =>
@@ -8757,6 +8878,8 @@ namespace Bhisi.Api.Controllers
                     DurationMonths = acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12,
                     TotalAccruedInterest = totalAccruedInt,
                     OpeningBalance = openingBal,
+                    OpeningPrincipalBalance = openingPrincipalBal,
+                    OpeningInterestBalance = openingInterestBal,
                     PeriodTotalDebit = periodTotalDebit,
                     PeriodTotalCredit = periodTotalCredit,
                     ClosingBalance = closingBal,
@@ -8773,6 +8896,8 @@ namespace Bhisi.Api.Controllers
                 {
                     var groupAccounts = g.OrderBy(a => a.CustomerName).ThenBy(a => a.AccountNo).ThenBy(a => a.FdAccountID).ToList();
                     decimal grpOpening = groupAccounts.Sum(a => a.OpeningBalance);
+                    decimal grpOpeningPrincipal = groupAccounts.Sum(a => a.OpeningPrincipalBalance);
+                    decimal grpOpeningInterest = groupAccounts.Sum(a => a.OpeningInterestBalance);
                     decimal grpDr = groupAccounts.Sum(a => a.PeriodTotalDebit);
                     decimal grpCr = groupAccounts.Sum(a => a.PeriodTotalCredit);
                     decimal grpClosing = groupAccounts.Sum(a => a.ClosingBalance);
@@ -8784,7 +8909,7 @@ namespace Bhisi.Api.Controllers
                     decimal consRunning = grpOpening;
                     var mergedRows = rawMerged
                         .OrderBy(x => x.Date.Date)
-                        .ThenBy(x => x.DebitCredit == "Cr" ? 0 : 1)
+                        .ThenBy(x => FdLedgerHelper.ResolveTransactionSortRank(x.Dto.TransactionType, x.DebitCredit, x.Dto.VoucherNo))
                         .ThenBy(x => x.Dto.AccountNo)
                         .ThenBy(x => x.TxId)
                         .Select(x =>
@@ -8807,6 +8932,8 @@ namespace Bhisi.Api.Controllers
                         TotalDepositAmount = groupAccounts.Sum(a => a.DepositAmount),
                         TotalMaturityAmount = groupAccounts.Sum(a => a.MaturityAmount),
                         OpeningBalance = grpOpening,
+                        OpeningPrincipalBalance = grpOpeningPrincipal,
+                        OpeningInterestBalance = grpOpeningInterest,
                         PeriodTotalDebit = grpDr,
                         PeriodTotalCredit = grpCr,
                         ClosingBalance = consClosing,
@@ -8817,6 +8944,8 @@ namespace Bhisi.Api.Controllers
                             TotalDepositAmount = groupAccounts.Sum(a => a.DepositAmount),
                             TotalMaturityAmount = groupAccounts.Sum(a => a.MaturityAmount),
                             OpeningBalance = grpOpening,
+                            OpeningPrincipalBalance = grpOpeningPrincipal,
+                            OpeningInterestBalance = grpOpeningInterest,
                             PeriodTotalDebit = grpDr,
                             PeriodTotalCredit = grpCr,
                             ClosingBalance = consClosing,
@@ -9068,6 +9197,8 @@ namespace Bhisi.Api.Controllers
                     TotalPrincipalInvested = accountLedgers.Sum(a => a.DepositAmount),
                     TotalMaturityValue = accountLedgers.Sum(a => a.MaturityAmount),
                     TotalOpeningBalance = schemeGroups.Sum(g => g.OpeningBalance),
+                    TotalOpeningPrincipalBalance = schemeGroups.Sum(g => g.OpeningPrincipalBalance),
+                    TotalOpeningInterestBalance = schemeGroups.Sum(g => g.OpeningInterestBalance),
                     TotalPeriodDebit = schemeGroups.Sum(g => g.PeriodTotalDebit),
                     TotalPeriodCredit = schemeGroups.Sum(g => g.PeriodTotalCredit),
                     TotalClosingBalance = schemeGroups.Sum(g => g.ClosingBalance),

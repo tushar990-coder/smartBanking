@@ -2161,6 +2161,22 @@ try
                 END
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'VoucherDetails')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[VoucherDetails]') AND name = 'SavingAccountID')
+                BEGIN
+                    ALTER TABLE [VoucherDetails] ADD [SavingAccountID] int NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[VoucherDetails]') AND name = 'ChargeLoanAccountID')
+                BEGIN
+                    ALTER TABLE [VoucherDetails] ADD [ChargeLoanAccountID] int NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[VoucherDetails]') AND name = 'ChargeExpenseType')
+                BEGIN
+                    ALTER TABLE [VoucherDetails] ADD [ChargeExpenseType] nvarchar(50) NULL;
+                END
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'LastInterestPostingDate')
@@ -2179,6 +2195,10 @@ try
                 BEGIN
                     ALTER TABLE [LoanAccounts] ADD [CapitalizedInterestAmount] decimal(18,2) NOT NULL DEFAULT 0;
                 END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'CapitalizedRecoveryCharges')
+                BEGIN
+                    ALTER TABLE [LoanAccounts] ADD [CapitalizedRecoveryCharges] decimal(18,2) NOT NULL DEFAULT 0;
+                END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'InterestProvisionBalance')
                 BEGIN
                     ALTER TABLE [LoanAccounts] ADD [InterestProvisionBalance] decimal(18,2) NOT NULL DEFAULT 0;
@@ -2190,6 +2210,38 @@ try
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'ChargeInterestOnCapitalizedAmount')
                 BEGIN
                     ALTER TABLE [LoanAccounts] ADD [ChargeInterestOnCapitalizedAmount] bit NOT NULL DEFAULT 1;
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'ExpensesCollected')
+                BEGIN
+                    ALTER TABLE [LoanCollections] ADD [ExpensesCollected] decimal(18,2) NOT NULL DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'ChargesPrincipalCollected')
+                BEGIN
+                    ALTER TABLE [LoanCollections] ADD [ChargesPrincipalCollected] decimal(18,2) NOT NULL DEFAULT 0;
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Sec101LegalExpenses')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Sec101LegalExpenses]') AND name = 'CapitalizeToLoanPrincipal')
+                BEGIN
+                    ALTER TABLE [Sec101LegalExpenses] ADD [CapitalizeToLoanPrincipal] bit NOT NULL DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Sec101LegalExpenses]') AND name = 'IsPrincipalApplied')
+                BEGIN
+                    ALTER TABLE [Sec101LegalExpenses] ADD [IsPrincipalApplied] bit NOT NULL DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Sec101LegalExpenses]') AND name = 'DebitLedgerId')
+                BEGIN
+                    ALTER TABLE [Sec101LegalExpenses] ADD [DebitLedgerId] int NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Sec101LegalExpenses]') AND name = 'CreditLedgerId')
+                BEGIN
+                    ALTER TABLE [Sec101LegalExpenses] ADD [CreditLedgerId] int NULL;
                 END
             END
 
@@ -2953,6 +3005,10 @@ try
                     [PaidTo] nvarchar(150) NULL,
                     [VoucherId] int NULL,
                     [IsDebitedToLoan] bit NOT NULL DEFAULT 1,
+                    [CapitalizeToLoanPrincipal] bit NOT NULL DEFAULT 0,
+                    [IsPrincipalApplied] bit NOT NULL DEFAULT 0,
+                    [DebitLedgerId] int NULL,
+                    [CreditLedgerId] int NULL,
                     [Remarks] nvarchar(max) NULL,
                     [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
                     [CreatedBy] int NOT NULL DEFAULT 1
@@ -2964,6 +3020,14 @@ try
                     ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [NoticeId] int NULL;
                 IF COL_LENGTH('Sec101LegalExpenses', 'CustomerId') IS NULL
                     ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [CustomerId] int NULL;
+                IF COL_LENGTH('Sec101LegalExpenses', 'CapitalizeToLoanPrincipal') IS NULL
+                    ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [CapitalizeToLoanPrincipal] bit NOT NULL DEFAULT 0;
+                IF COL_LENGTH('Sec101LegalExpenses', 'IsPrincipalApplied') IS NULL
+                    ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [IsPrincipalApplied] bit NOT NULL DEFAULT 0;
+                IF COL_LENGTH('Sec101LegalExpenses', 'DebitLedgerId') IS NULL
+                    ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [DebitLedgerId] int NULL;
+                IF COL_LENGTH('Sec101LegalExpenses', 'CreditLedgerId') IS NULL
+                    ALTER TABLE [dbo].[Sec101LegalExpenses] ADD [CreditLedgerId] int NULL;
                 IF COL_LENGTH('Sec101LegalExpenses', 'CustomerId') IS NOT NULL
                     EXEC(N'UPDATE le SET le.[CustomerId] = COALESCE(la.[CustomerID], cm.[CustomerId]) FROM [dbo].[Sec101LegalExpenses] le LEFT JOIN [dbo].[LoanAccounts] la ON le.[LoanAccountId] = la.[LoanAccountID] LEFT JOIN [dbo].[Sec101CaseMasters] cm ON le.[CaseId] = cm.[CaseId] WHERE le.[CustomerId] IS NULL;');
             END

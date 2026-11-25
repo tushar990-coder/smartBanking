@@ -88,6 +88,20 @@ const TRANSACTION_TYPES: { key: string; label: string; defaultDr: string; defaul
     desc: 'पंचनामा, मुल्यांकन, स्टॅम्प पेपर व इतर विविध कायदेशीर खर्च'
   },
   {
+    key: 'RECOVERY_EXPENSE',
+    label: '९. थकबाकी वसूली खर्च - कर्जात नावे (Recovery Expense)',
+    defaultDr: 'कर्ज खाते मुद्दल (Loan Principal GL)',
+    defaultCr: 'इतर उत्पन्न / वसूली खर्च उत्पन्न (Dynamic Income GL)',
+    desc: 'थकबाकीदार कर्जदाराच्या मुद्दलात वसूली खर्च नावे टाकणे (Dr कर्ज / Cr उत्पन्न - Journal)'
+  },
+  {
+    key: 'POSTAGE_EXPENSE',
+    label: '१०. थकबाकी पोसटेज / टपाल खर्च - कर्जात नावे (Postage Expense)',
+    defaultDr: 'कर्ज खाते मुद्दल (Loan Principal GL)',
+    defaultCr: 'इतर उत्पन्न / पोसटेज खर्च उत्पन्न (Dynamic Income GL)',
+    desc: 'थकबाकीदार कर्जदाराच्या मुद्दलात पोसटेज / टपाल खर्च नावे टाकणे (Dr कर्ज / Cr उत्पन्न - Journal)'
+  },
+  {
     key: 'BORROWER_SURPLUS_PAYABLE',
     label: '९. नियम १०७ लिलाव अतिरिक्त रक्कम देय (Borrower Surplus Payable)',
     defaultDr: 'रोख / बँक खाते (Cash/Bank)',

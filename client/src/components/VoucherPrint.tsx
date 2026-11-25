@@ -438,6 +438,13 @@ export function VoucherPrintTemplate({
                   </td>
                   <td className="border border-slate-900 py-1 px-2.5">
                     <span className="font-bold text-slate-900">{det.ledger?.ledgerName || '-'}</span>
+                    {(det.savingAccount?.accountNo || det.savingAccountID) && (
+                      <span className="block text-[10px] text-emerald-800 font-semibold mt-0.5">
+                        बचत खाते: {d(det.savingAccount?.accountNo || `#${det.savingAccountID}`)}
+                        {(det.savingAccount?.oldAccountNo || det.savingAccount?.previousAccountNo || det.savingAccount?.legacyAccountNumber) &&
+                          ` (जुना: ${d(det.savingAccount?.oldAccountNo || det.savingAccount?.previousAccountNo || det.savingAccount?.legacyAccountNumber)})`}
+                      </span>
+                    )}
                     {(code || name) && (
                       <span className="block text-[10px] text-slate-600 font-medium mt-0.5">
                         खातेदार: {d(code ? `${code} - ${name}` : name)}

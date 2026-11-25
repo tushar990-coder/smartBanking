@@ -276,6 +276,21 @@ namespace Bhisi.Api.Models
         public decimal NetAmountPaid { get; set; }
     }
 
+    public class LoanRecoveryExpenseBreakdownDto
+    {
+        public int ExpenseId { get; set; }
+        public string ExpenseType { get; set; } = string.Empty;
+        public string ExpenseTypeLabel { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public DateTime ExpenseDate { get; set; }
+        public bool CapitalizeToLoanPrincipal { get; set; }
+        public bool IsPrincipalApplied { get; set; }
+        public int? VoucherId { get; set; }
+        public string VoucherNo { get; set; } = string.Empty;
+        public string VoucherStatus { get; set; } = string.Empty;
+        public string? Remarks { get; set; }
+    }
+
     public class AccountDetailsAndScheduleDto
     {
         public decimal SanctionedAmount { get; set; }
@@ -285,6 +300,10 @@ namespace Bhisi.Api.Models
         public decimal CurrentPrincipalBalance { get; set; }
         public decimal PurePrincipalBalance { get; set; }
         public decimal CapitalizedInterestAmount { get; set; }
+        public decimal CapitalizedRecoveryCharges { get; set; }
+        public decimal PendingPrincipalCharges { get; set; }
+        public decimal UnpaidRecoveryExpenses { get; set; }
+        public decimal PendingRecoveryExpenses { get; set; }
         public decimal CurrentInterestBalance { get; set; }
         public decimal CurrentOverdueInterestBalance { get; set; }
         public decimal TotalDisbursedAmount { get; set; }
@@ -300,6 +319,7 @@ namespace Bhisi.Api.Models
         public int PenalGraceDays { get; set; }
         public string PenalInterestBasis { get; set; } = "OverduePrincipal";
         public bool AllowManualPenalInRecovery { get; set; } = true;
+        public List<LoanRecoveryExpenseBreakdownDto> RecoveryExpenseBreakdown { get; set; } = new();
         public List<LoanTrancheDetailDto> Tranches { get; set; } = new();
         public List<LoanInstallmentScheduleDto> Schedule { get; set; } = new();
     }
@@ -438,6 +458,8 @@ namespace Bhisi.Api.Models
         public decimal PrincipalBalance { get; set; }
         public decimal PurePrincipalBalance { get; set; }
         public decimal CapitalizedInterestAmount { get; set; }
+        public decimal CapitalizedRecoveryCharges { get; set; }
+        public decimal UnpaidRecoveryExpenses { get; set; }
         public decimal ReceivableInterestBalance { get; set; }
         public DateTime? OpeningBalanceDate { get; set; }
         public DateTime? InterestFromDate { get; set; }
@@ -526,6 +548,8 @@ namespace Bhisi.Api.Models
         public decimal SanctionedAmount { get; set; }
         public decimal PrincipalBalance { get; set; }
         public decimal OverduePrincipal { get; set; }
+        public decimal CapitalizedRecoveryCharges { get; set; }
+        public decimal RecoveryExpensesDue { get; set; }
         public DateTime? OverdueSinceDate { get; set; }
         public int OverdueInstallmentsCount { get; set; }
         public decimal InstallmentAmount { get; set; }
@@ -1044,6 +1068,8 @@ namespace Bhisi.Api.Models
         public int DurationMonths { get; set; }
         public decimal TotalAccruedInterest { get; set; }
         public decimal OpeningBalance { get; set; }
+        public decimal OpeningPrincipalBalance { get; set; }
+        public decimal OpeningInterestBalance { get; set; }
         public decimal PeriodTotalDebit { get; set; }
         public decimal PeriodTotalCredit { get; set; }
         public decimal ClosingBalance { get; set; }
@@ -1056,6 +1082,8 @@ namespace Bhisi.Api.Models
         public decimal TotalDepositAmount { get; set; }
         public decimal TotalMaturityAmount { get; set; }
         public decimal OpeningBalance { get; set; }
+        public decimal OpeningPrincipalBalance { get; set; }
+        public decimal OpeningInterestBalance { get; set; }
         public decimal PeriodTotalDebit { get; set; }
         public decimal PeriodTotalCredit { get; set; }
         public decimal ClosingBalance { get; set; }
@@ -1071,6 +1099,8 @@ namespace Bhisi.Api.Models
         public decimal TotalDepositAmount { get; set; }
         public decimal TotalMaturityAmount { get; set; }
         public decimal OpeningBalance { get; set; }
+        public decimal OpeningPrincipalBalance { get; set; }
+        public decimal OpeningInterestBalance { get; set; }
         public decimal PeriodTotalDebit { get; set; }
         public decimal PeriodTotalCredit { get; set; }
         public decimal ClosingBalance { get; set; }
@@ -1097,6 +1127,8 @@ namespace Bhisi.Api.Models
         public decimal TotalPrincipalInvested { get; set; }
         public decimal TotalMaturityValue { get; set; }
         public decimal TotalOpeningBalance { get; set; }
+        public decimal TotalOpeningPrincipalBalance { get; set; }
+        public decimal TotalOpeningInterestBalance { get; set; }
         public decimal TotalPeriodDebit { get; set; }
         public decimal TotalPeriodCredit { get; set; }
         public decimal TotalClosingBalance { get; set; }

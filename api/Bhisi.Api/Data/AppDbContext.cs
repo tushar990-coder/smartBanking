@@ -412,6 +412,16 @@ namespace Bhisi.Api.Data
                       .WithMany()
                       .HasForeignKey(d => d.LedgerID)
                       .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(d => d.SavingAccount)
+                      .WithMany()
+                      .HasForeignKey(d => d.SavingAccountID)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(d => d.ChargeLoanAccount)
+                      .WithMany()
+                      .HasForeignKey(d => d.ChargeLoanAccountID)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<BorrowerLinkedAccounts>(entity =>

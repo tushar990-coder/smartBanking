@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { FileSpreadsheet, Download, Search, Printer, DollarSign, Plus, RefreshCw } from 'lucide-react';
-import BankLedgerSelect from './common/BankLedgerSelect';
-import SearchableSelect from './SearchableSelect';
+import { FileSpreadsheet, Download, Search, Printer, Plus, RefreshCw } from 'lucide-react';
+import AddLoanRecoveryExpenseModal from './common/AddLoanRecoveryExpenseModal';
 import { useAuth } from '../context/AuthContext';
 import { getBusinessDateStr } from '../utils/businessDateUtils';
 import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
@@ -49,6 +48,8 @@ interface ExpenseItem {
   voucherStatus?: string;
   paymentMode?: string;
   isDebitedToBorrower: boolean;
+  capitalizeToLoanPrincipal?: boolean;
+  isPrincipalApplied?: boolean;
   remarks?: string;
 }
 
@@ -91,17 +92,6 @@ export default function Sec101LegalReports({
 
   // Add Expense Modal State
   const [showAddExpenseModal, setShowAddExpenseModal] = useState<boolean>(false);
-  const [expCaseId, setExpCaseId] = useState<number | null>(null);
-  const [expType, setExpType] = useState<string>('ADVOCATE_FEE');
-  const [expDate, setExpDate] = useState<string>(bizDateStr);
-  const [expAmount, setExpAmount] = useState<number>(1000);
-  const [expPayee, setExpPayee] = useState<string>('');
-  const [expMode, setExpMode] = useState<string>('CASH');
-  const [expBankLedgerId, setExpBankLedgerId] = useState<number>(0);
-  const [expReferenceNo, setExpReferenceNo] = useState<string>('');
-  const [expDebitedToBorrower, setExpDebitedToBorrower] = useState<boolean>(true);
-  const [expRemarks, setExpRemarks] = useState<string>('');
-  const [addingExpense, setAddingExpense] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isHOUser && lockedBranchId) {
@@ -112,10 +102,6 @@ export default function Sec101LegalReports({
       setSelectedBranchId(propBranchId);
     }
   }, [isHOUser, lockedBranchId, propEffectiveBranch, propBranchId]);
-
-  useEffect(() => {
-    setExpDate(bizDateStr);
-  }, [bizDateStr]);
 
   useEffect(() => {
     axios.get('/api/Branches').then((r) => Array.isArray(r.data) && setBranches(r.data)).catch(console.error);
@@ -145,52 +131,6 @@ export default function Sec101LegalReports({
   useEffect(() => {
     fetchData();
   }, [selectedBranchId]);
-
-  const handleAddExpense = async () => {
-    if (!expCaseId || Number(expAmount) <= 0) {
-      alert('कृपया वैध केस आणि रक्कम प्रविष्ट करा.');
-      return;
-    }
-    if (expMode === 'BANK_TRANSFER' && (!expBankLedgerId || expBankLedgerId <= 0)) {
-      alert('कृपया बँक जी.एल. खाते निवडा.');
-      return;
-    }
-
-    const selectedCaseObj = cases.find((c) => c.caseId === expCaseId);
-    setAddingExpense(true);
-    try {
-      const res = await axios.post('/api/LegalRecovery/expense/add', {
-        branchId: selectedBranchId > 0 ? selectedBranchId : user?.branchID || 1,
-        caseId: expCaseId,
-        loanAccountId: selectedCaseObj?.loanAccountId || 0,
-        expenseType: expType,
-        expenseDate: expDate,
-        amount: Number(expAmount),
-        payeeName: expPayee,
-        paymentMode: expMode,
-        bankLedgerId: expMode === 'BANK_TRANSFER' ? expBankLedgerId : null,
-        referenceNo: expMode === 'BANK_TRANSFER' ? expReferenceNo : null,
-        isDebitedToBorrower: expDebitedToBorrower,
-        remarks: expRemarks,
-      });
-
-      if (res.status === 200) {
-        const result = res.data;
-        alert(`कायदेशीर खर्च नोंद यशस्वीरीत्या सेव्ह झाली!\nव्हाउचर क्र.: ${result.voucherNumber || 'ऑटो-पोस्ट'} (पासिंगसाठी प्रलंबित)`);
-        setExpBankLedgerId(0);
-        setExpReferenceNo('');
-        setExpPayee('');
-        setExpRemarks('');
-        setShowAddExpenseModal(false);
-        await fetchData();
-        if (onDataChanged) onDataChanged();
-      }
-    } catch (e: any) {
-      alert('खर्च नोंदवताना त्रुटी आली: ' + (e.response?.data?.message || e.message));
-    } finally {
-      setAddingExpense(false);
-    }
-  };
 
   const filteredCases = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -301,11 +241,6 @@ export default function Sec101LegalReports({
     URL.revokeObjectURL(link.href);
   };
 
-  const caseOptions = cases.map((c) => ({
-    value: c.caseId,
-    label: `${c.caseNumber} - ${c.customerName || c.memberName} (CIF: ${c.cifNo || c.memberCode || '-'})`,
-  }));
-
   return (
     <div className={embedded ? 'max-w-full flex flex-col bg-transparent text-[11px] font-sans space-y-2.5' : 'p-2.5 max-w-full h-full flex flex-col bg-transparent text-[11px] font-sans space-y-2.5'}>
       <style>{`@media print { @page { size: A4 landscape; margin: 10mm; } }`}</style>
@@ -336,9 +271,9 @@ export default function Sec101LegalReports({
             <button
               type="button"
               onClick={() => setShowAddExpenseModal(true)}
-              className="bg-primary hover:opacity-95 text-white px-3 py-1.5 rounded-sm text-xs font-bold shadow-xs flex items-center gap-1 transition"
+              className="bg-primary hover:opacity-95 text-white px-3 py-1.5 rounded-sm text-xs font-bold shadow-xs flex items-center gap-1 transition cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" /> कायदेशीर खर्च नोंदवा
+              <Plus className="w-3.5 h-3.5" /> वसूली / पोसटेज / कायदेशीर खर्च नोंदवा
             </button>
           </div>
         </div>
@@ -390,9 +325,9 @@ export default function Sec101LegalReports({
               <button
                 type="button"
                 onClick={() => setShowAddExpenseModal(true)}
-                className="bg-primary hover:opacity-95 text-white px-2.5 py-1 rounded-sm text-xs font-bold flex items-center gap-1 transition"
+                className="bg-primary hover:opacity-95 text-white px-2.5 py-1 rounded-sm text-xs font-bold flex items-center gap-1 transition cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" /> कायदेशीर खर्च नोंदवा
+                <Plus className="w-3.5 h-3.5" /> वसूली / पोसटेज / कायदेशीर खर्च
               </button>
             )}
             <button type="button" onClick={fetchData} className="p-1.5 bg-white hover:bg-primary/10 hover:text-primary rounded-sm border border-gray-300 text-gray-700 transition" title="रिफ्रेश">
@@ -550,7 +485,7 @@ export default function Sec101LegalReports({
                         <div className="font-bold text-gray-900">{e.customerName || e.memberName || '-'}</div>
                         <div className="text-[10px] text-gray-500 font-mono">
                           CIF: {e.cifNo || '-'} | खाते: {e.loanAccountNo || '-'}
-                          {e.caseNumber ? ` | केस: ${e.caseNumber}` : ' | (नोटीस खर्च)'}
+                          {e.caseNumber ? ` | केस: ${e.caseNumber}` : ' | (थेट कर्ज / नोटीस खर्च)'}
                         </div>
                       </td>
                       <td className="p-2.5">
@@ -561,8 +496,10 @@ export default function Sec101LegalReports({
                       <td className="p-2.5 text-[10px]">{e.paymentMode || '-'}</td>
                       <td className="p-2.5">
                         <div className="flex flex-col gap-0.5 items-start">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-sm ${e.isDebitedToBorrower ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
-                            {e.isDebitedToBorrower ? 'कर्जदार नावे' : 'संस्था खर्च'}
+                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-sm ${e.capitalizeToLoanPrincipal ? 'bg-blue-100 text-blue-900' : (e.isDebitedToBorrower ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700')}`}>
+                            {e.capitalizeToLoanPrincipal
+                              ? (e.isPrincipalApplied ? 'कर्ज मुद्दल नावे (लागू)' : 'कर्ज मुद्दल नावे (प्रलंबित)')
+                              : (e.isDebitedToBorrower ? 'कर्जदार नावे (येणे खर्च)' : 'संस्था खर्च')}
                           </span>
                           {e.voucherStatus && e.voucherStatus !== 'None' && (
                             <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-sm ${e.voucherStatus === 'Approved' ? 'bg-primary/10 text-primary' : 'bg-amber-100 text-amber-900'}`}>
@@ -589,104 +526,16 @@ export default function Sec101LegalReports({
         </div>
       )}
 
-      {/* Add Legal Expense Modal */}
-      {showAddExpenseModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 print:hidden">
-          <div className="bg-white rounded-sm border-t-4 border-t-primary max-w-md w-full p-5 shadow-2xl space-y-4">
-            <div className="flex items-center gap-2 border-b pb-3 text-primary font-bold text-sm">
-              <DollarSign className="w-5 h-5 text-primary" />
-              कायदेशीर खर्च नोंदवा (Add Legal Expense)
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-gray-700">केस निवडा (Select Case):</label>
-                <div className="mt-1">
-                  <SearchableSelect
-                    options={caseOptions}
-                    value={expCaseId || ''}
-                    onChange={(e) => setExpCaseId(Number(e.target.value) || null)}
-                    placeholder="- केस निवडा -"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-gray-700">खर्च प्रकार (Expense Type):</label>
-                <select value={expType} onChange={(e) => setExpType(e.target.value)} className="w-full mt-1 border border-gray-300 rounded-sm px-2.5 py-1.5 font-bold bg-white focus:border-primary focus:ring-1 focus:ring-primary outline-none">
-                  <option value="ADVOCATE_FEE">वकिली फी (Advocate Fee)</option>
-                  <option value="COURT_FEE">कोर्ट फी (Court Fee)</option>
-                  <option value="NOTICE_FEE">नोटीस व टपाल खर्च (Notice Fee)</option>
-                  <option value="NEWSPAPER_AD">वर्तमानपत्र जाहीरनामा (Newspaper Ad)</option>
-                  <option value="SRO_COMMISSION">विशेष वसुली अधिकारी कमिशन (SRO Fee)</option>
-                  <option value="OTHER_LEGAL">इतर कायदेशीर खर्च (Other Legal Expense)</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-gray-700">खर्च तारीख:</label>
-                  <input type="date" value={expDate} onChange={(e) => setExpDate(e.target.value)} className="w-full mt-1 border border-gray-300 rounded-sm px-2 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
-                </div>
-                <div>
-                  <label className="font-bold text-gray-700">रक्कम (₹):</label>
-                  <input type="number" value={expAmount} onChange={(e) => setExpAmount(Number(e.target.value))} className="w-full mt-1 border border-gray-300 rounded-sm px-2 py-1.5 font-black text-rose-700 focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-gray-700">देय व्यक्ती / संस्था (Payee Name):</label>
-                <input type="text" value={expPayee} onChange={(e) => setExpPayee(e.target.value)} className="w-full mt-1 border border-gray-300 rounded-sm px-2.5 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
-              </div>
-
-              <div>
-                <label className="font-bold text-gray-700">पेमेंट पद्धत:</label>
-                <select
-                  value={expMode}
-                  onChange={(e) => {
-                    setExpMode(e.target.value);
-                    if (e.target.value !== 'BANK_TRANSFER') {
-                      setExpBankLedgerId(0);
-                      setExpReferenceNo('');
-                    }
-                  }}
-                  className="w-full mt-1 border border-gray-300 rounded-sm px-2.5 py-1.5 font-bold bg-white focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-                >
-                  <option value="CASH">रोख (Cash)</option>
-                  <option value="BANK_TRANSFER">बँक ट्रान्सफर / चेक (Bank Account)</option>
-                  <option value="JOURNAL">जर्नल (Journal)</option>
-                </select>
-              </div>
-
-              {expMode === 'BANK_TRANSFER' && (
-                <div className="bg-primary/5 border border-primary/20 rounded-sm p-2.5 space-y-2">
-                  <BankLedgerSelect value={expBankLedgerId} onChange={setExpBankLedgerId} showCountBadge />
-                  <input type="text" placeholder="UTR / चेक क्र." value={expReferenceNo} onChange={(e) => setExpReferenceNo(e.target.value)} className="w-full border border-gray-300 rounded-sm px-2.5 py-1.5 bg-white" />
-                </div>
-              )}
-
-              <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
-                <input type="checkbox" checked={expDebitedToBorrower} onChange={(e) => setExpDebitedToBorrower(e.target.checked)} />
-                <span>हा खर्च कर्जदाराच्या येणे कायदेशीर खर्चास नावे टाका (व्हाउचर मंजुरीनंतर Overdue Ledger मध्ये जमा)</span>
-              </label>
-
-              <div>
-                <label className="font-bold text-gray-700">शेरा (Remarks):</label>
-                <input type="text" value={expRemarks} onChange={(e) => setExpRemarks(e.target.value)} className="w-full mt-1 border border-gray-300 rounded-sm px-2.5 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button type="button" onClick={() => setShowAddExpenseModal(false)} className="px-4 py-1.5 rounded-sm text-xs font-bold bg-gray-100 hover:bg-gray-200 text-gray-700">
-                रद्द करा
-              </button>
-              <button type="button" onClick={handleAddExpense} disabled={addingExpense} className="px-4 py-1.5 rounded-sm text-xs font-bold shadow-xs transition disabled:opacity-50 bg-primary hover:opacity-95 text-white">
-                {addingExpense ? 'खर्च नोंदवत आहे...' : 'खर्च सेव्ह करा'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Shared Add Loan Recovery & Legal Expense Modal (works with or without Sec 101 Case) */}
+      <AddLoanRecoveryExpenseModal
+        isOpen={showAddExpenseModal}
+        onClose={() => setShowAddExpenseModal(false)}
+        branchId={selectedBranchId > 0 ? selectedBranchId : user?.branchID || 1}
+        onSuccess={async () => {
+          await fetchData();
+          if (onDataChanged) onDataChanged();
+        }}
+      />
     </div>
   );
 }

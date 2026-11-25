@@ -60,6 +60,12 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal PrincipalCollected { get; set; }
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal ExpensesCollected { get; set; } = 0m; // स्वतंत्र OverdueRecoveryLedgers मधून वसूल झालेला खर्च
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal ChargesPrincipalCollected { get; set; } = 0m; // PrincipalCollected मधून सेटल झालेला मुद्दलात समाविष्ट वसूली/पोसटेज खर्च (Lossless Rollback साठी)
+
         // OTS & Waiver fields
         [Column(TypeName = "decimal(18,2)")]
         public decimal InterestWaived { get; set; } = 0;

@@ -4345,6 +4345,10 @@ namespace Bhisi.Api.Migrations
                     b.Property<int>("BranchID")
                         .HasColumnType("int");
 
+                    b.Property<decimal>("CapitalizedRecoveryCharges")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<int?>("CoCustomer2ID")
                         .HasColumnType("int");
 
@@ -4679,8 +4683,16 @@ namespace Bhisi.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<decimal>("ChargesPrincipalCollected")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<DateTime>("CollectionDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<decimal>("ExpensesCollected")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("InterestCollected")
                         .HasPrecision(18, 2)
@@ -8346,6 +8358,9 @@ namespace Bhisi.Api.Migrations
                     b.Property<int>("BranchId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("CapitalizeToLoanPrincipal")
+                        .HasColumnType("bit");
+
                     b.Property<int?>("CaseId")
                         .HasColumnType("int");
 
@@ -8353,6 +8368,12 @@ namespace Bhisi.Api.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreditLedgerId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DebitLedgerId")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("ExpenseDate")
@@ -8364,6 +8385,9 @@ namespace Bhisi.Api.Migrations
                         .HasColumnType("nvarchar(50)");
 
                     b.Property<bool>("IsDebitedToLoan")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrincipalApplied")
                         .HasColumnType("bit");
 
                     b.Property<int>("LoanAccountId")
@@ -9163,6 +9187,13 @@ namespace Bhisi.Api.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("ChargeExpenseType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("ChargeLoanAccountID")
+                        .HasColumnType("int");
+
                     b.Property<int?>("CustomerID")
                         .HasColumnType("int");
 
@@ -9177,16 +9208,23 @@ namespace Bhisi.Api.Migrations
                     b.Property<int?>("MemberID")
                         .HasColumnType("int");
 
+                    b.Property<int?>("SavingAccountID")
+                        .HasColumnType("int");
+
                     b.Property<int>("VoucherID")
                         .HasColumnType("int");
 
                     b.HasKey("VoucherDetailID");
+
+                    b.HasIndex("ChargeLoanAccountID");
 
                     b.HasIndex("CustomerID");
 
                     b.HasIndex("LedgerID");
 
                     b.HasIndex("MemberID");
+
+                    b.HasIndex("SavingAccountID");
 
                     b.HasIndex("VoucherID");
 
@@ -11906,6 +11944,11 @@ namespace Bhisi.Api.Migrations
 
             modelBuilder.Entity("Bhisi.Api.Models.VoucherDetail", b =>
                 {
+                    b.HasOne("Bhisi.Api.Models.LoanAccount", "ChargeLoanAccount")
+                        .WithMany()
+                        .HasForeignKey("ChargeLoanAccountID")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Bhisi.Api.Models.Customer", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerID")
@@ -11922,17 +11965,26 @@ namespace Bhisi.Api.Migrations
                         .HasForeignKey("MemberID")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("Bhisi.Api.Models.SavingAccountMaster", "SavingAccount")
+                        .WithMany()
+                        .HasForeignKey("SavingAccountID")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Bhisi.Api.Models.Voucher", "Voucher")
                         .WithMany("VoucherDetails")
                         .HasForeignKey("VoucherID")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("ChargeLoanAccount");
+
                     b.Navigation("Customer");
 
                     b.Navigation("Ledger");
 
                     b.Navigation("Member");
+
+                    b.Navigation("SavingAccount");
 
                     b.Navigation("Voucher");
                 });

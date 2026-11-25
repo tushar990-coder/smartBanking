@@ -54,6 +54,9 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal CapitalizedInterestAmount { get; set; } = 0; // मुद्दलात समाविष्ट झालेले व्याज
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal CapitalizedRecoveryCharges { get; set; } = 0; // मुद्दलात समाविष्ट वसूली व पोसटेज खर्च
+
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal InterestBalance { get; set; }

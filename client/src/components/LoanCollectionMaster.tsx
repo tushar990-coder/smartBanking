@@ -6,6 +6,7 @@ import BankLedgerSelect from './common/BankLedgerSelect';
 import SearchableSelect, { SearchableSelectOption } from './SearchableSelect';
 import { filterBankAccountLedgers, isBankAccountLedger, isCashLedgerOption } from '../utils/bankLedgerUtils';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
+import AddLoanRecoveryExpenseModal from './common/AddLoanRecoveryExpenseModal';
 import { useAuth } from '../context/AuthContext';
 import { getCachedMasterData, markCustomer360Dirty } from '../utils/apiCache';
 
@@ -37,6 +38,7 @@ interface LoanAccount {
     principalBalance: number;
     purePrincipalBalance?: number;
     capitalizedInterestAmount?: number;
+    capitalizedRecoveryCharges?: number;
     interestBalance: number;
     overdueInterestBalance: number;
     installmentAmount: number;
@@ -112,6 +114,10 @@ interface AccountDetailsAndSchedule {
     currentPrincipalBalance: number;
     purePrincipalBalance?: number;
     capitalizedInterestAmount?: number;
+    capitalizedRecoveryCharges?: number;
+    pendingPrincipalCharges?: number;
+    unpaidRecoveryExpenses?: number;
+    pendingRecoveryExpenses?: number;
     currentInterestBalance: number;
     currentOverdueInterestBalance: number;
     totalDisbursedAmount?: number;
@@ -327,6 +333,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [allowDateOverride, setAllowDateOverride] = useState(false);
+    const [showAddRecoveryChargeModal, setShowAddRecoveryChargeModal] = useState(false);
 
     // Passing Mode State (व्हाउचर तपासणी व मंजुरी मोड)
     const [isPassingMode, setIsPassingMode] = useState(false);
@@ -1301,6 +1308,9 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                     return {
                         ...prev,
                         principalBalance: data.currentPrincipalBalance !== undefined ? data.currentPrincipalBalance : prev.principalBalance,
+                        purePrincipalBalance: data.purePrincipalBalance !== undefined ? data.purePrincipalBalance : prev.purePrincipalBalance,
+                        capitalizedInterestAmount: data.capitalizedInterestAmount !== undefined ? data.capitalizedInterestAmount : prev.capitalizedInterestAmount,
+                        capitalizedRecoveryCharges: data.capitalizedRecoveryCharges !== undefined ? data.capitalizedRecoveryCharges : prev.capitalizedRecoveryCharges,
                         interestBalance: data.currentInterestBalance !== undefined ? data.currentInterestBalance : prev.interestBalance,
                         overdueInterestBalance: data.currentOverdueInterestBalance !== undefined ? data.currentOverdueInterestBalance : prev.overdueInterestBalance,
                         sanctionedAmount: data.sanctionedAmount !== undefined ? data.sanctionedAmount : prev.sanctionedAmount,
@@ -1645,11 +1655,17 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         return isIncludeBothDays ? rawDiffDays + 1 : rawDiffDays;
     };
 
-    // Helper to split Current Principal Balance (चालू मुद्दल बाकी) into Pure Principal (मुद्दल) + Posted/Capitalized Interest (व्याज)
+    // Helper to split Current Principal Balance (चालू मुद्दल बाकी) into Pure Principal (मुद्दल) + Posted/Capitalized Interest (व्याज) + Capitalized Recovery/Postage Charges (वसूली/पोसटेज खर्च)
     const getPrincipalAndPostedInterestSplit = (acc: any, details?: AccountDetailsAndSchedule | null) => {
-        if (!acc) return { totalBalance: 0, purePrincipal: 0, postedInterest: 0 };
+        if (!acc) return { totalBalance: 0, purePrincipal: 0, postedInterest: 0, capCharges: 0 };
         const totalBalance = details?.currentPrincipalBalance !== undefined ? details.currentPrincipalBalance : (acc.principalBalance || 0);
         const baseDisbursed = details?.totalDisbursedAmount || details?.sanctionedAmount || acc.sanctionedAmount || 0;
+        const explicitCapCharges = details?.capitalizedRecoveryCharges !== undefined
+            ? details.capitalizedRecoveryCharges
+            : (acc.capitalizedRecoveryCharges || 0);
+        const capCharges = Math.min(totalBalance, Math.max(0, explicitCapCharges));
+        const maxNonChargeBalance = Math.max(0, totalBalance - capCharges);
+
         const explicitCapInt = details?.capitalizedInterestAmount !== undefined
             ? details.capitalizedInterestAmount
             : (acc.capitalizedInterestAmount || 0);
@@ -1658,23 +1674,24 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             : (acc.purePrincipalBalance || 0);
 
         let postedInterest = 0;
-        let purePrincipal = totalBalance;
+        let purePrincipal = maxNonChargeBalance;
 
         if (explicitCapInt > 0) {
-            postedInterest = Math.min(totalBalance, explicitCapInt);
-            purePrincipal = Math.max(0, totalBalance - postedInterest);
-        } else if (baseDisbursed > 0 && totalBalance > baseDisbursed) {
-            purePrincipal = (explicitPurePrin > 0 && explicitPurePrin < totalBalance) ? explicitPurePrin : baseDisbursed;
-            postedInterest = Math.max(0, totalBalance - purePrincipal);
-        } else if (explicitPurePrin > 0 && explicitPurePrin < totalBalance) {
+            postedInterest = Math.min(maxNonChargeBalance, explicitCapInt);
+            purePrincipal = Math.max(0, maxNonChargeBalance - postedInterest);
+        } else if (baseDisbursed > 0 && maxNonChargeBalance > baseDisbursed) {
+            purePrincipal = (explicitPurePrin > 0 && explicitPurePrin < maxNonChargeBalance) ? explicitPurePrin : baseDisbursed;
+            postedInterest = Math.max(0, maxNonChargeBalance - purePrincipal);
+        } else if (explicitPurePrin > 0 && explicitPurePrin < maxNonChargeBalance) {
             purePrincipal = explicitPurePrin;
-            postedInterest = Math.max(0, totalBalance - purePrincipal);
+            postedInterest = Math.max(0, maxNonChargeBalance - purePrincipal);
         }
 
         return {
             totalBalance: Math.round(totalBalance * 100) / 100,
             purePrincipal: Math.round(purePrincipal * 100) / 100,
-            postedInterest: Math.round(postedInterest * 100) / 100
+            postedInterest: Math.round(postedInterest * 100) / 100,
+            capCharges: Math.round(capCharges * 100) / 100
         };
     };
 
@@ -1682,7 +1699,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const getPrincipalDuesBreakdown = (acc: any, dateVal: string | Date | null | undefined) => {
         if (!acc) return { paikiThakbaki: 0, vasulpatra: 0, oneInstallmentPrincipal: 0, regularInstallmentAmount: 0, isMultiInstallmentLoan: false };
         const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (acc.principalBalance || 0);
-        const { purePrincipal, postedInterest } = getPrincipalAndPostedInterestSplit(acc, accountDetails);
+        const { purePrincipal, postedInterest, capCharges } = getPrincipalAndPostedInterestSplit(acc, accountDetails);
         const collectionDateObj = parseDateSafe(dateVal || new Date());
         collectionDateObj.setHours(0, 0, 0, 0);
 
@@ -1748,6 +1765,22 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         if (!isMultiInstallmentLoan && postedInterest > 0) {
             oneInstallmentPrincipal = Math.min(yeneBaki, oneInstallmentPrincipal + postedInterest);
             vasulpatra = Math.min(yeneBaki, vasulpatra + postedInterest);
+        }
+
+        // Always include Capitalized Recovery/Postage Charges added into PrincipalBalance inside overdue & collectible principal
+        if (capCharges > 0) {
+            paikiThakbaki = Math.min(yeneBaki, paikiThakbaki + capCharges);
+            vasulpatra = Math.min(yeneBaki, vasulpatra + capCharges);
+        }
+
+        // If past Maturity Date (परतफेड दि. ओलांडली), full PrincipalBalance is overdue
+        if (acc.maturityDate) {
+            const matObj = parseDateSafe(acc.maturityDate);
+            matObj.setHours(0, 0, 0, 0);
+            if (!isNaN(matObj.getTime()) && matObj <= collectionDateObj && yeneBaki > 0) {
+                paikiThakbaki = Math.max(paikiThakbaki, yeneBaki);
+                vasulpatra = Math.max(vasulpatra, yeneBaki);
+            }
         }
 
         paikiThakbaki = Math.min(yeneBaki, Math.max(0, paikiThakbaki));
@@ -1894,19 +1927,20 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         }
 
         const currentFeesSum = getFeesSum(formData.fees);
+        const unpaidRecoveryExp = Math.max(0, accountDetails?.unpaidRecoveryExpenses || 0);
         if (type === 'INTEREST_ONLY') {
-            const total = Math.round((penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
+            const total = Math.round((unpaidRecoveryExp + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
             autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === 'OVERDUE_ONLY') {
             const overduePrin = paikiThakbaki > 0 ? paikiThakbaki : vasulpatra;
-            const total = Math.round((overduePrin + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
+            const total = Math.round((unpaidRecoveryExp + overduePrin + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
             autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === '1_INST') {
-            const total = Math.round((oneInstallmentPrincipal + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
+            const total = Math.round((unpaidRecoveryExp + oneInstallmentPrincipal + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
             autoApportion(total, formData.fees || [], undefined, undefined, false);
         } else if (type === 'FULL_DUE') {
             const maxPrincipal = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (account.principalBalance || 0);
-            const total = Math.round((maxPrincipal + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
+            const total = Math.round((unpaidRecoveryExp + maxPrincipal + penal + yeneVyaj + currentInterestDue + currentFeesSum) * 100) / 100;
             autoApportion(total, formData.fees || [], undefined, undefined, false);
         }
     };
@@ -1929,6 +1963,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const dateStr = dateOverride || formData.collectionDate || new Date().toISOString().split('T')[0];
         const feesSum = getFeesSum(currentFees);
         let remaining = Math.max(0, Math.round((totalAmt - feesSum) * 100) / 100);
+
+        // 0. Separate Unpaid Recovery Expenses (OverdueRecoveryLedgers) deducted first on server
+        const unpaidRecoveryExp = Math.max(0, accountDetails?.unpaidRecoveryExpenses || 0);
+        const expensesCollected = Math.min(remaining, unpaidRecoveryExp);
+        remaining -= expensesCollected;
 
         // 1. Penalty Interest (Booked Overdue + Scheme-Accrued Penal)
         const { totalPenal: penaltyDue } = getEffectivePenalBreakdown(account);
@@ -2041,11 +2080,13 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             // एकूण जमा (totalAmountReceived) रक्कम कधीही बदलू नये; इतर वसुली वजा करून मुद्दल (principalCollected) रक्कम बदलावी!
             const currentTotal = Number(p.totalAmountReceived) || 0;
             const currentFeesSum = getFeesSum(p.fees);
+            const unpaidRecoveryExp = Math.max(0, accountDetails?.unpaidRecoveryExpenses || 0);
+            const expectedExpenses = Math.min(Math.max(0, currentTotal - currentFeesSum), unpaidRecoveryExp);
             const newReceivable = Number(name === 'receivableInterestCollected' ? val : p.receivableInterestCollected) || 0;
             const newInterest = Number(name === 'interestCollected' ? val : p.interestCollected) || 0;
             const newPenalty = Number(name === 'penaltyInterestCollected' ? val : p.penaltyInterestCollected) || 0;
             const newSurcharge = Number(name === 'surchargeCollected' ? val : p.surchargeCollected) || 0;
-            const nonPrincipalSum = Math.round((newReceivable + newInterest + newPenalty + newSurcharge + currentFeesSum) * 100) / 100;
+            const nonPrincipalSum = Math.round((newReceivable + newInterest + newPenalty + newSurcharge + currentFeesSum + expectedExpenses) * 100) / 100;
 
             nextState.principalCollected = Math.max(0, Math.round((currentTotal - nonPrincipalSum) * 100) / 100);
             return nextState;
@@ -2129,6 +2170,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             return;
         }
 
+        const unpaidRecoveryExp = Math.max(0, accountDetails?.unpaidRecoveryExpenses || 0);
+        const loanOnlyTotal = Math.max(0, Math.round((enteredTotalAmt - validFeesTotal) * 100) / 100);
+        const expectedExpenses = formData.isOTS ? 0 : Math.min(loanOnlyTotal, unpaidRecoveryExp);
+
         const allocatedSplitSum =
             Math.round(((
                 (Number(formData.principalCollected) || 0) +
@@ -2136,6 +2181,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 (Number(formData.interestCollected) || 0) +
                 (Number(formData.penaltyInterestCollected) || 0) +
                 (Number(formData.surchargeCollected) || 0) +
+                expectedExpenses +
                 validFeesTotal
             )) * 100) / 100;
         const splitDiff = Math.round((enteredTotalAmt - allocatedSplitSum) * 100) / 100;
@@ -2508,8 +2554,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         (Number(formData.interestCollected) || 0) +
         (Number(formData.penaltyInterestCollected) || 0) +
         (Number(formData.surchargeCollected) || 0);
-    const allocatedRecoveryTotal = Math.round((allocatedLoanRecoveryTotal + totalFeesAmount) * 100) / 100;
     const enteredTotalAmount = Math.round((Number(formData.totalAmountReceived) || 0) * 100) / 100;
+    const unpaidRecoveryExpDue = Math.max(0, accountDetails?.unpaidRecoveryExpenses || 0);
+    const expectedExpensesRecovered = formData.isOTS
+        ? 0
+        : Math.min(Math.max(0, Math.round((enteredTotalAmount - totalFeesAmount) * 100) / 100), unpaidRecoveryExpDue);
+    const allocatedRecoveryTotal = Math.round((allocatedLoanRecoveryTotal + expectedExpensesRecovered + totalFeesAmount) * 100) / 100;
     const allocationDifference = Math.round((enteredTotalAmount - allocatedRecoveryTotal) * 100) / 100;
     const hasAllocationMismatch = !formData.isOTS && Math.abs(allocationDifference) > 0.01;
 
@@ -2527,7 +2577,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
         const sanctionedAmount = accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount || 0;
         const interestRate = selectedAccount.loanRate?.interestRate || selectedAccount.interestRate || 0;
         const yeneBaki = accountDetails?.currentPrincipalBalance !== undefined ? accountDetails.currentPrincipalBalance : (selectedAccount.principalBalance || 0);
-        const { purePrincipal, postedInterest: postedInterestInPrincipal } = getPrincipalAndPostedInterestSplit(selectedAccount, accountDetails);
+        const { purePrincipal, postedInterest: postedInterestInPrincipal, capCharges: postedRecoveryChargesInPrincipal } = getPrincipalAndPostedInterestSplit(selectedAccount, accountDetails);
+        const pendingPrincipalCharges = Math.max(0, accountDetails?.pendingPrincipalCharges || 0);
+        const unpaidRecoveryExpenses = Math.max(0, accountDetails?.unpaidRecoveryExpenses || 0);
+        const pendingRecoveryExpenses = Math.max(0, accountDetails?.pendingRecoveryExpenses || 0);
 
         let thakitDinank = "-";
         const { paikiThakbaki, vasulpatra, regularInstallmentAmount, isMultiInstallmentLoan } = getPrincipalDuesBreakdown(selectedAccount, formData.collectionDate);
@@ -2624,7 +2677,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             vyaj = Math.max(0, Number(formData.interestCollected) || 0);
         }
         const shillakKarjRakkam = Math.max(0, yeneBaki - (formData.principalCollected || 0));
-        const ekunVasulpatra = vasulpatra + vyaj + yeneVyaj + dandVyaj + surcharge + vasuliFee;
+        const ekunVasulpatra = vasulpatra + vyaj + yeneVyaj + dandVyaj + surcharge + vasuliFee + unpaidRecoveryExpenses;
 
         return {
             disbursementDate,
@@ -2634,6 +2687,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             yeneBaki,
             purePrincipal,
             postedInterestInPrincipal,
+            postedRecoveryChargesInPrincipal,
+            pendingPrincipalCharges,
+            unpaidRecoveryExpenses,
+            pendingRecoveryExpenses,
             thakitDinank,
             vasulpatra,
             paikiThakbaki,
@@ -3983,9 +4040,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     }`}>
                                         घेतलेला वसूल: <b className={`font-mono ${hasAllocationMismatch ? 'text-rose-700' : 'text-gray-900'}`}>₹{allocatedRecoveryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
                                     </span>
-                                    {totalFeesAmount > 0 && (
+                                    {(totalFeesAmount > 0 || expectedExpensesRecovered > 0) && (
                                         <span className="px-2 py-1 rounded-sm bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold">
-                                            (कर्ज: <b className="font-mono">₹{allocatedLoanRecoveryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> + इतर फी: <b className="font-mono text-emerald-800">₹{totalFeesAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>)
+                                            (कर्ज: <b className="font-mono">₹{allocatedLoanRecoveryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                                            {expectedExpensesRecovered > 0 && <> + येणे खर्च: <b className="font-mono text-rose-800">₹{expectedExpensesRecovered.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b></>}
+                                            {totalFeesAmount > 0 && <> + इतर फी: <b className="font-mono text-emerald-800">₹{totalFeesAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b></>}
+                                            )
                                         </span>
                                     )}
                                     {hasAllocationMismatch && (
@@ -4098,17 +4158,30 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             <span className="border-l-4 border-primary pl-2 text-primary font-bold text-xs">
                                 कर्ज खाते स्थिती व थकबाकी (Loan & Dues)
                             </span>
-                            {npaStatus && (
-                                <span
-                                    className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border ${
-                                        npaStatus.category === 'Standard'
-                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                            : 'bg-rose-50 text-rose-800 border-rose-300'
-                                    }`}
-                                >
-                                    {npaStatus.categoryMarathi}
-                                </span>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                                {!isPassingMode && selectedAccount && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddRecoveryChargeModal(true)}
+                                        className="px-2 py-0.5 rounded-sm bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                                        title="थकबाकी कर्जाच्या येणे बाकीत वसूली / पोसटेज खर्च अ‍ॅड करा (Dr कर्ज / Cr उत्पन्न)"
+                                    >
+                                        <PlusCircle className="w-3 h-3 text-amber-800" />
+                                        <span>+ वसूली / पोसटेज खर्च</span>
+                                    </button>
+                                )}
+                                {npaStatus && (
+                                    <span
+                                        className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border ${
+                                            npaStatus.category === 'Standard'
+                                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                                : 'bg-rose-50 text-rose-800 border-rose-300'
+                                        }`}
+                                    >
+                                        {npaStatus.categoryMarathi}
+                                    </span>
+                                )}
+                            </div>
                         </div>
 
                         {selectedAccount && duesSummary ? (
@@ -4200,7 +4273,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         </div>
                                         <div className="text-[9.5px] font-bold text-sky-900 mt-1 leading-snug bg-white/85 px-1.5 py-0.5 rounded-xs border border-sky-200/80 font-mono flex flex-wrap items-center gap-x-1">
                                             <span className="whitespace-nowrap">मुद्दल: ₹{duesSummary.purePrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                                            <span className="whitespace-nowrap">+ व्याज: ₹{duesSummary.postedInterestInPrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                            {(duesSummary.postedInterestInPrincipal > 0 || duesSummary.postedRecoveryChargesInPrincipal === 0) && (
+                                                <span className="whitespace-nowrap">+ व्याज: ₹{duesSummary.postedInterestInPrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                            )}
+                                            {duesSummary.postedRecoveryChargesInPrincipal > 0 && (
+                                                <span className="whitespace-nowrap text-amber-800">+ खर्च: ₹{duesSummary.postedRecoveryChargesInPrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                            )}
                                         </div>
                                     </div>
 
@@ -4359,6 +4437,25 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             <span className="text-emerald-950 font-semibold">इतर वसूल फी</span>
                                             <span className="font-mono font-bold text-emerald-800">
                                                 ₹{duesSummary.vasuliFee.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {(duesSummary.postedRecoveryChargesInPrincipal > 0 || duesSummary.pendingPrincipalCharges > 0 || duesSummary.unpaidRecoveryExpenses > 0) && (
+                                        <div className="px-2.5 py-1.5 flex items-center justify-between bg-amber-50/70">
+                                            <span className="text-amber-950 font-semibold">
+                                                वसूली / पोसटेज खर्च
+                                                {duesSummary.pendingPrincipalCharges > 0 && (
+                                                    <span className="text-[9.5px] text-amber-800 ml-1">
+                                                        (पासिंग प्रलंबित: ₹{duesSummary.pendingPrincipalCharges.toLocaleString('en-IN')})
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span className="font-mono font-bold text-amber-900">
+                                                {duesSummary.postedRecoveryChargesInPrincipal > 0 && `मुद्दलात ₹${duesSummary.postedRecoveryChargesInPrincipal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
+                                                {duesSummary.postedRecoveryChargesInPrincipal > 0 && duesSummary.unpaidRecoveryExpenses > 0 && ' | '}
+                                                {duesSummary.unpaidRecoveryExpenses > 0 && `येणे ₹${duesSummary.unpaidRecoveryExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
+                                                {duesSummary.postedRecoveryChargesInPrincipal === 0 && duesSummary.unpaidRecoveryExpenses === 0 && `प्रलंबित ₹${duesSummary.pendingPrincipalCharges.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
                                             </span>
                                         </div>
                                     )}
@@ -5696,6 +5793,18 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                     </div>
                 </div>
             )}
+            {/* Add Recovery / Postage Charge Modal (Adds to Principal Balance via Maker-Checker Voucher) */}
+            <AddLoanRecoveryExpenseModal
+                isOpen={showAddRecoveryChargeModal}
+                onClose={() => setShowAddRecoveryChargeModal(false)}
+                branchId={selectedBranchId}
+                preselectedLoanAccountId={selectedAccount?.loanAccountID}
+                onSuccess={async () => {
+                    if (selectedAccount?.loanAccountID) {
+                        await selectLoanAccountById(selectedAccount.loanAccountID);
+                    }
+                }}
+            />
         </div>
     );
 };

@@ -28,6 +28,21 @@ interface VoucherDetail {
   drCr: string;
   amount: number;
   narration: string;
+  savingAccountID?: number | null;
+  savingAccount?: {
+    savingAccountID?: number;
+    accountNo?: string;
+    oldAccountNo?: string;
+    previousAccountNo?: string;
+    legacyAccountNumber?: string;
+  } | null;
+  chargeLoanAccountID?: number | null;
+  chargeExpenseType?: string | null;
+  chargeLoanAccount?: {
+    loanAccountID?: number;
+    loanAccountNo?: string;
+    legacyAccountNumber?: string;
+  } | null;
   ledger: { ledgerName: string; accountType?: string };
   customer?: {
     cifNo?: string;
@@ -459,16 +474,25 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       narr.includes('saving account closure');
 
     // 4. Saving Deposit / Withdrawal Transaction
+    // NOTE: Manual vouchers (especially Journal / Payment / Receipt with explicit VoucherDetail.SavingAccountID
+    // used for Salary/Honorarium -> Saving Account transfers) must always open in VoucherMaster Passing Mode,
+    // never hijacked into the standalone SavingTransaction form.
+    const hasManualSavingLink = ((v as any).voucherDetails || []).some(
+      (d: any) => Number(d?.savingAccountID ?? d?.SavingAccountID ?? 0) > 0
+    );
+    const isJournalVoucher = String((v as any).voucherType || '').toLowerCase() === 'journal';
     const isSavingTransaction =
-      vNo.startsWith('SAV-') ||
-      vNo.startsWith('REC-SAV-') ||
-      vNo.startsWith('PAY-SAV-') ||
-      v.narration?.includes('बचत जमा') ||
-      v.narration?.includes('बचत नावे') ||
-      v.narration?.includes('बचत हस्तांतरण') ||
-      narr.includes('saving deposit') ||
-      narr.includes('saving withdrawal') ||
-      narr.includes('saving transfer');
+      !hasManualSavingLink &&
+      !isJournalVoucher &&
+      (vNo.startsWith('SAV-') ||
+        vNo.startsWith('REC-SAV-') ||
+        vNo.startsWith('PAY-SAV-') ||
+        v.narration?.includes('बचत जमा') ||
+        v.narration?.includes('बचत नावे') ||
+        v.narration?.includes('बचत हस्तांतरण') ||
+        narr.includes('saving deposit') ||
+        narr.includes('saving withdrawal') ||
+        narr.includes('saving transfer'));
 
     // 5. Fixed Deposit Withdrawal / Closure / Renewal
     const isFdWithdrawal =
@@ -1703,6 +1727,26 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                             return <span className="text-gray-400 font-mono">-</span>;
                                           }
 
+                                          const savObj = vd.savingAccount || (vd as any).SavingAccount;
+                                          const savAccId = vd.savingAccountID ?? (vd as any).SavingAccountID ?? savObj?.savingAccountID ?? savObj?.SavingAccountID;
+                                          const savAccNo = savObj?.accountNo || savObj?.AccountNo || (savAccId ? `#${savAccId}` : '');
+                                          const savOldNo = savObj?.oldAccountNo || savObj?.OldAccountNo || savObj?.previousAccountNo || savObj?.legacyAccountNumber || savObj?.LegacyAccountNumber || '';
+
+                                          const chgObj = vd.chargeLoanAccount || (vd as any).ChargeLoanAccount;
+                                          const chgLoanId = vd.chargeLoanAccountID ?? (vd as any).ChargeLoanAccountID ?? chgObj?.loanAccountID ?? chgObj?.LoanAccountID;
+                                          const chgLoanNo = chgObj?.loanAccountNo || chgObj?.LoanAccountNo || (chgLoanId ? `#${chgLoanId}` : '');
+                                          const chgExpTypeRaw = String(vd.chargeExpenseType ?? (vd as any).ChargeExpenseType ?? '').toUpperCase();
+                                          const chgExpLabel =
+                                            chgExpTypeRaw === 'POSTAGE_EXPENSE'
+                                              ? 'पोसटेज खर्च'
+                                              : chgExpTypeRaw === 'RECOVERY_EXPENSE'
+                                              ? 'वसूली खर्च'
+                                              : chgExpTypeRaw === 'NOTICE_FEE'
+                                              ? 'नोटीस फी'
+                                              : chgExpTypeRaw
+                                              ? 'वसूली/इतर खर्च'
+                                              : '';
+
                                           const cust = vd.customer || vd.member?.customer;
                                           const cifVal = cust?.CIFNo || cust?.cifNo;
                                           const legCustVal = cust?.LegacyCustomerNo || cust?.legacyCustomerNo;
@@ -1710,24 +1754,39 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                           const lName = cust?.LastName || cust?.lastName || vd.member?.LastName || vd.member?.lastName || '';
                                           const fFullName = `${fName} ${lName}`.trim();
 
-                                          if (cifVal || legCustVal) {
+                                          if (savAccNo || chgLoanNo || cifVal || legCustVal || fFullName) {
                                             return (
-                                              <div className="flex flex-wrap items-center gap-1.5">
-                                                {cifVal && <span className="font-bold text-primary font-mono text-[11px]">{cifVal}</span>}
-                                                {legCustVal && (
-                                                  <span className="px-1 py-0.2 rounded-sm bg-amber-50 text-amber-800 border border-amber-200 font-mono font-bold text-[9.5px]">
-                                                    जुना: {legCustVal}
-                                                  </span>
+                                              <div className="flex flex-col gap-0.5">
+                                                {savAccNo && (
+                                                  <div className="flex flex-wrap items-center gap-1">
+                                                    <span className="px-1.5 py-0.2 rounded-sm bg-emerald-100 text-emerald-950 border border-emerald-300 font-mono font-bold text-[10px]">
+                                                      💳 बचत: {savAccNo}
+                                                    </span>
+                                                    {savOldNo && (
+                                                      <span className="px-1.5 py-0.2 rounded-sm bg-amber-100 text-amber-950 border border-amber-300 font-mono font-bold text-[10px]">
+                                                        जुना बचत नं: {savOldNo}
+                                                      </span>
+                                                    )}
+                                                  </div>
                                                 )}
-                                                {fFullName ? <span className="text-gray-700">{fFullName}</span> : null}
-                                              </div>
-                                            );
-                                          }
-
-                                          if (fFullName) {
-                                            return (
-                                              <div className="flex items-center gap-1.5">
-                                                <span className="text-gray-700">{fFullName}</span>
+                                                {chgLoanNo && (
+                                                  <div className="flex flex-wrap items-center gap-1">
+                                                    <span className="px-1.5 py-0.2 rounded-sm bg-blue-100 text-blue-950 border border-blue-300 font-mono font-bold text-[10px]">
+                                                      🏷️ कर्ज नावे: {chgLoanNo}{chgExpLabel ? ` (${chgExpLabel})` : ''}
+                                                    </span>
+                                                  </div>
+                                                )}
+                                                {(cifVal || legCustVal || fFullName) && (
+                                                  <div className="flex flex-wrap items-center gap-1.5">
+                                                    {cifVal && <span className="font-bold text-primary font-mono text-[11px]">{cifVal}</span>}
+                                                    {legCustVal && (
+                                                      <span className="px-1 py-0.2 rounded-sm bg-amber-50 text-amber-800 border border-amber-200 font-mono font-bold text-[9.5px]">
+                                                        जुना: {legCustVal}
+                                                      </span>
+                                                    )}
+                                                    {fFullName ? <span className="text-gray-700">{fFullName}</span> : null}
+                                                  </div>
+                                                )}
                                               </div>
                                             );
                                           }

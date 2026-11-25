@@ -509,6 +509,7 @@ namespace Bhisi.Api.Controllers
                     : new Helpers.FdPostingBreakdown();
                 decimal posted = breakdown.VerifiedProvision;
                 decimal capitalized = breakdown.VerifiedCapitalized;
+                decimal backedLegacy = breakdown.BackedLegacyProvision;
                 return new {
                     f.FdAccountID,
                     f.BranchID,
@@ -553,6 +554,8 @@ namespace Bhisi.Api.Controllers
                     f.IsLegacyAccount,
                     f.LegacyAccruedInt,
                     AlreadyPostedInterest = posted,
+                    BackedLegacyProvision = backedLegacy,
+                    EffectiveProvisionInterest = posted + backedLegacy,
                     AlreadyCapitalizedInterest = capitalized,
                     TotalPostedInterest = posted + capitalized,
                     f.PaymentMode,
@@ -595,6 +598,7 @@ namespace Bhisi.Api.Controllers
                 _context, id, f.FdScheme?.InterestPayableLedgerID ?? 0);
             decimal alreadyPosted = postingBreakdown.VerifiedProvision;
             decimal alreadyCapitalized = postingBreakdown.VerifiedCapitalized;
+            decimal backedLegacy = postingBreakdown.BackedLegacyProvision;
 
             return Ok(new {
                 f.FdAccountID,
@@ -632,6 +636,8 @@ namespace Bhisi.Api.Controllers
                 f.IsLegacyAccount,
                 f.LegacyAccruedInt,
                 AlreadyPostedInterest = alreadyPosted,
+                BackedLegacyProvision = backedLegacy,
+                EffectiveProvisionInterest = alreadyPosted + backedLegacy,
                 AlreadyCapitalizedInterest = alreadyCapitalized,
                 TotalPostedInterest = alreadyPosted + alreadyCapitalized,
                 f.LastInterestPostingDate,
@@ -2273,7 +2279,7 @@ namespace Bhisi.Api.Controllers
                     BranchID = account.BranchID,
                     FdAccountID = account.FdAccountID,
                     VoucherID = dummyVoucher.VoucherID,
-                    TransactionDate = account.OpeningDate,
+                    TransactionDate = account.LastInterestPostingDate ?? account.OpeningDate,
                     TransactionType = "Accrual",
                     DebitCredit = "Cr",
                     Amount = account.LegacyAccruedInt,
@@ -3802,6 +3808,8 @@ namespace Bhisi.Api.Controllers
                 recalculatedInterest = recalculatedInterest,
                 alreadyAccruedInterest = alreadyAccruedInt,
                 verifiedProvisionInterest = verifiedProvision,
+                backedLegacyProvision = postingBreakdown.BackedLegacyProvision,
+                effectiveProvisionInterest = verifiedProvision + postingBreakdown.BackedLegacyProvision,
                 alreadyCapitalizedInterest = capitalizedInterest,
                 legacyAccruedInterest = account.LegacyAccruedInt,
                 totalPostedInterest = totalPostedInterest,
@@ -5571,6 +5579,25 @@ namespace Bhisi.Api.Controllers
                             opTx.Amount = existing.DepositAmount;
                             opTx.TransactionDate = existing.OpeningDate;
                         }
+                        if (opVoucher != null)
+                        {
+                            var opAccrualTx = await _context.FdTransactions.FirstOrDefaultAsync(t =>
+                                t.FdAccountID == existing.FdAccountID &&
+                                t.VoucherID == opVoucher.VoucherID &&
+                                t.TransactionType == "Accrual");
+                            if (opAccrualTx != null)
+                            {
+                                if (existing.LegacyAccruedInt > 0)
+                                {
+                                    opAccrualTx.Amount = existing.LegacyAccruedInt;
+                                    opAccrualTx.TransactionDate = existing.LastInterestPostingDate ?? existing.OpeningDate;
+                                }
+                                else
+                                {
+                                    _context.FdTransactions.Remove(opAccrualTx);
+                                }
+                            }
+                        }
                         await _context.SaveChangesAsync();
 
                         await SyncFdOpeningBalancesInternalAsync();
@@ -6053,6 +6080,21 @@ namespace Bhisi.Api.Controllers
                 .ThenBy(a => a.FdAccountID)
                 .ToListAsync();
 
+            var accountIds = accounts.Select(a => a.FdAccountID).ToList();
+            var accrualDateRows = await _context.FdInterestAccruals
+                .AsNoTracking()
+                .Where(a => accountIds.Contains(a.FdAccountID))
+                .Select(a => new { a.FdAccountID, a.AccrualDate })
+                .ToListAsync();
+            var accrualDatesLookup = accrualDateRows.ToLookup(x => x.FdAccountID, x => x.AccrualDate);
+
+            var misDateRows = await _context.FdMisPayouts
+                .AsNoTracking()
+                .Where(m => accountIds.Contains(m.FdAccountID) && m.Status == "Success")
+                .Select(m => new { m.FdAccountID, m.PayoutDate })
+                .ToListAsync();
+            var misDatesLookup = misDateRows.ToLookup(x => x.FdAccountID, x => x.PayoutDate);
+
             var accountLedgerList = new List<object>();
 
             foreach (var acc in accounts)
@@ -6062,11 +6104,18 @@ namespace Bhisi.Api.Controllers
                     .Where(t => t.FdAccountID == acc.FdAccountID)
                     .ToListAsync();
 
-                // Calculate total recorded accrual in FdTransactions
-                decimal txAccrualSum = rawTransactions
-                    .Where(t => t.TransactionType == "Accrual")
+                // Calculate pre-closure recorded accruals in FdTransactions (excluding Closure_Interest)
+                decimal preClosureAccrualSum = rawTransactions
+                    .Where(t => string.Equals(t.TransactionType, "Accrual", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(t.TransactionType, "Interest_Capitalized", StringComparison.OrdinalIgnoreCase))
                     .Sum(t => t.Amount);
-                decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
+
+                DateTime resolvedLegacyIntDate = Helpers.FdLedgerHelper.ResolveLegacyOpeningInterestDate(
+                    acc,
+                    rawTransactions,
+                    accrualDatesLookup[acc.FdAccountID],
+                    misDatesLookup[acc.FdAccountID]);
+                string openingVoucherNo = $"JV-FD-OP-{acc.AccountNo}";
 
                 // Structured transaction list with unified typing
                 var fullTxList = rawTransactions.Select(t =>
@@ -6082,12 +6131,38 @@ namespace Bhisi.Api.Controllers
                     }
 
                     string rawNarration = t.Voucher?.Narration ?? "";
-                    string vnUpper = (t.Voucher?.VoucherNo ?? "").ToUpper();
+                    string rawVoucherNo = t.Voucher != null ? t.Voucher.VoucherNo : "";
+                    string vnUpper = rawVoucherNo.ToUpper();
                     string ttLower = (t.TransactionType ?? "").ToLower();
                     string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : "";
+                    bool isOpeningVoucherAccrual = ttLower == "accrual"
+                        && string.Equals(rawVoucherNo, openingVoucherNo, StringComparison.OrdinalIgnoreCase);
+
+                    DateTime effectiveTxDate = (isOpeningVoucherAccrual && t.TransactionDate.Date == acc.OpeningDate.Date && resolvedLegacyIntDate > acc.OpeningDate.Date)
+                        ? resolvedLegacyIntDate
+                        : t.TransactionDate;
+
                     string narration = "";
 
-                    if (ttLower.Contains("premature") || vnUpper.Contains("PRECLOSE") || rawNarration.Contains("मुदतपूर्व बंद") || rawNarration.Contains("Premature Close"))
+                    if (ttLower == "closure_interest" || ttLower == "interest_capitalized")
+                    {
+                        narration = rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
+                            ? "मुदतपूर्व व्याज जमा"
+                            : (rawNarration.Contains("मुदतपूर्ती") || vnUpper.Contains("MAT") || vnUpper.Contains("CLOSE")
+                                ? "मुदतपूर्ती व्याज जमा"
+                                : "मुदत ठेव व्याज जमा");
+                    }
+                    else if (ttLower == "accrual")
+                    {
+                        narration = isOpeningVoucherAccrual || vnUpper.Contains("LEG-INT")
+                            ? $"साचलेले जुने व्याज जमा{legPart}"
+                            : (rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
+                                ? "मुदतपूर्व व्याज जमा"
+                                : (rawNarration.Contains("मुदतपूर्ती") || vnUpper.Contains("MAT") || vnUpper.Contains("CLOSE")
+                                    ? "मुदतपूर्ती व्याज जमा"
+                                    : "मुदत ठेव व्याज जमा"));
+                    }
+                    else if (ttLower.Contains("premature") || vnUpper.Contains("PRECLOSE") || rawNarration.Contains("मुदतपूर्व बंद") || rawNarration.Contains("Premature Close"))
                     {
                         narration = "मुदतपूर्व बंद परतावा";
                     }
@@ -6097,15 +6172,13 @@ namespace Bhisi.Api.Controllers
                     }
                     else if (ttLower == "opening" || vnUpper.Contains("FD-OP") || rawNarration.Contains("खाते उघडले") || rawNarration.Contains("Account Opened") || rawNarration.Contains("आरंभिक") || rawNarration.Contains("Migration"))
                     {
-                        narration = (!string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) || rawNarration.Contains("स्थलांतर") || rawNarration.Contains("Migration") || rawNarration.Contains("आरंभिक"))
-                            ? $"आरंभिक मुदत ठेव जमा{legPart}"
-                            : "नवीन मुदत ठेव जमा";
+                        narration = Helpers.FdLedgerHelper.BuildOpeningDepositNarration(acc);
                     }
                     else if (ttLower.Contains("renew") || vnUpper.Contains("REN") || rawNarration.Contains("नूतनीकरण") || rawNarration.Contains("Renewal"))
                     {
                         narration = "मुदत ठेव नूतनीकरण";
                     }
-                    else if (ttLower == "accrual" || vnUpper.Contains("INT") || vnUpper.Contains("PROV") || rawNarration.Contains("व्याज जमा") || rawNarration.Contains("व्याज तरतूद") || rawNarration.Contains("Accrued Interest"))
+                    else if (vnUpper.Contains("INT") || vnUpper.Contains("PROV") || rawNarration.Contains("व्याज जमा") || rawNarration.Contains("व्याज तरतूद") || rawNarration.Contains("Accrued Interest"))
                     {
                         narration = rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
                             ? "मुदतपूर्व व्याज जमा"
@@ -6129,24 +6202,39 @@ namespace Bhisi.Api.Controllers
                     return new
                     {
                         t.FdTransactionID,
-                        t.TransactionDate,
+                        TransactionDate = effectiveTxDate,
                         t.TransactionType,
                         DebitCredit = drcr,
                         t.Amount,
-                        VoucherNo = t.Voucher != null ? t.Voucher.VoucherNo : "",
+                        VoucherNo = rawVoucherNo,
                         Narration = narration
                     };
                 }).ToList();
 
-                // If legacy accrued interest exists but was missing from FdTransactions, synthesize virtual opening accrual entry
-                if (acc.IsLegacyAccount && acc.LegacyAccruedInt > 0 && txAccrualSum < acc.LegacyAccruedInt)
+                // Ensure Opening deposit entry is always present at OpeningDate even if missing in FdTransactions
+                if (acc.DepositAmount > 0 && !rawTransactions.Any(t => string.Equals(t.TransactionType, "Opening", StringComparison.OrdinalIgnoreCase)))
                 {
-                    decimal missingLegacyInt = acc.LegacyAccruedInt - txAccrualSum;
+                    fullTxList.Add(new
+                    {
+                        FdTransactionID = -3,
+                        TransactionDate = acc.OpeningDate,
+                        TransactionType = "Opening",
+                        DebitCredit = "Cr",
+                        Amount = acc.DepositAmount,
+                        VoucherNo = openingVoucherNo,
+                        Narration = Helpers.FdLedgerHelper.BuildOpeningDepositNarration(acc)
+                    });
+                }
+
+                // If legacy accrued interest exists but was missing from FdTransactions, synthesize virtual opening accrual entry
+                if (acc.IsLegacyAccount && acc.LegacyAccruedInt > 0 && preClosureAccrualSum < acc.LegacyAccruedInt)
+                {
+                    decimal missingLegacyInt = acc.LegacyAccruedInt - preClosureAccrualSum;
                     string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : "";
                     fullTxList.Add(new
                     {
                         FdTransactionID = -1,
-                        TransactionDate = acc.OpeningDate,
+                        TransactionDate = resolvedLegacyIntDate,
                         TransactionType = "Accrual",
                         DebitCredit = "Cr",
                         Amount = missingLegacyInt,
@@ -6182,7 +6270,7 @@ namespace Bhisi.Api.Controllers
                             {
                                 FdTransactionID = -2,
                                 TransactionDate = closeTx.TransactionDate,
-                                TransactionType = "Accrual",
+                                TransactionType = "Closure_Interest",
                                 DebitCredit = "Cr",
                                 Amount = closureInterest,
                                 VoucherNo = closeTx.VoucherNo,
@@ -6192,26 +6280,30 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // Sort chronologically: same-day Credit entries MUST be listed before Debit entries
+                decimal totalAccruedInt = fullTxList
+                    .Where(t => t.DebitCredit == "Cr" && Helpers.FdLedgerHelper.IsInterestTransaction(t.TransactionType, t.VoucherNo))
+                    .Sum(t => t.Amount);
+
+                // Sort chronologically: Opening deposit Cr (0) -> Pre-closure interest Cr (1) -> Closure interest Cr (2) -> Payout Dr (4)
                 var sortedTxList = fullTxList
                     .OrderBy(t => t.TransactionDate.Date)
-                    .ThenBy(t => t.DebitCredit == "Cr" ? 0 : 1)
+                    .ThenBy(t => Helpers.FdLedgerHelper.ResolveTransactionSortRank(t.TransactionType, t.DebitCredit, t.VoucherNo))
                     .ThenBy(t => t.FdTransactionID)
                     .ToList();
 
                 // Compute opening balance before fromDate (if filtered)
                 decimal openingBal = 0m;
+                decimal openingPrincipalBal = 0m;
+                decimal openingInterestBal = 0m;
                 DateTime? filterFrom = fromDate?.Date;
                 DateTime? filterTo = toDate?.Date;
 
                 if (filterFrom.HasValue)
                 {
-                    var prePeriodTxs = sortedTxList.Where(t => t.TransactionDate.Date < filterFrom.Value).ToList();
-                    foreach (var p in prePeriodTxs)
-                    {
-                        if (p.DebitCredit == "Cr") openingBal += p.Amount;
-                        else if (p.DebitCredit == "Dr") openingBal -= p.Amount;
-                    }
+                    var prePeriodTxs = sortedTxList
+                        .Where(t => t.TransactionDate.Date < filterFrom.Value)
+                        .Select(t => ((string?)t.TransactionType, t.DebitCredit, t.Amount, (string?)t.VoucherNo));
+                    (openingBal, openingPrincipalBal, openingInterestBal) = Helpers.FdLedgerHelper.SplitOpeningBalances(prePeriodTxs);
                 }
 
                 // Filter transactions within selected period
@@ -6286,6 +6378,8 @@ namespace Bhisi.Api.Controllers
                     DurationMonths = acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12,
                     TotalAccruedInterest = totalAccruedInt,
                     OpeningBalance = openingBal,
+                    OpeningPrincipalBalance = openingPrincipalBal,
+                    OpeningInterestBalance = openingInterestBal,
                     PeriodTotalDebit = periodTotalDebit,
                     PeriodTotalCredit = periodTotalCredit,
                     ClosingBalance = ((acc.Status == "Closed" || acc.Status == "Closed-Premature") && Math.Abs(runningBal) < 0.01m) ? 0m : runningBal,

@@ -386,6 +386,42 @@ namespace Bhisi.Api.Helpers
                 }
             }
 
+            // 5B. Pending / Approved VoucherDetail Explicit Saving Account Links
+            var detailSavingLinks = await db.VoucherDetails.AsNoTracking()
+                .Where(vd => voucherIds.Contains(vd.VoucherID) && vd.SavingAccountID.HasValue && vd.SavingAccountID.Value > 0)
+                .Select(vd => new
+                {
+                    vd.VoucherID,
+                    vd.DrCr,
+                    AccNo = vd.SavingAccount != null ? vd.SavingAccount.AccountNo : null,
+                    OldNo = vd.SavingAccount != null ? (vd.SavingAccount.OldAccountNo ?? vd.SavingAccount.LegacyAccountNumber) : null
+                })
+                .ToListAsync();
+            foreach (var dSav in detailSavingLinks)
+            {
+                string roleLabel = string.Equals(dSav.DrCr, "Cr", StringComparison.OrdinalIgnoreCase)
+                    ? "जमा बचत"
+                    : "नावे बचत";
+                AddAccount(map, dSav.VoucherID, "Saving", "बचत", dSav.AccNo, dSav.OldNo, roleLabel: roleLabel);
+            }
+
+            // 5C. Pending / Approved VoucherDetail Explicit Loan Recovery / Postage Charge Links
+            var detailLoanChargeLinks = await db.VoucherDetails.AsNoTracking()
+                .Where(vd => voucherIds.Contains(vd.VoucherID) && vd.ChargeLoanAccountID.HasValue && vd.ChargeLoanAccountID.Value > 0)
+                .Select(vd => new
+                {
+                    vd.VoucherID,
+                    vd.ChargeExpenseType,
+                    LoanNo = vd.ChargeLoanAccount != null ? vd.ChargeLoanAccount.LoanAccountNo : null,
+                    OldNo = vd.ChargeLoanAccount != null ? vd.ChargeLoanAccount.LegacyAccountNumber : null
+                })
+                .ToListAsync();
+            foreach (var dChg in detailLoanChargeLinks)
+            {
+                string roleLabel = VoucherLoanChargeHelper.GetExpenseTypeMarathiLabel(dChg.ChargeExpenseType);
+                AddAccount(map, dChg.VoucherID, "Loan", "कर्ज", dChg.LoanNo, dChg.OldNo, roleLabel: roleLabel);
+            }
+
             // 6. Pigmy Deposits
             var pigmyColls = await db.PigmyCollections.AsNoTracking()
                 .Where(p => p.VoucherId.HasValue && voucherIds.Contains(p.VoucherId.Value))

@@ -125,6 +125,10 @@ namespace Bhisi.Api.Controllers
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Member)
                         .ThenInclude(m => m!.Customer)
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.SavingAccount)
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.ChargeLoanAccount)
                 .Where(v => v.Status == "Pending" &&
                             v.VoucherType != "Opening" &&
                             !v.VoucherNo.Contains("-OP-") &&
@@ -178,6 +182,10 @@ namespace Bhisi.Api.Controllers
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Member)
                         .ThenInclude(m => m!.Customer)
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.SavingAccount)
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.ChargeLoanAccount)
                 .Where(v => v.Status == "Approved" &&
                             v.VoucherType != "Opening" &&
                             !(v.Narration != null && (
@@ -398,34 +406,11 @@ namespace Bhisi.Api.Controllers
                         // 🌟 Apply deferred Saving Transfer credit for Pigmy Withdrawal / Closure ONLY upon Voucher Approval
                         await Helpers.PigmySettlementHelper.ApplyApprovedPigmySavingTransferAsync(_context, voucher, approverId);
 
-                        // 🌟 Activate OverdueRecoveryLedgers debit ONLY upon LEG-* Voucher Approval
-                        var approvedLegalExpenses = await _context.Sec101LegalExpenses
-                            .Where(e => e.VoucherId == voucher.VoucherID && e.IsDebitedToLoan && e.LoanAccountId > 0)
-                            .ToListAsync();
+                        // 🌟 Apply deferred Saving Account Transfer entries from manual Voucher Entry (e.g. Salary / Commission to SB)
+                        await Helpers.VoucherSavingTransferHelper.ApplyApprovedVoucherSavingTransfersAsync(_context, voucher, approverId);
 
-                        if (approvedLegalExpenses.Any())
-                        {
-                            bool alreadyHasDebits = await _context.OverdueRecoveryLedgers
-                                .AnyAsync(o => o.VoucherID == voucher.VoucherID && o.DebitAmount > 0);
-                            if (!alreadyHasDebits)
-                            {
-                                foreach (var exp in approvedLegalExpenses)
-                                {
-                                    string part = string.IsNullOrWhiteSpace(exp.Remarks)
-                                        ? $"कायदेशीर खर्च ({exp.ExpenseType})"
-                                        : exp.Remarks!;
-                                    _context.OverdueRecoveryLedgers.Add(new OverdueRecoveryLedger
-                                    {
-                                        LoanAccountID = exp.LoanAccountId,
-                                        TransactionDate = exp.ExpenseDate,
-                                        DebitAmount = exp.Amount,
-                                        CreditAmount = 0m,
-                                        VoucherID = voucher.VoucherID,
-                                        Particulars = part.Length > 250 ? part.Substring(0, 250) : part
-                                    });
-                                }
-                            }
-                        }
+                        // 🌟 Activate OverdueRecoveryLedgers debit OR Principal-capitalized Recovery/Postage charges ONLY upon Voucher Approval
+                        await Helpers.VoucherLoanChargeHelper.ApplyApprovedVoucherLoanChargesAsync(_context, voucher);
 
                         postedVoucherDetails.Add(new
                         {
@@ -571,12 +556,6 @@ namespace Bhisi.Api.Controllers
 
                     int? oldScrollNo = voucher.ScrollNo;
 
-                    // 2. Revert Status to Pending, reset ScrollNo and Approval fields
-                    voucher.Status = "Pending";
-                    voucher.ScrollNo = null;
-                    voucher.ApprovedBy = null;
-                    voucher.ApprovedOn = null;
-
                     // 🌟 Revert linked ShareCertificate Status to PendingApproval
                     var linkedUnpassShareTxns = await _context.ShareTransactions
                         .Where(st => st.VoucherId == voucher.VoucherID)
@@ -603,36 +582,17 @@ namespace Bhisi.Api.Controllers
                         await LoanDisbursementReversalHelper.ReverseSavingTransferCreditForVoucherAsync(_context, voucher.VoucherNo);
                     }
 
-                    // 🌟 Revert LEG-* OverdueRecoveryLedgers debit on Unpass (block if already recovered by a borrower collection)
-                    var unpassLegalExpenses = await _context.Sec101LegalExpenses
-                        .Where(e => e.VoucherId == voucher.VoucherID && e.IsDebitedToLoan && e.LoanAccountId > 0)
-                        .ToListAsync();
-                    if (unpassLegalExpenses.Any())
-                    {
-                        var ledgerRows = await _context.OverdueRecoveryLedgers
-                            .Where(o => o.VoucherID == voucher.VoucherID && o.DebitAmount > 0)
-                            .ToListAsync();
-                        if (ledgerRows.Any())
-                        {
-                            var affectedLoanIds = ledgerRows.Select(r => r.LoanAccountID).Distinct().ToList();
-                            foreach (int lid in affectedLoanIds)
-                            {
-                                decimal totalDebits = await _context.OverdueRecoveryLedgers
-                                    .Where(o => o.LoanAccountID == lid)
-                                    .SumAsync(o => (decimal?)o.DebitAmount) ?? 0m;
-                                decimal totalCredits = await _context.OverdueRecoveryLedgers
-                                    .Where(o => o.LoanAccountID == lid)
-                                    .SumAsync(o => (decimal?)o.CreditAmount) ?? 0m;
-                                decimal thisVoucherDebit = ledgerRows.Where(r => r.LoanAccountID == lid).Sum(r => r.DebitAmount);
-                                if (totalCredits > (totalDebits - thisVoucherDebit + 0.01m))
-                                {
-                                    throw new InvalidOperationException(
-                                        $"व्हाउचर क्र. {voucher.VoucherNo} मधील कायदेशीर खर्च कर्ज खात्यावरून आधीच वसूल झालेला असल्याने हे व्हाउचर अन-पास करता येत नाही.");
-                                }
-                            }
-                            _context.OverdueRecoveryLedgers.RemoveRange(ledgerRows);
-                        }
-                    }
+                    // 🌟 Reverse manual Voucher Entry Saving Account Transfer credits/debits on Unpass
+                    await Helpers.VoucherSavingTransferHelper.ReverseApprovedVoucherSavingTransfersOnUnpassAsync(_context, voucher);
+
+                    // 🌟 Revert Loan Recovery/Postage charges (Principal-capitalized OR OverdueRecoveryLedgers) on Unpass (block if already recovered)
+                    await Helpers.VoucherLoanChargeHelper.ReverseApprovedVoucherLoanChargesOnUnpassAsync(_context, voucher);
+
+                    // 2. Revert Status to Pending, reset ScrollNo and Approval fields only after all sub-ledger validations/reversals succeed
+                    voucher.Status = "Pending";
+                    voucher.ScrollNo = null;
+                    voucher.ApprovedBy = null;
+                    voucher.ApprovedOn = null;
 
                     // 3. Record in AuditLogs
                     _context.AuditLogs.Add(new AuditLog

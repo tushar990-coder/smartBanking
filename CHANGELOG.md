@@ -1,5 +1,24 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-25] - आवृत्ती v2.6.45 (Overdue Loan Recovery & Postage Charges to Principal + Dynamic Income Ledger, Voucher Salary/Honorarium Saving Transfer & FD Khatavani/Closure Updates)
+
+### 💳 1. थकबाकीदार कर्ज वसूली व पोसटेज खर्च थेट कर्जाच्या मुद्दलात (Dr कर्ज / Cr डायनॅमिक उत्पन्न लेजर)
+- **`LoanAccount.cs`, `Sec101LegalExpense.cs`, `LoanCollection.cs`, `VoucherDetail.cs`, `AppDbContext.cs`, `Program.cs`, `tools/master_vps_update_schema.sql`:**
+  - `LoanAccounts.CapitalizedRecoveryCharges`, `LoanCollections.ChargesPrincipalCollected` / `ExpensesCollected`, `VoucherDetails.ChargeLoanAccountID` / `ChargeExpenseType`, आणि `Sec101LegalExpenses.CapitalizeToLoanPrincipal` / `IsPrincipalApplied` स्तंभ idempotent DDL व EF Core स्नॅपशॉटसह समाविष्ट केले.
+- **`VoucherLoanChargeHelper.cs`, `Step4AccountingHelper.cs`, `VouchersController.cs`, `VoucherPostingController.cs`, `LegalRecoveryController.cs`, `LoanAccountsController.cs`, `LoanCollectionsController.cs`, `ReportsController.cs`, `LoanScheduleGenerator.cs`, `VoucherRollbackAndDeleteService.cs`, `OverdueLoanRecoveryPostageTests.cs`:**
+  - मुदतपूर्ती (`Maturity`) नंतर व्याज मोजणी बंद झालेल्या कर्जांच्या येणे बाकीत **वसूली खर्च (`RECOVERY_EXPENSE`)** आणि **पोसटेज खर्च (`POSTAGE_EXPENSE`)** कलम १०१ केसशिवाय किंवा केससह **`Dr` कर्ज मुद्दल लेजर / `Cr` डायनॅमिक सक्रिय उत्पन्न गट लेजर (`IsStrictIncomeLedger`)** अशा `JV-CHG-` Journal व्हाउचरद्वारे अ‍ॅड करण्याची सुविधा व `/api/Vouchers/loan-charge-ledgers` एन्डपॉईंट जोडला (`Zero Auto-Post Maker-Checker`).
+  - कर्ज वसुली (`PostLoanCollection`), शेड्यूल सिंक (`LoanScheduleGenerator`), `Unpass`/`Delete` रोलबॅक, `AccountDetailsAndSchedule` आणि **`कर्ज खतावणी` / `थकीत कर्ज यादी`** अहवालांत खर्च व शुद्ध मुद्दल अचूक वेगळे दाखवले (`OverdueRecoveryLedgers` असतानाची `allocationDiff` तफावत देखील दूर केली).
+- **`AddLoanRecoveryExpenseModal.tsx`, `LoanCollectionMaster.tsx`, `Sec101LegalReports.tsx`, `CustomerLegalTracker.tsx`, `LegalRecoveryMappingMaster.tsx`, `VoucherMaster.tsx`, `VoucherPosting.tsx`, `LoanLedgerReport.tsx`, `LoanOverdueReport.tsx`:**
+  - चारही प्रवेशद्वारांतून एकसंध सामायिक मोडल, डायनॅमिक उत्पन्न लेजर `SearchableSelect` निवड, `Dr/Cr` थेट प्रिव्ह्यू आणि `VoucherPosting` मध्ये `🏷️ कर्ज नावे` बॅज समाविष्ट केला.
+
+### 💼 2. व्हाउचरमधून नोकर पगार व वसूली अधिकारी मानधन थेट सेव्हिंग ठेव खात्यावर वर्ग
+- **`VoucherSavingTransferHelper.cs`, `VoucherLinkedAccountHelper.cs`, `VouchersController.cs`, `VoucherPostingController.cs`, `VoucherMaster.tsx`, `VoucherPosting.tsx`, `VoucherPrint.tsx`, `VoucherSavingTransferTests.cs`:**
+  - `VoucherDetails.SavingAccountID` द्वारे शाखा-नियंत्रित बचत खाते व जुना बचत खाते क्रमांक (`OldAccountNo`) शोधून मल्टी-कर्मचारी पगार/मानधन `Journal` मधून थेट बचत ठेव खात्यावर वर्ग, पासिंगनंतर `SavingTransaction` नोंद व लॉसलेस `Unpass`/रोलबॅक.
+
+### 🏦 3. मुदत ठेव (FD) खतावणी क्रोनोलॉजी, आरंभिक मुद्दल/व्याज विभाजन व मोडणी व्याज सुधारणा
+- **`FdLedgerHelper.cs`, `FdAccountsController.cs`, `FdInterestSettlementHelper.cs`, `FdReports.tsx`, `FdWithdrawalMaturity.tsx`, `FdClosurePostedInterestAndReversalTests.cs`, `FdLedgerSchemeFilterTests.cs`:**
+  - `LEG-INT-MIG` जुने व्याज नोंदी आरंभिक मुदत ठेव नोंदीसोबत अचूक क्रमाने व तारखेसह दाखवणे, आरंभिक मुद्दल व जुने व्याज विभाजन आणि FD मोडणी व्याज व `LegacyProvision` गणना अचूक केली (**२५७/२५७ xUnit चाचण्या व Vite प्रॉडक्शन बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-25] - आवृत्ती v2.6.44 (RD As-Of-Date Outstanding Snapshot & Universal SQL Reconciliation, Investment Premature Posting Reversal & Group Box UI, Mobile Manager & Customer Portal Expansion)
 
 ### 📊 1. आवर्ती ठेव (RD) दिनांकअखेर बाकी अहवाल (`31-03-2026` अचूक कटऑफ), आरंभिक शिल्लक संरक्षण व सर्व संस्था SQL समेट

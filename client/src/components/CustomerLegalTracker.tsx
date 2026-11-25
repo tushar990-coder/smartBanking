@@ -17,9 +17,11 @@ import {
   Printer,
   ShieldAlert,
   IndianRupee,
-  Receipt
+  Receipt,
+  Plus
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import AddLoanRecoveryExpenseModal from './common/AddLoanRecoveryExpenseModal';
 import { getCachedMasterArray } from '../utils/apiCache';
 
 interface CustomerItem {
@@ -184,6 +186,7 @@ export default function CustomerLegalTracker({
   const [sanstha, setSanstha] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [chargeModalCtx, setChargeModalCtx] = useState<{ loanAccountId: number; caseId?: number | null } | null>(null);
 
   useEffect(() => {
     if (initialCustomerId && initialCustomerId > 0 && initialCustomerId !== selectedCustomerId) {
@@ -489,26 +492,42 @@ export default function CustomerLegalTracker({
                     )}
                   </div>
 
-                  {loan.activeCase && (
-                    <div className="bg-white border border-primary/30 rounded-sm px-3 py-1.5 text-right space-y-0.5 shrink-0 shadow-2xs">
-                      <div className="text-[10px] font-bold text-primary">
-                        {loan.activeCase.caseType === 'SEC_91' ? 'कलम ९१ लवाद दावा' : 'कलम १०१ वसुली दावा'} • {loan.activeCase.caseNumber}
-                      </div>
-                      <div className="text-xs font-extrabold text-slate-900">
-                        {CASE_STATUS_LABELS[loan.activeCase.status] || loan.activeCase.status}
-                      </div>
-                      {loan.activeCase.certificateNo && (
-                        <div className="text-[10px] text-emerald-700 font-semibold">
-                          दाखला क्र.: {loan.activeCase.certificateNo} (₹{(loan.activeCase.sanctionedAmount || 0).toLocaleString('en-IN')})
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setChargeModalCtx({
+                          loanAccountId: loan.loanAccountID,
+                          caseId: loan.activeCase?.caseId || null,
+                        })
+                      }
+                      className="print:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-sm bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 text-[11px] font-bold shadow-2xs cursor-pointer transition"
+                      title="कर्जाच्या मुद्दलात वसूली किंवा पोसटेज खर्च अ‍ॅड करा"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>वसूली / पोसटेज खर्च</span>
+                    </button>
+                    {loan.activeCase && (
+                      <div className="bg-white border border-primary/30 rounded-sm px-3 py-1.5 text-right space-y-0.5 shrink-0 shadow-2xs">
+                        <div className="text-[10px] font-bold text-primary">
+                          {loan.activeCase.caseType === 'SEC_91' ? 'कलम ९१ लवाद दावा' : 'कलम १०१ वसुली दावा'} • {loan.activeCase.caseNumber}
                         </div>
-                      )}
-                      {loan.activeCase.awardNumber && (
-                        <div className="text-[10px] text-emerald-700 font-semibold">
-                          निवाडा क्र.: {loan.activeCase.awardNumber}
+                        <div className="text-xs font-extrabold text-slate-900">
+                          {CASE_STATUS_LABELS[loan.activeCase.status] || loan.activeCase.status}
                         </div>
-                      )}
-                    </div>
-                  )}
+                        {loan.activeCase.certificateNo && (
+                          <div className="text-[10px] text-emerald-700 font-semibold">
+                            दाखला क्र.: {loan.activeCase.certificateNo} (₹{(loan.activeCase.sanctionedAmount || 0).toLocaleString('en-IN')})
+                          </div>
+                        )}
+                        {loan.activeCase.awardNumber && (
+                          <div className="text-[10px] text-emerald-700 font-semibold">
+                            निवाडा क्र.: {loan.activeCase.awardNumber}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Smart Next-Action Recommendation */}
@@ -623,6 +642,19 @@ export default function CustomerLegalTracker({
           )}
         </div>
       )}
+      <AddLoanRecoveryExpenseModal
+        isOpen={Boolean(chargeModalCtx)}
+        onClose={() => setChargeModalCtx(null)}
+        branchId={trackerData?.customer?.branchID || (effectiveBranch && effectiveBranch !== 'all' ? Number(effectiveBranch) : (branchId || 1))}
+        preselectedLoanAccountId={chargeModalCtx?.loanAccountId}
+        preselectedCaseId={chargeModalCtx?.caseId || null}
+        preselectedCustomerId={selectedCustomerId}
+        onSuccess={() => {
+          if (selectedCustomerId > 0 || (initialLoanAccountId && initialLoanAccountId > 0)) {
+            fetchTracker(selectedCustomerId, initialLoanAccountId);
+          }
+        }}
+      />
     </div>
   );
 }

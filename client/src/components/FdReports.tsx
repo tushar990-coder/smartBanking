@@ -142,6 +142,8 @@ interface FdLedgerAccountItem {
   durationMonths: number;
   totalAccruedInterest: number;
   openingBalance?: number;
+  openingPrincipalBalance?: number;
+  openingInterestBalance?: number;
   periodTotalDebit?: number;
   periodTotalCredit?: number;
   closingBalance?: number;
@@ -156,6 +158,8 @@ interface FdSchemeLedgerGroup {
   totalDepositAmount: number;
   totalMaturityAmount: number;
   openingBalance: number;
+  openingPrincipalBalance?: number;
+  openingInterestBalance?: number;
   periodTotalDebit: number;
   periodTotalCredit: number;
   closingBalance: number;
@@ -165,6 +169,8 @@ interface FdSchemeLedgerGroup {
     totalDepositAmount: number;
     totalMaturityAmount: number;
     openingBalance: number;
+    openingPrincipalBalance?: number;
+    openingInterestBalance?: number;
     periodTotalDebit: number;
     periodTotalCredit: number;
     closingBalance: number;
@@ -290,6 +296,8 @@ interface CustomerLedgerData {
   totalPrincipalInvested: number;
   totalMaturityValue: number;
   totalOpeningBalance?: number;
+  totalOpeningPrincipalBalance?: number;
+  totalOpeningInterestBalance?: number;
   totalPeriodDebit?: number;
   totalPeriodCredit?: number;
   totalClosingBalance?: number;
@@ -396,6 +404,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
   const [selectedLedgerFdAccountId, setSelectedLedgerFdAccountId] = useState<number>(0);
   const [savedSingleFdAccountId, setSavedSingleFdAccountId] = useState<number>(0);
   const [ledgerViewMode, setLedgerViewMode] = useState<'single' | 'consolidated'>('single');
+  const [ledgerFullHistory, setLedgerFullHistory] = useState<boolean>(true);
   const ledgerRequestSeqRef = useRef<number>(0);
   const [ledgerCustomerOptions, setLedgerCustomerOptions] = useState<FdLedgerCustomerOption[]>([]);
   const [ledgerAccountOptions, setLedgerAccountOptions] = useState<FdLedgerAccountOption[]>([]);
@@ -532,7 +541,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     } else if (reportType !== 'AccrualProvision') {
       fetchReportData();
     }
-  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, fromDate, toDate, asOfDate, voucherPassingStatus]);
+  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, fromDate, toDate, ledgerFullHistory, asOfDate, voucherPassingStatus]);
 
   const fetchReportData = async () => {
     setLoading(true);
@@ -597,7 +606,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           branchID: branchID > 0 ? branchID : undefined,
           fdSchemeID: selectedSchemeId > 0 ? selectedSchemeId : undefined,
           customerID: !isAllMode && customerId > 0 ? customerId : undefined,
-          fromDate: fromDate || undefined,
+          fromDate: ledgerFullHistory ? undefined : (fromDate || undefined),
           toDate: toDate || undefined
         }
       });
@@ -621,6 +630,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           totalPrincipalInvested: Number(d.totalPrincipalInvested ?? accounts.reduce((sum, a) => sum + (Number(a.depositAmount) || 0), 0)),
           totalMaturityValue: Number(d.totalMaturityValue ?? accounts.reduce((sum, a) => sum + (Number(a.maturityAmount) || 0), 0)),
           totalOpeningBalance: Number(d.totalOpeningBalance ?? schemeGroups.reduce((sum, g) => sum + (Number(g.openingBalance) || 0), 0)),
+          totalOpeningPrincipalBalance: Number(d.totalOpeningPrincipalBalance ?? schemeGroups.reduce((sum, g) => sum + (Number(g.openingPrincipalBalance ?? g.openingBalance) || 0), 0)),
+          totalOpeningInterestBalance: Number(d.totalOpeningInterestBalance ?? schemeGroups.reduce((sum, g) => sum + (Number(g.openingInterestBalance) || 0), 0)),
           totalPeriodDebit: Number(d.totalPeriodDebit ?? schemeGroups.reduce((sum, g) => sum + (Number(g.periodTotalDebit) || 0), 0)),
           totalPeriodCredit: Number(d.totalPeriodCredit ?? schemeGroups.reduce((sum, g) => sum + (Number(g.periodTotalCredit) || 0), 0)),
           totalClosingBalance: Number(d.totalClosingBalance ?? schemeGroups.reduce((sum, g) => sum + (Number(g.closingBalance) || 0), 0)),
@@ -656,6 +667,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             totalDepositAmount: customerLedger.totalPrincipalInvested,
             totalMaturityAmount: customerLedger.totalMaturityValue,
             openingBalance: customerLedger.totalOpeningBalance ?? 0,
+            openingPrincipalBalance: customerLedger.totalOpeningPrincipalBalance ?? customerLedger.totalOpeningBalance ?? 0,
+            openingInterestBalance: customerLedger.totalOpeningInterestBalance ?? 0,
             periodTotalDebit: customerLedger.totalPeriodDebit ?? 0,
             periodTotalCredit: customerLedger.totalPeriodCredit ?? 0,
             closingBalance: customerLedger.totalClosingBalance ?? 0,
@@ -665,6 +678,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
               totalDepositAmount: customerLedger.totalPrincipalInvested,
               totalMaturityAmount: customerLedger.totalMaturityValue,
               openingBalance: customerLedger.totalOpeningBalance ?? 0,
+              openingPrincipalBalance: customerLedger.totalOpeningPrincipalBalance ?? customerLedger.totalOpeningBalance ?? 0,
+              openingInterestBalance: customerLedger.totalOpeningInterestBalance ?? 0,
               periodTotalDebit: customerLedger.totalPeriodDebit ?? 0,
               periodTotalCredit: customerLedger.totalPeriodCredit ?? 0,
               closingBalance: customerLedger.totalClosingBalance ?? 0,
@@ -850,15 +865,54 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
         return `दि. ${formatDisplayDate(fromDate)} ते दि. ${formatDisplayDate(toDate)}`;
       case 'MigratedFD':
         return 'स्थलांतरित मुदत ठेव खाती यादी (आरंभिक शिल्लक)';
-      case 'MemberLedger':
+      case 'MemberLedger': {
+        const periodLabel = customerLedger?.fromDate
+          ? `${formatDisplayDate(customerLedger.fromDate)} ते ${formatDisplayDate(customerLedger.toDate || toDate)}`
+          : `ठेव तारखेपासून ते ${formatDisplayDate(customerLedger?.toDate || toDate)} (संपूर्ण इतिहास)`;
         return customerLedger
           ? customerLedger.isAllCustomers
-            ? `${customerLedger.customerName} | कालावधी: ${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)}`
-            : `ग्राहक: ${customerLedger.customerName} (${customerLedger.cifNo || '-'}) | कालावधी: ${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)}`
+            ? `${customerLedger.customerName} | कालावधी: ${periodLabel}`
+            : `ग्राहक: ${customerLedger.customerName} (${customerLedger.cifNo || '-'}) | कालावधी: ${periodLabel}`
           : 'कृपया ठेव प्रकार व खातेदार / सर्व खाती निवडा';
+      }
       default:
         return `दिनांक: ${formatDisplayDate(new Date().toISOString())}`;
     }
+  };
+
+  const resolveOpeningBreakdown = (openingBalance?: number, openingPrincipal?: number, openingInterest?: number) => {
+    const ob = Number(openingBalance ?? 0);
+    const oi = Number(openingInterest ?? 0);
+    const op = openingPrincipal !== undefined ? Number(openingPrincipal) : Math.max(0, ob - oi);
+    return { ob, op, oi, hasSplit: oi > 0.009 };
+  };
+
+  const renderFdTxTypePill = (txType?: string, voucherNo?: string, isDebit?: boolean) => {
+    const tt = (txType || '').toLowerCase();
+    const vn = (voucherNo || '').toUpperCase();
+
+    if (tt === 'opening' || (!isDebit && (vn.startsWith('JV-FD-OP-') || vn.startsWith('REC-FD-')))) {
+      return (
+        <span className="inline-block ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-50 text-sky-800 border border-sky-200 align-middle">
+          ठेव मुद्दल
+        </span>
+      );
+    }
+    if (vn === 'LEG-INT-MIG') {
+      return (
+        <span className="inline-block ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200 align-middle">
+          जुने व्याज
+        </span>
+      );
+    }
+    if (tt === 'accrual' || tt === 'interest_capitalized' || tt === 'closure_interest') {
+      return (
+        <span className="inline-block ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 align-middle">
+          व्याज पोस्टिंग
+        </span>
+      );
+    }
+    return null;
   };
 
   const formatSafeFdNarration = (narration?: string, txType?: string, voucherNo?: string, accNo?: string, legacyNo?: string) => {
@@ -868,10 +922,20 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     const leg = legacyNo ? ` (जुनी पावती: ${legacyNo})` : '';
 
     // 1. Accrual / Interest credit
-    if (tt === 'accrual' || vn.includes('INT') || vn.includes('PROV') || raw.includes('व्याज जमा') || raw.includes('व्याज तरतूद') || raw.includes('Accrued Interest')) {
+    if (
+      tt === 'accrual' ||
+      tt === 'closure_interest' ||
+      tt === 'interest_capitalized' ||
+      vn.includes('INT') ||
+      vn.includes('PROV') ||
+      raw.includes('व्याज जमा') ||
+      raw.includes('व्याज तरतूद') ||
+      raw.includes('Accrued Interest')
+    ) {
       if (raw.includes('मुदतपूर्व') || vn.includes('PRECLOSE')) return 'मुदतपूर्व व्याज जमा';
-      if (raw.includes('मुदतपूर्ती') || vn.includes('MAT')) return 'मुदतपूर्ती व्याज जमा';
-      if (raw.includes('जुने व्याज') || vn.includes('LEG-INT')) return `साचलेले जुने व्याज जमा${leg}`;
+      if (raw.includes('नूतनीकरण') || vn.includes('REN')) return 'नूतनीकरण मुदतपूर्ती व्याज जमा';
+      if (raw.includes('मुदतपूर्ती') || vn.includes('MAT') || (tt === 'closure_interest' && vn.includes('CLOSE'))) return 'मुदतपूर्ती व्याज जमा';
+      if (raw.includes('जुने व्याज') || vn.includes('LEG-INT') || (tt === 'accrual' && vn.includes('FD-OP'))) return `साचलेले जुने व्याज जमा${leg}`;
       return 'मुदत ठेव व्याज जमा';
     }
 
@@ -981,19 +1045,56 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
 
       if (ledgerViewMode === 'consolidated') {
         groupsToExport.forEach(grp => {
-          rows.push({
-            'ठेव प्रकार': `=== ${grp.schemeName} (एकत्रित: ${grp.displayCount} खाती) ===`,
-            'FD पावती क्र.': '',
-            'जुनी पावती क्र.': '',
-            'खातेदाराचे नाव': '',
-            'CIF क्र.': '',
-            'व्यवहार तारीख': formatDisplayDate(fromDate),
-            'व्हाउचर क्र.': 'B/F',
-            'तपशील': 'एकत्रित आरंभिक शिल्लक (Consolidated Opening B/F)',
-            'नावे रक्कम (Dr ₹)': 0,
-            'जमा रक्कम (Cr ₹)': 0,
-            'शिल्लक रक्कम (Balance ₹)': grp.consolidated.openingBalance
-          });
+          const bf = resolveOpeningBreakdown(
+            grp.consolidated.openingBalance,
+            grp.consolidated.openingPrincipalBalance,
+            grp.consolidated.openingInterestBalance
+          );
+          if (bf.ob > 0 || Boolean(customerLedger.fromDate)) {
+            const bfDate = customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : '-';
+            if (bf.hasSplit) {
+              rows.push({
+                'ठेव प्रकार': `=== ${grp.schemeName} (एकत्रित: ${grp.displayCount} खाती) ===`,
+                'FD पावती क्र.': '',
+                'जुनी पावती क्र.': '',
+                'खातेदाराचे नाव': '',
+                'CIF क्र.': '',
+                'व्यवहार तारीख': bfDate,
+                'व्हाउचर क्र.': 'B/F',
+                'तपशील': 'एकत्रित मागील मुद्दल शिल्लक (Consolidated Opening Principal B/F)',
+                'नावे रक्कम (Dr ₹)': 0,
+                'जमा रक्कम (Cr ₹)': 0,
+                'शिल्लक रक्कम (Balance ₹)': bf.op
+              });
+              rows.push({
+                'ठेव प्रकार': grp.schemeName,
+                'FD पावती क्र.': '',
+                'जुनी पावती क्र.': '',
+                'खातेदाराचे नाव': '',
+                'CIF क्र.': '',
+                'व्यवहार तारीख': bfDate,
+                'व्हाउचर क्र.': 'B/F-INT',
+                'तपशील': `एकत्रित मागील व्याज पोस्टिंग शिल्लक (Opening Interest B/F: + ₹ ${fmtCurrency(bf.oi)})`,
+                'नावे रक्कम (Dr ₹)': 0,
+                'जमा रक्कम (Cr ₹)': 0,
+                'शिल्लक रक्कम (Balance ₹)': bf.ob
+              });
+            } else {
+              rows.push({
+                'ठेव प्रकार': `=== ${grp.schemeName} (एकत्रित: ${grp.displayCount} खाती) ===`,
+                'FD पावती क्र.': '',
+                'जुनी पावती क्र.': '',
+                'खातेदाराचे नाव': '',
+                'CIF क्र.': '',
+                'व्यवहार तारीख': bfDate,
+                'व्हाउचर क्र.': 'B/F',
+                'तपशील': 'एकत्रित आरंभिक शिल्लक (Consolidated Opening B/F)',
+                'नावे रक्कम (Dr ₹)': 0,
+                'जमा रक्कम (Cr ₹)': 0,
+                'शिल्लक रक्कम (Balance ₹)': bf.ob
+              });
+            }
+          }
 
           grp.consolidated.transactions.forEach(tx => {
             rows.push({
@@ -1032,8 +1133,10 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           accountsToExport.forEach(acc => {
             const custDisplay = acc.customerName || customerLedger.customerName;
             const cifDisplay = acc.cifNo || customerLedger.cifNo || '-';
-            if (acc.openingBalance !== undefined && acc.openingBalance > 0) {
-              rows.push({
+            const accBf = resolveOpeningBreakdown(acc.openingBalance, acc.openingPrincipalBalance, acc.openingInterestBalance);
+            if (accBf.ob > 0) {
+              const accBfDate = customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : formatDisplayDate(acc.openingDate);
+              const baseAccCols = {
                 'ठेव प्रकार': acc.schemeName,
                 'FD पावती क्र.': acc.accountNo,
                 'जुनी पावती क्र.': acc.legacyAccountNumber || '-',
@@ -1044,13 +1147,35 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                 'व्याजदर %': acc.interestRate,
                 'वारसदार': acc.nomineeName ? `${acc.nomineeName} (${acc.nomineeRelation || ''})` : '-',
                 'तारण बोजा': acc.isLienMarked ? `Lien (${acc.lienLoanAccountNo || 'कर्ज तारण'})` : 'निरंक',
-                'व्यवहार तारीख': formatDisplayDate(fromDate),
-                'व्हाउचर क्र.': 'B/F',
-                'तपशील': 'आरंभिक शिल्लक (Opening Balance Brought Forward)',
-                'नावे रक्कम (Dr ₹)': 0,
-                'जमा रक्कम (Cr ₹)': 0,
-                'शिल्लक रक्कम (Balance ₹)': acc.openingBalance
-              });
+                'व्यवहार तारीख': accBfDate
+              };
+              if (accBf.hasSplit) {
+                rows.push({
+                  ...baseAccCols,
+                  'व्हाउचर क्र.': 'B/F',
+                  'तपशील': 'मागील मुद्दल शिल्लक (Opening Principal B/F)',
+                  'नावे रक्कम (Dr ₹)': 0,
+                  'जमा रक्कम (Cr ₹)': 0,
+                  'शिल्लक रक्कम (Balance ₹)': accBf.op
+                });
+                rows.push({
+                  ...baseAccCols,
+                  'व्हाउचर क्र.': 'B/F-INT',
+                  'तपशील': `मागील व्याज पोस्टिंग शिल्लक (Opening Interest B/F: + ₹ ${fmtCurrency(accBf.oi)})`,
+                  'नावे रक्कम (Dr ₹)': 0,
+                  'जमा रक्कम (Cr ₹)': 0,
+                  'शिल्लक रक्कम (Balance ₹)': accBf.ob
+                });
+              } else {
+                rows.push({
+                  ...baseAccCols,
+                  'व्हाउचर क्र.': 'B/F',
+                  'तपशील': 'आरंभिक शिल्लक (Opening Balance Brought Forward)',
+                  'नावे रक्कम (Dr ₹)': 0,
+                  'जमा रक्कम (Cr ₹)': 0,
+                  'शिल्लक रक्कम (Balance ₹)': accBf.ob
+                });
+              }
             }
 
             acc.transactions.forEach((tx) => {
@@ -1102,7 +1227,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       const fileTag = customerLedger.isAllCustomers
         ? 'All_Accounts'
         : (customerLedger.customerName || 'Statement').replace(/\s+/g, '_');
-      XLSX.writeFile(wb, `FD_Ledger_${fileTag}_${fromDate}_to_${toDate}.xlsx`);
+      const periodTag = customerLedger.fromDate ? `${customerLedger.fromDate}_to_${customerLedger.toDate || toDate}` : `FullHistory_to_${customerLedger.toDate || toDate}`;
+      XLSX.writeFile(wb, `FD_Ledger_${fileTag}_${periodTag}.xlsx`);
       return;
     }
 
@@ -1954,13 +2080,38 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       {/* 6. Date Range (for Register, MaturityDue, VoucherPassing, DeletedEntries, MemberLedger) */}
       {(reportType === 'Register' || reportType === 'MaturityDue' || reportType === 'VoucherPassing' || reportType === 'DeletedEntries' || reportType === 'MemberLedger') && (
         <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5">
+          {reportType === 'MemberLedger' && (
+            <label
+              className={`flex items-center gap-1 pr-1.5 mr-0.5 border-r border-slate-300 text-[10.5px] font-bold cursor-pointer select-none ${
+                ledgerFullHistory ? 'text-primary' : 'text-slate-600'
+              }`}
+              title="ठेव तारखेपासून सर्व मुद्दल व व्याज पोस्टिंग नोंदी क्रमाने दाखवा"
+            >
+              <input
+                type="checkbox"
+                checked={ledgerFullHistory}
+                onChange={(e) => setLedgerFullHistory(e.target.checked)}
+                className="w-3 h-3 accent-primary cursor-pointer rounded-xs"
+              />
+              <span>संपूर्ण इतिहास</span>
+            </label>
+          )}
           <Calendar size={11} className="text-slate-500" />
           <input
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="h-5 text-[10.5px] font-mono border-none bg-transparent focus:ring-0 p-0 text-slate-800 font-bold w-24"
-            title="या तारखेपासून"
+            disabled={reportType === 'MemberLedger' && ledgerFullHistory}
+            className={`h-5 text-[10.5px] font-mono border-none bg-transparent focus:ring-0 p-0 font-bold w-24 ${
+              reportType === 'MemberLedger' && ledgerFullHistory
+                ? 'text-slate-400 cursor-not-allowed opacity-50'
+                : 'text-slate-800'
+            }`}
+            title={
+              reportType === 'MemberLedger' && ledgerFullHistory
+                ? 'ठेव तारखेपासून संपूर्ण इतिहास सुरू आहे (ठराविक तारखेसाठी संपूर्ण इतिहास बंद करा)'
+                : 'या तारखेपासून'
+            }
           />
           <span className="text-slate-400 text-xs">-</span>
           <input
@@ -2424,9 +2575,9 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             </div>
             <div className="font-mono text-slate-700">
               <strong className="font-sans text-slate-800">कालावधी: </strong>
-              {customerLedger.fromDate || customerLedger.toDate
-                ? `${customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : 'आरंभ'} ते ${customerLedger.toDate ? formatDisplayDate(customerLedger.toDate) : 'आज'}`
-                : 'संपूर्ण खातावणी'}
+              {customerLedger.fromDate
+                ? `${formatDisplayDate(customerLedger.fromDate)} ते ${customerLedger.toDate ? formatDisplayDate(customerLedger.toDate) : 'आज'}`
+                : `ठेव तारखेपासून ते ${customerLedger.toDate ? formatDisplayDate(customerLedger.toDate) : formatDisplayDate(toDate)} (संपूर्ण इतिहास)`}
             </div>
           </div>
 
@@ -2546,22 +2697,68 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                 </tr>
                               </thead>
                               <tbody>
-                                <tr className="bg-slate-100/90 font-bold text-slate-800 text-[11px] italic">
-                                  <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
-                                  <td className="border border-slate-900 py-1 px-2 text-center font-mono">
-                                    {customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : '-'}
-                                  </td>
-                                  <td className="border border-slate-900 py-1 px-2 font-mono text-slate-600">{grp.consolidated.accountsCount} खाती</td>
-                                  <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
-                                  <td className="border border-slate-900 py-1 px-2 font-semibold text-slate-700">
-                                    एकत्रित मागील शिल्लक (Consolidated Opening B/F)
-                                  </td>
-                                  <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
-                                  <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
-                                  <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-slate-200/60">
-                                    ₹ {fmtCurrency(grp.consolidated.openingBalance)}
-                                  </td>
-                                </tr>
+                                {(() => {
+                                  const consBf = resolveOpeningBreakdown(
+                                    grp.consolidated.openingBalance,
+                                    grp.consolidated.openingPrincipalBalance,
+                                    grp.consolidated.openingInterestBalance
+                                  );
+                                  if (!(consBf.ob > 0 || Boolean(customerLedger.fromDate))) return null;
+                                  const bfDateStr = customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : '-';
+                                  if (!consBf.hasSplit) {
+                                    return (
+                                      <tr className="bg-slate-100/90 font-bold text-slate-800 text-[11px] italic">
+                                        <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono">{bfDateStr}</td>
+                                        <td className="border border-slate-900 py-1 px-2 font-mono text-slate-600">{grp.consolidated.accountsCount} खाती</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 font-semibold text-slate-700">
+                                          एकत्रित मागील शिल्लक (Consolidated Opening B/F)
+                                        </td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-slate-200/60">
+                                          ₹ {fmtCurrency(consBf.ob)}
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+                                  return (
+                                    <>
+                                      <tr className="bg-slate-100/90 font-bold text-slate-800 text-[11px] italic">
+                                        <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono">{bfDateStr}</td>
+                                        <td className="border border-slate-900 py-1 px-2 font-mono text-slate-600">{grp.consolidated.accountsCount} खाती</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 font-semibold text-slate-800">
+                                          एकत्रित मागील मुद्दल शिल्लक (Opening Principal B/F)
+                                        </td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-slate-200/60">
+                                          ₹ {fmtCurrency(consBf.op)}
+                                        </td>
+                                      </tr>
+                                      <tr className="bg-emerald-50/60 font-bold text-slate-800 text-[11px]">
+                                        <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono">{bfDateStr}</td>
+                                        <td className="border border-slate-900 py-1 px-2 font-mono text-slate-600">{grp.consolidated.accountsCount} खाती</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 font-semibold text-emerald-900">
+                                          एकत्रित मागील व्याज पोस्टिंग शिल्लक (Opening Interest B/F)
+                                          <span className="ml-1.5 inline-block px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono text-[10px]">
+                                            + ₹ {fmtCurrency(consBf.oi)}
+                                          </span>
+                                        </td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-emerald-100/50">
+                                          ₹ {fmtCurrency(consBf.ob)}
+                                        </td>
+                                      </tr>
+                                    </>
+                                  );
+                                })()}
                                 {grp.consolidated.transactions.length > 0 ? (
                                   grp.consolidated.transactions.map((tx, tIdx) => {
                                     const isDebit = Number(tx.debit || 0) > 0;
@@ -2594,7 +2791,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                           )}
                                         </td>
                                         <td className="border border-slate-900 py-1 px-2">
-                                          {formatSafeFdNarration(tx.narration, tx.transactionType, tx.voucherNo, tx.accountNo, tx.legacyAccountNumber)}
+                                          <span>{formatSafeFdNarration(tx.narration, tx.transactionType, tx.voucherNo, tx.accountNo, tx.legacyAccountNumber)}</span>
+                                          {renderFdTxTypePill(tx.transactionType, tx.voucherNo, isDebit)}
                                         </td>
                                         <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-rose-700 bg-rose-50/20">
                                           {isDebit ? `₹ ${fmtCurrency(tx.debit)}` : <span className="text-slate-300 font-normal">-</span>}
@@ -2633,14 +2831,28 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                 </tr>
                                 <tr className="bg-slate-50 text-[10px] text-slate-700 border-t border-slate-300">
                                   <td colSpan={8} className="py-1 px-3 border border-slate-900">
-                                    <span className="font-semibold text-slate-900">ऑडिट ताळमेळ (Consolidated Balance Equation): </span>
-                                    आरंभी शिल्लक: <span className="font-mono font-bold">₹ {fmtCurrency(grp.consolidated.openingBalance)}</span>
-                                    {' '}+ एकूण जमा (Cr): <span className="font-mono font-bold text-emerald-700">₹ {fmtCurrency(grp.consolidated.periodTotalCredit)}</span>
-                                    {' '}- एकूण नावे (Dr): <span className="font-mono font-bold text-rose-700">₹ {fmtCurrency(grp.consolidated.periodTotalDebit)}</span>
-                                    {' '}={' '}
-                                    <strong className="text-slate-950">
-                                      अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-blue-900">₹ {fmtCurrency(grp.consolidated.closingBalance)}</span>
-                                    </strong>
+                                    {(() => {
+                                      const consBf = resolveOpeningBreakdown(
+                                        grp.consolidated.openingBalance,
+                                        grp.consolidated.openingPrincipalBalance,
+                                        grp.consolidated.openingInterestBalance
+                                      );
+                                      return (
+                                        <>
+                                          <span className="font-semibold text-slate-900">ऑडिट ताळमेळ (Consolidated Balance Equation): </span>
+                                          आरंभी शिल्लक: <span className="font-mono font-bold">₹ {fmtCurrency(consBf.ob)}</span>
+                                          {consBf.hasSplit && (
+                                            <span className="text-slate-600 ml-1">(मुद्दल: ₹ {fmtCurrency(consBf.op)} + व्याज: ₹ {fmtCurrency(consBf.oi)})</span>
+                                          )}
+                                          {' '}+ एकूण जमा (Cr): <span className="font-mono font-bold text-emerald-700">₹ {fmtCurrency(grp.consolidated.periodTotalCredit)}</span>
+                                          {' '}- एकूण नावे (Dr): <span className="font-mono font-bold text-rose-700">₹ {fmtCurrency(grp.consolidated.periodTotalDebit)}</span>
+                                          {' '}={' '}
+                                          <strong className="text-slate-950">
+                                            अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-blue-900">₹ {fmtCurrency(grp.consolidated.closingBalance)}</span>
+                                          </strong>
+                                        </>
+                                      );
+                                    })()}
                                   </td>
                                 </tr>
                               </tfoot>
@@ -2767,23 +2979,69 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {((acc.openingBalance ?? 0) > 0 || customerLedger.fromDate) && (
-                                      <tr className="bg-slate-100/90 font-bold text-slate-800 text-[11px] italic">
-                                        <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
-                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono">
-                                          {customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : formatDisplayDate(acc.openingDate)}
-                                        </td>
-                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
-                                        <td className="border border-slate-900 py-1 px-2 font-semibold text-slate-700">
-                                          मागील शिल्लक (Opening Balance B/F)
-                                        </td>
-                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
-                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
-                                        <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-slate-200/60">
-                                          ₹ {fmtCurrency(acc.openingBalance ?? 0)}
-                                        </td>
-                                      </tr>
-                                    )}
+                                    {(() => {
+                                      const accBf = resolveOpeningBreakdown(
+                                        acc.openingBalance,
+                                        acc.openingPrincipalBalance,
+                                        acc.openingInterestBalance
+                                      );
+                                      if (!(accBf.ob > 0 || Boolean(customerLedger.fromDate))) return null;
+                                      const accBfDate = customerLedger.fromDate
+                                        ? formatDisplayDate(customerLedger.fromDate)
+                                        : formatDisplayDate(acc.openingDate);
+
+                                      if (!accBf.hasSplit) {
+                                        return (
+                                          <tr className="bg-slate-100/90 font-bold text-slate-800 text-[11px] italic">
+                                            <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-center font-mono">{accBfDate}</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 font-semibold text-slate-700">
+                                              मागील शिल्लक (Opening Balance B/F)
+                                            </td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-slate-200/60">
+                                              ₹ {fmtCurrency(accBf.ob)}
+                                            </td>
+                                          </tr>
+                                        );
+                                      }
+
+                                      return (
+                                        <>
+                                          <tr className="bg-slate-100/90 font-bold text-slate-800 text-[11px] italic">
+                                            <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-center font-mono">{accBfDate}</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 font-semibold text-slate-800">
+                                              मागील मुद्दल शिल्लक (Opening Principal B/F)
+                                            </td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-slate-200/60">
+                                              ₹ {fmtCurrency(accBf.op)}
+                                            </td>
+                                          </tr>
+                                          <tr className="bg-emerald-50/60 font-bold text-slate-800 text-[11px]">
+                                            <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-center font-mono">{accBfDate}</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 font-semibold text-emerald-900">
+                                              मागील व्याज पोस्टिंग शिल्लक (Opening Interest B/F)
+                                              <span className="ml-1.5 inline-block px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono text-[10px]">
+                                                + ₹ {fmtCurrency(accBf.oi)}
+                                              </span>
+                                            </td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                                            <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-emerald-100/50">
+                                              ₹ {fmtCurrency(accBf.ob)}
+                                            </td>
+                                          </tr>
+                                        </>
+                                      );
+                                    })()}
 
                                     {acc.transactions && acc.transactions.length > 0 ? (
                                       acc.transactions.map((tx, tIdx) => {
@@ -2839,6 +3097,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                               <span className="font-medium text-slate-900">
                                                 {formatSafeFdNarration(tx.narration, tx.transactionType, tx.voucherNo, acc.accountNo, acc.legacyAccountNumber)}
                                               </span>
+                                              {renderFdTxTypePill(tx.transactionType, tx.voucherNo, isDebit)}
                                             </td>
                                             <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-rose-700 bg-rose-50/20">
                                               {isDebit ? `₹ ${fmtCurrency(dr)}` : <span className="text-slate-300 font-normal">-</span>}
@@ -2879,14 +3138,28 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
 
                                     <tr className="bg-slate-50 text-[10px] text-slate-700 border-t border-slate-300">
                                       <td colSpan={7} className="py-1 px-3 border border-slate-900">
-                                        <span className="font-semibold text-slate-900">ऑडिट ताळमेळ (Audit Balance Equation): </span>
-                                        आरंभी शिल्लक: <span className="font-mono font-bold">₹ {fmtCurrency(acc.openingBalance ?? 0)}</span>
-                                        {' '}+ एकूण जमा (Cr): <span className="font-mono font-bold text-emerald-700">₹ {fmtCurrency(acc.periodTotalCredit ?? 0)}</span>
-                                        {' '}- एकूण नावे (Dr): <span className="font-mono font-bold text-rose-700">₹ {fmtCurrency(acc.periodTotalDebit ?? 0)}</span>
-                                        {' '}={' '}
-                                        <strong className="text-slate-950">
-                                          अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-blue-900">₹ {fmtCurrency(acc.closingBalance ?? 0)}</span>
-                                        </strong>
+                                        {(() => {
+                                          const accBf = resolveOpeningBreakdown(
+                                            acc.openingBalance,
+                                            acc.openingPrincipalBalance,
+                                            acc.openingInterestBalance
+                                          );
+                                          return (
+                                            <>
+                                              <span className="font-semibold text-slate-900">ऑडिट ताळमेळ (Audit Balance Equation): </span>
+                                              आरंभी शिल्लक: <span className="font-mono font-bold">₹ {fmtCurrency(accBf.ob)}</span>
+                                              {accBf.hasSplit && (
+                                                <span className="text-slate-600 ml-1">(मुद्दल: ₹ {fmtCurrency(accBf.op)} + व्याज: ₹ {fmtCurrency(accBf.oi)})</span>
+                                              )}
+                                              {' '}+ एकूण जमा (Cr): <span className="font-mono font-bold text-emerald-700">₹ {fmtCurrency(acc.periodTotalCredit ?? 0)}</span>
+                                              {' '}- एकूण नावे (Dr): <span className="font-mono font-bold text-rose-700">₹ {fmtCurrency(acc.periodTotalDebit ?? 0)}</span>
+                                              {' '}={' '}
+                                              <strong className="text-slate-950">
+                                                अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-blue-900">₹ {fmtCurrency(acc.closingBalance ?? 0)}</span>
+                                              </strong>
+                                            </>
+                                          );
+                                        })()}
                                       </td>
                                     </tr>
                                   </tfoot>

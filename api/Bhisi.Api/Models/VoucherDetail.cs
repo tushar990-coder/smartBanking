@@ -30,6 +30,19 @@ namespace Bhisi.Api.Models
         [ForeignKey("CustomerID")]
         public virtual Customer? Customer { get; set; }
 
+        public int? SavingAccountID { get; set; }
+
+        [ForeignKey("SavingAccountID")]
+        public virtual SavingAccountMaster? SavingAccount { get; set; }
+
+        public int? ChargeLoanAccountID { get; set; }
+
+        [ForeignKey("ChargeLoanAccountID")]
+        public virtual LoanAccount? ChargeLoanAccount { get; set; }
+
+        [StringLength(50)]
+        public string? ChargeExpenseType { get; set; }
+
         [Required]
         [StringLength(2)]
         public required string DrCr { get; set; } // "Dr" or "Cr"

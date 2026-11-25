@@ -798,10 +798,21 @@ namespace Bhisi.Api.Helpers
         {
             int branchId = effectiveBranchId > 0 ? effectiveBranchId : 1;
             int actorUserId = createdByUserId > 0 ? createdByUserId : 1;
-            string payee = dto.PaidTo ?? dto.PayeeName ?? "कायदेशीर सल्लागार / अधिकारी";
+            string expLabel = VoucherLoanChargeHelper.GetExpenseTypeMarathiLabel(dto.ExpenseType);
+            string payee = !string.IsNullOrWhiteSpace(dto.PaidTo)
+                ? dto.PaidTo!.Trim()
+                : (!string.IsNullOrWhiteSpace(dto.PayeeName) ? dto.PayeeName!.Trim() : expLabel);
+
+            LoanAccount? loan = effectiveLoanAccountId > 0
+                ? await context.LoanAccounts.Include(l => l.Member).Include(l => l.LoanRate).AsNoTracking().FirstOrDefaultAsync(l => l.LoanAccountID == effectiveLoanAccountId)
+                : null;
+
+            string loanTag = !string.IsNullOrWhiteSpace(loan?.LoanAccountNo) ? $" ({loan!.LoanAccountNo})" : string.Empty;
             string rawNarration = !string.IsNullOrWhiteSpace(dto.Remarks)
                 ? dto.Remarks!.Trim()
-                : $"कायदेशीर खर्च ({dto.ExpenseType}) - {payee}";
+                : (dto.CapitalizeToLoanPrincipal
+                    ? $"{expLabel} कर्जात जमा{loanTag}"
+                    : $"कायदेशीर खर्च ({expLabel}) - {payee}");
             string finalNarration = (!string.IsNullOrWhiteSpace(dto.ReferenceNo) && !rawNarration.Contains(dto.ReferenceNo))
                 ? $"{rawNarration} (Ref: {dto.ReferenceNo.Trim()})"
                 : rawNarration;
@@ -811,46 +822,113 @@ namespace Bhisi.Api.Helpers
                 .OrderByDescending(m => m.BranchId.HasValue && m.BranchId.Value > 0 ? 1 : 0)
                 .FirstOrDefaultAsync();
 
-            int debitLedgerId = mapping?.DebitLedgerId ?? 0;
-            if (debitLedgerId <= 0)
-            {
-                throw new InvalidOperationException($"कायदेशीर खर्चाच्या प्रकारासाठी ('{dto.ExpenseType}') कोणतेही वैध खर्च लेजर (Debit Ledger) मॅप केलेले नाही. कृपया कायदेशीर लेजर मॅपिंग पूर्ण करा.");
-            }
-
-            string mode = (dto.PaymentMode ?? "CASH").Trim();
-            bool isBankMode = BankLedgerHelper.IsBankPaymentMode(mode);
-            bool isJournalMode = string.Equals(mode, "JOURNAL", StringComparison.OrdinalIgnoreCase);
-
+            int debitLedgerId = 0;
             int creditLedgerId = 0;
-            if (isBankMode)
+            string mode = (dto.PaymentMode ?? "CASH").Trim();
+            bool isJournalMode = dto.CapitalizeToLoanPrincipal || string.Equals(mode, "JOURNAL", StringComparison.OrdinalIgnoreCase);
+
+            if (dto.CapitalizeToLoanPrincipal)
             {
-                var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(context, dto.BankLedgerId);
-                if (!bankCheck.IsValid)
+                if (loan == null)
                 {
-                    throw new InvalidOperationException(bankCheck.ErrorMessage);
+                    throw new InvalidOperationException("कर्जाच्या मुद्दलात खर्च जोडण्यासाठी वैध कर्ज खाते आवश्यक आहे.");
                 }
-                creditLedgerId = bankCheck.LedgerId;
-            }
-            else if (isJournalMode)
-            {
-                creditLedgerId = mapping?.CreditLedgerId ?? 0;
+
+                debitLedgerId = loan.LoanRate?.LoanLedgerID ?? (dto.DebitLedgerId ?? 0);
+                if (debitLedgerId <= 0)
+                {
+                    throw new InvalidOperationException($"कर्ज योजना '{loan.LoanRate?.LoanType ?? "अज्ञात"}' ला कर्ज मुद्दल लेजर (Loan Ledger) जोडलेले नाही.");
+                }
+
+                if (dto.CreditLedgerId.HasValue && dto.CreditLedgerId.Value > 0)
+                {
+                    var blockedControlIds = await VoucherLoanChargeHelper.GetPersonalOrControlLedgerIdsAsync(context);
+                    var selectedCrLedger = await context.Ledgers
+                        .AsNoTracking()
+                        .Include(l => l.AccountGroup)
+                        .FirstOrDefaultAsync(l => l.LedgerID == dto.CreditLedgerId.Value);
+                    if (!VoucherLoanChargeHelper.IsStrictIncomeLedger(selectedCrLedger, blockedControlIds, out var crErr))
+                    {
+                        throw new InvalidOperationException(crErr);
+                    }
+                    creditLedgerId = selectedCrLedger!.LedgerID;
+                }
+                else if (mapping?.CreditLedgerId > 0)
+                {
+                    creditLedgerId = mapping.CreditLedgerId;
+                }
+                else
+                {
+                    var incomeLedgers = await VoucherLoanChargeHelper.GetDynamicIncomeLedgersAsync(context);
+                    var matchedIncome = incomeLedgers.FirstOrDefault(l =>
+                        (string.Equals(dto.ExpenseType, "POSTAGE_EXPENSE", StringComparison.OrdinalIgnoreCase) &&
+                         (l.LedgerName.Contains("पोस्टेज") || l.LedgerName.Contains("पोसटेज") || l.LedgerName.Contains("टपाल") || l.LedgerName.Contains("Postage"))) ||
+                        (string.Equals(dto.ExpenseType, "RECOVERY_EXPENSE", StringComparison.OrdinalIgnoreCase) &&
+                         (l.LedgerName.Contains("वसुली") || l.LedgerName.Contains("वसूली") || l.LedgerName.Contains("Recovery"))))
+                        ?? incomeLedgers.FirstOrDefault(l => l.LedgerName.Contains("इतर उत्पन्न") || l.LedgerName.Contains("Other Income"))
+                        ?? incomeLedgers.FirstOrDefault();
+
+                    creditLedgerId = matchedIncome?.LedgerID ?? 0;
+                }
+
                 if (creditLedgerId <= 0)
                 {
-                    throw new InvalidOperationException($"जर्नल (Journal) पद्धतीने कायदेशीर खर्च नोंदवण्यासाठी '{dto.ExpenseType}' प्रकारास क्रेडिट देय लेजर (Credit Payable Ledger) मॅप असणे आवश्यक आहे.");
+                    throw new InvalidOperationException("वसूली / पोसटेज खर्च जमा करण्यासाठी कोणतेही वैध 'उत्पन्न खाते (Income Ledger)' सापडले नाही. कृपया उत्पन्न लेजर निवडा.");
                 }
             }
             else
             {
-                creditLedgerId = await CashLedgerHelper.GetCashLedgerIdAsync(context, branchId, "LEGAL");
-                if (creditLedgerId <= 0)
+                debitLedgerId = (dto.DebitLedgerId.HasValue && dto.DebitLedgerId.Value > 0)
+                    ? dto.DebitLedgerId.Value
+                    : (mapping?.DebitLedgerId ?? 0);
+
+                if (debitLedgerId <= 0 &&
+                    (string.Equals(dto.ExpenseType, "RECOVERY_EXPENSE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(dto.ExpenseType, "POSTAGE_EXPENSE", StringComparison.OrdinalIgnoreCase)))
                 {
-                    throw new InvalidOperationException("या शाखेसाठी रोख शिल्लक लेजर सापडले नाही. कृपया शाखा मास्टरमध्ये रोख खाते तपासा.");
+                    var fallbackMap = await context.LegalRecoveryLedgerMappings
+                        .Where(m => (m.BranchId == branchId || m.BranchId == null || m.BranchId == 0) &&
+                                    (m.TransactionType == "NOTICE_FEE" || m.TransactionType == "OTHER_LEGAL") &&
+                                    m.IsActive && m.DebitLedgerId > 0)
+                        .OrderByDescending(m => m.BranchId.HasValue && m.BranchId.Value > 0 ? 1 : 0)
+                        .FirstOrDefaultAsync();
+                    debitLedgerId = fallbackMap?.DebitLedgerId ?? (loan?.LoanRate?.RecoveryFeeLedgerID ?? 0);
+                }
+
+                if (debitLedgerId <= 0)
+                {
+                    throw new InvalidOperationException($"कायदेशीर खर्चाच्या प्रकारासाठी ('{dto.ExpenseType}') कोणतेही वैध खर्च लेजर (Debit Ledger) मॅप केलेले नाही. कृपया कायदेशीर लेजर मॅपिंग पूर्ण करा.");
+                }
+
+                bool isBankMode = BankLedgerHelper.IsBankPaymentMode(mode);
+                if (isBankMode)
+                {
+                    var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(context, dto.BankLedgerId);
+                    if (!bankCheck.IsValid)
+                    {
+                        throw new InvalidOperationException(bankCheck.ErrorMessage);
+                    }
+                    creditLedgerId = bankCheck.LedgerId;
+                }
+                else if (isJournalMode)
+                {
+                    creditLedgerId = (dto.CreditLedgerId.HasValue && dto.CreditLedgerId.Value > 0)
+                        ? dto.CreditLedgerId.Value
+                        : (mapping?.CreditLedgerId ?? 0);
+                    if (creditLedgerId <= 0)
+                    {
+                        throw new InvalidOperationException($"जर्नल (Journal) पद्धतीने खर्च नोंदवण्यासाठी '{dto.ExpenseType}' प्रकारास क्रेडिट देय लेजर (Credit Ledger) निवडा किंवा मॅपिंग पूर्ण करा.");
+                    }
+                }
+                else
+                {
+                    creditLedgerId = await CashLedgerHelper.GetCashLedgerIdAsync(context, branchId, "LEGAL");
+                    if (creditLedgerId <= 0)
+                    {
+                        throw new InvalidOperationException("या शाखेसाठी रोख शिल्लक लेजर सापडले नाही. कृपया शाखा मास्टरमध्ये रोख खाते तपासा.");
+                    }
                 }
             }
-
-            LoanAccount? loan = effectiveLoanAccountId > 0
-                ? await context.LoanAccounts.Include(l => l.Member).AsNoTracking().FirstOrDefaultAsync(l => l.LoanAccountID == effectiveLoanAccountId)
-                : null;
 
             int? customerId = (loan != null && loan.CustomerID.HasValue && loan.CustomerID.Value > 0)
                 ? loan.CustomerID.Value
@@ -863,7 +941,10 @@ namespace Bhisi.Api.Helpers
 
             try
             {
-                string vNo = await VoucherNumberHelper.NextVoucherNoAsync(context, $"LEG-{branchId}-{dto.ExpenseDate:yyyyMMdd}-", 4);
+                string prefix = dto.CapitalizeToLoanPrincipal
+                    ? $"JV-CHG-{branchId}-{dto.ExpenseDate:yyyyMMdd}-"
+                    : $"LEG-{branchId}-{dto.ExpenseDate:yyyyMMdd}-";
+                string vNo = await VoucherNumberHelper.NextVoucherNoAsync(context, prefix, 4);
                 var voucher = new Voucher
                 {
                     BranchID = branchId,
@@ -882,6 +963,8 @@ namespace Bhisi.Api.Helpers
                             LedgerID = debitLedgerId,
                             CustomerID = customerId,
                             MemberID = memberId,
+                            ChargeLoanAccountID = dto.CapitalizeToLoanPrincipal && effectiveLoanAccountId > 0 ? effectiveLoanAccountId : (int?)null,
+                            ChargeExpenseType = dto.CapitalizeToLoanPrincipal ? dto.ExpenseType : null,
                             DrCr = "Dr",
                             Amount = dto.Amount
                         },
@@ -912,7 +995,11 @@ namespace Bhisi.Api.Helpers
                     ExpenseDate = dto.ExpenseDate,
                     PaidTo = payee,
                     VoucherId = voucher.VoucherID,
-                    IsDebitedToLoan = dto.IsDebitedToBorrower,
+                    IsDebitedToLoan = dto.IsDebitedToBorrower || dto.CapitalizeToLoanPrincipal,
+                    CapitalizeToLoanPrincipal = dto.CapitalizeToLoanPrincipal,
+                    IsPrincipalApplied = false,
+                    DebitLedgerId = debitLedgerId,
+                    CreditLedgerId = creditLedgerId,
                     Remarks = finalNarration,
                     CreatedAt = DateTime.UtcNow,
                     CreatedBy = actorUserId

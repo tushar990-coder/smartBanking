@@ -1,4 +1,4 @@
-# =========================================================================================
+﻿# =========================================================================================
 # SmartBanking ERP - 1-Click Multi-App Master VPS Patch Package Builder
 # Automates: Build Frontend + Publish Backend + Database SQL Patch + Multi-Target Packaging + Reverse Patch Engine
 # =========================================================================================
@@ -1009,12 +1009,17 @@ SELECT CASE
      AND COL_LENGTH('dbo.LoanRates','PenalInterestBasis') IS NOT NULL
      AND COL_LENGTH('dbo.PigmyCollections','RemittanceDepositId') IS NOT NULL
      AND COL_LENGTH('dbo.DemandColumnSettings','PigmySchemeID') IS NOT NULL
+     AND COL_LENGTH('dbo.VoucherDetails','SavingAccountID') IS NOT NULL
+     AND COL_LENGTH('dbo.VoucherDetails','ChargeLoanAccountID') IS NOT NULL
+     AND COL_LENGTH('dbo.LoanAccounts','CapitalizedRecoveryCharges') IS NOT NULL
+     AND COL_LENGTH('dbo.LoanCollections','ChargesPrincipalCollected') IS NOT NULL
+     AND COL_LENGTH('dbo.Sec101LegalExpenses','CapitalizeToLoanPrincipal') IS NOT NULL
     THEN 1 ELSE 0
 END;
 "@
         $colRes = Invoke-SqlQueryRaw -Query $colCheckQuery -DatabaseName $target.TargetDatabase -Config $config
         if (-not $colRes.Ok -or $colRes.Output.Trim() -notmatch '(?m)^1\s*$') {
-            $verifyIssues.Add("DB schema columns check failed (LoanRates.AllowManualPenalInRecovery / PigmyCollections / DemandColumnSettings) on $($target.TargetDatabase)")
+            $verifyIssues.Add("DB schema columns check failed (v2.6.41-v2.6.45 columns) on $($target.TargetDatabase)")
         }
 
         # Verify Customer-ID-First & Per-Module Legacy Account Numbers preserved 100%

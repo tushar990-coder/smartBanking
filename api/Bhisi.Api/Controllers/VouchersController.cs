@@ -116,6 +116,10 @@ namespace Bhisi.Api.Controllers
                                   .Include(v => v.VoucherDetails)
                                   .ThenInclude(d => d.Member)
                                       .ThenInclude(m => m!.Customer)
+                                  .Include(v => v.VoucherDetails)
+                                  .ThenInclude(d => d.SavingAccount)
+                                  .Include(v => v.VoucherDetails)
+                                  .ThenInclude(d => d.ChargeLoanAccount)
                                   .OrderByDescending(v => v.VoucherDate)
                                   .ThenByDescending(v => v.VoucherID);
 
@@ -147,6 +151,10 @@ namespace Bhisi.Api.Controllers
                                         .Include(v => v.VoucherDetails)
                                         .ThenInclude(d => d.Member)
                                             .ThenInclude(m => m!.Customer)
+                                        .Include(v => v.VoucherDetails)
+                                        .ThenInclude(d => d.SavingAccount)
+                                        .Include(v => v.VoucherDetails)
+                                        .ThenInclude(d => d.ChargeLoanAccount)
                                         .FirstOrDefaultAsync(v => v.VoucherID == id);
 
             if (voucher == null)
@@ -160,6 +168,35 @@ namespace Bhisi.Api.Controllers
             }
 
             return voucher;
+        }
+
+        // GET: api/Vouchers/saving-control-ledgers
+        [HttpGet("saving-control-ledgers")]
+        public async Task<ActionResult<object>> GetSavingControlLedgers()
+        {
+            var ids = await VoucherSavingTransferHelper.GetConfiguredSavingControlLedgerIdsAsync(_context);
+            return Ok(new { ledgerIds = ids.OrderBy(id => id).ToList() });
+        }
+
+        // GET: api/Vouchers/loan-charge-ledgers
+        [HttpGet("loan-charge-ledgers")]
+        public async Task<ActionResult<object>> GetLoanChargeLedgers()
+        {
+            var loanLedgerIds = await VoucherLoanChargeHelper.GetConfiguredLoanPrincipalLedgerIdsAsync(_context);
+            var incomeLedgers = (await VoucherLoanChargeHelper.GetDynamicIncomeLedgersAsync(_context))
+                .Select(l => new
+                {
+                    l.LedgerID,
+                    l.LedgerName,
+                    l.LedgerCode,
+                    GroupName = l.AccountGroup != null ? l.AccountGroup.GroupName : string.Empty
+                })
+                .ToList();
+            return Ok(new
+            {
+                loanLedgerIds = loanLedgerIds.OrderBy(id => id).ToList(),
+                incomeLedgers
+            });
         }
 
         // GET: api/Vouchers/next-number
@@ -274,14 +311,26 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Prevent debiting and crediting the exact same ledger (with same customer/member sub-ledger) in one voucher
+            var savingLinkError = await VoucherSavingTransferHelper.ValidateAndNormalizeVoucherSavingLinksAsync(_context, voucher, branchId);
+            if (!string.IsNullOrEmpty(savingLinkError))
+            {
+                return savingLinkError;
+            }
+
+            var loanChargeError = await VoucherLoanChargeHelper.ValidateAndNormalizeVoucherLoanChargeLinksAsync(_context, voucher, branchId);
+            if (!string.IsNullOrEmpty(loanChargeError))
+            {
+                return loanChargeError;
+            }
+
+            // Prevent debiting and crediting the exact same ledger (with same saving/loan-charge/customer sub-ledger) in one voucher
             var drKeys = voucher.VoucherDetails
                 .Where(d => d.DrCr == "Dr")
-                .Select(d => $"{d.LedgerID}_{d.CustomerID ?? 0}_{d.MemberID ?? 0}")
+                .Select(d => $"{d.LedgerID}_{d.SavingAccountID ?? 0}_{d.ChargeLoanAccountID ?? 0}_{d.CustomerID ?? 0}_{d.MemberID ?? 0}")
                 .ToHashSet();
 
             var dupCr = voucher.VoucherDetails
-                .FirstOrDefault(d => d.DrCr == "Cr" && drKeys.Contains($"{d.LedgerID}_{d.CustomerID ?? 0}_{d.MemberID ?? 0}"));
+                .FirstOrDefault(d => d.DrCr == "Cr" && drKeys.Contains($"{d.LedgerID}_{d.SavingAccountID ?? 0}_{d.ChargeLoanAccountID ?? 0}_{d.CustomerID ?? 0}_{d.MemberID ?? 0}"));
             if (dupCr != null && ledgersMap.TryGetValue(dupCr.LedgerID, out var dupLedger))
             {
                 return $"एकाच व्हाउचरमध्ये एकाच खात्याला ('{dupLedger.LedgerName}') एकाच वेळी नावे (Dr) आणि जमा (Cr) करता येत नाही.";
@@ -510,6 +559,8 @@ namespace Bhisi.Api.Controllers
             _context.Vouchers.Add(voucher);
             await _context.SaveChangesAsync();
 
+            await VoucherLoanChargeHelper.SyncManualVoucherLoanChargeExpensesAsync(_context, voucher, voucher.CreatedBy);
+
             _context.AuditLogs.Add(new AuditLog
             {
                 UserID = voucher.CreatedBy > 0 ? voucher.CreatedBy : null,
@@ -552,6 +603,20 @@ namespace Bhisi.Api.Controllers
             if (existingVoucher.Status == "Approved" && !User.IsHeadOfficeAdmin())
             {
                 return BadRequest("पोस्ट झालेले (Approved) व्हाउचर थेट बदलता येत नाही. आवश्यक असल्यास रिव्हर्सल किंवा कॅन्सलेशन करावे.");
+            }
+
+            if (existingVoucher.Status == "Approved" &&
+                (existingVoucher.VoucherDetails.Any(d => d.SavingAccountID.HasValue && d.SavingAccountID.Value > 0) ||
+                 voucher.VoucherDetails.Any(d => d.SavingAccountID.HasValue && d.SavingAccountID.Value > 0)))
+            {
+                return BadRequest("या मंजूर व्हाउचरशी बचत खात्याचे व्यवहार संलग्न आहेत; कृपया प्रथम व्हाउचर अन-पास (Unpass) करून नंतरच बदल करा.");
+            }
+
+            if (existingVoucher.Status == "Approved" &&
+                (existingVoucher.VoucherDetails.Any(d => d.ChargeLoanAccountID.HasValue && d.ChargeLoanAccountID.Value > 0) ||
+                 voucher.VoucherDetails.Any(d => d.ChargeLoanAccountID.HasValue && d.ChargeLoanAccountID.Value > 0)))
+            {
+                return BadRequest("या मंजूर व्हाउचरशी कर्जाच्या वसूली/पोसटेज खर्चाचे व्यवहार संलग्न आहेत; कृपया प्रथम व्हाउचर अन-पास (Unpass) करून नंतरच बदल करा.");
             }
 
             // Closed Financial Year check
@@ -665,6 +730,10 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                if (!string.Equals(existingVoucher.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+                {
+                    await VoucherLoanChargeHelper.SyncManualVoucherLoanChargeExpensesAsync(_context, existingVoucher, existingVoucher.CreatedBy);
+                }
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -755,6 +824,10 @@ namespace Bhisi.Api.Controllers
                                     .ThenInclude(m => m!.Customer)
                                 .Include(v => v.VoucherDetails)
                                 .ThenInclude(d => d.Customer)
+                                .Include(v => v.VoucherDetails)
+                                .ThenInclude(d => d.SavingAccount)
+                                .Include(v => v.VoucherDetails)
+                                .ThenInclude(d => d.ChargeLoanAccount)
                                 .Where(v => v.VoucherDate.Date >= sDate && v.VoucherDate.Date <= eDate)
                                 .Where(v => v.Status != "Rejected" && v.Status != "Cancelled")
                                 .Where(v => !v.VoucherNo.Contains("-OP-") &&
@@ -918,11 +991,19 @@ namespace Bhisi.Api.Controllers
                     pv.Status = "Approved";
                     pv.ApprovedBy = approverId > 0 ? approverId : (int?)null;
                     pv.ApprovedOn = DateTime.Now;
+
+                    await VoucherSavingTransferHelper.ApplyApprovedVoucherSavingTransfersAsync(_context, pv, approverId);
+                    await VoucherLoanChargeHelper.ApplyApprovedVoucherLoanChargesAsync(_context, pv);
                 }
 
                 await _context.SaveChangesAsync();
                 await dbTransaction.CommitAsync();
                 return Ok(new { message = pairVouchers.Count > 1 ? $"Voucher pair ({pairVouchers.Count}) approved successfully." : "Voucher approved successfully." });
+            }
+            catch (InvalidOperationException valEx)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(valEx.Message);
             }
             catch (Exception ex)
             {

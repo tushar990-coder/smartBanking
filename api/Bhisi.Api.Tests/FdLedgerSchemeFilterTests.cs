@@ -191,5 +191,131 @@ namespace Bhisi.Api.Tests
             Assert.Equal(1, singleSchemeGrp.FdSchemeID);
             Assert.Equal(152250m, singleSchemeGrp.Consolidated.ClosingBalance);
         }
+
+        [Fact]
+        public async Task GetFdLedgerStatement_FullHistory_ShowsOpeningBeforeLegacyCutoverInterest_AndSplitsFilteredOpeningBalances()
+        {
+            await using var db = CreateContext();
+            await SeedAsync(db);
+
+            db.Customers.Add(new Customer
+            {
+                CustomerID = 10,
+                BranchID = 1,
+                CIFNo = "CIF000743",
+                FirstName = "दिनकर",
+                MiddleName = "सीताराम",
+                LastName = "खोत",
+                MobileNo = "9800000010"
+            });
+
+            // Legacy FD #201: has Opening row + LastInterestPostingDate (2026-03-31) + Overdue Closure_Interest >= LegacyAccruedInt
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 201,
+                BranchID = 1,
+                CustomerID = 10,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000047-4",
+                LegacyAccountNumber = "881",
+                OpeningDate = new DateTime(2023, 1, 16),
+                MaturityDate = new DateTime(2024, 2, 16),
+                DepositAmount = 54870m,
+                InterestRate = 9m,
+                MaturityAmount = 60228m,
+                Status = "Closed",
+                IsLegacyAccount = true,
+                LegacyAccruedInt = 5000m,
+                LastInterestPostingDate = new DateTime(2026, 3, 31)
+            });
+
+            // Legacy FD #202: missing Opening row in FdTransactions AND LastInterestPostingDate == null (tests -3 synthesis & same-day sort rank)
+            db.FdAccounts.Add(new FdAccount
+            {
+                FdAccountID = 202,
+                BranchID = 1,
+                CustomerID = 10,
+                FdSchemeID = 1,
+                AccountNo = "001-401-0000048-2",
+                LegacyAccountNumber = "882",
+                OpeningDate = new DateTime(2023, 1, 16),
+                MaturityDate = new DateTime(2025, 1, 16),
+                DepositAmount = 20000m,
+                InterestRate = 9m,
+                MaturityAmount = 23600m,
+                Status = "Active",
+                IsLegacyAccount = true,
+                LegacyAccruedInt = 1500m,
+                LastInterestPostingDate = null
+            });
+
+            db.Vouchers.AddRange(
+                new Voucher { VoucherID = 201, BranchID = 1, VoucherNo = "JV-FD-OP-001-401-0000047-4", VoucherDate = new DateTime(2023, 1, 16), VoucherType = "Journal", TotalAmount = 54870m, Status = "Approved" },
+                new Voucher { VoucherID = 202, BranchID = 1, VoucherNo = "JV-FD-CLOSE-001-401-0000047-4", VoucherDate = new DateTime(2026, 6, 30), VoucherType = "Payment", TotalAmount = 71931m, Status = "Approved" }
+            );
+
+            db.FdTransactions.AddRange(
+                new FdTransaction { FdTransactionID = 379, BranchID = 1, FdAccountID = 201, VoucherID = 201, TransactionDate = new DateTime(2023, 1, 16), TransactionType = "Opening", DebitCredit = "Cr", Amount = 54870m },
+                new FdTransaction { FdTransactionID = 380, BranchID = 1, FdAccountID = 201, VoucherID = 202, TransactionDate = new DateTime(2026, 6, 30), TransactionType = "Payout", DebitCredit = "Dr", Amount = 71931m },
+                new FdTransaction { FdTransactionID = 381, BranchID = 1, FdAccountID = 201, VoucherID = 202, TransactionDate = new DateTime(2026, 6, 30), TransactionType = "Closure_Interest", DebitCredit = "Cr", Amount = 11703m }
+            );
+
+            await db.SaveChangesAsync();
+
+            var ctrl = new ReportsController(db, new MemoryCache(new MemoryCacheOptions()));
+            AttachUser(ctrl, BuildAdminPrincipal(1));
+
+            // 1. Full History (fromDate: null, toDate: 2026-06-30)
+            var fullRes = Assert.IsType<OkObjectResult>(await ctrl.GetFdLedgerStatement(
+                branchID: 1, fdSchemeID: 0, customerID: 10, fromDate: null, toDate: new DateTime(2026, 6, 30)));
+            var fullDto = Assert.IsType<FdLedgerStatementResponseDto>(fullRes.Value);
+            Assert.Equal(0m, fullDto.TotalOpeningBalance);
+
+            var acc201 = fullDto.Accounts.Single(a => a.FdAccountID == 201);
+            Assert.Equal(0m, acc201.OpeningBalance);
+            Assert.Equal(5, acc201.Transactions.Count);
+            // Row 1: Deposit Date 16/01/2023 (Opening Principal Cr)
+            Assert.Equal("2023-01-16", acc201.Transactions[0].TransactionDate);
+            Assert.Equal("Opening", acc201.Transactions[0].TransactionType);
+            Assert.Equal(54870m, acc201.Transactions[0].Credit);
+            Assert.Equal(54870m, acc201.Transactions[0].Balance);
+            // Row 2: Legacy Opening Cutover Date 31/03/2026 (LastInterestPostingDate -> LEG-INT-MIG Cr) even when Closure_Interest > LegacyAccruedInt
+            Assert.Equal("2026-03-31", acc201.Transactions[1].TransactionDate);
+            Assert.Equal("LEG-INT-MIG", acc201.Transactions[1].VoucherNo);
+            Assert.Equal(5000m, acc201.Transactions[1].Credit);
+            Assert.Equal(59870m, acc201.Transactions[1].Balance);
+            // Rows 3-5: Remaining closure interest (358), Overdue closure interest (11,703), Payout (71,931 Dr -> 0)
+            Assert.Equal(0m, acc201.ClosingBalance);
+
+            var acc202 = fullDto.Accounts.Single(a => a.FdAccountID == 202);
+            Assert.Equal(2, acc202.Transactions.Count);
+            // Missing Opening synthesized (-3) and sorted BEFORE LEG-INT-MIG (-1) on the exact same date 2023-01-16!
+            Assert.Equal("2023-01-16", acc202.Transactions[0].TransactionDate);
+            Assert.Equal("Opening", acc202.Transactions[0].TransactionType);
+            Assert.Equal(20000m, acc202.Transactions[0].Credit);
+            Assert.Equal(20000m, acc202.Transactions[0].Balance);
+            Assert.Equal("2023-01-16", acc202.Transactions[1].TransactionDate);
+            Assert.Equal("LEG-INT-MIG", acc202.Transactions[1].VoucherNo);
+            Assert.Equal(1500m, acc202.Transactions[1].Credit);
+            Assert.Equal(21500m, acc202.Transactions[1].Balance);
+
+            // 2. Filtered Period (01/06/2026 to 30/06/2026): splits OpeningPrincipalBalance and OpeningInterestBalance cleanly
+            var filteredRes = Assert.IsType<OkObjectResult>(await ctrl.GetFdLedgerStatement(
+                branchID: 1, fdSchemeID: 0, customerID: 10, fromDate: new DateTime(2026, 6, 1), toDate: new DateTime(2026, 6, 30)));
+            var filteredDto = Assert.IsType<FdLedgerStatementResponseDto>(filteredRes.Value);
+            Assert.Equal(74870m, filteredDto.TotalOpeningPrincipalBalance);
+            Assert.Equal(6500m, filteredDto.TotalOpeningInterestBalance);
+            Assert.Equal(81370m, filteredDto.TotalOpeningBalance);
+
+            var fAcc201 = filteredDto.Accounts.Single(a => a.FdAccountID == 201);
+            Assert.Equal(54870m, fAcc201.OpeningPrincipalBalance);
+            Assert.Equal(5000m, fAcc201.OpeningInterestBalance);
+            Assert.Equal(59870m, fAcc201.OpeningBalance);
+
+            var grp = Assert.Single(filteredDto.SchemeGroups);
+            Assert.Equal(74870m, grp.Consolidated.OpeningPrincipalBalance);
+            Assert.Equal(6500m, grp.Consolidated.OpeningInterestBalance);
+            Assert.Equal(81370m, grp.Consolidated.OpeningBalance);
+        }
     }
 }

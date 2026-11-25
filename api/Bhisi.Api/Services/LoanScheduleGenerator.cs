@@ -338,8 +338,8 @@ namespace Bhisi.Api.Services
         {
             if (schedules == null || !schedules.Any()) return;
 
-            decimal softwarePrincipalPaid = collections?.Sum(c => c.PrincipalCollected) ?? 0m;
-            decimal openingPrincipalAtMigration = account.PrincipalBalance + softwarePrincipalPaid;
+            decimal softwarePrincipalPaid = collections?.Sum(c => Math.Max(0m, c.PrincipalCollected - c.ChargesPrincipalCollected)) ?? 0m;
+            decimal openingPrincipalAtMigration = Math.Max(0m, account.PrincipalBalance - account.CapitalizedRecoveryCharges) + softwarePrincipalPaid;
             decimal priorPrincipalPaid = (account.IsOpeningBalance && account.SanctionedAmount > openingPrincipalAtMigration)
                 ? (account.SanctionedAmount - openingPrincipalAtMigration)
                 : 0m;

@@ -167,6 +167,9 @@ namespace Bhisi.Api.Controllers
         public string? ReferenceNo { get; set; }
         public bool PostVoucher { get; set; } = true;
         public bool IsDebitedToBorrower { get; set; } = true;
+        public bool CapitalizeToLoanPrincipal { get; set; } = false;
+        public int? DebitLedgerId { get; set; }
+        public int? CreditLedgerId { get; set; }
         public string? Remarks { get; set; }
     }
 
@@ -1932,10 +1935,13 @@ namespace Bhisi.Api.Controllers
 
                 return Ok(new
                 {
-                    Message = "कायदेशीर खर्च यशस्वीरीत्या नोंदवला व व्हाउचर पोस्ट झाले.",
+                    Message = dto.CapitalizeToLoanPrincipal
+                        ? "कर्जाच्या मुद्दलात (Principal Balance) खर्च अ‍ॅड करण्यासाठी व्हाउचर यशस्वीरीत्या तयार केले (मंजुरीसाठी प्रलंबित)."
+                        : "खर्च नोंदवला व व्हाउचर मंजुरीसाठी तयार केले (Pending).",
                     VoucherNo = voucher.VoucherNo,
                     VoucherNumber = voucher.VoucherNo,
-                    VoucherId = voucher.VoucherID
+                    VoucherId = voucher.VoucherID,
+                    CapitalizeToLoanPrincipal = dto.CapitalizeToLoanPrincipal
                 });
             }
             catch (InvalidOperationException valEx)
@@ -2013,6 +2019,10 @@ namespace Bhisi.Api.Controllers
                     BankLedgerId = bankLedgerId,
                     IsDebitedToBorrower = x.IsDebitedToLoan,
                     x.IsDebitedToLoan,
+                    x.CapitalizeToLoanPrincipal,
+                    x.IsPrincipalApplied,
+                    x.DebitLedgerId,
+                    x.CreditLedgerId,
                     x.Remarks
                 };
             }).ToList();

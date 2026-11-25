@@ -505,20 +505,18 @@ namespace Bhisi.Api.Controllers
 
                 // Actual Outside Liabilities (Deposits + External Loans)
                 var savBalQ = _context.SavingAccountMasters.Where(s => s.Status == "Active");
-                var rdBalQ = _context.RdAccounts.AsNoTracking().Where(FdDepositQueryHelper.LiveRdPredicate);
                 var pigBalQ = _context.PigmyAccounts.AsNoTracking().Where(FdDepositQueryHelper.LivePigmyPredicate);
 
                 if (scopedBranch.HasValue && scopedBranch.Value > 0)
                 {
                     int sbId = scopedBranch.Value;
                     savBalQ = savBalQ.Where(s => s.BranchID == sbId);
-                    rdBalQ = rdBalQ.Where(r => r.BranchID == sbId);
                     pigBalQ = pigBalQ.Where(p => p.BranchID == sbId);
                 }
 
                 decimal savingBalance = await savBalQ.SumAsync(s => s.CurrentBalance);
                 decimal fdBalance = await FdDepositQueryHelper.GetLiveFdTotalAsOfAsync(_context, targetDate, scopedBranch);
-                decimal rdBalance = await rdBalQ.SumAsync(r => r.TotalDepositedAmount);
+                decimal rdBalance = await RdDepositQueryHelper.GetLiveRdTotalAsOfAsync(_context, targetDate, scopedBranch);
                 decimal pigmyBalance = await pigBalQ.SumAsync(p => p.TotalDepositedAmount - p.TotalWithdrawnAmount);
                 
                 // Outside Bank Loans / External Borrowings if any

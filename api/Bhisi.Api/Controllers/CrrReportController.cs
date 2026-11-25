@@ -70,11 +70,7 @@ namespace Bhisi.Api.Controllers
                     .SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
 
                 var fdDeposits = await FdDepositQueryHelper.GetLiveFdTotalAsOfAsync(_context, targetDate, scopedBranch);
-
-                var rdDeposits = await _context.RdAccounts.AsNoTracking()
-                    .Where(FdDepositQueryHelper.LiveRdPredicate)
-                    .Where(r => !scopedBranch.HasValue || r.BranchID == scopedBranch.Value)
-                    .SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
+                var rdDeposits = await RdDepositQueryHelper.GetLiveRdTotalAsOfAsync(_context, targetDate, scopedBranch);
 
                 var pigmyDeposits = await _context.PigmyAccounts.AsNoTracking()
                     .Where(FdDepositQueryHelper.LivePigmyPredicate)
@@ -249,10 +245,7 @@ namespace Bhisi.Api.Controllers
                     .Where(s => (s.Status == "Active" || string.IsNullOrEmpty(s.Status)) && (!scopedBranch.HasValue || s.BranchID == scopedBranch.Value))
                     .SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
                 var fdDeposits = await FdDepositQueryHelper.GetLiveFdTotalAsOfAsync(_context, end, scopedBranch);
-                var rdDeposits = await _context.RdAccounts.AsNoTracking()
-                    .Where(FdDepositQueryHelper.LiveRdPredicate)
-                    .Where(r => !scopedBranch.HasValue || r.BranchID == scopedBranch.Value)
-                    .SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
+                var rdDeposits = await RdDepositQueryHelper.GetLiveRdTotalAsOfAsync(_context, end, scopedBranch);
                 var pigmyDeposits = await _context.PigmyAccounts.AsNoTracking()
                     .Where(FdDepositQueryHelper.LivePigmyPredicate)
                     .Where(p => !scopedBranch.HasValue || p.BranchID == scopedBranch.Value)

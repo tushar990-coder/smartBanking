@@ -264,41 +264,9 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(r => r.Customer != null && r.Customer.MemberProfile != null && r.Customer.MemberProfile.MemberID == memberId.Value);
             }
 
-            // Self-healing: Ensure legacy RD accounts opening balances are synchronized to General Ledger (skip on targeted customer queries)
-            if (!customerId.HasValue && !memberId.HasValue)
-            {
-                try
-                {
-                    var hasLegacy = await _context.RdAccounts.AnyAsync(a => a.IsLegacyAccount && a.Status == "Active");
-                    if (hasLegacy)
-                    {
-                        var schemeLedgerIds = await _context.RdSchemes
-                            .Where(s => s.RdLiabilityLedgerID.HasValue)
-                            .Select(s => s.RdLiabilityLedgerID!.Value)
-                            .ToListAsync();
-
-                        var totalLegacySum = await _context.RdAccounts
-                            .Where(a => a.IsLegacyAccount && a.Status == "Active")
-                            .SumAsync(a => a.TotalDepositedAmount);
-
-                        var initialFyId = await Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(_context);
-                        var currentLedgerSum = initialFyId > 0
-                            ? await _context.BranchLedgerOpeningBalances
-                                .Where(b => b.FinancialYearID == initialFyId && schemeLedgerIds.Contains(b.LedgerID))
-                                .SumAsync(b => b.OpeningBalanceType == "Cr" ? b.OpeningBalance : -b.OpeningBalance)
-                            : 0m;
-
-                        if (totalLegacySum > 0 && Math.Abs(currentLedgerSum - totalLegacySum) > 0.01m)
-                        {
-                            await SyncRdOpeningBalancesInternalAsync();
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Auto-heal RD check error: {ex.Message}");
-                }
-            }
+            // Read endpoint (GET /api/RdAccounts) must remain side-effect-free so viewing historical reports
+            // never overwrites FY GL Opening Balances with post-FY installments.
+            // Baseline opening balance syncing is handled exclusively during Migrate / Put / Delete / SyncOpeningBalances.
 
             var accounts = await query
                 .OrderByDescending(r => r.OpeningDate)
@@ -933,7 +901,9 @@ namespace Bhisi.Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutRdAccount(int id, RdAccount updated)
         {
-            var account = await _context.RdAccounts.FindAsync(id);
+            var account = await _context.RdAccounts
+                .Include(a => a.RdScheme)
+                .FirstOrDefaultAsync(a => a.RdAccountID == id);
             if (account == null)
             {
                 return NotFound(new { message = "आरडी खाते सापडले नाही." });
@@ -961,6 +931,28 @@ namespace Bhisi.Api.Controllers
             {
                 account.LegacyAccountNumber = null;
             }
+
+            bool principalOrCountChanged = Math.Abs(account.TotalDepositedAmount - updated.TotalDepositedAmount) > 0.01m ||
+                                           account.TotalPaidInstallments != updated.TotalPaidInstallments;
+
+            bool hasPostMigrationTxns = await _context.RdTransactions
+                .AsNoTracking()
+                .AnyAsync(t => t.RdAccountID == account.RdAccountID &&
+                               (t.TransactionType == "Installment" ||
+                                t.TransactionType == "Payout" ||
+                                t.TransactionType == "Premature_Close" ||
+                                t.TransactionType == "Renewal" ||
+                                t.TransactionType == "Close") &&
+                               (t.Voucher == null || t.Voucher.VoucherNo == null || !t.Voucher.VoucherNo.StartsWith("JV-RD-OP-")));
+
+            if (hasPostMigrationTxns && principalOrCountChanged)
+            {
+                return BadRequest(new
+                {
+                    message = "या आरडी खात्यावर मायग्रेशननंतरचे हप्ते किंवा बंद व्यवहार नोंदवलेले असल्यामुळे एकूण जमा रक्कम किंवा हप्ते संख्या थेट बदलता येत नाही. कृपया संबंधित हप्ता व्हाउचर तपासा."
+                });
+            }
+
             account.PassbookNo = updated.PassbookNo;
             account.OpeningDate = updated.OpeningDate;
             account.InstallmentAmount = updated.InstallmentAmount;
@@ -974,8 +966,85 @@ namespace Bhisi.Api.Controllers
             account.NomineeName = updated.NomineeName;
             account.NomineeRelation = updated.NomineeRelation;
             account.Remarks = updated.Remarks;
+            account.ModifiedDate = DateTime.UtcNow;
+
+            if (account.IsLegacyAccount && !hasPostMigrationTxns)
+            {
+                string openingVoucherNo = $"JV-RD-OP-{account.AccountNo}";
+                var opVoucher = await _context.Vouchers.FirstOrDefaultAsync(v => v.VoucherNo == openingVoucherNo);
+                if (opVoucher == null)
+                {
+                    opVoucher = new Voucher
+                    {
+                        BranchID = account.BranchID,
+                        VoucherNo = openingVoucherNo,
+                        VoucherDate = account.OpeningDate,
+                        VoucherType = "Journal",
+                        TotalAmount = account.TotalDepositedAmount,
+                        Narration = $"आवर्ती ठेव आरंभिक शिल्लक स्थलांतर (RD Opening Balance Migration): {account.AccountNo}",
+                        Status = "Approved",
+                        ApprovedBy = account.CreatedBy > 0 ? account.CreatedBy : 1,
+                        ApprovedOn = DateTime.Now,
+                        CreatedBy = account.CreatedBy > 0 ? account.CreatedBy : 1,
+                        CreatedOn = DateTime.Now
+                    };
+                    _context.Vouchers.Add(opVoucher);
+                    await _context.SaveChangesAsync();
+                }
+                else
+                {
+                    opVoucher.VoucherDate = account.OpeningDate;
+                    opVoucher.TotalAmount = account.TotalDepositedAmount;
+                    opVoucher.Status = "Approved";
+                }
+
+                var opInstallmentTx = await _context.RdTransactions
+                    .FirstOrDefaultAsync(t => t.RdAccountID == account.RdAccountID &&
+                                              t.TransactionType == "Installment" &&
+                                              t.DebitCredit == "Cr" &&
+                                              (t.VoucherID == opVoucher.VoucherID ||
+                                               (t.Narration != null && t.Narration.Contains("मायग्रेटेड आरडी खाते सुरुवाती शिल्लक"))));
+
+                if (opInstallmentTx == null)
+                {
+                    _context.RdTransactions.Add(new RdTransaction
+                    {
+                        BranchID = account.BranchID,
+                        RdAccountID = account.RdAccountID,
+                        VoucherID = opVoucher.VoucherID,
+                        TransactionDate = account.OpeningDate,
+                        TransactionType = "Installment",
+                        InstallmentNo = account.TotalPaidInstallments,
+                        DebitCredit = "Cr",
+                        PrincipalAmount = account.TotalDepositedAmount,
+                        PenaltyAmount = 0,
+                        InterestAmount = 0,
+                        BalanceAfterTxn = account.TotalDepositedAmount,
+                        Narration = $"मायग्रेटेड आरडी खाते सुरुवाती शिल्लक: {account.AccountNo}",
+                        CreatedBy = account.CreatedBy > 0 ? account.CreatedBy : 1
+                    });
+                }
+                else
+                {
+                    opInstallmentTx.VoucherID = opVoucher.VoucherID;
+                    opInstallmentTx.TransactionDate = account.OpeningDate;
+                    opInstallmentTx.InstallmentNo = account.TotalPaidInstallments;
+                    opInstallmentTx.PrincipalAmount = account.TotalDepositedAmount;
+                    opInstallmentTx.BalanceAfterTxn = account.TotalDepositedAmount;
+                }
+            }
 
             await _context.SaveChangesAsync();
+
+            if (account.IsLegacyAccount && !hasPostMigrationTxns)
+            {
+                await Helpers.RdInstallmentCollectionRollbackHelper.ReconcileRdSchedulesWithDepositedAmountAsync(
+                    _context,
+                    account,
+                    deletedVoucherIds: null,
+                    fallbackPaidDate: account.OpeningDate);
+            }
+
             if (account.IsLegacyAccount)
             {
                 try
@@ -2728,13 +2797,49 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        // POST: api/RdAccounts/SyncOpeningBalances
+        [HttpPost("SyncOpeningBalances")]
+        public async Task<IActionResult> SyncRdOpeningBalances()
+        {
+            var result = await SyncRdOpeningBalancesInternalAsync();
+            return Ok(result);
+        }
+
         private async Task<object> SyncRdOpeningBalancesInternalAsync()
         {
-            // 1. Fetch all active legacy RD accounts
-            var legacyAccounts = await _context.RdAccounts
+            // 1. Resolve baseline FY cutoff (e.g. 2026-03-31 before FY 2026-2027 starting 2026-04-01)
+            // so post-FY installments never leak into Opening Balances and Matured / later-closed accounts stay preserved.
+            var initialFyId = await Helpers.BranchLedgerBalanceHelper.GetInitialFinancialYearIdAsync(_context);
+            DateTime initialFyStart = initialFyId > 0
+                ? await _context.FinancialYears
+                    .AsNoTracking()
+                    .Where(fy => fy.FinancialYearID == initialFyId)
+                    .Select(fy => fy.StartDate.Date)
+                    .FirstOrDefaultAsync()
+                : default;
+
+            DateTime cutoffDate = initialFyStart != default ? initialFyStart.AddDays(-1) : DateTime.Today;
+
+            var preFySnapshots = (await Helpers.RdDepositQueryHelper.GetLiveRdSnapshotsAsOfAsync(_context, cutoffDate))
+                .Where(s => s.IsLegacyAccount)
+                .ToList();
+
+            var snapshotByAccId = preFySnapshots.ToDictionary(s => s.RdAccountID);
+
+            var legacyAccountsRaw = await _context.RdAccounts
+                .AsNoTracking()
                 .Include(a => a.RdScheme)
-                .Where(a => a.IsLegacyAccount && a.Status == "Active")
+                .Where(a => a.IsLegacyAccount)
                 .ToListAsync();
+
+            var legacyEntries = legacyAccountsRaw
+                .Where(a => snapshotByAccId.ContainsKey(a.RdAccountID))
+                .Select(a => new
+                {
+                    Account = a,
+                    PreFyDeposit = snapshotByAccId[a.RdAccountID].DepositedAmountAsOf
+                })
+                .ToList();
 
             var schemes = await _context.RdSchemes.ToListAsync();
             var allLedgers = await _context.Ledgers.ToListAsync();
@@ -2808,9 +2913,9 @@ namespace Bhisi.Api.Controllers
             }
 
             // Group legacy accounts by resolved Liability Ledger and Customer
-            var accountsWithLiabilityLedger = legacyAccounts
-                .Where(a => schemeLiabilityMap.ContainsKey(a.RdSchemeID))
-                .Select(a => new { Account = a, Ledger = schemeLiabilityMap[a.RdSchemeID] })
+            var accountsWithLiabilityLedger = legacyEntries
+                .Where(x => schemeLiabilityMap.ContainsKey(x.Account.RdSchemeID))
+                .Select(x => new { x.Account, x.PreFyDeposit, Ledger = schemeLiabilityMap[x.Account.RdSchemeID] })
                 .ToList();
 
             var liabilityLedgerGroups = accountsWithLiabilityLedger
@@ -2842,7 +2947,7 @@ namespace Bhisi.Api.Controllers
                 foreach (var cGrp in custGroups)
                 {
                     int custId = cGrp.Key;
-                    decimal custDepositTotal = cGrp.Sum(x => x.Account.TotalDepositedAmount);
+                    decimal custDepositTotal = Math.Round(cGrp.Sum(x => x.PreFyDeposit), 2, MidpointRounding.AwayFromZero);
                     totalDepositsSynced += custDepositTotal;
 
                     // Sync CustomerOpeningBalances
@@ -2902,9 +3007,9 @@ namespace Bhisi.Api.Controllers
             }
 
             // Group legacy accounts with Accrued Interest by resolved Payable Ledger and Customer
-            var accountsWithPayableLedger = legacyAccounts
-                .Where(a => a.LegacyAccruedInt > 0 && schemePayableMap.ContainsKey(a.RdSchemeID))
-                .Select(a => new { Account = a, Ledger = schemePayableMap[a.RdSchemeID] })
+            var accountsWithPayableLedger = legacyEntries
+                .Where(x => x.Account.LegacyAccruedInt > 0 && schemePayableMap.ContainsKey(x.Account.RdSchemeID))
+                .Select(x => new { x.Account, Ledger = schemePayableMap[x.Account.RdSchemeID] })
                 .ToList();
 
             var payableLedgerGroups = accountsWithPayableLedger

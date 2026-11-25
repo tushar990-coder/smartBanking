@@ -89,14 +89,25 @@ export default function RdReports() {
   const reportRef = useRef<HTMLDivElement>(null);
 
   // Filters
-  const [fromDate, setFromDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+  const getLocalTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const initialCbsDateStr = user?.businessDate ? user.businessDate.split('T')[0] : getLocalTodayStr();
+  const getFyStartForDate = (dateStr: string) => {
+    const [yStr, mStr] = dateStr.split('-');
+    const y = parseInt(yStr, 10) || new Date().getFullYear();
+    const m = parseInt(mStr, 10) || 1;
+    return `${m >= 4 ? y : y - 1}-04-01`;
+  };
+  const [hasSyncedCbsDate, setHasSyncedCbsDate] = useState<boolean>(Boolean(user?.businessDate));
+  const [fromDate, setFromDate] = useState<string>(() => getFyStartForDate(initialCbsDateStr));
+  const [toDate, setToDate] = useState<string>(() => initialCbsDateStr);
 
   useEffect(() => {
     fetchSansthaDetail();
     fetchBranches();
     fetchSchemes();
-    fetchReportData(initialBranchId, 'all');
 
     const handlePopState = () => {
       setReportType(parseReportType());
@@ -104,6 +115,15 @@ export default function RdReports() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (user?.businessDate && !hasSyncedCbsDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setFromDate(getFyStartForDate(bDate));
+      setToDate(bDate);
+      setHasSyncedCbsDate(true);
+    }
+  }, [user?.businessDate, hasSyncedCbsDate]);
 
   useEffect(() => {
     fetchReportData(selectedBranchId, selectedSchemeId);
@@ -145,63 +165,25 @@ export default function RdReports() {
     try {
       const activeBranch = bId !== undefined ? bId : selectedBranchId;
       const activeScheme = sId !== undefined ? sId : selectedSchemeId;
-      let url = '/api/RdAccounts';
       const queryParams = new URLSearchParams();
+      queryParams.append('reportType', reportType || 'outstanding');
       if (activeBranch && activeBranch !== 'all') {
         queryParams.append('branchId', activeBranch);
       }
       if (activeScheme && activeScheme !== 'all') {
         queryParams.append('schemeId', activeScheme);
       }
-      const qs = queryParams.toString();
-      if (qs) {
-        url += `?${qs}`;
+      if ((reportType === 'register' || reportType === 'closed') && fromDate) {
+        queryParams.append('fromDate', fromDate);
       }
-      const res = await axios.get(url);
-      let data: ReportRow[] = res.data || [];
-
-      // Filter by scheme in memory for robustness
-      if (activeScheme && activeScheme !== 'all') {
-        data = data.filter((r: any) => {
-          const rScheme = (r.rdSchemeID ?? r.rdSchemeId)?.toString();
-          return rScheme === activeScheme.toString();
-        });
+      if (toDate) {
+        queryParams.append('toDate', toDate);
+        queryParams.append('asOfDate', toDate);
       }
 
-      if (reportType === 'register') {
-        data = data.filter((r) => {
-          const d = r.openingDate.split('T')[0];
-          return d >= fromDate && d <= toDate;
-        });
-      } else if (reportType === 'outstanding') {
-        data = data.filter((r) => r.status === 'Active' || r.status === 'Matured');
-      } else if (reportType === 'defaulters') {
-        data = data.filter((r) => r.status === 'Active' && r.totalPaidInstallments < r.durationMonths);
-      } else if (reportType === 'maturity') {
-        data = data.filter((r) => r.status === 'Matured');
-      } else if (reportType === 'closed') {
-        data = data.filter((r) => r.status === 'Closed');
-      }
-
-      // Sort accounts in sequence by Account Number
-      data.sort((a, b) => {
-        const getSeq = (accNo?: string) => {
-          if (!accNo) return 0;
-          const parts = accNo.split('-');
-          if (parts.length >= 3) {
-            const seq = parseInt(parts[2], 10);
-            if (!isNaN(seq)) return seq;
-          }
-          return 0;
-        };
-        const seqA = getSeq(a.accountNo);
-        const seqB = getSeq(b.accountNo);
-        if (seqA > 0 && seqB > 0 && seqA !== seqB) {
-          return seqA - seqB;
-        }
-        return (a.accountNo || '').localeCompare(b.accountNo || '', undefined, { numeric: true });
-      });
-
+      const res = await axios.get(`/api/Reports/rd-report?${queryParams.toString()}`);
+      const payload = res.data;
+      const data: ReportRow[] = Array.isArray(payload) ? payload : (payload?.rows || []);
       setAccounts(data);
     } catch (err) {
       console.error('Failed to fetch RD data', err);
@@ -442,18 +424,22 @@ export default function RdReports() {
             </a>
 
             {/* Dates */}
-            <div className="flex items-center gap-1">
-              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">पासून:</label>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28"
-              />
-            </div>
+            {(reportType === 'register' || reportType === 'closed') && (
+              <div className="flex items-center gap-1">
+                <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">पासून:</label>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28"
+                />
+              </div>
+            )}
 
             <div className="flex items-center gap-1">
-              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">पर्यंत:</label>
+              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">
+                {reportType === 'register' || reportType === 'closed' ? 'पर्यंत:' : 'पर्यंत (दिनांक):'}
+              </label>
               <input
                 type="date"
                 value={toDate}
@@ -512,6 +498,11 @@ export default function RdReports() {
           </div>
 
           <div className="flex items-center gap-2 text-[11px] text-gray-600">
+            <span className="bg-indigo-50 px-2 py-0.5 rounded text-indigo-800 border border-indigo-200 font-medium">
+              {reportType === 'register' || reportType === 'closed'
+                ? `${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)}`
+                : `दि. ${formatDisplayDate(toDate)} अखेर`}
+            </span>
             <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
               एकूण खाती: <strong className="text-primary font-bold">{filteredAccounts.length}</strong>
             </span>
@@ -576,9 +567,11 @@ export default function RdReports() {
 
             {/* Date Tag on Right */}
             <div className="text-right text-xs font-bold text-gray-800">
-              <span>कालावधी : </span>
+              <span>{reportType === 'register' || reportType === 'closed' ? 'कालावधी : ' : 'अखेर दिनांक : '}</span>
               <span className="font-mono">
-                {formatDisplayDate(fromDate)} ते {formatDisplayDate(toDate)}
+                {reportType === 'register' || reportType === 'closed'
+                  ? `${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)}`
+                  : `${formatDisplayDate(toDate)} पर्यंत`}
               </span>
             </div>
           </div>

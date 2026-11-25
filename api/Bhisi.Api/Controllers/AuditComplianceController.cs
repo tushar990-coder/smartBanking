@@ -334,20 +334,18 @@ namespace Bhisi.Api.Controllers
                 decimal govtSecurities = SumCategoryFromMap(mappings, balances, "GOVT_SECURITIES", isCreditNormal: false);
 
                 var savQ = _context.SavingAccountMasters.Where(s => s.Status == "Active");
-                var rdQ = _context.RdAccounts.AsNoTracking().Where(FdDepositQueryHelper.LiveRdPredicate);
                 var pigQ = _context.PigmyAccounts.AsNoTracking().Where(FdDepositQueryHelper.LivePigmyPredicate);
 
                 if (scopedBranch.HasValue && scopedBranch.Value > 0)
                 {
                     int bId = scopedBranch.Value;
                     savQ = savQ.Where(s => s.BranchID == bId);
-                    rdQ = rdQ.Where(r => r.BranchID == bId);
                     pigQ = pigQ.Where(p => p.BranchID == bId);
                 }
 
                 var savingDeposits = await savQ.SumAsync(s => (decimal?)s.CurrentBalance) ?? 0m;
                 var fdDeposits = await FdDepositQueryHelper.GetLiveFdTotalAsOfAsync(_context, targetDate, scopedBranch);
-                var rdDeposits = await rdQ.SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
+                var rdDeposits = await RdDepositQueryHelper.GetLiveRdTotalAsOfAsync(_context, targetDate, scopedBranch);
                 var pigmyDeposits = await pigQ.SumAsync(p => (decimal?)p.TotalDepositedAmount) ?? 0m;
 
                 decimal totalDeposits = savingDeposits + fdDeposits + rdDeposits + pigmyDeposits;

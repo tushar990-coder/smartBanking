@@ -911,6 +911,11 @@ export default function RdOpeningBalanceMigration() {
                   className={`${inputClass} font-mono font-bold text-emerald-700 bg-slate-50`}
                   readOnly
                 />
+                {editingAccountId && (
+                  <p className="mt-0.5 text-[10px] text-amber-700 font-semibold">
+                    टीप: मायग्रेशननंतर हप्ते जमा असल्यास मुद्दल/हप्ते संख्या बदलू नये.
+                  </p>
+                )}
               </div>
 
               <div>

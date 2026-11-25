@@ -7865,6 +7865,343 @@ BEGIN
 END
 GO
 
+-- ============================================================================
+-- RD SUB-LEDGER, MIGRATION TRANSACTIONS & PRE-FY OPENING BALANCE SELF-HEAL
+-- Safe across all Sansthas (bambavadeurban, padvalwadi, sahyadrikarmachari, Testing)
+-- 1. Restores RdAccounts.TotalDepositedAmount if overwritten downward after Approved collections
+-- 2. Reconciles inflated/stale/missing pre-FY JV-RD-OP transactions & schedules
+-- 3. Rebuilds pre-FY Customer/Member/BranchLedgerOpeningBalances excluding post-FY installments
+--    while preserving Matured & post-FY closed accounts
+-- ============================================================================
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF OBJECT_ID('dbo.RdAccounts', 'U') IS NOT NULL
+   AND OBJECT_ID('dbo.RdTransactions', 'U') IS NOT NULL
+   AND OBJECT_ID('dbo.RdSchemes', 'U') IS NOT NULL
+BEGIN
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DECLARE @InitialFyId INT;
+        DECLARE @RdFyStart DATE;
+        SELECT TOP 1 @InitialFyId = FinancialYearID, @RdFyStart = CAST(StartDate AS DATE)
+        FROM dbo.FinancialYears
+        ORDER BY StartDate ASC, FinancialYearID ASC;
+
+        IF @RdFyStart IS NULL SET @RdFyStart = '2026-04-01';
+        DECLARE @PreFyCutoff DATE = DATEADD(DAY, -1, @RdFyStart);
+
+        -- Step 1: Restore downward-reset RdAccounts where Approved post-FY collections match PaidSchedules
+        -- (Guard: OpTxSum + PostFyAllCr = PaidSchedSum prevents inflated migration rows like Sahyadri Karmachari from matching)
+        UPDATE r
+        SET r.TotalDepositedAmount = CAST(opStats.OpTxSum + opStats.ApprovedPostFyCr AS DECIMAL(18,2)),
+            r.TotalPaidInstallments = CASE
+                WHEN r.InstallmentAmount > 0 THEN CAST(FLOOR((opStats.OpTxSum + opStats.ApprovedPostFyCr) / r.InstallmentAmount + 0.000001) AS INT)
+                ELSE r.TotalPaidInstallments
+            END,
+            r.ModifiedDate = GETUTCDATE()
+        FROM dbo.RdAccounts r
+        CROSS APPLY (
+            SELECT
+                ISNULL(SUM(CASE WHEN rt.TransactionType = 'Installment' AND rt.DebitCredit = 'Cr' AND CAST(rt.TransactionDate AS DATE) <= @PreFyCutoff AND (v.Status IS NULL OR v.Status NOT IN ('Rejected', 'Cancelled')) THEN rt.PrincipalAmount ELSE 0 END), 0) AS OpTxSum,
+                ISNULL(SUM(CASE WHEN rt.TransactionType = 'Installment' AND rt.DebitCredit = 'Cr' AND CAST(rt.TransactionDate AS DATE) > @PreFyCutoff AND ISNULL(v.Status, 'Approved') = 'Approved' THEN rt.PrincipalAmount ELSE 0 END), 0) AS ApprovedPostFyCr,
+                ISNULL(SUM(CASE WHEN rt.TransactionType = 'Installment' AND rt.DebitCredit = 'Cr' AND CAST(rt.TransactionDate AS DATE) > @PreFyCutoff AND (v.Status IS NULL OR v.Status NOT IN ('Rejected', 'Cancelled')) THEN rt.PrincipalAmount ELSE 0 END), 0) AS PostFyAllCr
+            FROM dbo.RdTransactions rt
+            LEFT JOIN dbo.Vouchers v ON rt.VoucherID = v.VoucherID
+            WHERE rt.RdAccountID = r.RdAccountID
+        ) opStats
+        CROSS APPLY (
+            SELECT ISNULL(SUM(sc.PaidAmount), 0) AS PaidSchedSum
+            FROM dbo.RDInstallmentSchedules sc
+            WHERE sc.RdAccountID = r.RdAccountID
+        ) scStats
+        WHERE r.IsLegacyAccount = 1
+          AND opStats.ApprovedPostFyCr > 0
+          AND opStats.OpTxSum > 0
+          AND opStats.OpTxSum <= 5000000
+          AND ABS((opStats.OpTxSum + opStats.PostFyAllCr) - scStats.PaidSchedSum) <= 0.01
+          AND r.TotalDepositedAmount + 0.01 < (opStats.OpTxSum + opStats.ApprovedPostFyCr);
+
+        -- Step 2: Build target pre-FY opening balances for all legacy accounts opened on/before @PreFyCutoff
+        DECLARE @RdHealTargets TABLE (
+            RdAccountID INT PRIMARY KEY,
+            BranchID INT NOT NULL,
+            CustomerID INT NOT NULL,
+            RdSchemeID INT NOT NULL,
+            AccountNo NVARCHAR(60) NOT NULL,
+            OpeningDate DATETIME2 NOT NULL,
+            InstallmentAmount DECIMAL(18,2) NOT NULL,
+            DurationMonths INT NOT NULL,
+            TotalDepositedAmount DECIMAL(18,2) NOT NULL,
+            LegacyAccruedInt DECIMAL(18,2) NOT NULL,
+            PostFyAllCr DECIMAL(18,2) NOT NULL,
+            TruePreFyOpening DECIMAL(18,2) NOT NULL,
+            ExistingPreFyTxSum DECIMAL(18,2) NOT NULL,
+            IsLivePreFy BIT NOT NULL
+        );
+
+        INSERT INTO @RdHealTargets (
+            RdAccountID, BranchID, CustomerID, RdSchemeID, AccountNo, OpeningDate,
+            InstallmentAmount, DurationMonths, TotalDepositedAmount, LegacyAccruedInt,
+            PostFyAllCr, TruePreFyOpening, ExistingPreFyTxSum, IsLivePreFy
+        )
+        SELECT
+            r.RdAccountID,
+            CASE WHEN r.BranchID > 0 THEN r.BranchID ELSE 1 END,
+            r.CustomerID,
+            r.RdSchemeID,
+            r.AccountNo,
+            r.OpeningDate,
+            r.InstallmentAmount,
+            r.DurationMonths,
+            r.TotalDepositedAmount,
+            r.LegacyAccruedInt,
+            tx.PostFyAllCr,
+            CASE WHEN r.TotalDepositedAmount > tx.PostFyAllCr THEN ROUND(r.TotalDepositedAmount - tx.PostFyAllCr, 2) ELSE 0 END,
+            tx.ExistingPreFyCr,
+            CASE
+                WHEN ISNULL(NULLIF(LTRIM(RTRIM(r.Status)), ''), 'Active') IN ('Active', 'Matured') THEN 1
+                WHEN COALESCE(CAST(r.ClosureDate AS DATE), clTx.MaxCloseDate, CAST(r.ModifiedDate AS DATE)) > @PreFyCutoff THEN 1
+                ELSE 0
+            END
+        FROM dbo.RdAccounts r
+        CROSS APPLY (
+            SELECT
+                ISNULL(SUM(CASE WHEN rt.TransactionType IN ('Installment', 'Opening', 'Deposit') AND rt.DebitCredit = 'Cr' AND CAST(rt.TransactionDate AS DATE) <= @PreFyCutoff AND (v.Status IS NULL OR v.Status NOT IN ('Rejected', 'Cancelled')) THEN rt.PrincipalAmount ELSE 0 END), 0) AS ExistingPreFyCr,
+                ISNULL(SUM(CASE WHEN rt.TransactionType IN ('Installment', 'Opening', 'Deposit') AND rt.DebitCredit = 'Cr' AND CAST(rt.TransactionDate AS DATE) > @PreFyCutoff AND (v.Status IS NULL OR v.Status NOT IN ('Rejected', 'Cancelled')) THEN rt.PrincipalAmount ELSE 0 END), 0) AS PostFyAllCr
+            FROM dbo.RdTransactions rt
+            LEFT JOIN dbo.Vouchers v ON rt.VoucherID = v.VoucherID
+            WHERE rt.RdAccountID = r.RdAccountID
+        ) tx
+        OUTER APPLY (
+            SELECT MAX(CAST(rt2.TransactionDate AS DATE)) AS MaxCloseDate
+            FROM dbo.RdTransactions rt2
+            WHERE rt2.RdAccountID = r.RdAccountID
+              AND rt2.TransactionType IN ('Payout', 'Premature_Close', 'PrematureClose', 'Renewal', 'Close', 'Matured_Close', 'Closure')
+        ) clTx
+        WHERE r.IsLegacyAccount = 1
+          AND CAST(r.OpeningDate AS DATE) <= @PreFyCutoff;
+
+        -- Step 3: Repair missing / stale / inflated pre-FY JV-RD-OP Vouchers & RdTransactions
+        DECLARE @HealAccId INT, @HealBrId INT, @HealAccNo NVARCHAR(60), @HealOpenDt DATETIME2, @HealTrueOp DECIMAL(18,2);
+        DECLARE curRdOp CURSOR LOCAL FAST_FORWARD FOR
+            SELECT RdAccountID, BranchID, AccountNo, OpeningDate, TruePreFyOpening
+            FROM @RdHealTargets
+            WHERE TruePreFyOpening > 0
+              AND ABS(ExistingPreFyTxSum - TruePreFyOpening) > 0.01;
+
+        OPEN curRdOp;
+        FETCH NEXT FROM curRdOp INTO @HealAccId, @HealBrId, @HealAccNo, @HealOpenDt, @HealTrueOp;
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            DECLARE @OpVNo NVARCHAR(100) = N'JV-RD-OP-' + @HealAccNo;
+            DECLARE @OpVoucherId INT = NULL;
+            SELECT TOP 1 @OpVoucherId = VoucherID FROM dbo.Vouchers WHERE VoucherNo = @OpVNo;
+
+            IF @OpVoucherId IS NULL
+            BEGIN
+                INSERT INTO dbo.Vouchers (BranchID, VoucherNo, VoucherDate, VoucherType, TotalAmount, Narration, Status, ApprovedBy, ApprovedOn, CreatedBy, CreatedOn, IsIbtVoucher)
+                VALUES (@HealBrId, @OpVNo, @HealOpenDt, 'Journal', @HealTrueOp, N'आवर्ती ठेव आरंभिक शिल्लक स्थलांतर (RD Opening Balance Migration): ' + @HealAccNo, 'Approved', 1, GETDATE(), 1, GETDATE(), 0);
+                SET @OpVoucherId = SCOPE_IDENTITY();
+            END
+            ELSE
+            BEGIN
+                UPDATE dbo.Vouchers SET TotalAmount = @HealTrueOp, VoucherDate = @HealOpenDt, Status = 'Approved' WHERE VoucherID = @OpVoucherId;
+            END
+
+            DELETE rt
+            FROM dbo.RdTransactions rt
+            WHERE rt.RdAccountID = @HealAccId
+              AND rt.TransactionType IN ('Installment', 'Opening', 'Deposit')
+              AND rt.DebitCredit = 'Cr'
+              AND CAST(rt.TransactionDate AS DATE) <= @PreFyCutoff;
+
+            INSERT INTO dbo.RdTransactions (InstitutionID, BranchID, FinancialYearID, RdAccountID, VoucherID, TransactionDate, TransactionType, InstallmentNo, DebitCredit, PrincipalAmount, PenaltyAmount, InterestAmount, BalanceAfterTxn, Narration, CreatedBy, CreatedDate, CollectionSource)
+            SELECT
+                ISNULL(NULLIF(r.InstitutionID, 0), 1),
+                @HealBrId,
+                ISNULL(NULLIF(r.FinancialYearID, 0), ISNULL(@InitialFyId, 1)),
+                @HealAccId,
+                @OpVoucherId,
+                @HealOpenDt,
+                'Installment',
+                CASE WHEN r.InstallmentAmount > 0 THEN CAST(FLOOR(@HealTrueOp / r.InstallmentAmount + 0.000001) AS INT) ELSE r.TotalPaidInstallments END,
+                'Cr',
+                @HealTrueOp,
+                0,
+                0,
+                @HealTrueOp,
+                N'मायग्रेटेड आरडी खाते सुरुवाती शिल्लक: ' + @HealAccNo,
+                1,
+                GETUTCDATE(),
+                'COUNTER'
+            FROM dbo.RdAccounts r
+            WHERE r.RdAccountID = @HealAccId;
+
+            FETCH NEXT FROM curRdOp INTO @HealAccId, @HealBrId, @HealAccNo, @HealOpenDt, @HealTrueOp;
+        END
+        CLOSE curRdOp; DEALLOCATE curRdOp;
+
+        -- Step 4: Heal corrupted RDInstallmentSchedules (e.g. Sahyadri Karmachari 17.6 Cr schedules or stale schedules)
+        IF OBJECT_ID('dbo.RDInstallmentSchedules', 'U') IS NOT NULL
+        BEGIN
+            DECLARE @SchedAccId INT, @SchedTargetDep DECIMAL(18,2), @SchedInstAmt DECIMAL(18,2), @SchedOpenDt DATETIME2, @SchedDur INT;
+            DECLARE curSchedFix CURSOR LOCAL FAST_FORWARD FOR
+                SELECT r.RdAccountID, r.TotalDepositedAmount, r.InstallmentAmount, r.DurationMonths, r.OpeningDate
+                FROM dbo.RdAccounts r
+                OUTER APPLY (SELECT ISNULL(SUM(PaidAmount), 0) AS PaidSum FROM dbo.RDInstallmentSchedules sc WHERE sc.RdAccountID = r.RdAccountID) sc
+                WHERE r.IsLegacyAccount = 1
+                  AND r.InstallmentAmount > 0
+                  AND ABS(ISNULL(sc.PaidSum, 0) - r.TotalDepositedAmount) > 0.01;
+
+            OPEN curSchedFix;
+            FETCH NEXT FROM curSchedFix INTO @SchedAccId, @SchedTargetDep, @SchedInstAmt, @SchedDur, @SchedOpenDt;
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                DECLARE @NeededRows INT = CAST(CEILING(@SchedTargetDep / @SchedInstAmt - 0.000001) AS INT);
+                IF @SchedDur > @NeededRows SET @NeededRows = @SchedDur;
+                IF @NeededRows < 1 SET @NeededRows = 1;
+
+                DELETE FROM dbo.RDInstallmentSchedules WHERE RdAccountID = @SchedAccId AND InstallmentNo > @NeededRows;
+
+                DECLARE @RowIdx INT = 1, @RemDep DECIMAL(18,2) = @SchedTargetDep;
+                WHILE @RowIdx <= @NeededRows
+                BEGIN
+                    DECLARE @AllocAmt DECIMAL(18,2) = CASE WHEN @RemDep >= @SchedInstAmt THEN @SchedInstAmt ELSE @RemDep END;
+                    SET @RemDep = CASE WHEN @RemDep > @AllocAmt THEN ROUND(@RemDep - @AllocAmt, 2) ELSE 0 END;
+                    DECLARE @RowStatus NVARCHAR(20) = CASE WHEN @AllocAmt >= @SchedInstAmt - 0.01 THEN 'Paid' WHEN @AllocAmt > 0.009 THEN 'Partial' ELSE 'Pending' END;
+                    DECLARE @DueDt DATETIME2 = DATEADD(MONTH, @RowIdx - 1, @SchedOpenDt);
+
+                    IF EXISTS (SELECT 1 FROM dbo.RDInstallmentSchedules WHERE RdAccountID = @SchedAccId AND InstallmentNo = @RowIdx)
+                    BEGIN
+                        UPDATE dbo.RDInstallmentSchedules
+                        SET ExpectedAmount = @SchedInstAmt,
+                            PaidAmount = @AllocAmt,
+                            Status = @RowStatus,
+                            PaidDate = CASE WHEN @AllocAmt > 0 THEN ISNULL(PaidDate, @SchedOpenDt) ELSE NULL END
+                        WHERE RdAccountID = @SchedAccId AND InstallmentNo = @RowIdx;
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO dbo.RDInstallmentSchedules (RdAccountID, InstallmentNo, DueDate, GraceDate, ExpectedAmount, PaidDate, PaidAmount, OverdueDays, PenaltyCharged, PenaltyWaived, Status)
+                        VALUES (@SchedAccId, @RowIdx, @DueDt, DATEADD(DAY, 5, @DueDt), @SchedInstAmt, CASE WHEN @AllocAmt > 0 THEN @SchedOpenDt ELSE NULL END, @AllocAmt, 0, 0, 0, @RowStatus);
+                    END
+                    SET @RowIdx += 1;
+                END
+                FETCH NEXT FROM curSchedFix INTO @SchedAccId, @SchedTargetDep, @SchedInstAmt, @SchedDur, @SchedOpenDt;
+            END
+            CLOSE curSchedFix; DEALLOCATE curSchedFix;
+        END
+
+        -- Step 5: Rebuild pre-FY baseline CustomerOpeningBalances, MemberOpeningBalances, and BranchLedgerOpeningBalances
+        IF OBJECT_ID('dbo.CustomerOpeningBalances', 'U') IS NOT NULL
+           AND OBJECT_ID('dbo.BranchLedgerOpeningBalances', 'U') IS NOT NULL
+           AND @InitialFyId IS NOT NULL
+        BEGIN
+            DECLARE @RdLiabLedgers TABLE (LedgerID INT PRIMARY KEY);
+            INSERT INTO @RdLiabLedgers (LedgerID)
+            SELECT DISTINCT RdLiabilityLedgerID FROM dbo.RdSchemes WHERE RdLiabilityLedgerID IS NOT NULL AND RdLiabilityLedgerID > 0;
+
+            IF EXISTS (SELECT 1 FROM @RdHealTargets) AND EXISTS (SELECT 1 FROM @RdLiabLedgers)
+            BEGIN
+                DECLARE @TargetCustObs TABLE (CustomerID INT NOT NULL, LedgerID INT NOT NULL, BranchID INT NOT NULL, Amount DECIMAL(18,2) NOT NULL);
+                INSERT INTO @TargetCustObs (CustomerID, LedgerID, BranchID, Amount)
+                SELECT
+                    t.CustomerID,
+                    s.RdLiabilityLedgerID,
+                    MAX(t.BranchID),
+                    ROUND(SUM(t.TruePreFyOpening), 2)
+                FROM @RdHealTargets t
+                INNER JOIN dbo.RdSchemes s ON t.RdSchemeID = s.RdSchemeID
+                WHERE t.IsLivePreFy = 1
+                  AND s.RdLiabilityLedgerID IS NOT NULL
+                  AND t.TruePreFyOpening > 0
+                GROUP BY t.CustomerID, s.RdLiabilityLedgerID;
+
+                DELETE cob
+                FROM dbo.CustomerOpeningBalances cob
+                WHERE cob.LedgerID IN (SELECT LedgerID FROM @RdLiabLedgers)
+                  AND cob.SourceModule = 'RD'
+                  AND NOT EXISTS (SELECT 1 FROM @TargetCustObs tc WHERE tc.CustomerID = cob.CustomerID AND tc.LedgerID = cob.LedgerID);
+
+                UPDATE cob
+                SET cob.Amount = tc.Amount,
+                    cob.BalanceType = 'Cr',
+                    cob.SourceModule = 'RD',
+                    cob.UpdatedOn = GETDATE()
+                FROM dbo.CustomerOpeningBalances cob
+                INNER JOIN @TargetCustObs tc ON tc.CustomerID = cob.CustomerID AND tc.LedgerID = cob.LedgerID;
+
+                INSERT INTO dbo.CustomerOpeningBalances (CustomerID, LedgerID, Amount, BalanceType, SourceModule, CreatedBy, CreatedOn)
+                SELECT tc.CustomerID, tc.LedgerID, tc.Amount, 'Cr', 'RD', 1, GETDATE()
+                FROM @TargetCustObs tc
+                WHERE NOT EXISTS (SELECT 1 FROM dbo.CustomerOpeningBalances cob WHERE cob.CustomerID = tc.CustomerID AND cob.LedgerID = tc.LedgerID);
+
+                IF OBJECT_ID('dbo.MemberOpeningBalances', 'U') IS NOT NULL
+                BEGIN
+                    DELETE mob
+                    FROM dbo.MemberOpeningBalances mob
+                    WHERE mob.LedgerID IN (SELECT LedgerID FROM @RdLiabLedgers)
+                      AND (mob.CustomerID IS NULL OR NOT EXISTS (SELECT 1 FROM @TargetCustObs tc WHERE tc.CustomerID = mob.CustomerID AND tc.LedgerID = mob.LedgerID));
+
+                    UPDATE mob
+                    SET mob.Amount = tc.Amount,
+                        mob.BalanceType = 'Cr',
+                        mob.UpdatedOn = GETDATE()
+                    FROM dbo.MemberOpeningBalances mob
+                    INNER JOIN @TargetCustObs tc ON tc.CustomerID = mob.CustomerID AND tc.LedgerID = mob.LedgerID;
+
+                    INSERT INTO dbo.MemberOpeningBalances (MemberID, CustomerID, LedgerID, Amount, BalanceType, CreatedBy, CreatedOn)
+                    SELECT m.MemberID, tc.CustomerID, tc.LedgerID, tc.Amount, 'Cr', 1, GETDATE()
+                    FROM @TargetCustObs tc
+                    INNER JOIN dbo.Members m ON m.CustomerID = tc.CustomerID
+                    WHERE NOT EXISTS (SELECT 1 FROM dbo.MemberOpeningBalances mob WHERE mob.MemberID = m.MemberID AND mob.LedgerID = tc.LedgerID);
+                END
+
+                DECLARE @TargetBranchObs TABLE (BranchID INT NOT NULL, LedgerID INT NOT NULL, OpeningBalance DECIMAL(18,2) NOT NULL);
+                INSERT INTO @TargetBranchObs (BranchID, LedgerID, OpeningBalance)
+                SELECT
+                    ISNULL(NULLIF(c.BranchID, 0), 1),
+                    cob.LedgerID,
+                    ROUND(SUM(CASE WHEN cob.BalanceType = 'Cr' THEN cob.Amount ELSE -cob.Amount END), 2)
+                FROM dbo.CustomerOpeningBalances cob
+                LEFT JOIN dbo.Customers c ON cob.CustomerID = c.CustomerID
+                WHERE cob.LedgerID IN (SELECT LedgerID FROM @RdLiabLedgers)
+                GROUP BY ISNULL(NULLIF(c.BranchID, 0), 1), cob.LedgerID;
+
+                UPDATE blob
+                SET blob.OpeningBalance = ISNULL(tb.OpeningBalance, 0),
+                    blob.OpeningBalanceType = 'Cr',
+                    blob.Remarks = N'आवर्ती ठेव प्री-FY आरंभिक शिल्लक सिंक',
+                    blob.UpdatedOn = GETUTCDATE()
+                FROM dbo.BranchLedgerOpeningBalances blob
+                LEFT JOIN @TargetBranchObs tb ON tb.BranchID = blob.BranchID AND tb.LedgerID = blob.LedgerID
+                WHERE blob.FinancialYearID = @InitialFyId
+                  AND blob.LedgerID IN (SELECT LedgerID FROM @RdLiabLedgers);
+
+                INSERT INTO dbo.BranchLedgerOpeningBalances (LedgerID, BranchID, FinancialYearID, OpeningBalance, OpeningBalanceType, Remarks, CreatedBy, CreatedOn)
+                SELECT tb.LedgerID, tb.BranchID, @InitialFyId, tb.OpeningBalance, 'Cr', N'आवर्ती ठेव प्री-FY आरंभिक शिल्लक सिंक', 1, GETUTCDATE()
+                FROM @TargetBranchObs tb
+                WHERE tb.OpeningBalance > 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM dbo.BranchLedgerOpeningBalances blob
+                      WHERE blob.FinancialYearID = @InitialFyId AND blob.LedgerID = tb.LedgerID AND blob.BranchID = tb.BranchID
+                  );
+            END
+        END
+
+        COMMIT TRAN;
+        PRINT '-> Reconciled RD Sub-Ledger, Pre-FY Opening Transactions/Schedules, and Opening Balances cleanly!';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        PRINT 'WARNING: RD reconciliation step skipped/rolled back: ' + ERROR_MESSAGE();
+    END CATCH
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

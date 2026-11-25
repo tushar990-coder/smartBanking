@@ -190,11 +190,10 @@ namespace Bhisi.Api.Controllers
                     .Select(s => new { s.CustomerID, s.CurrentBalance })
                     .ToListAsync();
 
-                var rdList = await _context.RdAccounts.AsNoTracking()
-                    .Where(FdDepositQueryHelper.LiveRdPredicate)
-                    .Where(r => !scopedBranch.HasValue || r.BranchID == scopedBranch.Value)
-                    .Select(r => new { r.CustomerID, CurrentBalance = r.TotalDepositedAmount })
-                    .ToListAsync();
+                var rdSnapshots = await RdDepositQueryHelper.GetLiveRdSnapshotsAsOfAsync(_context, targetDate, scopedBranch);
+                var rdList = rdSnapshots
+                    .Select(r => new { r.CustomerID, CurrentBalance = r.DepositedAmountAsOf })
+                    .ToList();
 
                 var pigmyList = await _context.PigmyAccounts.AsNoTracking()
                     .Where(FdDepositQueryHelper.LivePigmyPredicate)

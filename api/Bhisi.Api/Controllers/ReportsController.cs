@@ -10465,6 +10465,375 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, new { message = "Error creating IBT settlement vouchers", error = ex.Message });
             }
         }
+
+        // GET: api/Reports/rd-outstanding?branchId=1&schemeId=1&asOfDate=2026-03-31
+        [HttpGet("rd-outstanding")]
+        public async Task<IActionResult> GetRdOutstanding(
+            [FromQuery] int? branchId = null,
+            [FromQuery] int? schemeId = null,
+            [FromQuery] DateTime? asOfDate = null,
+            [FromQuery] DateTime? toDate = null)
+        {
+            try
+            {
+                int? effectiveBranchId = User?.ResolveOptionalBranchId(branchId.HasValue && branchId.Value > 0 ? branchId : null)
+                    ?? (branchId.HasValue && branchId.Value > 0 ? branchId : null);
+                int? effectiveSchemeId = schemeId.HasValue && schemeId.Value > 0 ? schemeId : null;
+                DateTime targetDate = (asOfDate ?? toDate ?? DateTime.Today).Date;
+
+                var rows = await BuildRdReportRowsAsync("outstanding", targetDate, null, targetDate, effectiveBranchId, effectiveSchemeId);
+                return Ok(rows);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "आवर्ती ठेव बाकी अहवाल लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/rd-report?reportType=outstanding&branchId=1&schemeId=1&fromDate=2026-01-01&toDate=2026-03-31
+        [HttpGet("rd-report")]
+        public async Task<IActionResult> GetRdReport(
+            [FromQuery] string reportType = "outstanding",
+            [FromQuery] int? branchId = null,
+            [FromQuery] int? schemeId = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] DateTime? asOfDate = null)
+        {
+            try
+            {
+                int? effectiveBranchId = User?.ResolveOptionalBranchId(branchId.HasValue && branchId.Value > 0 ? branchId : null)
+                    ?? (branchId.HasValue && branchId.Value > 0 ? branchId : null);
+                int? effectiveSchemeId = schemeId.HasValue && schemeId.Value > 0 ? schemeId : null;
+                DateTime targetAsOfDate = (asOfDate ?? toDate ?? DateTime.Today).Date;
+                DateTime? targetFromDate = fromDate?.Date;
+
+                string normalizedType = (reportType ?? "outstanding").Trim().ToLowerInvariant();
+                var rows = await BuildRdReportRowsAsync(normalizedType, targetAsOfDate, targetFromDate, toDate?.Date, effectiveBranchId, effectiveSchemeId);
+
+                return Ok(new
+                {
+                    ReportType = normalizedType,
+                    AsOfDate = targetAsOfDate.ToString("yyyy-MM-dd"),
+                    FromDate = targetFromDate?.ToString("yyyy-MM-dd"),
+                    ToDate = (toDate ?? targetAsOfDate).ToString("yyyy-MM-dd"),
+                    BranchID = effectiveBranchId ?? 0,
+                    SchemeID = effectiveSchemeId ?? 0,
+                    TotalAccounts = rows.Count,
+                    TotalDepositedAmount = rows.Sum(r => r.TotalDepositedAmount),
+                    Rows = rows
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "आवर्ती ठेव अहवाल लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        private async Task<List<RdReportRowDto>> BuildRdReportRowsAsync(
+            string reportType,
+            DateTime targetAsOfDate,
+            DateTime? fromDate,
+            DateTime? toDate,
+            int? branchId,
+            int? schemeId)
+        {
+            DateTime effectiveToDate = (toDate ?? targetAsOfDate).Date;
+
+            if (reportType == "closed")
+            {
+                var closedAccQuery = _context.RdAccounts
+                    .AsNoTracking()
+                    .AsSplitQuery()
+                    .Include(r => r.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(r => r.RdScheme)
+                    .Include(r => r.Branch)
+                    .Where(r => r.Status == "Closed" || r.Status == "Renewed");
+
+                if (branchId.HasValue && branchId.Value > 0)
+                    closedAccQuery = closedAccQuery.Where(r => r.BranchID == branchId.Value);
+                if (schemeId.HasValue && schemeId.Value > 0)
+                    closedAccQuery = closedAccQuery.Where(r => r.RdSchemeID == schemeId.Value);
+
+                var closedAccounts = await closedAccQuery.ToListAsync();
+                var closedIds = closedAccounts.Select(r => r.RdAccountID).ToList();
+
+                var closureTxList = closedIds.Count > 0
+                    ? await _context.RdTransactions.AsNoTracking()
+                        .Where(t => closedIds.Contains(t.RdAccountID) &&
+                                    (t.TransactionType == "Payout" ||
+                                     t.TransactionType == "Premature_Close" ||
+                                     t.TransactionType == "Renewal" ||
+                                     t.TransactionType == "Close" ||
+                                     t.TransactionType == "Matured_Close") &&
+                                    (t.Voucher == null || (t.Voucher.Status != "Rejected" && t.Voucher.Status != "Cancelled")))
+                        .Select(t => new { t.RdAccountID, t.TransactionDate, t.PrincipalAmount, t.InterestAmount, t.PenaltyAmount })
+                        .ToListAsync()
+                    : new();
+
+                var closureMap = closureTxList
+                    .GroupBy(x => x.RdAccountID)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.TransactionDate).First());
+
+                var closedRows = new List<RdReportRowDto>();
+                foreach (var r in closedAccounts)
+                {
+                    closureMap.TryGetValue(r.RdAccountID, out var ctx);
+                    DateTime? effCloseDate = (r.ClosureDate ?? ctx?.TransactionDate ?? r.ModifiedDate)?.Date;
+                    if (fromDate.HasValue && effCloseDate.HasValue && effCloseDate.Value < fromDate.Value)
+                        continue;
+                    if (effCloseDate.HasValue && effCloseDate.Value > effectiveToDate)
+                        continue;
+
+                    decimal payout = r.ClosedPayoutAmount
+                        ?? (ctx != null ? ctx.PrincipalAmount + ctx.InterestAmount : r.TotalDepositedAmount);
+
+                    closedRows.Add(MapRdReportRow(r, r.TotalDepositedAmount, r.TotalPaidInstallments, r.Status, false, effCloseDate, 0m, payout, ctx?.PenaltyAmount ?? 0m));
+                }
+
+                return SortRdReportRows(closedRows);
+            }
+
+            if (reportType == "register")
+            {
+                var regQuery = _context.RdAccounts
+                    .AsNoTracking()
+                    .AsSplitQuery()
+                    .Include(r => r.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(r => r.RdScheme)
+                    .Include(r => r.Branch)
+                    .Where(r => r.OpeningDate.Date <= effectiveToDate);
+
+                if (fromDate.HasValue)
+                {
+                    DateTime fStart = fromDate.Value.Date;
+                    regQuery = regQuery.Where(r => r.OpeningDate.Date >= fStart);
+                }
+                if (branchId.HasValue && branchId.Value > 0)
+                    regQuery = regQuery.Where(r => r.BranchID == branchId.Value);
+                if (schemeId.HasValue && schemeId.Value > 0)
+                    regQuery = regQuery.Where(r => r.RdSchemeID == schemeId.Value);
+
+                var regAccounts = await regQuery.ToListAsync();
+                var regIds = regAccounts.Select(r => r.RdAccountID).ToList();
+                var postTxMap = await GetRdPostCutoffInstallmentMapAsync(regIds, effectiveToDate);
+
+                var regRows = regAccounts.Select(r =>
+                {
+                    decimal txAfter = postTxMap.GetValueOrDefault(r.RdAccountID);
+                    decimal balAsOf = Math.Max(0m, Math.Round(r.TotalDepositedAmount - txAfter, 2, MidpointRounding.AwayFromZero));
+                    int instAsOf = txAfter <= 0m
+                        ? r.TotalPaidInstallments
+                        : (r.InstallmentAmount > 0m ? Math.Max(0, (int)Math.Floor((double)(balAsOf / r.InstallmentAmount) + 1e-6)) : 0);
+                    string statusOnDt = FdDepositQueryHelper.IsLiveDepositStatus(r.Status) || (r.ClosureDate.HasValue && r.ClosureDate.Value.Date > effectiveToDate)
+                        ? (r.MaturityDate.Date <= effectiveToDate ? "Matured" : "Active")
+                        : r.Status;
+                    return MapRdReportRow(r, balAsOf, instAsOf, statusOnDt, r.ClosureDate.HasValue && r.ClosureDate.Value.Date > effectiveToDate, r.ClosureDate, txAfter, null, 0m);
+                }).ToList();
+
+                return SortRdReportRows(regRows);
+            }
+
+            // outstanding, defaulters, maturity -> strictly live as of targetAsOfDate
+            var snapshots = await Helpers.RdDepositQueryHelper.GetLiveRdSnapshotsAsOfAsync(
+                _context,
+                targetAsOfDate,
+                branchId,
+                schemeId);
+
+            if (snapshots.Count == 0)
+            {
+                return new List<RdReportRowDto>();
+            }
+
+            var liveIds = snapshots.Select(s => s.RdAccountID).ToList();
+            var accountMetaMap = new Dictionary<int, RdAccount>();
+            for (int i = 0; i < liveIds.Count; i += 1000)
+            {
+                var chunk = liveIds.Skip(i).Take(1000).ToList();
+                var batch = await _context.RdAccounts
+                    .AsNoTracking()
+                    .AsSplitQuery()
+                    .Include(r => r.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(r => r.RdScheme)
+                    .Include(r => r.Branch)
+                    .Where(r => chunk.Contains(r.RdAccountID))
+                    .ToListAsync();
+                foreach (var acc in batch)
+                {
+                    accountMetaMap[acc.RdAccountID] = acc;
+                }
+            }
+
+            var resultRows = new List<RdReportRowDto>();
+            foreach (var snap in snapshots)
+            {
+                if (!accountMetaMap.TryGetValue(snap.RdAccountID, out var acc))
+                    continue;
+
+                if (reportType == "maturity")
+                {
+                    if (!string.Equals(snap.StatusAsOf, "Matured", StringComparison.OrdinalIgnoreCase) &&
+                        snap.MaturityDate > targetAsOfDate)
+                    {
+                        continue;
+                    }
+                }
+                else if (reportType == "defaulters")
+                {
+                    if (!string.Equals(snap.StatusAsOf, "Active", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    int monthsElapsed = ((targetAsOfDate.Year - snap.OpeningDate.Year) * 12)
+                                        + targetAsOfDate.Month - snap.OpeningDate.Month
+                                        + (targetAsOfDate.Day >= snap.OpeningDate.Day ? 1 : 0);
+                    int expectedDue = snap.DurationMonths > 0
+                        ? Math.Min(snap.DurationMonths, Math.Max(1, monthsElapsed))
+                        : Math.Max(1, monthsElapsed);
+
+                    if (snap.PaidInstallmentsAsOf >= expectedDue)
+                        continue;
+                }
+
+                resultRows.Add(MapRdReportRow(
+                    acc,
+                    snap.DepositedAmountAsOf,
+                    snap.PaidInstallmentsAsOf,
+                    snap.StatusAsOf,
+                    snap.IsClosedLater,
+                    snap.ClosureDate,
+                    snap.PostCutoffInstallmentsAmount,
+                    null,
+                    0m));
+            }
+
+            return SortRdReportRows(resultRows);
+        }
+
+        private async Task<Dictionary<int, decimal>> GetRdPostCutoffInstallmentMapAsync(List<int> accountIds, DateTime cutoffDate)
+        {
+            var map = new Dictionary<int, decimal>();
+            if (accountIds.Count == 0) return map;
+
+            for (int i = 0; i < accountIds.Count; i += 1000)
+            {
+                var chunk = accountIds.Skip(i).Take(1000).ToList();
+                var txs = await _context.RdTransactions
+                    .AsNoTracking()
+                    .Where(t => chunk.Contains(t.RdAccountID) &&
+                                t.DebitCredit == "Cr" &&
+                                (t.TransactionType == "Installment" || t.TransactionType == "Opening" || t.TransactionType == "Deposit") &&
+                                t.TransactionDate.Date > cutoffDate &&
+                                (t.Voucher == null || (t.Voucher.Status != "Rejected" && t.Voucher.Status != "Cancelled")))
+                    .Select(t => new { t.RdAccountID, t.PrincipalAmount })
+                    .ToListAsync();
+
+                foreach (var tx in txs)
+                {
+                    map[tx.RdAccountID] = map.GetValueOrDefault(tx.RdAccountID) + tx.PrincipalAmount;
+                }
+            }
+            return map;
+        }
+
+        private static RdReportRowDto MapRdReportRow(
+            RdAccount r,
+            decimal depositedAsOf,
+            int paidInstAsOf,
+            string statusAsOf,
+            bool isClosedLater,
+            DateTime? closureDate,
+            decimal postCutoffAmt,
+            decimal? payoutAmount,
+            decimal penaltyAmount)
+        {
+            string fullName = r.Customer != null
+                ? $"{r.Customer.FirstName} {r.Customer.MiddleName} {r.Customer.LastName}".Replace("  ", " ").Trim()
+                : "";
+
+            return new RdReportRowDto
+            {
+                RdAccountID = r.RdAccountID,
+                BranchID = r.BranchID,
+                BranchName = r.Branch?.BranchName ?? "मुख्य शाखा",
+                CustomerID = r.CustomerID,
+                CIFNo = r.Customer?.CIFNo ?? "",
+                MemberCode = r.Customer?.MemberProfile?.MemberCode ?? r.Customer?.CIFNo ?? "",
+                MemberName = fullName,
+                CustomerName = fullName,
+                RdSchemeID = r.RdSchemeID,
+                SchemeName = r.RdScheme?.SchemeName ?? "",
+                SchemeCode = r.RdScheme?.SchemeCode ?? "",
+                AccountNo = r.AccountNo,
+                FormattedAccountNo = Helpers.AccountNumberHelper.Format14Digit(r.AccountNo),
+                LegacyAccountNumber = r.LegacyAccountNumber,
+                OpeningDate = r.OpeningDate.ToString("yyyy-MM-dd"),
+                InstallmentAmount = r.InstallmentAmount,
+                DurationMonths = r.DurationMonths,
+                InterestRate = r.InterestRate,
+                MaturityDate = r.MaturityDate.ToString("yyyy-MM-dd"),
+                MaturityAmount = r.MaturityAmount,
+                TotalPaidInstallments = paidInstAsOf,
+                TotalDepositedAmount = depositedAsOf,
+                LiveDepositedAmount = r.TotalDepositedAmount,
+                PostCutoffInstallmentsAmount = postCutoffAmt,
+                LegacyAccruedInt = r.LegacyAccruedInt,
+                Status = statusAsOf,
+                IsClosedLater = isClosedLater,
+                ClosureDate = closureDate?.ToString("yyyy-MM-dd"),
+                TransactionDate = closureDate?.ToString("yyyy-MM-dd"),
+                PayoutAmount = payoutAmount,
+                PenaltyAmount = penaltyAmount
+            };
+        }
+
+        private static List<RdReportRowDto> SortRdReportRows(List<RdReportRowDto> rows)
+        {
+            return rows
+                .OrderBy(r =>
+                {
+                    var parts = (r.AccountNo ?? string.Empty).Split('-');
+                    return parts.Length >= 3 && int.TryParse(parts[2], out int seq) && seq > 0 ? seq : int.MaxValue;
+                })
+                .ThenBy(r => r.AccountNo, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(r => r.RdAccountID)
+                .ToList();
+        }
+    }
+
+    public class RdReportRowDto
+    {
+        public int RdAccountID { get; set; }
+        public int BranchID { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+        public int CustomerID { get; set; }
+        public string CIFNo { get; set; } = string.Empty;
+        public string MemberCode { get; set; } = string.Empty;
+        public string MemberName { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public int RdSchemeID { get; set; }
+        public string SchemeName { get; set; } = string.Empty;
+        public string SchemeCode { get; set; } = string.Empty;
+        public string AccountNo { get; set; } = string.Empty;
+        public string FormattedAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
+        public string OpeningDate { get; set; } = string.Empty;
+        public decimal InstallmentAmount { get; set; }
+        public int DurationMonths { get; set; }
+        public decimal InterestRate { get; set; }
+        public string MaturityDate { get; set; } = string.Empty;
+        public decimal MaturityAmount { get; set; }
+        public int TotalPaidInstallments { get; set; }
+        public decimal TotalDepositedAmount { get; set; }
+        public decimal LiveDepositedAmount { get; set; }
+        public decimal PostCutoffInstallmentsAmount { get; set; }
+        public decimal LegacyAccruedInt { get; set; }
+        public string Status { get; set; } = "Active";
+        public bool IsClosedLater { get; set; }
+        public string? ClosureDate { get; set; }
+        public string? TransactionDate { get; set; }
+        public decimal? PayoutAmount { get; set; }
+        public decimal PenaltyAmount { get; set; }
     }
 
 

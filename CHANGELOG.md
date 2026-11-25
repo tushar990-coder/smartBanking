@@ -1,5 +1,24 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-25] - आवृत्ती v2.6.44 (RD As-Of-Date Outstanding Snapshot & Universal SQL Reconciliation, Investment Premature Posting Reversal & Group Box UI, Mobile Manager & Customer Portal Expansion)
+
+### 📊 1. आवर्ती ठेव (RD) दिनांकअखेर बाकी अहवाल (`31-03-2026` अचूक कटऑफ), आरंभिक शिल्लक संरक्षण व सर्व संस्था SQL समेट
+- **`RdDepositQueryHelper.cs`, `ReportsController.cs`, `CrrReportController.cs`, `AuditComplianceController.cs`, `RegulatoryMisController.cs`, `SwanidhiController.cs`, `RdReports.tsx`:**
+  - नवीन `GetLiveRdSnapshotsAsOfAsync` / `GetLiveRdTotalAsOfAsync` इंजिन आणि `/api/Reports/rd-report` व `/api/Reports/rd-outstanding` एन्डपॉइंट्सद्वारे निवडलेल्या कटऑफ तारखेनंतर जमा झालेले (उदा. एप्रिल-मे चे) हप्ते वजा करून व तारखेनंतर बंद झालेली (`exitDate > targetDate`) खाती धरून १००% अचूक ऐतिहासिक RD बाकी (उदा. `31-03-2026` रोजीचा तेरीज व ग्राहकांची यादी तंतोतंत समान) आणि CRR, Audit, Regulatory MIS व Swanidhi अहवाल संरेखित केले.
+  - `RdReports.tsx` मध्ये CBS `businessDate` वरून आर्थिक वर्ष आरंभ/सद्य तारीख डीफॉल्ट्स, `outstanding` / `maturity` / `defaulters` साठी `पासून:` लपवून स्पष्ट `अखेर दिनांक : DD/MM/YYYY पर्यंत` A4 हेडर लागू केला.
+- **`RdAccountsController.cs`, `RdOpeningBalanceMigration.tsx`, `RdDepositStatusAndAsOfSnapshotTests.cs`, `tools/master_vps_update_schema.sql`:**
+  - `GetRdAccounts` मधील रीड-टाईम Opening Sync म्युटेशन काढले; `PutRdAccount` मध्ये स्थलांतरानंतरचे हप्ते असल्यास मुद्दल/हप्ता बदलण्यास प्रतिबंध केला; आणि `SyncOpeningBalances` मध्ये प्री-एफवाय (`initialFyStart - 1 day`) कटऑफ स्नॅपशॉट लागू केला.
+  - `tools/master_vps_update_schema.sql` मध्ये सर्व संस्थांसाठी आयडेम्पोटंट RD समेट ब्लॉक (`S1` ते `S5`: `JV-RD-OP` सिंक, गहाळ `RDInstallmentSchedules` पुनर्रचना, व `BranchLedgerOpeningBalances`/`CustomerOpeningBalances` ताळमेळ) समाविष्ट केला (**२४४/२४४ xUnit चाचण्या व Vite बिल्ड उत्तीर्ण**).
+
+### 💰 2. संस्था गुंतवणूक मुदतपूर्ती / मोडणी / नूतनीकरण UI ग्रुप बॉक्स व मुदतपूर्व व्याज रिव्हर्सल सुधारणा
+- **`InvestmentAccountsController.cs`, `InvestmentInterestSettlementHelper.cs`, `Step4AccountingHelper.cs`, `InvestmentPrematureWithdrawal.cs`, `VoucherRollbackAndDeleteService.cs`, `InvestmentMaturityClaim.tsx`, `InvestmentReports.tsx`, `InvestmentPrematureReversalAndRenewalTests.cs`:**
+  - मुदतपूर्व मोडणीवर येणे/पोस्टिंग व्याज रिव्हर्सल पद्धती, संपादनीय रिव्हर्सल रक्कम, कस्टम जी.एल. लेजर्स निवड व सत्यापित `Accrual` फिल्टरिंग समाविष्ट केले.
+  - `InvestmentMaturityClaim.tsx` मधील सर्व ५ मुख्य व २ उप-विभागांना स्पष्ट `<fieldset>` व `<legend>` ग्रुप बॉक्स बॉर्डर्स देऊन फॉर्मची मांडणी सुटसुटीत केली.
+
+### 📱 3. मोबाईल मॅनेजर व ग्राहक पोर्टल लाईव्ह विस्तार
+- **`MobileManagerController.cs`, `CustomerPortalController.cs`, `CustomerServiceRequest.cs`, `AppDbContext.cs`, `Program.cs`, `MobileLivePortalIntegrationTests.cs`:**
+  - `MobileManagerController` व विस्तारित `CustomerPortalController` एन्डपॉइंट्स आणि `CustomerServiceRequests` साठी स्टार्टअप सेल्फ-हील DDL जोडला.
+
 ## 📅 [2026-11-24] - आवृत्ती v2.6.43 (VPS SQL Patch `ModifiedDate` & `QUOTED_IDENTIFIER` Resolution + Per-Module Legacy Account & Customer-ID-First Guards)
 
 ### 🛠️ 1. सर्व संस्था VPS SQL स्क्रिप्ट्स त्रुटी कायमस्वरूपी निवारण (`Msg 207` व `Msg 1934`)

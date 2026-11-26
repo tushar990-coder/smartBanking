@@ -6,6 +6,7 @@ import {
   Receipt, 
   Scale, 
   Layers, 
+  FileSpreadsheet,
   ArrowLeft, 
   Sparkles
 } from 'lucide-react';
@@ -169,6 +170,15 @@ export default function SavingDashboard({ onNavigate }: SavingDashboardProps) {
       gradient: themeCfg.gradients[1]
     },
     {
+      id: 'saving-bulk',
+      titleMr: 'बचत बल्क ट्रान्सफर',
+      titleEn: 'BULK TRANSFER',
+      icon: FileSpreadsheet,
+      tab: 'saving-bulk-transfer',
+      params: {},
+      gradient: themeCfg.gradients[5]
+    },
+    {
       id: 'saving-post',
       titleMr: 'बचत व्याज आकारणी',
       titleEn: 'INTEREST POSTING',
@@ -204,7 +214,7 @@ export default function SavingDashboard({ onNavigate }: SavingDashboardProps) {
       {/* Decorative Background Accent */}
       <div className={`absolute top-[-10%] left-[-10%] w-[35rem] h-[35rem] ${themeCfg.accentBg} rounded-full blur-[110px] pointer-events-none`}></div>
 
-      <div className="p-3 md:p-5 max-w-4xl mx-auto w-full relative z-10 flex-1 flex flex-col justify-between space-y-4">
+      <div className="p-3 md:p-5 max-w-6xl mx-auto w-full relative z-10 flex-1 flex flex-col justify-between space-y-4">
         
         {/* Top Section: Header & Hero Banner */}
         <div className="space-y-3">
@@ -256,7 +266,7 @@ export default function SavingDashboard({ onNavigate }: SavingDashboardProps) {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-5 sm:gap-6 justify-items-center pt-2 max-w-5xl mx-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-5 sm:gap-6 justify-items-center pt-2 max-w-6xl mx-auto">
               {savingActionButtons.map((btn) => {
                 const IconComponent = btn.icon;
                 return (

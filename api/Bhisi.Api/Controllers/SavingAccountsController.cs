@@ -199,7 +199,14 @@ namespace Bhisi.Api.Controllers
 
             if (targetSchemeId.HasValue && targetSchemeId.Value > 0)
             {
-                legacyQuery = legacyQuery.Where(s => s.SavingSchemeID == targetSchemeId.Value || s.SavingSchemeID == null);
+                var targetSchemeObj = await _context.SavingInterestSettings
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.SettingID == targetSchemeId.Value);
+                int targetSchemeLedgerId = targetSchemeObj?.SavingLiabilityLedgerID ?? targetSchemeObj?.LedgerID ?? 0;
+
+                legacyQuery = legacyQuery.Where(s =>
+                    s.SavingSchemeID == targetSchemeId.Value ||
+                    (s.SavingSchemeID == null && targetSchemeLedgerId > 0 && s.LedgerID == targetSchemeLedgerId));
             }
 
             var legacyList = await legacyQuery
@@ -724,10 +731,12 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(legacyNo))
             {
-                bool legacyExists = await _context.SavingAccountMasters.AnyAsync(s => 
-                    s.BranchID == dto.BranchID && 
-                    (!resolvedSavingSchemeId.HasValue || s.SavingSchemeID == resolvedSavingSchemeId.Value) &&
-                    ((s.LegacyAccountNumber != null && s.LegacyAccountNumber.Trim() == legacyNo) || 
+                bool legacyExists = await _context.SavingAccountMasters.AnyAsync(s =>
+                    s.BranchID == dto.BranchID &&
+                    (resolvedSavingSchemeId.HasValue
+                        ? (s.SavingSchemeID == resolvedSavingSchemeId.Value || (s.SavingSchemeID == null && s.LedgerID == targetLedgerId))
+                        : s.LedgerID == targetLedgerId) &&
+                    ((s.LegacyAccountNumber != null && s.LegacyAccountNumber.Trim() == legacyNo) ||
                      (s.OldAccountNo != null && s.OldAccountNo.Trim() == legacyNo)));
                 if (legacyExists)
                 {

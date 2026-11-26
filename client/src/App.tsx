@@ -51,6 +51,7 @@ import LoanProcessMaster from './components/LoanProcessMaster';
 import LoanCollectionMaster from './components/LoanCollectionMaster';
 import LoanInterestPostingMaster from './components/LoanInterestPostingMaster';
 const LoanBulkChargesMaster = React.lazy(() => import('./components/LoanBulkChargesMaster'));
+const SavingBulkTransferMaster = React.lazy(() => import('./components/SavingBulkTransferMaster'));
 
 // Voucher & Accounting Modules
 import VoucherMaster from './components/VoucherMaster';
@@ -311,6 +312,7 @@ function App() {
     'saving': '/saving/dashboard',
     'saving-account': '/saving/accounts',
     'saving-transaction': '/saving/transaction',
+    'saving-bulk-transfer': '/saving/bulk-transfer',
     'saving-setting': '/saving/interest-setting',
     'saving-posting': '/saving/interest-posting',
     'saving-closing': '/saving/account-closing',
@@ -905,6 +907,7 @@ function App() {
         {activeTab === 'saving' && <SavingDashboard onNavigate={handleNavigate} />}
         {activeTab === 'saving-account' && <SavingAccountMaster />}
         {activeTab === 'saving-transaction' && <SavingTransactionEntry onNavigate={handleNavigate} />}
+        {activeTab === 'saving-bulk-transfer' && <SavingBulkTransferMaster onNavigate={handleNavigate} />}
         {activeTab === 'saving-setting' && <SavingInterestSettingMaster />}
         {activeTab === 'saving-posting' && <SavingInterestPostingMaster />}
         {activeTab === 'saving-closing' && <SavingAccountClosingMaster onNavigate={handleNavigate} />}

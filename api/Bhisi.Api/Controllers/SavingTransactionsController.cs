@@ -943,5 +943,169 @@ namespace Bhisi.Api.Controllers
                 }
             });
         }
+
+        // =========================================================================================
+        // BULK SAVING TRANSFER MODULE (KDCC Milk Society Bills & Scheme-to-Scheme Saving Transfers)
+        // =========================================================================================
+
+        [HttpGet("bulk-transfer-options")]
+        public async Task<IActionResult> GetBulkTransferOptions([FromQuery] int? branchId = null)
+        {
+            int effectiveBranchId = User.IsHeadOfficeAdmin()
+                ? (branchId.HasValue && branchId.Value > 0 ? branchId.Value : 0)
+                : User.GetOperatingBranchId();
+
+            var options = await SavingBulkTransferHelper.GetBulkTransferOptionsAsync(_context, effectiveBranchId);
+            return Ok(options);
+        }
+
+        [HttpGet("bulk-transfer-accounts")]
+        public async Task<IActionResult> GetBulkTransferAccounts(
+            [FromQuery] int? branchId,
+            [FromQuery] int ledgerId,
+            [FromQuery] int? schemeId = null,
+            [FromQuery] int? targetLedgerId = null,
+            [FromQuery] int? targetSchemeId = null)
+        {
+            if (ledgerId <= 0)
+            {
+                return BadRequest(new { message = "कृपया ठेव लेजर निवडा." });
+            }
+
+            int effectiveBranchId = User.IsHeadOfficeAdmin()
+                ? (branchId.HasValue && branchId.Value > 0 ? branchId.Value : User.GetOperatingBranchId())
+                : User.GetOperatingBranchId();
+
+            var rows = await SavingBulkTransferHelper.GetBulkTransferAccountsAsync(
+                _context,
+                effectiveBranchId,
+                ledgerId,
+                schemeId,
+                targetLedgerId,
+                targetSchemeId);
+
+            return Ok(rows);
+        }
+
+        [HttpPost("bulk-transfer")]
+        public async Task<IActionResult> PostBulkSavingTransfer([FromBody] SavingBulkTransferRequestDto request)
+        {
+            if (request == null)
+            {
+                return BadRequest(new { message = "अवैध बल्क ट्रान्सफर विनंती." });
+            }
+
+            int effectiveBranchId = User.IsHeadOfficeAdmin()
+                ? (request.BranchId > 0 ? request.BranchId : User.GetOperatingBranchId())
+                : User.GetOperatingBranchId();
+
+            int userId = User.GetUserId();
+
+            try
+            {
+                var result = await SavingBulkTransferHelper.ExecuteBulkSavingTransferAtomicAsync(
+                    _context,
+                    request,
+                    effectiveBranchId,
+                    userId);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("bulk-transfer-batches")]
+        public async Task<IActionResult> GetBulkTransferBatches(
+            [FromQuery] int? branchId = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null)
+        {
+            int effectiveBranchId = User.IsHeadOfficeAdmin()
+                ? (branchId.HasValue && branchId.Value > 0 ? branchId.Value : 0)
+                : User.GetOperatingBranchId();
+
+            var q = _context.Vouchers
+                .AsNoTracking()
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(d => d.Ledger)
+                .Where(v => v.VoucherNo != null && v.VoucherNo.StartsWith("JV-SBK-"));
+
+            if (effectiveBranchId > 0)
+            {
+                q = q.Where(v => v.BranchID == effectiveBranchId);
+            }
+            if (fromDate.HasValue)
+            {
+                DateTime start = fromDate.Value.Date;
+                q = q.Where(v => v.VoucherDate >= start);
+            }
+            if (toDate.HasValue)
+            {
+                DateTime endExclusive = toDate.Value.Date.AddDays(1);
+                q = q.Where(v => v.VoucherDate < endExclusive);
+            }
+
+            var vouchers = await q
+                .OrderByDescending(v => v.VoucherDate)
+                .ThenByDescending(v => v.VoucherID)
+                .Take(200)
+                .ToListAsync();
+
+            var allSavIds = vouchers
+                .SelectMany(v => v.VoucherDetails)
+                .Where(d => d.SavingAccountID.HasValue && d.SavingAccountID.Value > 0)
+                .Select(d => d.SavingAccountID!.Value)
+                .Distinct()
+                .ToList();
+
+            var savMap = allSavIds.Count > 0
+                ? await _context.SavingAccountMasters
+                    .AsNoTracking()
+                    .Include(s => s.Customer)
+                    .Where(s => allSavIds.Contains(s.SavingAccountID))
+                    .ToDictionaryAsync(s => s.SavingAccountID)
+                : new Dictionary<int, SavingAccountMaster>();
+
+            var list = vouchers.Select(v =>
+            {
+                var details = v.VoucherDetails.ToList();
+                var savingLines = details.Where(d => d.SavingAccountID.HasValue && d.SavingAccountID.Value > 0).ToList();
+                var nonSavingLines = details.Where(d => !d.SavingAccountID.HasValue || d.SavingAccountID.Value <= 0).ToList();
+
+                return new
+                {
+                    voucherId = v.VoucherID,
+                    voucherNo = v.VoucherNo,
+                    voucherDate = v.VoucherDate,
+                    status = v.Status,
+                    totalAmount = v.TotalAmount,
+                    narration = v.Narration,
+                    savingLineCount = savingLines.Count,
+                    contraLedgerNames = string.Join(", ", nonSavingLines.Select(x => x.Ledger?.LedgerName ?? "").Where(s => !string.IsNullOrWhiteSpace(s)).Distinct()),
+                    items = savingLines.Select(d =>
+                    {
+                        savMap.TryGetValue(d.SavingAccountID!.Value, out var sa);
+                        string cName = sa?.Customer != null
+                            ? $"{sa.Customer.FirstName} {sa.Customer.MiddleName} {sa.Customer.LastName}".Replace("  ", " ").Trim()
+                            : "";
+                        return new
+                        {
+                            savingAccountId = d.SavingAccountID!.Value,
+                            accountNo = sa?.AccountNo ?? "",
+                            oldAccountNo = sa?.OldAccountNo ?? sa?.LegacyAccountNumber ?? "",
+                            cifNo = sa?.Customer?.CIFNo ?? "",
+                            customerName = cName,
+                            ledgerName = d.Ledger?.LedgerName ?? "",
+                            drCr = d.DrCr,
+                            amount = d.Amount
+                        };
+                    }).ToList()
+                };
+            }).ToList();
+
+            return Ok(list);
+        }
     }
 }

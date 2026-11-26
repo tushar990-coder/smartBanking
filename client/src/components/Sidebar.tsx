@@ -52,7 +52,7 @@ export default function Sidebar({
   const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-bulk-charges' || activeTab === 'loan-documents' || activeTab === 'employee-bank' || activeTab === 'employer-master';
   const isBorrowingActive = activeTab === 'bank-borrowing' || activeTab === 'borrowing-dashboard' || activeTab === 'borrowing-account' || activeTab === 'borrowing-disbursement' || activeTab === 'borrowing-repayment' || activeTab === 'borrowing-custody';
   const isDemandActive = activeTab === 'demand-notice' || activeTab === 'demand-recovery' || activeTab === 'demand-settings';
-  const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing';
+  const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-bulk-transfer' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing';
   const isFdActive = activeTab === 'fd' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-mis-payout' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate';
   const isRdActive = activeTab === 'rd' || activeTab === 'rd-dashboard' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-collection' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-scheme';
   const isPigmyActive = activeTab === 'pigmy' || activeTab === 'pigmy-account' || activeTab === 'pigmy-agent' || activeTab === 'pigmy-collection' || activeTab === 'pigmy-collect' || activeTab === 'pigmy-daybook' || activeTab === 'pigmy-commission' || activeTab === 'pigmy-interest' || activeTab === 'pigmy-closure' || activeTab === 'pigmy-scheme';
@@ -386,6 +386,10 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'saving-transaction')} onClick={() => handleNavigate('saving-transaction')}>
               {renderSubDot(activeTab === 'saving-transaction')}
               <span className="truncate">जमा/नावे व्यवहार</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'saving-bulk-transfer')} onClick={() => handleNavigate('saving-bulk-transfer')}>
+              {renderSubDot(activeTab === 'saving-bulk-transfer')}
+              <span className="truncate">बचत बल्क ट्रान्सफर</span>
             </li>
             <li className={getSubItemClass(activeTab === 'saving-posting')} onClick={() => handleNavigate('saving-posting')}>
               {renderSubDot(activeTab === 'saving-posting')}

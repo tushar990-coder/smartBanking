@@ -74,6 +74,13 @@
       "IISAppPoolName": "kavathesarvidyasagar-backend",
       "BackendFolderPath": "D:\\WebApps\\kavathesarvidyasagar\\backend",
       "FrontendFolderPath": "D:\\WebApps\\kavathesarvidyasagar\\frontend"
+    },
+    {
+      "SansthaName": "Swarajya Vategaon",
+      "TargetDatabase": "SmartBanking_swarajyavategaon",
+      "IISAppPoolName": "swarajyavategaon-backend",
+      "BackendFolderPath": "D:\\WebApps\\swarajyavategaon\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\swarajyavategaon\\frontend"
     }
   ],
   "_CommentedOtherTargets": []

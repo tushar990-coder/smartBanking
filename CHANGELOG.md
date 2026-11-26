@@ -1,5 +1,17 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-26] - आवृत्ती v2.6.49 (`बचत बल्क ट्रान्सफर` — KDCC Milk Society Bill Credit, Multi-Society Saving Schemes & Scheme-to-Scheme Bulk Transfer + `Swarajya Vategaon` VPS Target)
+
+### 🥛 1. दूध संस्था `KDCC` बँक बिल जमा व संस्था ते रेग्युलर सेव्हिंग ठेव बल्क वर्ग (`Saving_bulk_transfer`)
+- **`SavingBulkTransferHelper.cs`, `SavingTransactionsController.cs`, `SavingAccountsController.cs`, `VoucherSavingTransferHelper.cs`, `SavingBulkTransferTests.cs`:**
+  - एकाच गावातील अनेक दूध संस्थांसाठी स्वतंत्र बचत योजना व देयता लेजर्समध्ये (उदा. `महालक्ष्मी सेव्हिंग ठेव`, `हनुमान सेव्हिंग ठेव`, `सेव्हिंग ठेव`) एकाच `CustomerID` वर स्वतंत्र बचत खाती उघडणे व योजनानिहाय स्वतंत्र `OldAccountNo` (`1, 2, 3...`) स्कोपिंग.
+  - ३ डायनॅमिक कॉन्ट्रा ट्रान्सफर मोड्स: **१) बँक ट्रान्सफर (`BANK` — उदा. `के.डी.सी.सी चालु खाते`)**, **२) लेजर / संस्था `CIF` बचत खाते ट्रान्सफर (`SAVING_ACCOUNT` / `GL_LEDGER`)**, आणि **३) योजना ते योजना बचत वर्ग (`SCHEME_TO_SCHEME` — `CustomerID` नुसार ऑटो-मॅच करून संस्था सेव्हिंग `Dr` ➔ रेग्युलर सेव्हिंग `Cr`)**.
+  - एकत्रित `JV-SBK-yyyyMMdd-xxxx` जर्नल व्हाउचर (`Zero Auto-Post Maker-Checker`), किमान शिल्लक व `Dormant` संरक्षण, ५००+ खाती बॅच प्री-लोडिंग ऑप्टिमायझेशन आणि लॉसलेस `Unpass`/`Delete` (**२६६/२६६ xUnit चाचण्या उत्तीर्ण**).
+
+### 🖥️ 2. कॉम्पॅक्ट फुल-स्क्रीन ERP थीम UI, Excel अपलोड/एक्सपोर्ट व VPS पॅच कॉन्फिग विस्तार
+- **`SavingBulkTransferMaster.tsx`, `SavingDashboard.tsx`, `Sidebar.tsx`, `App.tsx`, `tools/vps_multi_app_config.json`:**
+  - सर्व ERP थीम्सना सुसंगत कॉम्पॅक्ट सिंगल-लाईन ग्रिड UI, दूध संस्थेची `.xlsx`/`.csv` बिल यादी थेट अपलोड करून रक्कम व टिक भरणे, `Excel नमुना` एक्सपोर्ट, `उपलब्ध शिल्लक भरा` शॉर्टकट व `यादी पहा` रजिस्टर मोडल; तसेच `vps_multi_app_config.json` मध्ये `Swarajya Vategaon` संस्थेची नोंद समाविष्ट.
+
 ## 📅 [2026-11-26] - आवृत्ती v2.6.48 (`शेअर शिल्लक (Share OB)` 100% Hard Delete, Orphan 0-Share Member Cleanup & `जुना सभासद क्र.` False Duplicate Fix)
 
 ### 🧹 1. शेअर डिलीट व व्हाउचर रद्दीकरणामध्ये १००% क्लीन फिजिकल डिलीट (`Hard Delete`)

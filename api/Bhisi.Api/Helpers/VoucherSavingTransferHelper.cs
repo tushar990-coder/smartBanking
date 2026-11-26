@@ -141,6 +141,45 @@ namespace Bhisi.Api.Helpers
                 .OrderByDescending(s => s.SettingID)
                 .ToListAsync();
 
+            // Batch-preload all referenced SavingAccountMasters & Customer->Member mappings for fast 500+ row bulk transfers
+            var explicitSavingIds = voucher.VoucherDetails
+                .Where(d => d.SavingAccountID.HasValue && d.SavingAccountID.Value > 0)
+                .Select(d => d.SavingAccountID!.Value)
+                .Distinct()
+                .ToList();
+
+            var preloadedSavingById = explicitSavingIds.Count > 0
+                ? await context.SavingAccountMasters
+                    .Include(s => s.Customer)
+                    .Include(s => s.SavingScheme)
+                    .Where(s => explicitSavingIds.Contains(s.SavingAccountID))
+                    .ToDictionaryAsync(s => s.SavingAccountID)
+                : new Dictionary<int, SavingAccountMaster>();
+
+            var preloadedCustIds = preloadedSavingById.Values
+                .Select(s => s.CustomerID)
+                .Concat(voucher.VoucherDetails.Where(d => d.CustomerID.HasValue && d.CustomerID.Value > 0).Select(d => d.CustomerID!.Value))
+                .Distinct()
+                .ToList();
+
+            var memberIdByCustomerId = new Dictionary<int, int>();
+            if (preloadedCustIds.Count > 0)
+            {
+                var rawMembers = await context.Members
+                    .AsNoTracking()
+                    .Where(m => m.CustomerID.HasValue && preloadedCustIds.Contains(m.CustomerID.Value))
+                    .Select(m => new { CustomerID = m.CustomerID!.Value, m.MemberID })
+                    .ToListAsync();
+
+                foreach (var rm in rawMembers)
+                {
+                    if (!memberIdByCustomerId.ContainsKey(rm.CustomerID))
+                    {
+                        memberIdByCustomerId[rm.CustomerID] = rm.MemberID;
+                    }
+                }
+            }
+
             var requestedDebitTotalsBySavingId = new Dictionary<int, decimal>();
 
             foreach (var d in voucher.VoucherDetails)
@@ -161,10 +200,14 @@ namespace Bhisi.Api.Helpers
 
                 if (d.SavingAccountID.HasValue && d.SavingAccountID.Value > 0)
                 {
-                    savAcc = await context.SavingAccountMasters
-                        .Include(s => s.Customer)
-                        .Include(s => s.SavingScheme)
-                        .FirstOrDefaultAsync(s => s.SavingAccountID == d.SavingAccountID.Value);
+                    preloadedSavingById.TryGetValue(d.SavingAccountID.Value, out savAcc);
+                    if (savAcc == null)
+                    {
+                        savAcc = await context.SavingAccountMasters
+                            .Include(s => s.Customer)
+                            .Include(s => s.SavingScheme)
+                            .FirstOrDefaultAsync(s => s.SavingAccountID == d.SavingAccountID.Value);
+                    }
 
                     if (savAcc == null)
                     {
@@ -238,14 +281,22 @@ namespace Bhisi.Api.Helpers
                 }
 
                 d.CustomerID = savAcc.CustomerID;
-                var linkedMemberId = await context.Members
-                    .AsNoTracking()
-                    .Where(m => m.CustomerID == savAcc.CustomerID)
-                    .Select(m => (int?)m.MemberID)
-                    .FirstOrDefaultAsync();
-                if (linkedMemberId.HasValue)
+                if (memberIdByCustomerId.TryGetValue(savAcc.CustomerID, out int cachedMemId))
                 {
-                    d.MemberID = linkedMemberId.Value;
+                    d.MemberID = cachedMemId;
+                }
+                else
+                {
+                    var linkedMemberId = await context.Members
+                        .AsNoTracking()
+                        .Where(m => m.CustomerID == savAcc.CustomerID)
+                        .Select(m => (int?)m.MemberID)
+                        .FirstOrDefaultAsync();
+                    if (linkedMemberId.HasValue)
+                    {
+                        d.MemberID = linkedMemberId.Value;
+                        memberIdByCustomerId[savAcc.CustomerID] = linkedMemberId.Value;
+                    }
                 }
             }
 
@@ -296,6 +347,13 @@ namespace Bhisi.Api.Helpers
                 .ToDictionaryAsync(l => l.LedgerID, l => l.LedgerName);
 
             var affectedSavingIds = new HashSet<int>();
+            var batchSavingIds = linkedDetails
+                .Select(d => d.SavingAccountID!.Value)
+                .Distinct()
+                .ToList();
+            var batchAccountsById = await context.SavingAccountMasters
+                .Where(s => batchSavingIds.Contains(s.SavingAccountID))
+                .ToDictionaryAsync(s => s.SavingAccountID);
 
             foreach (var d in linkedDetails)
             {
@@ -304,8 +362,12 @@ namespace Bhisi.Api.Helpers
                     continue;
                 }
 
-                var savAcc = await context.SavingAccountMasters
-                    .FirstOrDefaultAsync(s => s.SavingAccountID == d.SavingAccountID!.Value);
+                batchAccountsById.TryGetValue(d.SavingAccountID!.Value, out var savAcc);
+                if (savAcc == null)
+                {
+                    savAcc = await context.SavingAccountMasters
+                        .FirstOrDefaultAsync(s => s.SavingAccountID == d.SavingAccountID!.Value);
+                }
 
                 if (savAcc == null)
                 {

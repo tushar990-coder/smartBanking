@@ -2046,13 +2046,14 @@ namespace Bhisi.Api.Controllers
             return Ok(list);
         }
 
-        // GET: api/LegalRecovery/overdue-charge-candidates?branchId=1&asOnDate=2026-11-26&loanRateId=2&creditLedgerId=405
+        // GET: api/LegalRecovery/overdue-charge-candidates?branchId=1&asOnDate=2026-11-26&loanRateId=2&creditLedgerId=405&overdueMode=ALL_OVERDUE
         [HttpGet("overdue-charge-candidates")]
         public async Task<IActionResult> GetOverdueChargeCandidates(
             [FromQuery] int? branchId = null,
             [FromQuery] DateTime? asOnDate = null,
             [FromQuery] int? loanRateId = null,
-            [FromQuery] int? creditLedgerId = null)
+            [FromQuery] int? creditLedgerId = null,
+            [FromQuery] string overdueMode = "ALL_OVERDUE")
         {
             var (scopedBranch, _, opBranch) = GetBranchScope(branchId);
             if (branchId.HasValue && branchId.Value > 0 && IsBranchForbidden(branchId.Value))
@@ -2063,6 +2064,7 @@ namespace Bhisi.Api.Controllers
             int targetBranchId = scopedBranch ?? (opBranch > 0 ? opBranch : 1);
             DateTime activeBizDate = await LegalRecoveryTrackerHelper.ResolveActiveBusinessDateAsync(_context, targetBranchId);
             DateTime targetDate = asOnDate?.Date ?? activeBizDate;
+            bool wantMaturityOnly = string.Equals((overdueMode ?? string.Empty).Trim(), "MATURITY_ONLY", StringComparison.OrdinalIgnoreCase);
 
             var query = _context.LoanAccounts
                 .AsNoTracking()
@@ -2073,7 +2075,7 @@ namespace Bhisi.Api.Controllers
                 .Where(la => la.BranchID == targetBranchId &&
                              la.OpeningDate <= targetDate &&
                              la.Status == "Active" &&
-                             la.PrincipalBalance > 0m);
+                             (la.PrincipalBalance > 0m || la.InterestBalance > 0m || la.OverdueInterestBalance > 0m));
 
             if (loanRateId.HasValue && loanRateId.Value > 0)
             {
@@ -2093,6 +2095,13 @@ namespace Bhisi.Api.Controllers
                 .Where(s => loanIds.Contains(s.LoanAccountID))
                 .ToListAsync())
                 .GroupBy(s => s.LoanAccountID)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var collectionsByLoan = (await _context.LoanCollections
+                .AsNoTracking()
+                .Where(c => loanIds.Contains(c.LoanAccountID) && c.CollectionDate <= targetDate)
+                .ToListAsync())
+                .GroupBy(c => c.LoanAccountID)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
             var recoveryDueByLoan = await _context.OverdueRecoveryLedgers
@@ -2131,10 +2140,17 @@ namespace Bhisi.Api.Controllers
             foreach (var la in loanAccounts)
             {
                 schedulesByLoan.TryGetValue(la.LoanAccountID, out var accSchedules);
+                collectionsByLoan.TryGetValue(la.LoanAccountID, out var accCollections);
                 recoveryDueByLoan.TryGetValue(la.LoanAccountID, out var unpaidRec);
 
-                var snap = VoucherLoanChargeHelper.ComputeOverdueCandidateSnapshot(la, accSchedules, targetDate, unpaidRec);
-                if (!snap.IsOverdue)
+                var snap = VoucherLoanChargeHelper.ComputeOverdueCandidateSnapshot(
+                    la,
+                    accSchedules,
+                    targetDate,
+                    unpaidRec,
+                    accCollections);
+
+                if (wantMaturityOnly ? !snap.IsMaturityOverdue : !snap.IsAnyOverdue)
                 {
                     continue;
                 }
@@ -2170,7 +2186,14 @@ namespace Bhisi.Api.Controllers
                     OverdueDate = snap.OverdueDate?.ToString("yyyy-MM-dd"),
                     MaturityDate = la.MaturityDate?.ToString("yyyy-MM-dd"),
                     la.PrincipalBalance,
+                    la.InterestBalance,
+                    la.OverdueInterestBalance,
                     OverdueAmount = snap.OverdueAmount,
+                    OverdueCategory = snap.OverdueCategory,
+                    IsMaturityOverdue = snap.IsMaturityOverdue,
+                    IsInstallmentOverdue = snap.IsInstallmentOverdue,
+                    HasReceivableDues = snap.HasReceivableDues,
+                    OverdueInstallmentsCount = snap.OverdueInstallmentsCount,
                     la.CapitalizedRecoveryCharges,
                     AlreadyChargedToday = sameDay != null && sameDay.TotalAmount > 0m,
                     AlreadyChargedAmount = sameDay?.TotalAmount ?? 0m,

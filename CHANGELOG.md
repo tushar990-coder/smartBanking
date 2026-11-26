@@ -1,5 +1,17 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-26] - आवृत्ती v2.6.47 (`वसुली खर्च नावे` 2 Overdue Selection Modes, Installment-Overdue Sync Engine & Compact ERP-Themed Single-Line Grid)
+
+### 💳 1. `वसुली खर्च नावे` मध्ये २ स्वतंत्र थकबाकी मोड्स + हप्ता थकीत / येणे बाकी सिंक इंजिन
+- **`VoucherLoanChargeHelper.cs`, `LegalRecoveryController.cs`, `LoanBulkChargesMaster.tsx`, `OverdueLoanRecoveryPostageTests.cs`:**
+  - **पर्याय १ (`MATURITY_ONLY` — `१) मुदतबाह्य थकबाकीदार`):** निवडलेल्या दिनांकापर्यंत ज्या कर्जांची मुदत (`MaturityDate`) संपली आहे व मुद्दल शिल्लक आहे फक्त अशीच कर्जे दाखवणे.
+  - **पर्याय २ (`ALL_OVERDUE` — `२) येणे बाकी / हप्ता थकीत व थकबाकीदार एकत्रित`):** मुदतबाह्य कर्जे + मुदतीच्या आतील हप्ता थकीत कर्जे (डेटाबेसमध्ये शेड्यूल नसल्यास किंवा सिंक नसल्यास इन-मेमरी `LoanScheduleGenerator.GenerateSchedules` + `SynchronizeSchedules` वापरून थकीत हप्ते मोजणे) + येणे व्याज/खर्च बाकी असलेली कर्जे एकत्रित दाखवणे आणि विशिष्ट थकीत खाते थेट शोधून निवडण्यासाठी `SearchableSelect` क्विक-पिकर जोडला (**२६०/२६० xUnit चाचण्या उत्तीर्ण**).
+
+### 🎨 2. ERP थीम संरेखन व फुल-स्क्रीन कॉम्पॅक्ट सिंगल-लाईन ग्रिड UI
+- **`LoanBulkChargesMaster.tsx`:**
+  - सर्व हार्डकोडेड जुने रंग काढून **Wine Red**, **Emerald Green** व **Corporate Blue** थीम्सशी १००% सुसंगत डायनॅमिक CSS टोकन्स (`bg-primary`, `text-primary`, `border-primary`) लागू केले.
+  - वरचा फिल्टर सेक्शन फक्त २ स्लिम आडव्या पट्ट्यांमध्ये बसवला आणि टेबल सेक्शनला उरलेली संपूर्ण स्क्रीन उंची (`flex-1 min-h-0`) दिली; एकाखाली-एक येणाऱ्या नोंदी १४ स्वतंत्र रकान्यांमध्ये (`जुना नं.`, `कर्ज खाते नं.`, `CIF नं.`, `थकबाकी स्थिती`, `चालू मुद्दल`, `येणे व्याज`, `थकबाकी रक्कम`, `नावे रक्कम`) विभाजित करून प्रत्येक रो एकाच कॉम्पॅक्ट ओळीत आणली.
+
 ## 📅 [2026-11-26] - आवृत्ती v2.6.46 (Bulk Overdue Loan Charges Debit Form `वसुली खर्च नावे`, Loan Scheme Display & Scheme-Linked Dynamic Income Ledger)
 
 ### 💳 1. थकबाकीदार कर्जदारांसाठी बल्क `वसुली खर्च नावे` (`Due_Charges`) फॉर्म (`CustomerID-First`)

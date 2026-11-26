@@ -16,10 +16,15 @@ import {
   ExternalLink,
   X,
   AlertCircle,
+  Coins,
+  Building2,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import { useAuth } from '../context/AuthContext';
 import { getBusinessDateStr } from '../utils/businessDateUtils';
+import { getCachedMasterData } from '../utils/apiCache';
 import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 
 export interface LoanBulkChargesMasterProps {
@@ -60,14 +65,7 @@ interface DynamicIncomeLedgerItem {
   groupName?: string;
 }
 
-const getSchemeDisplayName = (lr?: LoanRateItem | null): string => {
-  if (!lr) return '';
-  const shortLabel = (lr.shortName || '').trim();
-  if (shortLabel) return shortLabel;
-  const typeLabel = (lr.loanType || '').trim();
-  if (typeLabel) return typeLabel;
-  return `कर्ज योजना #${lr.loanRateID}`;
-};
+type OverdueFilterMode = 'MATURITY_ONLY' | 'ALL_OVERDUE';
 
 interface OverdueCandidateRow {
   loanAccountID: number;
@@ -87,7 +85,14 @@ interface OverdueCandidateRow {
   overdueDate?: string | null;
   maturityDate?: string | null;
   principalBalance: number;
+  interestBalance?: number;
+  overdueInterestBalance?: number;
   overdueAmount: number;
+  overdueCategory?: 'MATURITY_OVERDUE' | 'INSTALLMENT_OVERDUE' | 'DUES_OVERDUE' | string;
+  isMaturityOverdue?: boolean;
+  isInstallmentOverdue?: boolean;
+  hasReceivableDues?: boolean;
+  overdueInstallmentsCount?: number;
   capitalizedRecoveryCharges?: number;
   alreadyChargedToday?: boolean;
   alreadyChargedAmount?: number;
@@ -122,6 +127,15 @@ interface BulkChargeBatchRow {
   items: BulkBatchAccountItem[];
 }
 
+const getSchemeDisplayName = (lr?: LoanRateItem | null): string => {
+  if (!lr) return '';
+  const shortLabel = (lr.shortName || '').trim();
+  if (shortLabel) return shortLabel;
+  const typeLabel = (lr.loanType || '').trim();
+  if (typeLabel) return typeLabel;
+  return `कर्ज योजना #${lr.loanRateID}`;
+};
+
 const formatDisplayDate = (dateStr?: string | null): string => {
   if (!dateStr) return '-';
   const clean = dateStr.split('T')[0];
@@ -145,19 +159,31 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
   const lockedBranchId = getLockedBranchId(user);
   const defaultBizDate = getBusinessDateStr(user?.businessDate);
 
-  const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [branches, setBranches] = useState<BranchItem[]>(
+    () => getCachedMasterData<BranchItem[]>('/api/Branches') || []
+  );
   const [branchId, setBranchId] = useState<number>(() => resolveWriteBranchId(user, globalBranchId));
-  const [loanRates, setLoanRates] = useState<LoanRateItem[]>([]);
+  const [loanRates, setLoanRates] = useState<LoanRateItem[]>(() => {
+    const cached = getCachedMasterData<LoanRateItem[]>('/api/LoanRates') || [];
+    return cached.filter((r) => r.isActive !== false);
+  });
   const [loanPrincipalLedgers, setLoanPrincipalLedgers] = useState<LoanPrincipalLedgerItem[]>([]);
   const [incomeLedgers, setIncomeLedgers] = useState<DynamicIncomeLedgerItem[]>([]);
 
-  // Screenshot Top Controls: सर्व vs कर्ज प्रकार, डायनॅमिक उत्पन्न लेजर, खर्च रक्कम, दिनांक, शोधा
+  // 2-Option Overdue Filter Mode + Scheme Scope + Dynamic Income Ledger + Amount + Date + Search
+  const [overdueMode, setOverdueMode] = useState<OverdueFilterMode>('ALL_OVERDUE');
   const [schemeScope, setSchemeScope] = useState<'ALL' | 'SCHEME'>('SCHEME');
-  const [selectedLoanRateId, setSelectedLoanRateId] = useState<number>(0);
+  const [selectedLoanRateId, setSelectedLoanRateId] = useState<number>(() => {
+    const cached = (getCachedMasterData<LoanRateItem[]>('/api/LoanRates') || []).filter(
+      (r) => r.isActive !== false
+    );
+    return cached.length > 0 ? cached[0].loanRateID : 0;
+  });
   const [selectedCreditLedgerId, setSelectedCreditLedgerId] = useState<number>(0);
   const [defaultChargeAmount, setDefaultChargeAmount] = useState<string>('100');
   const [chargeDate, setChargeDate] = useState<string>(defaultBizDate);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [singleLoanQuickPickId, setSingleLoanQuickPickId] = useState<number>(0);
 
   // Candidate Grid State
   const [candidates, setCandidates] = useState<OverdueCandidateRow[]>([]);
@@ -178,7 +204,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
     message: string;
   } | null>(null);
 
-  // "यादी पहा" (Saved Batches Register Modal/View)
+  // "यादी पहा" (Saved Batches Register Modal)
   const [showBatchListModal, setShowBatchListModal] = useState<boolean>(false);
   const [batches, setBatches] = useState<BulkChargeBatchRow[]>([]);
   const [loadingBatches, setLoadingBatches] = useState<boolean>(false);
@@ -191,6 +217,17 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
     const raw = new URLSearchParams(window.location.search).get('customerId');
     return raw ? Number(raw) : 0;
   }, []);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setChargeDate(getBusinessDateStr(user.businessDate));
+    }
+    if (lockedBranchId) {
+      setBranchId(lockedBranchId);
+    } else if (user?.branchID && user.branchID > 0) {
+      setBranchId(Number(user.branchID));
+    }
+  }, [user?.businessDate, user?.branchID, lockedBranchId]);
 
   useEffect(() => {
     const loadMasters = async () => {
@@ -216,9 +253,11 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
             (r: LoanRateItem) => r.isActive !== false
           );
           setLoanRates(activeRates);
-          if (activeRates.length > 0) {
-            setSelectedLoanRateId(activeRates[0].loanRateID);
-          }
+          setSelectedLoanRateId((prev) =>
+            prev > 0 && activeRates.some((x) => x.loanRateID === prev)
+              ? prev
+              : activeRates[0]?.loanRateID || 0
+          );
         }
 
         if (ledgersRes.status === 'fulfilled' && ledgersRes.value.data) {
@@ -247,8 +286,22 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
   useEffect(() => {
     if (urlCustomerId > 0) {
       setSchemeScope('ALL');
+      setOverdueMode('ALL_OVERDUE');
     }
   }, [urlCustomerId]);
+
+  const branchOptions = useMemo(() => {
+    const base = lockedBranchId
+      ? branches.filter((b) => Number(b.branchID) === Number(lockedBranchId))
+      : branches;
+    if (base.length > 0) return base;
+    return [
+      {
+        branchID: branchId || Number(user?.branchID || 1),
+        branchName: user?.branchName || 'मुख्य शाखा',
+      },
+    ];
+  }, [branches, lockedBranchId, branchId, user?.branchID, user?.branchName]);
 
   const selectedScheme = useMemo(
     () =>
@@ -267,7 +320,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
   }, [selectedScheme, loanPrincipalLedgers]);
 
   // 100% Foreign-Key Dynamic Income Ledger List:
-  // 1) Selected scheme's mapped Income ledgers at top (RecoveryFee -> Surcharge -> OverdueInterest -> Interest -> ProcessingFee)
+  // 1) Selected scheme's mapped Income ledgers at top
   // 2) All general/common Income ledgers (excluding OTHER loan schemes' Interest/OverdueInterest ledgers)
   const { visibleIncomeLedgers, currentSchemeIncomeIdSet } = useMemo(() => {
     const incomeById = new Map<number, DynamicIncomeLedgerItem>();
@@ -313,7 +366,6 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
       };
     }
 
-    // In 'ALL' ('सर्व') mode: show common Income & Fee ledgers first, hiding scheme-specific interest ledgers
     const sharedFeeIds = new Set<number>();
     const allSchemeInterestIds = new Set<number>();
     loanRates.forEach((r) => {
@@ -417,19 +469,22 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
     }
   };
 
-  const fetchOverdueCandidates = async () => {
+  const fetchOverdueCandidates = async (overrideMode?: OverdueFilterMode) => {
+    const activeMode = overrideMode || overdueMode;
     setErrorMessage('');
     if (schemeScope === 'SCHEME' && (!selectedLoanRateId || selectedLoanRateId <= 0)) {
-      setErrorMessage('कृपया कर्ज प्रकार निवडा किंवा "सर्व" पर्याय निवडा.');
+      setErrorMessage('कृपया कर्ज प्रकार निवडा किंवा "सर्व योजना" पर्याय निवडा.');
       return;
     }
 
     setLoadingCandidates(true);
     setHasSearched(true);
+    setSingleLoanQuickPickId(0);
     try {
       const params = new URLSearchParams();
       params.set('branchId', String(branchId));
       params.set('asOnDate', chargeDate);
+      params.set('overdueMode', activeMode);
       if (schemeScope === 'SCHEME' && selectedLoanRateId > 0) {
         params.set('loanRateId', String(selectedLoanRateId));
       }
@@ -470,10 +525,40 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
     }
   };
 
+  // Quick single-account dropdown options from loaded overdue/installment candidates
+  const quickPickLoanOptions = useMemo(() => {
+    return candidates.map((r) => {
+      const accDisplay = r.legacyAccountNumber
+        ? `${r.legacyAccountNumber} (${r.loanAccountNo})`
+        : r.loanAccountNo;
+      const catLabel =
+        r.overdueCategory === 'MATURITY_OVERDUE'
+          ? 'मुदतबाह्य'
+          : r.overdueCategory === 'INSTALLMENT_OVERDUE'
+          ? `हप्ता थकीत (${r.overdueInstallmentsCount || 1})`
+          : 'येणे बाकी';
+      return {
+        value: r.loanAccountID,
+        label: `${accDisplay} — ${r.customerName} [${catLabel}: ₹${formatAmount(r.overdueAmount)}]`,
+      };
+    });
+  }, [candidates]);
+
+  const handleQuickPickSingleLoan = (loanId: number) => {
+    setSingleLoanQuickPickId(loanId);
+    if (loanId > 0) {
+      setSelectedLoanIds(new Set([loanId]));
+    }
+  };
+
   const filteredCandidates = useMemo(() => {
+    let base = candidates;
+    if (singleLoanQuickPickId > 0) {
+      base = base.filter((r) => r.loanAccountID === singleLoanQuickPickId);
+    }
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return candidates;
-    return candidates.filter((r) => {
+    if (!q) return base;
+    return base.filter((r) => {
       const legNo = (r.legacyAccountNumber || '').toLowerCase();
       const accNo = (r.loanAccountNo || '').toLowerCase();
       const name = (r.customerName || '').toLowerCase();
@@ -487,7 +572,19 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
         legCust.includes(q)
       );
     });
-  }, [candidates, searchQuery]);
+  }, [candidates, searchQuery, singleLoanQuickPickId]);
+
+  const categoryCounts = useMemo(() => {
+    let maturity = 0;
+    let installment = 0;
+    let dues = 0;
+    candidates.forEach((r) => {
+      if (r.overdueCategory === 'MATURITY_OVERDUE') maturity++;
+      else if (r.overdueCategory === 'INSTALLMENT_OVERDUE') installment++;
+      else dues++;
+    });
+    return { maturity, installment, dues };
+  }, [candidates]);
 
   const allVisibleSelected = useMemo(() => {
     if (filteredCandidates.length === 0) return false;
@@ -545,6 +642,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
     setErrorMessage('');
     setLastSavedResult(null);
     setSearchQuery('');
+    setSingleLoanQuickPickId(0);
     setCandidates([]);
     setSelectedLoanIds(new Set());
     setRowAmounts({});
@@ -571,7 +669,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
       }));
 
     if (selectedItems.length === 0) {
-      setErrorMessage('कृपया खर्च नावे टाकण्यासाठी किमान एक थकबाकीदार खातेदार निवडा.');
+      setErrorMessage('कृपया खर्च नावे टाकण्यासाठी किमान एक थकबाकीदार / हप्ता थकीत खातेदार निवडा.');
       return;
     }
 
@@ -587,7 +685,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
     const ledgerTitle = selectedIncomeLedger?.ledgerName || `Ledger #${selectedCreditLedgerId}`;
 
     const confirmed = window.confirm(
-      `खालील तपशिलाप्रमाणे थकबाकीदार कर्ज खात्यांवर खर्च नावे टाकायचा आहे का?\n\n` +
+      `खालील तपशिलाप्रमाणे निवडलेल्या कर्ज खात्यांवर खर्च नावे टाकायचा आहे का?\n\n` +
         `• दिनांक: ${formatDisplayDate(chargeDate)}\n` +
         `• जमा उत्पन्न लेजर (Cr): ${ledgerTitle}\n` +
         `• निवडलेले खातेदार: ${selectedItems.length}\n` +
@@ -622,7 +720,6 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
           `एकूण ${selectedItems.length} खात्यांवर ₹${formatAmount(totalSum)} खर्च यशस्वीरीत्या नोंदवला गेला!`,
       });
 
-      // Refresh candidate list so newly saved accounts reflect "आज आधीच नोंद" and become unchecked
       await fetchOverdueCandidates();
     } catch (err: any) {
       setErrorMessage(
@@ -692,35 +789,120 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
     XLSX.writeFile(wb, `Vasuli_Kharch_Nave_${batchFromDate}_${batchToDate}.xlsx`);
   };
 
+  const renderOverdueCategoryBadge = (row: OverdueCandidateRow) => {
+    if (row.overdueCategory === 'MATURITY_OVERDUE' || row.isMaturityOverdue) {
+      return (
+        <span className="inline-block px-1.5 py-0.5 rounded-sm text-[10px] leading-none font-bold bg-rose-50 text-rose-800 border border-rose-200 whitespace-nowrap">
+          मुदतबाह्य
+        </span>
+      );
+    }
+    if (row.overdueCategory === 'INSTALLMENT_OVERDUE' || row.isInstallmentOverdue) {
+      return (
+        <span className="inline-block px-1.5 py-0.5 rounded-sm text-[10px] leading-none font-bold bg-amber-50 text-amber-900 border border-amber-300 whitespace-nowrap">
+          हप्ता थकीत ({row.overdueInstallmentsCount || 1})
+        </span>
+      );
+    }
+    return (
+      <span className="inline-block px-1.5 py-0.5 rounded-sm text-[10px] leading-none font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 whitespace-nowrap">
+        येणे व्याज बाकी
+      </span>
+    );
+  };
+
+  const compactSelectTriggerClass =
+    'w-full h-7 border border-slate-300 px-2 rounded-sm flex justify-between items-center bg-white cursor-pointer hover:border-primary/60 text-[11px] font-semibold text-slate-900';
+
   return (
-    <div className="p-2 sm:p-3 max-w-[1440px] mx-auto font-sans text-xs text-slate-800 flex flex-col min-h-[calc(100vh-3.25rem)] justify-between gap-2.5">
-      <div className="space-y-2.5">
-        {/* Top Title Strip (Matches Screenshot 'वसुली खर्च नावे' + Branch Context) */}
-        <div className="bg-white border border-slate-300 border-t-2 border-t-primary rounded-sm shadow-xs px-3 py-2">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-1.5 mb-2">
-            <div className="flex items-center gap-2">
-              {onNavigate && (
-                <button
-                  type="button"
-                  onClick={() => onNavigate('loan')}
-                  className="px-2 py-0.5 rounded-sm border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                  title="कर्ज विभाग मुख्य पानावर परत जा"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>मागे</span>
-                </button>
-              )}
-              <span className="text-[11px] font-semibold text-slate-500 hidden sm:inline">
-                Due_Charges
-              </span>
+    <div className="p-1.5 sm:p-2 max-w-[1560px] mx-auto font-sans text-xs text-slate-800 flex flex-col h-[calc(100vh-3.15rem)] gap-1.5 bg-slate-50/60 overflow-hidden">
+      {/* 1. Ultra-Compact Combined ERP Header + Filter Toolbar Card */}
+      <div className="bg-white rounded-sm shadow-xs border border-slate-300 border-t-2 border-t-primary shrink-0">
+        {/* Top Strip: Title + Live Dr->Cr Mapping + Overdue Mode Pills + Branch + Back */}
+        <div className="px-2.5 py-1 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <div className="w-5 h-5 rounded-sm bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                <Coins size={12} className="stroke-[2.4]" />
+              </div>
+              <h1 className="text-xs sm:text-sm font-extrabold text-primary tracking-tight whitespace-nowrap">
+                वसुली खर्च नावे
+              </h1>
             </div>
 
-            <h1 className="text-base sm:text-lg font-black text-rose-700 tracking-wide text-center">
-              वसुली खर्च नावे
-            </h1>
+            <span className="hidden xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm bg-primary/5 border border-primary/20 text-[10px] text-slate-700 whitespace-nowrap">
+              <span>
+                Dr:{' '}
+                <strong className="text-slate-900">
+                  {schemeScope === 'SCHEME'
+                    ? selectedLoanPrincipalLedgerName || getSchemeDisplayName(selectedScheme) || '-'
+                    : 'कर्ज योजनानिहाय मुद्दल लेजर'}
+                </strong>
+              </span>
+              <span className="text-primary font-bold">➔</span>
+              <span>
+                Cr:{' '}
+                <strong className="text-primary">
+                  {selectedIncomeLedger?.ledgerName || 'लेजर निवडा'}
+                </strong>
+              </span>
+            </span>
+          </div>
 
-            <div className="flex items-center gap-1.5">
-              <label className="text-[11px] font-bold text-slate-600">शाखा:</label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* 2 Compact Overdue Mode Buttons */}
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-bold text-slate-600 hidden sm:inline">थकबाकी:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setOverdueMode('MATURITY_ONLY');
+                  setCandidates([]);
+                  setSelectedLoanIds(new Set());
+                  setHasSearched(false);
+                }}
+                className={`h-6 px-2 rounded-sm text-[11px] font-bold border transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                  overdueMode === 'MATURITY_ONLY'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-white text-slate-700 border-slate-300 hover:border-primary/40 hover:bg-primary/5'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    overdueMode === 'MATURITY_ONLY' ? 'bg-white' : 'bg-slate-400'
+                  }`}
+                />
+                <span>१) मुदतबाह्य थकबाकीदार</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setOverdueMode('ALL_OVERDUE');
+                  setCandidates([]);
+                  setSelectedLoanIds(new Set());
+                  setHasSearched(false);
+                }}
+                className={`h-6 px-2 rounded-sm text-[11px] font-bold border transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                  overdueMode === 'ALL_OVERDUE'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-white text-slate-700 border-slate-300 hover:border-primary/40 hover:bg-primary/5'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    overdueMode === 'ALL_OVERDUE' ? 'bg-white' : 'bg-slate-400'
+                  }`}
+                />
+                <span>२) येणे बाकी / हप्ता थकीत व थकबाकीदार एकत्रित</span>
+              </button>
+            </div>
+
+            <div className="h-4 w-px bg-slate-300 hidden sm:block" />
+
+            {/* Compact Branch Selector */}
+            <div className="flex items-center gap-1 bg-white px-1.5 h-6 rounded-sm border border-slate-300">
+              <Building2 size={11} className="text-primary shrink-0" />
               <select
                 value={branchId}
                 disabled={!isHOUser}
@@ -728,436 +910,556 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                   setBranchId(Number(e.target.value));
                   setCandidates([]);
                   setSelectedLoanIds(new Set());
+                  setHasSearched(false);
                 }}
-                className="h-7 border border-slate-300 rounded-sm px-2 text-[11px] font-bold bg-white text-slate-800 focus:outline-none focus:border-primary disabled:bg-slate-100"
+                className="h-5 text-[11px] font-bold bg-transparent text-slate-900 focus:outline-none disabled:text-slate-600"
               >
-                {(lockedBranchId
-                  ? branches.filter((b) => Number(b.branchID) === Number(lockedBranchId))
-                  : branches
-                ).map((b) => (
+                {branchOptions.map((b) => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}
                   </option>
                 ))}
               </select>
             </div>
-          </div>
 
-          {/* Screenshot Exact Top Filter & Input Bar */}
-          <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-            <div className="flex flex-wrap items-end gap-x-3 gap-y-2 flex-1">
-              {/* 1. सर्व / कर्ज प्रकार Radio + Loan Scheme Select */}
-              <div className="flex items-center gap-2.5 h-8">
-                <label className="inline-flex items-center gap-1 font-bold text-slate-800 cursor-pointer select-none">
-                  <input
-                    type="radio"
-                    name="loanSchemeScope"
-                    checked={schemeScope === 'ALL'}
-                    onChange={() => {
-                      setSchemeScope('ALL');
-                      setCandidates([]);
-                      setSelectedLoanIds(new Set());
-                      setHasSearched(false);
-                    }}
-                    className="w-3.5 h-3.5 accent-primary cursor-pointer"
-                  />
-                  <span>सर्व</span>
-                </label>
-
-                <label className="inline-flex items-center gap-1 font-bold text-slate-800 cursor-pointer select-none">
-                  <input
-                    type="radio"
-                    name="loanSchemeScope"
-                    checked={schemeScope === 'SCHEME'}
-                    onChange={() => {
-                      setSchemeScope('SCHEME');
-                      setCandidates([]);
-                      setSelectedLoanIds(new Set());
-                      setHasSearched(false);
-                    }}
-                    className="w-3.5 h-3.5 accent-primary cursor-pointer"
-                  />
-                  <span>कर्ज प्रकार</span>
-                </label>
-
-                <select
-                  value={schemeScope === 'SCHEME' ? selectedLoanRateId : ''}
-                  disabled={schemeScope === 'ALL'}
-                  onChange={(e) => {
-                    setSelectedLoanRateId(Number(e.target.value) || 0);
-                    setCandidates([]);
-                    setSelectedLoanIds(new Set());
-                    setHasSearched(false);
-                  }}
-                  className="h-8 border border-slate-300 rounded-sm px-2 text-xs font-bold bg-white text-slate-900 min-w-[185px] focus:outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  {schemeScope === 'ALL' ? (
-                    <option value="">-- सर्व कर्ज योजना --</option>
-                  ) : (
-                    loanRates.map((lr) => (
-                      <option key={lr.loanRateID} value={lr.loanRateID}>
-                        {getSchemeDisplayName(lr)}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              {/* 2. लेजर (100% Dynamic Income Group Ledgers — Zero Hardcoding) */}
-              <div className="flex items-center gap-1.5 min-w-[260px] sm:min-w-[300px]">
-                <label className="font-bold text-slate-800 whitespace-nowrap">लेजर</label>
-                <div className="flex-1">
-                  <SearchableSelect
-                    id="bulk-loan-charge-income-ledger"
-                    options={incomeLedgerOptions}
-                    value={selectedCreditLedgerId || ''}
-                    onChange={(e) => setSelectedCreditLedgerId(Number(e.target.value) || 0)}
-                    placeholder="-- जमा उत्पन्न लेजर निवडा --"
-                    searchPlaceholder="उत्पन्न लेजर नाव / कोड शोधा..."
-                    minMenuWidth={360}
-                  />
-                </div>
-              </div>
-
-              {/* 3. खर्च रक्कम */}
-              <div className="flex items-center gap-1.5">
-                <label className="font-bold text-slate-800 whitespace-nowrap">खर्च रक्कम</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={defaultChargeAmount}
-                  onChange={(e) => handleDefaultAmountChange(e.target.value)}
-                  placeholder="100"
-                  className="h-8 w-24 border border-slate-300 rounded-sm px-2 text-xs font-mono font-black text-right bg-white text-slate-900 focus:outline-none focus:border-primary"
-                />
-              </div>
-
-              {/* 4. दिनांक */}
-              <div className="flex items-center gap-1.5">
-                <label className="font-bold text-slate-800 whitespace-nowrap">दिनांक</label>
-                <input
-                  type="date"
-                  value={chargeDate}
-                  onChange={(e) => setChargeDate(e.target.value)}
-                  className="h-8 border border-slate-300 rounded-sm px-2 text-xs font-mono font-bold bg-white text-slate-900 focus:outline-none focus:border-primary"
-                />
-              </div>
-
-              {/* 5. पहा Button */}
+            {onNavigate && (
               <button
                 type="button"
-                onClick={fetchOverdueCandidates}
-                disabled={loadingCandidates}
-                className="h-8 px-5 bg-[#005a87] hover:bg-[#00486c] text-white font-extrabold text-xs rounded-sm shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                onClick={() => onNavigate('loan')}
+                className="h-6 px-2 rounded-sm border border-slate-300 bg-white hover:bg-primary/5 hover:text-primary hover:border-primary/40 text-slate-700 font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                title="कर्ज विभाग मुख्य डॅशबोर्डवर परत जा"
               >
-                {loadingCandidates && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>पहा</span>
+                <ArrowLeft className="w-3 h-3" />
+                <span>मागे</span>
               </button>
-            </div>
+            )}
+          </div>
+        </div>
 
-            {/* 6. Right-Side 'शोधा — कर्ज खाते नं' Box */}
-            <div className="flex flex-col items-start">
-              <span className="text-[10px] font-black text-rose-700 leading-none mb-0.5">शोधा</span>
-              <div className="flex items-center gap-1.5">
-                <label className="text-[11px] font-bold text-slate-700 whitespace-nowrap">
-                  कर्ज खाते नं
-                </label>
+        {/* Single Compact Inline Filter Row (28px controls, horizontal labels — minimal vertical space) */}
+        <div className="px-2.5 py-1.5 flex flex-wrap lg:flex-nowrap items-center gap-2">
+          {/* सर्व / कर्ज प्रकार */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <label className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 cursor-pointer select-none whitespace-nowrap">
+              <input
+                type="radio"
+                name="loanSchemeScope"
+                checked={schemeScope === 'ALL'}
+                onChange={() => {
+                  setSchemeScope('ALL');
+                  setCandidates([]);
+                  setSelectedLoanIds(new Set());
+                  setHasSearched(false);
+                }}
+                className="w-3.5 h-3.5 accent-primary cursor-pointer"
+              />
+              <span>सर्व</span>
+            </label>
+
+            <label className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 cursor-pointer select-none whitespace-nowrap">
+              <input
+                type="radio"
+                name="loanSchemeScope"
+                checked={schemeScope === 'SCHEME'}
+                onChange={() => {
+                  setSchemeScope('SCHEME');
+                  setCandidates([]);
+                  setSelectedLoanIds(new Set());
+                  setHasSearched(false);
+                }}
+                className="w-3.5 h-3.5 accent-primary cursor-pointer"
+              />
+              <span>कर्ज प्रकार</span>
+            </label>
+
+            <select
+              value={schemeScope === 'SCHEME' ? selectedLoanRateId : ''}
+              disabled={schemeScope === 'ALL'}
+              onChange={(e) => {
+                setSelectedLoanRateId(Number(e.target.value) || 0);
+                setCandidates([]);
+                setSelectedLoanIds(new Set());
+                setHasSearched(false);
+              }}
+              className="h-7 w-40 border border-slate-300 rounded-sm px-1.5 text-[11px] font-bold bg-white text-slate-900 focus:outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              {schemeScope === 'ALL' ? (
+                <option value="">-- सर्व योजना --</option>
+              ) : loanRates.length === 0 ? (
+                <option value={0}>-- लोड होत आहे --</option>
+              ) : (
+                loanRates.map((lr) => (
+                  <option key={lr.loanRateID} value={lr.loanRateID}>
+                    {getSchemeDisplayName(lr)}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          {/* लेजर (Dynamic Income Ledger) */}
+          <div className="flex items-center gap-1 flex-1 min-w-[210px]">
+            <label className="text-[11px] font-bold text-slate-700 whitespace-nowrap shrink-0">
+              लेजर<span className="text-rose-600">*</span>:
+            </label>
+            <div className="flex-1 min-w-0">
+              <SearchableSelect
+                id="bulk-loan-charge-income-ledger"
+                options={incomeLedgerOptions}
+                value={selectedCreditLedgerId || ''}
+                onChange={(e) => setSelectedCreditLedgerId(Number(e.target.value) || 0)}
+                placeholder="-- जमा उत्पन्न लेजर निवडा --"
+                searchPlaceholder="उत्पन्न लेजर नाव / कोड शोधा..."
+                minMenuWidth={350}
+                className={compactSelectTriggerClass}
+              />
+            </div>
+          </div>
+
+          {/* खर्च रक्कम */}
+          <div className="flex items-center gap-1 shrink-0">
+            <label className="text-[11px] font-bold text-slate-700 whitespace-nowrap">
+              रक्कम:
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={defaultChargeAmount}
+              onChange={(e) => handleDefaultAmountChange(e.target.value)}
+              placeholder="100"
+              className="h-7 w-20 border border-slate-300 rounded-sm px-2 text-[11px] font-mono font-black text-right bg-white text-primary focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          {/* दिनांक */}
+          <div className="flex items-center gap-1 shrink-0">
+            <label className="text-[11px] font-bold text-slate-700 whitespace-nowrap">
+              दिनांक:
+            </label>
+            <input
+              type="date"
+              value={chargeDate}
+              onChange={(e) => setChargeDate(e.target.value)}
+              className="h-7 w-[124px] border border-slate-300 rounded-sm px-1.5 text-[11px] font-mono font-bold bg-white text-slate-900 focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          {/* पहा Button */}
+          <button
+            type="button"
+            onClick={() => fetchOverdueCandidates()}
+            disabled={loadingCandidates}
+            className="h-7 px-3.5 bg-primary hover:opacity-90 text-white font-extrabold text-[11px] rounded-sm shadow-2xs transition flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+          >
+            {loadingCandidates ? (
+              <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+            ) : (
+              <Search className="w-3 h-3 shrink-0" />
+            )}
+            <span>पहा</span>
+          </button>
+
+          {/* थेट कर्ज खाते निवडा / शोधा */}
+          <div className="flex items-center gap-1 w-full sm:w-56 shrink-0">
+            <label className="text-[11px] font-bold text-primary whitespace-nowrap shrink-0">
+              शोधा:
+            </label>
+            <div className="flex-1 min-w-0">
+              {candidates.length > 0 && !searchQuery ? (
+                <SearchableSelect
+                  id="bulk-loan-single-account-picker"
+                  options={[
+                    { value: 0, label: `-- सर्व खाती (${candidates.length}) --` },
+                    ...quickPickLoanOptions,
+                  ]}
+                  value={singleLoanQuickPickId || 0}
+                  onChange={(e) => handleQuickPickSingleLoan(Number(e.target.value) || 0)}
+                  placeholder="खाते नं / नाव निवडा..."
+                  searchPlaceholder="जुना क्र., खाते नं., नाव किंवा CIF शोधा..."
+                  minMenuWidth={380}
+                  className={compactSelectTriggerClass}
+                />
+              ) : (
                 <div className="relative">
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="जुना क्र. / खाते नं / नाव / CIF"
-                    className="h-8 w-40 sm:w-44 border border-slate-300 rounded-sm pl-2 pr-6 text-xs bg-white text-slate-900 focus:outline-none focus:border-primary"
+                    placeholder="जुना क्र. / नाव / CIF..."
+                    className="h-7 w-full border border-slate-300 rounded-sm pl-2 pr-6 text-[11px] bg-white text-slate-900 focus:outline-none focus:border-primary"
                   />
                   {searchQuery ? (
                     <button
                       type="button"
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-1.5 top-2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                      className="absolute right-1.5 top-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
                   ) : (
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute right-1.5 top-2 pointer-events-none" />
+                    <Search className="w-3 h-3 text-slate-400 absolute right-1.5 top-2 pointer-events-none" />
                   )}
                 </div>
-              </div>
+              )}
             </div>
-          </div>
-
-          {/* Accounting Preview Strip: Shows selected scheme's Dr Loan Ledger & Cr Dynamic Income Ledger */}
-          <div className="mt-2 pt-1.5 border-t border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
-            <span>
-              नावे (Dr कर्ज खाते):{' '}
-              <strong className="text-slate-900">
-                {schemeScope === 'SCHEME'
-                  ? selectedLoanPrincipalLedgerName || getSchemeDisplayName(selectedScheme) || '-'
-                  : 'प्रत्येक खात्याच्या संबंधित कर्ज योजनेचे मुद्दल लेजर'}
-              </strong>
-            </span>
-            <span className="text-slate-400">➔</span>
-            <span>
-              जमा (Cr उत्पन्न लेजर):{' '}
-              <strong className="text-emerald-800">
-                {selectedIncomeLedger?.ledgerName || 'कृपया लेजर निवडा'}
-              </strong>
-            </span>
-          </div>
-        </div>
-
-        {/* Error Alert */}
-        {errorMessage && (
-          <div className="bg-rose-50 border border-rose-300 text-rose-800 px-3 py-2 rounded-sm flex items-center justify-between gap-2 font-bold">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{errorMessage}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setErrorMessage('')}
-              className="text-rose-600 hover:text-rose-900 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Saved Voucher Confirmation Strip with Direct Voucher Passing Shortcut */}
-        {lastSavedResult && (
-          <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 px-3 py-2 rounded-sm flex flex-wrap items-center justify-between gap-2 shadow-2xs">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <div>
-                <div className="font-bold text-xs">{lastSavedResult.message}</div>
-                <div className="text-[11px] text-emerald-800 mt-0.5">
-                  व्हाउचर क्र.: <strong className="font-mono">{lastSavedResult.voucherNo}</strong> •
-                  जमा उत्पन्न खाते: <strong>{lastSavedResult.incomeLedgerName}</strong> • निवडलेली
-                  खाती: <strong>{lastSavedResult.processedCount}</strong> • एकूण रक्कम:{' '}
-                  <strong className="font-mono">₹{formatAmount(lastSavedResult.totalAmount)}</strong>
-                </div>
-              </div>
-            </div>
-
-            {onNavigate && lastSavedResult.voucherId > 0 && (
-              <button
-                type="button"
-                onClick={() =>
-                  onNavigate('voucher-posting', { voucherId: lastSavedResult.voucherId })
-                }
-                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-sm flex items-center gap-1.5 cursor-pointer shadow-2xs"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>व्हाउचर पासिंग उघडा (मंजुरीसाठी)</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Main 9-Column Overdue Borrowers Data Grid (Matches Screenshot) */}
-        <div className="bg-white border border-slate-300 rounded-sm shadow-xs overflow-hidden">
-          <div className="overflow-x-auto max-h-[calc(100vh-16.5rem)] min-h-[340px]">
-            <table className="min-w-full border-collapse text-xs">
-              <thead className="bg-slate-100 text-slate-800 sticky top-0 z-10 border-b border-slate-300 font-bold">
-                <tr>
-                  <th className="w-10 px-2 py-2 border-r border-slate-300 text-center">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={toggleSelectAllVisible}
-                      disabled={filteredCandidates.length === 0}
-                      className="w-4 h-4 accent-[#005a87] cursor-pointer align-middle"
-                      title="सर्व थकबाकीदार खाती निवडा / निवड काढा"
-                    />
-                  </th>
-                  <th className="w-14 px-2 py-2 border-r border-slate-300 text-center">अ. नं.</th>
-                  <th className="w-36 px-2.5 py-2 border-r border-slate-300 text-center">
-                    कर्ज खाते नं.
-                  </th>
-                  <th className="px-3 py-2 border-r border-slate-300 text-left">कर्जदाराचे नाव</th>
-                  <th className="w-40 px-2.5 py-2 border-r border-slate-300 text-center">
-                    कर्ज प्रकार
-                  </th>
-                  <th className="w-28 px-2 py-2 border-r border-slate-300 text-center">
-                    कर्ज दिनांक
-                  </th>
-                  <th className="w-28 px-2 py-2 border-r border-slate-300 text-center">
-                    थकबाकी दिनांक
-                  </th>
-                  <th className="w-32 px-2.5 py-2 border-r border-slate-300 text-right">
-                    थकबाकी रक्कम
-                  </th>
-                  <th className="w-28 px-2.5 py-2 text-right">रक्कम</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-200 bg-white">
-                {loadingCandidates ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-16 text-center text-slate-500 font-bold">
-                      <div className="inline-flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                        <span>थकबाकीदार कर्ज खाती लोड होत आहेत...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : !hasSearched ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-16 text-center text-slate-500">
-                      <div className="font-bold text-slate-700 text-sm mb-1">
-                        थकबाकीदार कर्जदारांची यादी पाहण्यासाठी वर निवड करून &quot;पहा&quot; बटणावर क्लिक करा
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        निवडलेल्या दिनांकापर्यंत फक्त थकबाकीदार असलेलीच कर्ज खाती येथे दिसतील.
-                      </div>
-                    </td>
-                  </tr>
-                ) : filteredCandidates.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-16 text-center text-slate-500 font-bold">
-                      निवडलेल्या निकषांनुसार कोणतेही थकबाकीदार कर्ज खाते आढळले नाही.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredCandidates.map((row, idx) => {
-                    const isChecked = selectedLoanIds.has(row.loanAccountID);
-                    const rowAmtVal = rowAmounts[row.loanAccountID] ?? defaultChargeAmount;
-                    const primaryAccDisplay = row.legacyAccountNumber || row.loanAccountNo;
-                    const showSecondarySystemNo =
-                      Boolean(row.legacyAccountNumber) &&
-                      row.legacyAccountNumber !== row.loanAccountNo;
-
-                    return (
-                      <tr
-                        key={row.loanAccountID}
-                        onClick={() => toggleRowSelection(row.loanAccountID)}
-                        className={`transition-colors cursor-pointer ${
-                          isChecked
-                            ? 'bg-sky-50/70 hover:bg-sky-100/70'
-                            : 'hover:bg-slate-50 text-slate-600'
-                        }`}
-                      >
-                        <td
-                          className="px-2 py-1.5 border-r border-slate-200 text-center"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleRowSelection(row.loanAccountID)}
-                            className="w-4 h-4 accent-[#005a87] cursor-pointer align-middle"
-                          />
-                        </td>
-
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-center font-mono font-semibold">
-                          {idx + 1}
-                        </td>
-
-                        <td className="px-2.5 py-1.5 border-r border-slate-200 text-center">
-                          <div className="font-mono font-black text-slate-900">
-                            {primaryAccDisplay}
-                          </div>
-                          {showSecondarySystemNo && (
-                            <div className="text-[10px] font-mono text-slate-500 leading-tight">
-                              {row.loanAccountNo}
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="px-3 py-1.5 border-r border-slate-200 text-left">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-bold text-slate-900">
-                              {row.customerName || '-'}
-                            </span>
-                            {row.cifNo && (
-                              <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
-                                {row.cifNo}
-                              </span>
-                            )}
-                            {row.alreadyChargedToday && (
-                              <span
-                                className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded-sm"
-                                title={`व्हाउचर क्र.: ${row.alreadyChargedVoucherNo || '-'}`}
-                              >
-                                आज आधीच नोंद: ₹{formatAmount(row.alreadyChargedAmount)}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        <td className="px-2.5 py-1.5 border-r border-slate-200 text-center font-medium text-slate-800">
-                          {row.loanType}
-                        </td>
-
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-center font-mono text-slate-800">
-                          {formatDisplayDate(row.loanDate)}
-                        </td>
-
-                        <td className="px-2 py-1.5 border-r border-slate-200 text-center font-mono font-semibold text-rose-700">
-                          {formatDisplayDate(row.overdueDate || row.maturityDate)}
-                        </td>
-
-                        <td className="px-2.5 py-1.5 border-r border-slate-200 text-right font-mono font-bold text-slate-900">
-                          <div>{formatAmount(row.overdueAmount)}</div>
-                          {Math.abs(row.principalBalance - row.overdueAmount) > 0.01 && (
-                            <div className="text-[10px] text-slate-500 font-normal">
-                              मुद्दल: ₹{formatAmount(row.principalBalance)}
-                            </div>
-                          )}
-                        </td>
-
-                        <td
-                          className="px-2 py-1 text-right"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={rowAmtVal}
-                            onChange={(e) =>
-                              handleRowAmountChange(row.loanAccountID, e.target.value)
-                            }
-                            className={`w-24 h-7 px-2 text-right font-mono font-black border rounded-sm focus:outline-none focus:border-primary ${
-                              isChecked
-                                ? 'bg-white border-slate-300 text-slate-900'
-                                : 'bg-slate-100 border-slate-200 text-slate-400'
-                            }`}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
           </div>
         </div>
       </div>
 
-      {/* Screenshot Exact Bottom Summary & Action Bar */}
-      <div className="bg-white border border-slate-300 rounded-sm shadow-xs px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 sticky bottom-0 z-20">
-        {/* Left Counters */}
-        <div className="flex flex-wrap items-center gap-6 text-xs sm:text-sm font-extrabold text-slate-900">
-          <div>
-            एकूण खातेदार - <span className="text-rose-700 font-mono">{filteredCandidates.length}</span>
+      {/* Slim Error Alert */}
+      {errorMessage && (
+        <div className="bg-rose-50 border border-rose-300 text-rose-800 px-2.5 py-1 rounded-sm flex items-center justify-between gap-2 text-[11px] font-bold shrink-0">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
           </div>
-          <div>
-            निवडलेले खातेदार -{' '}
-            <span className="text-rose-700 font-mono">{selectedSummary.selectedCount}</span>
+          <button
+            type="button"
+            onClick={() => setErrorMessage('')}
+            className="text-rose-600 hover:text-rose-900 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Slim Saved Voucher Confirmation Strip */}
+      {lastSavedResult && (
+        <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 px-2.5 py-1 rounded-sm flex flex-wrap items-center justify-between gap-2 text-[11px] shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span className="font-bold">{lastSavedResult.message}</span>
+            <span className="text-emerald-800">
+              (व्हाउचर: <strong className="font-mono">{lastSavedResult.voucherNo}</strong> • लेजर:{' '}
+              <strong>{lastSavedResult.incomeLedgerName}</strong> • खाती:{' '}
+              <strong>{lastSavedResult.processedCount}</strong> • एकूण:{' '}
+              <strong className="font-mono">₹{formatAmount(lastSavedResult.totalAmount)}</strong>)
+            </span>
+          </div>
+
+          {onNavigate && lastSavedResult.voucherId > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                onNavigate('voucher-posting', { voucherId: lastSavedResult.voucherId })
+              }
+              className="h-6 px-2.5 bg-primary hover:opacity-90 text-white font-bold text-[11px] rounded-sm flex items-center gap-1 cursor-pointer"
+            >
+              <ExternalLink className="w-3 h-3" />
+              <span>व्हाउचर पासिंग उघडा</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 2. Full-Height Dense Single-Line Borrowers Table Card (flex-1 min-h-0 fills remaining screen) */}
+      <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-300 border-t-2 border-t-primary rounded-sm shadow-xs overflow-hidden">
+        {/* Compact Table Toolbar Strip */}
+        <div className="px-2.5 py-1 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-1.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-800">
+              २. पात्र कर्जदारांची यादी — ज्या खात्यांवर खर्च नावे टाकायचा आहे ती टिक (✓) करा
+            </span>
+            {singleLoanQuickPickId > 0 && (
+              <button
+                type="button"
+                onClick={() => setSingleLoanQuickPickId(0)}
+                className="px-1.5 py-0.5 rounded-sm bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold hover:bg-rose-100 cursor-pointer"
+              >
+                ✕ सर्व लोड केलेली खाती दाखवा ({candidates.length})
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {candidates.length > 0 && (
+              <>
+                <span className="px-1.5 py-0.5 rounded-sm bg-rose-50 text-rose-800 border border-rose-200 font-bold text-[10px] leading-none">
+                  मुदतबाह्य: {categoryCounts.maturity}
+                </span>
+                {overdueMode === 'ALL_OVERDUE' && (
+                  <>
+                    <span className="px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-900 border border-amber-300 font-bold text-[10px] leading-none">
+                      हप्ता थकीत: {categoryCounts.installment}
+                    </span>
+                    {categoryCounts.dues > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-[10px] leading-none">
+                        येणे व्याज: {categoryCounts.dues}
+                      </span>
+                    )}
+                  </>
+                )}
+
+                <div className="relative w-44">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="टेबल फिल्टर (नाव / क्र.)..."
+                    className="h-6 w-full border border-slate-300 rounded-sm pl-2 pr-5 text-[11px] bg-white focus:outline-none focus:border-primary"
+                  />
+                  {searchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-1 top-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  ) : (
+                    <Search className="w-3 h-3 text-slate-400 absolute right-1.5 top-1.5 pointer-events-none" />
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedLoanIds.size > 0) {
+                      setSelectedLoanIds(new Set());
+                    } else {
+                      setSelectedLoanIds(new Set(filteredCandidates.map((r) => r.loanAccountID)));
+                    }
+                  }}
+                  className="h-6 px-2 rounded-sm bg-white hover:bg-primary/10 text-primary border border-primary/30 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                >
+                  {selectedLoanIds.size > 0 ? (
+                    <>
+                      <Square className="w-3 h-3" />
+                      <span>निवड साफ करा</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="w-3 h-3" />
+                      <span>सर्व निवडा</span>
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Center 4 Action Buttons: नविन | जतन | बाहेर | यादी पहा */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Scrollable Dense Grid Container */}
+        <div className="flex-1 min-h-0 overflow-auto slim-scrollbar">
+          <table className="min-w-full border-collapse text-[11px] leading-tight">
+            <thead className="bg-slate-100 text-slate-800 sticky top-0 z-10 border-b-2 border-primary/30 font-bold whitespace-nowrap">
+              <tr>
+                <th className="w-8 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAllVisible}
+                    disabled={filteredCandidates.length === 0}
+                    className="w-3.5 h-3.5 accent-primary cursor-pointer align-middle"
+                    title="सर्व दिसणारी खाती निवडा / निवड काढा"
+                  />
+                </th>
+                <th className="w-9 px-1.5 py-1.5 border-r border-slate-200 text-center">अ.नं.</th>
+                <th className="w-14 px-1.5 py-1.5 border-r border-slate-200 text-center">जुना नं.</th>
+                <th className="w-28 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                  कर्ज खाते नं.
+                </th>
+                <th className="w-20 px-1.5 py-1.5 border-r border-slate-200 text-center">CIF नं.</th>
+                <th className="px-2 py-1.5 border-r border-slate-200 text-left min-w-[170px]">
+                  कर्जदाराचे नाव
+                </th>
+                <th className="w-32 px-1.5 py-1.5 border-r border-slate-200 text-left">
+                  कर्ज प्रकार
+                </th>
+                <th className="w-28 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                  थकबाकी स्थिती
+                </th>
+                <th className="w-20 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                  कर्ज दि.
+                </th>
+                <th className="w-20 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                  थकबाकी दि.
+                </th>
+                <th className="w-24 px-1.5 py-1.5 border-r border-slate-200 text-right">
+                  चालू मुद्दल
+                </th>
+                <th className="w-20 px-1.5 py-1.5 border-r border-slate-200 text-right">
+                  येणे व्याज
+                </th>
+                <th className="w-24 px-1.5 py-1.5 border-r border-slate-200 text-right">
+                  थकबाकी रक्कम
+                </th>
+                <th className="w-22 px-1.5 py-1.5 text-right">नावे रक्कम (₹)</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {loadingCandidates ? (
+                <tr>
+                  <td colSpan={14} className="px-4 py-16 text-center text-slate-500 font-bold">
+                    <div className="inline-flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                      <span>थकबाकीदार व हप्ता-थकीत कर्ज खाती लोड होत आहेत...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : !hasSearched ? (
+                <tr>
+                  <td colSpan={14} className="px-4 py-16 text-center text-slate-500">
+                    <Coins className="w-7 h-7 text-primary/40 mx-auto mb-1" />
+                    <div className="font-bold text-slate-700 text-xs mb-0.5">
+                      वर थकबाकी पर्याय व कर्ज प्रकार निवडून &quot;पहा&quot; बटणावर क्लिक करा
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      पर्याय १ मध्ये फक्त मुदतबाह्य थकबाकीदार कर्जे, तर पर्याय २ मध्ये हप्ता थकीत,
+                      येणे बाकी व मुदतबाह्य अशी सर्व पात्र खाती एकत्रित दिसतात.
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredCandidates.length === 0 ? (
+                <tr>
+                  <td colSpan={14} className="px-4 py-16 text-center text-slate-500 font-bold">
+                    निवडलेल्या निकषांनुसार कोणतेही पात्र थकबाकीदार / हप्ता-थकीत कर्ज खाते आढळले नाही.
+                  </td>
+                </tr>
+              ) : (
+                filteredCandidates.map((row, idx) => {
+                  const isChecked = selectedLoanIds.has(row.loanAccountID);
+                  const rowAmtVal = rowAmounts[row.loanAccountID] ?? defaultChargeAmount;
+                  const bookedInterestSum =
+                    Number(row.interestBalance || 0) + Number(row.overdueInterestBalance || 0);
+
+                  return (
+                    <tr
+                      key={row.loanAccountID}
+                      onClick={() => toggleRowSelection(row.loanAccountID)}
+                      className={`h-7 transition-colors cursor-pointer whitespace-nowrap ${
+                        isChecked
+                          ? 'bg-primary/5 hover:bg-primary/10'
+                          : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <td
+                        className="px-1.5 py-0.5 border-r border-slate-200 text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleRowSelection(row.loanAccountID)}
+                          className="w-3.5 h-3.5 accent-primary cursor-pointer align-middle"
+                        />
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-600">
+                        {idx + 1}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono font-black text-primary">
+                        {row.legacyAccountNumber || '-'}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-800">
+                        {row.loanAccountNo}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-600">
+                        {row.cifNo || '-'}
+                      </td>
+
+                      <td
+                        className="px-2 py-0.5 border-r border-slate-200 text-left max-w-[240px] truncate"
+                        title={row.customerName || ''}
+                      >
+                        <span className="font-bold text-slate-900">{row.customerName || '-'}</span>
+                        {row.alreadyChargedToday && (
+                          <span
+                            className="ml-1.5 px-1 py-0.2 rounded-sm text-[9px] font-bold bg-amber-100 text-amber-950 border border-amber-400"
+                            title={`आज आधीच नोंद — व्हाउचर क्र.: ${row.alreadyChargedVoucherNo || '-'}`}
+                          >
+                            आज: ₹{formatAmount(row.alreadyChargedAmount)}
+                          </span>
+                        )}
+                      </td>
+
+                      <td
+                        className="px-1.5 py-0.5 border-r border-slate-200 text-left max-w-[140px] truncate font-medium text-slate-800"
+                        title={row.loanType}
+                      >
+                        {row.loanType}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center">
+                        {renderOverdueCategoryBadge(row)}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-700">
+                        {formatDisplayDate(row.loanDate)}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono font-bold text-rose-700">
+                        {formatDisplayDate(row.overdueDate || row.maturityDate)}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono text-slate-700">
+                        {formatAmount(row.principalBalance)}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono text-amber-800 font-semibold">
+                        {bookedInterestSum > 0.009 ? formatAmount(bookedInterestSum) : '0.00'}
+                      </td>
+
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono font-bold text-slate-900">
+                        {formatAmount(row.overdueAmount)}
+                      </td>
+
+                      <td
+                        className="px-1.5 py-0.5 text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={rowAmtVal}
+                          onChange={(e) =>
+                            handleRowAmountChange(row.loanAccountID, e.target.value)
+                          }
+                          className={`w-20 h-6 px-1.5 text-right text-[11px] font-mono font-black border rounded-sm focus:outline-none focus:border-primary ${
+                            isChecked
+                              ? 'bg-white border-primary/40 text-primary'
+                              : 'bg-slate-100 border-slate-200 text-slate-400'
+                          }`}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 3. Compact Sticky CBS Bottom Summary & Action Bar */}
+      <div className="bg-white border border-slate-300 border-t-2 border-t-primary rounded-sm shadow-xs px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        {/* Left KPI Pills */}
+        <div className="flex items-center gap-2 text-[11px] font-extrabold text-slate-800">
+          <div className="px-2 py-0.5 rounded-sm bg-slate-100 border border-slate-200">
+            एकूण खातेदार:{' '}
+            <span className="text-slate-950 font-mono">{filteredCandidates.length}</span>
+          </div>
+          <div className="px-2 py-0.5 rounded-sm bg-primary/10 border border-primary/25 text-primary">
+            निवडलेले खातेदार:{' '}
+            <span className="font-mono font-black">{selectedSummary.selectedCount}</span>
+          </div>
+        </div>
+
+        {/* Center ERP Action Buttons */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={handleReset}
             disabled={savingBatch}
-            className="px-5 py-1.5 bg-[#005a87] hover:bg-[#00486c] text-white font-extrabold text-xs rounded-sm shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="h-7 px-3.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold text-[11px] rounded-sm transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3 h-3" />
             <span>नविन</span>
           </button>
 
@@ -1165,38 +1467,38 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
             type="button"
             onClick={handleSaveBulkCharges}
             disabled={savingBatch || selectedSummary.selectedCount === 0}
-            className="px-5 py-1.5 bg-[#005a87] hover:bg-[#00486c] text-white font-extrabold text-xs rounded-sm shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="h-7 px-4 bg-primary hover:opacity-90 text-white font-extrabold text-[11px] rounded-sm shadow-2xs transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
           >
             {savingBatch ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <RefreshCw className="w-3 h-3 animate-spin" />
             ) : (
-              <Save className="w-3.5 h-3.5" />
+              <Save className="w-3 h-3" />
             )}
-            <span>जतन</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => (onNavigate ? onNavigate('loan') : window.history.back())}
-            className="px-5 py-1.5 bg-[#005a87] hover:bg-[#00486c] text-white font-extrabold text-xs rounded-sm shadow-xs transition cursor-pointer"
-          >
-            बाहेर
+            <span>जतन करा</span>
           </button>
 
           <button
             type="button"
             onClick={handleOpenBatchList}
-            className="px-5 py-1.5 bg-[#005a87] hover:bg-[#00486c] text-white font-extrabold text-xs rounded-sm shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+            className="h-7 px-3.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-bold text-[11px] rounded-sm transition flex items-center gap-1 cursor-pointer"
           >
-            <FileText className="w-3.5 h-3.5" />
+            <FileText className="w-3 h-3" />
             <span>यादी पहा</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => (onNavigate ? onNavigate('loan') : window.history.back())}
+            className="h-7 px-3.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] rounded-sm transition cursor-pointer"
+          >
+            बाहेर
           </button>
         </div>
 
         {/* Right Total Selected Amount */}
-        <div className="text-xs sm:text-sm font-extrabold text-slate-900">
-          एकूण रक्कम -{' '}
-          <span className="text-rose-700 font-mono text-base">
+        <div className="px-2.5 py-0.5 rounded-sm bg-primary/10 border border-primary/25 text-xs font-extrabold text-slate-900">
+          एकूण रक्कम:{' '}
+          <span className="text-primary font-mono text-sm font-black">
             ₹{formatAmount(selectedSummary.totalAmount)}
           </span>
         </div>
@@ -1241,7 +1543,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                   type="button"
                   onClick={fetchSavedBatches}
                   disabled={loadingBatches}
-                  className="h-7 px-3 bg-primary text-white font-bold rounded-sm flex items-center gap-1 cursor-pointer"
+                  className="h-7 px-3 bg-primary hover:opacity-90 text-white font-bold rounded-sm flex items-center gap-1 cursor-pointer"
                 >
                   {loadingBatches ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1334,7 +1636,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                             <td className="px-2.5 py-1.5 border border-slate-200 text-center font-mono font-bold">
                               {b.accountCount}
                             </td>
-                            <td className="px-2.5 py-1.5 border border-slate-200 text-right font-mono font-black text-rose-700">
+                            <td className="px-2.5 py-1.5 border border-slate-200 text-right font-mono font-black text-primary">
                               ₹{formatAmount(b.totalAmount)}
                             </td>
                             <td className="px-2.5 py-1.5 border border-slate-200 text-center">
@@ -1387,7 +1689,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                                         <td className="px-2 py-1 border text-center font-mono">
                                           {i + 1}
                                         </td>
-                                        <td className="px-2 py-1 border text-center font-mono font-bold">
+                                        <td className="px-2 py-1 border text-center font-mono font-bold text-primary">
                                           {it.legacyAccountNumber
                                             ? `${it.legacyAccountNumber} (${it.loanAccountNo})`
                                             : it.loanAccountNo}

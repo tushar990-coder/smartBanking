@@ -983,5 +983,179 @@ namespace Bhisi.Api.Tests
             Assert.Equal(10000m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 501)).PrincipalBalance);
             Assert.Equal(15000m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 503)).PrincipalBalance);
         }
+
+        [Fact]
+        public async Task BulkOverdueModes_SeparatesMaturityOnly_FromInstallmentAndReceivableDuesCombined_AndAllowsSavingInstallmentOverdue()
+        {
+            await using var db = CreateContext();
+            var bizDate = new DateTime(2026, 6, 30);
+            await SeedEnvironmentAsync(db, bizDate);
+
+            db.Customers.AddRange(
+                new Customer { CustomerID = 210, BranchID = 1, CIFNo = "CIF000210", FirstName = "विनायक", LastName = "होनमोरे", BirthDate = new DateTime(1986, 3, 10) },
+                new Customer { CustomerID = 211, BranchID = 1, CIFNo = "CIF000211", FirstName = "रोहिणी", LastName = "देशपांडे", BirthDate = new DateTime(1989, 7, 14) },
+                new Customer { CustomerID = 212, BranchID = 1, CIFNo = "CIF000212", FirstName = "नियमित", LastName = "कर्जदार", BirthDate = new DateTime(1992, 11, 20) }
+            );
+
+            // 501 (already seeded): MaturityDate = 2026-04-01 <= 2026-06-30 -> MATURITY_OVERDUE
+            // 510: Within maturity (2027-01-01), disbursed 2026-01-01, 0 persisted schedule rows -> 5 unpaid installments due (Feb..Jun 2026) -> INSTALLMENT_OVERDUE
+            // 511: Within maturity (2027-06-15), disbursed 2026-06-15 (no installment due yet), InterestBalance = 750 -> DUES_OVERDUE
+            // 512: Within maturity (2027-06-20), disbursed 2026-06-20, zero interest/installment dues -> Regular (NOT overdue)
+            db.LoanAccounts.AddRange(
+                new LoanAccount
+                {
+                    LoanAccountID = 510,
+                    BranchID = 1,
+                    CustomerID = 210,
+                    MemberID = null, // CustomerID-First nominal borrower
+                    LoanRateID = 1,
+                    LoanAccountNo = "00150100000510",
+                    LegacyAccountNumber = "19",
+                    OpeningDate = new DateTime(2026, 1, 1),
+                    LoanDisbursementDate = new DateTime(2026, 1, 1),
+                    MaturityDate = new DateTime(2027, 1, 1),
+                    DurationMonths = 12,
+                    NoOfInstallments = 12,
+                    SanctionedAmount = 12000m,
+                    PrincipalBalance = 12000m,
+                    PurePrincipalBalance = 12000m,
+                    InterestBalance = 0m,
+                    OverdueInterestBalance = 0m,
+                    InterestRate = 14m,
+                    InstallmentAmount = 1140m,
+                    Status = "Active",
+                    IsOpeningBalance = false
+                },
+                new LoanAccount
+                {
+                    LoanAccountID = 511,
+                    BranchID = 1,
+                    CustomerID = 211,
+                    MemberID = null,
+                    LoanRateID = 1,
+                    LoanAccountNo = "00150100000511",
+                    LegacyAccountNumber = "22",
+                    OpeningDate = new DateTime(2026, 6, 15),
+                    LoanDisbursementDate = new DateTime(2026, 6, 15),
+                    MaturityDate = new DateTime(2027, 6, 15),
+                    DurationMonths = 12,
+                    NoOfInstallments = 12,
+                    SanctionedAmount = 25000m,
+                    PrincipalBalance = 25000m,
+                    PurePrincipalBalance = 25000m,
+                    InterestBalance = 750m, // Receivable interest due (येणे बाकी)
+                    OverdueInterestBalance = 0m,
+                    InterestRate = 14m,
+                    InstallmentAmount = 2375m,
+                    Status = "Active",
+                    IsOpeningBalance = false
+                },
+                new LoanAccount
+                {
+                    LoanAccountID = 512,
+                    BranchID = 1,
+                    CustomerID = 212,
+                    MemberID = null,
+                    LoanRateID = 1,
+                    LoanAccountNo = "00150100000512",
+                    LegacyAccountNumber = "90",
+                    OpeningDate = new DateTime(2026, 6, 20),
+                    LoanDisbursementDate = new DateTime(2026, 6, 20),
+                    MaturityDate = new DateTime(2027, 6, 20),
+                    DurationMonths = 12,
+                    NoOfInstallments = 12,
+                    SanctionedAmount = 30000m,
+                    PrincipalBalance = 30000m,
+                    PurePrincipalBalance = 30000m,
+                    InterestBalance = 0m,
+                    OverdueInterestBalance = 0m,
+                    InterestRate = 14m,
+                    InstallmentAmount = 2850m,
+                    Status = "Active",
+                    IsOpeningBalance = false
+                }
+            );
+            await db.SaveChangesAsync();
+
+            var legalCtrl = new LegalRecoveryController(db);
+            AttachUser(legalCtrl, BuildPrincipal(11, "maker", "Accountant", branchId: 1, bizDate));
+
+            // 1. Mode 1 (MATURITY_ONLY): Returns ONLY post-maturity loan 501; excludes 510, 511, 512
+            var matOnlyOk = Assert.IsType<OkObjectResult>(
+                await legalCtrl.GetOverdueChargeCandidates(branchId: 1, asOnDate: bizDate, overdueMode: "MATURITY_ONLY"));
+            using var matOnlyDoc = SerializeCamelCase(matOnlyOk.Value);
+            var matOnlyRows = matOnlyDoc.RootElement.EnumerateArray().ToList();
+            var matOnlyIds = matOnlyRows.Select(r => r.GetProperty("loanAccountID").GetInt32()).ToList();
+            Assert.Single(matOnlyIds);
+            Assert.Equal(501, matOnlyIds[0]);
+            Assert.Equal("MATURITY_OVERDUE", matOnlyRows[0].GetProperty("overdueCategory").GetString());
+
+            // 2. Mode 2 (ALL_OVERDUE): Returns 501 (maturity), 510 (installment overdue via in-memory schedule), and 511 (receivable dues) together; excludes regular 512
+            var allOverdueOk = Assert.IsType<OkObjectResult>(
+                await legalCtrl.GetOverdueChargeCandidates(branchId: 1, asOnDate: bizDate, overdueMode: "ALL_OVERDUE"));
+            using var allOverdueDoc = SerializeCamelCase(allOverdueOk.Value);
+            var allRows = allOverdueDoc.RootElement.EnumerateArray().ToList();
+            var allIds = allRows.Select(r => r.GetProperty("loanAccountID").GetInt32()).ToList();
+
+            Assert.Contains(501, allIds);
+            Assert.Contains(510, allIds);
+            Assert.Contains(511, allIds);
+            Assert.DoesNotContain(512, allIds);
+            Assert.DoesNotContain(502, allIds); // Branch 2 excluded
+
+            var row510 = allRows.Single(r => r.GetProperty("loanAccountID").GetInt32() == 510);
+            Assert.Equal("INSTALLMENT_OVERDUE", row510.GetProperty("overdueCategory").GetString());
+            Assert.True(row510.GetProperty("isInstallmentOverdue").GetBoolean());
+            Assert.False(row510.GetProperty("isMaturityOverdue").GetBoolean());
+            Assert.Equal(5, row510.GetProperty("overdueInstallmentsCount").GetInt32()); // Feb, Mar, Apr, May, Jun 2026
+            Assert.True(row510.GetProperty("overdueAmount").GetDecimal() > 0m);
+
+            var row511 = allRows.Single(r => r.GetProperty("loanAccountID").GetInt32() == 511);
+            Assert.Equal("DUES_OVERDUE", row511.GetProperty("overdueCategory").GetString());
+            Assert.True(row511.GetProperty("hasReceivableDues").GetBoolean());
+            Assert.Equal(750m, row511.GetProperty("overdueAmount").GetDecimal());
+
+            // 3. Bulk save succeeds on installment-overdue (510) + receivable-dues (511) accounts and posts on approval
+            var bulkOk = Assert.IsType<OkObjectResult>(await legalCtrl.BulkAddLoanCharges(new BulkAddLoanChargeDto
+            {
+                BranchId = 1,
+                ExpenseDate = bizDate,
+                CreditLedgerId = 405, // वसूली खर्च उत्पन्न
+                Items = new List<BulkLoanChargeItemDto>
+                {
+                    new() { LoanAccountId = 510, Amount = 100m },
+                    new() { LoanAccountId = 511, Amount = 100m }
+                }
+            }));
+            using var bulkSaveDoc = SerializeCamelCase(bulkOk.Value);
+            int voucherId = bulkSaveDoc.RootElement.GetProperty("voucherId").GetInt32();
+            Assert.Equal(2, bulkSaveDoc.RootElement.GetProperty("processedCount").GetInt32());
+            Assert.Equal(200m, bulkSaveDoc.RootElement.GetProperty("totalAmount").GetDecimal());
+
+            var postingCtrl = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(postingCtrl, BuildPrincipal(22, "checker", "Admin", branchId: 1, bizDate));
+            Assert.IsType<OkObjectResult>(await postingCtrl.PostVouchers(new VoucherPostingController.PostVouchersRequest
+            {
+                VoucherIds = new List<int> { voucherId },
+                BusinessDate = bizDate
+            }));
+
+            var loan510After = await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 510);
+            var loan511After = await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 511);
+            Assert.Equal(12100m, loan510After.PrincipalBalance);
+            Assert.Equal(100m, loan510After.CapitalizedRecoveryCharges);
+            Assert.Equal(25100m, loan511After.PrincipalBalance);
+            Assert.Equal(100m, loan511After.CapitalizedRecoveryCharges);
+
+            // 4. Regular zero-dues loan 512 is still strictly rejected by BulkAddLoanCharges
+            var badRegularRes = await legalCtrl.BulkAddLoanCharges(new BulkAddLoanChargeDto
+            {
+                BranchId = 1,
+                ExpenseDate = bizDate,
+                CreditLedgerId = 405,
+                Items = new List<BulkLoanChargeItemDto> { new() { LoanAccountId = 512, Amount = 100m } }
+            });
+            Assert.IsType<BadRequestObjectResult>(badRegularRes);
+        }
     }
 }

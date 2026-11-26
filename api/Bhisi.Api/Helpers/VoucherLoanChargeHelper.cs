@@ -461,55 +461,155 @@ namespace Bhisi.Api.Helpers
             public string IncomeLedgerName { get; set; } = string.Empty;
         }
 
-        public static (bool IsOverdue, DateTime? OverdueDate, decimal OverdueAmount) ComputeOverdueCandidateSnapshot(
+        public sealed class OverdueCandidateSnapshot
+        {
+            public bool IsAnyOverdue { get; set; }
+            public bool IsMaturityOverdue { get; set; }
+            public bool IsInstallmentOverdue { get; set; }
+            public bool HasReceivableDues { get; set; }
+            public int OverdueInstallmentsCount { get; set; }
+            public string OverdueCategory { get; set; } = string.Empty; // MATURITY_OVERDUE | INSTALLMENT_OVERDUE | DUES_OVERDUE
+            public DateTime? OverdueDate { get; set; }
+            public decimal OverdueAmount { get; set; }
+        }
+
+        public static OverdueCandidateSnapshot ComputeOverdueCandidateSnapshot(
             LoanAccount? la,
             IEnumerable<LoanInstallmentSchedule>? accountSchedules,
             DateTime asOnDate,
-            decimal unpaidRecoveryLedgerDue = 0m)
+            decimal unpaidRecoveryLedgerDue = 0m,
+            List<LoanCollection>? accountCollections = null)
         {
             DateTime target = asOnDate.Date;
             if (la == null ||
                 !string.Equals(la.Status, "Active", StringComparison.OrdinalIgnoreCase) ||
                 la.OpeningDate.Date > target ||
-                la.PrincipalBalance <= 0m)
+                (la.PrincipalBalance <= 0m && la.InterestBalance <= 0m && la.OverdueInterestBalance <= 0m && unpaidRecoveryLedgerDue <= 0m))
             {
-                return (false, null, 0m);
+                return new OverdueCandidateSnapshot();
             }
 
-            var overdueSchedules = (accountSchedules ?? Enumerable.Empty<LoanInstallmentSchedule>())
-                .Where(s => s.DueDate.Date <= target && !string.Equals(s.Status, "Paid", StringComparison.OrdinalIgnoreCase))
+            int durationMonths = la.DurationMonths > 0 ? la.DurationMonths : (la.LoanRate?.DurationMonths ?? 0);
+            DateTime baseDisbDate = (la.LoanDisbursementDate ?? la.OpeningDate).Date;
+            DateTime? effectiveMaturity = la.MaturityDate?.Date
+                ?? (durationMonths > 0 && baseDisbDate != default ? baseDisbDate.AddMonths(durationMonths) : (DateTime?)null);
+
+            bool isMaturityOverdue = effectiveMaturity.HasValue && effectiveMaturity.Value.Date <= target && la.PrincipalBalance > 0m;
+
+            List<LoanInstallmentSchedule> effectiveSchedules;
+            if (accountSchedules != null && accountSchedules.Any())
+            {
+                effectiveSchedules = accountSchedules
+                    .Select(s => new LoanInstallmentSchedule
+                    {
+                        LoanAccountID = s.LoanAccountID,
+                        InstallmentNo = s.InstallmentNo,
+                        DueDate = s.DueDate,
+                        PrincipalAmount = s.PrincipalAmount,
+                        InterestAmount = s.InterestAmount,
+                        TotalAmount = s.TotalAmount,
+                        BalanceAmount = s.BalanceAmount,
+                        OpeningBalance = s.OpeningBalance,
+                        ClosingBalance = s.ClosingBalance,
+                        Days = s.Days,
+                        InterestRate = s.InterestRate,
+                        Status = s.Status,
+                        PaidDate = s.PaidDate
+                    })
+                    .ToList();
+
+                if ((accountCollections != null && accountCollections.Count > 0) || la.IsOpeningBalance)
+                {
+                    Services.LoanScheduleGenerator.SynchronizeSchedules(
+                        la,
+                        effectiveSchedules,
+                        accountCollections ?? new List<LoanCollection>());
+                }
+            }
+            else if (la.LoanRate != null && la.PrincipalBalance > 0m)
+            {
+                effectiveSchedules = Services.LoanScheduleGenerator.GenerateSchedules(la, la.LoanRate);
+                if (effectiveSchedules.Count > 0 && ((accountCollections != null && accountCollections.Count > 0) || la.IsOpeningBalance))
+                {
+                    Services.LoanScheduleGenerator.SynchronizeSchedules(
+                        la,
+                        effectiveSchedules,
+                        accountCollections ?? new List<LoanCollection>());
+                }
+            }
+            else
+            {
+                effectiveSchedules = new List<LoanInstallmentSchedule>();
+            }
+
+            var overdueSchedules = effectiveSchedules
+                .Where(s => s.DueDate.Date <= target &&
+                            !string.Equals(s.Status, "Paid", StringComparison.OrdinalIgnoreCase) &&
+                            !(la.IsOpeningBalance && s.DueDate.Date <= la.OpeningDate.Date))
+                .OrderBy(s => s.DueDate)
                 .ToList();
 
-            decimal overduePrincipal = overdueSchedules.Sum(s => s.PrincipalAmount);
-            if (la.MaturityDate.HasValue && la.MaturityDate.Value.Date <= target && la.PrincipalBalance > overduePrincipal)
+            decimal overdueInstallmentPrincipal = overdueSchedules.Sum(s => s.PrincipalAmount);
+            if (la.PrincipalBalance > 0m && overdueInstallmentPrincipal > la.PrincipalBalance)
             {
-                overduePrincipal = la.PrincipalBalance;
+                overdueInstallmentPrincipal = la.PrincipalBalance;
             }
 
-            if (overduePrincipal > la.PrincipalBalance)
+            bool isInstallmentOverdue = !isMaturityOverdue &&
+                                        overdueSchedules.Count > 0 &&
+                                        overdueInstallmentPrincipal > 0m &&
+                                        la.PrincipalBalance > 0m;
+
+            decimal receivableDues = Math.Max(0m, la.InterestBalance) +
+                                     Math.Max(0m, la.OverdueInterestBalance) +
+                                     Math.Max(0m, unpaidRecoveryLedgerDue);
+            bool hasReceivableDues = receivableDues > 0m;
+
+            bool isAnyOverdue = isMaturityOverdue || isInstallmentOverdue || hasReceivableDues;
+            if (!isAnyOverdue)
             {
-                overduePrincipal = la.PrincipalBalance;
+                return new OverdueCandidateSnapshot();
             }
 
-            bool isOverdue =
-                overduePrincipal > 0m ||
-                la.OverdueInterestBalance > 0m ||
-                unpaidRecoveryLedgerDue > 0m ||
-                (la.MaturityDate.HasValue && la.MaturityDate.Value.Date <= target && la.PrincipalBalance > 0m);
-
-            if (!isOverdue)
+            decimal effectiveOverdueAmt;
+            if (isMaturityOverdue)
             {
-                return (false, null, 0m);
+                effectiveOverdueAmt = la.PrincipalBalance;
+            }
+            else if (overdueInstallmentPrincipal > 0m)
+            {
+                effectiveOverdueAmt = overdueInstallmentPrincipal;
+            }
+            else
+            {
+                effectiveOverdueAmt = receivableDues > 0m ? receivableDues : la.PrincipalBalance;
             }
 
             DateTime? overdueDate = overdueSchedules.Any()
                 ? overdueSchedules.Min(s => s.DueDate.Date)
-                : (la.MaturityDate.HasValue && la.MaturityDate.Value.Date <= target
-                    ? la.MaturityDate.Value.Date
-                    : (la.MaturityDate?.Date ?? la.OpeningDate.Date));
+                : (isMaturityOverdue
+                    ? effectiveMaturity!.Value
+                    : (la.LastInterestPostingDate?.Date ?? la.LastInstallmentPaidDate?.Date ?? effectiveMaturity ?? la.OpeningDate.Date));
 
-            decimal effectiveOverdueAmt = overduePrincipal > 0m ? overduePrincipal : la.PrincipalBalance;
-            return (true, overdueDate, Math.Round(effectiveOverdueAmt, 2, MidpointRounding.AwayFromZero));
+            string category = isMaturityOverdue
+                ? "MATURITY_OVERDUE"
+                : (isInstallmentOverdue ? "INSTALLMENT_OVERDUE" : "DUES_OVERDUE");
+
+            int overdueCount = overdueSchedules.Count > 0
+                ? overdueSchedules.Count
+                : (isMaturityOverdue ? Math.Max(1, la.NoOfInstallments) : 0);
+
+            return new OverdueCandidateSnapshot
+            {
+                IsAnyOverdue = true,
+                IsMaturityOverdue = isMaturityOverdue,
+                IsInstallmentOverdue = isInstallmentOverdue,
+                HasReceivableDues = hasReceivableDues,
+                OverdueInstallmentsCount = overdueCount,
+                OverdueCategory = category,
+                OverdueDate = overdueDate,
+                OverdueAmount = Math.Round(Math.Max(0m, effectiveOverdueAmt), 2, MidpointRounding.AwayFromZero)
+            };
         }
 
         public static async Task<BulkLoanChargeResult> ExecuteBulkLoanChargesAtomicAsync(
@@ -593,6 +693,13 @@ namespace Bhisi.Api.Helpers
                 .Select(g => new { LoanAccountID = g.Key, NetDue = g.Sum(x => x.DebitAmount - x.CreditAmount) })
                 .ToDictionaryAsync(x => x.LoanAccountID, x => Math.Max(0m, x.NetDue));
 
+            var collectionsByLoan = (await context.LoanCollections
+                .AsNoTracking()
+                .Where(c => requestedLoanIds.Contains(c.LoanAccountID) && c.CollectionDate <= effDate)
+                .ToListAsync())
+                .GroupBy(c => c.LoanAccountID)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
             var validatedEntries = new List<(LoanAccount Loan, int DebitLedgerId, int? CustomerId, int? MemberId, decimal Amount)>();
             foreach (var (loanId, amt) in normalizedItems)
             {
@@ -606,23 +713,26 @@ namespace Bhisi.Api.Helpers
                     throw new InvalidOperationException($"आंतर-शाखा कर्ज खर्च बंदी! कर्ज खाते क्र. '{loan.LegacyAccountNumber ?? loan.LoanAccountNo}' हे शाखा #{loan.BranchID} मधील आहे.");
                 }
 
-                if (string.Equals(loan.Status, "Closed", StringComparison.OrdinalIgnoreCase) || loan.PrincipalBalance <= 0m)
+                if (string.Equals(loan.Status, "Closed", StringComparison.OrdinalIgnoreCase) ||
+                    (loan.PrincipalBalance <= 0m && loan.InterestBalance <= 0m && loan.OverdueInterestBalance <= 0m))
                 {
-                    throw new InvalidOperationException($"कर्ज खाते क्र. '{loan.LegacyAccountNumber ?? loan.LoanAccountNo}' बंद आहे किंवा मुद्दल बाकी शून्य आहे.");
+                    throw new InvalidOperationException($"कर्ज खाते क्र. '{loan.LegacyAccountNumber ?? loan.LoanAccountNo}' बंद आहे किंवा येणे बाकी शून्य आहे.");
                 }
 
                 schedulesByLoan.TryGetValue(loanId, out var accSchedules);
                 recoveryDueByLoan.TryGetValue(loanId, out var unpaidRec);
-                var overdueSnap = ComputeOverdueCandidateSnapshot(loan, accSchedules, effDate, unpaidRec);
-                if (!overdueSnap.IsOverdue)
+                collectionsByLoan.TryGetValue(loanId, out var accCollections);
+                var overdueSnap = ComputeOverdueCandidateSnapshot(loan, accSchedules, effDate, unpaidRec, accCollections);
+                if (!overdueSnap.IsAnyOverdue)
                 {
-                    throw new InvalidOperationException($"कर्ज खाते क्र. '{loan.LegacyAccountNumber ?? loan.LoanAccountNo}' हे दिनांक {effDate:dd/MM/yyyy} रोजी थकबाकीदार नाही. या फॉर्ममधून फक्त थकबाकीदार कर्ज खात्यांवरच खर्च नावे टाकता येतो.");
+                    throw new InvalidOperationException($"कर्ज खाते क्र. '{loan.LegacyAccountNumber ?? loan.LoanAccountNo}' वर दिनांक {effDate:dd/MM/yyyy} पर्यंत कोणताही हप्ता किंवा थकबाकी बाकी नाही.");
                 }
 
                 int debitLedgerId = loan.LoanRate?.LoanLedgerID ?? 0;
                 if (debitLedgerId <= 0 || !loanControlLedgerIds.Contains(debitLedgerId))
                 {
-                    throw new InvalidOperationException($"कर्ज योजना '{loan.LoanRate?.LoanType ?? "अज्ञात"}' ला वैध कर्ज मुद्दल लेजर (Loan Ledger) जोडलेले नाही.");
+                    string schemeTitle = !string.IsNullOrWhiteSpace(loan.LoanRate?.ShortName) ? loan.LoanRate!.ShortName! : (loan.LoanRate?.LoanType ?? "अज्ञात");
+                    throw new InvalidOperationException($"कर्ज योजना '{schemeTitle}' ला वैध कर्ज मुद्दल लेजर (Loan Ledger) जोडलेले नाही.");
                 }
 
                 // CustomerID-First resolution: never fall back to MemberID ?? 1 or mix CustomerID into MemberID

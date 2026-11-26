@@ -184,6 +184,15 @@ export default function LoanDashboard({ onNavigate }: LoanDashboardProps) {
       gradient: themeCfg.gradients[3]
     },
     {
+      id: 'loan-bulk-charges',
+      titleMr: 'वसुली खर्च नावे',
+      titleEn: 'DUE CHARGES (BULK)',
+      icon: CircleDollarSign,
+      tab: 'loan-bulk-charges',
+      params: {},
+      gradient: themeCfg.gradients[1]
+    },
+    {
       id: 'loan-docs',
       titleMr: 'तारण व दागिने ट्रॅकिंग',
       titleEn: 'COLLATERAL & CUSTODY',
@@ -269,7 +278,7 @@ export default function LoanDashboard({ onNavigate }: LoanDashboardProps) {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 justify-items-center pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4 justify-items-center pt-2">
               {loanActionButtons.map((btn) => {
                 const IconComponent = btn.icon;
                 return (

@@ -447,6 +447,315 @@ namespace Bhisi.Api.Helpers
             }
         }
 
+        public sealed class BulkLoanChargeItemInput
+        {
+            public int LoanAccountId { get; set; }
+            public decimal Amount { get; set; }
+        }
+
+        public sealed class BulkLoanChargeResult
+        {
+            public Voucher Voucher { get; set; } = null!;
+            public int ProcessedCount { get; set; }
+            public decimal TotalAmount { get; set; }
+            public string IncomeLedgerName { get; set; } = string.Empty;
+        }
+
+        public static (bool IsOverdue, DateTime? OverdueDate, decimal OverdueAmount) ComputeOverdueCandidateSnapshot(
+            LoanAccount? la,
+            IEnumerable<LoanInstallmentSchedule>? accountSchedules,
+            DateTime asOnDate,
+            decimal unpaidRecoveryLedgerDue = 0m)
+        {
+            DateTime target = asOnDate.Date;
+            if (la == null ||
+                !string.Equals(la.Status, "Active", StringComparison.OrdinalIgnoreCase) ||
+                la.OpeningDate.Date > target ||
+                la.PrincipalBalance <= 0m)
+            {
+                return (false, null, 0m);
+            }
+
+            var overdueSchedules = (accountSchedules ?? Enumerable.Empty<LoanInstallmentSchedule>())
+                .Where(s => s.DueDate.Date <= target && !string.Equals(s.Status, "Paid", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            decimal overduePrincipal = overdueSchedules.Sum(s => s.PrincipalAmount);
+            if (la.MaturityDate.HasValue && la.MaturityDate.Value.Date <= target && la.PrincipalBalance > overduePrincipal)
+            {
+                overduePrincipal = la.PrincipalBalance;
+            }
+
+            if (overduePrincipal > la.PrincipalBalance)
+            {
+                overduePrincipal = la.PrincipalBalance;
+            }
+
+            bool isOverdue =
+                overduePrincipal > 0m ||
+                la.OverdueInterestBalance > 0m ||
+                unpaidRecoveryLedgerDue > 0m ||
+                (la.MaturityDate.HasValue && la.MaturityDate.Value.Date <= target && la.PrincipalBalance > 0m);
+
+            if (!isOverdue)
+            {
+                return (false, null, 0m);
+            }
+
+            DateTime? overdueDate = overdueSchedules.Any()
+                ? overdueSchedules.Min(s => s.DueDate.Date)
+                : (la.MaturityDate.HasValue && la.MaturityDate.Value.Date <= target
+                    ? la.MaturityDate.Value.Date
+                    : (la.MaturityDate?.Date ?? la.OpeningDate.Date));
+
+            decimal effectiveOverdueAmt = overduePrincipal > 0m ? overduePrincipal : la.PrincipalBalance;
+            return (true, overdueDate, Math.Round(effectiveOverdueAmt, 2, MidpointRounding.AwayFromZero));
+        }
+
+        public static async Task<BulkLoanChargeResult> ExecuteBulkLoanChargesAtomicAsync(
+            AppDbContext context,
+            int effectiveBranchId,
+            DateTime expenseDate,
+            int creditLedgerId,
+            IReadOnlyList<BulkLoanChargeItemInput> items,
+            int createdByUserId,
+            string? expenseType = null,
+            string? remarks = null)
+        {
+            int branchId = effectiveBranchId > 0 ? effectiveBranchId : 1;
+            int actorUserId = createdByUserId > 0 ? createdByUserId : 1;
+            DateTime effDate = expenseDate == default ? DateTime.Today : expenseDate.Date;
+
+            if (items == null || items.Count == 0)
+            {
+                throw new InvalidOperationException("कृपया खर्च नावे टाकण्यासाठी किमान एक थकबाकीदार कर्ज खाते निवडा.");
+            }
+
+            var normalizedItems = new List<(int LoanAccountId, decimal Amount)>();
+            var seenLoanIds = new HashSet<int>();
+            foreach (var raw in items)
+            {
+                if (raw == null || raw.LoanAccountId <= 0)
+                {
+                    throw new InvalidOperationException("निवडलेल्या यादीत अवैध कर्ज खाते आढळले.");
+                }
+                if (!seenLoanIds.Add(raw.LoanAccountId))
+                {
+                    throw new InvalidOperationException($"निवडलेल्या यादीत कर्ज खाते ID #{raw.LoanAccountId} ची दुहेरी नोंद आढळली आहे.");
+                }
+                decimal amt = Math.Round(raw.Amount, 2, MidpointRounding.AwayFromZero);
+                if (amt <= 0m)
+                {
+                    throw new InvalidOperationException("प्रत्येक निवडलेल्या खात्यासाठी खर्च रक्कम शून्यापेक्षा जास्त असणे आवश्यक आहे.");
+                }
+                normalizedItems.Add((raw.LoanAccountId, amt));
+            }
+
+            if (creditLedgerId <= 0)
+            {
+                throw new InvalidOperationException("कृपया जमेसाठी उत्पन्नाचे (Income) खाते निवडा.");
+            }
+
+            var blockedControlIds = await GetPersonalOrControlLedgerIdsAsync(context);
+            var creditLedger = await context.Ledgers
+                .AsNoTracking()
+                .Include(l => l.AccountGroup)
+                .FirstOrDefaultAsync(l => l.LedgerID == creditLedgerId);
+
+            if (!IsStrictIncomeLedger(creditLedger, blockedControlIds, out var crErr))
+            {
+                throw new InvalidOperationException(crErr);
+            }
+
+            var loanControlLedgerIds = await GetConfiguredLoanPrincipalLedgerIdsAsync(context);
+            var requestedLoanIds = normalizedItems.Select(x => x.LoanAccountId).ToList();
+
+            var loans = await context.LoanAccounts
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(l => l.Customer)
+                .Include(l => l.Member).ThenInclude(m => m!.Customer)
+                .Include(l => l.LoanRate)
+                .Where(l => requestedLoanIds.Contains(l.LoanAccountID))
+                .ToDictionaryAsync(l => l.LoanAccountID);
+
+            var schedulesByLoan = (await context.LoanInstallmentSchedules
+                .AsNoTracking()
+                .Where(s => requestedLoanIds.Contains(s.LoanAccountID))
+                .ToListAsync())
+                .GroupBy(s => s.LoanAccountID)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var recoveryDueByLoan = await context.OverdueRecoveryLedgers
+                .AsNoTracking()
+                .Where(o => requestedLoanIds.Contains(o.LoanAccountID) && o.TransactionDate <= effDate)
+                .GroupBy(o => o.LoanAccountID)
+                .Select(g => new { LoanAccountID = g.Key, NetDue = g.Sum(x => x.DebitAmount - x.CreditAmount) })
+                .ToDictionaryAsync(x => x.LoanAccountID, x => Math.Max(0m, x.NetDue));
+
+            var validatedEntries = new List<(LoanAccount Loan, int DebitLedgerId, int? CustomerId, int? MemberId, decimal Amount)>();
+            foreach (var (loanId, amt) in normalizedItems)
+            {
+                if (!loans.TryGetValue(loanId, out var loan))
+                {
+                    throw new InvalidOperationException($"निवडलेले कर्ज खाते (ID: #{loanId}) डेटाबेसमध्ये सापडले नाही.");
+                }
+
+                if (loan.BranchID > 0 && loan.BranchID != branchId)
+                {
+                    throw new InvalidOperationException($"आंतर-शाखा कर्ज खर्च बंदी! कर्ज खाते क्र. '{loan.LegacyAccountNumber ?? loan.LoanAccountNo}' हे शाखा #{loan.BranchID} मधील आहे.");
+                }
+
+                if (string.Equals(loan.Status, "Closed", StringComparison.OrdinalIgnoreCase) || loan.PrincipalBalance <= 0m)
+                {
+                    throw new InvalidOperationException($"कर्ज खाते क्र. '{loan.LegacyAccountNumber ?? loan.LoanAccountNo}' बंद आहे किंवा मुद्दल बाकी शून्य आहे.");
+                }
+
+                schedulesByLoan.TryGetValue(loanId, out var accSchedules);
+                recoveryDueByLoan.TryGetValue(loanId, out var unpaidRec);
+                var overdueSnap = ComputeOverdueCandidateSnapshot(loan, accSchedules, effDate, unpaidRec);
+                if (!overdueSnap.IsOverdue)
+                {
+                    throw new InvalidOperationException($"कर्ज खाते क्र. '{loan.LegacyAccountNumber ?? loan.LoanAccountNo}' हे दिनांक {effDate:dd/MM/yyyy} रोजी थकबाकीदार नाही. या फॉर्ममधून फक्त थकबाकीदार कर्ज खात्यांवरच खर्च नावे टाकता येतो.");
+                }
+
+                int debitLedgerId = loan.LoanRate?.LoanLedgerID ?? 0;
+                if (debitLedgerId <= 0 || !loanControlLedgerIds.Contains(debitLedgerId))
+                {
+                    throw new InvalidOperationException($"कर्ज योजना '{loan.LoanRate?.LoanType ?? "अज्ञात"}' ला वैध कर्ज मुद्दल लेजर (Loan Ledger) जोडलेले नाही.");
+                }
+
+                // CustomerID-First resolution: never fall back to MemberID ?? 1 or mix CustomerID into MemberID
+                int? resolvedCustomerId = LegalRecoveryTrackerHelper.ResolveLoanCustomerId(loan);
+                int? nullableMemberId = loan.MemberID.HasValue && loan.MemberID.Value > 0 ? loan.MemberID.Value : null;
+
+                validatedEntries.Add((loan, debitLedgerId, resolvedCustomerId, nullableMemberId, amt));
+            }
+
+            var activeCasesByLoan = await context.Sec101CaseMasters
+                .AsNoTracking()
+                .Where(c => requestedLoanIds.Contains(c.LoanAccountId) && c.Status != "DISMISSED" && c.Status != "WITHDRAWN" && c.Status != "CLOSED_RECOVERED")
+                .GroupBy(c => c.LoanAccountId)
+                .Select(g => new { LoanAccountId = g.Key, CaseId = g.OrderByDescending(x => x.FilingDate).Select(x => (int?)x.CaseId).FirstOrDefault() })
+                .ToDictionaryAsync(x => x.LoanAccountId, x => x.CaseId);
+
+            string normExpenseType = string.IsNullOrWhiteSpace(expenseType)
+                ? "RECOVERY_EXPENSE"
+                : expenseType.Trim().ToUpperInvariant();
+            if (!SupportedChargeTypes.Contains(normExpenseType))
+            {
+                normExpenseType = "RECOVERY_EXPENSE";
+            }
+
+            decimal totalAmount = Math.Round(validatedEntries.Sum(e => e.Amount), 2, MidpointRounding.AwayFromZero);
+            string cleanRemark = (remarks ?? string.Empty).Trim();
+            string voucherNarration = $"बल्क वसुली खर्च नावे ({creditLedger!.LedgerName}) - एकूण {validatedEntries.Count} थकबाकीदार खाती" +
+                                      (!string.IsNullOrEmpty(cleanRemark) ? $" | {cleanRemark}" : string.Empty);
+
+            var ownTx = context.Database.CurrentTransaction == null
+                ? await context.Database.BeginTransactionAsync()
+                : null;
+
+            try
+            {
+                string prefix = $"JV-BCHG-{branchId}-{effDate:yyyyMMdd}-";
+                string voucherNo = await VoucherNumberHelper.NextVoucherNoAsync(context, prefix, 4);
+
+                var voucherDetails = new List<VoucherDetail>(validatedEntries.Count + 1);
+                foreach (var entry in validatedEntries)
+                {
+                    voucherDetails.Add(new VoucherDetail
+                    {
+                        LedgerID = entry.DebitLedgerId,
+                        CustomerID = entry.CustomerId,
+                        MemberID = entry.MemberId,
+                        ChargeLoanAccountID = entry.Loan.LoanAccountID,
+                        ChargeExpenseType = normExpenseType,
+                        DrCr = "Dr",
+                        Amount = entry.Amount
+                    });
+                }
+
+                voucherDetails.Add(new VoucherDetail
+                {
+                    LedgerID = creditLedger.LedgerID,
+                    CustomerID = null,
+                    MemberID = null,
+                    DrCr = "Cr",
+                    Amount = totalAmount
+                });
+
+                var voucher = new Voucher
+                {
+                    BranchID = branchId,
+                    VoucherNo = voucherNo,
+                    VoucherDate = effDate,
+                    VoucherType = "Journal",
+                    Status = "Pending",
+                    Narration = voucherNarration,
+                    TotalAmount = totalAmount,
+                    CreatedBy = actorUserId,
+                    CreatedOn = DateTime.UtcNow,
+                    VoucherDetails = voucherDetails
+                };
+
+                VoucherBalanceHelper.EnsureBalanced(voucher);
+                context.Vouchers.Add(voucher);
+                await context.SaveChangesAsync();
+
+                string perAccountRemark = !string.IsNullOrEmpty(cleanRemark)
+                    ? $"{creditLedger.LedgerName} - {cleanRemark}"
+                    : creditLedger.LedgerName;
+
+                foreach (var entry in validatedEntries)
+                {
+                    activeCasesByLoan.TryGetValue(entry.Loan.LoanAccountID, out var activeCaseId);
+                    context.Sec101LegalExpenses.Add(new Sec101LegalExpense
+                    {
+                        BranchId = branchId,
+                        CaseId = activeCaseId,
+                        LoanAccountId = entry.Loan.LoanAccountID,
+                        CustomerId = entry.CustomerId,
+                        ExpenseType = normExpenseType,
+                        Amount = entry.Amount,
+                        ExpenseDate = effDate,
+                        PaidTo = creditLedger.LedgerName,
+                        VoucherId = voucher.VoucherID,
+                        IsDebitedToLoan = true,
+                        CapitalizeToLoanPrincipal = true,
+                        IsPrincipalApplied = false,
+                        DebitLedgerId = entry.DebitLedgerId,
+                        CreditLedgerId = creditLedger.LedgerID,
+                        Remarks = perAccountRemark,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = actorUserId
+                    });
+                }
+
+                await context.SaveChangesAsync();
+                if (ownTx != null)
+                {
+                    await ownTx.CommitAsync();
+                }
+
+                return new BulkLoanChargeResult
+                {
+                    Voucher = voucher,
+                    ProcessedCount = validatedEntries.Count,
+                    TotalAmount = totalAmount,
+                    IncomeLedgerName = creditLedger.LedgerName
+                };
+            }
+            catch
+            {
+                if (ownTx != null)
+                {
+                    await ownTx.RollbackAsync();
+                }
+                throw;
+            }
+        }
+
         public static async Task ReverseApprovedVoucherLoanChargesOnUnpassAsync(
             AppDbContext context,
             Voucher voucher)

@@ -4187,8 +4187,13 @@ namespace Bhisi.Api.Controllers
 
                 foreach (var chg in inRangePrincipalCharges)
                 {
-                    string typeLabel = Helpers.VoucherLoanChargeHelper.GetExpenseTypeMarathiLabel(chg.ExpenseType);
-                    string remarkPart = !string.IsNullOrWhiteSpace(chg.Remarks) ? $" - {chg.Remarks}" : "";
+                    string typeLabel = !string.IsNullOrWhiteSpace(chg.PaidTo)
+                        ? chg.PaidTo.Trim()
+                        : Helpers.VoucherLoanChargeHelper.GetExpenseTypeMarathiLabel(chg.ExpenseType);
+                    string cleanRemark = (chg.Remarks ?? string.Empty).Trim();
+                    string remarkPart = (!string.IsNullOrEmpty(cleanRemark) && !string.Equals(cleanRemark, typeLabel, StringComparison.OrdinalIgnoreCase))
+                        ? $" - {cleanRemark}"
+                        : "";
                     transactions.Add(new LoanLedgerTransactionDto
                     {
                         Date = chg.ExpenseDate,

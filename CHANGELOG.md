@@ -1,5 +1,18 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-26] - आवृत्ती v2.6.46 (Bulk Overdue Loan Charges Debit Form `वसुली खर्च नावे`, Loan Scheme Display & Scheme-Linked Dynamic Income Ledger)
+
+### 💳 1. थकबाकीदार कर्जदारांसाठी बल्क `वसुली खर्च नावे` (`Due_Charges`) फॉर्म (`CustomerID-First`)
+- **`LoanBulkChargesMaster.tsx`, `App.tsx`, `Sidebar.tsx`, `LoanDashboard.tsx`, `LoanOverdueReport.tsx`, `Sec101LegalReports.tsx`:**
+  - निवडलेल्या दिनांकापर्यंत **फक्त थकबाकीदार कर्ज खातीच** (मुदतपूर्ती उलटलेली किंवा हप्ता/व्याज थकलेली) दाखवणारा ९-रकान्यांचा चेकबॉक्स ग्रिड (`सर्व` / `कर्ज प्रकार`, `खर्च रक्कम`, `दिनांक`, `पहा`, जुना खाते क्र. व `CIF` सह `शोधा`, `नविन`, `जतन`, `बाहेर` आणि `यादी पहा`).
+  - १००% `CustomerID-First` आर्किटेक्चर (`CustomerID` प्रथम, `MemberID` असल्यासच `Nullable`) व त्याच दिवशी आधीच नोंद असल्यास `[आज आधीच नोंद]` सुरक्षा बॅज.
+
+### 🏦 2. कर्ज प्रकारात प्रत्यक्ष योजना नाव (`ShortName`) व योजनानिहाय डायनॅमिक `Income` लेजर ऑटो-सिलेक्ट
+- **`VoucherLoanChargeHelper.cs`, `LegalRecoveryController.cs`, `VouchersController.cs`, `ReportsController.cs`, `OverdueLoanRecoveryPostageTests.cs`:**
+  - `कर्ज प्रकार` ड्रॉपडाउन व ग्रिडमध्ये सामान्य `तारणी/विनातारणी` ऐवजी प्रत्यक्ष कर्ज योजना (`ShortName`, उदा. `रिकरींग तारण कर्ज`, `आकस्मित कर्ज`) दाखवणे.
+  - योजना निवडताच डेटाबेस `LoanRates` फॉरेन-की वरून त्या योजनेचे उत्पन्न लेजर (`RecoveryFee` -> `Surcharge` -> `OverdueInterest` -> `Interest`) आपोआप सिलेक्ट करणे व इतर योजनांची व्याज खाती वगळून सर्व सामान्य उत्पन्न लेजर्स डायनॅमिक दाखवणे (`Zero Hardcoding`).
+  - `/api/LegalRecovery/overdue-charge-candidates`, `/api/LegalRecovery/expense/bulk-add` (`JV-BCHG-` एकत्रित कंपाउंड जर्नल व्हाउचर), आणि `/api/LegalRecovery/bulk-charge-batches` एन्डपॉइंट्स (**२५९/२५९ xUnit चाचण्या व प्रॉडक्शन Vite बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-25] - आवृत्ती v2.6.45 (Overdue Loan Recovery & Postage Charges to Principal + Dynamic Income Ledger, Voucher Salary/Honorarium Saving Transfer & FD Khatavani/Closure Updates)
 
 ### 💳 1. थकबाकीदार कर्ज वसूली व पोसटेज खर्च थेट कर्जाच्या मुद्दलात (Dr कर्ज / Cr डायनॅमिक उत्पन्न लेजर)

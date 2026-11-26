@@ -173,6 +173,22 @@ namespace Bhisi.Api.Controllers
         public string? Remarks { get; set; }
     }
 
+    public class BulkLoanChargeItemDto
+    {
+        public int LoanAccountId { get; set; }
+        public decimal Amount { get; set; }
+    }
+
+    public class BulkAddLoanChargeDto
+    {
+        public int BranchId { get; set; }
+        public DateTime ExpenseDate { get; set; } = DateTime.Today;
+        public int CreditLedgerId { get; set; }
+        public string? ExpenseType { get; set; }
+        public string? Remarks { get; set; }
+        public List<BulkLoanChargeItemDto> Items { get; set; } = new();
+    }
+
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
@@ -2028,6 +2044,331 @@ namespace Bhisi.Api.Controllers
             }).ToList();
 
             return Ok(list);
+        }
+
+        // GET: api/LegalRecovery/overdue-charge-candidates?branchId=1&asOnDate=2026-11-26&loanRateId=2&creditLedgerId=405
+        [HttpGet("overdue-charge-candidates")]
+        public async Task<IActionResult> GetOverdueChargeCandidates(
+            [FromQuery] int? branchId = null,
+            [FromQuery] DateTime? asOnDate = null,
+            [FromQuery] int? loanRateId = null,
+            [FromQuery] int? creditLedgerId = null)
+        {
+            var (scopedBranch, _, opBranch) = GetBranchScope(branchId);
+            if (branchId.HasValue && branchId.Value > 0 && IsBranchForbidden(branchId.Value))
+            {
+                return StatusCode(403, new { message = "इतर शाखेची थकबाकीदार कर्ज खाती पाहण्याची परवानगी नाही." });
+            }
+
+            int targetBranchId = scopedBranch ?? (opBranch > 0 ? opBranch : 1);
+            DateTime activeBizDate = await LegalRecoveryTrackerHelper.ResolveActiveBusinessDateAsync(_context, targetBranchId);
+            DateTime targetDate = asOnDate?.Date ?? activeBizDate;
+
+            var query = _context.LoanAccounts
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(la => la.Customer)
+                .Include(la => la.Member).ThenInclude(m => m!.Customer)
+                .Include(la => la.LoanRate)
+                .Where(la => la.BranchID == targetBranchId &&
+                             la.OpeningDate <= targetDate &&
+                             la.Status == "Active" &&
+                             la.PrincipalBalance > 0m);
+
+            if (loanRateId.HasValue && loanRateId.Value > 0)
+            {
+                query = query.Where(la => la.LoanRateID == loanRateId.Value);
+            }
+
+            var loanAccounts = await query.ToListAsync();
+            if (!loanAccounts.Any())
+            {
+                return Ok(Array.Empty<object>());
+            }
+
+            var loanIds = loanAccounts.Select(l => l.LoanAccountID).ToList();
+
+            var schedulesByLoan = (await _context.LoanInstallmentSchedules
+                .AsNoTracking()
+                .Where(s => loanIds.Contains(s.LoanAccountID))
+                .ToListAsync())
+                .GroupBy(s => s.LoanAccountID)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var recoveryDueByLoan = await _context.OverdueRecoveryLedgers
+                .AsNoTracking()
+                .Where(o => loanIds.Contains(o.LoanAccountID) && o.TransactionDate <= targetDate)
+                .GroupBy(o => o.LoanAccountID)
+                .Select(g => new { LoanAccountID = g.Key, NetDue = g.Sum(x => x.DebitAmount - x.CreditAmount) })
+                .ToDictionaryAsync(x => x.LoanAccountID, x => Math.Max(0m, x.NetDue));
+
+            var sameDayExpQuery = _context.Sec101LegalExpenses
+                .AsNoTracking()
+                .Include(e => e.Voucher)
+                .Where(e => loanIds.Contains(e.LoanAccountId) &&
+                            e.CapitalizeToLoanPrincipal &&
+                            e.ExpenseDate.Date == targetDate &&
+                            (e.Voucher == null || (e.Voucher.Status != "Rejected" && e.Voucher.Status != "Cancelled")));
+
+            if (creditLedgerId.HasValue && creditLedgerId.Value > 0)
+            {
+                sameDayExpQuery = sameDayExpQuery.Where(e => e.CreditLedgerId == creditLedgerId.Value);
+            }
+
+            var sameDayByLoan = (await sameDayExpQuery.ToListAsync())
+                .GroupBy(e => e.LoanAccountId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => new
+                    {
+                        TotalAmount = g.Sum(x => x.Amount),
+                        VoucherNo = g.OrderByDescending(x => x.ExpenseId).Select(x => x.Voucher != null ? x.Voucher.VoucherNo : "").FirstOrDefault() ?? ""
+                    });
+
+            var resultRows = new List<object>();
+            var sortable = new List<(string LoanType, int HasNumericLegacy, long NumericLegacy, string RawLegacy, string LoanAccountNo, object Payload)>();
+
+            foreach (var la in loanAccounts)
+            {
+                schedulesByLoan.TryGetValue(la.LoanAccountID, out var accSchedules);
+                recoveryDueByLoan.TryGetValue(la.LoanAccountID, out var unpaidRec);
+
+                var snap = VoucherLoanChargeHelper.ComputeOverdueCandidateSnapshot(la, accSchedules, targetDate, unpaidRec);
+                if (!snap.IsOverdue)
+                {
+                    continue;
+                }
+
+                // CustomerID-First resolution: Customer primary, Member strictly secondary/nullable
+                var cust = la.Customer ?? la.Member?.Customer;
+                int? resolvedCustomerId = LegalRecoveryTrackerHelper.ResolveLoanCustomerId(la);
+                string customerName = LegalRecoveryTrackerHelper.FormatCustomerName(cust);
+                string loanType = !string.IsNullOrWhiteSpace(la.LoanRate?.ShortName)
+                    ? la.LoanRate!.ShortName!.Trim()
+                    : (la.LoanRate?.LoanType ?? "");
+                sameDayByLoan.TryGetValue(la.LoanAccountID, out var sameDay);
+
+                string rawLeg = (la.LegacyAccountNumber ?? string.Empty).Trim();
+                bool isNumLeg = long.TryParse(rawLeg, out long parsedLeg);
+
+                var payload = new
+                {
+                    la.LoanAccountID,
+                    la.BranchID,
+                    LoanAccountNo = la.LoanAccountNo ?? "",
+                    LegacyAccountNumber = string.IsNullOrWhiteSpace(rawLeg) ? null : rawLeg,
+                    CustomerID = resolvedCustomerId,
+                    CifNo = cust?.CIFNo ?? "",
+                    LegacyCustomerNo = cust?.LegacyCustomerNo,
+                    CustomerName = customerName,
+                    MobileNo = cust?.MobileNo ?? "",
+                    MemberID = la.MemberID,
+                    la.LoanRateID,
+                    LoanType = loanType,
+                    LoanLedgerID = la.LoanRate?.LoanLedgerID,
+                    LoanDate = (la.LoanDisbursementDate ?? la.OpeningDate).ToString("yyyy-MM-dd"),
+                    OverdueDate = snap.OverdueDate?.ToString("yyyy-MM-dd"),
+                    MaturityDate = la.MaturityDate?.ToString("yyyy-MM-dd"),
+                    la.PrincipalBalance,
+                    OverdueAmount = snap.OverdueAmount,
+                    la.CapitalizedRecoveryCharges,
+                    AlreadyChargedToday = sameDay != null && sameDay.TotalAmount > 0m,
+                    AlreadyChargedAmount = sameDay?.TotalAmount ?? 0m,
+                    AlreadyChargedVoucherNo = sameDay?.VoucherNo ?? ""
+                };
+
+                sortable.Add((loanType, isNumLeg ? 0 : 1, isNumLeg ? parsedLeg : long.MaxValue, rawLeg, la.LoanAccountNo ?? "", payload));
+            }
+
+            resultRows = sortable
+                .OrderBy(x => x.LoanType)
+                .ThenBy(x => x.HasNumericLegacy)
+                .ThenBy(x => x.NumericLegacy)
+                .ThenBy(x => x.RawLegacy)
+                .ThenBy(x => x.LoanAccountNo)
+                .Select(x => x.Payload)
+                .ToList();
+
+            return Ok(resultRows);
+        }
+
+        // POST: api/LegalRecovery/expense/bulk-add
+        [HttpPost("expense/bulk-add")]
+        public async Task<IActionResult> BulkAddLoanCharges([FromBody] BulkAddLoanChargeDto dto)
+        {
+            if (dto == null)
+            {
+                return BadRequest(new { message = "विनंती डेटा रिक्त आहे." });
+            }
+
+            int targetBranchId = User.IsHeadOfficeAdmin()
+                ? (dto.BranchId > 0 ? dto.BranchId : User.GetOperatingBranchId())
+                : User.GetOperatingBranchId();
+            if (targetBranchId <= 0) targetBranchId = 1;
+
+            if (IsBranchForbidden(targetBranchId) || (dto.BranchId > 0 && !User.IsHeadOfficeAdmin() && dto.BranchId != targetBranchId))
+            {
+                return StatusCode(403, new { message = "इतर शाखेच्या कर्ज खात्यांवर बल्क खर्च नोंदवण्याची परवानगी नाही." });
+            }
+
+            DateTime activeBizDate = await LegalRecoveryTrackerHelper.ResolveActiveBusinessDateAsync(_context, targetBranchId);
+            DateTime expDate = dto.ExpenseDate == default ? activeBizDate : dto.ExpenseDate.Date;
+            string? dateErr = await LegalRecoveryTrackerHelper.ValidateOperationalDateAsync(_context, targetBranchId, expDate);
+            if (!string.IsNullOrEmpty(dateErr))
+            {
+                return BadRequest(new { message = dateErr });
+            }
+
+            int userId = User.GetUserId();
+            var items = (dto.Items ?? new List<BulkLoanChargeItemDto>())
+                .Select(i => new VoucherLoanChargeHelper.BulkLoanChargeItemInput
+                {
+                    LoanAccountId = i.LoanAccountId,
+                    Amount = i.Amount
+                })
+                .ToList();
+
+            try
+            {
+                var res = await VoucherLoanChargeHelper.ExecuteBulkLoanChargesAtomicAsync(
+                    _context,
+                    targetBranchId,
+                    expDate,
+                    dto.CreditLedgerId,
+                    items,
+                    userId,
+                    dto.ExpenseType,
+                    dto.Remarks);
+
+                return Ok(new
+                {
+                    Message = $"एकूण {res.ProcessedCount} थकबाकीदार खात्यांवर ₹{res.TotalAmount:N2} रक्कम '{res.IncomeLedgerName}' लेजरवर जमा करून कर्जात नावे टाकण्याचे व्हाउचर तयार झाले (मंजुरीसाठी प्रलंबित).",
+                    VoucherNo = res.Voucher.VoucherNo,
+                    VoucherNumber = res.Voucher.VoucherNo,
+                    VoucherId = res.Voucher.VoucherID,
+                    ProcessedCount = res.ProcessedCount,
+                    TotalAmount = res.TotalAmount,
+                    IncomeLedgerName = res.IncomeLedgerName,
+                    Status = res.Voucher.Status
+                });
+            }
+            catch (InvalidOperationException valEx)
+            {
+                return BadRequest(new { message = valEx.Message });
+            }
+        }
+
+        // GET: api/LegalRecovery/bulk-charge-batches?branchId=1&fromDate=2026-04-01&toDate=2026-11-26&creditLedgerId=405
+        [HttpGet("bulk-charge-batches")]
+        public async Task<IActionResult> GetBulkChargeBatches(
+            [FromQuery] int? branchId = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] int? creditLedgerId = null)
+        {
+            var (scopedBranch, _, _) = GetBranchScope(branchId);
+            if (branchId.HasValue && branchId.Value > 0 && IsBranchForbidden(branchId.Value))
+            {
+                return StatusCode(403, new { message = "इतर शाखेची वसुली खर्च यादी पाहण्याची परवानगी नाही." });
+            }
+
+            var query = _context.Sec101LegalExpenses
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(e => e.Customer)
+                .Include(e => e.LoanAccount).ThenInclude(l => l!.Customer)
+                .Include(e => e.LoanAccount).ThenInclude(l => l!.Member).ThenInclude(m => m!.Customer)
+                .Include(e => e.LoanAccount).ThenInclude(l => l!.LoanRate)
+                .Include(e => e.Voucher)
+                .Where(e => e.CapitalizeToLoanPrincipal &&
+                            e.VoucherId.HasValue &&
+                            (e.Voucher == null || (e.Voucher.Status != "Rejected" && e.Voucher.Status != "Cancelled")));
+
+            if (scopedBranch.HasValue && scopedBranch.Value > 0)
+            {
+                query = query.Where(e => e.BranchId == scopedBranch.Value);
+            }
+            if (fromDate.HasValue)
+            {
+                query = query.Where(e => e.ExpenseDate.Date >= fromDate.Value.Date);
+            }
+            if (toDate.HasValue)
+            {
+                query = query.Where(e => e.ExpenseDate.Date <= toDate.Value.Date);
+            }
+            if (creditLedgerId.HasValue && creditLedgerId.Value > 0)
+            {
+                query = query.Where(e => e.CreditLedgerId == creditLedgerId.Value);
+            }
+
+            var rawExpenses = await query
+                .OrderByDescending(e => e.ExpenseDate)
+                .ThenByDescending(e => e.VoucherId)
+                .ThenBy(e => e.ExpenseId)
+                .ToListAsync();
+
+            var crLedgerIds = rawExpenses
+                .Where(e => e.CreditLedgerId.HasValue && e.CreditLedgerId.Value > 0)
+                .Select(e => e.CreditLedgerId!.Value)
+                .Distinct()
+                .ToList();
+
+            var ledgerNames = crLedgerIds.Any()
+                ? await _context.Ledgers
+                    .AsNoTracking()
+                    .Where(l => crLedgerIds.Contains(l.LedgerID))
+                    .ToDictionaryAsync(l => l.LedgerID, l => l.LedgerName)
+                : new Dictionary<int, string>();
+
+            var batches = rawExpenses
+                .GroupBy(e => e.VoucherId!.Value)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    int crId = first.CreditLedgerId ?? 0;
+                    string incName = (crId > 0 && ledgerNames.TryGetValue(crId, out var lName) && !string.IsNullOrWhiteSpace(lName))
+                        ? lName
+                        : (first.PaidTo ?? "");
+
+                    var items = g.Select(x =>
+                    {
+                        var cust = x.Customer ?? x.LoanAccount?.Customer ?? x.LoanAccount?.Member?.Customer;
+                        return new
+                        {
+                            x.ExpenseId,
+                            x.LoanAccountId,
+                            LoanAccountNo = x.LoanAccount?.LoanAccountNo ?? "",
+                            LegacyAccountNumber = x.LoanAccount?.LegacyAccountNumber,
+                            CustomerID = x.CustomerId ?? LegalRecoveryTrackerHelper.ResolveLoanCustomerId(x.LoanAccount),
+                            CifNo = cust?.CIFNo ?? "",
+                            LegacyCustomerNo = cust?.LegacyCustomerNo,
+                            CustomerName = LegalRecoveryTrackerHelper.FormatCustomerName(cust),
+                            LoanType = !string.IsNullOrWhiteSpace(x.LoanAccount?.LoanRate?.ShortName)
+                                ? x.LoanAccount!.LoanRate!.ShortName!.Trim()
+                                : (x.LoanAccount?.LoanRate?.LoanType ?? ""),
+                            x.Amount,
+                            x.IsPrincipalApplied
+                        };
+                    }).ToList();
+
+                    return new
+                    {
+                        VoucherId = g.Key,
+                        VoucherNo = first.Voucher?.VoucherNo ?? "",
+                        ExpenseDate = first.ExpenseDate.ToString("yyyy-MM-dd"),
+                        VoucherStatus = first.Voucher?.Status ?? "Pending",
+                        IsPrincipalApplied = g.All(x => x.IsPrincipalApplied),
+                        CreditLedgerId = first.CreditLedgerId,
+                        IncomeLedgerName = incName,
+                        AccountCount = items.Count,
+                        TotalAmount = g.Sum(x => x.Amount),
+                        Narration = first.Voucher?.Narration ?? first.Remarks ?? "",
+                        Items = items
+                    };
+                })
+                .ToList();
+
+            return Ok(batches);
         }
     }
 }

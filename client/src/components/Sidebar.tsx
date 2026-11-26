@@ -49,7 +49,7 @@ export default function Sidebar({
   
   // Helpers to detect active state
   const isSharesActive = activeTab === 'members' || activeTab === 'share-master' || activeTab === 'share-transfer' || activeTab === 'member-closure' || activeTab === 'share-withdrawal';
-  const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-documents' || activeTab === 'employee-bank' || activeTab === 'employer-master';
+  const isLoanActive = activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-ob' || activeTab === 'loan-opening' || activeTab === 'gold-loan-details' || activeTab === 'loan-collection' || activeTab === 'loan-interest-posting' || activeTab === 'loan-bulk-charges' || activeTab === 'loan-documents' || activeTab === 'employee-bank' || activeTab === 'employer-master';
   const isBorrowingActive = activeTab === 'bank-borrowing' || activeTab === 'borrowing-dashboard' || activeTab === 'borrowing-account' || activeTab === 'borrowing-disbursement' || activeTab === 'borrowing-repayment' || activeTab === 'borrowing-custody';
   const isDemandActive = activeTab === 'demand-notice' || activeTab === 'demand-recovery' || activeTab === 'demand-settings';
   const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing';
@@ -312,6 +312,10 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'loan-interest-posting')} onClick={() => handleNavigate('loan-interest-posting')}>
               {renderSubDot(activeTab === 'loan-interest-posting')}
               <span className="truncate">कर्ज व्याज आकारणी</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'loan-bulk-charges')} onClick={() => handleNavigate('loan-bulk-charges')}>
+              {renderSubDot(activeTab === 'loan-bulk-charges')}
+              <span className="truncate">वसुली खर्च नावे (Bulk)</span>
             </li>
             <li className={getSubItemClass(activeTab === 'loan-documents')} onClick={() => handleNavigate('loan-documents')}>
               {renderSubDot(activeTab === 'loan-documents')}

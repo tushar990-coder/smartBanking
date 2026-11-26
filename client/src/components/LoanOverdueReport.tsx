@@ -85,7 +85,7 @@ const formatDisplayDate = (dStr?: string | null) => {
   }
 };
 
-export default function LoanOverdueReport() {
+export default function LoanOverdueReport({ onNavigate }: { onNavigate?: (tab: string, params?: any) => void } = {}) {
   const { user, globalBranchId } = useAuth();
   const isHOUser = isHeadOfficeUser(user);
   const lockedBranchId = getLockedBranchId(user);
@@ -395,6 +395,17 @@ export default function LoanOverdueReport() {
 
           {/* Right: Export & Print Action Buttons */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate('loan-bulk-charges')}
+                className="h-6 bg-rose-700 hover:bg-rose-800 text-white px-2.5 py-0.5 rounded-sm text-[11px] font-bold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                title="थकबाकीदार कर्ज खात्यांवर एकत्रित वसुली / इतर खर्च नावे टाका"
+              >
+                <Coins size={12} />
+                <span>+ वसुली खर्च नावे (Bulk)</span>
+              </button>
+            )}
             <button
               onClick={handleExportExcel}
               disabled={filteredRows.length === 0}

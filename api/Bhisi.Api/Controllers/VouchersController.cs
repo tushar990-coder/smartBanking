@@ -183,6 +183,20 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<object>> GetLoanChargeLedgers()
         {
             var loanLedgerIds = await VoucherLoanChargeHelper.GetConfiguredLoanPrincipalLedgerIdsAsync(_context);
+            var loanPrincipalLedgers = loanLedgerIds.Count > 0
+                ? (await _context.Ledgers
+                    .AsNoTracking()
+                    .Where(l => l.IsActive && loanLedgerIds.Contains(l.LedgerID))
+                    .OrderBy(l => l.LedgerID)
+                    .Select(l => new
+                    {
+                        l.LedgerID,
+                        l.LedgerName,
+                        l.LedgerCode
+                    })
+                    .ToListAsync())
+                : new();
+
             var incomeLedgers = (await VoucherLoanChargeHelper.GetDynamicIncomeLedgersAsync(_context))
                 .Select(l => new
                 {
@@ -195,6 +209,7 @@ namespace Bhisi.Api.Controllers
             return Ok(new
             {
                 loanLedgerIds = loanLedgerIds.OrderBy(id => id).ToList(),
+                loanPrincipalLedgers,
                 incomeLedgers
             });
         }

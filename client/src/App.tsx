@@ -50,6 +50,7 @@ import MemberClosure from './components/MemberClosure';
 import LoanProcessMaster from './components/LoanProcessMaster';
 import LoanCollectionMaster from './components/LoanCollectionMaster';
 import LoanInterestPostingMaster from './components/LoanInterestPostingMaster';
+const LoanBulkChargesMaster = React.lazy(() => import('./components/LoanBulkChargesMaster'));
 
 // Voucher & Accounting Modules
 import VoucherMaster from './components/VoucherMaster';
@@ -290,6 +291,7 @@ function App() {
     'gold-loan-details': '/karjvibhag/goldloan',
     'loan-collection': '/karjvibhag/vasuli',
     'loan-interest-posting': '/karjvibhag/vyaj',
+    'loan-bulk-charges': '/karjvibhag/vasuli-kharch-nave',
     'loan-documents': '/karjvibhag/documents',
     'bank-borrowing': '/borrowings/dashboard',
     'borrowing-dashboard': '/borrowings/dashboard',
@@ -879,6 +881,7 @@ function App() {
         )}
         {activeTab === 'loan-collection' && <LoanCollectionMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-interest-posting' && <LoanInterestPostingMaster />}
+        {activeTab === 'loan-bulk-charges' && <LoanBulkChargesMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-documents' && <LoanDocumentsUpload onNavigate={handleNavigate} />}
         {(activeTab === 'bank-borrowing' || activeTab === 'borrowing-dashboard') && <BorrowingDashboard onNavigate={handleNavigate} />}
         {activeTab === 'borrowing-account' && <BorrowingAccountOpening onNavigate={handleNavigate} />}
@@ -968,7 +971,7 @@ function App() {
         {(activeTab === 'locker-reports' || activeTab.startsWith('locker-reports&')) && <LockerReports />}
 
         {/* Legal Recovery (Sec 101 / 91) Module */}
-        {activeTab === 'sec101-reports' && <Sec101LegalReports />}
+        {activeTab === 'sec101-reports' && <Sec101LegalReports onNavigate={handleNavigate} />}
         {(activeTab === 'legal-recovery' || (activeTab.startsWith('sec101-') && activeTab !== 'sec101-reports')) && (
           <LegalRecoveryDashboard
             initialSubTab={
@@ -1008,7 +1011,7 @@ function App() {
         {activeTab === 'loan-ledger-report' && <LoanLedgerReport />}
         {activeTab === 'loan-outstanding-report' && <LoanOutstandingReport />}
         {activeTab === 'closed-loan-report' && <ClosedLoanAccountsReport />}
-        {(activeTab === 'loan-overdue-report' || activeTab === 'loan-overdue-recovery') && <LoanOverdueReport />}
+        {(activeTab === 'loan-overdue-report' || activeTab === 'loan-overdue-recovery') && <LoanOverdueReport onNavigate={handleNavigate} />}
         {activeTab === 'loan-recovery-notice-report' && <LoanRecoveryNoticeReport />}
         {activeTab === 'interest-waiver-register' && <InterestWaiverRegister />}
         {activeTab === 'guarantor-loan-report' && <GuarantorReport />}

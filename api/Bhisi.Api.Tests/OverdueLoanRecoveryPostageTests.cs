@@ -687,5 +687,301 @@ namespace Bhisi.Api.Tests
             Assert.Equal(0m, (await loanAccCtrl.GetAccountDetailsAndSchedule(501, bizDate)).Value!.UnpaidRecoveryExpenses);
             Assert.Equal(9300m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 501)).PrincipalBalance);
         }
+
+        [Fact]
+        public async Task BulkOverdueCandidates_FiltersStrictlyOverdueOnly_CustomerIdFirst_AndRejectsNonOverdueOrNonIncomeLedgers()
+        {
+            await using var db = CreateContext();
+            var bizDate = new DateTime(2026, 11, 26);
+            await SeedEnvironmentAsync(db, bizDate);
+
+            // Dynamic new Loan Scheme + Dynamic new Income Ledger (proves 0% hardcoded IDs)
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 105, GroupID = 2, LedgerCode = "105", LedgerName = "आकस्मित कर्ज मुद्दल", AccountType = "Loan", ReportType = "Balance Sheet", IsActive = true },
+                new Ledger { LedgerID = 499, GroupID = 4, LedgerCode = "499", LedgerName = "कर्ज वसुली चार्जेस", AccountType = "Income", ReportType = "Profit & Loss", IsActive = true }
+            );
+            db.LoanRates.Add(new LoanRate
+            {
+                LoanRateID = 2,
+                LoanCode = "RD-LN",
+                LoanType = "तारणी",
+                ShortName = "रिकरींग तारण कर्ज",
+                InterestRate = 15m,
+                OverdueInterestRate = 2m,
+                InterestCalculationMethod = "Flat",
+                LoanLedgerID = 105,
+                InterestLedgerID = 401,
+                ReceivableInterestLedgerID = 102,
+                OverdueInterestLedgerID = 402,
+                IsActive = true
+            });
+
+            // Customer 203: Nominal / CustomerID-only borrower (MemberID = null) with overdue loan 503
+            // Customer 204: Regular non-overdue borrower with active loan 504 (Maturity in 2027, no due installments)
+            db.Customers.AddRange(
+                new Customer { CustomerID = 203, BranchID = 1, CIFNo = "CIF000203", LegacyCustomerNo = "CUST-03", FirstName = "दयानंद", MiddleName = "जयसिंगराव", LastName = "साळुंखे", BirthDate = new DateTime(1985, 5, 5) },
+                new Customer { CustomerID = 204, BranchID = 1, CIFNo = "CIF000204", FirstName = "नियमित", LastName = "खातेदार", BirthDate = new DateTime(1990, 1, 1) }
+            );
+
+            db.LoanAccounts.AddRange(
+                new LoanAccount
+                {
+                    LoanAccountID = 503,
+                    BranchID = 1,
+                    CustomerID = 203,
+                    MemberID = null, // CustomerID-First: NO MemberID!
+                    LoanRateID = 2,
+                    LoanAccountNo = "00150200000003",
+                    LegacyAccountNumber = "3",
+                    OpeningDate = new DateTime(2024, 4, 20),
+                    LoanDisbursementDate = new DateTime(2024, 4, 20),
+                    MaturityDate = new DateTime(2026, 3, 31),
+                    SanctionedAmount = 100000m,
+                    PrincipalBalance = 6667m,
+                    PurePrincipalBalance = 6667m,
+                    InterestRate = 15m,
+                    Status = "Active"
+                },
+                new LoanAccount
+                {
+                    LoanAccountID = 504,
+                    BranchID = 1,
+                    CustomerID = 204,
+                    MemberID = null,
+                    LoanRateID = 2,
+                    LoanAccountNo = "00150200000099",
+                    LegacyAccountNumber = "99",
+                    OpeningDate = new DateTime(2026, 11, 1),
+                    LoanDisbursementDate = new DateTime(2026, 11, 1),
+                    MaturityDate = new DateTime(2027, 11, 1), // Future maturity -> NOT overdue
+                    SanctionedAmount = 50000m,
+                    PrincipalBalance = 50000m,
+                    PurePrincipalBalance = 50000m,
+                    InterestRate = 15m,
+                    Status = "Active"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            // 1. Dynamic Income Ledgers endpoint includes 499 ('कर्ज वसुली चार्जेस') and excludes Expense 351 / Cash 10 / Loan 105
+            var vchCtrl = new VouchersController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(vchCtrl, BuildPrincipal(11, "maker", "Accountant", branchId: 1, bizDate));
+            var ledgersOk = Assert.IsType<OkObjectResult>((await vchCtrl.GetLoanChargeLedgers()).Result);
+            using var ledgersDoc = SerializeCamelCase(ledgersOk.Value);
+            var incIds = ledgersDoc.RootElement.GetProperty("incomeLedgers").EnumerateArray().Select(x => x.GetProperty("ledgerID").GetInt32()).ToList();
+            var prinLedgerIds = ledgersDoc.RootElement.GetProperty("loanPrincipalLedgers").EnumerateArray().Select(x => x.GetProperty("ledgerID").GetInt32()).ToList();
+            Assert.Contains(105, prinLedgerIds);
+            Assert.Contains(499, incIds);
+            Assert.DoesNotContain(351, incIds); // Expense ledger strictly excluded
+            Assert.DoesNotContain(10, incIds);  // Cash strictly excluded
+            Assert.DoesNotContain(105, incIds); // Loan control ledger strictly excluded
+
+            // 2. Overdue candidates strictly returns ONLY overdue loans (501 & 503), excluding regular loan 504 and Branch 2 loan 502
+            var legalCtrl = new LegalRecoveryController(db);
+            AttachUser(legalCtrl, BuildPrincipal(11, "maker", "Accountant", branchId: 1, bizDate));
+
+            var candOk = Assert.IsType<OkObjectResult>(await legalCtrl.GetOverdueChargeCandidates(branchId: 1, asOnDate: bizDate));
+            using var candDoc = SerializeCamelCase(candOk.Value);
+            var candRows = candDoc.RootElement.EnumerateArray().ToList();
+            var returnedIds = candRows.Select(r => r.GetProperty("loanAccountID").GetInt32()).ToList();
+            Assert.Contains(501, returnedIds);
+            Assert.Contains(503, returnedIds);
+            Assert.DoesNotContain(504, returnedIds); // Regular non-overdue loan excluded
+            Assert.DoesNotContain(502, returnedIds); // Branch 2 excluded
+
+            var row503 = candRows.Single(r => r.GetProperty("loanAccountID").GetInt32() == 503);
+            Assert.Equal(203, row503.GetProperty("customerID").GetInt32());
+            Assert.Equal("CIF000203", row503.GetProperty("cifNo").GetString());
+            Assert.Equal(JsonValueKind.Null, row503.GetProperty("memberID").ValueKind);
+            Assert.Equal("3", row503.GetProperty("legacyAccountNumber").GetString());
+            Assert.Equal("रिकरींग तारण कर्ज", row503.GetProperty("loanType").GetString());
+            Assert.Equal(6667m, row503.GetProperty("overdueAmount").GetDecimal());
+
+            // 3. Reject non-Income CreditLedgerId (351 = Expense)
+            var badLedgerRes = await legalCtrl.BulkAddLoanCharges(new BulkAddLoanChargeDto
+            {
+                BranchId = 1,
+                ExpenseDate = bizDate,
+                CreditLedgerId = 351,
+                Items = new List<BulkLoanChargeItemDto> { new() { LoanAccountId = 503, Amount = 100m } }
+            });
+            Assert.IsType<BadRequestObjectResult>(badLedgerRes);
+
+            // 4. Reject non-overdue LoanAccount (504) on server even if submitted directly to API
+            var badOverdueRes = await legalCtrl.BulkAddLoanCharges(new BulkAddLoanChargeDto
+            {
+                BranchId = 1,
+                ExpenseDate = bizDate,
+                CreditLedgerId = 499,
+                Items = new List<BulkLoanChargeItemDto>
+                {
+                    new() { LoanAccountId = 503, Amount = 100m },
+                    new() { LoanAccountId = 504, Amount = 100m }
+                }
+            });
+            Assert.IsType<BadRequestObjectResult>(badOverdueRes);
+        }
+
+        [Fact]
+        public async Task BulkAddLoanCharges_MultiSchemeCompoundVoucher_AppliesOnPassing_ListsInBatches_AndRollsBackCleanly()
+        {
+            await using var db = CreateContext();
+            var bizDate = new DateTime(2026, 11, 26);
+            await SeedEnvironmentAsync(db, bizDate);
+
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 105, GroupID = 2, LedgerCode = "105", LedgerName = "आकस्मित कर्ज मुद्दल", AccountType = "Loan", ReportType = "Balance Sheet", IsActive = true },
+                new Ledger { LedgerID = 499, GroupID = 4, LedgerCode = "499", LedgerName = "कर्ज वसुली चार्जेस", AccountType = "Income", ReportType = "Profit & Loss", IsActive = true }
+            );
+            db.LoanRates.Add(new LoanRate
+            {
+                LoanRateID = 2,
+                LoanCode = "RD-LN",
+                LoanType = "तारणी",
+                ShortName = "रिकरींग तारण कर्ज",
+                InterestRate = 15m,
+                OverdueInterestRate = 2m,
+                InterestCalculationMethod = "Flat",
+                LoanLedgerID = 105,
+                InterestLedgerID = 401,
+                ReceivableInterestLedgerID = 102,
+                OverdueInterestLedgerID = 402,
+                IsActive = true
+            });
+            db.Customers.Add(new Customer
+            {
+                CustomerID = 203,
+                BranchID = 1,
+                CIFNo = "CIF000203",
+                FirstName = "सुनिता",
+                LastName = "पाटील",
+                BirthDate = new DateTime(1988, 8, 8)
+            });
+            db.LoanAccounts.Add(new LoanAccount
+            {
+                LoanAccountID = 503,
+                BranchID = 1,
+                CustomerID = 203,
+                MemberID = null, // CustomerID-only nominal borrower
+                LoanRateID = 2,
+                LoanAccountNo = "00150200000015",
+                LegacyAccountNumber = "15",
+                OpeningDate = new DateTime(2025, 4, 2),
+                LoanDisbursementDate = new DateTime(2025, 4, 2),
+                MaturityDate = new DateTime(2026, 3, 2),
+                SanctionedAmount = 20000m,
+                PrincipalBalance = 15000m,
+                PurePrincipalBalance = 15000m,
+                InterestRate = 15m,
+                Status = "Active"
+            });
+            db.LoanDisbursements.Add(new LoanDisbursement
+            {
+                LoanDisbursementID = 2,
+                LoanAccountID = 503,
+                DisbursementDate = new DateTime(2025, 4, 2),
+                DisbursementAmount = 15000m,
+                NetAmountPaid = 15000m,
+                PaymentMode = "Cash"
+            });
+            await db.SaveChangesAsync();
+
+            var legalCtrl = new LegalRecoveryController(db);
+            AttachUser(legalCtrl, BuildPrincipal(11, "maker", "Accountant", branchId: 1, bizDate));
+
+            // 1. Bulk post across 2 different loan schemes (501 -> Ledger 101 @ ₹100, 503 -> Ledger 105 @ ₹150; Cr 499 @ ₹250)
+            var bulkRes = await legalCtrl.BulkAddLoanCharges(new BulkAddLoanChargeDto
+            {
+                BranchId = 1,
+                ExpenseDate = bizDate,
+                CreditLedgerId = 499,
+                Items = new List<BulkLoanChargeItemDto>
+                {
+                    new() { LoanAccountId = 501, Amount = 100m },
+                    new() { LoanAccountId = 503, Amount = 150m }
+                }
+            });
+            var okBulk = Assert.IsType<OkObjectResult>(bulkRes);
+            using var bulkDoc = SerializeCamelCase(okBulk.Value);
+            int voucherId = bulkDoc.RootElement.GetProperty("voucherId").GetInt32();
+            string voucherNo = bulkDoc.RootElement.GetProperty("voucherNo").GetString()!;
+            Assert.StartsWith("JV-BCHG-", voucherNo);
+            Assert.Equal(2, bulkDoc.RootElement.GetProperty("processedCount").GetInt32());
+            Assert.Equal(250m, bulkDoc.RootElement.GetProperty("totalAmount").GetDecimal());
+
+            // Verify CustomerID-First stamping on VoucherDetails & Zero Auto-Post while Pending
+            var vDetails = await db.VoucherDetails.AsNoTracking().Where(d => d.VoucherID == voucherId).ToListAsync();
+            Assert.Equal(3, vDetails.Count);
+            Assert.Contains(vDetails, d => d.DrCr == "Dr" && d.LedgerID == 101 && d.ChargeLoanAccountID == 501 && d.CustomerID == 201 && d.MemberID == 301 && d.Amount == 100m);
+            Assert.Contains(vDetails, d => d.DrCr == "Dr" && d.LedgerID == 105 && d.ChargeLoanAccountID == 503 && d.CustomerID == 203 && d.MemberID == null && d.Amount == 150m);
+            Assert.Contains(vDetails, d => d.DrCr == "Cr" && d.LedgerID == 499 && d.CustomerID == null && d.MemberID == null && d.Amount == 250m);
+
+            Assert.Equal(10000m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 501)).PrincipalBalance);
+            Assert.Equal(15000m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 503)).PrincipalBalance);
+
+            // Verify 'यादी पहा' endpoint returns the saved batch
+            var batchesOk = Assert.IsType<OkObjectResult>(await legalCtrl.GetBulkChargeBatches(branchId: 1, fromDate: bizDate, toDate: bizDate));
+            using var batchesDoc = SerializeCamelCase(batchesOk.Value);
+            var batchItem = Assert.Single(batchesDoc.RootElement.EnumerateArray());
+            Assert.Equal(voucherNo, batchItem.GetProperty("voucherNo").GetString());
+            Assert.Equal(2, batchItem.GetProperty("accountCount").GetInt32());
+            Assert.Equal(250m, batchItem.GetProperty("totalAmount").GetDecimal());
+            Assert.Equal("कर्ज वसुली चार्जेस", batchItem.GetProperty("incomeLedgerName").GetString());
+
+            // 2. Approve compound batch voucher -> BOTH selected loans get their principal charges posted
+            var rollback = new VoucherRollbackAndDeleteService(db);
+            var postingCtrl = new VoucherPostingController(db, rollback);
+            AttachUser(postingCtrl, BuildPrincipal(22, "checker", "Admin", branchId: 1, bizDate));
+            Assert.IsType<OkObjectResult>(await postingCtrl.PostVouchers(new VoucherPostingController.PostVouchersRequest
+            {
+                VoucherIds = new List<int> { voucherId },
+                BusinessDate = bizDate
+            }));
+
+            var loan501After = await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 501);
+            var loan503After = await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 503);
+            Assert.Equal(10100m, loan501After.PrincipalBalance);
+            Assert.Equal(100m, loan501After.CapitalizedRecoveryCharges);
+            Assert.Equal(15150m, loan503After.PrincipalBalance);
+            Assert.Equal(150m, loan503After.CapitalizedRecoveryCharges);
+
+            // Verify LoanLedgerReport displays dynamic Income Ledger name cleanly
+            var reportsCtrl = new ReportsController(db, new MemoryCache(new MemoryCacheOptions()));
+            AttachUser(reportsCtrl, BuildPrincipal(22, "checker", "Admin", branchId: 1, bizDate));
+            var ledger503Res = await reportsCtrl.GetLoanLedger(503, new DateTime(2025, 4, 1), bizDate);
+            var ledger503Dto = (ledger503Res.Result is OkObjectResult okL ? okL.Value as Bhisi.Api.Models.LoanLedgerReportDto : ledger503Res.Value)!;
+            var chgTx = Assert.Single(ledger503Dto.Transactions, t => t.RecoveryCharges == 150m);
+            Assert.Equal("कर्ज वसुली चार्जेस (मुद्दल नावे)", chgTx.Particulars);
+            Assert.Equal(15150m, chgTx.Balance);
+
+            // 3. Unpass compound batch voucher -> BOTH loans cleanly revert to 10000 & 15000
+            Assert.IsType<OkObjectResult>(await postingCtrl.UnpassVouchers(new VoucherPostingController.UnpassVouchersRequest
+            {
+                VoucherIds = new List<int> { voucherId },
+                Reason = "Unpass bulk loan charge voucher test"
+            }));
+            Assert.Equal(10000m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 501)).PrincipalBalance);
+            Assert.Equal(0m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 501)).CapitalizedRecoveryCharges);
+            Assert.Equal(15000m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 503)).PrincipalBalance);
+            Assert.Equal(0m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 503)).CapitalizedRecoveryCharges);
+
+            // 4. Hard-delete the unpassed (Pending) batch voucher -> physically removes Voucher, VoucherDetails & Sec101LegalExpenses
+            var delRes = await rollback.DeleteVoucherWithRollbackAsync(voucherId, new VoucherDeleteRequestContext
+            {
+                UserId = 22,
+                Username = "checker",
+                UserRole = "Admin",
+                UserBranchId = 1,
+                IsHeadOfficeAdmin = true,
+                Reason = "Rollback bulk charge voucher test",
+                ActionSource = "VOUCHER_DELETED",
+                RequireMinTenCharReason = true
+            });
+            Assert.True(delRes.Success, delRes.Message);
+            Assert.Empty(await db.Vouchers.AsNoTracking().Where(v => v.VoucherID == voucherId).ToListAsync());
+            Assert.Empty(await db.Sec101LegalExpenses.AsNoTracking().Where(e => e.VoucherId == voucherId).ToListAsync());
+            Assert.Equal(10000m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 501)).PrincipalBalance);
+            Assert.Equal(15000m, (await db.LoanAccounts.AsNoTracking().FirstAsync(l => l.LoanAccountID == 503)).PrincipalBalance);
+        }
     }
 }

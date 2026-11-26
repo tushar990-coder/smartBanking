@@ -58,6 +58,7 @@ interface Sec101LegalReportsProps {
   effectiveBranch?: number | 'all' | null;
   embedded?: boolean;
   onDataChanged?: () => void;
+  onNavigate?: (tab: string, params?: any) => void;
 }
 
 export default function Sec101LegalReports({
@@ -65,6 +66,7 @@ export default function Sec101LegalReports({
   effectiveBranch: propEffectiveBranch,
   embedded = false,
   onDataChanged,
+  onNavigate,
 }: Sec101LegalReportsProps = {}) {
   const { user, globalBranchId } = useAuth();
   const isHOUser = isHeadOfficeUser(user);
@@ -267,7 +269,16 @@ export default function Sec101LegalReports({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate('loan-bulk-charges')}
+                className="bg-rose-700 hover:bg-rose-800 text-white px-3 py-1.5 rounded-sm text-xs font-bold shadow-xs flex items-center gap-1 transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> बल्क वसुली खर्च नावे
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowAddExpenseModal(true)}

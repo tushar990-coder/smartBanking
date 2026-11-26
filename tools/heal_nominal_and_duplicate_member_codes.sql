@@ -105,6 +105,63 @@ BEGIN TRY
         );
     END
 
+    -- 3.5 Unlink DemandMemberDetails.MemberId, Sec101CaseMasters.MemberId, Sec101NoticeHistories.MemberId & AgentCustomerRequests.CreatedMemberID
+    IF OBJECT_ID(N'[dbo].[DemandMemberDetails]', N'U') IS NOT NULL AND COL_LENGTH('dbo.DemandMemberDetails', 'MemberId') IS NOT NULL
+    BEGIN
+        UPDATE [dbo].[DemandMemberDetails]
+        SET [MemberId] = NULL
+        WHERE [MemberId] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId]
+                FROM [dbo].[ShareAccounts] sa
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    IF OBJECT_ID(N'[dbo].[Sec101CaseMasters]', N'U') IS NOT NULL AND COL_LENGTH('dbo.Sec101CaseMasters', 'MemberId') IS NOT NULL
+    BEGIN
+        UPDATE [dbo].[Sec101CaseMasters]
+        SET [MemberId] = NULL
+        WHERE [MemberId] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId]
+                FROM [dbo].[ShareAccounts] sa
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    IF OBJECT_ID(N'[dbo].[Sec101NoticeHistories]', N'U') IS NOT NULL AND COL_LENGTH('dbo.Sec101NoticeHistories', 'MemberId') IS NOT NULL
+    BEGIN
+        UPDATE [dbo].[Sec101NoticeHistories]
+        SET [MemberId] = NULL
+        WHERE [MemberId] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId]
+                FROM [dbo].[ShareAccounts] sa
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    IF OBJECT_ID(N'[dbo].[AgentCustomerRequests]', N'U') IS NOT NULL AND COL_LENGTH('dbo.AgentCustomerRequests', 'CreatedMemberID') IS NOT NULL
+    BEGIN
+        UPDATE [dbo].[AgentCustomerRequests]
+        SET [CreatedMemberID] = NULL
+        WHERE [CreatedMemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId]
+                FROM [dbo].[ShareAccounts] sa
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
     -- 4. Delete orphan JointMembers
     IF OBJECT_ID(N'[dbo].[JointMembers]', N'U') IS NOT NULL
     BEGIN
@@ -169,20 +226,54 @@ BEGIN TRY
         );
     END
 
-    -- 8. Delete orphan 0-share ShareAccounts
+    -- 8. Delete orphan 0-share ShareAccounts (only those with NO remaining ShareTransactions, cleaning child certs/prints first)
     IF OBJECT_ID(N'[dbo].[ShareAccounts]', N'U') IS NOT NULL
     BEGIN
-        DELETE FROM [dbo].[ShareAccounts]
-        WHERE [TotalShareCount] <= 0 OR [TotalShareCount] IS NULL;
+        IF OBJECT_ID(N'[dbo].[ShareCertificatePrintHistories]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[ShareCertificates]', N'U') IS NOT NULL
+        BEGIN
+            DELETE p
+            FROM [dbo].[ShareCertificatePrintHistories] p
+            INNER JOIN [dbo].[ShareCertificates] sc ON p.[CertificateId] = sc.[CertificateId]
+            INNER JOIN [dbo].[ShareAccounts] sa ON sc.[ShareAccountId] = sa.[ShareAccountId]
+            WHERE (sa.[TotalShareCount] <= 0 OR sa.[TotalShareCount] IS NULL)
+              AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareTransactions] st WHERE st.[ShareAccountId] = sa.[ShareAccountId]);
+        END
+
+        IF OBJECT_ID(N'[dbo].[ShareCertificates]', N'U') IS NOT NULL
+        BEGIN
+            DELETE sc
+            FROM [dbo].[ShareCertificates] sc
+            INNER JOIN [dbo].[ShareAccounts] sa ON sc.[ShareAccountId] = sa.[ShareAccountId]
+            WHERE (sa.[TotalShareCount] <= 0 OR sa.[TotalShareCount] IS NULL)
+              AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareTransactions] st WHERE st.[ShareAccountId] = sa.[ShareAccountId]);
+        END
+
+        DELETE sa
+        FROM [dbo].[ShareAccounts] sa
+        WHERE (sa.[TotalShareCount] <= 0 OR sa.[TotalShareCount] IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareTransactions] st WHERE st.[ShareAccountId] = sa.[ShareAccountId]);
     END
 
-    -- 9. PERMANENTLY DELETE all Members who have NO active shares in ShareAccounts
-    DELETE FROM [dbo].[Members]
-    WHERE [MemberID] NOT IN (
-        SELECT DISTINCT sa.[MemberId] 
-        FROM [dbo].[ShareAccounts] sa 
-        WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+    -- 9. PERMANENTLY DELETE all Members who have NO ShareAccounts and NO DeceasedClaimSettlements
+    DELETE m
+    FROM [dbo].[Members] m
+    WHERE NOT EXISTS (
+        SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = m.[MemberID]
+    )
+    AND (
+        OBJECT_ID(N'[dbo].[DeceasedClaimSettlements]', N'U') IS NULL
+        OR NOT EXISTS (SELECT 1 FROM [dbo].[DeceasedClaimSettlements] d WHERE d.[MemberID] = m.[MemberID])
     );
+
+    -- Release LegacyMemberNo & MemberCode on any historical 0-share Member row kept due to historical transactions/claims
+    UPDATE m
+    SET m.[LegacyMemberNo] = NULL,
+        m.[MemberCode] = NULL
+    FROM [dbo].[Members] m
+    WHERE NOT EXISTS (
+        SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = m.[MemberID] AND sa.[TotalShareCount] > 0
+    )
+    AND (m.[LegacyMemberNo] IS NOT NULL OR m.[MemberCode] IS NOT NULL);
 
     SET @DeletedCount = @@ROWCOUNT;
     PRINT '>> Step 1 Completed: Permanently deleted ' + CAST(@DeletedCount AS VARCHAR(10)) + ' non-shareholder Member rows.';

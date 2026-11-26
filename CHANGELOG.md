@@ -1,5 +1,16 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-26] - आवृत्ती v2.6.48 (`शेअर शिल्लक (Share OB)` 100% Hard Delete, Orphan 0-Share Member Cleanup & `जुना सभासद क्र.` False Duplicate Fix)
+
+### 🧹 1. शेअर डिलीट व व्हाउचर रद्दीकरणामध्ये १००% क्लीन फिजिकल डिलीट (`Hard Delete`)
+- **`ShareCleanupHelper.cs`, `ShareAccountsController.cs`, `VoucherRollbackAndDeleteService.cs`, `MembersController.cs`, `ShareObDeleteAndLegacyMemberTests.cs`:**
+  - शेअर ओपनिंग बॅलन्स / प्रमाणपत्र डिलीट (`DELETE /api/ShareAccounts/OpeningBalance/*`) किंवा शेअर वाटप व्हाउचर Reject/Delete केल्यानंतर संबंधित `ShareCertificatePrintHistories`, `ShareCertificates`, `ShareTransactions`, `MemberOpeningBalances`, `TotalShareCount <= 0` झालेले रिकामे `ShareAccounts`, आणि ०-शेअर्स असलेले अनाथ `Members` रेकॉर्ड्स (सर्व वैकल्पिक `MemberID` फॉरेन-की जसे `DemandMemberDetails`, `LoanAccounts`, `VoucherDetails`, `AgentCustomerRequests`, `Sec101*` सुरक्षितपणे `NULL` अनलिंक करून व मूळ `Customers` सुरक्षित ठेवून) टेबलमधून कायमचे फिजिकली डिलीट होतात व आयडेंटिटी काउंटर रिसीड होतो (**२६२/२६२ xUnit चाचण्या उत्तीर्ण**).
+
+### 🔢 2. `जुना सभासद क्र.` चुकीची तुलना दुरुस्ती, तत्काळ कॅशे सिंक व डेटाबेस सफाई
+- **`ShareOpeningBalance.tsx`, `ShareOpeningBalanceBulk.tsx`, `apiCache.ts`, `tools/heal_nominal_and_duplicate_member_codes.sql`, `tools/master_vps_update_schema.sql`:**
+  - `ShareOpeningBalance.tsx` मधून दुसऱ्या खातेदाराच्या `जुना खातेदार नं. (LegacyCustomerNo)` शी होणारी चुकीची तुलना काढून फक्त प्रत्यक्ष सक्रिय शेअरधारकाच्या `LegacyMemberNo` विरुद्धच तपासणी लागू केली.
+  - प्रत्येक सेव्ह/अपडेट/डिलीट नंतर बॅकएंड `IMemoryCache` (`customers_cache_ver`) आणि फ्रंटएंड कॅशे तत्काळ क्लिअर होतो, आणि आधी अर्धवट डिलीट होऊन अडकलेली सर्व ०-शेअर `ShareAccounts` व `Members` रेकॉर्ड्स `GetOpeningBalances` तसेच SQL पॅच स्क्रिप्ट्समध्ये आपोआप साफ होतात.
+
 ## 📅 [2026-11-26] - आवृत्ती v2.6.47 (`वसुली खर्च नावे` 2 Overdue Selection Modes, Installment-Overdue Sync Engine & Compact ERP-Themed Single-Line Grid)
 
 ### 💳 1. `वसुली खर्च नावे` मध्ये २ स्वतंत्र थकबाकी मोड्स + हप्ता थकीत / येणे बाकी सिंक इंजिन

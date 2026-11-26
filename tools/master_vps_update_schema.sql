@@ -8258,6 +8258,116 @@ BEGIN
 END
 GO
 
+-- =========================================================================================
+-- v2.6.48: PURGE LEFTOVER 0-SHARE ORPHAN SHAREACCOUNTS & 0-SHARE ORPHAN MEMBERS
+-- Ensures previously deleted Share OB / Allotment entries never lock LegacyMemberNo or MemberCode
+-- =========================================================================================
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
+
+IF OBJECT_ID(N'[dbo].[Members]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[ShareAccounts]', N'U') IS NOT NULL
+BEGIN
+    BEGIN TRY
+        BEGIN TRAN;
+
+        -- 1. Purge 0-share ShareAccounts that have 0 remaining ShareTransactions
+        IF OBJECT_ID(N'[dbo].[ShareCertificatePrintHistories]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[ShareCertificates]', N'U') IS NOT NULL
+        BEGIN
+            DELETE p
+            FROM [dbo].[ShareCertificatePrintHistories] p
+            INNER JOIN [dbo].[ShareCertificates] sc ON p.[CertificateId] = sc.[CertificateId]
+            INNER JOIN [dbo].[ShareAccounts] sa ON sc.[ShareAccountId] = sa.[ShareAccountId]
+            WHERE ISNULL(sa.[TotalShareCount], 0) <= 0
+              AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareTransactions] st WHERE st.[ShareAccountId] = sa.[ShareAccountId]);
+        END
+
+        IF OBJECT_ID(N'[dbo].[ShareCertificates]', N'U') IS NOT NULL
+        BEGIN
+            DELETE sc
+            FROM [dbo].[ShareCertificates] sc
+            INNER JOIN [dbo].[ShareAccounts] sa ON sc.[ShareAccountId] = sa.[ShareAccountId]
+            WHERE ISNULL(sa.[TotalShareCount], 0) <= 0
+              AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareTransactions] st WHERE st.[ShareAccountId] = sa.[ShareAccountId]);
+        END
+
+        DELETE sa
+        FROM [dbo].[ShareAccounts] sa
+        WHERE ISNULL(sa.[TotalShareCount], 0) <= 0
+          AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareTransactions] st WHERE st.[ShareAccountId] = sa.[ShareAccountId]);
+
+        -- 2. Unlink nullable MemberID FKs for 0-share Members (CustomerID remains intact 100%)
+        IF OBJECT_ID(N'[dbo].[LoanAccounts]', N'U') IS NOT NULL
+            UPDATE l SET l.[MemberID] = NULL FROM [dbo].[LoanAccounts] l
+            WHERE l.[MemberID] IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = l.[MemberID] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[LockerAllotments]', N'U') IS NOT NULL
+            UPDATE la SET la.[MemberID] = NULL FROM [dbo].[LockerAllotments] la
+            WHERE la.[MemberID] IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = la.[MemberID] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[VoucherDetails]', N'U') IS NOT NULL
+            UPDATE vd SET vd.[MemberID] = NULL FROM [dbo].[VoucherDetails] vd
+            WHERE vd.[MemberID] IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = vd.[MemberID] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[DemandMemberDetails]', N'U') IS NOT NULL AND COL_LENGTH('dbo.DemandMemberDetails', 'MemberId') IS NOT NULL
+            UPDATE dm SET dm.[MemberId] = NULL FROM [dbo].[DemandMemberDetails] dm
+            WHERE dm.[MemberId] IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = dm.[MemberId] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[Sec101CaseMasters]', N'U') IS NOT NULL AND COL_LENGTH('dbo.Sec101CaseMasters', 'MemberId') IS NOT NULL
+            UPDATE sc SET sc.[MemberId] = NULL FROM [dbo].[Sec101CaseMasters] sc
+            WHERE sc.[MemberId] IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = sc.[MemberId] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[Sec101NoticeHistories]', N'U') IS NOT NULL AND COL_LENGTH('dbo.Sec101NoticeHistories', 'MemberId') IS NOT NULL
+            UPDATE sn SET sn.[MemberId] = NULL FROM [dbo].[Sec101NoticeHistories] sn
+            WHERE sn.[MemberId] IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = sn.[MemberId] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[AgentCustomerRequests]', N'U') IS NOT NULL AND COL_LENGTH('dbo.AgentCustomerRequests', 'CreatedMemberID') IS NOT NULL
+            UPDATE ar SET ar.[CreatedMemberID] = NULL FROM [dbo].[AgentCustomerRequests] ar
+            WHERE ar.[CreatedMemberID] IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = ar.[CreatedMemberID] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[JointMembers]', N'U') IS NOT NULL
+            DELETE jm FROM [dbo].[JointMembers] jm
+            WHERE NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = jm.[PrimaryMemberID] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[BorrowerLinkedAccounts]', N'U') IS NOT NULL
+            DELETE bla FROM [dbo].[BorrowerLinkedAccounts] bla
+            WHERE NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = bla.[ParentMemberID] AND sa.[TotalShareCount] > 0)
+               OR NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = bla.[LinkedMemberID] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[CommitteeMembers]', N'U') IS NOT NULL
+            DELETE cm FROM [dbo].[CommitteeMembers] cm
+            WHERE ISNULL(cm.[Status], '') <> 'Active'
+              AND NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = cm.[MemberID] AND sa.[TotalShareCount] > 0);
+
+        IF OBJECT_ID(N'[dbo].[MemberOpeningBalances]', N'U') IS NOT NULL
+            DELETE mob FROM [dbo].[MemberOpeningBalances] mob
+            WHERE NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = mob.[MemberID] AND sa.[TotalShareCount] > 0);
+
+        -- 3. Physically delete 0-share orphan Member rows
+        DELETE m
+        FROM [dbo].[Members] m
+        WHERE NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = m.[MemberID])
+          AND (OBJECT_ID(N'[dbo].[DeceasedClaimSettlements]', N'U') IS NULL OR NOT EXISTS (SELECT 1 FROM [dbo].[DeceasedClaimSettlements] d WHERE d.[MemberID] = m.[MemberID]))
+          AND (OBJECT_ID(N'[dbo].[CommitteeMembers]', N'U') IS NULL OR NOT EXISTS (SELECT 1 FROM [dbo].[CommitteeMembers] cm WHERE cm.[MemberID] = m.[MemberID]));
+
+        -- Clear LegacyMemberNo & MemberCode on any historical 0-share Member kept for closed history
+        UPDATE m
+        SET m.[LegacyMemberNo] = NULL,
+            m.[MemberCode] = NULL
+        FROM [dbo].[Members] m
+        WHERE NOT EXISTS (SELECT 1 FROM [dbo].[ShareAccounts] sa WHERE sa.[MemberId] = m.[MemberID] AND sa.[TotalShareCount] > 0)
+          AND (m.[LegacyMemberNo] IS NOT NULL OR m.[MemberCode] IS NOT NULL);
+
+        COMMIT TRAN;
+        PRINT '-> Purged 0-share orphan ShareAccounts & 0-share orphan Members cleanly!';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        PRINT 'WARNING: Orphan Share/Member cleanup skipped: ' + ERROR_MESSAGE();
+    END CATCH
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

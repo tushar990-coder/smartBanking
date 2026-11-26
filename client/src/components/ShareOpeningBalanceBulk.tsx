@@ -173,7 +173,10 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
 
   const fetchMembers = async () => {
     try {
-      const res = await fetch('/api/Customers', { headers: getAuthHeaders() });
+      const res = await fetch('/api/Customers', {
+        headers: getAuthHeaders(),
+        cache: 'no-store'
+      });
       if (res.ok) {
         const data = await res.json();
         setMembers(safeArray(data));
@@ -185,7 +188,10 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
 
   const fetchBalances = async () => {
     try {
-      const res = await fetch('/api/ShareAccounts/OpeningBalance', { headers: getAuthHeaders() });
+      const res = await fetch('/api/ShareAccounts/OpeningBalance', {
+        headers: getAuthHeaders(),
+        cache: 'no-store'
+      });
       if (res.ok) {
         const data = await res.json();
         setExistingBalances(safeArray(data));

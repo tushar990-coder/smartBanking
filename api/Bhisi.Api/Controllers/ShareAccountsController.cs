@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Bhisi.Api.Data;
 using Bhisi.Api.Helpers;
 using Bhisi.Api.Models;
@@ -16,11 +17,21 @@ namespace Bhisi.Api.Controllers
     {
         private readonly AppDbContext _context;
         private readonly Services.VoucherRollbackAndDeleteService _rollbackService;
+        private readonly IMemoryCache? _cache;
 
-        public ShareAccountsController(AppDbContext context, Services.VoucherRollbackAndDeleteService rollbackService)
+        public ShareAccountsController(
+            AppDbContext context,
+            Services.VoucherRollbackAndDeleteService rollbackService,
+            IMemoryCache? cache = null)
         {
             _context = context;
             _rollbackService = rollbackService;
+            _cache = cache;
+        }
+
+        private void InvalidateCustomerAndShareCache()
+        {
+            ShareCleanupHelper.InvalidateCustomerListCache(_cache, HttpContext);
         }
 
         private (int userId, string username, int branchId) GetCurrentUserContext()
@@ -989,6 +1000,18 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                // Self-heal any leftover 0-share ShareAccounts or 0-share orphan Member rows left by older deletes
+                bool hasOrphans = await _context.ShareAccounts.AnyAsync(sa => sa.TotalShareCount <= 0 && !_context.ShareTransactions.Any(t => t.ShareAccountId == sa.ShareAccountId))
+                    || await _context.Members.AnyAsync(m => !_context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID && sa.TotalShareCount > 0));
+                if (hasOrphans)
+                {
+                    int cleaned = await ShareCleanupHelper.PurgeAllOrphanZeroShareRecordsAsync(_context);
+                    if (cleaned > 0)
+                    {
+                        InvalidateCustomerAndShareCache();
+                    }
+                }
+
                 var accounts = await _context.ShareAccounts
                     .Include(s => s.Member)
                         .ThenInclude(m => m!.Customer)
@@ -1594,6 +1617,7 @@ namespace Bhisi.Api.Controllers
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+                InvalidateCustomerAndShareCache();
                 return Ok(new { message = "Opening balance saved successfully.", accountId = account.ShareAccountId });
             }
             catch (Exception ex)
@@ -1712,6 +1736,18 @@ namespace Bhisi.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(request.LegacyMemberNo))
                     {
                         var trimmedLegacy = request.LegacyMemberNo.Trim();
+                        var staleOwners = await _context.Members
+                            .Where(m => m.MemberID != member.MemberID && !m.IsDeleted && m.BranchID == member.BranchID && m.LegacyMemberNo == trimmedLegacy)
+                            .ToListAsync();
+                        foreach (var stMem in staleOwners)
+                        {
+                            bool stHasActive = await _context.ShareAccounts.AnyAsync(sa => sa.MemberId == stMem.MemberID && sa.TotalShareCount > 0);
+                            if (!stHasActive)
+                            {
+                                stMem.LegacyMemberNo = null;
+                                _context.Members.Update(stMem);
+                            }
+                        }
                         member.LegacyMemberNo = trimmedLegacy;
                     }
                     _context.Members.Update(member);
@@ -1888,6 +1924,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 await transaction.CommitAsync();
+                InvalidateCustomerAndShareCache();
                 return Ok(new
                 {
                     message = $"एकूण {processedCount} सभासदांचे शेअर ओपनिंग बॅलन्स यशस्वीरित्या सेव्ह झाले!",
@@ -2151,6 +2188,7 @@ namespace Bhisi.Api.Controllers
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+                InvalidateCustomerAndShareCache();
 
                 return Ok(new { message = "शेअर ओपनिंग बॅलन्स यशस्वीरित्या अपडेट केला! (Opening balance updated successfully.)" });
             }
@@ -2179,6 +2217,7 @@ namespace Bhisi.Api.Controllers
                     if (targetCert != null)
                     {
                         account = await _context.ShareAccounts
+                            .Include(a => a.Member)
                             .Include(a => a.Transactions)
                             .Include(a => a.Certificates)
                             .FirstOrDefaultAsync(a => a.ShareAccountId == targetCert.ShareAccountId);
@@ -2188,6 +2227,7 @@ namespace Bhisi.Api.Controllers
                 if (account == null && id.HasValue && id.Value > 0)
                 {
                     account = await _context.ShareAccounts
+                        .Include(a => a.Member)
                         .Include(a => a.Transactions)
                         .Include(a => a.Certificates)
                         .FirstOrDefaultAsync(a => a.ShareAccountId == id.Value);
@@ -2195,11 +2235,19 @@ namespace Bhisi.Api.Controllers
 
                 if (account == null) return NotFound("Share account / certificate not found.");
 
-                // If deleting a specific certificate
+                // If deleting a specific certificate and OTHER active certificates remain on this account
                 if (targetCert != null && account.Certificates != null && account.Certificates.Count > 1)
                 {
                     int certShares = targetCert.NumberOfShares;
                     decimal certAmount = certShares * targetCert.FaceValue;
+
+                    var targetPrints = await _context.ShareCertificatePrintHistories
+                        .Where(p => p.CertificateId == targetCert.CertificateId)
+                        .ToListAsync();
+                    if (targetPrints.Count > 0)
+                    {
+                        _context.ShareCertificatePrintHistories.RemoveRange(targetPrints);
+                    }
 
                     _context.ShareCertificates.Remove(targetCert);
 
@@ -2245,12 +2293,25 @@ namespace Bhisi.Api.Controllers
                             "शेअर्स प्रमाणपत्र डिलीट सिंक");
                         await _context.SaveChangesAsync();
                     }
+
+                    if (account.TotalShareCount <= 0)
+                    {
+                        await ShareCleanupHelper.PurgeZeroShareAccountAndOrphanMemberAsync(
+                            _context,
+                            account.ShareAccountId,
+                            account.MemberId,
+                            reseedIdentities: true);
+                    }
+
                     await transaction.CommitAsync();
+                    InvalidateCustomerAndShareCache();
                     return Ok(new { message = "प्रमाणपत्र यशस्वीरित्या डिलीट केले! (Certificate deleted successfully.)" });
                 }
 
-                // Otherwise, delete the entire account opening balance
+                // Otherwise, completely hard-delete the entire Share Opening Balance account & 0-share Member row
+                int targetMemberId = account.MemberId;
                 int resolvedCustId = account.CustomerID > 0 ? account.CustomerID : (account.Member?.CustomerID ?? 0);
+
                 var shareCapitalMobs = await _context.MemberOpeningBalances
                     .Include(m => m.Ledger)
                     .Where(m => (m.MemberID == account.MemberId || (resolvedCustId > 0 && m.CustomerID == resolvedCustId)) && m.Ledger != null &&
@@ -2295,16 +2356,25 @@ namespace Bhisi.Api.Controllers
                     _context.MemberOpeningBalances.Remove(divMob);
                 }
 
+                if (account.Certificates != null && account.Certificates.Any())
+                {
+                    var allCertIds = account.Certificates.Select(c => c.CertificateId).ToList();
+                    var allCertPrints = await _context.ShareCertificatePrintHistories
+                        .Where(p => allCertIds.Contains(p.CertificateId))
+                        .ToListAsync();
+                    if (allCertPrints.Count > 0)
+                    {
+                        _context.ShareCertificatePrintHistories.RemoveRange(allCertPrints);
+                    }
+                    _context.ShareCertificates.RemoveRange(account.Certificates);
+                }
+
                 if (account.Transactions != null && account.Transactions.Any())
                 {
                     _context.ShareTransactions.RemoveRange(account.Transactions);
                 }
-                if (account.Certificates != null && account.Certificates.Any())
-                {
-                    _context.ShareCertificates.RemoveRange(account.Certificates);
-                }
-                _context.ShareAccounts.Remove(account);
 
+                _context.ShareAccounts.Remove(account);
                 await _context.SaveChangesAsync();
 
                 if (affectedShareLedgerIds.Any())
@@ -2316,102 +2386,17 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                // Rollback / Cleanup of Member record & MemberCode so next code/ID decrements by -1
-                int targetMemberId = account.MemberId;
-                var member = await _context.Members.FindAsync(targetMemberId);
-                if (member != null)
-                {
-                    var mobIdsToDelete = shareCapitalMobs.Select(m => m.MemberOpeningBalanceID)
-                        .Concat(divMobs.Select(d => d.MemberOpeningBalanceID))
-                        .ToList();
-
-                    bool hasOtherShares = await _context.ShareAccounts.AnyAsync(s => s.ShareAccountId != account.ShareAccountId && s.MemberId == targetMemberId && s.TotalShareCount > 0);
-
-                    if (!hasOtherShares)
-                    {
-                        // Cleanly unlink all foreign keys to this Member record before full removal
-                        var linkedLoans = await _context.LoanAccounts.Where(l => l.MemberID == targetMemberId).ToListAsync();
-                        foreach (var l in linkedLoans)
-                        {
-                            l.MemberID = null;
-                        }
-
-                        var linkedLockers = await _context.LockerAllotments.Where(l => l.MemberID == targetMemberId).ToListAsync();
-                        foreach (var l in linkedLockers)
-                        {
-                            l.MemberID = null;
-                        }
-
-                        var linkedVoucherDetails = await _context.VoucherDetails.Where(v => v.MemberID == targetMemberId).ToListAsync();
-                        foreach (var v in linkedVoucherDetails)
-                        {
-                            v.MemberID = null;
-                        }
-
-                        var linkedJoints = await _context.JointMembers.Where(j => j.PrimaryMemberID == targetMemberId).ToListAsync();
-                        if (linkedJoints.Any())
-                        {
-                            _context.JointMembers.RemoveRange(linkedJoints);
-                        }
-
-                        var linkedBorrowers = await _context.BorrowerLinkedAccounts.Where(b => b.ParentMemberID == targetMemberId || b.LinkedMemberID == targetMemberId).ToListAsync();
-                        if (linkedBorrowers.Any())
-                        {
-                            _context.BorrowerLinkedAccounts.RemoveRange(linkedBorrowers);
-                        }
-
-                        var linkedCommittee = await _context.CommitteeMembers.Where(c => c.MemberID == targetMemberId).ToListAsync();
-                        if (linkedCommittee.Any())
-                        {
-                            _context.CommitteeMembers.RemoveRange(linkedCommittee);
-                        }
-
-                        var remainingMobs = await _context.MemberOpeningBalances.Where(m => m.MemberID == targetMemberId).ToListAsync();
-                        if (remainingMobs.Any())
-                        {
-                            _context.MemberOpeningBalances.RemoveRange(remainingMobs);
-                        }
-
-                        var linkedDcs = await _context.DeceasedClaimSettlements.Where(d => d.MemberID == targetMemberId).ToListAsync();
-                        if (linkedDcs.Any())
-                        {
-                            _context.DeceasedClaimSettlements.RemoveRange(linkedDcs);
-                        }
-
-                        var linkedDmd = await _context.DemandMemberDetails.Where(d => d.MemberId == targetMemberId).ToListAsync();
-                        if (linkedDmd.Any())
-                        {
-                            _context.DemandMemberDetails.RemoveRange(linkedDmd);
-                        }
-
-                        var linkedScm = await _context.Sec101CaseMasters.Where(s => s.MemberId == targetMemberId).ToListAsync();
-                        foreach (var scm in linkedScm)
-                        {
-                            scm.MemberId = null;
-                        }
-
-                        var linkedSnh = await _context.Sec101NoticeHistories.Where(s => s.MemberId == targetMemberId).ToListAsync();
-                        foreach (var snh in linkedSnh)
-                        {
-                            snh.MemberId = null;
-                        }
-
-                        var remainingEmptyShares = await _context.ShareAccounts.Where(s => s.MemberId == targetMemberId && s.ShareAccountId != account.ShareAccountId).ToListAsync();
-                        if (remainingEmptyShares.Any())
-                        {
-                            _context.ShareAccounts.RemoveRange(remainingEmptyShares);
-                        }
-
-                        // Permanently DELETE the Member row since customer holds 0 shares
-                        _context.Members.Remove(member);
-                    }
-
-                    await _context.SaveChangesAsync();
-                }
+                // Physically delete orphan 0-share Member record & safely unlink all nullable MemberID FKs
+                await ShareCleanupHelper.PurgeZeroShareAccountAndOrphanMemberAsync(
+                    _context,
+                    shareAccountId: null,
+                    memberId: targetMemberId,
+                    reseedIdentities: true);
 
                 await transaction.CommitAsync();
+                InvalidateCustomerAndShareCache();
 
-                return Ok(new { message = "शेअर ओपनिंग बॅलन्स यशस्वीरित्या डिलीट केला व सभासद कोड पूर्ववत रोलबॅक केला! (Opening balance deleted and member code rolled back successfully.)" });
+                return Ok(new { message = "शेअर ओपनिंग बॅलन्स व संबंधित अनाथ सभासद नोंद १००% पूर्णपणे डिलीट केली व सभासद कोड पूर्ववत रोलबॅक केला!" });
             }
             catch (Exception ex)
             {
@@ -3403,6 +3388,7 @@ namespace Bhisi.Api.Controllers
                     return StatusCode(delRes.HttpStatusCode, new { message = delRes.Message });
                 }
 
+                InvalidateCustomerAndShareCache();
                 return Ok(new { message = $"शेअर वाटप नोंद (शेअर्स: {preCheckAllot.NumberOfShares}, रक्कम: ₹{preCheckAllot.Amount:F2}) व संलग्न व्हाउचर पूर्णपणे डिलीट व पूर्ववत करण्यात आले!" });
             }
 
@@ -3516,13 +3502,25 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // 4. Remove Transaction
+                // 4. Remove Transaction & purge 0-share ShareAccount + orphan Member if no shares remain
+                int cancelledAccId = account.ShareAccountId;
+                int cancelledMemId = account.MemberId;
                 _context.ShareTransactions.Remove(txn);
-
                 await _context.SaveChangesAsync();
-                await dbTransaction.CommitAsync();
 
-                return Ok(new { message = $"शेअर वाटप नोंद (शेअर्स: {txn.NumberOfShares}, रक्कम: ₹{txn.Amount:F2}) यशस्वीरित्या रद्द व रिव्हर्स करण्यात आली!" });
+                if (account.TotalShareCount <= 0)
+                {
+                    await ShareCleanupHelper.PurgeZeroShareAccountAndOrphanMemberAsync(
+                        _context,
+                        cancelledAccId,
+                        cancelledMemId,
+                        reseedIdentities: true);
+                }
+
+                await dbTransaction.CommitAsync();
+                InvalidateCustomerAndShareCache();
+
+                return Ok(new { message = $"शेअर वाटप नोंद (शेअर्स: {txn.NumberOfShares}, रक्कम: ₹{txn.Amount:F2}) यशस्वीरित्या रद्द व पूर्णपणे डिलीट करण्यात आली!" });
             }
             catch (Exception ex)
             {

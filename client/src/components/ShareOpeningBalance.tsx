@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
+import { invalidateApiCache } from '../utils/apiCache';
 import { 
   List, 
   Search, 
@@ -211,7 +212,10 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
 
   const fetchMembers = async () => {
     try {
-      const res = await fetch('/api/Customers', { headers: getAuthHeaders() });
+      const res = await fetch('/api/Customers', {
+        headers: getAuthHeaders(),
+        cache: 'no-store'
+      });
       if (res.ok) {
         const data = await res.json();
         const safeList = Array.isArray(data) ? data : (data?.value || []);
@@ -224,7 +228,10 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
 
   const fetchBalances = async () => {
     try {
-      const res = await fetch('/api/ShareAccounts/OpeningBalance', { headers: getAuthHeaders() });
+      const res = await fetch('/api/ShareAccounts/OpeningBalance', {
+        headers: getAuthHeaders(),
+        cache: 'no-store'
+      });
       if (res.ok) {
         const data = await res.json();
         const safeList = Array.isArray(data) ? data : (data?.value || []);
@@ -268,7 +275,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
       setFormData(prev => ({
         ...prev,
         memberId: String(selectedCustId),
-        legacyMemberNo: existingBal.legacyMemberNo || selCust?.legacyCustomerNo || '',
+        legacyMemberNo: existingBal.legacyMemberNo || selCust?.memberProfile?.legacyMemberNo || selCust?.legacyMemberNo || '',
         openingDate: formattedDate,
         shareQuantity: (existingBal.shareQuantity || 0).toString(),
         faceValue: (existingBal.faceValue || 100).toString(),
@@ -288,7 +295,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
       setFormData(prev => ({
         ...prev,
         memberId: String(selectedCustId),
-        legacyMemberNo: selCust?.legacyCustomerNo || ''
+        legacyMemberNo: selCust?.memberProfile?.legacyMemberNo || selCust?.legacyMemberNo || ''
       }));
     }
   };
@@ -501,6 +508,9 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
       if (res.ok) {
         setMessage(isEditMode ? 'शेअर ओपनिंग बॅलन्स यशस्वीरित्या अपडेट केला!' : 'शेअर ओपनिंग बॅलन्स यशस्वीरित्या सेव्ह झाला!');
         setMessageType('success');
+        invalidateApiCache('/api/customers');
+        invalidateApiCache('/api/members');
+        invalidateApiCache('/api/shareaccounts');
         resetForm();
         fetchMembers();
         fetchBalances();
@@ -594,6 +604,9 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
       if (res.ok) {
         setMessage(data.message || 'नोंद यशस्वीरित्या डिलीट केली आणि सभासद कोड पूर्ववत रोलबॅक केला!');
         setMessageType('success');
+        invalidateApiCache('/api/customers');
+        invalidateApiCache('/api/members');
+        invalidateApiCache('/api/shareaccounts');
         if (isEditMode && (editAccountId === targetId || editCertificateId === targetId)) {
           resetForm();
         }
@@ -650,25 +663,33 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
     const currentCustId = Number(formData.memberId || 0);
 
     const matchBal = Array.isArray(balances) ? balances.find(b => {
-      if (!b) return false;
+      if (!b || !(Number(b.shareQuantity || 0) > 0)) return false;
       const bCustId = Number(b.customerId || 0);
       const isSamePerson = currentCustId > 0 && bCustId === currentCustId;
       return !isSamePerson && (b.legacyMemberNo?.trim().toLowerCase() === trimmed);
     }) : null;
     if (matchBal) return { name: matchBal.memberName, code: matchBal.memberNo || matchBal.legacyMemberNo || `CIF:${matchBal.cifNo}` };
 
+    // Strictly compare ONLY active shareholder LegacyMemberNo (NEVER compare against LegacyCustomerNo!)
     const matchMem = Array.isArray(members) ? members.find(m => {
       if (!m) return false;
       const mCustId = Number(m.customerID || m.customerId || m.id || 0);
       const isSamePerson = currentCustId > 0 && mCustId === currentCustId;
-      return !isSamePerson && (
-        (m.legacyMemberNo?.trim().toLowerCase() === trimmed) ||
-        (m.legacyCustomerNo?.trim().toLowerCase() === trimmed)
-      );
+      if (isSamePerson) return false;
+
+      const activeMemberCode = String(m.memberProfile?.memberCode || (m as any).memberCode || '').trim();
+      if (!activeMemberCode) return false;
+
+      const activeLegMemberNo = String(
+        m.memberProfile?.legacyMemberNo ?? m.legacyMemberNo ?? ''
+      ).trim().toLowerCase();
+
+      return activeLegMemberNo !== '' && activeLegMemberNo === trimmed;
     }) : null;
     if (matchMem) {
       const fullName = [matchMem.firstName, matchMem.middleName, matchMem.lastName].filter(Boolean).join(' ');
-      return { name: fullName, code: matchMem.cifNo || `CIF:${matchMem.customerID}` };
+      const displayCode = matchMem.memberProfile?.memberCode || matchMem.cifNo || `CIF:${matchMem.customerID}`;
+      return { name: fullName, code: displayCode };
     }
     return null;
   }, [formData.legacyMemberNo, formData.memberId, balances, members]);

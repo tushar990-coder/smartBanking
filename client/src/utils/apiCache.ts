@@ -325,7 +325,10 @@ export function invalidateApiCache(urlOrGroup?: string): void {
         key.includes('/api/rdaccounts') ||
         key.includes('/api/pigmyaccounts') ||
         key.includes('/api/fdaccounts') ||
-        key.includes('/api/legalrecovery')
+        key.includes('/api/legalrecovery') ||
+        key.includes('/api/customers') ||
+        key.includes('/api/members') ||
+        key.includes('/api/shareaccounts/nextshareconfig')
       ) {
         memoryCache.delete(key);
       }

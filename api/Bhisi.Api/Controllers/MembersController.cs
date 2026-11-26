@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Bhisi.Api.Helpers;
@@ -20,10 +21,17 @@ namespace Bhisi.Api.Controllers
     public class MembersController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IMemoryCache? _cache;
 
-        public MembersController(AppDbContext context)
+        public MembersController(AppDbContext context, IMemoryCache? cache = null)
         {
             _context = context;
+            _cache = cache;
+        }
+
+        private void InvalidateCustomerCache()
+        {
+            ShareCleanupHelper.InvalidateCustomerListCache(_cache, HttpContext);
         }
 
         private (int userId, string username, int branchId, string role, bool isHeadOfficeAdmin) GetCurrentUserContext()
@@ -272,7 +280,11 @@ namespace Bhisi.Api.Controllers
 
                 var existingLegacyList = await _context.Members
                     .AsNoTracking()
-                    .Where(m => !m.IsDeleted && m.BranchID == effectiveBranchId && m.LegacyMemberNo != null && m.LegacyMemberNo != "")
+                    .Where(m => !m.IsDeleted &&
+                                m.BranchID == effectiveBranchId &&
+                                m.LegacyMemberNo != null &&
+                                m.LegacyMemberNo != "" &&
+                                _context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID && sa.TotalShareCount > 0))
                     .Select(m => m.LegacyMemberNo!)
                     .ToListAsync();
 
@@ -597,14 +609,31 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(req.LegacyMemberNo))
             {
-                var existingLegacyMember = await _context.Members
-                    .AsNoTracking()
+                var conflictingMembers = await _context.Members
                     .Include(m => m.Customer)
-                    .FirstOrDefaultAsync(m => m.MemberID != id && !m.IsDeleted && m.BranchID == existingMember.BranchID && m.LegacyMemberNo == req.LegacyMemberNo);
-                if (existingLegacyMember != null)
+                    .Where(m => m.MemberID != id && !m.IsDeleted && m.BranchID == existingMember.BranchID && m.LegacyMemberNo == req.LegacyMemberNo)
+                    .ToListAsync();
+
+                foreach (var exMem in conflictingMembers)
                 {
-                    string legacyName = existingLegacyMember.Customer != null ? $"{existingLegacyMember.Customer.FirstName} {existingLegacyMember.Customer.LastName}".Trim() : "Member";
-                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({req.LegacyMemberNo}) आधीच सभासद '{legacyName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
+                    bool hasAnyShareRow = await _context.ShareAccounts.AnyAsync(sa => sa.MemberId == exMem.MemberID);
+                    bool exHasActiveShares = hasAnyShareRow && await _context.ShareAccounts.AnyAsync(sa => sa.MemberId == exMem.MemberID && sa.TotalShareCount > 0);
+                    bool isOrphanOrClosed = string.Equals(exMem.Status, "Closed", StringComparison.OrdinalIgnoreCase) ||
+                                            string.IsNullOrWhiteSpace(exMem.MemberCode) ||
+                                            exMem.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase) ||
+                                            (hasAnyShareRow && !exHasActiveShares);
+
+                    if (isOrphanOrClosed)
+                    {
+                        exMem.LegacyMemberNo = null;
+                        _context.Members.Update(exMem);
+                        await _context.SaveChangesAsync();
+                    }
+                    else
+                    {
+                        string legacyName = exMem.Customer != null ? $"{exMem.Customer.FirstName} {exMem.Customer.LastName}".Trim() : "Member";
+                        return BadRequest(new { message = $"हा जुना सभासद आयडी ({req.LegacyMemberNo}) आधीच सभासद '{legacyName}' (कोड: {exMem.MemberCode ?? exMem.MemberID.ToString()}) साठी नोंदवला आहे." });
+                    }
                 }
             }
 
@@ -729,6 +758,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                InvalidateCustomerCache();
                 await LogAuditAsync("MEMBER_UPDATE", id.ToString(), $"सभासद माहिती अद्ययावत केली: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}");
             }
             catch (DbUpdateConcurrencyException)
@@ -844,14 +874,32 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(req.LegacyMemberNo))
             {
-                var existingLegacyMember = await _context.Members
-                    .AsNoTracking()
+                int effectiveReqBranchId = isHeadOfficeAdmin ? (req.BranchID > 0 ? req.BranchID : userBranchId) : userBranchId;
+                var conflictingMembers = await _context.Members
                     .Include(m => m.Customer)
-                    .FirstOrDefaultAsync(m => !m.IsDeleted && m.BranchID == req.BranchID && m.LegacyMemberNo == req.LegacyMemberNo);
-                if (existingLegacyMember != null)
+                    .Where(m => !m.IsDeleted && m.BranchID == effectiveReqBranchId && m.LegacyMemberNo == req.LegacyMemberNo && (customer == null || m.CustomerID != customer.CustomerID))
+                    .ToListAsync();
+
+                foreach (var exMem in conflictingMembers)
                 {
-                    string legacyName = existingLegacyMember.Customer != null ? $"{existingLegacyMember.Customer.FirstName} {existingLegacyMember.Customer.LastName}".Trim() : "Member";
-                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({req.LegacyMemberNo}) आधीच सभासद '{legacyName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
+                    bool hasAnyShareRow = await _context.ShareAccounts.AnyAsync(sa => sa.MemberId == exMem.MemberID);
+                    bool exHasActiveShares = hasAnyShareRow && await _context.ShareAccounts.AnyAsync(sa => sa.MemberId == exMem.MemberID && sa.TotalShareCount > 0);
+                    bool isOrphanOrClosed = string.Equals(exMem.Status, "Closed", StringComparison.OrdinalIgnoreCase) ||
+                                            string.IsNullOrWhiteSpace(exMem.MemberCode) ||
+                                            exMem.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase) ||
+                                            (hasAnyShareRow && !exHasActiveShares);
+
+                    if (isOrphanOrClosed)
+                    {
+                        exMem.LegacyMemberNo = null;
+                        _context.Members.Update(exMem);
+                        await _context.SaveChangesAsync();
+                    }
+                    else
+                    {
+                        string legacyName = exMem.Customer != null ? $"{exMem.Customer.FirstName} {exMem.Customer.LastName}".Trim() : "Member";
+                        return BadRequest(new { message = $"हा जुना सभासद आयडी ({req.LegacyMemberNo}) आधीच सभासद '{legacyName}' (कोड: {exMem.MemberCode ?? exMem.MemberID.ToString()}) साठी नोंदवला आहे." });
+                    }
                 }
             }
 
@@ -1210,6 +1258,7 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, new { message = "सभासद नोंदणी करताना अनपेक्षित त्रुटी आली: " + (ex.InnerException?.Message ?? ex.Message) });
             }
 
+            InvalidateCustomerCache();
             var responseDto = MemberResponseDto.FromMember(member);
             responseDto.GeneratedVoucherNo = generatedVoucherNo;
             responseDto.GeneratedVoucherId = savedVoucherId;
@@ -1263,42 +1312,27 @@ namespace Bhisi.Api.Controllers
 
             try
             {
-                // Remove zero-share account record if exists
-                var emptyShares = await _context.ShareAccounts.Where(s => s.MemberId == id).ToListAsync();
-                if (emptyShares.Any())
+                await ShareCleanupHelper.PurgeZeroShareAccountAndOrphanMemberAsync(
+                    _context,
+                    shareAccountId: null,
+                    memberId: id,
+                    reseedIdentities: true);
+
+                // Ensure Member row is physically removed if still tracked
+                var stillExists = await _context.Members.FindAsync(id);
+                if (stillExists != null)
                 {
-                    _context.ShareAccounts.RemoveRange(emptyShares);
+                    _context.Members.Remove(stillExists);
+                    await _context.SaveChangesAsync();
                 }
 
-                // Preserve Customer-First Sec101 audit trail by detaching legacy MemberId FK
-                var linkedCases = await _context.Sec101CaseMasters.Where(c => c.MemberId == id).ToListAsync();
-                foreach (var lc in linkedCases) lc.MemberId = null;
-                var linkedNotices = await _context.Sec101NoticeHistories.Where(n => n.MemberId == id).ToListAsync();
-                foreach (var ln in linkedNotices) ln.MemberId = null;
-
-                _context.Members.Remove(member);
-                await _context.SaveChangesAsync();
-
-                // If the deleted record was the highest/only MemberID, automatically decrement/reseed identity counter
-                try
-                {
-                    var maxRemainingId = await _context.Members.MaxAsync(m => (int?)m.MemberID) ?? 0;
-                    if (id >= maxRemainingId)
-                    {
-                        int reseedVal = maxRemainingId;
-                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('Members', RESEED, {reseedVal});");
-                    }
-                }
-                catch (Exception reseedEx)
-                {
-                    Console.WriteLine($"[WARNING] Member reseed error: {reseedEx.Message}");
-                }
+                InvalidateCustomerCache();
 
                 string memberName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
                 string cifNo = member.Customer?.CIFNo ?? "";
                 await LogAuditAsync("MEMBER_DELETE", id.ToString(), $"सभासद कायमचा डिलीट केला: {memberName}, CIF: {cifNo}, Code: {member.MemberCode}");
 
-                return Ok(new { message = "सभासद यशस्वीरित्या डिलीट केला." });
+                return Ok(new { message = "सभासद यशस्वीरित्या कायमचा डिलीट केला." });
             }
             catch (Exception ex)
             {

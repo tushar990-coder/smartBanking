@@ -2284,6 +2284,7 @@ namespace Bhisi.Api.Services
                     }
 
                     // 6B. Share Allotment
+                    var allotmentAccountRefs = new List<(int ShareAccountId, int MemberId)>();
                     foreach (var st in shareTxns.Where(t => t.TransactionType == "Allotment"))
                     {
                         var shAcc = await _context.ShareAccounts.FindAsync(st.ShareAccountId);
@@ -2299,6 +2300,7 @@ namespace Bhisi.Api.Services
                             shAcc.TotalShareCount = Math.Max(0, shAcc.TotalShareCount - st.NumberOfShares);
                             shAcc.TotalShareAmount = Math.Max(0m, shAcc.TotalShareAmount - st.Amount);
                             _context.Entry(shAcc).State = EntityState.Modified;
+                            allotmentAccountRefs.Add((shAcc.ShareAccountId, shAcc.MemberId));
                         }
 
                         var cert = await FindShareCertificateForTransactionAsync(st);
@@ -2359,6 +2361,16 @@ namespace Bhisi.Api.Services
 
                     _context.ShareTransactions.RemoveRange(shareTxns);
                     await _context.SaveChangesAsync();
+
+                    // Hard-delete 0-share ShareAccounts and 0-share Member rows left behind after cancelling initial Share Allotment
+                    foreach (var accRef in allotmentAccountRefs.Distinct())
+                    {
+                        await ShareCleanupHelper.PurgeZeroShareAccountAndOrphanMemberAsync(
+                            _context,
+                            accRef.ShareAccountId,
+                            accRef.MemberId,
+                            reseedIdentities: false);
+                    }
                 }
             }
 

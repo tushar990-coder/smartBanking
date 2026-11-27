@@ -2580,46 +2580,55 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
 
       {/* 👥 CUSTOMER DIRECTORY & INSTANT SEARCH MODAL */}
       {isListModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-4 backdrop-blur-xs">
-          <div className="bg-white rounded shadow-2xl max-w-[96vw] w-full h-[90vh] flex flex-col overflow-hidden border border-slate-300">
-            <div className="px-4 py-2.5 bg-primary text-white flex justify-between items-center shrink-0 border-b border-primary/20">
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-amber-300" />
-                <span className="font-bold text-sm sm:text-base">
-                  नोंदणीकृत खातेदार यादी व शोध (एकूण खातेदार: {totalCustomersCount} | शोध निकाल: {directoryTotalCount})
+        <div className="fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-1.5 sm:p-3 backdrop-blur-xs">
+          <div className="bg-white rounded-xl shadow-2xl max-w-[98vw] w-full h-[92vh] flex flex-col overflow-hidden border border-blue-200/80">
+            <div className="px-4 py-2 bg-gradient-to-r from-[#0F2454] via-[#1E3A8A] to-[#2563EB] text-white flex justify-between items-center shrink-0 border-b border-blue-900/40">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+                  <Users className="w-4 h-4 text-amber-300" />
+                </div>
+                <span className="font-bold text-xs sm:text-sm truncate">
+                  नोंदणीकृत खातेदार यादी व शोध
+                </span>
+                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/15 border border-white/20 text-blue-50">
+                  एकूण: {totalCustomersCount} | शोध निकाल: {directoryTotalCount}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={handleHarmonizeCifs}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-sm shadow-xs cursor-pointer flex items-center gap-1 border border-emerald-500"
+                  className="bg-emerald-500/90 hover:bg-emerald-500 text-white text-[10.5px] font-bold px-2.5 py-1 rounded-md shadow-xs cursor-pointer flex items-center gap-1 border border-emerald-300/40 transition"
                   title="सर्व खातेदारांचे CIF क्रमांक सलग (Sequential) करा"
                 >
                   <RefreshCw className="w-3 h-3" />
                   <span>CIF सिंक (Auto-Harmonize)</span>
                 </button>
-                <button onClick={() => setIsListModalOpen(false)} className="text-white/80 hover:text-white p-1 cursor-pointer">
-                  <X className="w-5 h-5" />
+                <button
+                  onClick={() => setIsListModalOpen(false)}
+                  className="text-white/80 hover:text-white hover:bg-white/15 rounded-md p-1 cursor-pointer transition"
+                  title="बंद करा"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div className="p-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2.5 shrink-0">
-              <div className="relative flex-1 min-w-[300px]">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+            <div className="px-3 py-1.5 bg-gradient-to-r from-[#eef2ff] via-[#f8fbff] to-[#e0f2fe] border-b border-blue-200/70 flex flex-wrap justify-between items-center gap-2 shrink-0">
+              <div className="relative flex-1 min-w-[280px]">
+                <Search className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 top-1.5" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="नाव, CIF, जुना लेगसी क्र., मोबाईल, आधार, पॅन किंवा गाव शोधा..."
-                  className="w-full pl-8 pr-8 py-1 border border-slate-300 rounded text-[11px] focus:ring-1 focus:ring-primary focus:border-primary outline-none bg-white h-[28px]"
+                  className="w-full pl-8 pr-8 py-0.5 border border-blue-200 rounded-md text-[11px] focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white h-[26px]"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    className="absolute right-2 top-1 text-slate-400 hover:text-slate-700 cursor-pointer"
                     title="शोध साफ करा"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -2627,10 +2636,10 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
                 {directoryLoading && (
-                  <span className="text-primary font-bold flex items-center gap-1">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span className="text-blue-700 font-bold flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
                     <span>लोड होत आहे...</span>
                   </span>
                 )}
@@ -2640,19 +2649,19 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                     setDirectorySortDir(prev => (prev === 'asc' ? 'desc' : 'asc'));
                     setDirectoryPage(1);
                   }}
-                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded font-bold text-slate-800 h-[28px] cursor-pointer shadow-2xs flex items-center gap-1"
+                  className="px-2 py-0.5 bg-white hover:bg-blue-50 border border-blue-200 rounded-md font-bold text-slate-800 h-[26px] cursor-pointer shadow-2xs flex items-center gap-1 text-[10.5px]"
                   title="यादीची क्रमवारी बदला (१ पासून किंवा शेवटच्या नोंदीपासून)"
                 >
                   <span>{directorySortDir === 'asc' ? '⬆️ १ पासून (जुने ➔ नवीन)' : '⬇️ शेवटून (नवीन ➔ जुने)'}</span>
                 </button>
-                <label className="font-bold text-slate-600">प्रति पान:</label>
+                <label className="font-bold text-slate-600 text-[10.5px]">प्रति पान:</label>
                 <select
                   value={directoryPageSize}
                   onChange={e => {
                     setDirectoryPageSize(Number(e.target.value));
                     setDirectoryPage(1);
                   }}
-                  className="border border-slate-300 rounded px-2 py-1 bg-white font-bold text-slate-800 h-[28px] outline-none cursor-pointer"
+                  className="border border-blue-200 rounded-md px-1.5 py-0.5 bg-white font-bold text-slate-800 h-[26px] outline-none cursor-pointer text-[10.5px]"
                 >
                   <option value={50}>50</option>
                   <option value={100}>100</option>
@@ -2663,128 +2672,273 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-2">
-              <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
+            <div className="flex-1 overflow-auto bg-white">
+              <table className="w-full text-left border-collapse text-[11px] leading-tight whitespace-nowrap">
                 <thead>
-                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-300 sticky top-0 font-bold shadow-xs z-10">
-                    <th className="p-2 text-center w-12">अ.क्र.</th>
-                    <th className="p-2 text-center w-10">फोटो</th>
-                    <th className="p-2">CIF कोड</th>
-                    <th className="p-2">खातेदार ID</th>
-                    <th className="p-2">जुना / लेगसी क्र.</th>
-                    <th className="p-2 min-w-[180px]">खातेदाराचे पूर्ण नाव</th>
-                    <th className="p-2 text-center">खाते सुरू दिनांक</th>
-                    <th className="p-2 text-center">जन्म तारीख</th>
-                    <th className="p-2">प्रवर्ग / वर्गवारी</th>
-                    <th className="p-2">जात</th>
-                    <th className="p-2">व्यवसाय</th>
-                    <th className="p-2">मोबाईल नंबर</th>
-                    <th className="p-2">आधार नंबर</th>
-                    <th className="p-2">पॅन नंबर</th>
-                    <th className="p-2 min-w-[160px]">पत्ता / गाव</th>
-                    <th className="p-2">वारसदार व नाते</th>
-                    <th className="p-2 text-center">स्टेटस</th>
-                    <th className="p-2 text-center sticky right-0 bg-slate-100 shadow-l">कृती</th>
+                  <tr className="bg-[#0F2454] text-white sticky top-0 font-bold z-20 text-[10.5px] tracking-wide">
+                    <th className="py-1.5 px-2 text-center w-9 border-r border-white/10 sticky left-0 bg-[#0F2454] z-30">अ.क्र.</th>
+                    <th className="py-1.5 px-1.5 text-center w-8 border-r border-white/10">फोटो</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">CIF कोड</th>
+                    <th className="py-1.5 px-2 border-r border-white/10 text-center">ID</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">जुना / लेगसी क्र.</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">सभासद क्र.</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">शाखा</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">खातेदाराचे पूर्ण नाव (मराठी)</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">इंग्रजी नाव (English)</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">टोपणनाव</th>
+                    <th className="py-1.5 px-2 text-center border-r border-white/10">खाते सुरू दि.</th>
+                    <th className="py-1.5 px-2 text-center border-r border-white/10">लिंग</th>
+                    <th className="py-1.5 px-2 text-center border-r border-white/10">जन्म तारीख</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">प्रकार</th>
+                    <th className="py-1.5 px-2 text-center border-r border-white/10">अल्पवयीन</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">प्रवर्ग</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">जात</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">व्यवसाय</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">मोबाईल नंबर</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">ईमेल</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">आधार नंबर</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">पॅन नंबर</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">CKYC क्र.</th>
+                    <th className="py-1.5 px-2 text-center border-r border-white/10">KYC / जोखीम</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">पत्ता (मराठी)</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">गाव</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">तालुका</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">जिल्हा</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">संस्था / कर्मचारी कोड</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">वारसदार नाव</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">वारसदार नाते</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">वारसदार जन्म दि. / पत्ता</th>
+                    <th className="py-1.5 px-2 border-r border-white/10">पालक (Guardian)</th>
+                    <th className="py-1.5 px-2 text-center border-r border-white/10">कागदपत्रे</th>
+                    <th className="py-1.5 px-2 text-center border-r border-white/10">स्टेटस</th>
+                    <th className="py-1.5 px-2 text-center sticky right-0 bg-[#0F2454] z-30 shadow-[-4px_0_8px_rgba(15,36,84,0.2)]">कृती</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {filteredCustomers.map((c, index) => (
-                    <tr key={c.customerID} className="border-b border-slate-100 hover:bg-blue-50/50 transition">
-                      <td className="p-2 text-center font-bold text-slate-500 bg-slate-50/60">
-                        {directoryPageSize <= 0
-                          ? index + 1
-                          : (directoryPage - 1) * directoryPageSize + index + 1}
-                      </td>
-                      <td className="p-1.5 text-center">
-                        <div className="w-7 h-7 mx-auto rounded-full bg-slate-200 overflow-hidden flex items-center justify-center border border-slate-300 shadow-2xs">
-                          {c.photoPath ? (
-                            <img src={c.photoPath} alt="P" className="w-full h-full object-cover" />
+                <tbody className="divide-y divide-slate-200/80">
+                  {filteredCustomers.map((c, index) => {
+                    const rowNo = directoryPageSize <= 0
+                      ? index + 1
+                      : (directoryPage - 1) * directoryPageSize + index + 1;
+                    const marathiName = [c.firstName, c.middleName, c.lastName].filter(Boolean).join(' ') || '-';
+                    const englishName = [c.firstNameEng, c.middleNameEng, c.lastNameEng].filter(Boolean).join(' ') || '-';
+                    const legacyNo = c.legacyCustomerNo || (c as any).LegacyCustomerNo || (c as any).oldMemberCode || (c as any).memberProfile?.oldMemberCode || '-';
+                    const memberCode = (c as any).memberProfile?.memberCode || (c as any).memberProfile?.legacyMemberNo || '-';
+                    const branchName = c.branch?.branchName || branches.find(b => b.branchID === c.branchID)?.branchName || (c.branchID ? `Branch #${c.branchID}` : '-');
+                    const employerName = c.employerId
+                      ? (employers.find(e => Number(e.employerId ?? e.employerID ?? e.id) === Number(c.employerId))?.employerName || `#${c.employerId}`)
+                      : '';
+                    const employerDisplay = [employerName, c.employeeCode ? `(${c.employeeCode})` : ''].filter(Boolean).join(' ') || '-';
+                    const nomineeExtra = [
+                      c.nomineeBirthDate ? new Date(c.nomineeBirthDate).toLocaleDateString('en-GB') : '',
+                      c.nomineeIsMinor ? 'अल्पवयीन' : '',
+                      c.nomineeAddress || ''
+                    ].filter(Boolean).join(' | ') || '-';
+                    const guardianDisplay = c.guardianName
+                      ? [c.guardianName, c.guardianRelation ? `(${c.guardianRelation})` : '', c.guardianMobileNo || ''].filter(Boolean).join(' ')
+                      : '-';
+                    const kycStatus = c.kycStatus || 'Verified';
+                    const riskCategory = c.riskCategory || 'Low';
+                    const rowBgClass = index % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+
+                    return (
+                      <tr
+                        key={c.customerID}
+                        className={`h-[28px] ${rowBgClass} hover:bg-blue-50 transition-colors group`}
+                      >
+                        <td className={`py-1 px-2 text-center font-bold text-slate-500 border-r border-slate-200/70 sticky left-0 ${rowBgClass} group-hover:bg-blue-50 z-10`}>
+                          {rowNo}
+                        </td>
+                        <td className="py-0.5 px-1.5 text-center border-r border-slate-200/70">
+                          <button
+                            type="button"
+                            disabled={!c.photoPath}
+                            onClick={() => c.photoPath && setPreviewDocModal({ isOpen: true, title: `${marathiName} - फोटो`, docUrl: c.photoPath })}
+                            className={`w-5 h-5 mx-auto rounded-full bg-slate-200 overflow-hidden flex items-center justify-center border border-slate-300 ${c.photoPath ? 'cursor-pointer hover:ring-2 hover:ring-blue-400' : 'cursor-default'}`}
+                            title={c.photoPath ? 'फोटो मोठा पहा' : 'फोटो अपलोड नाही'}
+                          >
+                            {c.photoPath ? (
+                              <img src={c.photoPath} alt="P" className="w-full h-full object-cover" />
+                            ) : (
+                              <Users className="w-3 h-3 text-slate-400" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="py-1 px-2 font-black text-blue-700 border-r border-slate-200/70 font-mono">{c.cifNo || '-'}</td>
+                        <td className="py-1 px-2 text-center font-semibold text-slate-600 border-r border-slate-200/70">#{c.customerID}</td>
+                        <td className="py-1 px-2 font-semibold text-slate-700 border-r border-slate-200/70">{legacyNo}</td>
+                        <td className="py-1 px-2 font-semibold text-indigo-700 border-r border-slate-200/70">{memberCode}</td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70 max-w-[130px] truncate" title={branchName}>
+                          {branchName}
+                        </td>
+                        <td className="py-1 px-2 font-bold text-slate-900 border-r border-slate-200/70 max-w-[200px] truncate" title={marathiName}>
+                          {marathiName}
+                        </td>
+                        <td className="py-1 px-2 text-slate-600 border-r border-slate-200/70 max-w-[180px] truncate" title={englishName}>
+                          {englishName}
+                        </td>
+                        <td className="py-1 px-2 text-slate-600 border-r border-slate-200/70 max-w-[110px] truncate" title={c.nickName || '-'}>
+                          {c.nickName || '-'}
+                        </td>
+                        <td className="py-1 px-2 text-center text-blue-900 font-semibold bg-blue-50/40 border-r border-slate-200/70">
+                          {c.registrationDate ? new Date(c.registrationDate).toLocaleDateString('en-GB') : '-'}
+                        </td>
+                        <td className="py-1 px-2 text-center text-slate-700 border-r border-slate-200/70">{c.gender || '-'}</td>
+                        <td className="py-1 px-2 text-center text-slate-700 border-r border-slate-200/70">
+                          {c.birthDate ? new Date(c.birthDate).toLocaleDateString('en-GB') : '-'}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70">
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200/70 text-[10px] font-semibold">
+                            {c.customerType || 'Individual'}
+                          </span>
+                        </td>
+                        <td className="py-1 px-2 text-center border-r border-slate-200/70">
+                          {c.isMinor ? (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">होय</span>
                           ) : (
-                            <Users className="w-3.5 h-3.5 text-slate-400" />
+                            <span className="text-slate-400 text-[10px]">नाही</span>
                           )}
-                        </div>
-                      </td>
-                      <td className="p-2 font-black text-primary">{c.cifNo}</td>
-                      <td className="p-2 font-bold text-slate-700">#{c.customerID}</td>
-                      <td className="p-2 font-semibold text-slate-700">
-                        {c.legacyCustomerNo || (c as any).LegacyCustomerNo || (c as any).oldMemberCode || (c as any).memberProfile?.oldMemberCode || '-'}
-                      </td>
-                      <td className="p-2 font-bold text-slate-800">
-                        {c.firstName} {c.middleName} {c.lastName}
-                        {c.firstNameEng && (
-                          <span className="block text-[10px] text-slate-500 font-normal">
-                            {c.firstNameEng} {c.lastNameEng}
+                        </td>
+                        <td className="py-1 px-2 border-r border-slate-200/70">
+                          {c.casteCategory ? (
+                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-semibold border border-slate-200">
+                              {c.casteCategory}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70">{c.caste || '-'}</td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70 max-w-[120px] truncate" title={c.occupation || '-'}>
+                          {c.occupation || '-'}
+                        </td>
+                        <td className="py-1 px-2 font-bold text-blue-700 border-r border-slate-200/70 font-mono">{c.mobileNo || '-'}</td>
+                        <td className="py-1 px-2 text-slate-600 border-r border-slate-200/70 max-w-[150px] truncate" title={c.email || '-'}>
+                          {c.email || '-'}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 font-mono border-r border-slate-200/70">{c.aadhaarNo || '-'}</td>
+                        <td className="py-1 px-2 font-mono font-bold text-slate-800 uppercase border-r border-slate-200/70">{c.panNo || '-'}</td>
+                        <td className="py-1 px-2 font-mono text-slate-700 border-r border-slate-200/70">{c.ckycNo || '-'}</td>
+                        <td className="py-1 px-2 text-center border-r border-slate-200/70">
+                          <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold mr-1 ${
+                            kycStatus === 'Verified' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {kycStatus}
                           </span>
-                        )}
-                      </td>
-                      <td className="p-2 text-center text-blue-900 font-bold bg-blue-50/40">
-                        {c.registrationDate ? new Date(c.registrationDate).toLocaleDateString('en-GB') : '-'}
-                      </td>
-                      <td className="p-2 text-center text-slate-600 font-medium">
-                        {c.birthDate ? new Date(c.birthDate).toLocaleDateString('en-GB') : '-'}
-                      </td>
-                      <td className="p-2">
-                        {c.casteCategory ? (
-                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-semibold border border-slate-200">
-                            {c.casteCategory}
+                          <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold ${
+                            riskCategory === 'High'
+                              ? 'bg-red-100 text-red-700'
+                              : riskCategory === 'Medium'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-sky-100 text-sky-700'
+                          }`}>
+                            {riskCategory}
                           </span>
-                        ) : '-'}
-                      </td>
-                      <td className="p-2 text-slate-700">{c.caste || '-'}</td>
-                      <td className="p-2 text-slate-700 font-medium">{c.occupation || '-'}</td>
-                      <td className="p-2 font-bold text-blue-700">{c.mobileNo || '-'}</td>
-                      <td className="p-2 text-slate-600 font-mono text-[11px]">{c.aadhaarNo || '-'}</td>
-                      <td className="p-2 font-mono font-bold text-slate-700 uppercase text-[11px]">{c.panNo || '-'}</td>
-                      <td className="p-2 text-slate-600 max-w-[200px] truncate" title={c.address ? `${c.address}${c.village ? ', ' + c.village : ''}` : (c.village || '-')}>
-                        {c.address ? `${c.address}${c.village ? ', ' + c.village : ''}` : (c.village || '-')}
-                      </td>
-                      <td className="p-2 text-slate-700 font-medium">
-                        {c.nomineeName ? (
-                          <span>
-                            {c.nomineeName} {c.nomineeRelation && <span className="text-[10px] text-slate-500 font-normal">({c.nomineeRelation})</span>}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70 max-w-[180px] truncate" title={c.address || '-'}>
+                          {c.address || '-'}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70 max-w-[120px] truncate" title={c.village || '-'}>
+                          {c.village || '-'}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70 max-w-[110px] truncate" title={c.taluka || '-'}>
+                          {c.taluka || '-'}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70 max-w-[110px] truncate" title={c.district || '-'}>
+                          {c.district || '-'}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70 max-w-[150px] truncate" title={employerDisplay}>
+                          {employerDisplay}
+                        </td>
+                        <td className="py-1 px-2 text-slate-800 font-medium border-r border-slate-200/70 max-w-[150px] truncate" title={c.nomineeName || '-'}>
+                          {c.nomineeName || '-'}
+                        </td>
+                        <td className="py-1 px-2 text-slate-600 border-r border-slate-200/70">{c.nomineeRelation || '-'}</td>
+                        <td className="py-1 px-2 text-slate-600 border-r border-slate-200/70 max-w-[160px] truncate" title={nomineeExtra}>
+                          {nomineeExtra}
+                        </td>
+                        <td className="py-1 px-2 text-slate-700 border-r border-slate-200/70 max-w-[160px] truncate" title={guardianDisplay}>
+                          {guardianDisplay}
+                        </td>
+                        <td className="py-1 px-2 text-center border-r border-slate-200/70">
+                          <div className="inline-flex items-center gap-1">
+                            {c.signaturePath && (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewDocModal({ isOpen: true, title: `${marathiName} - सही`, docUrl: c.signaturePath! })}
+                                className="px-1 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[9.5px] font-bold cursor-pointer"
+                                title="सही पहा"
+                              >
+                                सही
+                              </button>
+                            )}
+                            {c.aadhaarDocPath && (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewDocModal({ isOpen: true, title: `${marathiName} - आधार कार्ड`, docUrl: c.aadhaarDocPath! })}
+                                className="px-1 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9.5px] font-bold cursor-pointer"
+                                title="आधार डॉक्युमेंट पहा"
+                              >
+                                आधार
+                              </button>
+                            )}
+                            {c.panDocPath && (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewDocModal({ isOpen: true, title: `${marathiName} - पॅन कार्ड`, docUrl: c.panDocPath! })}
+                                className="px-1 py-0.5 rounded bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-[9.5px] font-bold cursor-pointer"
+                                title="पॅन डॉक्युमेंट पहा"
+                              >
+                                पॅन
+                              </button>
+                            )}
+                            {!c.signaturePath && !c.aadhaarDocPath && !c.panDocPath && (
+                              <span className="text-slate-400 text-[10px]">-</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-1 px-2 text-center border-r border-slate-200/70">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            c.status === 'Active'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : c.status === 'Deceased'
+                                ? 'bg-slate-200 text-slate-800'
+                                : 'bg-red-100 text-red-800'
+                          }`}>
+                            {c.status}
                           </span>
-                        ) : '-'}
-                      </td>
-                      <td className="p-2 text-center">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          c.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {c.status}
-                        </span>
-                      </td>
-                      <td className="p-2 text-center sticky right-0 bg-white shadow-l">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => setDoorstepModal({ isOpen: true, customerId: c.customerID, customerName: `${c.firstName} ${c.lastName}` })}
-                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition cursor-pointer"
-                            title="डोअरस्टेप वसुली व गोपनीयता परवानग्या (Doorstep Privacy & Collection Settings)"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleEdit(c)}
-                            className="p-1 text-primary hover:bg-primary/10 rounded transition cursor-pointer"
-                            title="एडिट करा"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(c.customerID)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
-                            title="डिलीट करा"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className={`py-0.5 px-2 text-center sticky right-0 ${rowBgClass} group-hover:bg-blue-50 z-10 shadow-[-4px_0_8px_rgba(15,36,84,0.06)]`}>
+                          <div className="flex items-center justify-center gap-0.5">
+                            <button
+                              onClick={() => setDoorstepModal({ isOpen: true, customerId: c.customerID, customerName: `${c.firstName} ${c.lastName}` })}
+                              className="p-1 text-emerald-600 hover:bg-emerald-100/80 rounded transition cursor-pointer"
+                              title="डोअरस्टेप वसुली व गोपनीयता परवानग्या (Doorstep Privacy & Collection Settings)"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleEdit(c)}
+                              className="p-1 text-blue-700 hover:bg-blue-100/80 rounded transition cursor-pointer"
+                              title="एडिट करा"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(c.customerID)}
+                              className="p-1 text-red-600 hover:bg-red-100/80 rounded transition cursor-pointer"
+                              title="डिलीट करा"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {filteredCustomers.length === 0 && (
                     <tr>
-                      <td colSpan={18} className="p-10 text-center text-slate-400">
+                      <td colSpan={36} className="p-10 text-center text-slate-400">
                         {directoryLoading ? (
                           <div className="flex flex-col items-center gap-2">
-                            <RefreshCw className="w-7 h-7 animate-spin text-primary" />
+                            <RefreshCw className="w-7 h-7 animate-spin text-blue-600" />
                             <p className="font-semibold text-slate-600">खातेदार यादी लोड होत आहे...</p>
                           </div>
                         ) : (

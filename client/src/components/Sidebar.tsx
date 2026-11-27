@@ -100,24 +100,24 @@ export default function Sidebar({
   const getItemClass = (isActive: boolean) => `
     w-full flex items-center ${isSidebarOpen ? 'px-2.5 justify-start' : 'px-0 justify-center'} py-1 rounded-lg text-[11.5px] leading-snug transition-all duration-150 select-none cursor-pointer group ${
       isActive 
-        ? 'bg-gradient-to-r from-emerald-500/20 via-teal-500/12 to-emerald-500/5 text-emerald-950 font-bold border border-emerald-500/35 shadow-sm relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-emerald-600' 
-        : 'text-slate-700 hover:text-slate-950 hover:bg-slate-100/80 font-semibold'
+        ? 'bg-gradient-to-r from-[#2563EB]/15 via-[#06B6D4]/12 to-[#7C3AED]/10 text-[#0F2454] font-bold border border-[#2563EB]/30 shadow-xs relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-gradient-to-b before:from-[#1D8CF8] before:via-[#2563EB] before:to-[#7C3AED]' 
+        : 'text-[#1E3A5F] hover:text-[#0F2454] hover:bg-white/75 font-semibold'
     }
   `;
 
   const getModuleBtnClass = (isActive: boolean) => `
     w-full flex items-center justify-between ${isSidebarOpen ? 'px-2.5' : 'px-0 justify-center'} py-1 rounded-lg text-[11.5px] leading-snug transition-all duration-150 select-none cursor-pointer group ${
       isActive 
-        ? 'bg-gradient-to-r from-emerald-500/20 via-teal-500/12 to-emerald-500/5 text-emerald-950 font-bold border border-emerald-500/35 shadow-sm relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-emerald-600' 
-        : 'text-slate-700 hover:text-slate-950 hover:bg-slate-100/80 font-semibold'
+        ? 'bg-gradient-to-r from-[#2563EB]/15 via-[#06B6D4]/12 to-[#7C3AED]/10 text-[#0F2454] font-bold border border-[#2563EB]/30 shadow-xs relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-gradient-to-b before:from-[#1D8CF8] before:via-[#2563EB] before:to-[#7C3AED]' 
+        : 'text-[#1E3A5F] hover:text-[#0F2454] hover:bg-white/75 font-semibold'
     }
   `;
 
   const getSubItemClass = (isActive: boolean) => `
     px-2 py-0.5 cursor-pointer flex items-center gap-1.5 transition-all duration-150 text-[11px] leading-snug rounded-md select-none group/sub ${
       isActive 
-        ? 'text-emerald-900 font-bold bg-emerald-500/20 border border-emerald-500/30 shadow-sm' 
-        : 'text-slate-600 hover:text-slate-950 hover:bg-white/80 font-medium'
+        ? 'text-[#1D4ED8] font-bold bg-[#2563EB]/12 border border-[#2563EB]/25 shadow-2xs' 
+        : 'text-[#334E73] hover:text-[#0F2454] hover:bg-white/85 font-medium'
     }
   `;
 
@@ -125,37 +125,49 @@ export default function Sidebar({
     <span
       className={`w-1.5 h-1.5 rounded-full shrink-0 transition-all ${
         isActive
-          ? 'bg-emerald-600 ring-2 ring-emerald-500/30'
-          : 'bg-slate-400 group-hover/sub:bg-emerald-500'
+          ? 'bg-[#2563EB] ring-2 ring-[#38BDF8]/40'
+          : 'bg-blue-300 group-hover/sub:bg-[#06B6D4]'
       }`}
     />
   );
 
-  const subMenuContainerClass = "pl-2 pr-1 py-0.5 space-y-0.5 border-l-2 border-emerald-500/35 ml-3 my-0.5 bg-emerald-50/35 rounded-r-lg";
+  const subMenuContainerClass = "pl-2 pr-1 py-0.5 space-y-0.5 border-l-2 border-[#2563EB]/35 ml-3 my-0.5 bg-white/55 rounded-r-lg";
 
   return (
     <aside 
       className={`relative flex flex-col z-30 h-full print:hidden transition-all duration-200 ease-in-out shrink-0 select-none overflow-hidden ${
         isSidebarOpen ? 'w-[206px]' : 'w-12'
-      } backdrop-blur-xl bg-gradient-to-b from-white/95 via-slate-50/90 to-emerald-50/30 border-r border-slate-200/80 shadow-sm`}
+      } backdrop-blur-xl border-r border-blue-200/80 shadow-[2px_0_16px_rgba(37,99,235,0.08)]`}
+      style={{
+        background:
+          'linear-gradient(180deg, #eef2ff 0%, #f8fbff 36%, #e0f2fe 74%, #dbeafe 100%)',
+      }}
     >
       {/* Top Header Bar - Matches h-9 Global Header */}
-      <div className={`h-9 flex items-center border-b border-slate-200/80 shrink-0 bg-white/80 backdrop-blur-md relative z-10 ${
+      <div className={`h-9 flex items-center border-b border-blue-200/75 shrink-0 bg-white/75 backdrop-blur-md relative z-10 ${
         isSidebarOpen ? 'justify-between px-2.5' : 'justify-center px-1'
       }`}>
         {isSidebarOpen ? (
           <>
             <div className="flex items-center space-x-2 truncate">
-              <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-black text-[11px] shadow-2xs border border-emerald-400/50 shrink-0">
+              <div
+                className="w-6 h-6 rounded-md text-white flex items-center justify-center font-black text-[11px] shadow-xs border border-white/50 shrink-0"
+                style={{
+                  background: 'linear-gradient(135deg, #1D8CF8 0%, #2563EB 55%, #7C3AED 100%)',
+                }}
+              >
                 S
               </div>
-              <span className="text-[12px] font-black text-slate-800 tracking-wide truncate">
-                SMART <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 bg-clip-text text-transparent">BANKING</span>
+              <span className="text-[12px] font-black text-[#0F2454] tracking-wide truncate">
+                SMART{' '}
+                <span className="bg-gradient-to-r from-[#1D8CF8] via-[#2563EB] to-[#7C3AED] bg-clip-text text-transparent">
+                  BANKING
+                </span>
               </span>
             </div>
             <button 
               onClick={() => setIsSidebarOpen(false)}
-              className="text-slate-400 hover:text-emerald-700 p-0.5 rounded hover:bg-slate-100 transition-all shrink-0 cursor-pointer"
+              className="text-blue-400 hover:text-[#1D4ED8] p-0.5 rounded hover:bg-blue-100/70 transition-all shrink-0 cursor-pointer"
               title="साईडबार बंद करा"
             >
               <ChevronLeft size={15} />
@@ -164,7 +176,10 @@ export default function Sidebar({
         ) : (
           <button 
             onClick={() => setIsSidebarOpen(true)}
-            className="w-6 h-6 rounded-md bg-gradient-to-tr from-emerald-600 to-teal-500 text-white border border-emerald-400/40 flex items-center justify-center font-black text-[11px] shadow-2xs hover:scale-105 transition-transform cursor-pointer"
+            className="w-6 h-6 rounded-md text-white border border-white/50 flex items-center justify-center font-black text-[11px] shadow-xs hover:scale-105 transition-transform cursor-pointer"
+            style={{
+              background: 'linear-gradient(135deg, #1D8CF8 0%, #2563EB 55%, #7C3AED 100%)',
+            }}
             title="साईडबार उघडा"
           >
             S
@@ -179,7 +194,7 @@ export default function Sidebar({
         {/* GROUP 1: MAIN DASHBOARD                                                   */}
         {/* ========================================================================= */}
         {isSidebarOpen && (
-          <p className="px-2 pt-0.5 pb-0.5 text-[10px] font-extrabold text-slate-500 tracking-wide uppercase flex items-center gap-1">
+          <p className="px-2 pt-0.5 pb-0.5 text-[10px] font-extrabold text-[#1E40AF]/75 tracking-wide uppercase flex items-center gap-1">
             <span>✨</span> मुख्य डॅशबोर्ड
           </p>
         )}
@@ -189,7 +204,7 @@ export default function Sidebar({
           title="डॅशबोर्ड"
           className={getItemClass(activeTab === 'dashboard')}
         >
-          <LayoutDashboard size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'dashboard' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <LayoutDashboard size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'dashboard' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">डॅशबोर्ड</span>}
         </button>
 
@@ -198,7 +213,7 @@ export default function Sidebar({
           title="आजची कामे"
           className={getItemClass(activeTab === 'todays-tasks')}
         >
-          <BellRing size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'todays-tasks' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <BellRing size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'todays-tasks' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">आजची कामे</span>}
         </button>
 
@@ -207,7 +222,7 @@ export default function Sidebar({
           title="खातेदार ३६०°"
           className={getItemClass(activeTab === 'member-360' || activeTab === 'customer-360' || activeTab === 'khatedar-360')}
         >
-          <UserCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'member-360' || activeTab === 'customer-360' || activeTab === 'khatedar-360' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <UserCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'member-360' || activeTab === 'customer-360' || activeTab === 'khatedar-360' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">खातेदार ३६०°</span>}
         </button>
 
@@ -216,7 +231,7 @@ export default function Sidebar({
           title="खातेदार"
           className={getItemClass(activeTab === 'customers')}
         >
-          <Users size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'customers' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <Users size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'customers' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">खातेदार</span>}
         </button>
 
@@ -225,7 +240,7 @@ export default function Sidebar({
           title="खातेदार बल्क नोंदणी (Excel Grid)"
           className={getItemClass(activeTab === 'customer-bulk')}
         >
-          <FileSpreadsheet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'customer-bulk' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <FileSpreadsheet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'customer-bulk' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">खातेदार बल्क नोंदणी (Grid)</span>}
         </button>
 
@@ -233,11 +248,11 @@ export default function Sidebar({
         {/* GROUP 2: BANKING MODULES                                                  */}
         {/* ========================================================================= */}
         {isSidebarOpen ? (
-          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-slate-500 tracking-wide uppercase border-t border-slate-200/80 mt-1 flex items-center gap-1">
+          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-[#1E40AF]/75 tracking-wide uppercase border-t border-blue-200/75 mt-1 flex items-center gap-1">
             <span>🏛️</span> बँकिंग व्यवहार
           </p>
         ) : (
-          <div className="border-t border-slate-200/80 my-1" />
+          <div className="border-t border-blue-200/75 my-1" />
         )}
 
         {/* Shares Module */}
@@ -247,10 +262,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isSharesActive)}
         >
           <div className="flex items-center truncate">
-            <Award size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isSharesActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Award size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isSharesActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">सभासद नोंदणी (Shares)</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isSharesActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isSharesActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isSharesActive && (
@@ -285,10 +300,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isLoanActive)}
         >
           <div className="flex items-center truncate">
-            <TrendingDown size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isLoanActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <TrendingDown size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isLoanActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">कर्ज विभाग (Loans)</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isLoanActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isLoanActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isLoanActive && (
@@ -339,10 +354,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isDemandActive)}
         >
           <div className="flex items-center truncate">
-            <FileSpreadsheet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isDemandActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <FileSpreadsheet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isDemandActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">पगारदार डिमांड</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isDemandActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isDemandActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isDemandActive && (
@@ -371,10 +386,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isSavingActive)}
         >
           <div className="flex items-center truncate">
-            <Wallet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isSavingActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Wallet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isSavingActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">बचत ठेव</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isSavingActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isSavingActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isSavingActive && (
@@ -405,10 +420,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isFdActive)}
         >
           <div className="flex items-center truncate">
-            <Building2 size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isFdActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Building2 size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isFdActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">मुदत ठेव (FD)</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isFdActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isFdActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isFdActive && (
@@ -439,10 +454,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isRdActive)}
         >
           <div className="flex items-center truncate">
-            <Clock size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isRdActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Clock size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isRdActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">आवर्ती ठेव (RD)</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isRdActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isRdActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isRdActive && (
@@ -473,10 +488,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isPigmyActive)}
         >
           <div className="flex items-center truncate">
-            <Coins size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isPigmyActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Coins size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isPigmyActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">पिग्मी ठेव</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isPigmyActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isPigmyActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isPigmyActive && (
@@ -519,10 +534,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isVoucherActive)}
         >
           <div className="flex items-center truncate">
-            <Receipt size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isVoucherActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Receipt size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isVoucherActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">वाउचर / पावती</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isVoucherActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isVoucherActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isVoucherActive && (
@@ -545,10 +560,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isCashierActive)}
         >
           <div className="flex items-center truncate">
-            <Coins size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isCashierActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Coins size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isCashierActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">कॅश मॅनेजमेंट</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isCashierActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isCashierActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isCashierActive && (
@@ -575,10 +590,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isInvActive)}
         >
           <div className="flex items-center truncate">
-            <BarChart3 size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isInvActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <BarChart3 size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isInvActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">गुंतवणूक (Investment)</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isInvActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isInvActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isInvActive && (
@@ -609,10 +624,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isBorrowingActive)}
         >
           <div className="flex items-center truncate">
-            <Building2 size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isBorrowingActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Building2 size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isBorrowingActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">बाह्य कर्जे व पुनर्गहाण</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isBorrowingActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isBorrowingActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isBorrowingActive && (
@@ -651,10 +666,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isAssetActive)}
         >
           <div className="flex items-center truncate">
-            <Building size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isAssetActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Building size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isAssetActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">मालमत्ता व्यवस्थापन</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isAssetActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isAssetActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isAssetActive && (
@@ -681,10 +696,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isLockerActive)}
         >
           <div className="flex items-center truncate">
-            <KeyRound size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isLockerActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <KeyRound size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isLockerActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">लॉकर विभाग</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isLockerActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isLockerActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isLockerActive && (
@@ -726,7 +741,7 @@ export default function Sidebar({
           title="एन.पी.ए. विभाग"
           className={getItemClass(isNpaActive)}
         >
-          <Scale size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isNpaActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <Scale size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isNpaActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">एन.पी.ए. विभाग</span>}
         </button>
 
@@ -737,10 +752,10 @@ export default function Sidebar({
           className={getModuleBtnClass(isLegalActive)}
         >
           <div className="flex items-center truncate">
-            <Gavel size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isLegalActive ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Gavel size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isLegalActive ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">कलम १०१ वसुली</span>}
           </div>
-          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isLegalActive ? 'rotate-180 text-emerald-600' : ''}`} />}
+          {isSidebarOpen && <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isLegalActive ? 'rotate-180 text-[#2563EB]' : ''}`} />}
         </button>
 
         {isSidebarOpen && isLegalActive && (
@@ -782,7 +797,7 @@ export default function Sidebar({
           title="पंच कमिटी (संचालक मंडळ)"
           className={getItemClass(activeTab === 'committee')}
         >
-          <UserCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'committee' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <UserCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'committee' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">संचालक मंडळ</span>}
         </button>
 
@@ -790,11 +805,11 @@ export default function Sidebar({
         {/* GROUP 3: UTILITIES                                                        */}
         {/* ========================================================================= */}
         {isSidebarOpen ? (
-          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-slate-500 tracking-wide uppercase border-t border-slate-200/80 mt-1 flex items-center gap-1">
+          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-[#1E40AF]/75 tracking-wide uppercase border-t border-blue-200/75 mt-1 flex items-center gap-1">
             <span>⚙️</span> युटिलिटीज
           </p>
         ) : (
-          <div className="border-t border-slate-200/80 my-1" />
+          <div className="border-t border-blue-200/75 my-1" />
         )}
 
         <button 
@@ -802,7 +817,7 @@ export default function Sidebar({
           title="दिवस समाप्ती (EOD)"
           className={getItemClass(activeTab === 'day-end' || activeTab === 'eod-dashboard')}
         >
-          <Moon size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${(activeTab === 'day-end' || activeTab === 'eod-dashboard') ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <Moon size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${(activeTab === 'day-end' || activeTab === 'eod-dashboard') ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">दिवस समाप्ती (EOD)</span>}
         </button>
 
@@ -811,7 +826,7 @@ export default function Sidebar({
           title="व्याज कॅल्क्युलेटर"
           className={getItemClass(activeTab === 'interest-calculator')}
         >
-          <Calculator size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'interest-calculator' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <Calculator size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'interest-calculator' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">व्याज कॅल्क्युलेटर</span>}
         </button>
 
@@ -820,7 +835,7 @@ export default function Sidebar({
           title="सहकार ऑडीट व कम्प्लायन्स"
           className={getItemClass(activeTab === 'audit-compliance')}
         >
-          <ShieldCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'audit-compliance' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <ShieldCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'audit-compliance' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
           {isSidebarOpen && <span className="truncate">ऑडीट व कम्प्लायन्स</span>}
         </button>
 
@@ -828,11 +843,11 @@ export default function Sidebar({
         {/* GROUP 4: SPECIAL HIGHLIGHTED ACTIONS                                      */}
         {/* ========================================================================= */}
         {isSidebarOpen ? (
-          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-amber-700 tracking-wide uppercase border-t border-amber-200/80 mt-1 flex items-center gap-1">
+          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-[#047857] tracking-wide uppercase border-t border-blue-200/75 mt-1 flex items-center gap-1">
             <span>⚡</span> मंजुरी (APPROVAL)
           </p>
         ) : (
-          <div className="border-t border-amber-300/80 my-1" />
+          <div className="border-t border-blue-200/75 my-1" />
         )}
 
         {/* Voucher Approval Button */}
@@ -841,25 +856,25 @@ export default function Sidebar({
           title="वाउचर पासिंग व मंजुरी फॉर्म"
           className={`w-full flex items-center ${isSidebarOpen ? 'px-2.5 justify-start' : 'px-0 justify-center'} py-1 rounded-lg text-[11.5px] leading-snug transition-all duration-150 shadow-sm border cursor-pointer ${
             activeTab === 'voucher-posting' || activeTab === 'voucher-approval'
-              ? 'bg-gradient-to-r from-amber-600 via-emerald-700 to-teal-800 text-white font-bold shadow-sm ring-1 ring-amber-300 border-amber-400' 
-              : 'bg-gradient-to-r from-amber-500/15 via-emerald-500/10 to-teal-500/15 hover:from-amber-500/25 text-slate-800 font-bold border-amber-300/80'
+              ? 'bg-gradient-to-r from-[#10B981] via-[#059669] to-[#0891B2] text-white font-bold shadow-sm ring-1 ring-emerald-300 border-emerald-400' 
+              : 'bg-gradient-to-r from-[#10B981]/14 via-[#06B6D4]/10 to-white/75 hover:from-[#10B981]/22 text-[#0F2454] font-bold border-[#10B981]/35'
           }`}
         >
-          <FileCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${(activeTab === 'voucher-posting' || activeTab === 'voucher-approval') ? 'text-white' : 'text-amber-700'}`} />
+          <FileCheck size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${(activeTab === 'voucher-posting' || activeTab === 'voucher-approval') ? 'text-white' : 'text-[#059669]'}`} />
           {isSidebarOpen && (
             <div className="flex items-center justify-between w-full">
               <span className="truncate">वाउचर पासिंग/मंजुरी</span>
-              <span className="ml-1 px-1 py-0.2 text-[9px] bg-amber-600 text-white font-extrabold rounded-full uppercase tracking-tight shadow-sm">मंजुरी</span>
+              <span className="ml-1 px-1.5 py-0.2 text-[9px] bg-gradient-to-r from-[#10B981] to-[#0891B2] text-white font-extrabold rounded-full uppercase tracking-tight shadow-xs">मंजुरी</span>
             </div>
           )}
         </button>
 
         {isSidebarOpen ? (
-          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-blue-700 tracking-wide uppercase border-t border-blue-200/80 mt-1 flex items-center gap-1">
+          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-[#1D4ED8] tracking-wide uppercase border-t border-blue-200/75 mt-1 flex items-center gap-1">
             <span>📊</span> अहवाल (REPORTS)
           </p>
         ) : (
-          <div className="border-t border-blue-300/80 my-1" />
+          <div className="border-t border-blue-200/75 my-1" />
         )}
 
         {/* Reports Center Button */}
@@ -868,15 +883,15 @@ export default function Sidebar({
           title="सर्व अहवाल केंद्र"
           className={`w-full flex items-center ${isSidebarOpen ? 'px-2.5 justify-start' : 'px-0 justify-center'} py-1 rounded-lg text-[11.5px] leading-snug transition-all duration-150 shadow-sm border cursor-pointer ${
             isReportsActive
-              ? 'bg-gradient-to-r from-blue-700 to-indigo-700 text-white font-bold shadow-sm ring-1 ring-blue-300 border-blue-400' 
-              : 'bg-gradient-to-r from-blue-500/15 via-indigo-500/10 to-blue-500/15 hover:from-blue-500/25 text-slate-800 font-bold border-blue-300/80'
+              ? 'bg-gradient-to-r from-[#1D8CF8] via-[#2563EB] to-[#7C3AED] text-white font-bold shadow-sm ring-1 ring-blue-300 border-blue-400' 
+              : 'bg-gradient-to-r from-[#1D8CF8]/14 via-[#2563EB]/10 to-[#7C3AED]/12 hover:from-[#1D8CF8]/22 text-[#0F2454] font-bold border-[#2563EB]/30'
           }`}
         >
-          <FileSpreadsheet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isReportsActive ? 'text-white' : 'text-blue-600'}`} />
+          <FileSpreadsheet size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${isReportsActive ? 'text-white' : 'text-[#2563EB]'}`} />
           {isSidebarOpen && (
             <div className="flex items-center justify-between w-full">
               <span className="truncate">सर्व रिपोर्ट केंद्र</span>
-              <span className="ml-1 px-1 py-0.2 text-[9px] bg-blue-600 text-white font-extrabold rounded-full uppercase tracking-tight shadow-sm">मुख्य</span>
+              <span className="ml-1 px-1.5 py-0.2 text-[9px] bg-gradient-to-r from-[#0891B2] to-[#2563EB] text-white font-extrabold rounded-full uppercase tracking-tight shadow-xs">मुख्य</span>
             </div>
           )}
         </button>
@@ -885,11 +900,11 @@ export default function Sidebar({
         {/* GROUP 5: ADMIN & SETTINGS                                                 */}
         {/* ========================================================================= */}
         {isSidebarOpen ? (
-          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-slate-500 tracking-wide uppercase border-t border-slate-200/80 mt-1">
+          <p className="px-2 pt-2 pb-0.5 text-[10px] font-extrabold text-[#1E40AF]/75 tracking-wide uppercase border-t border-blue-200/75 mt-1">
             प्रशासन व सेटिंग्ज
           </p>
         ) : (
-          <div className="border-t border-slate-200/80 my-1" />
+          <div className="border-t border-blue-200/75 my-1" />
         )}
 
         {hasPermission(user?.role, 'Settings', 'View') && (
@@ -898,7 +913,7 @@ export default function Sidebar({
             title="सिस्टीम सेटिंग्ज"
             className={getItemClass(activeTab === 'settings' || activeTab === 'member-opening')}
           >
-            <Settings size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${(activeTab === 'settings' || activeTab === 'member-opening') ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <Settings size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${(activeTab === 'settings' || activeTab === 'member-opening') ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">सिस्टीम सेटिंग्ज</span>}
           </button>
         )}
@@ -911,7 +926,7 @@ export default function Sidebar({
             title="युजर व्यवस्थापन"
             className={getItemClass(activeTab === 'users')}
           >
-            <UserCog size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'users' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+            <UserCog size={16} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'users' ? 'text-[#2563EB]' : 'text-[#4F6D9A] group-hover:text-[#1D8CF8]'}`} />
             {isSidebarOpen && <span className="truncate">युजर व्यवस्थापन</span>}
           </button>
         )}
@@ -919,7 +934,7 @@ export default function Sidebar({
         {/* ========================================================================= */}
         {/* GROUP 6: LOGOUT                                                           */}
         {/* ========================================================================= */}
-        <div className="pt-1.5 pb-1 border-t border-slate-200/80 mt-1">
+        <div className="pt-1.5 pb-1 border-t border-blue-200/75 mt-1">
           <button
             onClick={logout}
             title="लॉगआउट (Logout)"

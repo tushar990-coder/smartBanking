@@ -16,7 +16,13 @@ import {
     History,
     ArrowUpRight,
     ArrowDownLeft,
-    Landmark
+    Landmark,
+    Wallet,
+    Coins,
+    PiggyBank,
+    Clock,
+    Scale,
+    Sparkles
 } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 
@@ -481,32 +487,55 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
     };
 
     return (
-        <div className="p-3.5 max-w-full h-full flex flex-col bg-gradient-to-br from-slate-100/90 via-slate-50/80 to-slate-200/60 text-xs font-sans relative overflow-y-auto">
-            {/* Ambient Background Light Orbs */}
-            <div className="absolute -top-32 -left-32 w-80 h-80 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute top-1/3 -right-24 w-80 h-80 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-24 left-1/3 w-80 h-80 bg-purple-400/10 rounded-full blur-3xl pointer-events-none" />
+        <div
+            className="p-3.5 max-w-full min-h-full flex flex-col text-xs font-sans relative overflow-y-auto"
+            style={{
+                background:
+                    'radial-gradient(circle at 12% 10%, #e4ecff 0%, rgba(228,236,255,0) 45%), radial-gradient(circle at 88% 12%, #bfdbfe 0%, rgba(191,219,254,0) 42%), radial-gradient(circle at 78% 85%, #a5f3fc 0%, rgba(165,243,252,0) 44%), radial-gradient(circle at 12% 88%, #ddd6fe 0%, rgba(221,214,254,0) 44%), linear-gradient(135deg, #eef2ff 0%, #f8fbff 44%, #e0f2fe 78%, #dbeafe 100%)',
+            }}
+        >
+            {/* Subtle Architectural Dot Grid & Ambient Aurora Orbs */}
+            <div
+                className="absolute inset-0 opacity-[0.18] pointer-events-none"
+                style={{
+                    backgroundImage: 'radial-gradient(#3b82f6 0.8px, transparent 0.8px)',
+                    backgroundSize: '28px 28px',
+                }}
+            />
+            <div className="absolute -top-28 -left-28 w-80 h-80 bg-[#7C3AED]/12 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute top-1/3 -right-24 w-80 h-80 bg-[#06B6D4]/15 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 left-1/3 w-80 h-80 bg-[#2563EB]/12 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 flex flex-col gap-3">
                 
-                {/* 1. Glassmorphic Top Navigation & Customer Search Bar */}
-                <div className="relative z-50 backdrop-blur-xl bg-white/85 border border-white/90 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.04)] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+                {/* 1. Aurora Frosted Glass Top Navigation & Customer Search Bar */}
+                <div className="relative z-50 backdrop-blur-xl bg-white/85 border border-white/95 rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.10)] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-xs">
-                            <Award className="w-4.5 h-4.5 text-emerald-100" />
+                        <div
+                            className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-[0_6px_16px_rgba(37,99,235,0.32)] border border-white/40 shrink-0"
+                            style={{
+                                background: 'linear-gradient(135deg, #1D8CF8 0%, #2563EB 55%, #7C3AED 100%)',
+                            }}
+                        >
+                            <Award className="w-4.5 h-4.5 text-white" />
                         </div>
                         <div>
-                            <h2 className="text-sm md:text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                                <span>खातेदार ३६०°</span>
-                                <span className="text-xs font-semibold text-slate-400 hidden sm:inline">(Khatedar 360°)</span>
+                            <h2 className="text-sm md:text-base font-extrabold text-[#0F2454] tracking-tight flex items-center gap-2">
+                                <span>
+                                    खातेदार{' '}
+                                    <span className="bg-gradient-to-r from-[#1D8CF8] via-[#2563EB] to-[#7C3AED] bg-clip-text text-transparent">
+                                        ३६०°
+                                    </span>
+                                </span>
+                                <span className="text-xs font-semibold text-[#3B82F6]/80 hidden sm:inline">(Khatedar 360°)</span>
                             </h2>
-                            <p className="text-[11px] text-slate-500 hidden sm:block">सर्वसमावेशक खातेदार माहिती, पोर्टफोलिओ शिल्लक व जलद व्यवहार</p>
+                            <p className="text-[11px] text-[#334E73] font-medium hidden sm:block">सर्वसमावेशक खातेदार माहिती, पोर्टफोलिओ शिल्लक व जलद व्यवहार</p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2.5 w-full sm:w-auto relative z-50">
-                        <div className="w-full sm:w-84 md:w-96 flex items-center gap-2 bg-slate-50/90 border border-slate-200/90 rounded-lg px-2.5 py-1 shadow-2xs relative z-50">
-                            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="w-full sm:w-84 md:w-96 flex items-center gap-2 bg-white/95 border border-blue-200/90 focus-within:border-[#2563EB] rounded-xl px-2.5 py-1 shadow-2xs relative z-50 transition-colors">
+                            <Search className="w-4 h-4 text-[#2563EB]/75 shrink-0" />
                             <div className="flex-1 text-slate-800 text-xs relative z-50">
                                 <CustomerSearchSelect
                                     customers={rawCustomers}
@@ -522,24 +551,24 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                             onClick={() => fetch360Data(true)}
                             disabled={loading || !selectedCustomerId}
                             title="रिफ्रेश करा (Refresh)"
-                            className="p-2 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-600 hover:text-emerald-700 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                            className="p-2 rounded-xl border border-blue-200/90 bg-white/95 hover:bg-blue-50 text-[#2563EB] hover:text-[#1D4ED8] shadow-2xs transition-all cursor-pointer disabled:opacity-50"
                         >
-                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-600' : ''}`} />
+                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#2563EB]' : ''}`} />
                         </button>
                     </div>
                 </div>
 
                 {/* 2. Loading State */}
                 {loading && !data && (
-                    <div className="backdrop-blur-xl bg-white/70 border border-white/80 rounded-xl p-10 shadow-xs flex flex-col items-center justify-center">
-                        <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-xs text-slate-600 font-semibold mt-3">खातेदार ३६०° तपशील लोड होत आहे...</span>
+                    <div className="backdrop-blur-xl bg-white/80 border border-white/95 rounded-2xl p-10 shadow-xs flex flex-col items-center justify-center">
+                        <div className="w-8 h-8 border-3 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs text-[#1E3A8A] font-semibold mt-3">खातेदार ३६०° तपशील लोड होत आहे...</span>
                     </div>
                 )}
 
                 {/* 3. Error Alert */}
                 {error && (
-                    <div className="backdrop-blur-xl bg-rose-50/90 border border-rose-200 text-rose-800 text-xs p-3.5 rounded-xl shadow-xs flex items-center justify-between gap-2.5">
+                    <div className="backdrop-blur-xl bg-rose-50/90 border border-rose-200 text-rose-800 text-xs p-3.5 rounded-2xl shadow-xs flex items-center justify-between gap-2.5">
                         <div className="flex items-center gap-2.5">
                             <AlertTriangle size={16} className="text-rose-600 shrink-0" />
                             <span className="font-semibold">{error}</span>
@@ -552,7 +581,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     fetch360Data();
                                 }
                             }}
-                            className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded cursor-pointer transition-colors shadow-2xs"
+                            className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-colors shadow-2xs"
                         >
                             पुनः प्रयत्न करा (Retry)
                         </button>
@@ -561,9 +590,9 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                 {/* 4. Empty State */}
                 {!loading && !data && !error && (
-                    <div className="backdrop-blur-xl bg-white/60 border border-dashed border-slate-300 rounded-xl p-14 text-center flex flex-col items-center justify-center">
-                        <Search size={36} className="stroke-[1.5] mb-2.5 text-slate-400" />
-                        <span className="text-xs md:text-sm font-bold text-slate-600">कृपया प्रोफाइल पाहण्यासाठी वरील शोध बारमधून खातेदार निवडा.</span>
+                    <div className="backdrop-blur-xl bg-white/75 border border-dashed border-blue-300 rounded-2xl p-14 text-center flex flex-col items-center justify-center">
+                        <Search size={36} className="stroke-[1.5] mb-2.5 text-[#3B82F6]" />
+                        <span className="text-xs md:text-sm font-bold text-[#1E3A8A]">कृपया प्रोफाइल पाहण्यासाठी वरील शोध बारमधून खातेदार निवडा.</span>
                     </div>
                 )}
 
@@ -571,80 +600,92 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                 {!loading && data && (
                     <div className="relative z-10 flex flex-col gap-3">
                         
-                        {/* Customer Profile Hero Glass Banner */}
-                        <div className="backdrop-blur-xl bg-gradient-to-br from-slate-900/95 via-slate-800/95 to-emerald-950/95 text-white rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] p-4 border border-white/15 relative overflow-hidden flex flex-wrap lg:flex-nowrap gap-3.5 items-center">
-                            {/* Ambient specular highlight */}
-                            <div className="absolute top-0 right-0 w-80 h-32 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+                        {/* Customer Profile Hero Aurora Glass Banner */}
+                        <div
+                            className="backdrop-blur-xl text-white rounded-2xl shadow-[0_12px_34px_rgba(30,58,138,0.22)] p-4 border border-white/25 relative overflow-hidden flex flex-wrap lg:flex-nowrap gap-3.5 items-center"
+                            style={{
+                                background:
+                                    'linear-gradient(125deg, #0F2454 0%, #1E3A8A 42%, #2563EB 78%, #5B21B6 100%)',
+                            }}
+                        >
+                            {/* Ambient Aurora Glow Highlights */}
+                            <div className="absolute -top-10 right-12 w-72 h-36 bg-[#38BDF8]/25 rounded-full blur-3xl pointer-events-none" />
+                            <div className="absolute -bottom-12 left-1/3 w-72 h-32 bg-[#A855F7]/20 rounded-full blur-3xl pointer-events-none" />
 
                             {/* Avatar / Photo */}
-                            <div className="w-15 h-15 rounded-full bg-gradient-to-tr from-emerald-500/30 to-teal-500/20 border-2 border-emerald-400/50 p-0.5 shadow-md flex items-center justify-center text-white font-black text-base shrink-0">
+                            <div
+                                className="w-15 h-15 rounded-2xl p-0.5 shadow-[0_8px_20px_rgba(15,36,84,0.35)] flex items-center justify-center text-white font-black text-base shrink-0 relative z-10"
+                                style={{
+                                    background: 'linear-gradient(135deg, #38BDF8 0%, #2563EB 55%, #C084FC 100%)',
+                                }}
+                            >
                                 {data.memberInfo.photoPath ? (
-                                    <img src={data.memberInfo.photoPath} alt="Photo" className="w-full h-full rounded-full object-cover" />
+                                    <img src={data.memberInfo.photoPath} alt="Photo" className="w-full h-full rounded-[14px] object-cover" />
                                 ) : (
-                                    <div className="w-full h-full rounded-full bg-emerald-600/40 flex items-center justify-center text-emerald-200">
+                                    <div className="w-full h-full rounded-[14px] bg-[#0F2454]/80 flex items-center justify-center text-sky-200 tracking-wide">
                                         {`${(data.memberInfo?.firstName || 'K')[0]}${(data.memberInfo?.lastName || 'K')[0]}`}
                                     </div>
                                 )}
                             </div>
 
                             {/* Customer Details */}
-                            <div className="flex-1 min-w-[280px]">
+                            <div className="flex-1 min-w-[280px] relative z-10">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="text-sm md:text-base font-extrabold tracking-tight text-white">
                                         {data.memberInfo.firstName} {data.memberInfo.middleName || ''} {data.memberInfo.lastName}
                                     </h3>
                                     {data.memberInfo.nickName && (
-                                        <span className="text-amber-300 text-xs font-semibold">({data.memberInfo.nickName})</span>
+                                        <span className="text-amber-200 text-xs font-semibold">({data.memberInfo.nickName})</span>
                                     )}
 
                                     {data.memberInfo.cifNo && (
-                                        <span className="text-[10px] bg-sky-500/20 text-sky-200 border border-sky-400/30 px-2.5 py-0.5 rounded font-mono font-bold">
+                                        <span className="text-[10px] bg-sky-400/20 text-sky-100 border border-sky-300/40 px-2.5 py-0.5 rounded-full font-mono font-bold">
                                             CIF: {data.memberInfo.cifNo}
                                         </span>
                                     )}
 
                                     {(data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode) && (
-                                        <span className="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/30 px-2.5 py-0.5 rounded font-mono font-bold">
+                                        <span className="text-[10px] bg-amber-400/20 text-amber-100 border border-amber-300/40 px-2.5 py-0.5 rounded-full font-mono font-bold">
                                             जुना खातेदार नं: {data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode}
                                         </span>
                                     )}
 
-                                    <span className={`text-[10px] px-2.5 py-0.5 rounded font-bold border ${data.memberInfo.status === 'Active' ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/40' : 'bg-rose-500/25 text-rose-300 border-rose-400/40'}`}>
+                                    <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${data.memberInfo.status === 'Active' ? 'bg-emerald-400/25 text-emerald-100 border-emerald-300/45' : 'bg-rose-400/25 text-rose-100 border-rose-300/45'}`}>
                                         {data.memberInfo.status === 'Active' ? 'सक्रीय (Active)' : 'निष्क्रिय (Inactive)'}
                                     </span>
                                 </div>
 
                                 {/* Demographics Grid */}
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-1.5 mt-2.5 text-[11px] text-slate-200/90 font-medium">
-                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">CIF नं:</span> {data.memberInfo.cifNo || '-'}</div>
-                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">जुना खातेदार नं:</span> {data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode || '-'}</div>
-                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">मोबाईल:</span> {data.memberInfo.mobileNo || '-'}</div>
-                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">आधार क्रमांक:</span> {data.memberInfo.aadhaarNo || '-'}</div>
-                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">शाखा:</span> {data.memberInfo.branchName || '-'}</div>
-                                    <div><span className="text-white/50 block text-[10px] uppercase tracking-wider">नोंदणी तारीख:</span> {formatDate(data.memberInfo.joiningDate)}</div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-1.5 mt-2.5 text-[11px] text-blue-50/95 font-medium">
+                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">CIF नं:</span> {data.memberInfo.cifNo || '-'}</div>
+                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">जुना खातेदार नं:</span> {data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode || '-'}</div>
+                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">मोबाईल:</span> {data.memberInfo.mobileNo || '-'}</div>
+                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">आधार क्रमांक:</span> {data.memberInfo.aadhaarNo || '-'}</div>
+                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">शाखा:</span> {data.memberInfo.branchName || '-'}</div>
+                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">नोंदणी तारीख:</span> {formatDate(data.memberInfo.joiningDate)}</div>
                                 </div>
                             </div>
 
-                            {/* 4 Financial Stat Glass Orbs / Panels */}
-                            <div className="flex gap-2.5 border-t lg:border-t-0 lg:border-l border-white/15 pt-3 lg:pt-0 lg:pl-3.5 w-full lg:w-auto justify-between lg:justify-end shrink-0 flex-wrap sm:flex-nowrap">
-                                <div className="backdrop-blur-md bg-white/10 px-3 py-2 rounded-lg border border-white/15 text-right flex-1 sm:flex-none">
+                            {/* 4 Financial Stat Glass Panels */}
+                            <div className="flex gap-2 border-t lg:border-t-0 lg:border-l border-white/20 pt-3 lg:pt-0 lg:pl-3.5 w-full lg:w-auto justify-between lg:justify-end shrink-0 flex-wrap sm:flex-nowrap relative z-10">
+                                <div className="backdrop-blur-md bg-white/12 px-3 py-2 rounded-xl border border-white/20 text-right flex-1 sm:flex-none">
                                     <div className="text-[10px] font-bold text-emerald-200 uppercase tracking-wider">एकूण ठेव (Deposits)</div>
-                                    <div className="text-sm font-black text-emerald-300 mt-0.5">₹ {(data.balances?.totalDeposits || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                    <div className="text-sm font-black text-emerald-300 mt-0.5 font-mono">₹ {(data.balances?.totalDeposits || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                 </div>
 
-                                <div className="backdrop-blur-md bg-white/10 px-3 py-2 rounded-lg border border-white/15 text-right flex-1 sm:flex-none">
+                                <div className="backdrop-blur-md bg-white/12 px-3 py-2 rounded-xl border border-white/20 text-right flex-1 sm:flex-none">
                                     <div className="text-[10px] font-bold text-purple-200 uppercase tracking-wider">भाग भांडवल (Shares)</div>
-                                    <div className="text-sm font-black text-purple-300 mt-0.5">₹ {(data.balances?.shareCapital || data.portfolio?.shares?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                    <div className="text-sm font-black text-purple-200 mt-0.5 font-mono">₹ {(data.balances?.shareCapital || data.portfolio?.shares?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                 </div>
 
-                                <div className="backdrop-blur-md bg-white/10 px-3 py-2 rounded-lg border border-white/15 text-right flex-1 sm:flex-none">
+                                <div className="backdrop-blur-md bg-white/12 px-3 py-2 rounded-xl border border-white/20 text-right flex-1 sm:flex-none">
                                     <div className="text-[10px] font-bold text-rose-200 uppercase tracking-wider">कर्ज बाकी (Loans)</div>
-                                    <div className="text-sm font-black text-rose-300 mt-0.5">₹ {(data.balances?.totalLoansOutstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                    <div className="text-sm font-black text-rose-200 mt-0.5 font-mono">₹ {(data.balances?.totalLoansOutstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                 </div>
 
-                                <div className="backdrop-blur-md bg-emerald-950/70 px-3 py-2 rounded-lg border border-emerald-400/40 text-right flex-1 sm:flex-none shadow-xs">
-                                    <div className="text-[10px] font-bold text-amber-200 uppercase tracking-wider">निव्वळ शिल्लक (Net)</div>
-                                    <div className="text-sm font-black text-amber-300 mt-0.5">
+                                <div className="backdrop-blur-md bg-white/20 px-3 py-2 rounded-xl border border-cyan-300/50 text-right flex-1 sm:flex-none shadow-xs">
+                                    <div className="text-[10px] font-bold text-amber-100 uppercase tracking-wider">निव्वळ शिल्लक (Net)</div>
+                                    <div className="text-sm font-black text-amber-200 mt-0.5 font-mono">
                                         ₹ {((data.balances?.totalDeposits || 0) + (data.balances?.shareCapital || data.portfolio?.shares?.balance || 0) - (data.balances?.totalLoansOutstanding || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                 </div>
@@ -652,28 +693,33 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                         </div>
 
                         {/* Section Header: Product Accounts */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 mt-1 px-1">
-                            <h4 className="text-xs font-bold text-slate-700 tracking-wider uppercase flex items-center gap-1.5">
-                                <CreditCard size={14} className="text-slate-500" />
+                        <div className="flex flex-wrap items-center justify-between gap-2 mt-0.5 px-1">
+                            <h4 className="text-xs font-extrabold text-[#0F2454] tracking-wider uppercase flex items-center gap-1.5">
+                                <span
+                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-white shadow-2xs"
+                                    style={{ background: 'linear-gradient(135deg, #1D8CF8 0%, #2563EB 100%)' }}
+                                >
+                                    <CreditCard size={13} />
+                                </span>
                                 <span>पोर्टफोलिओ प्रॉडक्ट्स (Product Accounts)</span>
                             </h4>
 
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => onNavigate('employee-bank', getUniversalNavParams({ source: '360dashboard' }))}
-                                    className="text-[11px] font-bold text-blue-800 hover:text-blue-950 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                    className="text-[11px] font-bold text-[#1D4ED8] hover:text-[#0F2454] bg-white/90 hover:bg-blue-50 border border-blue-200/90 px-3 py-1 rounded-full flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                                     title="या खातेदाराचा कर्मचारी व वैयक्तिक बँक तपशील पहा / बदला"
                                 >
-                                    <Landmark size={13} />
+                                    <Landmark size={13} className="text-[#1D8CF8]" />
                                     <span>बँक व कर्मचारी तपशील</span>
                                 </button>
 
                                 {data.recentTransactions && data.recentTransactions.length > 0 && (
                                     <button
                                         onClick={() => setShowTransactions(!showTransactions)}
-                                        className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                        className="text-[11px] font-bold text-[#047857] hover:text-emerald-950 bg-white/90 hover:bg-emerald-50 border border-emerald-200/90 px-3 py-1 rounded-full flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                                     >
-                                        <History size={13} />
+                                        <History size={13} className="text-[#10B981]" />
                                         <span>अलिकडील व्यवहार ({data.recentTransactions.length})</span>
                                         {showTransactions ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                     </button>
@@ -694,10 +740,15 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 items-start">
                                     
                                     {/* 1. SAVINGS DEPOSIT CARD */}
-                                    <div className="backdrop-blur-md bg-white/85 hover:bg-white/95 border border-slate-200/90 hover:border-blue-300 rounded-xl shadow-[0_2px_14px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-slate-100 bg-gradient-to-b from-blue-50/70 to-white/60 border-t-3 border-t-blue-500">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs font-extrabold text-slate-800 truncate" title="१. बचत ठेव (Savings)">१. बचत ठेव (Savings)</span>
+                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#1D8CF8]/45 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(29,140,248,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-blue-100/80 bg-gradient-to-b from-[#eff6ff] to-white/70 border-t-[3px] border-t-[#1D8CF8]">
+                                            <div className="flex justify-between items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 55%, #1D4ED8 100%)' }}>
+                                                        <Wallet size={13} />
+                                                    </span>
+                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="१. बचत ठेव (Savings)">१. बचत ठेव</span>
+                                                </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.savings.statusColor)}`}>
                                                     {hasSavings ? 'सुरू' : 'शून्य'}
                                                 </span>
@@ -771,10 +822,15 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 2. FIXED DEPOSIT CARD */}
-                                    <div className="backdrop-blur-md bg-white/85 hover:bg-white/95 border border-slate-200/90 hover:border-teal-300 rounded-xl shadow-[0_2px_14px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-slate-100 bg-gradient-to-b from-teal-50/70 to-white/60 border-t-3 border-t-teal-500">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs font-extrabold text-slate-800 truncate" title="२. मुदत ठेव (FD)">२. मुदत ठेव (FD)</span>
+                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#0891B2]/45 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(8,145,178,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-cyan-100/80 bg-gradient-to-b from-[#ecfeff] to-white/70 border-t-[3px] border-t-[#0891B2]">
+                                            <div className="flex justify-between items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #22D3EE 0%, #0891B2 55%, #0369A1 100%)' }}>
+                                                        <Landmark size={13} />
+                                                    </span>
+                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="२. मुदत ठेव (FD)">२. मुदत ठेव (FD)</span>
+                                                </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.fixedDeposits.statusColor)}`}>
                                                     {hasFD ? 'सुरू' : 'शून्य'}
                                                 </span>
@@ -848,10 +904,15 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 3. RECURRING DEPOSIT CARD */}
-                                    <div className="backdrop-blur-md bg-white/85 hover:bg-white/95 border border-slate-200/90 hover:border-amber-300 rounded-xl shadow-[0_2px_14px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-slate-100 bg-gradient-to-b from-amber-50/70 to-white/60 border-t-3 border-t-amber-500">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs font-extrabold text-slate-800 truncate" title="३. आवर्ती ठेव (RD)">३. आवर्ती ठेव (RD)</span>
+                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#F59E0B]/50 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(245,158,11,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-amber-100/80 bg-gradient-to-b from-[#fffbeb] to-white/70 border-t-[3px] border-t-[#F59E0B]">
+                                            <div className="flex justify-between items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 55%, #D97706 100%)' }}>
+                                                        <Clock size={13} />
+                                                    </span>
+                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="३. आवर्ती ठेव (RD)">३. आवर्ती ठेव (RD)</span>
+                                                </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.recurringDeposits.statusColor)}`}>
                                                     {hasRD ? 'सुरू' : 'शून्य'}
                                                 </span>
@@ -929,10 +990,15 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 4. PIGMY DEPOSIT CARD */}
-                                    <div className="backdrop-blur-md bg-white/85 hover:bg-white/95 border border-slate-200/90 hover:border-emerald-300 rounded-xl shadow-[0_2px_14px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-slate-100 bg-gradient-to-b from-emerald-50/70 to-white/60 border-t-3 border-t-emerald-500">
-                                             <div className="flex justify-between items-center">
-                                                <span className="text-xs font-extrabold text-slate-800 truncate" title="४. पिग्मी ठेव (Pigmy)">४. पिग्मी ठेव (Pigmy)</span>
+                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#22C55E]/50 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(34,197,94,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-emerald-100/80 bg-gradient-to-b from-[#ecfdf5] to-white/70 border-t-[3px] border-t-[#22C55E]">
+                                             <div className="flex justify-between items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #4ADE80 0%, #22C55E 55%, #15803D 100%)' }}>
+                                                        <PiggyBank size={13} />
+                                                    </span>
+                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="४. पिग्मी ठेव (Pigmy)">४. पिग्मी ठेव</span>
+                                                </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.pigmy?.statusColor || 'Gray')}`}>
                                                     {hasPigmy ? 'सुरू' : 'शून्य'}
                                                 </span>
@@ -1010,10 +1076,15 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 5. LOAN DEPARTMENT CARD */}
-                                    <div className="backdrop-blur-md bg-white/85 hover:bg-white/95 border border-slate-200/90 hover:border-rose-300 rounded-xl shadow-[0_2px_14px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-slate-100 bg-gradient-to-b from-rose-50/70 to-white/60 border-t-3 border-t-rose-500">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs font-extrabold text-slate-800 truncate" title="५. कर्ज विभाग (Loans)">५. कर्ज विभाग (Loans)</span>
+                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-rose-400/50 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(225,29,72,0.15)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-rose-100/80 bg-gradient-to-b from-[#fff1f2] to-white/70 border-t-[3px] border-t-rose-500">
+                                            <div className="flex justify-between items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #FB7185 0%, #E11D48 55%, #BE123C 100%)' }}>
+                                                        <Scale size={13} />
+                                                    </span>
+                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="५. कर्ज विभाग (Loans)">५. कर्ज विभाग</span>
+                                                </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.loans.statusColor)}`}>
                                                     {hasLoans ? (data.portfolio.loans.statusColor === 'Red' ? 'थकीत' : 'सुरू') : 'शून्य'}
                                                 </span>
@@ -1091,10 +1162,15 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 6. SHARE CAPITAL CARD */}
-                                    <div className="backdrop-blur-md bg-white/85 hover:bg-white/95 border border-slate-200/90 hover:border-purple-300 rounded-xl shadow-[0_2px_14px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-slate-100 bg-gradient-to-b from-purple-50/70 to-white/60 border-t-3 border-t-purple-500">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs font-extrabold text-slate-800 truncate" title="६. भाग भांडवल (Shares)">६. भाग भांडवल (Shares)</span>
+                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#9333EA]/45 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(147,51,234,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-purple-100/80 bg-gradient-to-b from-[#faf5ff] to-white/70 border-t-[3px] border-t-[#9333EA]">
+                                            <div className="flex justify-between items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #C084FC 0%, #9333EA 55%, #6B21A8 100%)' }}>
+                                                        <Coins size={13} />
+                                                    </span>
+                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="६. भाग भांडवल (Shares)">६. भाग भांडवल</span>
+                                                </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.shares.statusColor)}`}>
                                                     {hasShares ? 'सुरू' : 'शून्य'}
                                                 </span>
@@ -1176,7 +1252,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                             const cfg = moduleReportsConfig[activeReportModule];
 
                             return (
-                                <div className={`bg-white border-2 ${cfg.borderColor} rounded-lg shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200`}>
+                                <div className={`bg-white/95 backdrop-blur-md border-2 ${cfg.borderColor} rounded-2xl shadow-[0_10px_30px_rgba(37,99,235,0.10)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200`}>
                                     
                                     {/* Header matching original style */}
                                     <div className={`${cfg.headerBg} border-b ${cfg.headerBorder} px-3 py-1.5 flex items-center justify-between`}>
@@ -1222,22 +1298,22 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                         {/* Recent Transactions Accordion Tray */}
                         {showTransactions && data.recentTransactions && data.recentTransactions.length > 0 && (
-                            <div className="backdrop-blur-xl bg-white/90 border border-slate-200/90 rounded-xl shadow-xs overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                <div className="bg-slate-50/90 border-b border-slate-200/80 px-3.5 py-2.5 flex items-center justify-between">
+                            <div className="backdrop-blur-xl bg-white/92 border border-white/95 rounded-2xl shadow-[0_10px_30px_rgba(37,99,235,0.10)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="bg-gradient-to-r from-[#eef2ff] via-[#f8fbff] to-[#e0f2fe] border-b border-blue-200/75 px-3.5 py-2.5 flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <History className="w-4 h-4 text-emerald-700" />
-                                        <span className="text-xs md:text-sm font-bold text-slate-800">अलिकडील व्यवहार इतिहास (Recent Transactions - Top 20)</span>
+                                        <History className="w-4 h-4 text-[#2563EB]" />
+                                        <span className="text-xs md:text-sm font-extrabold text-[#0F2454]">अलिकडील व्यवहार इतिहास (Recent Transactions - Top 20)</span>
                                     </div>
                                     <button
                                         onClick={() => setShowTransactions(false)}
-                                        className="text-xs text-slate-500 hover:text-slate-800 font-semibold px-2.5 py-1 rounded cursor-pointer"
+                                        className="text-xs text-[#1E40AF] hover:text-[#0F2454] font-bold px-2.5 py-1 rounded-lg hover:bg-white/70 cursor-pointer transition-colors"
                                     >
                                         ✕ लपवा
                                     </button>
                                 </div>
                                 <div className="overflow-x-auto max-h-80 overflow-y-auto">
                                     <table className="w-full text-xs text-left border-collapse">
-                                        <thead className="bg-slate-100/80 text-slate-600 font-bold sticky top-0 border-b border-slate-200/80 z-10">
+                                        <thead className="bg-[#eff6ff] text-[#1E3A8A] font-bold sticky top-0 border-b border-blue-200/75 z-10">
                                             <tr>
                                                 <th className="p-2.5">दिनांक व वेळ</th>
                                                 <th className="p-2.5">विभाग</th>

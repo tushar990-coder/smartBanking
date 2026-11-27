@@ -118,7 +118,7 @@ input[type=number] {
 .custom-scrollbar,
 .sidebar-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(16, 185, 129, 0.4) transparent;
+  scrollbar-color: rgba(37, 99, 235, 0.4) transparent;
   scroll-behavior: smooth;
 }
 
@@ -139,34 +139,34 @@ input[type=number] {
 
 .custom-scrollbar:hover::-webkit-scrollbar-track,
 .sidebar-scrollbar:hover::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(37, 99, 235, 0.04);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb,
 .sidebar-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.35); /* Subtle smooth pill by default */
+  background: rgba(96, 165, 250, 0.35); /* Subtle smooth pill by default */
   border-radius: 9999px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Glowing Emerald & Teal on Sidebar Hover */
+/* Glowing Aurora Sky-Blue & Violet on Sidebar Hover */
 .custom-scrollbar:hover::-webkit-scrollbar-thumb,
 .sidebar-scrollbar:hover::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(16, 185, 129, 0.75) 0%, rgba(13, 148, 136, 0.85) 100%);
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+  background: linear-gradient(180deg, rgba(29, 140, 248, 0.75) 0%, rgba(37, 99, 235, 0.8) 55%, rgba(124, 58, 237, 0.8) 100%);
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.35);
 }
 
 /* Interactive Feedback on Active / Direct Hover */
 .custom-scrollbar::-webkit-scrollbar-thumb:hover,
 .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #10b981 0%, #0d9488 100%);
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.7);
+  background: linear-gradient(180deg, #1d8cf8 0%, #2563eb 55%, #7c3aed 100%);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.6);
   cursor: grab;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:active,
 .sidebar-scrollbar::-webkit-scrollbar-thumb:active {
-  background: linear-gradient(180deg, #059669 0%, #0f766e 100%);
+  background: linear-gradient(180deg, #0284c7 0%, #1d4ed8 55%, #6d28d9 100%);
   cursor: grabbing;
 }
 
@@ -193,6 +193,334 @@ input[type=number] {
 }
 .slim-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.6);
+}
+
+/* Animated Saving Account (बचत खाते) Icon Keyframes */
+@keyframes savingCoinDrop {
+  0% {
+    transform: translateY(-7px) scale(0.85);
+    opacity: 0;
+  }
+  18% {
+    transform: translateY(-4px) scale(1);
+    opacity: 1;
+  }
+  52% {
+    transform: translateY(5px) scale(0.95);
+    opacity: 1;
+  }
+  65% {
+    transform: translateY(9px) scale(0.65);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(-7px) scale(0.85);
+    opacity: 0;
+  }
+}
+
+@keyframes savingPiggyBob {
+  0%, 48%, 100% {
+    transform: translateY(0) scaleY(1) scaleX(1);
+  }
+  58% {
+    transform: translateY(1.2px) scaleY(0.94) scaleX(1.04);
+  }
+  70% {
+    transform: translateY(-0.8px) scaleY(1.03) scaleX(0.98);
+  }
+  82% {
+    transform: translateY(0) scaleY(1) scaleX(1);
+  }
+}
+
+@keyframes savingSparkle {
+  0%, 50%, 100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  64% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  80% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@keyframes depositNoteFloat {
+  0%, 100% {
+    transform: translateY(2px);
+  }
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+
+@keyframes loanCoinFloat {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-3px) scale(1.06);
+  }
+}
+
+@keyframes transferSlideRight {
+  0%, 100% {
+    transform: translateX(-1.8px);
+  }
+  50% {
+    transform: translateX(2.4px);
+  }
+}
+
+@keyframes transferSlideLeft {
+  0%, 100% {
+    transform: translateX(1.8px);
+  }
+  50% {
+    transform: translateX(-2.4px);
+  }
+}
+
+@keyframes customerBob {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-1.4px);
+  }
+}
+
+@keyframes badgePop {
+  0%, 100% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.18);
+  }
+  70% {
+    transform: scale(0.95);
+  }
+}
+
+@keyframes shieldPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes checkDraw {
+  0% {
+    stroke-dashoffset: 18;
+  }
+  45%, 85% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 18;
+  }
+}
+
+@keyframes bellSwing {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  18% {
+    transform: rotate(14deg);
+  }
+  36% {
+    transform: rotate(-12deg);
+  }
+  54% {
+    transform: rotate(8deg);
+  }
+  72% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes bellWaves {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  25%, 65% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes dotPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.24);
+    opacity: 0.85;
+  }
+}
+
+@keyframes barGrow {
+  0%, 100% {
+    transform: scaleY(0.72);
+  }
+  45%, 65% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes trendRise {
+  0%, 100% {
+    transform: translate(0px, 1px);
+  }
+  50% {
+    transform: translate(1.4px, -1.8px);
+  }
+}
+
+.animate-saving-coin,
+.animate-saving-piggy,
+.animate-saving-sparkle-1,
+.animate-saving-sparkle-2,
+.animate-deposit-note,
+.animate-loan-coin,
+.animate-transfer-right,
+.animate-transfer-left,
+.animate-customer-bob,
+.animate-badge-pop,
+.animate-shield-pulse,
+.animate-bell-swing,
+.animate-bell-waves,
+.animate-dot-pulse,
+.animate-bar-1,
+.animate-bar-2,
+.animate-bar-3,
+.animate-trend-rise {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.animate-saving-piggy,
+.animate-customer-bob,
+.animate-bar-1,
+.animate-bar-2,
+.animate-bar-3 {
+  transform-origin: center bottom;
+}
+
+.animate-bell-swing {
+  transform-origin: 50% 10%;
+}
+
+/* Keep burst sparkles & bell sound-waves hidden until hover */
+.animate-saving-sparkle-1,
+.animate-saving-sparkle-2,
+.animate-bell-waves {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+/* Trigger icon animations ONLY on button hover / keyboard focus */
+.group:hover .animate-saving-coin,
+.group:focus-visible .animate-saving-coin {
+  animation: savingCoinDrop 1.45s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.group:hover .animate-saving-piggy,
+.group:focus-visible .animate-saving-piggy {
+  animation: savingPiggyBob 1.45s ease-in-out infinite;
+}
+
+.group:hover .animate-saving-sparkle-1,
+.group:focus-visible .animate-saving-sparkle-1 {
+  animation: savingSparkle 1.45s ease-out infinite;
+}
+
+.group:hover .animate-saving-sparkle-2,
+.group:focus-visible .animate-saving-sparkle-2 {
+  animation: savingSparkle 1.45s ease-out 0.12s infinite;
+}
+
+.group:hover .animate-deposit-note,
+.group:focus-visible .animate-deposit-note {
+  animation: depositNoteFloat 1.4s ease-in-out infinite;
+}
+
+.group:hover .animate-loan-coin,
+.group:focus-visible .animate-loan-coin {
+  animation: loanCoinFloat 1.35s ease-in-out infinite;
+}
+
+.group:hover .animate-transfer-right,
+.group:focus-visible .animate-transfer-right {
+  animation: transferSlideRight 1.25s ease-in-out infinite;
+}
+
+.group:hover .animate-transfer-left,
+.group:focus-visible .animate-transfer-left {
+  animation: transferSlideLeft 1.25s ease-in-out infinite;
+}
+
+.group:hover .animate-customer-bob,
+.group:focus-visible .animate-customer-bob {
+  animation: customerBob 1.35s ease-in-out infinite;
+}
+
+.group:hover .animate-badge-pop,
+.group:focus-visible .animate-badge-pop {
+  animation: badgePop 1.35s ease-in-out infinite;
+}
+
+.group:hover .animate-shield-pulse,
+.group:focus-visible .animate-shield-pulse {
+  animation: shieldPulse 1.5s ease-in-out infinite;
+}
+
+.group:hover .animate-check-draw,
+.group:focus-visible .animate-check-draw {
+  animation: checkDraw 1.5s ease-in-out infinite;
+}
+
+.group:hover .animate-bell-swing,
+.group:focus-visible .animate-bell-swing {
+  animation: bellSwing 1.4s ease-in-out infinite;
+}
+
+.group:hover .animate-bell-waves,
+.group:focus-visible .animate-bell-waves {
+  animation: bellWaves 1.4s ease-in-out infinite;
+}
+
+.group:hover .animate-dot-pulse,
+.group:focus-visible .animate-dot-pulse {
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+
+.group:hover .animate-bar-1,
+.group:focus-visible .animate-bar-1 {
+  animation: barGrow 1.35s ease-in-out 0s infinite;
+}
+
+.group:hover .animate-bar-2,
+.group:focus-visible .animate-bar-2 {
+  animation: barGrow 1.35s ease-in-out 0.16s infinite;
+}
+
+.group:hover .animate-bar-3,
+.group:focus-visible .animate-bar-3 {
+  animation: barGrow 1.35s ease-in-out 0.32s infinite;
+}
+
+.group:hover .animate-trend-rise,
+.group:focus-visible .animate-trend-rise {
+  animation: trendRise 1.35s ease-in-out infinite;
 }
 
 /* Global Print Unlocking Rules for Multi-Page Pagination */

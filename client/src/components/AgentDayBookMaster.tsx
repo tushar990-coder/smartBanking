@@ -534,10 +534,17 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
   };
 
   return (
-    <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
+    <div
+      className="p-2.5 sm:p-3.5 w-full min-h-full font-sans text-xs"
+      style={{
+        background:
+          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+      }}
+    >
+      <div className="max-w-[1680px] mx-auto space-y-3">
       {/* Passing Mode Banner */}
       {isPassingMode && (
-        <div className="bg-amber-500 text-white p-3 rounded-sm shadow flex items-center justify-between">
+        <div className="bg-amber-500 text-white p-3 rounded-xl shadow flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="text-xl">⚠️</span>
             <div>
@@ -554,7 +561,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <button
               type="button"
               onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
-              className="px-3 py-1 bg-white text-amber-800 text-xs font-bold rounded shadow hover:bg-amber-50"
+              className="px-3 py-1 bg-white text-amber-800 text-xs font-bold rounded-lg shadow hover:bg-amber-50 cursor-pointer"
             >
               ↩️ पासिंग यादीवर परत जा
             </button>
@@ -562,28 +569,40 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         </div>
       )}
       
-      {/* Outer Container matching Standard ERP Theme */}
-      <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col">
+      {/* Outer Aurora Container */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 overflow-hidden flex flex-col">
         
-        {/* Standard ERP Header Banner */}
-        <div className="bg-primary px-3 py-2 text-white flex items-center justify-between shadow-xs">
-          <div>
-            <h2 className="text-sm font-bold tracking-wide flex items-center gap-1.5">
-              <span>📖 एजंट डे बुक (Agent Day Book - Cash Remittance)</span>
-              {isPassingMode && <span className="ml-2 text-xs font-normal text-amber-200 bg-amber-700/50 px-2 py-0.5 rounded border border-amber-400/40">(फक्त वाचन मोड)</span>}
-            </h2>
-            <p className="text-[10px] text-blue-100 font-normal">एजंट दैनंदिन संकलन ताळमेळ, रोख भरणा, पावती जनरेशन आणि शिल्लक तपासणी</p>
+        {/* Aurora Sapphire Header Banner */}
+        <div
+          className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2"
+          style={{
+            background:
+              'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-base shadow-xs shrink-0">
+              📖
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2">
+                <span>एजंट डे बुक</span>
+                <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(Agent Day Book — Cash Remittance)</span>
+                {isPassingMode && <span className="ml-1 text-[10.5px] font-bold text-amber-100 bg-amber-600/60 px-2 py-0.5 rounded-full border border-amber-300/50">फक्त वाचन मोड</span>}
+              </h2>
+              <p className="text-[11px] text-blue-100/90 font-medium">एजंट दैनंदिन संकलन ताळमेळ, रोख भरणा, पावती जनरेशन आणि शिल्लक तपासणी</p>
+            </div>
           </div>
 
           <button
             onClick={fetchSummary}
-            className="px-2.5 py-0.5 bg-blue-800/60 hover:bg-blue-800 text-white font-semibold rounded-sm border border-blue-400/40 flex items-center gap-1 text-xs cursor-pointer"
+            className="px-3 py-1 bg-white/15 hover:bg-white/25 text-white font-bold rounded-full border border-white/30 flex items-center gap-1 text-xs cursor-pointer transition"
           >
-            <span>रिफ्रेश (Refresh)</span>
+            <span>↻ रिफ्रेश</span>
           </button>
         </div>
 
-        <div className="p-3 space-y-3">
+        <div className="p-3.5 space-y-3">
 
           {message && (
             <div className={`p-2.5 rounded-sm border text-xs font-bold ${
@@ -810,11 +829,11 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
       )}
 
       {/* Main Grid: Left Receive Cash Form | Right Remittance History Table */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
         
         {/* Receive Cash Form */}
         <fieldset disabled={isPassingMode} className="contents">
-        <div className="bg-white p-3 rounded-sm shadow-sm border border-gray-200 h-fit">
+        <div className="lg:col-span-4 bg-white p-3 rounded-sm shadow-sm border border-gray-200 h-fit">
           <div className="text-[12px] font-bold text-primary border-b border-gray-200 pb-1 mb-2.5 flex justify-between items-center">
             <span>एजंट रोख रक्कम भरणा नोंद (Receive Remittance)</span>
           </div>
@@ -1048,8 +1067,8 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         </div>
         </fieldset>
 
-        {/* Remittance History Sheet */}
-        <div className="md:col-span-2 bg-white p-3 rounded-sm shadow-sm border border-gray-200">
+        {/* Remittance History Sheet (Compact Single-Line 8-Column Grid) */}
+        <div className="lg:col-span-8 bg-white p-3 rounded-sm shadow-sm border border-gray-200 min-w-0">
           <h2 className="text-[12px] font-bold text-gray-800 mb-2 border-b pb-1 flex justify-between items-center">
             <span>एजंट भरणा पावती इतिहास (Remittance Receipts History)</span>
             <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-bold">
@@ -1057,86 +1076,94 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             </span>
           </h2>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-center text-[11px]">
-              <thead className="bg-primary text-white">
+          <div className="overflow-x-auto border border-gray-200 rounded-sm">
+            <table className="min-w-full divide-y divide-gray-200 text-left text-[11px] border-collapse">
+              <thead className="bg-primary text-white whitespace-nowrap">
                 <tr>
-                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium">पावती क्र. (Receipt)</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium">भरणा दिनांक (Deposit)</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium">भरणा प्रकार (Mode)</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium">व्हाउचर क्र. (Voucher)</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-right">रक्कम (Amount ₹)</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">संकलन कालावधी / तपशील (Narration)</th>
-                  <th className="px-2 py-1.5 font-medium text-center">कृती (Action)</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold">पावती क्र.</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold text-center">भरणा दि.</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold text-center">संकलन कालावधी</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold text-center">प्रकार</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold">व्हाउचर क्र.</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold text-right">रक्कम (₹)</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold">तपशील</th>
+                  <th className="px-2 py-1.5 font-semibold text-center">कृती</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
                 {!summary?.recentRemittances || summary.recentRemittances.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-4 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
                       या एजंटच्या कोणत्याही भरणा पावत्या आढळल्या नाहीत.
                     </td>
                   </tr>
                 ) : (
-                  summary.recentRemittances.map((item) => (
-                    <tr key={item.depositId} className="hover:bg-gray-50">
-                      <td className="px-2 py-1 border-r border-gray-200 font-mono font-bold text-primary">
-                        {item.receiptNo}
-                      </td>
-                      <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap font-medium text-gray-800">
-                        {new Date(item.depositDate).toLocaleDateString('en-GB')}
-                      </td>
-                      <td className="px-2 py-1 border-r border-gray-200 font-semibold text-gray-800">
-                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-gray-100 border border-gray-300">
-                          {getModeLabel(item.paymentMode)}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1 border-r border-gray-200 font-mono text-gray-700">
-                        {item.voucherNo || '-'}
-                      </td>
-                      <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-green-700">
-                        ₹ {item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-700 max-w-xs">
-                        {item.collectionDateFrom && item.collectionDateTo ? (
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-blue-900 text-[10px] bg-blue-50 px-1 py-0.5 rounded w-fit border border-blue-200">
-                              [संकलन: {new Date(item.collectionDateFrom).toLocaleDateString('en-GB')} ते {new Date(item.collectionDateTo).toLocaleDateString('en-GB')}]
+                  summary.recentRemittances.map((item, idx) => {
+                    const collectionPeriod =
+                      item.collectionDateFrom && item.collectionDateTo
+                        ? `${new Date(item.collectionDateFrom).toLocaleDateString('en-GB')} - ${new Date(item.collectionDateTo).toLocaleDateString('en-GB')}`
+                        : item.narration?.includes('[संकलन:')
+                          ? item.narration.split('[संकलन:')[1]?.split(']')[0]?.trim() || '-'
+                          : '-';
+
+                    const cleanNarration = (item.narration || '')
+                      .replace(/\[संकलन:[^\]]+\]/g, '')
+                      .trim();
+
+                    return (
+                      <tr
+                        key={item.depositId}
+                        className={`hover:bg-blue-50/50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'}`}
+                      >
+                        <td className="px-2 py-1 border-r border-gray-200 font-mono font-bold text-primary whitespace-nowrap align-middle">
+                          {item.receiptNo}
+                        </td>
+                        <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap text-center font-mono font-medium text-gray-800 align-middle">
+                          {new Date(item.depositDate).toLocaleDateString('en-GB')}
+                        </td>
+                        <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap text-center align-middle">
+                          {collectionPeriod !== '-' ? (
+                            <span className="inline-block font-mono font-semibold text-blue-900 text-[10px] bg-blue-50 px-1.5 py-0.5 rounded-sm border border-blue-200 leading-tight">
+                              {collectionPeriod}
                             </span>
-                            {item.narration && (
-                              <span className="text-[10px] text-gray-600 truncate">
-                                {item.narration.replace(/\[संकलन:[^\]]+\]/g, '').trim()}
-                              </span>
-                            )}
-                          </div>
-                        ) : item.narration?.startsWith('[संकलन:') ? (
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-blue-900 text-[10px] bg-blue-50 px-1 py-0.5 rounded w-fit border border-blue-200">
-                              {item.narration.split(']')[0] + ']'}
-                            </span>
-                            <span className="text-[10px] text-gray-600 truncate">
-                              {item.narration.split(']').slice(1).join(']').trim()}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="truncate block">{item.narration || '-'}</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap text-center font-semibold text-gray-800 align-middle">
+                          <span className="inline-block px-1.5 py-0.5 rounded-sm text-[10px] leading-tight bg-gray-100 border border-gray-300">
+                            {getModeLabel(item.paymentMode)}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 border-r border-gray-200 font-mono text-gray-700 whitespace-nowrap align-middle">
+                          {item.voucherNo || '-'}
+                        </td>
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-green-700 whitespace-nowrap align-middle">
+                          ₹ {item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td
+                          className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 whitespace-nowrap align-middle max-w-[180px]"
+                          title={cleanNarration || item.narration || undefined}
+                        >
+                          {cleanNarration ? (
+                            <div className="truncate text-[10.5px]">{cleanNarration}</div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
                           <button
                             type="button"
                             onClick={() => setSelectedReceipt(item)}
-                            className="border border-blue-500 text-blue-700 px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors font-semibold text-[10px] cursor-pointer"
+                            className="border border-blue-500 text-blue-700 px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors font-semibold text-[10px] leading-tight cursor-pointer whitespace-nowrap"
                             title="पावती प्रिंट करा"
                           >
-                            पावती प्रिंट
+                            प्रिंट
                           </button>
-
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1460,6 +1487,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

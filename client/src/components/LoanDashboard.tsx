@@ -1,63 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { 
-  Building2, 
-  Landmark, 
-  Coins, 
-  Receipt, 
-  Scale, 
-  Layers, 
-  BarChart3, 
-  ArrowLeft, 
-  Sparkles,
-  FileText,
-  FileCheck,
-  TrendingUp,
-  CircleDollarSign
-} from 'lucide-react';
-
-const fmt = (n: number) => '₹ ' + (n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { ArrowLeft, Sparkles, Building2 } from 'lucide-react';
+import {
+  AnimatedLoanIcon,
+  AnimatedLoanCollectionIcon,
+  AnimatedGoldLoanIcon,
+  AnimatedInterestIcon,
+  AnimatedBulkChargesIcon,
+  AnimatedApprovalIcon,
+  AnimatedBorrowingIcon,
+  AnimatedReportsIcon,
+} from './common/AnimatedDashboardIcons';
 
 interface LoanDashboardProps {
   onNavigate?: (tab: string, params?: any) => void;
 }
 
+interface LoanDockItem {
+  id: string;
+  titleMr: string;
+  titleEn: string;
+  subtitleMr: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tab: string;
+  params?: any;
+  gradient: string;
+  shadowColor: string;
+  accentHex: string;
+}
+
 export default function LoanDashboard({ onNavigate }: LoanDashboardProps) {
   const { user } = useAuth();
-
-  const getInitialTheme = () => {
-    return document.documentElement.getAttribute('data-theme') || 
-           localStorage.getItem('app-theme') || 
-           'wine-red';
-  };
-
-  const [appTheme, setAppTheme] = useState(getInitialTheme);
-
-  useEffect(() => {
-    const updateTheme = () => {
-      const current = document.documentElement.getAttribute('data-theme') || 
-                      localStorage.getItem('app-theme') || 
-                      'wine-red';
-      setAppTheme(current);
-    };
-
-    window.addEventListener('storage', updateTheme);
-
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
-          updateTheme();
-        }
-      });
-    });
-
-    observer.observe(document.documentElement, { attributes: true });
-
-    return () => {
-      window.removeEventListener('storage', updateTheme);
-      observer.disconnect();
-    };
-  }, []);
 
   const handleNav = (tab: string, params?: any) => {
     if (onNavigate) {
@@ -65,257 +38,292 @@ export default function LoanDashboard({ onNavigate }: LoanDashboardProps) {
     }
   };
 
-  const getThemeConfig = () => {
-    switch (appTheme) {
-      case 'green':
-        return {
-          bgGrad: 'from-emerald-50/40 via-slate-50 to-teal-50/30',
-          accentBg: 'bg-emerald-400/10',
-          textDark: 'text-emerald-950',
-          textSub: 'text-emerald-700',
-          badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-          cardBorder: 'border-emerald-200/80 shadow-emerald-100',
-          btnBorder: 'border-emerald-200/90 shadow-emerald-950/30 group-hover:shadow-emerald-500/50',
-          bannerGrad: 'from-emerald-950 via-[#0E8A5A] to-teal-900',
-          bannerBorder: 'border-emerald-400/30',
-          bannerMetricBg: 'bg-emerald-900/40 border-emerald-400/30',
-          bannerSubText: 'text-emerald-200',
-          backBtnHover: 'hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300',
-          gradients: [
-            'from-emerald-400 via-emerald-600 to-teal-950',
-            'from-green-400 via-emerald-600 to-emerald-950',
-            'from-emerald-400 via-green-600 to-teal-950',
-            'from-teal-400 via-emerald-700 to-slate-900',
-            'from-emerald-400 via-teal-600 to-green-950',
-            'from-green-400 via-emerald-600 to-teal-900',
-            'from-emerald-400 via-green-700 to-teal-950'
-          ]
-        };
-      case 'blue':
-        return {
-          bgGrad: 'from-sky-50/40 via-slate-50 to-blue-50/30',
-          accentBg: 'bg-sky-400/10',
-          textDark: 'text-blue-950',
-          textSub: 'text-sky-800',
-          badgeBg: 'bg-blue-100 text-blue-800 border-blue-300',
-          cardBorder: 'border-sky-200/80 shadow-sky-100',
-          btnBorder: 'border-sky-200/90 shadow-blue-950/30 group-hover:shadow-blue-500/50',
-          bannerGrad: 'from-slate-950 via-[#005689] to-blue-900',
-          bannerBorder: 'border-sky-400/30',
-          bannerMetricBg: 'bg-blue-900/40 border-sky-400/30',
-          bannerSubText: 'text-sky-200',
-          backBtnHover: 'hover:bg-sky-50 hover:text-blue-800 hover:border-sky-300',
-          gradients: [
-            'from-sky-400 via-blue-600 to-blue-950',
-            'from-cyan-400 via-blue-600 to-indigo-950',
-            'from-blue-400 via-indigo-600 to-blue-950',
-            'from-sky-500 via-blue-700 to-slate-900',
-            'from-cyan-500 via-blue-600 to-blue-950',
-            'from-blue-400 via-blue-600 to-sky-950',
-            'from-sky-400 via-indigo-600 to-blue-950'
-          ]
-        };
-      case 'wine-red':
-      default:
-        return {
-          bgGrad: 'from-rose-50/40 via-slate-50 to-pink-50/30',
-          accentBg: 'bg-rose-400/10',
-          textDark: 'text-[#4c0519]',
-          textSub: 'text-[#880e4f]',
-          badgeBg: 'bg-rose-100 text-[#880e4f] border-rose-300',
-          cardBorder: 'border-rose-200/80 shadow-rose-100/60',
-          btnBorder: 'border-rose-200/90 shadow-[#42051a]/40 group-hover:shadow-rose-600/50',
-          bannerGrad: 'from-[#380413] via-[#880E4F] to-[#4c0519]',
-          bannerBorder: 'border-rose-400/30',
-          bannerMetricBg: 'bg-pink-950/40 border-rose-400/30',
-          bannerSubText: 'text-pink-200',
-          backBtnHover: 'hover:bg-rose-50 hover:text-[#880e4f] hover:border-rose-300',
-          gradients: [
-            'from-rose-400 via-[#9b1142] to-[#42051a]',
-            'from-pink-400 via-[#880e4f] to-[#3a0017]',
-            'from-rose-400 via-[#831843] to-[#400318]',
-            'from-red-400 via-[#7f1d1d] to-[#3f0708]',
-            'from-rose-400 via-[#9f1239] to-[#4c0519]',
-            'from-pink-400 via-[#9d174d] to-[#470624]',
-            'from-rose-400 via-[#881337] to-[#380413]'
-          ]
-        };
-    }
-  };
-
-  const themeCfg = getThemeConfig();
-
-  // 6 Circular Glossy 3D Action Buttons for Loan Department (कर्ज विभाग)
-  const loanActionButtons = [
+  // 8 Bespoke Animated Glossy Gradient Action Icons for Loan Department (कर्ज विभाग मुख्य हब)
+  const loanActionButtons: LoanDockItem[] = [
     {
       id: 'loan-process',
       titleMr: 'कर्ज मागणी व वितरण',
-      titleEn: 'APPLICATION & DISBURSEMENT',
-      icon: FileText,
+      titleEn: 'DISBURSEMENT',
+      subtitleMr: 'नवीन अर्ज, मंजुरी व वाटप',
+      icon: AnimatedLoanIcon,
       tab: 'loan-process',
       params: { subTab: 1 },
-      gradient: themeCfg.gradients[0]
+      gradient: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 55%, #1D4ED8 100%)',
+      shadowColor: 'rgba(29, 140, 248, 0.40)',
+      accentHex: '#1D74F5',
     },
     {
       id: 'loan-collection',
       titleMr: 'कर्ज हप्ता वसुली',
       titleEn: 'COLLECTION',
-      icon: Receipt,
+      subtitleMr: 'मुद्दल व व्याज वसुली',
+      icon: AnimatedLoanCollectionIcon,
       tab: 'loan-collection',
       params: {},
-      gradient: themeCfg.gradients[1]
+      gradient: 'linear-gradient(135deg, #4ADE80 0%, #22C55E 55%, #15803D 100%)',
+      shadowColor: 'rgba(34, 197, 94, 0.38)',
+      accentHex: '#16A34A',
     },
     {
       id: 'gold-loan',
       titleMr: 'सोने तारण कर्ज',
       titleEn: 'GOLD LOAN',
-      icon: Coins,
+      subtitleMr: 'दागिने मूल्यांकन व तारण',
+      icon: AnimatedGoldLoanIcon,
       tab: 'gold-loan-details',
       params: {},
-      gradient: themeCfg.gradients[2]
+      gradient: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 55%, #D97706 100%)',
+      shadowColor: 'rgba(245, 158, 11, 0.40)',
+      accentHex: '#D97706',
     },
     {
       id: 'loan-interest',
       titleMr: 'कर्ज व्याज आकारणी',
-      titleEn: 'INTEREST POSTING',
-      icon: Scale,
+      titleEn: 'INTEREST',
+      subtitleMr: 'मासिक / त्रैमासिक व्याज',
+      icon: AnimatedInterestIcon,
       tab: 'loan-interest-posting',
       params: {},
-      gradient: themeCfg.gradients[3]
+      gradient: 'linear-gradient(135deg, #C084FC 0%, #9333EA 55%, #6B21A8 100%)',
+      shadowColor: 'rgba(147, 51, 234, 0.38)',
+      accentHex: '#7E22CE',
     },
     {
       id: 'loan-bulk-charges',
       titleMr: 'वसुली खर्च नावे',
-      titleEn: 'DUE CHARGES (BULK)',
-      icon: CircleDollarSign,
+      titleEn: 'DUE CHARGES',
+      subtitleMr: 'नोटीस व इतर खर्च नावे',
+      icon: AnimatedBulkChargesIcon,
       tab: 'loan-bulk-charges',
       params: {},
-      gradient: themeCfg.gradients[1]
+      gradient: 'linear-gradient(135deg, #60A5FA 0%, #2563EB 55%, #1E40AF 100%)',
+      shadowColor: 'rgba(37, 99, 235, 0.40)',
+      accentHex: '#2563EB',
     },
     {
       id: 'loan-docs',
-      titleMr: 'तारण व दागिने ट्रॅकिंग',
-      titleEn: 'COLLATERAL & CUSTODY',
-      icon: Layers,
+      titleMr: 'तारण व दागिने',
+      titleEn: 'COLLATERAL',
+      subtitleMr: 'दस्तऐवज व सुरक्षितता',
+      icon: AnimatedApprovalIcon,
       tab: 'loan-documents',
       params: {},
-      gradient: themeCfg.gradients[4]
+      gradient: 'linear-gradient(135deg, #34D399 0%, #10B981 55%, #047857 100%)',
+      shadowColor: 'rgba(16, 185, 129, 0.38)',
+      accentHex: '#059669',
     },
     {
       id: 'bank-borrowing',
       titleMr: 'बाह्य कर्जे / पुनर्गहाण',
-      titleEn: 'BANK BORROWINGS',
-      icon: Landmark,
+      titleEn: 'BORROWINGS',
+      subtitleMr: 'जिल्हा बँक व पुनर्गहाण',
+      icon: AnimatedBorrowingIcon,
       tab: 'bank-borrowing',
       params: {},
-      gradient: themeCfg.gradients[6]
+      gradient: 'linear-gradient(135deg, #A78BFA 0%, #7C3AED 55%, #5B21B6 100%)',
+      shadowColor: 'rgba(124, 58, 237, 0.38)',
+      accentHex: '#6D28D9',
     },
     {
       id: 'loan-reports',
-      titleMr: 'रिपोर्ट',
+      titleMr: 'कर्ज अहवाल',
       titleEn: 'REPORTS',
-      icon: BarChart3,
+      subtitleMr: 'खतावणी व थकबाकी अहवाल',
+      icon: AnimatedReportsIcon,
       tab: 'loan-ledger-report',
       params: {},
-      gradient: themeCfg.gradients[5]
-    }
+      gradient: 'linear-gradient(135deg, #22D3EE 0%, #0891B2 55%, #0369A1 100%)',
+      shadowColor: 'rgba(8, 145, 178, 0.38)',
+      accentHex: '#0E7490',
+    },
   ];
 
   return (
-    <div className={`w-full font-sans relative bg-gradient-to-b ${themeCfg.bgGrad} min-h-[calc(100vh-4rem)] flex flex-col justify-between pb-4 transition-colors duration-300`}>
-      {/* Decorative Background Accent */}
-      <div className={`absolute top-[-10%] left-[-10%] w-[35rem] h-[35rem] ${themeCfg.accentBg} rounded-full blur-[110px] pointer-events-none`}></div>
+    <div
+      className="relative w-full min-h-[calc(100vh-54px)] flex flex-col justify-between overflow-hidden select-none font-sans"
+      style={{
+        background:
+          'radial-gradient(circle at 18% 18%, #e4ecff 0%, rgba(228,236,255,0) 48%), radial-gradient(circle at 86% 14%, #bfdbfe 0%, rgba(191,219,254,0) 45%), radial-gradient(circle at 75% 78%, #67e8f9 0%, rgba(103,232,249,0) 44%), radial-gradient(circle at 14% 82%, #c4b5fd 0%, rgba(196,181,253,0) 46%), linear-gradient(135deg, #eef2ff 0%, #f8fbff 42%, #dbeafe 78%, #93c5fd 100%)',
+      }}
+    >
+      {/* ========================================================================= */}
+      {/* CRISP VECTOR AURORA WAVE & AMBIENT LIGHT CANVAS (Matches Main Dashboard)  */}
+      {/* ========================================================================= */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div
+          className="absolute -top-24 -left-20 w-[420px] h-[420px] rounded-full opacity-45 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #a5b4fc 0%, transparent 70%)' }}
+        />
+        <div
+          className="absolute top-12 right-10 w-[460px] h-[460px] rounded-full opacity-45 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #38bdf8 0%, transparent 70%)' }}
+        />
+        <div
+          className="absolute bottom-16 left-1/3 w-[520px] h-[320px] rounded-full opacity-35 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #2dd4bf 0%, transparent 72%)' }}
+        />
 
-      <div className="p-3 md:p-5 max-w-5xl mx-auto w-full relative z-10 flex-1 flex flex-col justify-between space-y-4">
-        
-        {/* Top Section: Header & Hero Banner */}
-        <div className="space-y-3">
-          {/* Navigation Bar */}
-          <div className="flex items-center justify-between gap-3">
-            <button
-              onClick={() => handleNav('dashboard')}
-              className={`flex items-center gap-2 px-3 py-1 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold shadow-2xs ${themeCfg.backBtnHover} transition-all cursor-pointer`}
-            >
-              <ArrowLeft size={15} />
-              <span>मुख्य डॅशबोर्डवर जा</span>
-            </button>
-            
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] font-extrabold ${themeCfg.badgeBg} px-3 py-0.5 rounded-full shadow-2xs border`}>
-                💳 कर्ज विभाग (Loan Department Hub)
-              </span>
-            </div>
-          </div>
+        {/* Subtle Architectural Dot Grid */}
+        <div
+          className="absolute inset-0 opacity-[0.22]"
+          style={{
+            backgroundImage: 'radial-gradient(#3b82f6 0.85px, transparent 0.85px)',
+            backgroundSize: '28px 28px',
+          }}
+        />
 
-          {/* Hero Banner (Compact & Sleek Width) */}
-          <div className={`bg-gradient-to-r ${themeCfg.bannerGrad} text-white rounded-xl shadow-md px-4 py-2.5 md:py-3 relative overflow-hidden border ${themeCfg.bannerBorder}`}>
-            <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+        {/* Flowing Multi-Color Aurora Ribbon Waves */}
+        <svg
+          viewBox="0 0 1440 520"
+          preserveAspectRatio="none"
+          className="absolute bottom-0 left-0 w-full h-[64%] opacity-90"
+        >
+          <defs>
+            <linearGradient id="loanAurora1" x1="0%" y1="50%" x2="100%" y2="30%">
+              <stop offset="0%" stopColor="#7C3AED" stopOpacity="0.48" />
+              <stop offset="32%" stopColor="#06B6D4" stopOpacity="0.42" />
+              <stop offset="65%" stopColor="#10B981" stopOpacity="0.34" />
+              <stop offset="100%" stopColor="#2563EB" stopOpacity="0.52" />
+            </linearGradient>
+            <linearGradient id="loanAurora2" x1="0%" y1="60%" x2="100%" y2="40%">
+              <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.35" />
+              <stop offset="40%" stopColor="#22D3EE" stopOpacity="0.45" />
+              <stop offset="75%" stopColor="#3B82F6" stopOpacity="0.42" />
+              <stop offset="100%" stopColor="#1D4ED8" stopOpacity="0.58" />
+            </linearGradient>
+            <linearGradient id="loanAurora3" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.65" />
+              <stop offset="50%" stopColor="#E0F2FE" stopOpacity="0.45" />
+              <stop offset="100%" stopColor="#93C5FD" stopOpacity="0.55" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M0,260 C210,165 390,340 660,245 C920,155 1170,110 1440,195 L1440,520 L0,520 Z"
+            fill="url(#loanAurora1)"
+          />
+          <path
+            d="M0,335 C260,235 480,385 780,280 C1050,185 1250,240 1440,150 L1440,520 L0,520 Z"
+            fill="url(#loanAurora2)"
+          />
+          <path
+            d="M0,400 C320,320 620,445 960,365 C1190,310 1330,335 1440,295 L1440,520 L0,520 Z"
+            fill="url(#loanAurora3)"
+          />
+        </svg>
+      </div>
 
-            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/30 shadow-inner shrink-0 text-xl">
-                  💳
-                </div>
-                <div>
-                  <h1 className="text-sm md:text-base font-black tracking-tight text-white drop-shadow-md flex items-center gap-2">
-                    <span>कर्ज विभाग मुख्य हब</span>
-                  </h1>
-                  <p className={`text-[11px] ${themeCfg.bannerSubText} font-medium mt-0.5 drop-shadow-xs`}>
-                    कर्ज मागणी व वितरण, हप्ता वसुली आणि व्याज आकारणी नोंदणी
-                  </p>
-                </div>
-              </div>
-            </div>
+      {/* ========================================================================= */}
+      {/* TOP MINIMAL NAVIGATION BAR (Frosted Glass Pills)                          */}
+      {/* ========================================================================= */}
+      <div className="relative z-10 w-full px-4 sm:px-7 pt-3.5 flex items-center justify-between gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={() => handleNav('dashboard')}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/85 hover:bg-white backdrop-blur-md border border-white text-[#0F2454] text-[11.5px] font-bold shadow-xs transition-all cursor-pointer hover:-translate-x-0.5"
+        >
+          <ArrowLeft size={14} className="text-[#2563EB]" />
+          <span>मुख्य डॅशबोर्डवर जा</span>
+        </button>
+
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 backdrop-blur-md border border-white shadow-xs text-[11px] font-bold text-[#1E3A8A]">
+            <Building2 size={12} className="text-[#1D8CF8]" />
+            <span>{user?.branchName || 'मुख्य शाखा'}</span>
+            <span className="text-blue-300">•</span>
+            <span className="font-mono text-slate-600">FY {user?.financialYearCode || '2026-2027'}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* CENTER PRESTIGIOUS LOAN HUB HERO                                          */}
+      {/* ========================================================================= */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-4 py-8 sm:py-10">
+        {/* Glowing Animated Loan Hub Emblem */}
+        <div className="relative mb-4">
+          <div
+            className="absolute inset-0 rounded-3xl blur-xl opacity-45 scale-110"
+            style={{ background: 'linear-gradient(135deg, #F59E0B 0%, #2563EB 55%, #7C3AED 100%)' }}
+          />
+          <div
+            className="relative w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-[22px] flex items-center justify-center text-white shadow-[0_12px_30px_rgba(37,99,235,0.34)] border border-white/40"
+            style={{
+              background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 52%, #D97706 100%)',
+            }}
+          >
+            <AnimatedLoanIcon className="w-11 h-11" />
           </div>
         </div>
 
-        {/* Footer Section: 6 Circular Glossy 3D Action Buttons */}
-        <div className="mt-auto pt-4">
-          <div className={`bg-white/95 backdrop-blur-md border ${themeCfg.cardBorder} rounded-2xl p-4 md:p-5 shadow-md space-y-3`}>
-            <div className="text-center pb-2 border-b border-slate-100">
-              <span className={`text-xs font-black ${themeCfg.textDark} uppercase tracking-widest flex items-center justify-center gap-1.5`}>
-                <Sparkles size={14} className={themeCfg.textSub} /> कर्ज विभाग मुख्य हब (LOAN DEPARTMENT CORE MODULES)
-              </span>
-            </div>
+        {/* Subtle Module Pill */}
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/75 backdrop-blur-md border border-white/90 shadow-2xs text-[10.5px] font-bold tracking-wider uppercase text-[#1D4ED8] mb-2.5">
+          <Sparkles className="w-3 h-3 text-[#F59E0B]" />
+          <span>LOAN DEPARTMENT CORE HUB</span>
+        </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4 justify-items-center pt-2">
-              {loanActionButtons.map((btn) => {
-                const IconComponent = btn.icon;
-                return (
+        {/* Prestigious Title */}
+        <h1 className="text-2xl sm:text-3xl md:text-[34px] font-black text-[#0F2454] tracking-tight leading-snug max-w-3xl drop-shadow-[0_1px_12px_rgba(255,255,255,0.9)]">
+          कर्ज विभाग मुख्य हब
+        </h1>
+
+        {/* Clean Aurora Accent Underline */}
+        <div
+          className="w-28 h-1 rounded-full my-3 opacity-90"
+          style={{
+            background: 'linear-gradient(90deg, #F59E0B 0%, #06B6D4 50%, #2563EB 100%)',
+          }}
+        />
+
+        {/* Subtitle Pill */}
+        <p className="text-xs sm:text-[13px] font-semibold text-[#1E3A8A]/90 bg-white/75 backdrop-blur-md border border-white/90 px-4 py-1.5 rounded-full shadow-2xs">
+          कर्ज मागणी व वितरण &bull; हप्ता वसुली &bull; सोने तारण &bull; व्याज आकारणी &bull; बाह्य कर्जे व अहवाल
+        </p>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* BOTTOM FLOATING 8-ICON ANIMATED DOCK (Matches Main Dashboard Exactly)     */}
+      {/* ========================================================================= */}
+      <div className="relative z-10 w-full px-3 sm:px-6 pb-5 sm:pb-6">
+        <div className="max-w-[1320px] mx-auto bg-white/92 backdrop-blur-xl rounded-[22px] border border-white shadow-[0_16px_45px_rgba(30,64,175,0.18)] px-2 py-3 sm:py-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-y-2 lg:gap-y-0 lg:divide-x divide-slate-200/75">
+            {loanActionButtons.map((btn) => {
+              const IconComp = btn.icon;
+              return (
+                <button
+                  key={btn.id}
+                  type="button"
+                  onClick={() => handleNav(btn.tab, btn.params)}
+                  title={`${btn.titleMr} (${btn.titleEn}) — ${btn.subtitleMr}`}
+                  className="group flex flex-col items-center justify-center text-center px-2 py-2 rounded-xl transition-all duration-200 cursor-pointer hover:-translate-y-1.5 hover:bg-slate-50/90 focus:outline-none"
+                >
+                  {/* Glossy Gradient Squircle with Animated Icon */}
                   <div
-                    key={btn.id}
-                    onClick={() => handleNav(btn.tab, btn.params)}
-                    className="flex flex-col items-center cursor-pointer group select-none w-full max-w-[130px]"
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-white transition-transform duration-200 group-hover:scale-110 overflow-hidden"
+                    style={{
+                      background: btn.gradient,
+                      boxShadow: `0 8px 18px -4px ${btn.shadowColor}`,
+                    }}
                   >
-                    {/* Circular Glossy 3D Button Frame */}
-                    <div className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br ${btn.gradient} border-[3.5px] ${themeCfg.btnBorder} flex items-center justify-center relative overflow-hidden group-hover:scale-110 group-hover:shadow-2xl group-hover:border-white transition-all duration-300 p-2`}>
-                      {/* Top Gloss Reflection */}
-                      <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/50 via-white/10 to-transparent rounded-t-full pointer-events-none"></div>
-                      
-                      {/* Inner Badge Frame */}
-                      <div className="w-full h-full rounded-full bg-white/15 backdrop-blur-2xs border border-white/40 flex items-center justify-center p-1.5 shadow-inner">
-                        <div className="text-white drop-shadow-md flex items-center justify-center">
-                          <IconComponent size={34} className="stroke-[2.2]" />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Label Text Below */}
-                    <div className="mt-2.5 text-center">
-                      <span className={`block text-xs sm:text-sm font-extrabold ${themeCfg.textDark} group-hover:opacity-80 tracking-tight leading-tight transition-colors`}>
-                        {btn.titleMr}
-                      </span>
-                      <span className="block text-[9px] font-bold text-slate-400 font-mono uppercase tracking-wider mt-0.5">
-                        {btn.titleEn}
-                      </span>
-                    </div>
+                    <IconComp className="w-9 h-9" />
                   </div>
-                );
-              })}
-            </div>
+
+                  {/* Marathi Label */}
+                  <span className="mt-2.5 text-[11.5px] font-extrabold text-slate-800 group-hover:text-slate-950 leading-tight truncate max-w-full">
+                    {btn.titleMr}
+                  </span>
+
+                  {/* Accent English Tag */}
+                  <span
+                    className="mt-0.5 text-[9.5px] font-extrabold tracking-wider uppercase leading-tight"
+                    style={{ color: btn.accentHex }}
+                  >
+                    {btn.titleEn}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
-
       </div>
     </div>
   );

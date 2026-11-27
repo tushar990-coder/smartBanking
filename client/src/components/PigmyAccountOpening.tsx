@@ -603,14 +603,32 @@ export default function PigmyAccountOpening() {
   });
 
   return (
-    <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
-      {/* Standard ERP Header Banner */}
-      <div className="bg-primary px-3 py-2 text-white flex items-center justify-between shadow-xs rounded-sm">
-        <div className="flex items-center gap-2">
-          <CreditCard className="w-5 h-5 text-blue-200" />
+    <div
+      className="p-3 sm:p-4 w-full min-h-full font-sans text-xs"
+      style={{
+        background:
+          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+      }}
+    >
+      <div className="max-w-[1640px] mx-auto space-y-3">
+      {/* Aurora Sapphire Header Banner */}
+      <div
+        className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2 rounded-2xl shadow-[0_8px_24px_rgba(30,58,138,0.18)]"
+        style={{
+          background:
+            'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shadow-xs shrink-0">
+            <CreditCard className="w-5 h-5 text-sky-200" />
+          </div>
           <div>
-            <h1 className="text-sm font-bold tracking-wide">नवीन पिग्मी खाते उघडा (New Pigmy Account Opening)</h1>
-            <p className="text-[10px] text-blue-100 font-normal">ऑटो-इन्क्रिमेंट खाते क्रमांक, एजंट लिंकिंग आणि पिग्मी खात्यांची व्यवस्थापन यादी</p>
+            <h1 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2">
+              <span>नवीन पिग्मी खाते उघडा</span>
+              <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(New Pigmy Account Opening)</span>
+            </h1>
+            <p className="text-[11px] text-blue-100/90 font-medium">ऑटो-इन्क्रिमेंट खाते क्रमांक, एजंट लिंकिंग आणि पिग्मी खात्यांची व्यवस्थापन यादी</p>
           </div>
         </div>
 
@@ -621,7 +639,7 @@ export default function PigmyAccountOpening() {
               fetchSavedAccounts();
               setShowFullAccountsListModal(true);
             }}
-            className="px-2.5 py-0.5 bg-blue-800/60 hover:bg-blue-800 text-white font-semibold rounded-sm border border-blue-400/40 flex items-center gap-1 text-xs cursor-pointer"
+            className="px-3.5 py-1.5 bg-white/15 hover:bg-white/25 text-white font-bold rounded-full border border-white/30 flex items-center gap-1.5 text-xs cursor-pointer transition"
           >
             <ListOrdered className="w-3.5 h-3.5" />
             <span>खाती यादी ({savedAccounts.length})</span>
@@ -639,7 +657,7 @@ export default function PigmyAccountOpening() {
       )}
 
       {/* Main Form */}
-      <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-5">
+      <form onSubmit={handleSubmit} className="bg-white/95 backdrop-blur-md rounded-2xl p-4 sm:p-5 shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 space-y-5">
         
         {/* Section 1: Customer & Account Info */}
         <div>
@@ -1495,6 +1513,7 @@ export default function PigmyAccountOpening() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

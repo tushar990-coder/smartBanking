@@ -494,47 +494,63 @@ export default function PigmyAgentMaster() {
   });
 
   return (
-    <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
+    <div
+      className="p-3 sm:p-4 w-full min-h-full font-sans text-xs"
+      style={{
+        background:
+          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+      }}
+    >
+      <div className="max-w-[1640px] mx-auto space-y-3">
       {/* Custom Toast Notification - Highly Visible */}
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-[9999999] bg-slate-900 border border-slate-700 text-white px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 transition-all">
+        <div className="fixed top-4 right-4 z-[9999999] bg-slate-900 border border-slate-700 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all">
           <AlertCircle className="w-6 h-6 text-amber-400" />
           <span className="font-bold text-sm tracking-wide leading-relaxed">{toastMessage}</span>
         </div>
       )}
       
-      {/* Outer Container matching Standard ERP Theme */}
-      <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col">
+      {/* Outer Aurora Container */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 overflow-hidden flex flex-col">
         
-        {/* Standard ERP Header Banner */}
-        <div className="bg-primary px-3 py-2 text-white flex items-center justify-between shadow-xs">
-          <div className="flex items-center gap-2">
-            <UserCheck className="w-5 h-5 text-white/80" />
+        {/* Aurora Sapphire Header Banner */}
+        <div
+          className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2"
+          style={{
+            background:
+              'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shadow-xs shrink-0">
+              <UserCheck className="w-5 h-5 text-sky-200" />
+            </div>
             <div>
-              <h2 className="text-sm font-bold tracking-wide flex items-center gap-1.5">
-                <span>पिग्मी एजंट मास्टर (Pigmy Agent Master)</span>
+              <h2 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2">
+                <span>पिग्मी एजंट मास्टर</span>
+                <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(Pigmy Agent Master)</span>
               </h2>
-              <p className="text-[10px] text-white/90 font-normal">नवीन पिग्मी एजंट नोंदणी, रुजू दिनांक, माहिती संपादन (Edit) आणि एजंट व्यवस्थापन</p>
+              <p className="text-[11px] text-blue-100/90 font-medium">नवीन पिग्मी एजंट नोंदणी, रुजू दिनांक, माहिती संपादन (Edit) आणि एजंट व्यवस्थापन</p>
             </div>
           </div>
 
           <button 
             onClick={fetchAgents}
             disabled={loading}
-            className="px-2.5 py-0.5 bg-white/15 hover:bg-white/25 text-white font-semibold rounded-sm border border-white/30 flex items-center gap-1 text-xs cursor-pointer transition"
+            className="px-3 py-1 bg-white/15 hover:bg-white/25 text-white font-bold rounded-full border border-white/30 flex items-center gap-1.5 text-xs cursor-pointer transition"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>रिफ्रेश करा</span>
           </button>
         </div>
 
-        <div className="p-3">
+        <div className="p-3.5">
 
           {/* Add / Edit Form Card */}
           <div 
             ref={formContainerRef}
-            className={`p-2.5 rounded-sm border mb-3 transition-all duration-300 ${
-              editingAgentId !== null ? 'border-primary ring-2 ring-primary/20 shadow-md bg-blue-50/10' : 'bg-gray-50/80 border-gray-200'
+            className={`p-3.5 rounded-xl border mb-3.5 transition-all duration-300 ${
+              editingAgentId !== null ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 shadow-md bg-blue-50/30' : 'bg-[#f8fbff] border-blue-200/75 shadow-2xs'
             }`}
           >
             <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200 flex items-center justify-between">
@@ -765,11 +781,11 @@ export default function PigmyAgentMaster() {
           </div>
 
           {/* Registered Agents List */}
-          <div className="bg-white rounded-sm border border-gray-200 overflow-hidden space-y-2">
+          <div className="bg-white rounded-xl border border-blue-200/80 overflow-hidden shadow-2xs">
             
             {/* List Header & Filters */}
-            <div className="p-2 bg-gray-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2">
-              <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+            <div className="px-3 py-2 bg-gradient-to-r from-[#eef2ff] to-[#e0f2fe] border-b border-blue-200/75 flex flex-wrap justify-between items-center gap-2">
+              <div className="text-[11px] font-extrabold text-[#0F2454] uppercase tracking-wider flex items-center gap-1.5">
                 <span>नोंदणीकृत एजंट लिस्ट (REGISTERED AGENTS: {filteredAgents.length})</span>
               </div>
 
@@ -777,7 +793,7 @@ export default function PigmyAgentMaster() {
                 <select 
                   value={selectedBranchFilter}
                   onChange={(e) => setSelectedBranchFilter(e.target.value)}
-                  className="border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:border-primary"
+                  className="border border-blue-200 rounded-lg px-2.5 py-1 text-xs bg-white font-bold focus:outline-none focus:border-[#2563EB]"
                 >
                   <option value="ALL">सर्व शाखा (All Branches)</option>
                   {branches.map(b => (
@@ -788,48 +804,48 @@ export default function PigmyAgentMaster() {
                 </select>
 
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2 top-1.5" />
+                  <Search className="w-3.5 h-3.5 text-[#2563EB]/70 absolute left-2.5 top-1.5" />
                   <input 
                     type="text"
                     placeholder="नाव किंवा मोबाईलने शोधा..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-7 pr-2 py-1 border border-gray-300 rounded-sm text-xs bg-white focus:outline-none focus:border-primary w-48 font-medium"
+                    className="pl-7 pr-2.5 py-1 border border-blue-200 rounded-lg text-xs bg-white focus:outline-none focus:border-[#2563EB] w-52 font-medium"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Table */}
+            {/* Compact Single-Line Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
+              <table className="w-full text-[11px] text-left border-collapse">
                 <thead>
-                  <tr className="bg-primary text-white font-bold uppercase tracking-wider text-[11px]">
-                    <th className="py-2 px-3 border-r border-white/20">Agent ID</th>
-                    <th className="py-2 px-3 border-r border-white/20">एजंटचे नाव (Agent Name)</th>
-                    <th className="py-2 px-3 border-r border-white/20">युझरनेम (Username)</th>
-                    <th className="py-2 px-3 border-r border-white/20">शाखा (Branch)</th>
-                    <th className="py-2 px-3 border-r border-white/20">रुजू दिनांक (Joining Date)</th>
-                    <th className="py-2 px-3 border-r border-white/20">लिमिट (Limit)</th>
-                    <th className="py-2 px-3 border-r border-white/20">स्थिती (Status)</th>
-                    <th className="py-2 px-3 text-center">कारवाई (Actions)</th>
+                  <tr className="bg-[#0F2454] text-white font-bold whitespace-nowrap">
+                    <th className="py-1.5 px-2.5 border-r border-white/15">Agent ID</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15">एजंटचे नाव</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15">युझरनेम</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15">शाखा</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center">रुजू दिनांक</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right">कॅश लिमिट / लॉक</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center">स्थिती</th>
+                    <th className="py-1.5 px-2.5 text-center">कारवाई (Actions)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-blue-100/70">
                   {loading && agents.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-6 text-center text-gray-500 font-bold">
+                      <td colSpan={8} className="py-6 text-center text-slate-500 font-bold">
                         लोड होत आहे...
                       </td>
                     </tr>
                   ) : filteredAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-6 text-center text-gray-500 font-bold">
+                      <td colSpan={8} className="py-6 text-center text-slate-500 font-bold">
                         कोणतेही एजंट नोंद सापडली नाही.
                       </td>
                     </tr>
                   ) : (
-                    filteredAgents.map((ag) => {
+                    filteredAgents.map((ag, idx) => {
                       const id = getAgentId(ag);
                       const joiningDateStr = ag.joiningDate 
                         ? new Date(ag.joiningDate).toLocaleDateString('en-GB')
@@ -837,28 +853,30 @@ export default function PigmyAgentMaster() {
                       const branchName = ag.branchName || ag.branch?.branchName || '-';
 
                       return (
-                        <tr key={id} className="hover:bg-blue-50/40 transition">
-                          <td className="py-1.5 px-3 font-mono font-bold text-primary border-r border-gray-200">
+                        <tr key={id} className={`hover:bg-blue-50/50 transition ${idx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'}`}>
+                          <td className="py-1.5 px-2.5 font-mono font-bold text-[#1D4ED8] border-r border-blue-100/70 whitespace-nowrap">
                             {formatAgentCode(id)}
                           </td>
-                          <td className="py-1.5 px-3 font-bold text-gray-900 border-r border-gray-200">
+                          <td className="py-1.5 px-2.5 font-bold text-slate-900 border-r border-blue-100/70 whitespace-nowrap">
                             {ag.agentName}
                           </td>
-                          <td className="py-1.5 px-3 text-gray-600 border-r border-gray-200 font-mono text-[11px]">
+                          <td className="py-1.5 px-2.5 text-slate-600 border-r border-blue-100/70 font-mono whitespace-nowrap">
                             {ag.username || '-'}
                           </td>
-                          <td className="py-1.5 px-3 text-gray-700 border-r border-gray-200">
+                          <td className="py-1.5 px-2.5 text-slate-700 border-r border-blue-100/70 whitespace-nowrap">
                             {branchName}
                           </td>
-                          <td className="py-1.5 px-3 text-gray-700 border-r border-gray-200">
+                          <td className="py-1.5 px-2.5 text-slate-700 border-r border-blue-100/70 text-center font-mono whitespace-nowrap">
                             {joiningDateStr}
                           </td>
-                          <td className="py-1.5 px-3 text-gray-700 border-r border-gray-200 font-bold">
-                            ₹{ag.maxCashLimit?.toLocaleString('en-IN') || '20,000'} <br/>
-                            <span className="text-[10px] text-gray-500 font-normal">({ag.maxLockDays || 2} दिवस)</span>
+                          <td className="py-1.5 px-2.5 text-slate-800 border-r border-blue-100/70 text-right font-mono font-bold whitespace-nowrap">
+                            <span>₹{ag.maxCashLimit?.toLocaleString('en-IN') || '20,000'}</span>
+                            <span className="ml-1.5 px-1.5 py-0.2 rounded bg-blue-50 text-blue-800 border border-blue-200 text-[9.5px] font-sans font-bold">
+                              {ag.maxLockDays || 2} दि.
+                            </span>
                           </td>
-                          <td className="py-1.5 px-3 border-r border-gray-200">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold ${
+                          <td className="py-1.5 px-2.5 border-r border-blue-100/70 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               ag.status === 'Active' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
                               ag.status === 'Inactive' ? 'bg-gray-100 text-gray-800 border border-gray-300' :
                               'bg-rose-50 text-rose-800 border border-rose-200'
@@ -876,15 +894,15 @@ export default function PigmyAgentMaster() {
                                 className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 text-[9.5px] font-bold cursor-pointer"
                                 title="लॉक झालेले एजंट खाते अनलॉक करा"
                               >
-                                🔒 अनलॉक करा
+                                🔒 अनलॉक
                               </button>
                             )}
                           </td>
-                          <td className="py-1.5 px-3 text-center">
-                            <div className="flex justify-center gap-1.5">
+                          <td className="py-1.5 px-2.5 text-center whitespace-nowrap">
+                            <div className="inline-flex justify-center gap-1">
                               <button 
                                 onClick={() => handleEdit(ag)}
-                                className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-sm font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-md font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
                                 title="संपादित करा"
                               >
                                 <Edit3 className="w-3 h-3" />
@@ -893,16 +911,16 @@ export default function PigmyAgentMaster() {
 
                               <button 
                                 onClick={() => openTransferModal(ag)}
-                                className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 rounded-sm font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 rounded-md font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
                                 title="खाती वर्ग / कार्यमुक्ती (Transfer & Deactivate)"
                               >
                                 <ArrowRightLeft className="w-3 h-3" />
-                                <span>खाते वर्ग</span>
+                                <span>वर्ग</span>
                               </button>
 
                               <button 
                                 onClick={() => openHistoryModal(ag)}
-                                className="px-2 py-0.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-sm font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                className="px-2 py-0.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-md font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
                                 title="हस्तांतरण इतिहास (Transfer History)"
                               >
                                 <History className="w-3 h-3" />
@@ -911,7 +929,7 @@ export default function PigmyAgentMaster() {
                               
                               <button 
                                 onClick={() => handleDelete(ag)}
-                                className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-sm font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-md font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
                                 title="डिलीट करा"
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -1406,6 +1424,7 @@ export default function PigmyAgentMaster() {
       )}
 
         </div>
+      </div>
       </div>
     </div>
   );

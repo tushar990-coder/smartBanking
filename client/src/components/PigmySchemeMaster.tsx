@@ -749,37 +749,49 @@ export default function PigmySchemeMaster() {
   const inputClass = "w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]";
 
   return (
-    <div className="p-2 sD:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
-      
-      {/* Top Sleek CBS Header Banner */}
-      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
-            <Coins size={18} className="stroke-[2.5]" />
+    <div
+      className="p-3 sm:p-4 w-full min-h-screen flex flex-col text-[11px] font-sans"
+      style={{
+        background:
+          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+      }}
+    >
+      <div className="max-w-[1640px] mx-auto w-full space-y-3">
+      {/* Aurora Sapphire Header Banner */}
+      <div
+        className="px-4 py-3 rounded-2xl shadow-[0_8px_24px_rgba(30,58,138,0.18)] text-white flex flex-wrap justify-between items-center gap-2.5"
+        style={{
+          background:
+            'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-sky-200 shadow-xs shrink-0">
+            <Coins size={18} className="stroke-[2.4]" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
+            <h1 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2 flex-wrap">
               <span>पिग्मी योजना मास्टर</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sD:inline">(Pigmy Scheme Master)</span>
+              <span className="text-[11px] font-semibold text-sky-200 font-mono hidden sm:inline">(Pigmy Scheme Master)</span>
               {isEditMode && (
-                <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
+                <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs animate-pulse">
                   ✏️ संपादन चालू (#{formData.schemeCode})
                 </span>
               )}
             </h1>
-            <p className="text-[11px] text-gray-500 font-medium">
+            <p className="text-[11px] text-blue-100/90 font-medium">
               नवीन पिग्मी योजना तयार करा, व्याजदर, मुदत, एजंट कमिशन व जनरल लेजर खाते मॅपिंग व्यवस्थापन
             </p>
           </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {isEditMode && (
             <button
               type="button"
               onClick={() => resetForm()}
-              className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+              className="px-3 py-1 bg-white/15 hover:bg-white/25 text-white border border-white/30 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
               title="संपादन रद्द करा"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -790,7 +802,7 @@ export default function PigmySchemeMaster() {
           <button
             type="button"
             onClick={() => resetForm()}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            className="px-3 py-1 bg-white/15 hover:bg-white/25 text-white border border-white/30 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
             title="नवीन फॉर्म रिकामा करा"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -804,53 +816,53 @@ export default function PigmySchemeMaster() {
               fetchSchemesAndLedgers();
               setShowListModal(true);
             }}
-            className="px-3.5 py-1.5 bg-primary hover:opacity-90 text-white rounded-sm text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+            className="px-3.5 py-1.5 bg-white text-[#0F2454] hover:bg-blue-50 rounded-full text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
             title="सर्व पिग्मी योजना यादी पॉप-अप मध्ये पहा"
           >
-            <Layers className="w-4 h-4" />
-            <span>📋 नोंदवलेली योजना यादी पहा ({schemes.length})</span>
+            <Layers className="w-3.5 h-3.5 text-[#2563EB]" />
+            <span>नोंदवलेली योजना यादी ({schemes.length})</span>
           </button>
         </div>
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-blue-200/75 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 100%)' }}>
             <Coins className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण पिग्मी योजना</div>
-            <div className="text-sm font-black text-gray-900">{schemes.length}</div>
+            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">एकूण पिग्मी योजना</div>
+            <div className="text-sm font-black text-[#0F2454]">{schemes.length}</div>
           </div>
         </div>
 
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-blue-200/75 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #4ADE80 0%, #16A34A 100%)' }}>
             <CheckCircle className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सक्रिय योजना (Active)</div>
+            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">सक्रिय योजना (Active)</div>
             <div className="text-sm font-black text-emerald-800">{activeCount}</div>
           </div>
         </div>
 
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-blue-200/75 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #A78BFA 0%, #7C3AED 100%)' }}>
             <Percent className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सरासरी व्याजदर (% Avg)</div>
+            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">सरासरी व्याजदर (% Avg)</div>
             <div className="text-sm font-black text-indigo-950">{avgInterestRate}% p.a.</div>
           </div>
         </div>
 
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-amber-50 text-amber-700 border border-amber-200 rounded">
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-blue-200/75 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #FBBF24 0%, #D97706 100%)' }}>
             <BookOpen className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">मॅप्ड खातावणी खाती</div>
+            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">मॅप्ड खातावणी खाती</div>
             <div className="text-sm font-black text-amber-800">{mappedLedgersCount}</div>
           </div>
         </div>
@@ -858,7 +870,7 @@ export default function PigmySchemeMaster() {
 
       {/* Alert Messages */}
       {error && (
-        <div className="mb-3 p-2 bg-rose-50 border border-rose-300 text-rose-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs">
+        <div className="p-2.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl flex items-center gap-2 text-xs font-bold shadow-2xs">
           <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
           <span className="flex-1">{error}</span>
           <button onClick={() => setError('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
@@ -866,7 +878,7 @@ export default function PigmySchemeMaster() {
       )}
 
       {success && (
-        <div className="mb-3 p-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs">
+        <div className="p-2.5 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl flex items-center gap-2 text-xs font-bold shadow-2xs">
           <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
           <span className="flex-1">{success}</span>
           <button onClick={() => setSuccess('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
@@ -876,8 +888,8 @@ export default function PigmySchemeMaster() {
       {/* MAIN SINGLE UNIFIED FORM */}
       <div 
         ref={formContainerRef}
-        className={`bg-white p-3.5 sD:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+        className={`bg-white/95 backdrop-blur-md p-4 rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border space-y-3.5 transition-all duration-300 ${
+          isEditMode ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 bg-blue-50/20' : 'border-blue-200/75'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -889,7 +901,7 @@ export default function PigmySchemeMaster() {
               <h2 className="text-xs font-bold text-primary">१. मूलभूत योजना माहिती (Basic Details)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sD:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
               <div className="lg:col-span-1">
                 <div className="flex items-center justify-between mb-0.5">
                   <label className={labelClass}>
@@ -917,7 +929,7 @@ export default function PigmySchemeMaster() {
                 />
               </div>
 
-              <div className="sD:col-span-2 md:col-span-2 lg:col-span-2">
+              <div className="sm:col-span-2 md:col-span-2 lg:col-span-2">
                 <label className={labelClass}>
                   योजनेचे नाव (Scheme Name) <span className="text-red-500">*</span>
                 </label>
@@ -1290,7 +1302,7 @@ export default function PigmySchemeMaster() {
       {/* POP-UP MODAL: SAVED PIGMY SCHEMES LIST                                   */}
       {/* ========================================================================= */}
       {showListModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sD:p-4 overflow-y-auto animate-in fade-in duration-150">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
           <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
@@ -1493,6 +1505,7 @@ export default function PigmySchemeMaster() {
         </div>
       )}
 
+      </div>
     </div>
   );
 }

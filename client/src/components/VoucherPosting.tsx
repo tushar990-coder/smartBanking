@@ -1066,7 +1066,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const selectedTotalAmount = selectedVouchersList.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
 
   return (
-    <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-full flex flex-col bg-slate-50 text-[11px] font-sans pb-10">
+    <div className="p-2 sm:p-2.5 w-full max-w-[1720px] mx-auto min-h-full flex flex-col bg-slate-50 text-[11px] font-sans pb-10">
       {/* 1. STANDARD CBS THEME HEADER BANNER (Matches ERP Dynamic Theme) */}
       <div className="bg-white px-3.5 py-2 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-2.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
@@ -1380,12 +1380,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
           </div>
         )}
 
-        {/* CLEAN 7-COLUMN VOUCHER TABLE */}
+        {/* COMPACT SINGLE-LINE 10-COLUMN VOUCHER TABLE */}
         <div className="overflow-x-auto min-h-[380px]">
-          <table className="min-w-full divide-y divide-gray-200 text-xs border-collapse">
-            <thead className="bg-slate-100 text-slate-800 sticky top-0 z-10 border-b border-slate-300 font-bold">
+          <table className="min-w-full divide-y divide-gray-200 text-[11px] border-collapse">
+            <thead className="bg-slate-100 text-slate-800 sticky top-0 z-10 border-b border-slate-300 font-bold whitespace-nowrap">
               <tr>
-                <th className="px-2 py-2 border-r border-gray-200 w-9 text-center">
+                <th className="px-1.5 py-1.5 border-r border-gray-200 w-8 text-center">
                   <input
                     type="checkbox"
                     className="w-3.5 h-3.5 accent-primary rounded-sm cursor-pointer align-middle"
@@ -1394,19 +1394,22 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                     title={`सर्व ${filteredVouchers.length} व्हाउचर्स निवडा (Select All)`}
                   />
                 </th>
-                <th className="px-2.5 py-2 border-r border-gray-200 w-24 text-left">तारीख</th>
-                <th className="px-2.5 py-2 border-r border-gray-200 w-36 text-left">व्हाउचर क्र.</th>
-                <th className="px-2 py-2 border-r border-gray-200 w-20 text-left">प्रकार</th>
-                <th className="px-2.5 py-2 border-r border-gray-200 text-left">खाते / खातेदार व तपशील</th>
-                <th className="px-2.5 py-2 border-r border-gray-200 w-28 text-right">रक्कम (₹)</th>
-                <th className="px-2 py-2 w-40 text-center">कृती (Action)</th>
+                <th className="px-2 py-1.5 border-r border-gray-200 w-[92px] text-left">तारीख</th>
+                <th className="px-2 py-1.5 border-r border-gray-200 text-left">व्हाउचर क्र.</th>
+                <th className="px-1.5 py-1.5 border-r border-gray-200 w-[72px] text-left">प्रकार</th>
+                <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदार / सभासद</th>
+                <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र. / CIF</th>
+                <th className="px-2 py-1.5 border-r border-gray-200 text-left">लेजर खाते</th>
+                <th className="px-2 py-1.5 border-r border-gray-200 text-left">तपशील (Narration)</th>
+                <th className="px-2 py-1.5 border-r border-gray-200 w-28 text-right">रक्कम (₹)</th>
+                <th className="px-1.5 py-1.5 w-[150px] text-center">कृती (Action)</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-200 bg-white text-gray-800">
               {(activeTab === 'PENDING' ? loading : loadingApproved) && currentDataset.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-14 text-center text-gray-500 font-bold">
+                  <td colSpan={10} className="px-4 py-14 text-center text-gray-500 font-bold">
                     <div className="inline-flex items-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                       <span>
@@ -1419,7 +1422,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 </tr>
               ) : filteredVouchers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-14 text-center text-gray-500">
+                  <td colSpan={10} className="px-4 py-14 text-center text-gray-500">
                     {currentDataset.length === 0 ? (
                       <div className="space-y-1">
                         <CheckCircle2 className="w-8 h-8 text-primary mx-auto opacity-80" />
@@ -1448,7 +1451,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                   </td>
                 </tr>
               ) : (
-                filteredVouchers.map((v) => {
+                filteredVouchers.map((v, rowIdx) => {
                   const isSelected = selectedVouchers.has(v.voucherID);
                   const isExpanded = expandedVoucherId === v.voucherID;
                   const { cif, legacyCustomerNo, fullName, ledgerSummary, linkedAccounts } = getVoucherPartySummary(v);
@@ -1464,16 +1467,38 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                     typeBadgeStyle = 'bg-amber-50 text-amber-800 border-amber-200';
                   }
 
+                  const partyTooltip = [
+                    fullName,
+                    cif ? `CIF: ${cif}` : '',
+                    legacyCustomerNo ? `जुना खाते क्र.: ${legacyCustomerNo}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' | ');
+
+                  const primaryAcc = linkedAccounts[0];
+                  const accountTooltip = [
+                    ...linkedAccounts.map(
+                      (a) =>
+                        `${a.accountTypeLabel}${a.roleLabel ? ` (${a.roleLabel})` : ''}: ${a.accountNo}${
+                          a.oldAccountNo ? ` | जुना: ${a.oldAccountNo}` : ''
+                        }${a.receiptNo ? ` | पावती: ${a.receiptNo}` : ''}`
+                    ),
+                    cif ? `CIF: ${cif}` : '',
+                    legacyCustomerNo ? `जुना खाते क्र.: ${legacyCustomerNo}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' • ');
+
                   return (
                     <React.Fragment key={v.voucherID}>
                       <tr
                         onClick={() => setExpandedVoucherId(isExpanded ? null : v.voucherID)}
-                        className={`hover:bg-slate-50 transition-colors cursor-pointer ${
-                          isSelected ? 'bg-primary/5' : ''
+                        className={`hover:bg-primary/5 transition-colors cursor-pointer ${
+                          isSelected ? 'bg-primary/10' : rowIdx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'
                         }`}
                       >
                         <td
-                          className="px-2 py-2 border-r border-gray-200 text-center"
+                          className="px-1.5 py-1 border-r border-gray-200 text-center align-middle whitespace-nowrap"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <input
@@ -1484,7 +1509,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                           />
                         </td>
 
-                        <td className="px-2.5 py-2 border-r border-gray-200 text-left font-medium whitespace-nowrap text-gray-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-medium whitespace-nowrap align-middle text-gray-800">
                           <span className="inline-flex items-center gap-1">
                             {isExpanded ? (
                               <ChevronDown className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -1501,12 +1526,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                           </span>
                         </td>
 
-                        <td className="px-2.5 py-2 border-r border-gray-200 text-left whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left whitespace-nowrap align-middle">
+                          <div className="inline-flex items-center gap-1">
                             <span className="font-bold text-primary font-mono">{v.voucherNo}</span>
                             {v.scrollNo ? (
                               <span
-                                className="px-1.5 py-0.2 text-[9.5px] font-mono font-bold bg-amber-50 text-amber-900 rounded-sm border border-amber-200"
+                                className="px-1 py-0 text-[9.5px] leading-tight font-mono font-bold bg-amber-50 text-amber-900 rounded-sm border border-amber-200"
                                 title={`स्क्रॉल क्र. #${v.scrollNo}`}
                               >
                                 #{v.scrollNo}
@@ -1515,86 +1540,94 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                           </div>
                         </td>
 
-                        <td className="px-2 py-2 border-r border-gray-200 text-left whitespace-nowrap">
-                          <span className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded-sm border ${typeBadgeStyle}`}>
+                        <td className="px-1.5 py-1 border-r border-gray-200 text-left whitespace-nowrap align-middle">
+                          <span className={`px-1.5 py-0.5 inline-flex text-[9.5px] leading-3 font-bold rounded-sm border ${typeBadgeStyle}`}>
                             {v.voucherType}
                           </span>
                         </td>
 
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left max-w-md">
-                          <div className="flex flex-wrap items-center gap-1.5 leading-snug">
-                            {fullName && (
-                              <span className="font-bold text-gray-900">{fullName}</span>
-                            )}
-                            {cif && (
-                              <span className="px-1.5 py-0.2 rounded-sm bg-primary/10 text-primary border border-primary/20 font-mono font-bold text-[9.5px]">
-                                {cif}
-                              </span>
-                            )}
-                            {legacyCustomerNo && (
-                              <span
-                                className="px-1.5 py-0.2 rounded-sm bg-amber-50 text-amber-800 border border-amber-200 font-mono font-bold text-[9.5px]"
-                                title={`जुना खातेदार / खाते क्र.: ${legacyCustomerNo}`}
-                              >
-                                जुना खाते क्र.: {legacyCustomerNo}
-                              </span>
-                            )}
-                            {ledgerSummary && (
-                              <span className={`${fullName ? 'text-gray-600 font-semibold text-[11px]' : 'font-bold text-gray-900'}`}>
-                                {fullName ? `• ${ledgerSummary}` : ledgerSummary}
-                              </span>
-                            )}
-                          </div>
-                          {linkedAccounts.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-1 mt-1">
-                              {linkedAccounts.slice(0, 2).map((acc, idx) => (
-                                <span
-                                  key={`${acc.accountType}-${acc.accountNo}-${idx}`}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-sm bg-slate-100 text-slate-800 border border-slate-300 font-mono text-[9.5px]"
-                                >
-                                  <span className="font-sans font-bold text-slate-600">
-                                    {acc.accountTypeLabel}
-                                    {acc.roleLabel ? ` (${acc.roleLabel})` : ''}:
-                                  </span>
-                                  {acc.accountNo && <span className="font-bold text-slate-900">{acc.accountNo}</span>}
-                                  {acc.oldAccountNo && (
-                                    <span className="text-amber-800 font-bold">
-                                      | जुना: {acc.oldAccountNo}
-                                    </span>
-                                  )}
-                                  {acc.receiptNo && (
-                                    <span className="text-indigo-700 font-semibold">
-                                      | पावती: {acc.receiptNo}
-                                    </span>
-                                  )}
-                                </span>
-                              ))}
-                              {linkedAccounts.length > 2 && (
-                                <span
-                                  className="px-1.5 py-0.2 rounded-sm bg-slate-200 text-slate-700 font-bold text-[9.5px]"
-                                  title={linkedAccounts
-                                    .slice(2)
-                                    .map((a) => `${a.accountTypeLabel}: ${a.accountNo}${a.oldAccountNo ? ` (जुना: ${a.oldAccountNo})` : ''}`)
-                                    .join(', ')}
-                                >
-                                  +{linkedAccounts.length - 2} खाती
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          {v.narration && (
-                            <div className="text-[10.5px] text-gray-500 truncate mt-0.5" title={v.narration}>
-                              {v.narration}
-                            </div>
+                        <td
+                          className="px-2 py-1 border-r border-gray-200 text-left whitespace-nowrap align-middle max-w-[180px]"
+                          title={partyTooltip || undefined}
+                        >
+                          {fullName ? (
+                            <div className="truncate font-bold text-gray-900">{fullName}</div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
                           )}
                         </td>
 
-                        <td className="px-2.5 py-2 border-r border-gray-200 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
+                        <td
+                          className="px-2 py-1 border-r border-gray-200 text-left whitespace-nowrap align-middle max-w-[205px]"
+                          title={accountTooltip || undefined}
+                        >
+                          {primaryAcc ? (
+                            <div className="inline-flex items-center gap-1 max-w-full overflow-hidden">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded-sm bg-slate-100 text-slate-800 border border-slate-300 font-mono text-[9.5px] leading-4 truncate max-w-full">
+                                <span className="font-sans font-bold text-slate-600 shrink-0">
+                                  {primaryAcc.accountTypeLabel}:
+                                </span>
+                                {primaryAcc.accountNo && (
+                                  <span className="font-bold text-slate-900 truncate">{primaryAcc.accountNo}</span>
+                                )}
+                                {(primaryAcc.oldAccountNo || legacyCustomerNo) && (
+                                  <span className="text-amber-800 font-bold shrink-0">
+                                    | जुना:{primaryAcc.oldAccountNo || legacyCustomerNo}
+                                  </span>
+                                )}
+                              </span>
+                              {linkedAccounts.length > 1 && (
+                                <span className="px-1 py-0 rounded-sm bg-slate-200 text-slate-700 font-bold text-[9.5px] leading-4 shrink-0">
+                                  +{linkedAccounts.length - 1}
+                                </span>
+                              )}
+                            </div>
+                          ) : cif || legacyCustomerNo ? (
+                            <div className="inline-flex items-center gap-1 max-w-full overflow-hidden">
+                              {cif && (
+                                <span className="px-1.5 py-0 rounded-sm bg-primary/10 text-primary border border-primary/20 font-mono font-bold text-[9.5px] leading-4 shrink-0">
+                                  {cif}
+                                </span>
+                              )}
+                              {legacyCustomerNo && (
+                                <span className="px-1.5 py-0 rounded-sm bg-amber-50 text-amber-800 border border-amber-200 font-mono font-bold text-[9.5px] leading-4 truncate">
+                                  जुना:{legacyCustomerNo}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+
+                        <td
+                          className="px-2 py-1 border-r border-gray-200 text-left whitespace-nowrap align-middle max-w-[180px]"
+                          title={ledgerSummary || undefined}
+                        >
+                          {ledgerSummary ? (
+                            <div className="truncate font-semibold text-gray-700">{ledgerSummary}</div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+
+                        <td
+                          className="px-2 py-1 border-r border-gray-200 text-left whitespace-nowrap align-middle max-w-[220px]"
+                          title={v.narration || undefined}
+                        >
+                          {v.narration ? (
+                            <div className="truncate text-[10.5px] text-gray-500">{v.narration}</div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-gray-900 whitespace-nowrap align-middle">
                           ₹{v.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
 
                         <td
-                          className="px-2 py-1.5 text-center whitespace-nowrap"
+                          className="px-1.5 py-1 text-center whitespace-nowrap align-middle"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="inline-flex items-center justify-center gap-1">
@@ -1603,7 +1636,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                 type="button"
                                 onClick={() => handleSinglePass(v)}
                                 disabled={actionLoading}
-                                className="bg-primary hover:opacity-90 text-white px-2.5 py-1 rounded-sm text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                                className="bg-primary hover:opacity-90 text-white px-2 py-0.5 rounded-sm text-[10px] font-bold transition-all cursor-pointer flex items-center gap-0.5 shadow-2xs disabled:opacity-50"
                                 title="व्हाउचर मंजूर व पास करा"
                               >
                                 <CheckCircle2 className="w-3 h-3" />
@@ -1614,7 +1647,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                 type="button"
                                 onClick={() => openSingleUnpassModal(v)}
                                 disabled={actionLoading}
-                                className="bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 rounded-sm text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                                className="bg-amber-600 hover:bg-amber-700 text-white px-2 py-0.5 rounded-sm text-[10px] font-bold transition-all cursor-pointer flex items-center gap-0.5 shadow-2xs disabled:opacity-50"
                                 title="मंजूर व्हाउचर अन-पास करा"
                               >
                                 <RotateCcw className="w-3 h-3" />
@@ -1625,7 +1658,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                             <button
                               type="button"
                               onClick={() => handleOpenFormView(v)}
-                              className="bg-white hover:bg-slate-100 text-slate-700 border border-gray-300 px-1.5 py-1 rounded-sm text-[10.5px] font-semibold transition-colors cursor-pointer flex items-center gap-0.5"
+                              className="bg-white hover:bg-slate-100 text-slate-700 border border-gray-300 px-1.5 py-0.5 rounded-sm text-[10px] font-semibold transition-colors cursor-pointer flex items-center gap-0.5"
                               title="मूळ फॉर्ममध्ये नोंद उघडा (View Form)"
                             >
                               <Eye className="w-3 h-3 text-primary" />
@@ -1635,10 +1668,10 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                             <button
                               type="button"
                               onClick={() => setPrintingVoucherId(v.voucherID)}
-                              className="bg-white hover:bg-slate-100 text-slate-700 border border-gray-300 p-1 rounded-sm transition-colors cursor-pointer flex items-center justify-center"
+                              className="bg-white hover:bg-slate-100 text-slate-700 border border-gray-300 p-0.5 rounded-sm transition-colors cursor-pointer flex items-center justify-center"
                               title="व्हाउचर पावती प्रिंट करा (Print Slip)"
                             >
-                              <Printer className="w-3.5 h-3.5 text-slate-600" />
+                              <Printer className="w-3 h-3 text-slate-600" />
                             </button>
 
                             {activeTab === 'PENDING' && (
@@ -1646,10 +1679,10 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                 type="button"
                                 onClick={() => handleActionDelete(v)}
                                 disabled={actionLoading}
-                                className="bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-gray-300 hover:border-rose-300 p-1 rounded-sm transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+                                className="bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-gray-300 hover:border-rose-300 p-0.5 rounded-sm transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
                                 title="व्हाउचर रद्द व डिलीट करा (Delete & Rollback)"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             )}
                           </div>
@@ -1659,7 +1692,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                       {/* Clean Expanded Dr/Cr Ledger Breakdown (Matches VoucherMaster, zero duplicate buttons) */}
                       {isExpanded && (
                         <tr className="bg-slate-50/90">
-                          <td colSpan={7} className="p-2.5 border-l-4 border-primary text-left">
+                          <td colSpan={10} className="p-2.5 border-l-4 border-primary text-left">
                             <div className="flex items-center justify-between mb-1.5">
                               <div className="text-[11px] font-bold text-primary flex flex-wrap items-center gap-1.5">
                                 <Layers className="w-3.5 h-3.5" />
@@ -1692,6 +1725,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                 <span>बंद</span>
                               </button>
                             </div>
+                            {v.narration && (
+                              <div className="mb-1.5 px-2 py-1 bg-white border border-gray-200 rounded-sm text-[10.5px] text-gray-700">
+                                <span className="font-bold text-gray-800">तपशील: </span>
+                                <span>{v.narration}</span>
+                              </div>
+                            )}
 
                             <div className="overflow-x-auto bg-white border border-gray-200 rounded-sm shadow-2xs">
                               <table className="min-w-full divide-y divide-gray-200 text-[11px]">

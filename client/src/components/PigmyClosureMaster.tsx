@@ -1382,10 +1382,17 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
   );
 
   return (
-    <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
+    <div
+      className="p-2.5 sm:p-3.5 w-full min-h-full font-sans text-xs"
+      style={{
+        background:
+          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+      }}
+    >
+      <div className="max-w-[1640px] mx-auto space-y-3">
       {/* Passing Mode Banner */}
       {isPassingMode && (
-        <div className="bg-amber-500 text-white p-3 rounded-sm shadow flex items-center justify-between print:hidden">
+        <div className="bg-amber-500 text-white p-3 rounded-xl shadow flex items-center justify-between print:hidden">
           <div className="flex items-center space-x-2">
             <span className="text-xl">⚠️</span>
             <div>
@@ -1400,32 +1407,44 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
           <button
             type="button"
             onClick={() => (onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting'))}
-            className="px-3 py-1 bg-white text-amber-800 text-xs font-bold rounded shadow hover:bg-amber-50 cursor-pointer"
+            className="px-3 py-1 bg-white text-amber-800 text-xs font-bold rounded-lg shadow hover:bg-amber-50 cursor-pointer"
           >
             ↩️ पासिंग यादीवर परत जा
           </button>
         </div>
       )}
 
-      {/* Main Card */}
-      <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col print:hidden">
-        {/* Header */}
-        <div className="bg-primary px-3 py-2 text-white flex flex-wrap items-center justify-between shadow-xs gap-2">
-          <div>
-            <h2 className="text-sm font-bold tracking-wide flex items-center gap-1.5">
-              <span>पिग्मी विड्रॉल व खाते बंद व्यवस्थापन (Pigmy Withdrawal & Closure)</span>
-              {isPassingMode && (
-                <span className="ml-2 text-xs font-normal text-amber-200 bg-amber-700/50 px-2 py-0.5 rounded border border-amber-400/40">
-                  (चेकर तपासणी मोड)
-                </span>
-              )}
-            </h2>
-            <p className="text-[10px] text-blue-100 font-normal">
-              डायनॅमिक कमिशन/दंड जी.एल. लेजर, कर्ज खाते समायोजन (Waterfall), बचत वर्ग व सायकल ट्रॅकिंग
-            </p>
+      {/* Main Aurora Card */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 overflow-hidden flex flex-col print:hidden">
+        {/* Aurora Sapphire Header */}
+        <div
+          className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2.5"
+          style={{
+            background:
+              'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shadow-xs shrink-0">
+              <BanknotesIcon className="w-5 h-5 text-sky-200" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2 flex-wrap">
+                <span>पिग्मी विड्रॉल व खाते बंद व्यवस्थापन</span>
+                <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(Pigmy Withdrawal &amp; Closure)</span>
+                {isPassingMode && (
+                  <span className="ml-1 text-[10.5px] font-bold text-amber-100 bg-amber-600/60 px-2 py-0.5 rounded-full border border-amber-300/50">
+                    चेकर तपासणी मोड
+                  </span>
+                )}
+              </h2>
+              <p className="text-[11px] text-blue-100/90 font-medium">
+                डायनॅमिक कमिशन/दंड जी.एल. लेजर, कर्ज खाते समायोजन (Waterfall), बचत वर्ग व सायकल ट्रॅकिंग
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1 bg-white/10 p-0.5 rounded border border-white/20">
+          <div className="flex items-center gap-1 bg-white/12 p-1 rounded-xl border border-white/25 backdrop-blur-xs">
             <button
               type="button"
               disabled={isPassingMode}
@@ -1433,8 +1452,8 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                 setActiveTab('withdrawal');
                 setWithdrawalPreview(null);
               }}
-              className={`px-3 py-1 rounded text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                activeTab === 'withdrawal' ? 'bg-white text-primary shadow-xs' : 'text-white/80 hover:text-white'
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'withdrawal' ? 'bg-white text-[#0F2454] shadow-xs' : 'text-white/85 hover:text-white hover:bg-white/10'
               }`}
             >
               <BanknotesIcon className="w-4 h-4" />
@@ -1448,8 +1467,8 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                 setWithdrawalPreview(null);
                 if (closurePreview) applySchemeDefaultsFromPreview(closurePreview, true);
               }}
-              className={`px-3 py-1 rounded text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                activeTab === 'closure' ? 'bg-white text-rose-700 shadow-xs' : 'text-white/80 hover:text-white'
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'closure' ? 'bg-white text-rose-700 shadow-xs' : 'text-white/85 hover:text-white hover:bg-white/10'
               }`}
             >
               <XCircleIcon className="w-4 h-4" />
@@ -1564,8 +1583,8 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
             )}
 
             {/* Search Account Card */}
-            <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200">
-              <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200 flex items-center justify-between">
+            <div className="bg-[#f8fbff] p-3.5 rounded-xl border border-blue-200/75 shadow-2xs">
+              <div className="text-[11px] font-extrabold text-[#0F2454] uppercase tracking-wider mb-2 pb-1.5 border-b border-blue-100 flex items-center justify-between">
                 <span>१. खाते शोध (Search Pigmy Account)</span>
                 <span className="text-[10px] text-primary font-bold">
                   {activeTab === 'withdrawal' ? 'मोड: अंशतः विड्रॉल (Partial Withdrawal)' : 'मोड: पूर्ण खाते बंद (Full Closure)'}
@@ -2091,6 +2110,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

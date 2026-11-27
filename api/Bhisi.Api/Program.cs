@@ -2724,50 +2724,69 @@ try
                 VALUES (1, 10.00, 9.00, 9.00, 9.00, GETDATE());
             END
 
-            -- Initial smart auto-seed for Swanidhi mappings if empty
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SwanidhiLedgerMappings')
+            BEGIN
+                ;WITH DupSwanidhi AS (
+                    SELECT [MappingID], ROW_NUMBER() OVER (PARTITION BY [LedgerID] ORDER BY [UpdatedOn] DESC, [MappingID] DESC) AS rn
+                    FROM [SwanidhiLedgerMappings]
+                )
+                DELETE FROM DupSwanidhi WHERE rn > 1;
+
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_SwanidhiLedgerMappings_LedgerID' AND object_id = OBJECT_ID('dbo.SwanidhiLedgerMappings'))
+                BEGIN
+                    CREATE UNIQUE INDEX [UX_SwanidhiLedgerMappings_LedgerID] ON [dbo].[SwanidhiLedgerMappings] ([LedgerID]);
+                END
+            END
+
+            -- Initial smart auto-seed for Swanidhi mappings if empty (Excluded FIRST to protect Rule 35)
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SwanidhiLedgerMappings') AND (SELECT COUNT(*) FROM [SwanidhiLedgerMappings]) = 0
             BEGIN
+                -- 0. Excluded Reserves FIRST (highest precedence)
+                INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
+                SELECT 'EXCLUDED_RESERVES', N'वगळलेले बाह्य देयता निधी', [LedgerID], GETDATE(), GETDATE()
+                FROM [Ledgers]
+                WHERE [IsActive] = 1 AND ([ExcludeFromRule35Swanidhi] = 1 OR [LedgerName] LIKE N'%कल्याण%' OR [LedgerName] LIKE N'%धर्मादाय%' OR [LedgerName] LIKE N'%घसारा%' OR [LedgerName] LIKE N'%संशयित बुडीत%' OR [LedgerName] LIKE N'%बुडीत कर्ज%');
+
                 -- 1. Paid-up Share Capital
                 INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
                 SELECT 'PAID_UP_CAPITAL', N'१. वसूल भाग भांडवल', [LedgerID], GETDATE(), GETDATE()
                 FROM [Ledgers]
-                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%भाग भांडवल%' OR [LedgerName] LIKE N'%सभासद भाग%' OR [LedgerName] LIKE N'%Share%');
+                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%भाग भांडवल%' OR [LedgerName] LIKE N'%सभासद भाग%' OR [LedgerName] LIKE N'%Share Capital%')
+                  AND [LedgerID] NOT IN (SELECT [LedgerID] FROM [SwanidhiLedgerMappings]);
 
                 -- 2. Statutory Reserve Fund
                 INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
                 SELECT 'STATUTORY_RESERVE', N'२. राखीव निधी', [LedgerID], GETDATE(), GETDATE()
                 FROM [Ledgers]
-                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%राखीव निधी%' OR [LedgerName] LIKE N'%Reserve Fund%');
+                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%राखीव निधी%' OR [LedgerName] LIKE N'%Reserve Fund%')
+                  AND [LedgerID] NOT IN (SELECT [LedgerID] FROM [SwanidhiLedgerMappings]);
 
                 -- 3. Building Fund
                 INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
                 SELECT 'BUILDING_FUND', N'३. इमारत निधी', [LedgerID], GETDATE(), GETDATE()
                 FROM [Ledgers]
-                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%इमारत निधी%' OR [LedgerName] LIKE N'%Building Fund%');
+                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%इमारत निधी%' OR [LedgerName] LIKE N'%Building Fund%')
+                  AND [LedgerID] NOT IN (SELECT [LedgerID] FROM [SwanidhiLedgerMappings]);
 
                 -- 4. Free and Development Reserves
                 INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
                 SELECT 'FREE_AND_DEVELOPMENT_RESERVE', N'४. मुक्त व विकास निधी (स्पष्टीकरण-१)', [LedgerID], GETDATE(), GETDATE()
                 FROM [Ledgers]
-                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%लाभांश सम%' OR [LedgerName] LIKE N'%तंत्रज्ञान विकास%' OR [LedgerName] LIKE N'%Dividend Equal%');
+                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%लाभांश सम%' OR [LedgerName] LIKE N'%तंत्रज्ञान विकास%' OR [LedgerName] LIKE N'%Dividend Equal%')
+                  AND [LedgerID] NOT IN (SELECT [LedgerID] FROM [SwanidhiLedgerMappings]);
 
                 -- 5. Standard Asset Provision
                 INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
                 SELECT 'STANDARD_ASSET_PROVISION', N'५. उत्तम जिंदगी तरतूद', [LedgerID], GETDATE(), GETDATE()
                 FROM [Ledgers]
-                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%उत्तम जिंदगी%' OR [LedgerName] LIKE N'%Standard Asset%');
+                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%उत्तम जिंदगी%' OR [LedgerName] LIKE N'%Standard Asset%')
+                  AND [LedgerID] NOT IN (SELECT [LedgerID] FROM [SwanidhiLedgerMappings]);
 
                 -- 6. Accumulated Loss
                 INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
                 SELECT 'ACCUMULATED_LOSS', N'ब. संचित तोटा', [LedgerID], GETDATE(), GETDATE()
                 FROM [Ledgers]
-                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%संचित तोटा%' OR [LedgerName] LIKE N'%चालू तोटा%');
-
-                -- 7. Excluded Reserves
-                INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
-                SELECT 'EXCLUDED_RESERVES', N'वगळलेले बाह्य देयता निधी', [LedgerID], GETDATE(), GETDATE()
-                FROM [Ledgers]
-                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%कल्याण%' OR [LedgerName] LIKE N'%धर्मादाय%' OR [LedgerName] LIKE N'%घसारा%' OR [LedgerName] LIKE N'%संशयित बुडीत%' OR [ExcludeFromRule35Swanidhi] = 1)
+                WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%संचित तोटा%' OR [LedgerName] LIKE N'%चालू तोटा%')
                   AND [LedgerID] NOT IN (SELECT [LedgerID] FROM [SwanidhiLedgerMappings]);
             END
 

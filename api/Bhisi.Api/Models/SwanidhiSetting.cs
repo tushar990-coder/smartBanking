@@ -33,10 +33,12 @@ namespace Bhisi.Api.Models
         {
             get
             {
-                var rates = new[] { Year1DividendRate, Year2DividendRate, Year3DividendRate };
-                var validRates = rates.Where(r => r > 0).ToList();
-                if (validRates.Count == 0) return 0.0m;
-                return Math.Round(validRates.Average(), 2);
+                // Official Maharashtra Circular Explanation-2:
+                // Exact consecutive 3-year average dividend rate = (Y1 + Y2 + Y3) / 3
+                decimal sum = Math.Max(0m, Year1DividendRate)
+                            + Math.Max(0m, Year2DividendRate)
+                            + Math.Max(0m, Year3DividendRate);
+                return Math.Round(sum / 3m, 2, MidpointRounding.AwayFromZero);
             }
         }
     }

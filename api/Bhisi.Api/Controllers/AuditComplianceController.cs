@@ -184,7 +184,7 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        // 4. GET Owned Funds & Exposure Limits Calculation
+        // 4. GET Owned Funds & Exposure Limits Calculation (Aligned with Rule 35 SwanidhiCalculationHelper SSOT)
         [HttpGet("OwnedFunds")]
         public async Task<IActionResult> GetOwnedFunds([FromQuery] int? branchId = null, [FromQuery] DateTime? asOnDate = null)
         {
@@ -193,50 +193,47 @@ namespace Bhisi.Api.Controllers
                 int? scopedBranch = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
                 DateTime targetDate = asOnDate ?? DateTime.Today;
 
-                var mappings = await _context.AuditLedgerMappings.Include(m => m.Ledger).ToListAsync();
+                var swanidhi = await SwanidhiCalculationHelper.CalculateAsync(_context, targetDate, scopedBranch);
+
+                // Also read non-free reserves from AuditLedgerMappings purely for informational transparency (NEVER added to NetOwnedFunds)
+                var mappings = await _context.AuditLedgerMappings.AsNoTracking().Include(m => m.Ledger).ToListAsync();
                 var balances = await GetMappedAsOfBalancesAsync(mappings, targetDate, scopedBranch);
-
-                decimal paidUpCapital = SumCategoryFromMap(mappings, balances, "SHARE_CAPITAL", isCreditNormal: true);
-                decimal shareReserve = SumCategoryFromMap(mappings, balances, "SHARE_RESERVE", isCreditNormal: true);
-                decimal totalCapitalPartA = paidUpCapital + shareReserve;
-
-                decimal statutoryReserve = SumCategoryFromMap(mappings, balances, "STATUTORY_RESERVE", isCreditNormal: true);
-                decimal buildingFund = SumCategoryFromMap(mappings, balances, "BUILDING_FUND", isCreditNormal: true);
-                decimal dividendEqFund = SumCategoryFromMap(mappings, balances, "DIVIDEND_EQ_FUND", isCreditNormal: true);
                 decimal invDeprFund = SumCategoryFromMap(mappings, balances, "INVESTMENT_DEPR_FUND", isCreditNormal: true);
                 decimal badDebtReserve = SumCategoryFromMap(mappings, balances, "BAD_DEBT_RESERVE", isCreditNormal: true);
+                decimal shareReserve = SumCategoryFromMap(mappings, balances, "SHARE_RESERVE", isCreditNormal: true);
 
-                decimal totalReservesPartB = statutoryReserve + buildingFund + dividendEqFund + invDeprFund + badDebtReserve;
+                decimal totalCapitalPartA = swanidhi.PaidUpCapital + shareReserve;
+                decimal totalReservesPartB = swanidhi.StatutoryReserve + swanidhi.BuildingFund + swanidhi.FreeReserves + swanidhi.StandardAssetProvision + swanidhi.UndistributedNetProfit;
+                decimal totalDeductionsPartC = swanidhi.TotalDeductions;
+                decimal netOwnedFunds = swanidhi.NetOwnedFunds + shareReserve;
+                decimal positiveNetOwnedFunds = Math.Max(0m, netOwnedFunds);
 
-                decimal accumulatedLoss = SumCategoryFromMap(mappings, balances, "ACCUMULATED_LOSS", isCreditNormal: false);
-                decimal totalDeductionsPartC = accumulatedLoss;
-
-                decimal netOwnedFunds = (totalCapitalPartA + totalReservesPartB) - totalDeductionsPartC;
-                if (netOwnedFunds <= 0) netOwnedFunds = 100000; // safety fallback
-
-                // Exposure Limits per Section 144-22A
-                decimal individualLoanLimit15Percent = netOwnedFunds * 0.15m;
-                decimal groupLoanLimit20Percent = netOwnedFunds * 0.20m;
+                // Exposure Limits per Section 144-22A (strictly zero when NetOwnedFunds <= 0 — no synthetic 100000 fallback)
+                decimal individualLoanLimit15Percent = Math.Round(positiveNetOwnedFunds * 0.15m, 2);
+                decimal groupLoanLimit20Percent = Math.Round(positiveNetOwnedFunds * 0.20m, 2);
 
                 return Ok(new
                 {
                     BranchID = scopedBranch ?? 0,
                     AsOnDate = targetDate.Date,
-                    PaidUpCapital = paidUpCapital,
+                    PaidUpCapital = swanidhi.PaidUpCapital,
                     ShareReserve = shareReserve,
                     TotalPartA = totalCapitalPartA,
-                    StatutoryReserve = statutoryReserve,
-                    BuildingFund = buildingFund,
-                    DividendEqFund = dividendEqFund,
+                    StatutoryReserve = swanidhi.StatutoryReserve,
+                    BuildingFund = swanidhi.BuildingFund,
+                    DividendEqFund = swanidhi.FreeReserves,
+                    StandardAssetProvision = swanidhi.StandardAssetProvision,
+                    UndistributedNetProfit = swanidhi.UndistributedNetProfit,
                     InvDeprFund = invDeprFund,
                     BadDebtReserve = badDebtReserve,
                     TotalPartB = totalReservesPartB,
-                    AccumulatedLoss = accumulatedLoss,
+                    AccumulatedLoss = swanidhi.AccumulatedLoss,
+                    CurrentYearNetLoss = swanidhi.CurrentYearNetLoss,
                     TotalPartC = totalDeductionsPartC,
                     NetOwnedFunds = netOwnedFunds,
                     IndividualLoanLimit15Percent = individualLoanLimit15Percent,
                     GroupLoanLimit20Percent = groupLoanLimit20Percent,
-                    Section43MaxBorrowingLimit = netOwnedFunds * 10m // 10 times Owned Funds rule
+                    Section43MaxBorrowingLimit = swanidhi.MaxBorrowingLimit
                 });
             }
             catch (Exception ex)
@@ -399,11 +396,8 @@ namespace Bhisi.Api.Controllers
                 var mappings = await _context.AuditLedgerMappings.Include(m => m.Ledger).ToListAsync();
                 var balances = await GetMappedAsOfBalancesAsync(mappings, targetDate, scopedBranch);
 
-                decimal paidUpCapital = SumCategoryFromMap(mappings, balances, "SHARE_CAPITAL", isCreditNormal: true);
-                decimal statutoryReserve = SumCategoryFromMap(mappings, balances, "STATUTORY_RESERVE", isCreditNormal: true);
-                decimal buildingFund = SumCategoryFromMap(mappings, balances, "BUILDING_FUND", isCreditNormal: true);
-                decimal netOwnedFunds = paidUpCapital + statutoryReserve + buildingFund;
-                if (netOwnedFunds <= 0) netOwnedFunds = 100000;
+                var swanidhi = await SwanidhiCalculationHelper.CalculateAsync(_context, targetDate, scopedBranch);
+                decimal netOwnedFunds = Math.Max(0m, swanidhi.NetOwnedFunds);
 
                 // Risk Weighted Assets breakdown
                 decimal cashAmount = SumCategoryFromMap(mappings, balances, "CASH_IN_HAND", isCreditNormal: false);

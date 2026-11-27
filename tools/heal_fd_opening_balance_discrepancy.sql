@@ -37,7 +37,34 @@ CROSS APPLY (
 ) l
 WHERE s.FdLiabilityLedgerID IS NULL OR s.FdLiabilityLedgerID = 0;
 
--- 2. Process each distinct Liability Ledger
+-- 2. Identify Baseline FY Start so post-FY-start closed legacy FDs stay in baseline OB
+DECLARE @BaselineFyStart DATE = NULL;
+IF OBJECT_ID('FinancialYears', 'U') IS NOT NULL
+BEGIN
+    SELECT TOP 1 @BaselineFyStart = CAST(StartDate AS DATE)
+    FROM FinancialYears
+    ORDER BY StartDate ASC, FinancialYearID ASC;
+END
+
+DECLARE @ClosedPostFyLegacyIds TABLE (FdAccountID INT PRIMARY KEY);
+IF @BaselineFyStart IS NOT NULL
+BEGIN
+    INSERT INTO @ClosedPostFyLegacyIds (FdAccountID)
+    SELECT DISTINCT a.FdAccountID
+    FROM FdAccounts a
+    JOIN FdTransactions t ON a.FdAccountID = t.FdAccountID
+    JOIN Vouchers v ON t.VoucherID = v.VoucherID
+    WHERE a.IsLegacyAccount = 1
+      AND a.Status NOT IN ('Active', 'Matured')
+      AND ISNULL(v.Status, '') NOT IN ('Rejected', 'Cancelled')
+      AND CAST(v.VoucherDate AS DATE) >= @BaselineFyStart
+      AND (v.VoucherNo LIKE '%-FD-CLOSE-%'
+        OR v.VoucherNo LIKE '%-FD-PRECLOSE-%'
+        OR v.VoucherNo LIKE '%-FD-REN-%'
+        OR v.VoucherNo LIKE '%-FD-AUTOREN-%');
+END
+
+-- 3. Process each distinct Liability Ledger
 DECLARE @curLedgerId INT;
 DECLARE @curSchemeName NVARCHAR(150);
 DECLARE @curLedgerName NVARCHAR(150);
@@ -56,14 +83,23 @@ BEGIN
     DECLARE @oldBal DECIMAL(18,2) = 0;
     SELECT @oldBal = ISNULL(OpeningBalance, 0) FROM Ledgers WHERE LedgerID = @curLedgerId;
 
-    -- A. Calculate actual active legacy deposit sum per customer under this liability ledger
+    -- A. Calculate actual baseline legacy deposit sum per customer under this liability ledger
+    --    (includes LegacyAccruedInt when scheme.InterestPostingMethod = 'On Interest' on live accounts)
     ;WITH ActualCustFd AS (
         SELECT 
             a.CustomerID,
-            SUM(a.DepositAmount) AS TrueDepositTotal
+            SUM(
+                a.DepositAmount +
+                CASE
+                    WHEN LTRIM(RTRIM(ISNULL(s.InterestPostingMethod, ''))) = 'On Interest'
+                         AND a.Status IN ('Active', 'Matured')
+                    THEN ISNULL(a.LegacyAccruedInt, 0)
+                    ELSE 0
+                END
+            ) AS TrueDepositTotal
         FROM FdAccounts a
         JOIN FdSchemes s ON a.FdSchemeID = s.FdSchemeID
-        WHERE a.Status = 'Active' 
+        WHERE (a.Status IN ('Active', 'Matured') OR a.FdAccountID IN (SELECT FdAccountID FROM @ClosedPostFyLegacyIds))
           AND a.IsLegacyAccount = 1 
           AND s.FdLiabilityLedgerID = @curLedgerId
         GROUP BY a.CustomerID
@@ -72,56 +108,68 @@ BEGIN
     UPDATE cob
     SET cob.Amount = act.TrueDepositTotal,
         cob.BalanceType = 'Cr',
+        cob.SourceModule = 'FD',
         cob.UpdatedOn = GETDATE()
     FROM CustomerOpeningBalances cob
     JOIN ActualCustFd act ON cob.CustomerID = act.CustomerID AND cob.LedgerID = @curLedgerId
-    WHERE cob.Amount <> act.TrueDepositTotal OR cob.BalanceType <> 'Cr';
+    WHERE cob.Amount <> act.TrueDepositTotal OR cob.BalanceType <> 'Cr' OR ISNULL(cob.SourceModule, '') <> 'FD';
 
     -- C. Insert missing CustomerOpeningBalances for active customers
     ;WITH ActualCustFd AS (
         SELECT 
             a.CustomerID,
-            SUM(a.DepositAmount) AS TrueDepositTotal
+            SUM(
+                a.DepositAmount +
+                CASE
+                    WHEN LTRIM(RTRIM(ISNULL(s.InterestPostingMethod, ''))) = 'On Interest'
+                         AND a.Status IN ('Active', 'Matured')
+                    THEN ISNULL(a.LegacyAccruedInt, 0)
+                    ELSE 0
+                END
+            ) AS TrueDepositTotal
         FROM FdAccounts a
         JOIN FdSchemes s ON a.FdSchemeID = s.FdSchemeID
-        WHERE a.Status = 'Active' 
+        WHERE (a.Status IN ('Active', 'Matured') OR a.FdAccountID IN (SELECT FdAccountID FROM @ClosedPostFyLegacyIds))
           AND a.IsLegacyAccount = 1 
           AND s.FdLiabilityLedgerID = @curLedgerId
         GROUP BY a.CustomerID
     )
-    INSERT INTO CustomerOpeningBalances (CustomerID, LedgerID, Amount, BalanceType, CreatedBy, CreatedOn)
+    INSERT INTO CustomerOpeningBalances (CustomerID, LedgerID, Amount, BalanceType, SourceModule, CreatedBy, CreatedOn)
     SELECT 
         act.CustomerID, 
         @curLedgerId, 
         act.TrueDepositTotal, 
         'Cr', 
+        'FD',
         1, 
         GETDATE()
     FROM ActualCustFd act
     LEFT JOIN CustomerOpeningBalances cob ON act.CustomerID = cob.CustomerID AND cob.LedgerID = @curLedgerId
     WHERE cob.CustomerOpeningBalanceID IS NULL AND act.TrueDepositTotal > 0;
 
-    -- D. Delete ORPHAN CustomerOpeningBalances (customers who have 0 active legacy FDs under this ledger)
+    -- D. Delete ORPHAN CustomerOpeningBalances (customers who have 0 baseline legacy FDs under this ledger)
     DECLARE @orphansCount INT = 0;
     SELECT @orphansCount = COUNT(*)
     FROM CustomerOpeningBalances cob
     WHERE cob.LedgerID = @curLedgerId
+      AND (cob.SourceModule IS NULL OR cob.SourceModule IN ('', 'FD'))
       AND cob.CustomerID NOT IN (
           SELECT DISTINCT a.CustomerID
           FROM FdAccounts a
           JOIN FdSchemes s ON a.FdSchemeID = s.FdSchemeID
-          WHERE a.Status = 'Active' 
+          WHERE (a.Status IN ('Active', 'Matured') OR a.FdAccountID IN (SELECT FdAccountID FROM @ClosedPostFyLegacyIds))
             AND a.IsLegacyAccount = 1 
             AND s.FdLiabilityLedgerID = @curLedgerId
       );
 
     DELETE FROM CustomerOpeningBalances
     WHERE LedgerID = @curLedgerId
+      AND (SourceModule IS NULL OR SourceModule IN ('', 'FD'))
       AND CustomerID NOT IN (
           SELECT DISTINCT a.CustomerID
           FROM FdAccounts a
           JOIN FdSchemes s ON a.FdSchemeID = s.FdSchemeID
-          WHERE a.Status = 'Active' 
+          WHERE (a.Status IN ('Active', 'Matured') OR a.FdAccountID IN (SELECT FdAccountID FROM @ClosedPostFyLegacyIds))
             AND a.IsLegacyAccount = 1 
             AND s.FdLiabilityLedgerID = @curLedgerId
       );
@@ -134,7 +182,7 @@ BEGIN
           SELECT DISTINCT a.CustomerID
           FROM FdAccounts a
           JOIN FdSchemes s ON a.FdSchemeID = s.FdSchemeID
-          WHERE a.Status = 'Active' 
+          WHERE (a.Status IN ('Active', 'Matured') OR a.FdAccountID IN (SELECT FdAccountID FROM @ClosedPostFyLegacyIds))
             AND a.IsLegacyAccount = 1 
             AND s.FdLiabilityLedgerID = @curLedgerId
       );
@@ -162,7 +210,7 @@ BEGIN
     SELECT @accCount = COUNT(*)
     FROM FdAccounts a
     JOIN FdSchemes s ON a.FdSchemeID = s.FdSchemeID
-    WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @curLedgerId;
+    WHERE a.Status IN ('Active', 'Matured') AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @curLedgerId;
 
     INSERT INTO @HealSummary (SchemeID, SchemeName, LedgerID, LedgerName, OldLedgerOpeningBal, NewLedgerOpeningBal, OrphansRemoved, TotalFdAccounts)
     VALUES (0, 'All Schemes under Ledger', @curLedgerId, @curLedgerName, @oldBal, @newBal, @orphansCount, @accCount);

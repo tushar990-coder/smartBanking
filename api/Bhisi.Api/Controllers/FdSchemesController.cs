@@ -269,6 +269,20 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(ledgerValidation.ErrorMessage);
             }
 
+            string oldPostingMethod = existingScheme.InterestPostingMethod ?? "On Principal";
+            int? oldLiabilityLedgerId = existingScheme.FdLiabilityLedgerID;
+            int? oldPayableLedgerId = existingScheme.InterestPayableLedgerID;
+
+            var safetyErr = await Helpers.FdOpeningBalanceSyncHelper.ValidateSchemePostingMethodChangeSafetyAsync(
+                _context,
+                existingScheme.FdSchemeID,
+                oldPostingMethod,
+                fdScheme.InterestPostingMethod);
+            if (!string.IsNullOrEmpty(safetyErr))
+            {
+                return BadRequest(new { message = safetyErr });
+            }
+
             // Update Scheme fields
             existingScheme.SchemeName = fdScheme.SchemeName;
             existingScheme.DurationMonths = fdScheme.DurationMonths;
@@ -352,6 +366,18 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+
+                bool glOrPostingChanged =
+                    !string.Equals(oldPostingMethod?.Trim(), existingScheme.InterestPostingMethod?.Trim(), System.StringComparison.OrdinalIgnoreCase) ||
+                    oldLiabilityLedgerId != existingScheme.FdLiabilityLedgerID ||
+                    oldPayableLedgerId != existingScheme.InterestPayableLedgerID;
+
+                if (glOrPostingChanged)
+                {
+                    await Helpers.FdOpeningBalanceSyncHelper.SyncSchemeLegacyOpeningVouchersAndTransactionsAsync(
+                        _context, existingScheme);
+                    await Helpers.FdOpeningBalanceSyncHelper.SyncAllFdOpeningBalancesAsync(_context);
+                }
             }
             catch (DbUpdateException ex)
             {

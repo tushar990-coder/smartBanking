@@ -340,5 +340,352 @@ namespace Bhisi.Api.Tests
             Assert.Equal(1, bs.PendingVouchersCount);
             Assert.Equal(7500m, bs.PendingVouchersAmount);
         }
+
+        [Fact]
+        public async Task LegacyFdOpeningBalance_OnPrincipalVsOnInterest_SplitsBetweenProvisionAndDepositLiability_AndClearsToZeroOnClosure()
+        {
+            await using var db = CreateContext();
+            var fyStart = new DateTime(2026, 4, 1);
+            var maturityDate = new DateTime(2026, 4, 30);
+
+            db.SansthaDetails.Add(new SansthaDetail { SansthaID = 1, SansthaName = "स्मार्ट पतसंस्था" });
+            db.Branches.Add(new Branch { BranchID = 1, BranchCode = "HO", BranchName = "मुख्य शाखा", DefaultCashLedgerID = 51, IsActive = true });
+            db.FinancialYears.Add(new FinancialYear
+            {
+                FinancialYearID = 1,
+                YearCode = "2026-2027",
+                StartDate = fyStart,
+                EndDate = new DateTime(2027, 3, 31),
+                IsActive = true,
+                IsClosed = false
+            });
+            db.BranchDayEndStatuses.AddRange(
+                new BranchDayEndStatus { BranchID = 1, BusinessDate = fyStart, IsDayClosed = false },
+                new BranchDayEndStatus { BranchID = 1, BusinessDate = maturityDate, IsDayClosed = false }
+            );
+
+            db.AccountGroups.AddRange(
+                new AccountGroup { GroupID = 1, GroupName = "भांडवल व देणी", NatureOfGroup = "Liabilities", DisplayOrder = 1, IsActive = true },
+                new AccountGroup { GroupID = 2, GroupName = "ठेवी", ParentGroupID = 1, NatureOfGroup = "Liabilities", DisplayOrder = 1, IsActive = true },
+                new AccountGroup { GroupID = 3, GroupName = "देणे व्याज व तरतुदी", ParentGroupID = 1, NatureOfGroup = "Liabilities", DisplayOrder = 2, IsActive = true },
+                new AccountGroup { GroupID = 4, GroupName = "मालमत्ता व येणी", NatureOfGroup = "Assets", DisplayOrder = 1, IsActive = true },
+                new AccountGroup { GroupID = 5, GroupName = "रोख शिल्लक", ParentGroupID = 4, NatureOfGroup = "Assets", DisplayOrder = 1, IsActive = true },
+                new AccountGroup { GroupID = 6, GroupName = "खर्च", NatureOfGroup = "Expenses", DisplayOrder = 1, IsActive = true }
+            );
+
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 12, GroupID = 2, LedgerCode = "12", LedgerName = "मुदत ठेव", AccountType = "Fixed Deposit", IsActive = true },
+                new Ledger { LedgerID = 23, GroupID = 3, LedgerCode = "23", LedgerName = "देणे मुदत ठेव व्याज तरतूद", AccountType = "Payable", IsActive = true },
+                new Ledger { LedgerID = 51, GroupID = 5, LedgerCode = "51", LedgerName = "हातातील रोख शिल्लक", AccountType = "Cash", IsActive = true },
+                new Ledger { LedgerID = 132, GroupID = 6, LedgerCode = "132", LedgerName = "मुदत ठेव व्याज खर्च", AccountType = "Expenses", IsActive = true },
+                new Ledger { LedgerID = 412, GroupID = 4, LedgerCode = "412", LedgerName = "आरंभिक शिल्लक स्थलांतर", AccountType = "Migration", IsActive = true }
+            );
+
+            // Contra Cash Opening Balance = ₹2,16,000 Dr to match 2 legacy FDs (1,08,000 + 1,08,000 = 2,16,000 Cr)
+            db.BranchLedgerOpeningBalances.Add(new BranchLedgerOpeningBalance
+            {
+                BranchID = 1,
+                FinancialYearID = 1,
+                LedgerID = 51,
+                OpeningBalance = 216000m,
+                OpeningBalanceType = "Dr"
+            });
+
+            db.FdSchemes.AddRange(
+                new FdScheme
+                {
+                    FdSchemeID = 1,
+                    SchemeCode = "FD101",
+                    SchemeName = "साधी मुदत ठेव (On Principal)",
+                    DurationMonths = 13,
+                    DurationType = "Months",
+                    SchemeDurationModel = "Fixed",
+                    InterestRate = 9m,
+                    SeniorCitizenInterestRate = 9.5m,
+                    InterestType = "Simple",
+                    InterestPostingMethod = "On Principal",
+                    InterestCompoundingFrequency = "N/A",
+                    PrematureInterestRate = 7m,
+                    FdLiabilityLedgerID = 12,
+                    InterestPayableLedgerID = 23,
+                    InterestExpenseLedgerID = 132,
+                    IsActive = true
+                },
+                new FdScheme
+                {
+                    FdSchemeID = 2,
+                    SchemeCode = "FD102",
+                    SchemeName = "चक्रवाढ मुदत ठेव (On Interest)",
+                    DurationMonths = 13,
+                    DurationType = "Months",
+                    SchemeDurationModel = "Fixed",
+                    InterestRate = 9m,
+                    SeniorCitizenInterestRate = 9.5m,
+                    InterestType = "Cumulative",
+                    InterestPostingMethod = "On Interest",
+                    InterestCompoundingFrequency = "Quarterly",
+                    PrematureInterestRate = 7m,
+                    FdLiabilityLedgerID = 12,
+                    InterestPayableLedgerID = 23,
+                    InterestExpenseLedgerID = 132,
+                    IsActive = true
+                }
+            );
+
+            db.Customers.AddRange(
+                new Customer { CustomerID = 11, BranchID = 1, CIFNo = "CIF000011", FirstName = "अशोक", LastName = "जाधव", BirthDate = new DateTime(1985, 1, 1) },
+                new Customer { CustomerID = 12, BranchID = 1, CIFNo = "CIF000012", FirstName = "विजय", LastName = "शिंदे", BirthDate = new DateTime(1985, 1, 1) }
+            );
+            await db.SaveChangesAsync();
+
+            var fdCtrl = new FdAccountsController(db);
+            AttachAdmin(fdCtrl, fyStart);
+
+            // Migrate FD 1 under "On Principal" (Deposit ₹1,00,000 + LegacyAccruedInt ₹8,000)
+            var mig1 = await fdCtrl.MigrateFdAccount(new FdAccount
+            {
+                BranchID = 1,
+                CustomerID = 11,
+                FdSchemeID = 1,
+                LegacyAccountNumber = "501",
+                OpeningDate = new DateTime(2025, 3, 30),
+                MaturityDate = maturityDate,
+                DurationType = "Months",
+                DurationValue = 13,
+                DurationInDays = 396,
+                DepositAmount = 100000m,
+                MaturityAmount = 108800m,
+                InterestRate = 9m,
+                LegacyAccruedInt = 8000m,
+                LastInterestPostingDate = new DateTime(2026, 3, 31),
+                IsLegacyAccount = true,
+                Status = "Active"
+            });
+            var ok1 = Assert.IsType<OkObjectResult>(mig1.Result);
+            var fd1 = Assert.IsType<FdAccount>(ok1.Value);
+
+            // Migrate FD 2 under "On Interest" (Deposit ₹1,00,000 + LegacyAccruedInt ₹8,000)
+            var mig2 = await fdCtrl.MigrateFdAccount(new FdAccount
+            {
+                BranchID = 1,
+                CustomerID = 12,
+                FdSchemeID = 2,
+                LegacyAccountNumber = "502",
+                OpeningDate = new DateTime(2025, 3, 30),
+                MaturityDate = maturityDate,
+                DurationType = "Months",
+                DurationValue = 13,
+                DurationInDays = 396,
+                DepositAmount = 100000m,
+                MaturityAmount = 108800m,
+                InterestRate = 9m,
+                LegacyAccruedInt = 8000m,
+                LastInterestPostingDate = new DateTime(2026, 3, 31),
+                IsLegacyAccount = true,
+                Status = "Active"
+            });
+            var ok2 = Assert.IsType<OkObjectResult>(mig2.Result);
+            var fd2 = Assert.IsType<FdAccount>(ok2.Value);
+
+            // Verify Balance Sheet on 01/04/2026:
+            // Deposits (Group 2, Ledger 12) = ₹1,00,000 (FD1) + ₹1,08,000 (FD2 Principal + Capitalized Int) = ₹2,08,000!
+            // Provision (Group 3, Ledger 23) = ₹8,000 (FD1 On Principal ONLY!)
+            var reportsCtrl = new ReportsController(db, new MemoryCache(new MemoryCacheOptions()));
+            AttachAdmin(reportsCtrl, fyStart);
+
+            var bsOpen = (await reportsCtrl.GetBalanceSheet(fyStart, fyStart, branchId: 1)).Value!;
+            Assert.True(bsOpen.IsTallied);
+            Assert.Equal(208000m, bsOpen.Liabilities.First(g => g.Id == 2).Amount);
+            Assert.Equal(8000m, bsOpen.Liabilities.First(g => g.Id == 3).Amount);
+
+            // MaturedClose BOTH FDs on 30/04/2026 (Payout ₹1,08,800 each):
+            // FD1 (On Principal) clears ₹8,000 from Provision (InterestDebitMode = "Provision") + ₹800 Expense;
+            // FD2 (On Interest) clears ₹1,08,000 from Deposit Liability + ₹0 from Provision + ₹800 Expense even with InterestDebitMode = "Provision"!
+            AttachAdmin(fdCtrl, maturityDate);
+            Assert.IsType<OkObjectResult>(await fdCtrl.MaturedClose(fd1.FdAccountID, new FdClosureRequest { ClosureDate = maturityDate, PaymentMode = "Cash", InterestDebitMode = "Provision" }));
+            Assert.IsType<OkObjectResult>(await fdCtrl.MaturedClose(fd2.FdAccountID, new FdClosureRequest { ClosureDate = maturityDate, PaymentMode = "Cash", InterestDebitMode = "Provision" }));
+
+            var closeVouchers = await db.Vouchers.Include(v => v.VoucherDetails)
+                .Where(v => v.VoucherNo.StartsWith("JV-FD-CLOSE-"))
+                .ToListAsync();
+            Assert.Equal(2, closeVouchers.Count);
+            foreach (var cv in closeVouchers) cv.Status = "Approved";
+            await db.SaveChangesAsync();
+
+            var cv1 = closeVouchers.Single(v => v.VoucherNo == $"JV-FD-CLOSE-{fd1.AccountNo}");
+            Assert.Equal(100000m, cv1.VoucherDetails!.Where(d => d.LedgerID == 12 && d.DrCr == "Dr").Sum(d => d.Amount));
+            Assert.Equal(8000m, cv1.VoucherDetails!.Where(d => d.LedgerID == 23 && d.DrCr == "Dr").Sum(d => d.Amount));
+            Assert.Equal(800m, cv1.VoucherDetails!.Where(d => d.LedgerID == 132 && d.DrCr == "Dr").Sum(d => d.Amount));
+
+            var cv2 = closeVouchers.Single(v => v.VoucherNo == $"JV-FD-CLOSE-{fd2.AccountNo}");
+            Assert.Equal(108000m, cv2.VoucherDetails!.Where(d => d.LedgerID == 12 && d.DrCr == "Dr").Sum(d => d.Amount));
+            Assert.Equal(0m, cv2.VoucherDetails!.Where(d => d.LedgerID == 23 && d.DrCr == "Dr").Sum(d => d.Amount));
+            Assert.Equal(800m, cv2.VoucherDetails!.Where(d => d.LedgerID == 132 && d.DrCr == "Dr").Sum(d => d.Amount));
+
+            // Verify Balance Sheet after closing BOTH FDs: BOTH Deposit Liability (12) AND Provision (23) are ₹0.00!
+            AttachAdmin(reportsCtrl, maturityDate);
+            var bsClosed = (await reportsCtrl.GetBalanceSheet(fyStart, maturityDate, branchId: 1)).Value!;
+            Assert.True(bsClosed.IsTallied);
+            Assert.Equal(0m, bsClosed.Liabilities.FirstOrDefault(g => g.Id == 2)?.Amount ?? 0m);
+            Assert.Equal(0m, bsClosed.Liabilities.FirstOrDefault(g => g.Id == 3)?.Amount ?? 0m);
+        }
+
+        [Fact]
+        public async Task PutFdScheme_TogglingPostingMethod_AutomaticallyReSyncsBalanceSheet_AndBlocksAfterClosure()
+        {
+            await using var db = CreateContext();
+            var fyStart = new DateTime(2026, 4, 1);
+            var maturityDate = new DateTime(2026, 4, 30);
+
+            db.SansthaDetails.Add(new SansthaDetail { SansthaID = 1, SansthaName = "स्मार्ट पतसंस्था" });
+            db.Branches.Add(new Branch { BranchID = 1, BranchCode = "HO", BranchName = "मुख्य शाखा", DefaultCashLedgerID = 51, IsActive = true });
+            db.FinancialYears.Add(new FinancialYear
+            {
+                FinancialYearID = 1,
+                YearCode = "2026-2027",
+                StartDate = fyStart,
+                EndDate = new DateTime(2027, 3, 31),
+                IsActive = true,
+                IsClosed = false
+            });
+            db.BranchDayEndStatuses.AddRange(
+                new BranchDayEndStatus { BranchID = 1, BusinessDate = fyStart, IsDayClosed = false },
+                new BranchDayEndStatus { BranchID = 1, BusinessDate = maturityDate, IsDayClosed = false }
+            );
+
+            db.AccountGroups.AddRange(
+                new AccountGroup { GroupID = 1, GroupName = "भांडवल व देणी", NatureOfGroup = "Liabilities", DisplayOrder = 1, IsActive = true },
+                new AccountGroup { GroupID = 2, GroupName = "ठेवी", ParentGroupID = 1, NatureOfGroup = "Liabilities", DisplayOrder = 1, IsActive = true },
+                new AccountGroup { GroupID = 3, GroupName = "देणे व्याज व तरतुदी", ParentGroupID = 1, NatureOfGroup = "Liabilities", DisplayOrder = 2, IsActive = true },
+                new AccountGroup { GroupID = 4, GroupName = "मालमत्ता व येणी", NatureOfGroup = "Assets", DisplayOrder = 1, IsActive = true },
+                new AccountGroup { GroupID = 5, GroupName = "रोख शिल्लक", ParentGroupID = 4, NatureOfGroup = "Assets", DisplayOrder = 1, IsActive = true },
+                new AccountGroup { GroupID = 6, GroupName = "खर्च", NatureOfGroup = "Expenses", DisplayOrder = 1, IsActive = true }
+            );
+
+            db.Ledgers.AddRange(
+                new Ledger { LedgerID = 12, GroupID = 2, LedgerCode = "12", LedgerName = "मुदत ठेव", AccountType = "Fixed Deposit", IsActive = true },
+                new Ledger { LedgerID = 23, GroupID = 3, LedgerCode = "23", LedgerName = "देणे मुदत ठेव व्याज तरतूद", AccountType = "Payable", IsActive = true },
+                new Ledger { LedgerID = 51, GroupID = 5, LedgerCode = "51", LedgerName = "हातातील रोख शिल्लक", AccountType = "Cash", IsActive = true },
+                new Ledger { LedgerID = 132, GroupID = 6, LedgerCode = "132", LedgerName = "मुदत ठेव व्याज खर्च", AccountType = "Expenses", IsActive = true },
+                new Ledger { LedgerID = 412, GroupID = 4, LedgerCode = "412", LedgerName = "आरंभिक शिल्लक स्थलांतर", AccountType = "Migration", IsActive = true }
+            );
+
+            db.BranchLedgerOpeningBalances.Add(new BranchLedgerOpeningBalance
+            {
+                BranchID = 1,
+                FinancialYearID = 1,
+                LedgerID = 51,
+                OpeningBalance = 109000m,
+                OpeningBalanceType = "Dr"
+            });
+
+            var scheme = new FdScheme
+            {
+                FdSchemeID = 1,
+                SchemeCode = "FD201",
+                SchemeName = "विशेष मुदत ठेव योजना",
+                DurationMonths = 13,
+                DurationType = "Months",
+                SchemeDurationModel = "Fixed",
+                InterestRate = 9m,
+                SeniorCitizenInterestRate = 9.5m,
+                InterestType = "Simple",
+                InterestPostingMethod = "On Principal",
+                InterestCompoundingFrequency = "N/A",
+                MinimumAmount = 1000m,
+                MaximumAmount = 1000000m,
+                PrematureInterestRate = 7m,
+                FdLiabilityLedgerID = 12,
+                InterestPayableLedgerID = 23,
+                InterestExpenseLedgerID = 132,
+                IsActive = true
+            };
+            db.FdSchemes.Add(scheme);
+            db.Customers.Add(new Customer { CustomerID = 21, BranchID = 1, CIFNo = "CIF000021", FirstName = "संदीप", LastName = "देशमुख", BirthDate = new DateTime(1986, 6, 1) });
+            await db.SaveChangesAsync();
+
+            var fdCtrl = new FdAccountsController(db);
+            AttachAdmin(fdCtrl, fyStart);
+
+            // 1. Enter Legacy FD while scheme is "On Principal"
+            var migRes = await fdCtrl.MigrateFdAccount(new FdAccount
+            {
+                BranchID = 1,
+                CustomerID = 21,
+                FdSchemeID = 1,
+                LegacyAccountNumber = "701",
+                OpeningDate = new DateTime(2025, 3, 30),
+                MaturityDate = maturityDate,
+                DurationType = "Months",
+                DurationValue = 13,
+                DurationInDays = 396,
+                DepositAmount = 100000m,
+                MaturityAmount = 109500m,
+                InterestRate = 9m,
+                LegacyAccruedInt = 9000m,
+                LastInterestPostingDate = new DateTime(2026, 3, 31),
+                IsLegacyAccount = true,
+                Status = "Active"
+            });
+            var migratedFd = Assert.IsType<FdAccount>(Assert.IsType<OkObjectResult>(migRes.Result).Value);
+
+            var reportsCtrl = new ReportsController(db, new MemoryCache(new MemoryCacheOptions()));
+            AttachAdmin(reportsCtrl, fyStart);
+
+            var bsInitial = (await reportsCtrl.GetBalanceSheet(fyStart, fyStart, branchId: 1)).Value!;
+            Assert.True(bsInitial.IsTallied);
+            Assert.Equal(100000m, bsInitial.Liabilities.First(g => g.Id == 2).Amount);
+            Assert.Equal(9000m, bsInitial.Liabilities.First(g => g.Id == 3).Amount);
+
+            // 2. Change Scheme Posting Method from "On Principal" -> "On Interest" via PutFdScheme
+            var schemeCtrl = new FdSchemesController(db);
+            AttachAdmin(schemeCtrl, fyStart);
+
+            var updatedSchemePayload = new FdScheme
+            {
+                FdSchemeID = 1,
+                SchemeCode = "FD201",
+                SchemeName = "विशेष मुदत ठेव योजना",
+                DurationMonths = 13,
+                DurationType = "Months",
+                SchemeDurationModel = "Fixed",
+                InterestRate = 9m,
+                SeniorCitizenInterestRate = 9.5m,
+                InterestType = "Cumulative",
+                InterestPostingMethod = "On Interest",
+                InterestCompoundingFrequency = "Quarterly",
+                MinimumAmount = 1000m,
+                MaximumAmount = 1000000m,
+                PrematureInterestRate = 7m,
+                FdLiabilityLedgerID = 12,
+                InterestPayableLedgerID = 23,
+                InterestExpenseLedgerID = 132,
+                IsActive = true
+            };
+            Assert.IsType<NoContentResult>(await schemeCtrl.PutFdScheme(1, updatedSchemePayload));
+
+            // Balance Sheet MUST immediately reflect ₹1,09,000 under Deposits (Group 2) and ₹0 under Provision (Group 3)!
+            var bsAfterOnInterest = (await reportsCtrl.GetBalanceSheet(fyStart, fyStart, branchId: 1)).Value!;
+            Assert.True(bsAfterOnInterest.IsTallied);
+            Assert.Equal(109000m, bsAfterOnInterest.Liabilities.First(g => g.Id == 2).Amount);
+            Assert.Null(bsAfterOnInterest.Liabilities.FirstOrDefault(g => g.Id == 3));
+
+            // 3. Toggle back "On Interest" -> "On Principal" via PutFdScheme
+            updatedSchemePayload.InterestType = "Simple";
+            updatedSchemePayload.InterestPostingMethod = "On Principal";
+            Assert.IsType<NoContentResult>(await schemeCtrl.PutFdScheme(1, updatedSchemePayload));
+
+            var bsBackToPrincipal = (await reportsCtrl.GetBalanceSheet(fyStart, fyStart, branchId: 1)).Value!;
+            Assert.True(bsBackToPrincipal.IsTallied);
+            Assert.Equal(100000m, bsBackToPrincipal.Liabilities.First(g => g.Id == 2).Amount);
+            Assert.Equal(9000m, bsBackToPrincipal.Liabilities.First(g => g.Id == 3).Amount);
+
+            // 4. Close the FD, then try changing PostingMethod -> Safety Guard MUST block with BadRequest!
+            AttachAdmin(fdCtrl, maturityDate);
+            Assert.IsType<OkObjectResult>(await fdCtrl.MaturedClose(migratedFd.FdAccountID, new FdClosureRequest { ClosureDate = maturityDate, PaymentMode = "Cash" }));
+
+            updatedSchemePayload.InterestPostingMethod = "On Interest";
+            Assert.IsType<BadRequestObjectResult>(await schemeCtrl.PutFdScheme(1, updatedSchemePayload));
+        }
     }
 }

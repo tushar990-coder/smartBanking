@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Home,
   User,
   Landmark,
@@ -14,6 +15,7 @@ import {
   X,
   FileSpreadsheet,
   Building2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -55,6 +57,8 @@ interface SocietyBranch {
 interface EmployeeBankDetailsProps {
   onNavigate?: (tab: string, params?: any) => void;
 }
+
+type GridViewMode = 'BANK_COMPACT' | 'ALL_COLUMNS';
 
 const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const ACCOUNT_NO_REGEX = /^[A-Za-z0-9]{8,20}$/;
@@ -101,7 +105,6 @@ function validateRowsForSave(
 ): { errorsByCustomer: Record<number, string>; summaryMessage: string } {
   const errorsByCustomer: Record<number, string> = {};
 
-  // Check duplicate Employee IDs across all loaded rows (case-insensitive, trimmed)
   const empIdOwner = new Map<string, EmployeeBankDetail>();
   for (const row of allRows) {
     const empId = (row.employeeID || '').trim().toUpperCase();
@@ -119,7 +122,6 @@ function validateRowsForSave(
     }
   }
 
-  // Check duplicate BankName + AccountNumber across all loaded rows
   const bankAccOwner = new Map<string, EmployeeBankDetail>();
   for (const row of allRows) {
     const bankName = (row.bankName || '').trim().toUpperCase();
@@ -136,7 +138,6 @@ function validateRowsForSave(
     }
   }
 
-  // Field-level checks on dirty rows
   for (const row of allRows) {
     if (!dirtyIds.has(row.customerID)) continue;
     if (errorsByCustomer[row.customerID]) continue;
@@ -198,6 +199,15 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Clean View Mode: BANK_COMPACT hides cluttering HR columns unless toggled
+  const [viewMode, setViewMode] = useState<GridViewMode>('BANK_COMPACT');
+  const [showMasterMenu, setShowMasterMenu] = useState(false);
+  const masterMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Single-Row Detail Edit Modal (for comfortable editing of all Bank + Employee fields)
+  const [editingRow, setEditingRow] = useState<EmployeeBankDetail | null>(null);
+  const [savingSingleRow, setSavingSingleRow] = useState(false);
+
   // Dirty tracking & row validation errors
   const [dirtyCustomerIds, setDirtyCustomerIds] = useState<Set<number>>(new Set());
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
@@ -208,7 +218,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
   const [deptFilter, setDeptFilter] = useState('all');
   const [completionFilter, setCompletionFilter] = useState<'all' | 'completed' | 'pending'>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(50);
 
   // Quick Add Bank Modal state
   const [showAddBankModal, setShowAddBankModal] = useState(false);
@@ -240,7 +250,16 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
   const [source, setSource] = useState('');
   const [contextCustomerId, setContextCustomerId] = useState('');
 
-  // Warn user on browser close/refresh when unsaved edits exist
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (masterMenuRef.current && !masterMenuRef.current.contains(e.target as Node)) {
+        setShowMasterMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (dirtyCustomerIds.size > 0) {
@@ -333,7 +352,6 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
         }))
       );
 
-      // Process Bank Master list
       const masterBanks: BankItem[] = (Array.isArray(bankData) ? bankData : []).map((b: any) => ({
         bankID: b.bankID ?? b.bankId ?? b.BankID ?? 0,
         bankName: (b.bankName ?? b.BankName ?? '').trim(),
@@ -367,7 +385,6 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
     fetchData();
   }, [fetchData]);
 
-  // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, statusFilter, deptFilter, completionFilter, pageSize]);
@@ -439,6 +456,9 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
 
       if (activeCustomerIdForBank !== null) {
         handleInputChange(activeCustomerIdForBank, 'bankName', bankNameAdded);
+        if (editingRow && editingRow.customerID === activeCustomerIdForBank) {
+          setEditingRow((prev) => (prev ? { ...prev, bankName: bankNameAdded } : null));
+        }
       }
 
       const successMsg = `'${bankNameAdded}' बँक यशस्वीरीत्या जोडली गेली!`;
@@ -501,6 +521,9 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
 
       if (activeCustomerIdForDept !== null) {
         handleInputChange(activeCustomerIdForDept, 'departmentID', newDeptId);
+        if (editingRow && editingRow.customerID === activeCustomerIdForDept) {
+          setEditingRow((prev) => (prev ? { ...prev, departmentID: newDeptId } : null));
+        }
       }
 
       const successMsg = `'${deptNameAdded}' विभाग यशस्वीरीत्या जोडला गेला!`;
@@ -568,6 +591,9 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
 
       if (activeCustomerIdForBranch !== null) {
         handleInputChange(activeCustomerIdForBranch, 'branchID', newBranchId);
+        if (editingRow && editingRow.customerID === activeCustomerIdForBranch) {
+          setEditingRow((prev) => (prev ? { ...prev, branchID: newBranchId } : null));
+        }
       }
 
       const successMsg = `'${branchNameAdded}' शाखा यशस्वीरीत्या जोडली गेली!`;
@@ -633,7 +659,6 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
       setError(summaryMessage);
       toast.error(summaryMessage);
 
-      // Jump to page containing the first error row if visible in filteredData
       const firstInvalidCustId = Number(Object.keys(errorsByCustomer)[0]);
       const idx = filteredData.findIndex((r) => r.customerID === firstInvalidCustId);
       if (idx >= 0) {
@@ -660,7 +685,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
       }
 
       const resJson = await response.json().catch(() => null);
-      const okMsg = resJson?.message || 'कर्मचारी बँक माहिती यशस्वीरित्या सेव्ह झाली!';
+      const okMsg = resJson?.message || 'खातेदार व कर्मचारी बँक माहिती यशस्वीरित्या सेव्ह झाली!';
       toast.success(okMsg);
       setDirtyCustomerIds(new Set());
       setRowErrors({});
@@ -672,6 +697,51 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Quick Save from the Single-Customer Detail Modal
+  const handleSaveSingleModalRow = async () => {
+    if (!editingRow) return;
+    const simulatedAll = data.map((r) => (r.customerID === editingRow.customerID ? editingRow : r));
+    const singleDirty = new Set<number>([editingRow.customerID]);
+    const { errorsByCustomer, summaryMessage } = validateRowsForSave(simulatedAll, singleDirty);
+    if (Object.keys(errorsByCustomer).length > 0) {
+      toast.error(summaryMessage);
+      return;
+    }
+
+    setSavingSingleRow(true);
+    try {
+      const response = await fetch('/api/EmployeeBankDetails/bulk-upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([editingRow]),
+      });
+
+      if (!response.ok) {
+        const errMsg = await readErrorMessage(response, 'माहिती सेव्ह करताना त्रुटी आली.');
+        toast.error(errMsg);
+        return;
+      }
+
+      setData(simulatedAll);
+      setDirtyCustomerIds((prev) => {
+        const next = new Set(prev);
+        next.delete(editingRow.customerID);
+        return next;
+      });
+      setRowErrors((prev) => {
+        const next = { ...prev };
+        delete next[editingRow.customerID];
+        return next;
+      });
+      toast.success(`${editingRow.customerName} यांची बँक व कर्मचारी माहिती सेव्ह झाली!`);
+      setEditingRow(null);
+    } catch {
+      toast.error('माहिती सेव्ह करताना त्रुटी आली.');
+    } finally {
+      setSavingSingleRow(false);
     }
   };
 
@@ -726,184 +796,222 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
   };
 
   const completedCount = useMemo(() => data.filter(isRowBankComplete).length, [data]);
+  const deptNameMap = useMemo(() => new Map(departments.map((d) => [d.id, d.name])), [departments]);
+  const totalCols = viewMode === 'BANK_COMPACT' ? 9 : 14;
+
+  // Ultra-compact spreadsheet cell input styling (borderless at rest, crisp border on hover/focus)
+  const cellInputBase =
+    'h-6 px-1.5 rounded text-[11.5px] bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-primary focus:outline-none transition-colors';
+  const cellSelectBase =
+    'h-6 px-1 rounded text-[11.5px] bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-primary focus:outline-none transition-colors cursor-pointer';
 
   return (
-    <div className="p-2 max-w-[1600px] mx-auto bg-gray-50 min-h-screen font-sans pb-6">
-      {/* 360 Dashboard Breadcrumb */}
-      {source === '360dashboard' && (
-        <div className="mb-2.5 flex flex-wrap justify-between items-center bg-white p-2 rounded-sm border border-gray-200 shadow-xs">
-          <nav className="flex text-[11px] text-gray-500 font-medium items-center">
-            <span
-              className="flex items-center hover:text-primary cursor-pointer"
-              onClick={() => onNavigate && onNavigate('dashboard')}
-            >
-              <Home size={12} className="mr-1 text-gray-400" /> होम
-            </span>
-            <span className="mx-1.5 text-gray-300">/</span>
-            <span
-              className="flex items-center hover:text-primary cursor-pointer"
-              onClick={() => onNavigate && onNavigate('customers')}
-            >
-              <User size={12} className="mr-1 text-gray-400" /> खातेदार माहिती
-            </span>
-            <span className="mx-1.5 text-gray-300">/</span>
-            <span className="text-primary hover:underline cursor-pointer font-bold flex items-center" onClick={navigateBack}>
-              360 डॅशबोर्ड
-            </span>
-            <span className="mx-1.5 text-gray-300">/</span>
-            <span className="text-gray-800 font-semibold">कर्मचारी बँक तपशील</span>
-          </nav>
+    <div className="h-[calc(100vh-3.15rem)] flex flex-col gap-1.5 p-1.5 bg-slate-50 overflow-hidden font-sans">
+      {/* TOP COMPACT 2-STRIP HEADER & FILTER BAR */}
+      <div className="shrink-0 bg-white border border-slate-200 rounded-lg shadow-2xs px-2.5 py-1.5 space-y-1.5">
+        {/* Strip 1: Title + Counts + Master Quick-Add Menu + Excel + Save */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-1">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+            {source === '360dashboard' && (
+              <button
+                type="button"
+                onClick={navigateBack}
+                className="h-6 px-2 rounded border border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                title="360 डॅशबोर्डवर परत जा"
+              >
+                <Home size={11} />
+                <ChevronLeft size={12} />
+                <span>360 डॅशबोर्ड</span>
+              </button>
+            )}
 
-          <button
-            onClick={navigateBack}
-            className="flex items-center text-xs text-primary bg-primary/10 border border-primary/20 px-3 py-1 rounded-sm hover:bg-primary/20 transition-colors font-bold cursor-pointer"
-          >
-            <ChevronLeft size={14} className="mr-1" /> 360 डॅशबोर्डवर परत जा
-          </button>
-        </div>
-      )}
+            <div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <Landmark size={14} />
+            </div>
 
-      {/* Main Header Action Bar */}
-      <div className="mb-3 flex flex-wrap justify-between items-center bg-white p-2.5 rounded-sm shadow-xs border border-gray-200 gap-2">
-        <div className="flex items-center gap-2">
-          <div className="bg-primary/10 text-primary p-2 rounded-sm">
-            <Landmark className="w-5 h-5" />
+            <h1 className="text-xs sm:text-sm font-black text-primary leading-tight truncate">
+              खातेदार व कर्मचारी बँक तपशील
+            </h1>
+
+            <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10.5px] font-bold text-emerald-800">
+              बँक पूर्ण: {completedCount} / {data.length}
+            </span>
+
+            {dirtyCustomerIds.size > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[10.5px] font-extrabold text-amber-900">
+                ● {dirtyCustomerIds.size} नोंदींमध्ये बदल बाकी
+              </span>
+            )}
           </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-base font-bold text-gray-800 leading-tight">
-                खातेदार व कर्मचारी बँक तपशील (Customer &amp; Employee Bank Details)
-              </h1>
-              {source === '360dashboard' && (
-                <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold border border-indigo-200">
-                  खातेदार फिल्टर लागू
-                </span>
-              )}
-              {dirtyCustomerIds.size > 0 && (
-                <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold border border-amber-300">
-                  {dirtyCustomerIds.size} नोंदींमध्ये बदल प्रलंबित
-                </span>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Consolidated Clean "+ मास्टर जोडा" Dropdown (replaces 3 rainbow buttons) */}
+            <div className="relative" ref={masterMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowMasterMenu((v) => !v)}
+                className="h-7 px-2.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <Plus size={12} className="text-primary" />
+                <span>मास्टर जोडा</span>
+                <ChevronDown size={12} className="text-slate-400" />
+              </button>
+
+              {showMasterMenu && (
+                <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-30 text-xs font-semibold text-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMasterMenu(false);
+                      setActiveCustomerIdForBank(null);
+                      setNewBankName('');
+                      setAddBankError('');
+                      setAddBankSuccess('');
+                      setShowAddBankModal(true);
+                    }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-primary/5 hover:text-primary flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus size={13} className="text-primary" />
+                    <span>नवीन बँक जोडा</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMasterMenu(false);
+                      setActiveCustomerIdForDept(null);
+                      setNewDeptName('');
+                      setNewDeptCode('');
+                      setAddDeptError('');
+                      setAddDeptSuccess('');
+                      setShowAddDeptModal(true);
+                    }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-primary/5 hover:text-primary flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus size={13} className="text-primary" />
+                    <span>नवीन विभाग जोडा</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMasterMenu(false);
+                      setActiveCustomerIdForBranch(null);
+                      setNewBranchName('');
+                      setNewBranchCode('');
+                      setAddBranchError('');
+                      setAddBranchSuccess('');
+                      setShowAddBranchModal(true);
+                    }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-primary/5 hover:text-primary flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus size={13} className="text-primary" />
+                    <span>नवीन कंपनी शाखा जोडा</span>
+                  </button>
+                </div>
               )}
             </div>
-            <p className="text-[11px] text-gray-500">
-              पतसंस्थेच्या नोंदणीकृत खातेदारांचे (CIF) वैयक्तिक बँक खाते, IFSC कोड, मूळ कंपनी/विभाग व पद स्थिती माहिती व्यवस्थापित करा
-            </p>
+
+            <button
+              type="button"
+              onClick={() => fetchData()}
+              disabled={loading}
+              title="ताजे करा (Refresh)"
+              className="h-7 px-2 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={loading ? 'animate-spin text-primary' : ''} />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={loading || filteredData.length === 0}
+              className="h-7 px-2.5 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              <FileSpreadsheet size={12} />
+              <span>Excel</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSaveAll}
+              disabled={saving || loading || dirtyCustomerIds.size === 0}
+              className="h-7 px-3.5 rounded-md bg-primary hover:bg-primary/90 text-white text-[11.5px] font-extrabold flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer"
+            >
+              {saving ? (
+                <>
+                  <RefreshCw size={12} className="animate-spin" />
+                  <span>सेव्ह होत आहे...</span>
+                </>
+              ) : (
+                <>
+                  <Save size={12} />
+                  <span>बदल सेव्ह करा {dirtyCustomerIds.size > 0 ? `(${dirtyCustomerIds.size})` : ''}</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => {
-              setActiveCustomerIdForDept(null);
-              setNewDeptName('');
-              setNewDeptCode('');
-              setAddDeptError('');
-              setAddDeptSuccess('');
-              setShowAddDeptModal(true);
-            }}
-            className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-sm font-bold text-xs shadow-xs transition-all cursor-pointer"
-            title="नवीन विभाग जोडा"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>विभाग जोडा</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveCustomerIdForBank(null);
-              setNewBankName('');
-              setAddBankError('');
-              setAddBankSuccess('');
-              setShowAddBankModal(true);
-            }}
-            className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-sm font-bold text-xs shadow-xs transition-all cursor-pointer"
-            title="नवीन बँक जोडा"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>बँक जोडा</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveCustomerIdForBranch(null);
-              setNewBranchName('');
-              setNewBranchCode('');
-              setAddBranchError('');
-              setAddBranchSuccess('');
-              setShowAddBranchModal(true);
-            }}
-            className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1.5 rounded-sm font-bold text-xs shadow-xs transition-all cursor-pointer"
-            title="नवीन कंपनी शाखा जोडा"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>कंपनी शाखा जोडा</span>
-          </button>
-
-          <button
-            onClick={handleExportExcel}
-            disabled={loading || filteredData.length === 0}
-            className="flex items-center gap-1 bg-teal-700 hover:bg-teal-800 text-white px-2.5 py-1.5 rounded-sm font-bold text-xs shadow-xs transition-all disabled:opacity-50 cursor-pointer"
-            title="Excel मध्ये डाउनलोड करा"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Excel</span>
-          </button>
-
-          <button
-            onClick={handleSaveAll}
-            disabled={saving || loading || dirtyCustomerIds.size === 0}
-            className="flex items-center gap-1.5 bg-primary hover:bg-[#004a75] text-white px-4 py-1.5 rounded-sm font-bold text-xs shadow-xs transition-all disabled:opacity-50 cursor-pointer"
-          >
-            {saving ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>सेव्ह होत आहे...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>
-                  बदल सेव्ह करा {dirtyCustomerIds.size > 0 ? `(${dirtyCustomerIds.size})` : ''}
-                </span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 mb-3 rounded-sm text-xs font-semibold flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Main Table Card */}
-      <div className="bg-white rounded-sm shadow-sm border border-gray-200 overflow-hidden">
-        {/* Search & Filter Toolbar */}
-        <div className="p-3 bg-gray-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2.5">
-          <div className="flex flex-wrap items-center gap-2 flex-1">
-            <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-2" />
+        {/* Strip 2: Search + View Mode Toggle (सुटसुटीत बँक vs सर्व रकाने) + Compact Filters */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+            {/* Search Input */}
+            <div className="relative w-56 sm:w-64">
+              <Search size={13} className="text-slate-400 absolute left-2 top-2 pointer-events-none" />
               <input
                 type="text"
-                placeholder="नाव, CIF, मोबाईल, बँक, IFSC किंवा खाते क्र...."
+                placeholder="शोधा: नाव, CIF, मोबाईल, बँक, खाते क्र...."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full border border-gray-300 pl-8 pr-3 py-1.5 rounded-sm bg-white focus:outline-none focus:border-primary text-xs"
+                className="h-7 w-full border border-slate-300 pl-7 pr-6 rounded-md bg-slate-50 focus:bg-white focus:outline-none focus:border-primary text-[11px] font-semibold text-slate-800"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1.5 top-1.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
 
+            {/* Clean View Toggle: बँक तपशील (सुटसुटीत) vs कर्मचारी + बँक (सर्व रकाने) */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 h-7">
+              <button
+                type="button"
+                onClick={() => setViewMode('BANK_COMPACT')}
+                className={`h-6 px-2.5 rounded text-[11px] font-extrabold cursor-pointer transition-colors ${
+                  viewMode === 'BANK_COMPACT'
+                    ? 'bg-primary text-white shadow-2xs'
+                    : 'text-slate-700 hover:bg-white/70'
+                }`}
+              >
+                बँक तपशील (सुटसुटीत)
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('ALL_COLUMNS')}
+                className={`h-6 px-2.5 rounded text-[11px] font-extrabold cursor-pointer transition-colors ${
+                  viewMode === 'ALL_COLUMNS'
+                    ? 'bg-primary text-white shadow-2xs'
+                    : 'text-slate-700 hover:bg-white/70'
+                }`}
+              >
+                कर्मचारी + बँक (सर्व)
+              </button>
+            </div>
+
+            {/* Society Branch Filter (HO) */}
             {isHoAdmin && societyBranches.length > 0 && (
-              <div className="flex items-center gap-1">
-                <Building2 className="w-3.5 h-3.5 text-gray-500" />
+              <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded-md px-1.5 h-7">
+                <Building2 size={12} className="text-primary shrink-0" />
                 <select
                   value={selectedSocietyBranchId}
                   onChange={(e) => handleSocietyBranchChange(e.target.value)}
-                  className="border border-gray-300 rounded-sm px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-primary font-medium"
+                  className="bg-transparent text-[11px] font-bold text-slate-800 focus:outline-none"
                   title="पतसंस्था शाखा निवडा"
                 >
-                  <option value="all">सर्व शाखा (All Branches)</option>
+                  <option value="all">सर्व शाखा</option>
                   {societyBranches.map((sb) => (
                     <option key={sb.branchID} value={String(sb.branchID)}>
                       {sb.branchName}
@@ -913,256 +1021,318 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
               </div>
             )}
 
+            {/* Bank Completion Filter */}
             <select
               value={completionFilter}
               onChange={(e) => setCompletionFilter(e.target.value as 'all' | 'completed' | 'pending')}
-              className="border border-gray-300 rounded-sm px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-primary font-medium"
+              className="h-7 border border-slate-300 rounded-md px-2 text-[11px] bg-white focus:outline-none focus:border-primary font-semibold text-slate-700"
             >
               <option value="all">सर्व बँक स्थिती</option>
-              <option value="completed">बँक तपशील पूर्ण</option>
-              <option value="pending">बँक तपशील अपूर्ण</option>
+              <option value="completed">✓ बँक पूर्ण</option>
+              <option value="pending">○ बँक अपूर्ण</option>
             </select>
 
-            <select
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-              className="border border-gray-300 rounded-sm px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-primary font-medium"
-            >
-              <option value="all">सर्व विभाग</option>
-              {departments.map((d) => (
-                <option key={d.id} value={String(d.id)}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+            {/* Department & Status Filters (shown when ALL_COLUMNS or active) */}
+            {(viewMode === 'ALL_COLUMNS' || deptFilter !== 'all' || statusFilter !== 'all') && (
+              <>
+                <select
+                  value={deptFilter}
+                  onChange={(e) => setDeptFilter(e.target.value)}
+                  className="h-7 border border-slate-300 rounded-md px-2 text-[11px] bg-white focus:outline-none focus:border-primary font-semibold text-slate-700"
+                >
+                  <option value="all">सर्व विभाग</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={String(d.id)}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-gray-300 rounded-sm px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-primary font-medium"
-            >
-              <option value="all">सर्व पद स्थिती</option>
-              <option value="Active">सक्रिय (Active)</option>
-              <option value="Retired">निवृत्त (Retired)</option>
-              <option value="Resigned">राजीनामा (Resigned)</option>
-              <option value="Transferred">बदली (Transferred)</option>
-              <option value="Suspended">निलंबित (Suspended)</option>
-            </select>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="h-7 border border-slate-300 rounded-md px-2 text-[11px] bg-white focus:outline-none focus:border-primary font-semibold text-slate-700"
+                >
+                  <option value="all">सर्व पद स्थिती</option>
+                  <option value="Active">सक्रिय</option>
+                  <option value="Retired">निवृत्त</option>
+                  <option value="Resigned">राजीनामा</option>
+                  <option value="Transferred">बदली</option>
+                  <option value="Suspended">निलंबित</option>
+                </select>
+              </>
+            )}
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-gray-600 font-medium">
-            <span>
-              बँक पूर्ण: <strong className="text-emerald-700 font-bold">{completedCount}</strong> / {data.length}
-            </span>
-            <span>
-              दाखवलेले: <strong className="text-primary font-bold">{filteredData.length}</strong>
-            </span>
+          <div className="text-[11px] text-slate-500 font-semibold whitespace-nowrap">
+            नोंदी: <strong className="text-primary font-extrabold">{filteredData.length}</strong>
           </div>
         </div>
 
-        {/* Content Table */}
+        {error && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-700 px-2.5 py-1 rounded text-[11px] font-bold flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 truncate">
+              <AlertCircle size={13} className="text-rose-600 shrink-0" />
+              <span className="truncate">{error}</span>
+            </div>
+            <button type="button" onClick={() => setError('')} className="text-rose-500 hover:text-rose-700 cursor-pointer">
+              <X size={13} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* CENTER FULL-HEIGHT ULTRA-COMPACT SINGLE-LINE TABLE */}
+      <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-lg shadow-2xs flex flex-col overflow-hidden">
         {loading ? (
-          <div className="p-10 text-center text-gray-500 text-xs font-semibold flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-            <span>डेटा लोड होत आहे... (Loading Data...)</span>
+          <div className="flex-1 flex items-center justify-center gap-2 text-slate-500 text-xs font-bold">
+            <RefreshCw size={16} className="animate-spin text-primary" />
+            <span>खातेदार बँक माहिती लोड होत आहे...</span>
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-xs text-left">
-                <thead className="bg-slate-100 text-slate-700 border-b border-gray-300 shadow-xs">
-                  <tr>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">CIF क्र.</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap min-w-[150px]">
-                      खातेदाराचे नाव
-                    </th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">मोबाईल क्र.</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">कर्मचारी आयडी</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">विभाग (Dept)</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">रुजू तारीख</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">पद स्थिती</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">वैयक्तिक बँकेचे नाव</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">IFSC कोड</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">खाते क्रमांक</th>
-                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">खाते प्रकार</th>
-                    <th className="px-2.5 py-2 font-bold whitespace-nowrap">कंपनी शाखा</th>
+            <div className="flex-1 min-h-0 overflow-auto">
+              <table className="w-full border-collapse text-left">
+                <thead className="bg-primary text-white sticky top-0 z-10 text-[11px] font-bold select-none">
+                  <tr className="h-7">
+                    <th className="w-10 px-2 text-center border-r border-white/15 whitespace-nowrap">अ.क्र.</th>
+                    <th className="w-24 px-2 border-r border-white/15 whitespace-nowrap">CIF क्र.</th>
+                    <th className="min-w-[180px] px-2.5 border-r border-white/15 whitespace-nowrap">खातेदाराचे नाव</th>
+                    <th className="w-24 px-2 border-r border-white/15 whitespace-nowrap">मोबाईल क्र.</th>
+
+                    {viewMode === 'ALL_COLUMNS' && (
+                      <>
+                        <th className="w-24 px-2 border-r border-white/15 whitespace-nowrap">कर्मचारी आयडी</th>
+                        <th className="w-36 px-2 border-r border-white/15 whitespace-nowrap">विभाग</th>
+                        <th className="w-28 px-2 border-r border-white/15 whitespace-nowrap">रुजू दि.</th>
+                        <th className="w-24 px-2 border-r border-white/15 whitespace-nowrap">पद स्थिती</th>
+                      </>
+                    )}
+
+                    <th className="w-48 px-2 border-r border-white/15 whitespace-nowrap">वैयक्तिक बँकेचे नाव</th>
+                    <th className="w-28 px-2 border-r border-white/15 whitespace-nowrap">IFSC कोड</th>
+                    <th className="w-36 px-2 border-r border-white/15 whitespace-nowrap">बँक खाते क्रमांक</th>
+                    <th className="w-24 px-2 border-r border-white/15 whitespace-nowrap">खाते प्रकार</th>
+
+                    {viewMode === 'ALL_COLUMNS' && (
+                      <th className="w-32 px-2 border-r border-white/15 whitespace-nowrap">कंपनी शाखा</th>
+                    )}
+
+                    <th className="w-16 px-2 text-center whitespace-nowrap">सविस्तर</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-slate-100 text-[11.5px]">
                   {paginatedData.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-8 text-center text-gray-500">
-                        <div className="flex flex-col items-center justify-center gap-1.5">
-                          <Landmark className="w-8 h-8 text-gray-300" />
-                          <p className="font-semibold text-gray-600">कोणतीही खातेदार/कर्मचारी नोंद सापडली नाही.</p>
-                          <p className="text-[11px] text-gray-400">शोधाचा शब्द किंवा फिल्टर बदला.</p>
-                        </div>
+                      <td colSpan={totalCols} className="py-12 text-center text-slate-400 font-semibold">
+                        कोणतीही खातेदार / कर्मचारी नोंद सापडली नाही.
                       </td>
                     </tr>
                   ) : (
-                    paginatedData.map((row) => {
+                    paginatedData.map((row, idx) => {
+                      const serialNo = (safePage - 1) * pageSize + idx + 1;
                       const isDirty = dirtyCustomerIds.has(row.customerID);
                       const rowError = rowErrors[row.customerID];
+                      const bankDone = isRowBankComplete(row);
+                      const deptTitle = row.departmentID ? deptNameMap.get(row.departmentID) : '';
+
                       return (
-                        <React.Fragment key={row.customerID || row.cifNo}>
-                          <tr
-                            className={`transition-colors ${
-                              rowError
-                                ? 'bg-red-50/70'
-                                : isDirty
-                                ? 'bg-amber-50/60 hover:bg-amber-50'
-                                : 'hover:bg-blue-50/40'
-                            }`}
+                        <tr
+                          key={row.customerID || row.cifNo}
+                          title={rowError ? `त्रुटी: ${rowError}` : undefined}
+                          className={`h-7 transition-colors whitespace-nowrap ${
+                            rowError
+                              ? 'bg-rose-50/90 hover:bg-rose-100/70'
+                              : isDirty
+                              ? 'bg-amber-50/70 hover:bg-amber-100/60'
+                              : idx % 2 === 0
+                              ? 'bg-white hover:bg-primary/5'
+                              : 'bg-slate-50/50 hover:bg-primary/5'
+                          }`}
+                        >
+                          <td className="px-2 py-0.5 text-center text-slate-500 font-semibold border-r border-slate-100">
+                            {serialNo}
+                          </td>
+
+                          <td className="px-2 py-0.5 font-mono text-[10.5px] font-bold text-primary border-r border-slate-100">
+                            <div className="flex items-center gap-1">
+                              {bankDone ? (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="बँक तपशील पूर्ण" />
+                              ) : (
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" title="बँक तपशील अपूर्ण" />
+                              )}
+                              <span>{row.cifNo || 'CIF' + String(row.customerID).padStart(6, '0')}</span>
+                              {isDirty && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="न सेव्ह केलेला बदल" />
+                              )}
+                            </div>
+                          </td>
+
+                          <td
+                            className="px-2.5 py-0.5 font-bold text-slate-800 border-r border-slate-100 max-w-[230px] truncate"
+                            title={`${row.customerName}${deptTitle ? ` (${deptTitle})` : ''}`}
                           >
-                            <td className="px-2.5 py-1.5 border-r border-gray-100 font-bold text-primary whitespace-nowrap">
-                              <div className="flex items-center gap-1">
-                                <span>{row.cifNo || 'CIF' + String(row.customerID).padStart(6, '0')}</span>
-                                {isDirty && (
-                                  <span
-                                    className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"
-                                    title="बदल केलेली नोंद (Unsaved)"
-                                  />
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100 font-bold text-gray-800 whitespace-nowrap">
-                              {row.customerName}
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100 text-gray-600 whitespace-nowrap font-mono">
-                              {row.mobileNumber || '-'}
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100">
-                              <input
-                                type="text"
-                                maxLength={50}
-                                value={row.employeeID || ''}
-                                onChange={(e) => handleInputChange(row.customerID, 'employeeID', e.target.value)}
-                                className="border border-gray-300 rounded-sm px-2 py-1 w-24 text-xs focus:outline-none focus:border-primary bg-white font-medium"
-                                placeholder="Emp ID"
-                              />
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100">
-                              <select
-                                value={row.departmentID !== undefined && row.departmentID !== null ? row.departmentID : ''}
-                                onChange={(e) => {
-                                  if (e.target.value === '__ADD_NEW_DEPT__') {
-                                    setActiveCustomerIdForDept(row.customerID);
-                                    setNewDeptName('');
-                                    setNewDeptCode('');
-                                    setAddDeptError('');
-                                    setAddDeptSuccess('');
-                                    setShowAddDeptModal(true);
-                                  } else {
+                            <span>{row.customerName}</span>
+                            {viewMode === 'BANK_COMPACT' && (row.employeeID || deptTitle) && (
+                              <span className="ml-1.5 px-1 py-0 rounded bg-slate-100 text-slate-500 text-[9.5px] font-semibold">
+                                {row.employeeID || deptTitle}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-2 py-0.5 font-mono text-[10.5px] text-slate-600 border-r border-slate-100">
+                            {row.mobileNumber || '-'}
+                          </td>
+
+                          {viewMode === 'ALL_COLUMNS' && (
+                            <>
+                              <td className="px-1 py-0.5 border-r border-slate-100">
+                                <input
+                                  type="text"
+                                  maxLength={50}
+                                  value={row.employeeID || ''}
+                                  onChange={(e) => handleInputChange(row.customerID, 'employeeID', e.target.value)}
+                                  placeholder="-"
+                                  className={`${cellInputBase} w-20 font-medium text-slate-800`}
+                                />
+                              </td>
+
+                              <td className="px-1 py-0.5 border-r border-slate-100">
+                                <select
+                                  value={row.departmentID !== undefined && row.departmentID !== null ? row.departmentID : ''}
+                                  onChange={(e) => {
+                                    if (e.target.value === '__ADD_NEW_DEPT__') {
+                                      setActiveCustomerIdForDept(row.customerID);
+                                      setNewDeptName('');
+                                      setNewDeptCode('');
+                                      setAddDeptError('');
+                                      setAddDeptSuccess('');
+                                      setShowAddDeptModal(true);
+                                    } else {
+                                      handleInputChange(
+                                        row.customerID,
+                                        'departmentID',
+                                        e.target.value ? Number(e.target.value) : undefined
+                                      );
+                                    }
+                                  }}
+                                  className={`${cellSelectBase} w-32 font-medium text-slate-700`}
+                                >
+                                  <option value="">- विभाग -</option>
+                                  {departments.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                      {d.name}
+                                    </option>
+                                  ))}
+                                  <option value="__ADD_NEW_DEPT__">+ नवीन विभाग जोडा</option>
+                                </select>
+                              </td>
+
+                              <td className="px-1 py-0.5 border-r border-slate-100">
+                                <input
+                                  type="date"
+                                  value={row.joiningDate ? row.joiningDate.split('T')[0] : ''}
+                                  onChange={(e) =>
                                     handleInputChange(
                                       row.customerID,
-                                      'departmentID',
-                                      e.target.value ? Number(e.target.value) : undefined
-                                    );
+                                      'joiningDate',
+                                      e.target.value ? e.target.value : undefined
+                                    )
                                   }
-                                }}
-                                className="border border-gray-300 rounded-sm px-2 py-1 w-36 text-xs focus:outline-none focus:border-primary bg-white font-medium"
-                              >
-                                <option value="">-- विभाग निवडा --</option>
-                                {departments.map((d) => (
-                                  <option key={d.id} value={d.id}>
-                                    {d.name}
-                                  </option>
-                                ))}
-                                <option value="__ADD_NEW_DEPT__" className="font-bold text-blue-600 bg-blue-50">
-                                  + नवीन विभाग जोडा (Add New Dept)
+                                  className={`${cellInputBase} w-28 text-[10.5px] py-0 text-slate-700`}
+                                />
+                              </td>
+
+                              <td className="px-1 py-0.5 border-r border-slate-100">
+                                <select
+                                  value={row.employeeStatus}
+                                  onChange={(e) => handleInputChange(row.customerID, 'employeeStatus', e.target.value)}
+                                  className={`${cellSelectBase} w-24 font-semibold text-slate-700`}
+                                >
+                                  <option value="Active">सक्रिय</option>
+                                  <option value="Retired">निवृत्त</option>
+                                  <option value="Resigned">राजीनामा</option>
+                                  <option value="Transferred">बदली</option>
+                                  <option value="Suspended">निलंबित</option>
+                                </select>
+                              </td>
+                            </>
+                          )}
+
+                          {/* Bank Name */}
+                          <td className="px-1 py-0.5 border-r border-slate-100">
+                            <select
+                              value={row.bankName || ''}
+                              onChange={(e) => {
+                                if (e.target.value === '__ADD_NEW__') {
+                                  setActiveCustomerIdForBank(row.customerID);
+                                  setNewBankName('');
+                                  setAddBankError('');
+                                  setAddBankSuccess('');
+                                  setShowAddBankModal(true);
+                                } else {
+                                  handleInputChange(row.customerID, 'bankName', e.target.value);
+                                }
+                              }}
+                              className={`${cellSelectBase} w-full min-w-[165px] font-semibold ${
+                                row.bankName ? 'text-slate-900' : 'text-slate-400'
+                              }`}
+                            >
+                              <option value="">-- बँक निवडा --</option>
+                              {banks.map((b) => (
+                                <option key={b.bankID + '-' + b.bankName} value={b.bankName} className="text-slate-800">
+                                  {b.bankName}
                                 </option>
-                              </select>
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100">
-                              <input
-                                type="date"
-                                value={row.joiningDate ? row.joiningDate.split('T')[0] : ''}
-                                onChange={(e) =>
-                                  handleInputChange(
-                                    row.customerID,
-                                    'joiningDate',
-                                    e.target.value ? e.target.value : undefined
-                                  )
-                                }
-                                className="border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white"
-                              />
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100">
-                              <select
-                                value={row.employeeStatus}
-                                onChange={(e) => handleInputChange(row.customerID, 'employeeStatus', e.target.value)}
-                                className="border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-semibold"
-                              >
-                                <option value="Active">सक्रिय (Active)</option>
-                                <option value="Retired">निवृत्त (Retired)</option>
-                                <option value="Resigned">राजीनामा (Resigned)</option>
-                                <option value="Transferred">बदली (Transferred)</option>
-                                <option value="Suspended">निलंबित (Suspended)</option>
-                              </select>
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100">
-                              <select
-                                value={row.bankName || ''}
-                                onChange={(e) => {
-                                  if (e.target.value === '__ADD_NEW__') {
-                                    setActiveCustomerIdForBank(row.customerID);
-                                    setNewBankName('');
-                                    setAddBankError('');
-                                    setAddBankSuccess('');
-                                    setShowAddBankModal(true);
-                                  } else {
-                                    handleInputChange(row.customerID, 'bankName', e.target.value);
-                                  }
-                                }}
-                                className="border border-gray-300 rounded-sm px-2 py-1 w-40 text-xs focus:outline-none focus:border-primary bg-white font-medium"
-                              >
-                                <option value="">-- बँक निवडा --</option>
-                                {banks.map((b) => (
-                                  <option key={b.bankID + '-' + b.bankName} value={b.bankName}>
-                                    {b.bankName}
-                                  </option>
-                                ))}
-                                <option value="__ADD_NEW__" className="font-bold text-blue-600 bg-blue-50">
-                                  + नवीन बँक जोडा (Add New Bank)
-                                </option>
-                              </select>
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100">
-                              <input
-                                type="text"
-                                maxLength={11}
-                                value={row.ifscCode || ''}
-                                onChange={(e) =>
-                                  handleInputChange(row.customerID, 'ifscCode', e.target.value.toUpperCase().trim())
-                                }
-                                className="border border-gray-300 rounded-sm px-2 py-1 w-28 text-xs uppercase font-mono focus:outline-none focus:border-primary bg-white font-medium"
-                                placeholder="SBIN0001234"
-                              />
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100">
-                              <input
-                                type="text"
-                                maxLength={20}
-                                value={row.accountNumber || ''}
-                                onChange={(e) =>
-                                  handleInputChange(row.customerID, 'accountNumber', e.target.value.replace(/\s+/g, ''))
-                                }
-                                className="border border-gray-300 rounded-sm px-2 py-1 w-32 text-xs font-mono focus:outline-none focus:border-primary bg-white font-medium"
-                                placeholder="खाते क्रमांक"
-                              />
-                            </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-100">
-                              <select
-                                value={row.accountType}
-                                onChange={(e) => handleInputChange(row.customerID, 'accountType', e.target.value)}
-                                className="border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white"
-                              >
-                                <option value="Savings">बचत (Savings)</option>
-                                <option value="Current">चालू (Current)</option>
-                                <option value="Salary">पगार (Salary)</option>
-                              </select>
-                            </td>
-                            <td className="px-2.5 py-1.5">
+                              ))}
+                              <option value="__ADD_NEW__" className="font-bold text-primary">
+                                + नवीन बँक जोडा
+                              </option>
+                            </select>
+                          </td>
+
+                          {/* IFSC */}
+                          <td className="px-1 py-0.5 border-r border-slate-100">
+                            <input
+                              type="text"
+                              maxLength={11}
+                              value={row.ifscCode || ''}
+                              onChange={(e) =>
+                                handleInputChange(row.customerID, 'ifscCode', e.target.value.toUpperCase().trim())
+                              }
+                              placeholder="IFSC कोड"
+                              className={`${cellInputBase} w-full min-w-[105px] uppercase font-mono font-semibold text-slate-800`}
+                            />
+                          </td>
+
+                          {/* Account Number */}
+                          <td className="px-1 py-0.5 border-r border-slate-100">
+                            <input
+                              type="text"
+                              maxLength={20}
+                              value={row.accountNumber || ''}
+                              onChange={(e) =>
+                                handleInputChange(row.customerID, 'accountNumber', e.target.value.replace(/\s+/g, ''))
+                              }
+                              placeholder="खाते क्रमांक"
+                              className={`${cellInputBase} w-full min-w-[130px] font-mono font-bold text-slate-900`}
+                            />
+                          </td>
+
+                          {/* Account Type */}
+                          <td className="px-1 py-0.5 border-r border-slate-100">
+                            <select
+                              value={row.accountType}
+                              onChange={(e) => handleInputChange(row.customerID, 'accountType', e.target.value)}
+                              className={`${cellSelectBase} w-full font-semibold text-slate-700`}
+                            >
+                              <option value="Savings">बचत</option>
+                              <option value="Current">चालू</option>
+                              <option value="Salary">पगार</option>
+                            </select>
+                          </td>
+
+                          {viewMode === 'ALL_COLUMNS' && (
+                            <td className="px-1 py-0.5 border-r border-slate-100">
                               <select
                                 value={row.branchID !== undefined && row.branchID !== null ? row.branchID : ''}
                                 onChange={(e) => {
@@ -1181,28 +1351,32 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                                     );
                                   }
                                 }}
-                                className="border border-gray-300 rounded-sm px-2 py-1 w-32 text-xs focus:outline-none focus:border-primary bg-white"
+                                className={`${cellSelectBase} w-32 text-slate-700`}
                               >
-                                <option value="">-- कंपनी शाखा --</option>
+                                <option value="">- शाखा -</option>
                                 {branches.map((b) => (
                                   <option key={b.id} value={b.id}>
                                     {b.name}
                                   </option>
                                 ))}
-                                <option value="__ADD_NEW_BRANCH__" className="font-bold text-purple-600 bg-purple-50">
-                                  + नवीन कंपनी शाखा जोडा
-                                </option>
+                                <option value="__ADD_NEW_BRANCH__">+ नवीन शाखा जोडा</option>
                               </select>
                             </td>
-                          </tr>
-                          {rowError && (
-                            <tr className="bg-red-50">
-                              <td colSpan={12} className="px-3 py-1 text-[11px] font-semibold text-red-700 border-b border-red-200">
-                                ⚠ {rowError}
-                              </td>
-                            </tr>
                           )}
-                        </React.Fragment>
+
+                          {/* Quick Single-Customer Full Form Modal Trigger */}
+                          <td className="px-1.5 py-0.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setEditingRow({ ...row })}
+                              title="बँक व कर्मचारी सविस्तर माहिती भरा / संपादित करा"
+                              className="h-5 px-1.5 rounded border border-slate-200 hover:border-primary bg-slate-50 hover:bg-primary/10 text-slate-600 hover:text-primary text-[10px] font-bold inline-flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <SlidersHorizontal size={10} />
+                              <span>फॉर्म</span>
+                            </button>
+                          </td>
+                        </tr>
                       );
                     })
                   )}
@@ -1210,43 +1384,44 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
               </table>
             </div>
 
-            {/* Pagination Footer */}
-            <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 flex flex-wrap justify-between items-center gap-2 text-xs text-gray-600">
-              <div className="flex items-center gap-2">
-                <span>प्रति पान नोंदी:</span>
+            {/* SLIM COMPACT PAGINATION FOOTER */}
+            <div className="shrink-0 h-8 px-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2 text-[11px] text-slate-600">
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold">प्रति पान:</span>
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="border border-gray-300 rounded-sm px-1.5 py-0.5 bg-white text-xs font-semibold"
+                  className="h-6 border border-slate-300 rounded px-1 bg-white text-[11px] font-bold text-slate-800"
                 >
                   <option value={25}>25</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
                 </select>
                 <span>
-                  (एकूण {filteredData.length} पैकी{' '}
-                  {filteredData.length === 0 ? 0 : (safePage - 1) * pageSize + 1}–
-                  {Math.min(safePage * pageSize, filteredData.length)})
+                  ({filteredData.length === 0 ? 0 : (safePage - 1) * pageSize + 1}–
+                  {Math.min(safePage * pageSize, filteredData.length)} / एकूण {filteredData.length})
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
+                  type="button"
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={safePage <= 1}
-                  className="px-2 py-1 border border-gray-300 rounded-sm bg-white hover:bg-gray-100 disabled:opacity-40 flex items-center gap-0.5 cursor-pointer"
+                  className="h-6 px-2 border border-slate-300 rounded bg-white hover:bg-slate-100 disabled:opacity-40 flex items-center gap-0.5 font-bold cursor-pointer"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" /> मागील
+                  <ChevronLeft size={12} /> मागील
                 </button>
-                <span className="px-2 font-bold text-gray-800">
-                  पान {safePage} / {totalPages}
+                <span className="px-2 font-extrabold text-slate-800">
+                  {safePage} / {totalPages}
                 </span>
                 <button
+                  type="button"
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={safePage >= totalPages}
-                  className="px-2 py-1 border border-gray-300 rounded-sm bg-white hover:bg-gray-100 disabled:opacity-40 flex items-center gap-0.5 cursor-pointer"
+                  className="h-6 px-2 border border-slate-300 rounded bg-white hover:bg-slate-100 disabled:opacity-40 flex items-center gap-0.5 font-bold cursor-pointer"
                 >
-                  पुढील <ChevronRight className="w-3.5 h-3.5" />
+                  पुढील <ChevronRight size={12} />
                 </button>
               </div>
             </div>
@@ -1254,23 +1429,247 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
         )}
       </div>
 
+      {/* SINGLE-CUSTOMER CLEAN QUICK-EDIT MODAL (बँक + कर्मचारी संपूर्ण फॉर्म) */}
+      {editingRow && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 backdrop-blur-2xs p-3">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden">
+            <div className="bg-primary text-white px-4 py-2.5 flex items-center justify-between">
+              <div className="min-w-0">
+                <h3 className="text-sm font-black truncate">{editingRow.customerName}</h3>
+                <p className="text-[11px] text-white/80 font-mono">
+                  {editingRow.cifNo || `CIF${String(editingRow.customerID).padStart(6, '0')}`}
+                  {editingRow.mobileNumber ? ` • मो. ${editingRow.mobileNumber}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingRow(null)}
+                className="text-white/80 hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              {/* Section 1: Bank Details */}
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2.5">
+                <div className="font-extrabold text-primary text-[11.5px] border-b border-slate-200 pb-1">
+                  १. वैयक्तिक बँक खाते तपशील
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">बँकेचे नाव</label>
+                    <select
+                      value={editingRow.bankName || ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__ADD_NEW__') {
+                          setActiveCustomerIdForBank(editingRow.customerID);
+                          setShowAddBankModal(true);
+                        } else {
+                          setEditingRow({ ...editingRow, bankName: e.target.value });
+                        }
+                      }}
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 font-semibold focus:border-primary focus:outline-none"
+                    >
+                      <option value="">-- बँक निवडा --</option>
+                      {banks.map((b) => (
+                        <option key={b.bankID + '-' + b.bankName} value={b.bankName}>
+                          {b.bankName}
+                        </option>
+                      ))}
+                      <option value="__ADD_NEW__">+ नवीन बँक जोडा</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">IFSC कोड (११ अक्षरी)</label>
+                    <input
+                      type="text"
+                      maxLength={11}
+                      value={editingRow.ifscCode || ''}
+                      onChange={(e) =>
+                        setEditingRow({ ...editingRow, ifscCode: e.target.value.toUpperCase().trim() })
+                      }
+                      placeholder="उदा. SBIN0001234"
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 uppercase font-mono font-bold focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">बँक खाते क्रमांक</label>
+                    <input
+                      type="text"
+                      maxLength={20}
+                      value={editingRow.accountNumber || ''}
+                      onChange={(e) =>
+                        setEditingRow({ ...editingRow, accountNumber: e.target.value.replace(/\s+/g, '') })
+                      }
+                      placeholder="खाते क्रमांक"
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 font-mono font-bold focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">खात्याचा प्रकार</label>
+                    <select
+                      value={editingRow.accountType}
+                      onChange={(e) => setEditingRow({ ...editingRow, accountType: e.target.value })}
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 font-semibold focus:border-primary focus:outline-none"
+                    >
+                      <option value="Savings">बचत (Savings)</option>
+                      <option value="Current">चालू (Current)</option>
+                      <option value="Salary">पगार (Salary)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Employee / Company Details */}
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2.5">
+                <div className="font-extrabold text-slate-700 text-[11.5px] border-b border-slate-200 pb-1">
+                  २. कर्मचारी व विभाग तपशील (पगारदार कर्मचाऱ्यांसाठी पर्यायी)
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">कर्मचारी आयडी (Emp ID)</label>
+                    <input
+                      type="text"
+                      maxLength={50}
+                      value={editingRow.employeeID || ''}
+                      onChange={(e) => setEditingRow({ ...editingRow, employeeID: e.target.value })}
+                      placeholder="उदा. EMP001"
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 font-semibold focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">विभाग (Department)</label>
+                    <select
+                      value={editingRow.departmentID ?? ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__ADD_NEW_DEPT__') {
+                          setActiveCustomerIdForDept(editingRow.customerID);
+                          setShowAddDeptModal(true);
+                        } else {
+                          setEditingRow({
+                            ...editingRow,
+                            departmentID: e.target.value ? Number(e.target.value) : undefined,
+                          });
+                        }
+                      }}
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 font-semibold focus:border-primary focus:outline-none"
+                    >
+                      <option value="">-- विभाग निवडा --</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                      <option value="__ADD_NEW_DEPT__">+ नवीन विभाग जोडा</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">कंपनी / कार्यालय शाखा</label>
+                    <select
+                      value={editingRow.branchID ?? ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__ADD_NEW_BRANCH__') {
+                          setActiveCustomerIdForBranch(editingRow.customerID);
+                          setShowAddBranchModal(true);
+                        } else {
+                          setEditingRow({
+                            ...editingRow,
+                            branchID: e.target.value ? Number(e.target.value) : undefined,
+                          });
+                        }
+                      }}
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 font-semibold focus:border-primary focus:outline-none"
+                    >
+                      <option value="">-- कंपनी शाखा निवडा --</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                      <option value="__ADD_NEW_BRANCH__">+ नवीन शाखा जोडा</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">रुजू तारीख</label>
+                      <input
+                        type="date"
+                        value={editingRow.joiningDate ? editingRow.joiningDate.split('T')[0] : ''}
+                        onChange={(e) =>
+                          setEditingRow({
+                            ...editingRow,
+                            joiningDate: e.target.value ? e.target.value : undefined,
+                          })
+                        }
+                        className="h-8 w-full rounded border border-slate-300 bg-white px-1.5 text-[11px] focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">पद स्थिती</label>
+                      <select
+                        value={editingRow.employeeStatus}
+                        onChange={(e) => setEditingRow({ ...editingRow, employeeStatus: e.target.value })}
+                        className="h-8 w-full rounded border border-slate-300 bg-white px-1.5 font-semibold focus:border-primary focus:outline-none"
+                      >
+                        <option value="Active">सक्रिय</option>
+                        <option value="Retired">निवृत्त</option>
+                        <option value="Resigned">राजीनामा</option>
+                        <option value="Transferred">बदली</option>
+                        <option value="Suspended">निलंबित</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingRow(null)}
+                className="h-8 px-3 rounded-md border border-slate-300 bg-white hover:bg-slate-100 text-xs font-bold text-slate-700 cursor-pointer"
+              >
+                रद्द करा
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSingleModalRow}
+                disabled={savingSingleRow}
+                className="h-8 px-4 rounded-md bg-primary hover:bg-primary/90 text-white text-xs font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Save size={13} />
+                <span>{savingSingleRow ? 'सेव्ह होत आहे...' : 'जतन करा'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quick Add Bank Modal */}
       {showAddBankModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-sm shadow-xl border border-gray-200 w-full max-w-md overflow-hidden">
-            <div className="bg-slate-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <Landmark className="w-5 h-5 text-primary" />
-                <h3 className="font-bold text-sm text-gray-800">नवीन बँक जोडा (Add New Bank)</h3>
+                <Landmark className="w-4 h-4" />
+                <h3 className="font-bold text-sm">नवीन बँक जोडा</h3>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setShowAddBankModal(false);
                   setAddBankError('');
                   setNewBankName('');
                   setActiveCustomerIdForBank(null);
                 }}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-sm transition-colors"
+                className="text-white/80 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1278,22 +1677,22 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
 
             <div className="p-4 space-y-3">
               {addBankSuccess && (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-sm text-xs font-semibold flex items-center gap-2">
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded text-xs font-semibold flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{addBankSuccess}</span>
                 </div>
               )}
 
               {addBankError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-sm text-xs font-medium flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded text-xs font-medium flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
                   <span>{addBankError}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  बँकेचे नाव (Bank Name) <span className="text-red-500">*</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  बँकेचे नाव <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1307,15 +1706,16 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleAddBank();
                   }}
-                  placeholder="उदा. स्टेट बँक ऑफ इंडिया / ICICI Bank"
-                  className="w-full border border-gray-300 rounded-sm px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white"
+                  placeholder="उदा. स्टेट बँक ऑफ इंडिया / KDCC बँक"
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white"
                   autoFocus
                 />
               </div>
             </div>
 
-            <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+            <div className="bg-slate-50 px-4 py-2.5 border-t border-slate-200 flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => {
                   setShowAddBankModal(false);
                   setAddBankError('');
@@ -1323,26 +1723,18 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setNewBankName('');
                   setActiveCustomerIdForBank(null);
                 }}
-                className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-sm text-xs font-medium hover:bg-gray-100 transition-colors"
+                className="px-3 py-1.5 border border-slate-300 text-slate-700 rounded text-xs font-bold hover:bg-slate-100 cursor-pointer"
               >
-                {addBankSuccess ? 'पूर्ण झाले (Close)' : 'रद्द करा (Cancel)'}
+                {addBankSuccess ? 'बंद करा' : 'रद्द करा'}
               </button>
               <button
+                type="button"
                 onClick={handleAddBank}
                 disabled={addingBank || !newBankName.trim()}
-                className="flex items-center gap-1.5 bg-primary hover:bg-[#004a75] text-white px-4 py-1.5 rounded-sm font-bold text-xs shadow-xs transition-all disabled:opacity-50"
+                className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white px-4 py-1.5 rounded font-bold text-xs disabled:opacity-50 cursor-pointer"
               >
-                {addingBank ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>सेव्ह होत आहे...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-3.5 h-3.5" />
-                    <span>बँक सेव्ह करा</span>
-                  </>
-                )}
+                <Save className="w-3.5 h-3.5" />
+                <span>{addingBank ? 'सेव्ह होत आहे...' : 'बँक सेव्ह करा'}</span>
               </button>
             </div>
           </div>
@@ -1352,13 +1744,14 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
       {/* Quick Add Department Modal */}
       {showAddDeptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-sm shadow-xl border border-gray-200 w-full max-w-md overflow-hidden">
-            <div className="bg-slate-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <User className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-sm text-gray-800">नवीन विभाग जोडा (Add New Department)</h3>
+                <User className="w-4 h-4" />
+                <h3 className="font-bold text-sm">नवीन विभाग जोडा</h3>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setShowAddDeptModal(false);
                   setAddDeptError('');
@@ -1367,7 +1760,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setNewDeptCode('');
                   setActiveCustomerIdForDept(null);
                 }}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-sm transition-colors"
+                className="text-white/80 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1375,22 +1768,22 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
 
             <div className="p-4 space-y-3">
               {addDeptSuccess && (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-sm text-xs font-semibold flex items-center gap-2">
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded text-xs font-semibold flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{addDeptSuccess}</span>
                 </div>
               )}
 
               {addDeptError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-sm text-xs font-medium flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded text-xs font-medium flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
                   <span>{addDeptError}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  विभागाचे नाव (Department Name) <span className="text-red-500">*</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  विभागाचे नाव <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1405,28 +1798,27 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                     if (e.key === 'Enter') handleAddDept();
                   }}
                   placeholder="उदा. महसूल विभाग / वित्त विभाग / प्रशासन"
-                  className="w-full border border-gray-300 rounded-sm px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white"
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  विभाग कोड (Department Code - पर्यायी)
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">विभाग कोड (पर्यायी)</label>
                 <input
                   type="text"
                   maxLength={20}
                   value={newDeptCode}
                   onChange={(e) => setNewDeptCode(e.target.value)}
                   placeholder="उदा. DEPT01"
-                  className="w-full border border-gray-300 rounded-sm px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white uppercase"
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white uppercase"
                 />
               </div>
             </div>
 
-            <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+            <div className="bg-slate-50 px-4 py-2.5 border-t border-slate-200 flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => {
                   setShowAddDeptModal(false);
                   setAddDeptError('');
@@ -1435,26 +1827,18 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setNewDeptCode('');
                   setActiveCustomerIdForDept(null);
                 }}
-                className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-sm text-xs font-medium hover:bg-gray-100 transition-colors"
+                className="px-3 py-1.5 border border-slate-300 text-slate-700 rounded text-xs font-bold hover:bg-slate-100 cursor-pointer"
               >
-                {addDeptSuccess ? 'पूर्ण झाले (Close)' : 'रद्द करा (Cancel)'}
+                {addDeptSuccess ? 'बंद करा' : 'रद्द करा'}
               </button>
               <button
+                type="button"
                 onClick={handleAddDept}
                 disabled={addingDept || !newDeptName.trim()}
-                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-sm font-bold text-xs shadow-xs transition-all disabled:opacity-50"
+                className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white px-4 py-1.5 rounded font-bold text-xs disabled:opacity-50 cursor-pointer"
               >
-                {addingDept ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>सेव्ह होत आहे...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-3.5 h-3.5" />
-                    <span>विभाग सेव्ह करा</span>
-                  </>
-                )}
+                <Save className="w-3.5 h-3.5" />
+                <span>{addingDept ? 'सेव्ह होत आहे...' : 'विभाग सेव्ह करा'}</span>
               </button>
             </div>
           </div>
@@ -1464,13 +1848,14 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
       {/* Quick Add Company Branch Modal */}
       {showAddBranchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-sm shadow-xl border border-gray-200 w-full max-w-md overflow-hidden">
-            <div className="bg-slate-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <Landmark className="w-5 h-5 text-purple-600" />
-                <h3 className="font-bold text-sm text-gray-800">नवीन कंपनी शाखा जोडा (Add Company Branch)</h3>
+                <Building2 className="w-4 h-4" />
+                <h3 className="font-bold text-sm">नवीन कंपनी शाखा जोडा</h3>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setShowAddBranchModal(false);
                   setAddBranchError('');
@@ -1479,7 +1864,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setNewBranchCode('');
                   setActiveCustomerIdForBranch(null);
                 }}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-sm transition-colors"
+                className="text-white/80 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1487,22 +1872,22 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
 
             <div className="p-4 space-y-3">
               {addBranchSuccess && (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-sm text-xs font-semibold flex items-center gap-2">
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded text-xs font-semibold flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{addBranchSuccess}</span>
                 </div>
               )}
 
               {addBranchError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-sm text-xs font-medium flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded text-xs font-medium flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
                   <span>{addBranchError}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  कंपनी शाखेचे नाव (Branch Name) <span className="text-red-500">*</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  कंपनी शाखेचे नाव <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1517,28 +1902,27 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                     if (e.key === 'Enter') handleAddBranch();
                   }}
                   placeholder="उदा. मुख्य कार्यालय / पुणे शाखा / कोल्हापूर शाखा"
-                  className="w-full border border-gray-300 rounded-sm px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white"
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  शाखा कोड (Branch Code - पर्यायी)
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">शाखा कोड (पर्यायी)</label>
                 <input
                   type="text"
                   maxLength={20}
                   value={newBranchCode}
                   onChange={(e) => setNewBranchCode(e.target.value)}
                   placeholder="उदा. BR01"
-                  className="w-full border border-gray-300 rounded-sm px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white uppercase"
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-primary bg-white uppercase"
                 />
               </div>
             </div>
 
-            <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+            <div className="bg-slate-50 px-4 py-2.5 border-t border-slate-200 flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => {
                   setShowAddBranchModal(false);
                   setAddBranchError('');
@@ -1547,26 +1931,18 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setNewBranchCode('');
                   setActiveCustomerIdForBranch(null);
                 }}
-                className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-sm text-xs font-medium hover:bg-gray-100 transition-colors"
+                className="px-3 py-1.5 border border-slate-300 text-slate-700 rounded text-xs font-bold hover:bg-slate-100 cursor-pointer"
               >
-                {addBranchSuccess ? 'पूर्ण झाले (Close)' : 'रद्द करा (Cancel)'}
+                {addBranchSuccess ? 'बंद करा' : 'रद्द करा'}
               </button>
               <button
+                type="button"
                 onClick={handleAddBranch}
                 disabled={addingBranch || !newBranchName.trim()}
-                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 rounded-sm font-bold text-xs shadow-xs transition-all disabled:opacity-50"
+                className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white px-4 py-1.5 rounded font-bold text-xs disabled:opacity-50 cursor-pointer"
               >
-                {addingBranch ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>सेव्ह होत आहे...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-3.5 h-3.5" />
-                    <span>शाखा सेव्ह करा</span>
-                  </>
-                )}
+                <Save className="w-3.5 h-3.5" />
+                <span>{addingBranch ? 'सेव्ह होत आहे...' : 'शाखा सेव्ह करा'}</span>
               </button>
             </div>
           </div>

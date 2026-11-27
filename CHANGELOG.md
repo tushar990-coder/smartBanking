@@ -1,5 +1,18 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-27] - आवृत्ती v2.6.50 (`मुदत ठेव` ओपनिंग बॅलन्स `On Principal` vs `On Interest` ताळेबंद वर्गीकरण, योजना बदलावर डायनॅमिक ऑटो-सिंक व `खातेदार व कर्मचारी बँक तपशील` कॉम्पॅक्ट UI)
+
+### 🏦 1. मुदत ठेव (`FD`) ३१/०३/२०२६ साचलेले व्याज वर्गीकरण व क्लोजर सेटलमेंट (`Posting Method`)
+- **`FdOpeningBalanceSyncHelper.cs`, `FdInterestSettlementHelper.cs`, `FdAccountsController.cs`, `FdOpeningBalanceMigration.tsx`, `tools/heal_fd_opening_balance_discrepancy.sql`, `BalanceSheetAndFdCapitalizationTests.cs`:**
+  - **`मूळ मुद्दलावर (On Principal)` / `Monthly Payout` (साधे व्याज):** ठेव रक्कम (`DepositAmount`) `मुदत ठेव` खात्यात (`FdLiabilityLedgerID`) आणि ३१/०३/२०२६ अखेरचे `साचलेले व्याज ₹` (`LegacyAccruedInt`) महाराष्ट्र सहकारी संस्था नियम १९६१ (Rule 62, Form 'N') प्रमाणे स्वतंत्रपणे `देणे मुदत ठेव व्याज तरतूद` (`InterestPayableLedgerID` — Provision) खात्यात जमा होते.
+  - **`व्याजावर व्याज चक्रवाढ (On Interest)` (चक्रवाढ व्याज):** `DepositAmount + LegacyAccruedInt` ही एकत्रित रक्कम थेट `मुदत ठेव` मुख्य खात्यात (`FdLiabilityLedgerID`) जमा होते व तरतूद खात्यात `₹ 0.00` राहते.
+  - FD बंद / मुदतपूर्व बंद / नूतनीकरण (`MaturedClose`, `PrematureClose`, `RenewFd`) वेळी दोन्ही प्रकारातील साचलेले व्याज आपापल्या अचूक लेजरमधून क्लिअर होऊन ताळेबंदातील शिल्लक `₹ 0.00` होते (**२६८/२६८ xUnit चाचण्या उत्तीर्ण**).
+
+### 🔄 2. `FdSchemeMaster` मध्ये `व्याज मोजणी पद्धत` बदलल्यावर ताळेबंद डायनॅमिक रि-सिंक व `EmployeeBankDetails` कॉम्पॅक्ट ग्रिड
+- **`FdSchemesController.cs`, `FdSchemeMaster.tsx`, `EmployeeBankDetails.tsx`:**
+  - आधी ओपनिंग बॅलन्स भरल्यानंतर `FdSchemeMaster` मध्ये `व्याज मोजणी पद्धत` किंवा लेजर मॅपिंग बदलल्यास सेफ्टी गार्ड तपासून `JV-FD-OP-*` नोंदी, `CustomerOpeningBalances` व `BranchLedgerOpeningBalances` आपोआप अपडेट होतात व ताळेबंदावर तत्काळ परिणाम दिसतो.
+  - `खातेदार व कर्मचारी बँक तपशील` (`EmployeeBankDetails.tsx`) स्क्रीन स्लिम २-पट्टी ERP थीम हेडर, २ सुटसुटीत व्ह्यू मोड्स, कॉम्पॅक्ट सिंगल-लाईन `h-7` रो आणि प्रति-ओळ `फॉर्म` क्विक-एडिट मोडलसह सुटसुटीत केली.
+
 ## 📅 [2026-11-26] - आवृत्ती v2.6.49 (`बचत बल्क ट्रान्सफर` — KDCC Milk Society Bill Credit, Multi-Society Saving Schemes & Scheme-to-Scheme Bulk Transfer + `Swarajya Vategaon` VPS Target)
 
 ### 🥛 1. दूध संस्था `KDCC` बँक बिल जमा व संस्था ते रेग्युलर सेव्हिंग ठेव बल्क वर्ग (`Saving_bulk_transfer`)

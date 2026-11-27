@@ -197,10 +197,11 @@ namespace Bhisi.Api.Helpers
                 .GroupBy(t => t.FdAccountID)
                 .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
 
-            // 3. Backed Legacy Opening Provision:
-            // LegacyAccruedInt for Active/Matured accounts is credited to CustomerOpeningBalances (InterestPayableLedgerID)
-            // via SyncFdOpeningBalancesInternalAsync. Only surface it when that customer's OpeningBalance Cr genuinely backs it.
+            // 3. Backed Legacy Opening Interest Split:
+            // - For "On Principal" / "Monthly Payout" schemes: LegacyAccruedInt is backed by CustomerOpeningBalances on InterestPayableLedgerID -> BackedLegacyProvision.
+            // - For "On Interest" (चक्रवाढ) schemes: LegacyAccruedInt is backed by CustomerOpeningBalances on FdLiabilityLedgerID -> BackedLegacyCapitalized (merged into VerifiedCapitalized).
             var backedLegacyMap = new Dictionary<int, decimal>();
+            var backedLegacyCapMap = new Dictionary<int, decimal>();
             var distinctInputIds = fdAccountIds.Distinct().ToList();
             var targetIdSet = distinctInputIds.ToHashSet();
 
@@ -210,22 +211,97 @@ namespace Bhisi.Api.Helpers
                 .Where(a => distinctInputIds.Contains(a.FdAccountID) &&
                             (a.Status == "Active" || a.Status == "Matured") &&
                             a.LegacyAccruedInt > 0m &&
-                            a.FdScheme != null &&
-                            a.FdScheme.InterestPayableLedgerID.HasValue &&
-                            a.FdScheme.InterestPayableLedgerID.Value > 0)
+                            a.FdScheme != null)
                 .Select(a => new
                 {
                     a.FdAccountID,
                     a.CustomerID,
-                    PayableLedgerId = a.FdScheme!.InterestPayableLedgerID!.Value,
+                    a.DepositAmount,
+                    IsCompound = a.FdScheme != null && a.FdScheme.InterestPostingMethod != null &&
+                                 a.FdScheme.InterestPostingMethod.Trim().ToLower() == "on interest",
+                    LiabilityLedgerId = a.FdScheme!.FdLiabilityLedgerID ?? 0,
+                    PayableLedgerId = a.FdScheme!.InterestPayableLedgerID ?? 0,
                     a.LegacyAccruedInt
                 })
                 .ToListAsync();
 
-            if (targetLegacyAccounts.Count > 0)
+            var onInterestLegacyTargets = targetLegacyAccounts
+                .Where(x => x.IsCompound && x.LiabilityLedgerId > 0)
+                .ToList();
+
+            if (onInterestLegacyTargets.Count > 0)
             {
-                var targetCustIds = targetLegacyAccounts.Select(x => x.CustomerID).Distinct().ToList();
-                var targetPayableLedgers = targetLegacyAccounts.Select(x => x.PayableLedgerId).Distinct().ToList();
+                var capCustIds = onInterestLegacyTargets.Select(x => x.CustomerID).Distinct().ToList();
+                var capLiabLedgers = onInterestLegacyTargets.Select(x => x.LiabilityLedgerId).Distinct().ToList();
+
+                var custLiabOpeningCredits = await context.CustomerOpeningBalances
+                    .AsNoTracking()
+                    .Where(c => capCustIds.Contains(c.CustomerID) &&
+                                capLiabLedgers.Contains(c.LedgerID) &&
+                                c.BalanceType == "Cr" &&
+                                c.Amount > 0m)
+                    .GroupBy(c => new { c.CustomerID, c.LedgerID })
+                    .Select(g => new { g.Key.CustomerID, g.Key.LedgerID, TotalCr = g.Sum(x => x.Amount) })
+                    .ToDictionaryAsync(k => (k.CustomerID, k.LedgerID), v => v.TotalCr);
+
+                if (custLiabOpeningCredits.Count > 0)
+                {
+                    var allCustLiabAccounts = await context.FdAccounts
+                        .AsNoTracking()
+                        .Include(a => a.FdScheme)
+                        .Where(a => capCustIds.Contains(a.CustomerID) &&
+                                    a.IsLegacyAccount &&
+                                    (a.Status == "Active" || a.Status == "Matured") &&
+                                    a.FdScheme != null &&
+                                    a.FdScheme.FdLiabilityLedgerID.HasValue &&
+                                    capLiabLedgers.Contains(a.FdScheme.FdLiabilityLedgerID.Value))
+                        .Select(a => new
+                        {
+                            a.FdAccountID,
+                            a.CustomerID,
+                            LiabilityLedgerId = a.FdScheme!.FdLiabilityLedgerID!.Value,
+                            IsCompound = a.FdScheme.InterestPostingMethod != null &&
+                                         a.FdScheme.InterestPostingMethod.Trim().ToLower() == "on interest",
+                            a.DepositAmount,
+                            a.LegacyAccruedInt,
+                            a.OpeningDate
+                        })
+                        .ToListAsync();
+
+                    foreach (var grp in allCustLiabAccounts.GroupBy(a => (a.CustomerID, a.LiabilityLedgerId)))
+                    {
+                        if (!custLiabOpeningCredits.TryGetValue(grp.Key, out decimal custLiabCr) || custLiabCr <= 0m)
+                            continue;
+
+                        decimal totalActivePrincipals = grp.Sum(x => x.DepositAmount);
+                        decimal excessForCapInterest = Math.Max(0m, custLiabCr - totalActivePrincipals);
+                        if (excessForCapInterest <= 0m) continue;
+
+                        foreach (var accItem in grp.Where(x => x.IsCompound && x.LegacyAccruedInt > 0m).OrderBy(x => x.OpeningDate).ThenBy(x => x.FdAccountID))
+                        {
+                            if (excessForCapInterest <= 0m) break;
+                            decimal allocCap = Math.Round(Math.Min(accItem.LegacyAccruedInt, excessForCapInterest), 2, MidpointRounding.AwayFromZero);
+                            excessForCapInterest = Math.Max(0m, excessForCapInterest - allocCap);
+                            if (targetIdSet.Contains(accItem.FdAccountID) && allocCap > 0m)
+                            {
+                                backedLegacyCapMap[accItem.FdAccountID] = allocCap;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Any LegacyAccruedInt not already backed in FdLiabilityLedgerID (i.e. all On Principal accounts, plus any pre-sync
+            // accounts whose OpeningBalance credit still sits in InterestPayableLedgerID) is checked against InterestPayableLedgerID.
+            var onPrincipalLegacyTargets = targetLegacyAccounts
+                .Where(x => x.PayableLedgerId > 0 &&
+                            (!backedLegacyCapMap.TryGetValue(x.FdAccountID, out var capCovered) || capCovered + 0.01m < x.LegacyAccruedInt))
+                .ToList();
+
+            if (onPrincipalLegacyTargets.Count > 0)
+            {
+                var targetCustIds = onPrincipalLegacyTargets.Select(x => x.CustomerID).Distinct().ToList();
+                var targetPayableLedgers = onPrincipalLegacyTargets.Select(x => x.PayableLedgerId).Distinct().ToList();
 
                 var custOpeningCredits = await context.CustomerOpeningBalances
                     .AsNoTracking()
@@ -315,7 +391,11 @@ namespace Bhisi.Api.Helpers
                         if (!custOpeningCredits.TryGetValue(grp.Key, out decimal custObCr) || custObCr <= 0m)
                             continue;
 
-                        decimal activeLegacySum = grp.Sum(x => x.LegacyAccruedInt);
+                        decimal activeLegacySum = grp.Sum(x =>
+                        {
+                            backedLegacyCapMap.TryGetValue(x.FdAccountID, out decimal cCov);
+                            return Math.Max(0m, x.LegacyAccruedInt - cCov);
+                        });
                         decimal priorClosedDr = closedLegacyVchByCustLedger.TryGetValue(grp.Key, out var drVal) ? drVal : 0m;
                         decimal remainingPool = (custObCr > activeLegacySum && priorClosedDr > 0m)
                             ? Math.Max(0m, custObCr - priorClosedDr)
@@ -324,7 +404,10 @@ namespace Bhisi.Api.Helpers
                         foreach (var accItem in grp.OrderBy(x => x.OpeningDate).ThenBy(x => x.FdAccountID))
                         {
                             if (remainingPool <= 0m) break;
-                            decimal alloc = Math.Round(Math.Min(accItem.LegacyAccruedInt, remainingPool), 2, MidpointRounding.AwayFromZero);
+                            backedLegacyCapMap.TryGetValue(accItem.FdAccountID, out decimal alreadyCap);
+                            decimal neededProv = Math.Max(0m, accItem.LegacyAccruedInt - alreadyCap);
+                            if (neededProv <= 0m) continue;
+                            decimal alloc = Math.Round(Math.Min(neededProv, remainingPool), 2, MidpointRounding.AwayFromZero);
                             remainingPool = Math.Max(0m, remainingPool - alloc);
                             if (targetIdSet.Contains(accItem.FdAccountID) && alloc > 0m)
                             {
@@ -343,7 +426,8 @@ namespace Bhisi.Api.Helpers
 
                 decimal capA = capAccrualSums.TryGetValue(id, out var ca) ? ca : 0m;
                 decimal capT = capTxSums.TryGetValue(id, out var ct) ? ct : 0m;
-                decimal finalCap = Math.Round(Math.Max(capA, capT), 2, MidpointRounding.AwayFromZero);
+                decimal backedCap = backedLegacyCapMap.TryGetValue(id, out var bc) ? bc : 0m;
+                decimal finalCap = Math.Round(Math.Max(Math.Max(capA, capT), backedCap), 2, MidpointRounding.AwayFromZero);
 
                 decimal backed = backedLegacyMap.TryGetValue(id, out var bl) ? bl : 0m;
 

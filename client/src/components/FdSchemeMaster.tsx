@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
+import { invalidateApiCache } from '../utils/apiCache';
 
 interface Ledger {
   ledgerID: number;
@@ -469,6 +470,9 @@ const FdSchemeMaster: React.FC = () => {
         setSuccess('नवीन मुदत ठेव योजना यशस्वीरीत्या सेव्ह (Saved) झाली!');
       }
 
+      invalidateApiCache('/api/FdSchemes');
+      invalidateApiCache('/api/FdAccounts');
+      invalidateApiCache('/api/Reports');
       await fetchSchemes();
       resetForm();
     } catch (err: any) {

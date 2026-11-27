@@ -4,7 +4,7 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getLockedBranchId, isHeadOfficeUser, resolveWriteBranchId } from '../utils/branchAccess';
 import SearchableSelect from './SearchableSelect';
-import { getCachedMasterData, safeArray } from '../utils/apiCache';
+import { getCachedMasterData, invalidateApiCache, safeArray } from '../utils/apiCache';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import {
   Landmark,
@@ -73,6 +73,7 @@ interface FdScheme {
   minDurationDays?: number;
   maxDurationDays?: number;
   interestType?: string;
+  interestPostingMethod?: string;
   interestCompoundingFrequency?: string;
   slabs?: FdSchemeInterestSlab[];
   branchID?: number | null;
@@ -183,9 +184,13 @@ const FdOpeningBalanceMigration: React.FC = () => {
       const res = await api.post('/FdAccounts/SyncOpeningBalances');
       if (res.data?.success) {
         setSyncResult(res.data);
+        invalidateApiCache('/api/Reports');
         const depStr = Number(res.data.totalDepositsSynced || 0).toLocaleString('en-IN');
-        const intStr = Number(res.data.totalAccruedSynced || 0).toLocaleString('en-IN');
-        setSuccess(`✅ मुदत ठेव सुरुवातीची शिल्लक आणि साचलेले जुने व्याज आर्थिक पत्रके (ताळेबंद / तेरीज) सह यशस्वीरीत्या सिंक करण्यात आले आहे! (एकूण मुद्दल: ₹${depStr}, साचलेले व्याज: ₹${intStr})`);
+        const capStr = Number(res.data.totalCapitalizedInterestSynced || 0).toLocaleString('en-IN');
+        const provStr = Number(res.data.totalAccruedProvisionSynced ?? res.data.totalAccruedSynced ?? 0).toLocaleString('en-IN');
+        setSuccess(
+          `✅ मुदत ठेव सुरुवातीची शिल्लक व साचलेले व्याज ताळेबंद / तेरीज सह यशस्वीरीत्या सिंक झाले! (मुद्दल: ₹${depStr}, मुद्दलात जमा चक्रवाढ व्याज: ₹${capStr}, देणे व्याज तरतूद: ₹${provStr})`
+        );
         fetchMigratedAccounts();
       } else {
         setSuccess(res.data?.message || 'सिंक पूर्ण झाले.');
@@ -1207,6 +1212,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
         const assignedNo = res.data?.accountNo || '';
         setSuccess(`जुन्या मुदत ठेव खात्याचे स्थलांतर यशस्वीरित्या झाले! ${assignedNo ? `(नवीन पावती क्र.: ${assignedNo})` : ''}`);
       }
+      invalidateApiCache('/api/Reports');
       resetForm();
       fetchMigratedAccounts();
     } catch (err: any) {
@@ -1986,6 +1992,24 @@ const FdOpeningBalanceMigration: React.FC = () => {
                     <label className="text-[11px] font-bold text-gray-700 truncate" title="साचलेले जुने व्याज (Accrued Int. ₹)">
                       साचलेले व्याज ₹
                     </label>
+                    {selectedScheme && (
+                      <span
+                        className={`text-[8px] px-1 py-0.2 rounded font-bold border truncate ${
+                          (selectedScheme.interestPostingMethod || '').trim().toLowerCase() === 'on interest'
+                            ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                            : 'bg-amber-100 text-amber-900 border-amber-300'
+                        }`}
+                        title={
+                          (selectedScheme.interestPostingMethod || '').trim().toLowerCase() === 'on interest'
+                            ? "चक्रवाढ योजना (On Interest): हे व्याज ताळेबंदात मुख्य 'मुदत ठेव' खात्यात (ठेवी) जमा होईल"
+                            : "साधी योजना (On Principal): हे व्याज ताळेबंदात स्वतंत्र 'देणे व्याज तरतूद' खात्यात दिसेल"
+                        }
+                      >
+                        {(selectedScheme.interestPostingMethod || '').trim().toLowerCase() === 'on interest'
+                          ? '🏦 ठेवीत जमा'
+                          : '📌 देणे तरतूद'}
+                      </span>
+                    )}
                   </div>
                   <input
                     type="number"

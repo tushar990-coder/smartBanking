@@ -118,6 +118,7 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'member-balance-report', name: 'सभासद शेअर्स बाकी यादी (Member Shares List)' },
         { id: 'share-certificate-report', name: 'अधिकृत शेअर प्रमाणपत्र (Official Share Certificate)' },
         { id: 'sabhasad-labhansh-report', name: 'सभासद लाभांश यादी (Dividend List)' },
+        { id: 'sabhasad-labhansh-khatavani-report', name: 'सभासद लाभांश खतावणी (Dividend Khatavani)' },
         { id: 'shares-khatavani-report', name: 'शेअर्स खतावणी (Shares Ledger)' },
         { id: 'cbs-sample-report', name: 'सीबीएस ऑडिट नमुना अहवाल (CBS Sample Report)' },
         { id: 'i-namuna-report', name: 'वैधानिक नमूना आय रजिस्टर (I-Namuna)' },

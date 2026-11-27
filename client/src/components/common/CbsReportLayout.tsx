@@ -62,6 +62,8 @@ export interface CbsReportLayoutProps {
   onPrint?: () => void;
   /** Additional controls inside toolbar */
   extraToolbarControls?: React.ReactNode;
+  /** Optional full-width second filter row inside the unified toolbar */
+  toolbarSecondRow?: React.ReactNode;
   /** Loading indicator */
   isLoading?: boolean;
   /** Empty or initial state message if no data */
@@ -108,6 +110,7 @@ export default function CbsReportLayout({
   onDownloadPdf,
   onPrint,
   extraToolbarControls,
+  toolbarSecondRow,
   isLoading = false,
   emptyState,
   hasData = true,
@@ -339,6 +342,12 @@ export default function CbsReportLayout({
           </button>
 
         </div>
+
+        {toolbarSecondRow && (
+          <div className="w-full basis-full pt-1.5 mt-0.5 border-t border-slate-100 flex flex-wrap items-center gap-2">
+            {toolbarSecondRow}
+          </div>
+        )}
 
       </div>
 

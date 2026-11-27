@@ -7,8 +7,7 @@ import {
   Search, 
   RefreshCw, 
   Gift, 
-  Building2,
-  Calendar
+  BookOpen
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
@@ -16,9 +15,15 @@ import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../ut
 
 interface DividendRow {
   memberID: number;
+  customerID?: number | null;
   memberNo: string;
+  legacyMemberNo?: string;
   memberName: string;
   balance: number;
+}
+
+interface SabhasadLabhanshReportProps {
+  onNavigate?: (tab: string, params?: any) => void;
 }
 
 const fmtCurrency = (n: number | null | undefined) => {
@@ -45,7 +50,7 @@ const formatDisplayDate = (dStr?: string | null) => {
   }
 };
 
-export default function SabhasadLabhanshReport() {
+export default function SabhasadLabhanshReport({ onNavigate }: SabhasadLabhanshReportProps) {
   const { user, globalBranchId } = useAuth();
   const isHOUser = isHeadOfficeUser(user);
   const lockedBranchId = getLockedBranchId(user);
@@ -449,20 +454,23 @@ export default function SabhasadLabhanshReport() {
                 <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
                   <th className="border border-gray-900 py-1.5 px-1 w-[8%] text-center">अ.क्र.</th>
                   <th className="border border-gray-900 py-1.5 px-2 w-[22%] text-center">सभासद क्र.</th>
-                  <th className="border border-gray-900 py-1.5 px-3 w-[46%] text-left">सभासदाचे नाव</th>
-                  <th className="border border-gray-900 py-1.5 px-3 w-[24%] text-right font-extrabold">लाभांश रक्कम</th>
+                  <th className="border border-gray-900 py-1.5 px-3 w-[44%] text-left">सभासदाचे नाव</th>
+                  <th className="border border-gray-900 py-1.5 px-3 w-[18%] text-right font-extrabold">लाभांश रक्कम</th>
+                  {onNavigate && (
+                    <th className="border border-gray-900 py-1.5 px-2 w-[8%] text-center no-print">खतावणी</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                    <td colSpan={onNavigate ? 5 : 4} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                       माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
                     </td>
                   </tr>
                 ) : filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                    <td colSpan={onNavigate ? 5 : 4} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                       कोणतीही लाभांश नोंद आढळली नाही.
                     </td>
                   </tr>
@@ -474,6 +482,7 @@ export default function SabhasadLabhanshReport() {
                       </td>
                       <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">
                         {r.memberNo}
+                        {r.legacyMemberNo ? <span className="text-[10px] font-normal text-gray-600 ml-1">({r.legacyMemberNo})</span> : null}
                       </td>
                       <td className="border border-gray-900 py-1 px-3 font-medium">
                         {r.memberName}
@@ -481,6 +490,27 @@ export default function SabhasadLabhanshReport() {
                       <td className="border border-gray-900 py-1 px-3 text-right font-mono font-bold text-emerald-800">
                         {fmtCurrency(r.balance)}
                       </td>
+                      {onNavigate && (
+                        <td className="border border-gray-900 py-1 px-1.5 text-center no-print">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onNavigate('sabhasad-labhansh-khatavani-report', {
+                                memberId: r.memberID,
+                                customerId: r.customerID || undefined,
+                                ledgerId: selectedLedgerId || undefined,
+                                branchId: selectedBranchId !== 'all' ? selectedBranchId : undefined,
+                                toDate: asOfDate || undefined,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/30 text-[10px] font-bold transition-colors cursor-pointer"
+                            title="या सभासदाची लाभांश खतावणी पहा"
+                          >
+                            <BookOpen size={10} />
+                            <span>पहा</span>
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -494,6 +524,7 @@ export default function SabhasadLabhanshReport() {
                     <td className="border border-gray-900 py-1.5 px-3 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
                       ₹ {fmtCurrency(totalBalanceSum)}
                     </td>
+                    {onNavigate && <td className="border border-gray-900 py-1.5 px-2 no-print" />}
                   </tr>
                 </tfoot>
               )}

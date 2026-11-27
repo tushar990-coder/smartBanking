@@ -5282,6 +5282,7 @@ namespace Bhisi.Api.Controllers
                     MemberID = member.MemberID,
                     CustomerID = custId,
                     MemberNo = member.MemberCode ?? "",
+                    LegacyMemberNo = member.LegacyMemberNo ?? "",
                     MemberName = member.Customer != null ? string.Join(" ", new[] { member.Customer.FirstName, member.Customer.MiddleName, member.Customer.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "",
                     Balance = Math.Abs(netBalance),
                     BalanceType = netBalance > 0 ? "Cr" : "Dr"
@@ -5489,6 +5490,447 @@ namespace Bhisi.Api.Controllers
             };
 
             return Ok(report);
+        }
+
+        [HttpGet("sabhasad-labhansh-khatavani")]
+        public async Task<ActionResult<DividendKhatavaniReportDto>> GetSabhasadLabhanshKhatavani(
+            [FromQuery] int? memberId = null,
+            [FromQuery] int? customerId = null,
+            [FromQuery] int? ledgerId = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] int? branchId = null)
+        {
+            if ((!memberId.HasValue || memberId.Value <= 0) && (!customerId.HasValue || customerId.Value <= 0))
+            {
+                return BadRequest("कृपया वैध सभासद किंवा खातेदार निवडा.");
+            }
+
+            bool isHoRole = User.IsHeadOfficeAdmin() ||
+                            User?.IsInRole("Admin") == true ||
+                            User?.IsInRole("SuperAdmin") == true ||
+                            User?.IsInRole("Super Admin") == true ||
+                            User?.IsInRole("HeadOffice") == true ||
+                            User?.IsInRole("HO_Manager") == true ||
+                            User?.IsInRole("HO Manager") == true;
+
+            int? effectiveBranchId = branchId.HasValue && branchId.Value > 0 ? branchId.Value : null;
+            int? userBranchId = null;
+            if (!isHoRole)
+            {
+                int claimBranch = User.GetOperatingBranchId();
+                if (claimBranch <= 0)
+                {
+                    var rawBranch = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("DefaultBranchID")?.Value;
+                    if (int.TryParse(rawBranch, out int parsedBranch) && parsedBranch > 0)
+                    {
+                        claimBranch = parsedBranch;
+                    }
+                }
+                if (claimBranch > 0)
+                {
+                    userBranchId = claimBranch;
+                    effectiveBranchId = claimBranch;
+                }
+            }
+
+            // 1. Resolve Customer & Member (CustomerID-First)
+            Member? member = null;
+            Customer? customer = null;
+
+            if (customerId.HasValue && customerId.Value > 0)
+            {
+                customer = await _context.Customers.AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
+
+                var memberQuery = _context.Members.AsNoTracking()
+                    .Include(m => m.Customer)
+                    .Where(m => m.CustomerID == customerId.Value && !m.IsDeleted);
+                if (effectiveBranchId.HasValue)
+                {
+                    member = await memberQuery.FirstOrDefaultAsync(m => m.BranchID == effectiveBranchId.Value)
+                        ?? await memberQuery.FirstOrDefaultAsync();
+                }
+                else
+                {
+                    member = await memberQuery.FirstOrDefaultAsync();
+                }
+            }
+            else if (memberId.HasValue && memberId.Value > 0)
+            {
+                member = await _context.Members.AsNoTracking()
+                    .Include(m => m.Customer)
+                    .FirstOrDefaultAsync(m => m.MemberID == memberId.Value);
+                if (member != null)
+                {
+                    customer = member.Customer;
+                }
+                else
+                {
+                    customer = await _context.Customers.AsNoTracking()
+                        .FirstOrDefaultAsync(c => c.CustomerID == memberId.Value);
+                    if (customer != null)
+                    {
+                        member = await _context.Members.AsNoTracking()
+                            .Include(m => m.Customer)
+                            .FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID && !m.IsDeleted);
+                    }
+                }
+            }
+
+            if (member == null && customer == null)
+            {
+                return NotFound("सभासद / खातेदार आढळला नाही.");
+            }
+
+            int partyBranchId = member?.BranchID > 0 ? member.BranchID : (customer?.BranchID ?? 0);
+            if (!isHoRole && userBranchId.HasValue && partyBranchId > 0 && partyBranchId != userBranchId.Value)
+            {
+                return Forbid();
+            }
+
+            // 2. Resolve Dividend Payable Ledger (Zero Hardcoding)
+            Ledger? ledger = null;
+            if (ledgerId.HasValue && ledgerId.Value > 0)
+            {
+                ledger = await _context.Ledgers.AsNoTracking()
+                    .FirstOrDefaultAsync(l => l.LedgerID == ledgerId.Value);
+            }
+            else
+            {
+                ledger = await ShareLedgerHelper.GetDividendPayableLedgerAsync(_context);
+            }
+
+            if (ledger == null)
+            {
+                return NotFound("लाभांश लेजर आढळले नाही.");
+            }
+
+            // 3. Resolve Date Window
+            DateTime effectiveFrom;
+            DateTime effectiveTo;
+            if (fromDate.HasValue)
+            {
+                effectiveFrom = fromDate.Value.Date;
+            }
+            else
+            {
+                var activeFy = await _context.FinancialYears.AsNoTracking()
+                    .FirstOrDefaultAsync(f => f.IsActive);
+                if (activeFy != null)
+                {
+                    effectiveFrom = activeFy.StartDate.Date;
+                }
+                else
+                {
+                    var today = DateTime.Today;
+                    int fyStartYear = today.Month < 4 ? today.Year - 1 : today.Year;
+                    effectiveFrom = new DateTime(fyStartYear, 4, 1);
+                }
+            }
+
+            effectiveTo = toDate?.Date ?? DateTime.Today;
+            if (effectiveTo < effectiveFrom)
+            {
+                return BadRequest("अंतिम तारीख ही सुरुवातीच्या तारखेपेक्षा लहान असू शकत नाही.");
+            }
+
+            var fromStart = effectiveFrom.Date;
+            var toEnd = effectiveTo.Date.AddDays(1).AddTicks(-1);
+
+            int? resolvedCustomerId = customer?.CustomerID ?? member?.CustomerID;
+            int? resolvedMemberId = member?.MemberID;
+
+            // 4. Load ShareAccounts & DividendDistributions metadata
+            var shareAccounts = await _context.ShareAccounts.AsNoTracking()
+                .Include(s => s.Member)
+                .Include(s => s.Customer)
+                .Where(s =>
+                    (resolvedCustomerId.HasValue && s.CustomerID == resolvedCustomerId.Value) ||
+                    (resolvedMemberId.HasValue && s.MemberId == resolvedMemberId.Value))
+                .OrderByDescending(s => s.Status == "Active")
+                .ThenByDescending(s => s.TotalShareCount)
+                .ThenBy(s => s.ShareAccountId)
+                .ToListAsync();
+
+            if (effectiveBranchId.HasValue)
+            {
+                var branchShares = shareAccounts.Where(s =>
+                    (s.Member != null && s.Member.BranchID == effectiveBranchId.Value) ||
+                    (s.Customer != null && s.Customer.BranchID == effectiveBranchId.Value)).ToList();
+                if (branchShares.Count > 0)
+                {
+                    shareAccounts = branchShares;
+                }
+            }
+
+            var primaryShareAcc = shareAccounts.FirstOrDefault();
+            int totalShareCount = shareAccounts.Sum(s => s.TotalShareCount);
+            decimal totalShareCapital = shareAccounts.Sum(s => s.TotalShareAmount);
+            decimal fallbackShareDivPayable = shareAccounts.Sum(s => s.DividendPayableBalance);
+
+            var shareAccountIds = shareAccounts.Select(s => s.ShareAccountId).Distinct().ToList();
+            var dividendDistByVoucherId = new Dictionary<int, DividendDistribution>();
+            if (shareAccountIds.Count > 0)
+            {
+                var dists = await _context.DividendDistributions.AsNoTracking()
+                    .Where(d => shareAccountIds.Contains(d.ShareAccountId) && d.VoucherId.HasValue)
+                    .OrderByDescending(d => d.DividendId)
+                    .ToListAsync();
+                foreach (var d in dists)
+                {
+                    if (d.VoucherId.HasValue && !dividendDistByVoucherId.ContainsKey(d.VoucherId.Value))
+                    {
+                        dividendDistByVoucherId[d.VoucherId.Value] = d;
+                    }
+                }
+            }
+
+            // 5. Opening Balance Resolution (CustomerID-First + Zero Double-Count)
+            var memberObCandidates = await _context.MemberOpeningBalances.AsNoTracking()
+                .Where(m => m.LedgerID == ledger.LedgerID &&
+                            ((resolvedCustomerId.HasValue && m.CustomerID == resolvedCustomerId.Value) ||
+                             (resolvedMemberId.HasValue && m.MemberID == resolvedMemberId.Value)))
+                .ToListAsync();
+
+            var matchedMemberObs = memberObCandidates.Where(ob =>
+                resolvedCustomerId.HasValue
+                    ? (ob.CustomerID.HasValue ? ob.CustomerID.Value == resolvedCustomerId.Value : (resolvedMemberId.HasValue && ob.MemberID == resolvedMemberId.Value))
+                    : (!ob.CustomerID.HasValue && resolvedMemberId.HasValue && ob.MemberID == resolvedMemberId.Value)).ToList();
+
+            decimal baseObDr = 0m;
+            decimal baseObCr = 0m;
+            string obSource = "None";
+
+            if (matchedMemberObs.Count > 0)
+            {
+                baseObDr = matchedMemberObs.Where(ob => string.Equals(ob.BalanceType, "Dr", StringComparison.OrdinalIgnoreCase)).Sum(ob => ob.Amount);
+                baseObCr = matchedMemberObs.Where(ob => string.Equals(ob.BalanceType, "Cr", StringComparison.OrdinalIgnoreCase)).Sum(ob => ob.Amount);
+                obSource = "MemberOpeningBalance";
+            }
+            else if (resolvedCustomerId.HasValue)
+            {
+                var matchedCustObs = await _context.CustomerOpeningBalances.AsNoTracking()
+                    .Where(c => c.LedgerID == ledger.LedgerID && c.CustomerID == resolvedCustomerId.Value)
+                    .ToListAsync();
+                if (matchedCustObs.Count > 0)
+                {
+                    baseObDr = matchedCustObs.Where(ob => string.Equals(ob.BalanceType, "Dr", StringComparison.OrdinalIgnoreCase)).Sum(ob => ob.Amount);
+                    baseObCr = matchedCustObs.Where(ob => string.Equals(ob.BalanceType, "Cr", StringComparison.OrdinalIgnoreCase)).Sum(ob => ob.Amount);
+                    obSource = "CustomerOpeningBalance";
+                }
+            }
+
+            if (obSource == "None" && fallbackShareDivPayable > 0m)
+            {
+                baseObCr = fallbackShareDivPayable;
+                obSource = "ShareAccountFallback";
+            }
+
+            bool hasBaseOpeningBalance = baseObDr > 0m || baseObCr > 0m;
+
+            // 6. Load Approved / Posted Voucher Details up to toEnd (CustomerID-First + Branch-Scoped)
+            var voucherQuery = _context.VoucherDetails.AsNoTracking()
+                .Include(vd => vd.Voucher)
+                .Where(vd => vd.LedgerID == ledger.LedgerID
+                          && ((resolvedCustomerId.HasValue && vd.CustomerID == resolvedCustomerId.Value) ||
+                              (vd.CustomerID == null && resolvedMemberId.HasValue && vd.MemberID == resolvedMemberId.Value))
+                          && vd.Voucher != null
+                          && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted")
+                          && vd.Voucher.Status != "Rejected"
+                          && vd.Voucher.Status != "Cancelled"
+                          && vd.Voucher.Status != "Pending"
+                          && vd.Voucher.Status != "Unposted"
+                          && vd.Voucher.VoucherDate <= toEnd);
+
+            if (effectiveBranchId.HasValue)
+            {
+                voucherQuery = voucherQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == effectiveBranchId.Value);
+            }
+
+            var allApprovedVds = await voucherQuery
+                .OrderBy(vd => vd.Voucher!.VoucherDate)
+                .ThenBy(vd => vd.VoucherID)
+                .ThenBy(vd => vd.VoucherDetailID)
+                .ToListAsync();
+
+            static bool IsOpeningMigrationVoucher(Voucher? v)
+            {
+                if (v == null) return false;
+                if (string.Equals(v.VoucherType, "Opening", StringComparison.OrdinalIgnoreCase)) return true;
+                string vNo = v.VoucherNo ?? string.Empty;
+                if (vNo.Contains("-OP-", StringComparison.OrdinalIgnoreCase) ||
+                    vNo.StartsWith("JV-SH-OP-", StringComparison.OrdinalIgnoreCase) ||
+                    vNo.StartsWith("JV-DIV-OP-", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+                string narr = v.Narration ?? string.Empty;
+                if (narr.Contains("आरंभिक शिल्लक", StringComparison.OrdinalIgnoreCase) ||
+                    narr.Contains("Opening Balance Migration", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+                return false;
+            }
+
+            var filteredVds = hasBaseOpeningBalance
+                ? allApprovedVds.Where(vd => !IsOpeningMigrationVoucher(vd.Voucher)).ToList()
+                : allApprovedVds;
+
+            decimal priorDr = filteredVds
+                .Where(vd => vd.Voucher!.VoucherDate < fromStart && string.Equals(vd.DrCr, "Dr", StringComparison.OrdinalIgnoreCase))
+                .Sum(vd => vd.Amount);
+            decimal priorCr = filteredVds
+                .Where(vd => vd.Voucher!.VoucherDate < fromStart && string.Equals(vd.DrCr, "Cr", StringComparison.OrdinalIgnoreCase))
+                .Sum(vd => vd.Amount);
+
+            decimal openingNet = (baseObCr + priorCr) - (baseObDr + priorDr); // Positive = Cr (Payable), Negative = Dr
+            decimal runningNet = openingNet;
+
+            var periodVds = filteredVds
+                .Where(vd => vd.Voucher!.VoucherDate >= fromStart && vd.Voucher!.VoucherDate <= toEnd)
+                .ToList();
+
+            var periodVoucherIds = periodVds.Select(vd => vd.VoucherID).Distinct().ToList();
+            var contraLinesByVoucherId = periodVoucherIds.Count > 0
+                ? (await _context.VoucherDetails.AsNoTracking()
+                    .Include(d => d.Ledger)
+                    .Where(d => periodVoucherIds.Contains(d.VoucherID) && d.LedgerID != ledger.LedgerID)
+                    .ToListAsync())
+                    .GroupBy(d => d.VoucherID)
+                    .ToDictionary(g => g.Key, g => g.ToList())
+                : new Dictionary<int, List<VoucherDetail>>();
+
+            var branchMap = await _context.Branches.AsNoTracking()
+                .ToDictionaryAsync(b => b.BranchID, b => b.BranchName);
+
+            var transactions = new List<DividendKhatavaniRowDto>();
+            decimal totalDebit = 0m;
+            decimal totalCredit = 0m;
+
+            foreach (var vd in periodVds)
+            {
+                var v = vd.Voucher!;
+                bool isCredit = string.Equals(vd.DrCr, "Cr", StringComparison.OrdinalIgnoreCase);
+                decimal drAmt = isCredit ? 0m : vd.Amount;
+                decimal crAmt = isCredit ? vd.Amount : 0m;
+
+                if (isCredit)
+                {
+                    runningNet += vd.Amount;
+                    totalCredit += vd.Amount;
+                }
+                else
+                {
+                    runningNet -= vd.Amount;
+                    totalDebit += vd.Amount;
+                }
+
+                dividendDistByVoucherId.TryGetValue(v.VoucherID, out var distMeta);
+                contraLinesByVoucherId.TryGetValue(v.VoucherID, out var contraLines);
+
+                string paymentMode = ResolveDividendVoucherMode(v, contraLines);
+
+                string particulars = !string.IsNullOrWhiteSpace(v.Narration)
+                    ? v.Narration
+                    : (!string.IsNullOrWhiteSpace(v.VoucherType) ? v.VoucherType : (isCredit ? "लाभांश जमा" : "लाभांश वाटप"));
+
+                transactions.Add(new DividendKhatavaniRowDto
+                {
+                    VoucherID = v.VoucherID,
+                    VoucherDetailID = vd.VoucherDetailID,
+                    VoucherDate = v.VoucherDate,
+                    VoucherNo = v.VoucherNo ?? string.Empty,
+                    VoucherType = v.VoucherType ?? string.Empty,
+                    PaymentMode = paymentMode,
+                    Particulars = particulars,
+                    FinancialYear = distMeta?.FinancialYear,
+                    DividendPercentage = distMeta?.DividendPercentage,
+                    DebitAmount = drAmt,
+                    CreditAmount = crAmt,
+                    RunningBalance = Math.Abs(runningNet),
+                    BalanceType = runningNet >= 0m ? "Cr" : "Dr",
+                    BranchName = branchMap.TryGetValue(v.BranchID, out var bName) ? bName : string.Empty
+                });
+            }
+
+            var sanstha = await _context.SansthaDetails.AsNoTracking().FirstOrDefaultAsync();
+            var partyCust = customer ?? member?.Customer;
+            string resolvedBranchName = effectiveBranchId.HasValue && branchMap.TryGetValue(effectiveBranchId.Value, out var selBName)
+                ? selBName
+                : (effectiveBranchId.HasValue ? $"शाखा #{effectiveBranchId.Value}" : "सर्व शाखा (All Branches)");
+
+            var dto = new DividendKhatavaniReportDto
+            {
+                SansthaInfo = sanstha,
+                BranchID = effectiveBranchId,
+                BranchName = resolvedBranchName,
+                LedgerID = ledger.LedgerID,
+                LedgerName = ledger.LedgerName,
+                FromDate = effectiveFrom,
+                ToDate = effectiveTo,
+                MemberID = resolvedMemberId,
+                CustomerID = resolvedCustomerId,
+                MemberNo = member?.MemberCode ?? partyCust?.CIFNo ?? string.Empty,
+                LegacyMemberNo = member?.LegacyMemberNo ?? string.Empty,
+                CIFNo = partyCust?.CIFNo ?? string.Empty,
+                MemberName = partyCust != null
+                    ? string.Join(" ", new[] { partyCust.FirstName, partyCust.MiddleName, partyCust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim()
+                    : string.Empty,
+                MobileNo = partyCust?.MobileNo ?? string.Empty,
+                Village = partyCust?.Village ?? string.Empty,
+                Taluka = partyCust?.Taluka ?? string.Empty,
+                Address = partyCust?.Address ?? string.Empty,
+                ShareAccountNo = primaryShareAcc?.AccountNo ?? string.Empty,
+                TotalShareCount = totalShareCount,
+                TotalShareCapital = totalShareCapital,
+                OpeningBalance = Math.Abs(openingNet),
+                OpeningBalanceType = openingNet >= 0m ? "Cr" : "Dr",
+                OpeningBalanceSource = obSource,
+                TotalDebit = totalDebit,
+                TotalCredit = totalCredit,
+                ClosingBalance = Math.Abs(runningNet),
+                ClosingBalanceType = runningNet >= 0m ? "Cr" : "Dr",
+                Transactions = transactions
+            };
+
+            return Ok(dto);
+        }
+
+        private static string ResolveDividendVoucherMode(Voucher voucher, List<VoucherDetail>? contraLines)
+        {
+            if (contraLines != null && contraLines.Count > 0)
+            {
+                if (contraLines.Any(d => d.SavingAccountID.HasValue && d.SavingAccountID.Value > 0))
+                    return "बचत वर्ग (Saving)";
+
+                foreach (var cl in contraLines)
+                {
+                    string accType = cl.Ledger?.AccountType ?? string.Empty;
+                    string lName = cl.Ledger?.LedgerName ?? string.Empty;
+                    if (string.Equals(accType, "Cash", StringComparison.OrdinalIgnoreCase) ||
+                        lName.Contains("रोख", StringComparison.OrdinalIgnoreCase) ||
+                        lName.Contains("Cash", StringComparison.OrdinalIgnoreCase))
+                        return "रोख (Cash)";
+                    if (string.Equals(accType, "Bank", StringComparison.OrdinalIgnoreCase) ||
+                        lName.Contains("बँक", StringComparison.OrdinalIgnoreCase) ||
+                        lName.Contains("Bank", StringComparison.OrdinalIgnoreCase))
+                        return "बँक (Bank)";
+                    if (string.Equals(accType, "Saving Deposit", StringComparison.OrdinalIgnoreCase) ||
+                        lName.Contains("बचत", StringComparison.OrdinalIgnoreCase) ||
+                        lName.Contains("सेव्हिंग", StringComparison.OrdinalIgnoreCase))
+                        return "बचत वर्ग (Saving)";
+                }
+            }
+
+            return voucher.VoucherType switch
+            {
+                "Payment" => "पेमेंट (Payment)",
+                "Receipt" => "पावती (Receipt)",
+                "Contra" => "कॉन्ट्रा (Contra)",
+                _ => "जर्नल (Journal)"
+            };
         }
 
         [HttpGet("i-namuna")]
@@ -11631,6 +12073,7 @@ namespace Bhisi.Api.Controllers
         public int MemberID { get; set; }
         public int? CustomerID { get; set; }
         public string MemberNo { get; set; } = string.Empty;
+        public string LegacyMemberNo { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
         public decimal Balance { get; set; }
         public string BalanceType { get; set; } = string.Empty;
@@ -11683,6 +12126,56 @@ namespace Bhisi.Api.Controllers
         public decimal ClosingBalance { get; set; }
         public string ClosingBalanceType { get; set; } = string.Empty;
         public int ClosingShares { get; set; }
+    }
+
+    public class DividendKhatavaniRowDto
+    {
+        public int VoucherID { get; set; }
+        public int VoucherDetailID { get; set; }
+        public DateTime VoucherDate { get; set; }
+        public string VoucherNo { get; set; } = string.Empty;
+        public string VoucherType { get; set; } = string.Empty;
+        public string PaymentMode { get; set; } = string.Empty;
+        public string Particulars { get; set; } = string.Empty;
+        public string? FinancialYear { get; set; }
+        public decimal? DividendPercentage { get; set; }
+        public decimal DebitAmount { get; set; }
+        public decimal CreditAmount { get; set; }
+        public decimal RunningBalance { get; set; }
+        public string BalanceType { get; set; } = "Cr";
+        public string BranchName { get; set; } = string.Empty;
+    }
+
+    public class DividendKhatavaniReportDto
+    {
+        public SansthaDetail? SansthaInfo { get; set; }
+        public int? BranchID { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+        public int LedgerID { get; set; }
+        public string LedgerName { get; set; } = string.Empty;
+        public DateTime FromDate { get; set; }
+        public DateTime ToDate { get; set; }
+        public int? MemberID { get; set; }
+        public int? CustomerID { get; set; }
+        public string MemberNo { get; set; } = string.Empty;
+        public string LegacyMemberNo { get; set; } = string.Empty;
+        public string CIFNo { get; set; } = string.Empty;
+        public string MemberName { get; set; } = string.Empty;
+        public string MobileNo { get; set; } = string.Empty;
+        public string Village { get; set; } = string.Empty;
+        public string Taluka { get; set; } = string.Empty;
+        public string Address { get; set; } = string.Empty;
+        public string ShareAccountNo { get; set; } = string.Empty;
+        public int TotalShareCount { get; set; }
+        public decimal TotalShareCapital { get; set; }
+        public decimal OpeningBalance { get; set; }
+        public string OpeningBalanceType { get; set; } = "Cr";
+        public string OpeningBalanceSource { get; set; } = "None";
+        public decimal TotalDebit { get; set; }
+        public decimal TotalCredit { get; set; }
+        public decimal ClosingBalance { get; set; }
+        public string ClosingBalanceType { get; set; } = "Cr";
+        public List<DividendKhatavaniRowDto> Transactions { get; set; } = new();
     }
 
     public class INamunaReportDto

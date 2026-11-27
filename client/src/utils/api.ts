@@ -52,7 +52,7 @@ api.interceptors.request.use((config) => {
         url = url.startsWith('/') ? `/api${url}` : `/api/${url}`;
       }
       const currentApiBase = getApiBaseUrl();
-      if (currentApiBase) {
+      if (!import.meta.env.DEV && currentApiBase) {
         url = `${currentApiBase}${url}`;
       }
       config.url = url;

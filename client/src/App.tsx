@@ -99,6 +99,7 @@ const CustomerOpeningBalanceReport = React.lazy(() => import('./components/Custo
 const MemberListReport = React.lazy(() => import('./components/MemberListReport'));
 const AadhaarCardYadiReport = React.lazy(() => import('./components/AadhaarCardYadiReport'));
 const SabhasadLabhanshReport = React.lazy(() => import('./components/SabhasadLabhanshReport'));
+const SabhasadLabhanshKhatavaniReport = React.lazy(() => import('./components/SabhasadLabhanshKhatavaniReport'));
 const SharesKhatavaniReport = React.lazy(() => import('./components/SharesKhatavaniReport'));
 const CbsSampleReport = React.lazy(() => import('./components/CbsSampleReport'));
 const SavingKhatavaniReport = React.lazy(() => import('./components/SavingKhatavaniReport'));
@@ -446,6 +447,7 @@ function App() {
     'member-list-report': '/reports/member-list',
     'aadhaar-list': '/reports/aadhaar-list',
     'sabhasad-labhansh-report': '/reports/labhansh-report',
+    'sabhasad-labhansh-khatavani-report': '/reports/labhansh-khatavani',
     'shares-khatavani-report': '/reports/shares-khatavani',
     'cbs-sample-report': '/reports/cbs-sample',
     'i-namuna-report': '/reports/i-namuna',
@@ -1022,7 +1024,8 @@ function App() {
         {activeTab === 'customer-opening-balance-report' && <CustomerOpeningBalanceReport />}
         {(activeTab === 'member-list-report' || activeTab === 'j-namuna-report') && <MemberListReport />}
         {activeTab === 'aadhaar-list' && <AadhaarCardYadiReport />}
-        {activeTab === 'sabhasad-labhansh-report' && <SabhasadLabhanshReport />}
+        {activeTab === 'sabhasad-labhansh-report' && <SabhasadLabhanshReport onNavigate={handleNavigate} />}
+        {activeTab === 'sabhasad-labhansh-khatavani-report' && <SabhasadLabhanshKhatavaniReport onNavigate={handleNavigate} />}
         {activeTab === 'shares-khatavani-report' && <SharesKhatavaniReport />}
         {activeTab === 'cbs-sample-report' && <CbsSampleReport />}
         {activeTab === 'i-namuna-report' && <INamunaReport />}

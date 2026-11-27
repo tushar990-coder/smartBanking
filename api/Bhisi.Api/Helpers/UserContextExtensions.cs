@@ -6,6 +6,48 @@ namespace Bhisi.Api.Helpers
     public static class UserContextExtensions
     {
         /// <summary>
+        /// Returns true if the role represents the highest-authority Super Administrator role.
+        /// </summary>
+        public static bool IsSuperAdminRole(string? roleName)
+        {
+            if (string.IsNullOrWhiteSpace(roleName)) return false;
+            string trimmed = roleName.Trim();
+            return trimmed.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("Super Admin", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("Super_Admin", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Returns true if the role represents an Administrator role (Admin / SystemAdmin).
+        /// </summary>
+        public static bool IsAdminRole(string? roleName)
+        {
+            if (string.IsNullOrWhiteSpace(roleName)) return false;
+            string trimmed = roleName.Trim();
+            return trimmed.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Normalizes Super Admin variants to canonical "SuperAdmin" for [Authorize(Roles = ...)] compatibility.
+        /// </summary>
+        public static string NormalizeRoleClaim(string? roleName)
+        {
+            if (string.IsNullOrWhiteSpace(roleName)) return "User";
+            if (IsSuperAdminRole(roleName)) return "SuperAdmin";
+            return roleName.Trim();
+        }
+
+        /// <summary>
+        /// Determines whether the authenticated user holds the SuperAdmin role.
+        /// </summary>
+        public static bool IsSuperAdmin(this ClaimsPrincipal? user)
+        {
+            if (user == null) return false;
+            return IsSuperAdminRole(user.GetUserRole());
+        }
+
+        /// <summary>
         /// Single Source of Truth for Head Office / Multi-Branch roles.
         /// Non-HO roles (Manager, BranchManager, Cashier, Clerk, Accountant, User, AGENT) are strictly locked to DefaultBranchID.
         /// </summary>

@@ -8368,6 +8368,44 @@ BEGIN
 END
 GO
 
+-- =========================================================================================
+-- v2.6.51: ENSURE SUPERADMIN ROLE EXISTS IN [Roles] ACROSS ALL SANSTHA DATABASES
+-- =========================================================================================
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
+
+IF OBJECT_ID(N'[dbo].[Roles]', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[Roles]
+        WHERE [RoleName] IN ('SuperAdmin', 'Super Admin')
+           OR (COL_LENGTH('dbo.Roles', 'RoleCode') IS NOT NULL AND [RoleCode] = 'SuperAdmin')
+    )
+    BEGIN
+        IF COL_LENGTH('dbo.Roles', 'RoleCode') IS NOT NULL
+           AND COL_LENGTH('dbo.Roles', 'Description') IS NOT NULL
+           AND COL_LENGTH('dbo.Roles', 'IsSystemRole') IS NOT NULL
+           AND COL_LENGTH('dbo.Roles', 'Status') IS NOT NULL
+        BEGIN
+            INSERT INTO [dbo].[Roles] ([RoleCode], [RoleName], [Description], [IsSystemRole], [Status])
+            VALUES ('SuperAdmin', 'SuperAdmin', N'सर्वोच्च प्रणाली प्रशासक (Master Super Administrator)', 1, 1);
+        END
+        ELSE IF COL_LENGTH('dbo.Roles', 'RoleCode') IS NOT NULL
+        BEGIN
+            INSERT INTO [dbo].[Roles] ([RoleCode], [RoleName])
+            VALUES ('SuperAdmin', 'SuperAdmin');
+        END
+        ELSE
+        BEGIN
+            INSERT INTO [dbo].[Roles] ([RoleName])
+            VALUES ('SuperAdmin');
+        END
+        PRINT '-> Seeded SuperAdmin role in [dbo].[Roles] successfully!';
+    END
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

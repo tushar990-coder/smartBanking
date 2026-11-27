@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import Select from 'react-select';
 import * as XLSX from 'xlsx';
-// @ts-ignore
-import html2pdf from 'html2pdf.js';
+import { exportHtmlElementToPdf } from '../utils/daybookPdfExport';
 import { Search, RefreshCw, Calendar, ShieldCheck, Landmark } from 'lucide-react';
 import CbsReportLayout, { formatDisplayDate, SansthaDetails } from './common/CbsReportLayout';
 import { useAuth } from '../context/AuthContext';
@@ -704,7 +703,7 @@ const LoanLedgerReport: React.FC = () => {
   const primaryReport = activeReports[0] || reportData;
   const showMultipleLoanBlocks = isConsolidatedMode || activeReports.length > 1;
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     if (activeReports.length === 0) return;
     const element = document.querySelector('.cbs-print-container') as HTMLElement | null;
     if (!element) {
@@ -722,25 +721,17 @@ const LoanLedgerReport: React.FC = () => {
       ? `Karj_Khatavani_Consolidated_${firstReport.cifNo || firstReport.loanAccountNo}.pdf`
       : `Karj_Khatavani_${firstReport.loanAccountNo}.pdf`;
 
-    const opt: any = {
-      margin: [6, 6, 6, 6],
-      filename: pdfFileName,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: {
-        unit: 'mm',
-        format: isLegal ? 'legal' : 'a4',
-        orientation: isLandscape ? 'landscape' : 'portrait'
-      }
-    };
-
     try {
-      html2pdf()
-        .set(opt)
-        .from(element)
-        .save()
-        .catch(() => window.print());
-    } catch {
+      await exportHtmlElementToPdf({
+        element,
+        filename: pdfFileName,
+        format: isLegal ? 'legal' : 'a4',
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        marginMm: 6,
+        chunkSelector: showMultipleLoanBlocks ? '.loan-ledger-pdf-block' : undefined
+      });
+    } catch (err) {
+      console.error('Loan Ledger PDF generation error:', err);
       window.print();
     }
   };
@@ -1304,7 +1295,7 @@ const LoanLedgerReport: React.FC = () => {
             return (
               <div
                 key={`${item.loanAccountNo}-${loanIdx}`}
-                className={`space-y-2.5 ${
+                className={`loan-ledger-pdf-block space-y-2.5 ${
                   showMultipleLoanBlocks && loanIdx > 0 ? 'pt-4 border-t-2 border-dashed border-slate-400' : ''
                 }`}
               >

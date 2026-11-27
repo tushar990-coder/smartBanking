@@ -1,240 +1,335 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { AlertOctagon, Building2, Calculator, FileSpreadsheet, Settings, ShieldAlert, ShieldCheck, Users } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 interface NpaDashboardProps {
   onNavigate?: (tab: string, params?: any) => void;
 }
 
+const getLocalTodayStr = (): string => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
+const getBusinessDateStr = (rawDate?: string | null): string => {
+  if (rawDate && typeof rawDate === 'string') {
+    const clean = rawDate.split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+  }
+  return getLocalTodayStr();
+};
+
+const fmtLakh = (val: any): string =>
+  Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const NpaDashboard: React.FC<NpaDashboardProps> = ({ onNavigate }) => {
+  const { user, globalBranchId } = useAuth();
+  const isHOUser = isHeadOfficeUser(user);
+  const lockedBranchId = getLockedBranchId(user);
   const API_URL = '/api/Npa';
+
   const [statement, setStatement] = useState<any>(null);
   const [runs, setRuns] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [runDate, setRunDate] = useState(new Date().toISOString().split('T')[0]);
+  const [runDate, setRunDate] = useState<string>(() => getBusinessDateStr(user?.businessDate));
   const [runningBatch, setRunningBatch] = useState(false);
   const [message, setMessage] = useState('');
 
-  const fetchData = async (isMounted = true) => {
+  const effectiveBranch = getEffectiveBranchId(user, globalBranchId);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    effectiveBranch === null ? 'all' : String(effectiveBranch)
+  );
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setRunDate(getBusinessDateStr(user.businessDate));
+    }
+  }, [user?.businessDate]);
+
+  useEffect(() => {
+    axios.get('/api/Branches').then((r) => setBranches(r.data || [])).catch(() => {});
+  }, []);
+
+  const fetchData = async (date = runDate, bId = selectedBranchId) => {
     try {
-      if (isMounted) setLoading(true);
+      setLoading(true);
+      const bQuery = bId && bId !== 'all' ? `&branchId=${bId}` : '';
       const [stmtRes, runsRes] = await Promise.allSettled([
-        axios.get(`${API_URL}/statement`),
-        axios.get(`${API_URL}/runs`)
+        axios.get(`${API_URL}/statement?asOfDate=${date}${bQuery}`),
+        axios.get(`${API_URL}/runs`),
       ]);
-      
-      if (isMounted) {
-        if (stmtRes.status === 'fulfilled' && stmtRes.value?.data) {
-          setStatement(stmtRes.value.data);
-        }
-        if (runsRes.status === 'fulfilled' && runsRes.value?.data) {
-          setRuns(Array.isArray(runsRes.value.data) ? runsRes.value.data : []);
-        }
+
+      if (stmtRes.status === 'fulfilled' && stmtRes.value?.data) {
+        setStatement(stmtRes.value.data);
+      }
+      if (runsRes.status === 'fulfilled' && runsRes.value?.data) {
+        setRuns(Array.isArray(runsRes.value.data) ? runsRes.value.data : []);
       }
     } catch (err) {
-      if (isMounted) {
-        console.error(err);
-        setMessage('माहिती लोड करताना त्रुटी आली. (Error loading data.)');
-      }
+      console.error(err);
+      setMessage('माहिती लोड करताना त्रुटी आली.');
     } finally {
-      if (isMounted) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    let isMounted = true;
-    fetchData(isMounted);
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    fetchData(runDate, selectedBranchId);
+  }, [runDate, selectedBranchId]);
 
   const handleRunBatch = async () => {
     try {
       setRunningBatch(true);
-      setMessage('एन.पी.ए. गणना प्रक्रिया चालू आहे... (NPA Calculation in progress...)');
-      await axios.post(`${API_URL}/run`, { asOfDate: runDate, triggeredBy: 'Manager' });
-      setMessage('बॅच यशस्वीरित्या पूर्ण झाली! (Batch completed successfully!)');
-      fetchData();
+      setMessage('एन.पी.ए. गणना प्रक्रिया चालू आहे...');
+      await axios.post(`${API_URL}/run`, { asOfDate: runDate, triggeredBy: user?.username || 'Manager' });
+      setMessage(`✅ दि. ${runDate} अखेर एन.पी.ए. वर्गीकरण व तरतूद मोजणी यशस्वीरित्या पूर्ण झाली!`);
+      await fetchData(runDate, selectedBranchId);
     } catch (err) {
       console.error(err);
-      setMessage('बॅच चालवताना त्रुटी आली. (Error running batch.)');
+      setMessage('बॅच चालवताना त्रुटी आली.');
     } finally {
       setRunningBatch(false);
     }
   };
 
-  if (loading && !statement) {
-    return (
-      <div className="flex items-center justify-center p-8 bg-gray-50 text-[11px] font-sans">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-2 text-xs text-gray-600 font-medium">माहिती लोड होत आहे... (Loading NPA data...)</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Compliance Flags
   const isGrossNpaViolated = statement ? statement.grossNpaPercent > 10 : false;
   const isNetNpaViolated = statement ? statement.netNpaPercent > 5 : false;
 
   return (
-    <div className="p-2 max-w-full h-full flex flex-col bg-gray-50 text-[11px] font-sans">
-      {/* Top Title Bar */}
-      <div className="text-xs font-bold text-primary border-b border-gray-400 pb-1 mb-2 flex justify-between items-center">
-        <div>
-          <span>एन.पी.ए. व्यवस्थापन डॅशबोर्ड (NPA Dashboard)</span>
-          <span className="text-[10px] text-gray-500 font-normal ml-2">(महाराष्ट्र सहकारी आयुक्त परिपत्रक २०२४ नियमांनुसार)</span>
-        </div>
+    <div className="p-2 sm:p-3 max-w-7xl mx-auto bg-slate-50/70 min-h-[calc(100vh-3.15rem)] flex flex-col gap-2.5 font-sans text-xs text-slate-800">
+      {/* ERP Header Bar */}
+      <div className="bg-white px-3 py-2 rounded-sm shadow-xs border border-slate-300 border-t-2 border-t-primary flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-sm bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+            <AlertOctagon size={14} />
+          </div>
+          <div>
+            <h1 className="text-xs sm:text-sm font-extrabold text-primary">
+              एन.पी.ए. व्यवस्थापन व तरतूद डॅशबोर्ड (NPA &amp; Provisioning Dashboard)
+            </h1>
+            <p className="text-[10px] text-slate-500">
+              मुद्दल बाकीवर BDDR तरतूद स्लॅब + NPA येणे व्याजावर स्वतंत्र १००% थकीत व्याज तरतूद (OIR)
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded-sm px-2 h-7">
+            <Building2 size={12} className="text-primary" />
+            <select
+              value={selectedBranchId}
+              disabled={!isHOUser}
+              onChange={(e) => setSelectedBranchId(e.target.value)}
+              className="bg-transparent text-[11px] font-bold text-slate-900 focus:outline-none"
+            >
+              {isHOUser && <option value="all">सर्व शाखा (All)</option>}
+              {(isHOUser || !lockedBranchId
+                ? branches
+                : branches.filter((b: any) => Number(b.branchID) === Number(lockedBranchId))
+              ).map((b: any) => (
+                <option key={b.branchID} value={String(b.branchID)}>
+                  {b.branchName}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <input
             type="date"
             value={runDate}
             onChange={(e) => setRunDate(e.target.value)}
-            className="px-2 py-0.5 border border-gray-300 rounded-sm text-[11px] focus:outline-none focus:border-primary bg-white"
+            className="h-7 px-2 border border-slate-300 rounded-sm text-[11px] font-mono font-bold bg-white focus:outline-none focus:border-primary"
           />
+
           <button
-            onClick={() => onNavigate && onNavigate('npa-config')}
-            className="px-3 py-1 rounded-sm text-xs font-semibold bg-slate-700 hover:bg-slate-800 text-white shadow-sm transition-colors flex items-center gap-1"
+            onClick={() => onNavigate?.('npa-config')}
+            className="h-7 px-2.5 rounded-sm text-[11px] font-bold bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 flex items-center gap-1 cursor-pointer transition"
           >
-            ⚙️ NPA तरतूद निकष व स्लॅब सेटिंग
+            <Settings size={12} />
+            <span>तरतूद स्लॅब सेटिंग</span>
           </button>
+
           <button
             onClick={handleRunBatch}
             disabled={runningBatch}
-            className={`px-3 py-1 rounded-sm text-xs font-bold text-white shadow-sm transition-colors ${
-              runningBatch ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-[#004a75]'
-            }`}
+            className="h-7 px-3 rounded-sm text-[11px] font-extrabold text-white bg-primary hover:opacity-90 shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
           >
-            {runningBatch ? 'प्रक्रिया चालू...' : '⚡ एन.पी.ए. गणना करा (Run Batch)'}
+            <Calculator size={12} />
+            <span>{runningBatch ? 'प्रक्रिया चालू...' : 'एन.पी.ए. गणना करा (Run Batch)'}</span>
           </button>
         </div>
       </div>
 
-      {/* Notifications / Alerts */}
       {message && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 px-3 py-1.5 rounded-sm text-[11px] font-medium flex justify-between items-center mb-2">
-          <span>ℹ️ {message}</span>
-          <button onClick={() => setMessage('')} className="text-blue-600 hover:text-blue-800 font-bold">✕</button>
+        <div className="bg-primary/5 border border-primary/20 text-slate-900 px-3 py-1.5 rounded-sm text-[11px] font-bold flex justify-between items-center">
+          <span>{message}</span>
+          <button onClick={() => setMessage('')} className="text-primary font-bold cursor-pointer">
+            ✕
+          </button>
         </div>
       )}
 
       {(isGrossNpaViolated || isNetNpaViolated) && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-1.5 rounded-sm text-[11px] font-medium flex flex-col gap-0.5 mb-2">
-          <div className="font-bold flex items-center text-red-700">
-            <span className="mr-1.5">⚠️</span> नियामक मर्यादांचे उल्लंघन (Regulatory Threshold Breach):
+        <div className="bg-rose-50 border border-rose-300 text-rose-900 px-3 py-1.5 rounded-sm text-[11px] font-medium space-y-0.5">
+          <div className="font-extrabold flex items-center gap-1 text-rose-700">
+            <ShieldAlert size={13} />
+            <span>नियामक मर्यादांचे उल्लंघन (Regulatory Threshold Breach):</span>
           </div>
-          {isGrossNpaViolated && <div>• एकूण एन.पी.ए. प्रमाण (Gross NPA) नियामक कमाल मर्यादा १०% पेक्षा जास्त आहे.</div>}
-          {isNetNpaViolated && <div>• निव्वळ एन.पी.ए. प्रमाण (Net NPA) नियामक कमाल मर्यादा ५% पेक्षा जास्त आहे.</div>}
+          {isGrossNpaViolated && <div>• एकूण एन.पी.ए. प्रमाण (Gross NPA) कमाल १०% मर्यादेपेक्षा जास्त आहे.</div>}
+          {isNetNpaViolated && <div>• निव्वळ एन.पी.ए. प्रमाण (Net NPA) कमाल ५% मर्यादेपेक्षा जास्त आहे.</div>}
         </div>
       )}
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-3">
-        <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-sm">
-          <div className="text-[10px] font-bold text-gray-500 uppercase">एकूण कर्ज वाटप (Gross Advances)</div>
-          <div className="text-base font-black text-gray-900 mt-1">₹ {statement?.grossAdvances?.toLocaleString('en-IN', { minimumFractionDigits: 2 }) || '0.00'} <span className="text-[10px] font-normal text-gray-500">लाख</span></div>
+      {/* 6 Compact KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="bg-white p-2.5 rounded-sm border border-slate-300 shadow-2xs">
+          <div className="text-[10px] font-bold text-slate-500 uppercase">एकूण कर्ज बाकी</div>
+          <div className="text-sm font-black text-slate-900 font-mono mt-0.5">₹ {fmtLakh(statement?.grossAdvances)} लाख</div>
         </div>
 
-        <div className={`bg-white p-2.5 rounded-sm border shadow-sm ${isGrossNpaViolated ? 'border-red-300 bg-red-50/30' : 'border-gray-200'}`}>
-          <div className="text-[10px] font-bold text-gray-500 uppercase">एकूण एन.पी.ए. (Gross NPA)</div>
-          <div className={`text-base font-black mt-1 ${isGrossNpaViolated ? 'text-red-700' : 'text-gray-900'}`}>
-            ₹ {statement?.grossNpa?.toLocaleString('en-IN', { minimumFractionDigits: 2 }) || '0.00'} <span className="text-[10px] font-normal text-gray-500">लाख</span>
-          </div>
-          <div className="mt-1 flex items-center justify-between text-[10px] border-t border-gray-100 pt-1">
-            <span className="text-gray-500">Gross NPA %:</span>
-            <span className={`font-bold ${isGrossNpaViolated ? 'text-red-600' : 'text-gray-700'}`}>{statement?.grossNpaPercent || 0}%</span>
+        <div className={`bg-white p-2.5 rounded-sm border shadow-2xs ${isGrossNpaViolated ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'}`}>
+          <div className="text-[10px] font-bold text-slate-500 uppercase">एकूण NPA ({statement?.grossNpaPercent || 0}%)</div>
+          <div className={`text-sm font-black font-mono mt-0.5 ${isGrossNpaViolated ? 'text-rose-700' : 'text-slate-900'}`}>
+            ₹ {fmtLakh(statement?.grossNpa)} लाख
           </div>
         </div>
 
-        <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-sm">
-          <div className="text-[10px] font-bold text-gray-500 uppercase">निव्वळ कर्ज (Net Advances)</div>
-          <div className="text-base font-black text-gray-900 mt-1">₹ {statement?.netAdvances?.toLocaleString('en-IN', { minimumFractionDigits: 2 }) || '0.00'} <span className="text-[10px] font-normal text-gray-500">लाख</span></div>
+        <div className="bg-amber-50/60 p-2.5 rounded-sm border border-amber-300 shadow-2xs">
+          <div className="text-[10px] font-bold text-amber-800 uppercase">१००% OIR (व्याज तरतूद)</div>
+          <div className="text-sm font-black text-amber-950 font-mono mt-0.5">
+            ₹ {fmtLakh(statement?.overdueInterestReserve)} लाख
+          </div>
         </div>
 
-        <div className={`bg-white p-2.5 rounded-sm border shadow-sm ${isNetNpaViolated ? 'border-red-300 bg-red-50/30' : 'border-gray-200'}`}>
-          <div className="text-[10px] font-bold text-gray-500 uppercase">निव्वळ एन.पी.ए. (Net NPA)</div>
-          <div className={`text-base font-black mt-1 ${isNetNpaViolated ? 'text-red-700' : 'text-gray-900'}`}>
-            ₹ {statement?.netNpa?.toLocaleString('en-IN', { minimumFractionDigits: 2 }) || '0.00'} <span className="text-[10px] font-normal text-gray-500">लाख</span>
-          </div>
-          <div className="mt-1 flex items-center justify-between text-[10px] border-t border-gray-100 pt-1">
-            <span className="text-gray-500">Net NPA %:</span>
-            <span className={`font-bold ${isNetNpaViolated ? 'text-red-600' : 'text-gray-700'}`}>{statement?.netNpaPercent || 0}%</span>
+        <div className="bg-primary/5 p-2.5 rounded-sm border border-primary/20 shadow-2xs">
+          <div className="text-[10px] font-bold text-primary uppercase">आवश्यक BDDR (मुद्दल)</div>
+          <div className="text-sm font-black text-primary font-mono mt-0.5">₹ {fmtLakh(statement?.totalProvision)} लाख</div>
+        </div>
+
+        <div className="bg-white p-2.5 rounded-sm border border-slate-300 shadow-2xs">
+          <div className="text-[10px] font-bold text-slate-500 uppercase">निव्वळ कर्ज बाकी</div>
+          <div className="text-sm font-black text-slate-900 font-mono mt-0.5">₹ {fmtLakh(statement?.netAdvances)} लाख</div>
+        </div>
+
+        <div className={`bg-white p-2.5 rounded-sm border shadow-2xs ${isNetNpaViolated ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'}`}>
+          <div className="text-[10px] font-bold text-slate-500 uppercase">निव्वळ NPA ({statement?.netNpaPercent || 0}%)</div>
+          <div className={`text-sm font-black font-mono mt-0.5 ${isNetNpaViolated ? 'text-rose-700' : 'text-slate-900'}`}>
+            ₹ {fmtLakh(statement?.netNpa)} लाख
           </div>
         </div>
       </div>
 
-      {/* Main Content Grid: Quick Nav & Historical Log */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 flex-1">
-        {/* Left: Quick Links */}
-        <div className="lg:col-span-2 space-y-3">
-          <div className="bg-white p-2.5 rounded-sm shadow-sm border border-gray-200">
-            <div className="text-[11px] font-bold text-primary border-b border-gray-200 pb-1 mb-2">
-              १. त्वरित दुवे (Quick Navigation)
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <button
-                onClick={() => onNavigate?.('npa-statement')}
-                className="flex flex-col justify-between p-2.5 bg-blue-50/50 hover:bg-blue-100/60 border border-blue-200/70 rounded-sm transition-all text-left group"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-blue-900">एन.पी.ए. पत्रक</span>
-                    <span className="text-blue-600 group-hover:translate-x-1 transition-transform text-xs">➔</span>
-                  </div>
-                  <p className="text-[10px] text-blue-600 mt-1">वैधानिक अहवाल आणि ऑडिट सही ब्लॉक</p>
-                </div>
-              </button>
+      {/* Quick Navigation + Audit Runs Log */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 flex-1">
+        <div className="lg:col-span-2 bg-white p-3 rounded-sm shadow-xs border border-slate-300 border-t-2 border-t-primary">
+          <div className="text-xs font-extrabold text-primary border-b border-slate-200 pb-1.5 mb-2.5">
+            १. एन.पी.ए. अहवाल व व्यवस्थापन दुवे (Quick Navigation)
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              onClick={() => onNavigate?.('npa-register')}
+              className="p-3 bg-primary/5 hover:bg-primary/15 border border-primary/20 rounded-sm transition text-left cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-primary flex items-center gap-1.5">
+                  <FileSpreadsheet size={14} />
+                  <span>NPA तरतूद माहिती (खातेनिहाय रजिस्टर)</span>
+                </span>
+                <span className="text-primary font-bold">➔</span>
+              </div>
+              <p className="text-[11px] text-slate-600 mt-1">
+                प्रत्येक कर्ज खात्याची मुद्दल बाकी, तारणी/विनातारणी विभागणी, BDDR % व १००% OIR रजिस्टर
+              </p>
+            </button>
 
-              <button
-                onClick={() => onNavigate?.('collateral-compliance')}
-                className="flex flex-col justify-between p-2.5 bg-indigo-50/50 hover:bg-indigo-100/60 border border-indigo-200/70 rounded-sm transition-all text-left group"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-indigo-900">तारण पूर्तता ट्रॅकर</span>
-                    <span className="text-indigo-600 group-hover:translate-x-1 transition-transform text-xs">➔</span>
-                  </div>
-                  <p className="text-[10px] text-indigo-600 mt-1">मूल्यमापन, विमा आणि तपासणी नोंद</p>
-                </div>
-              </button>
+            <button
+              onClick={() => onNavigate?.('npa-statement')}
+              className="p-3 bg-white hover:bg-primary/10 border border-slate-300 hover:border-primary rounded-sm transition text-left cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-900">एन.पी.ए. वैधानिक पत्रक (Statement)</span>
+                <span className="text-primary font-bold">➔</span>
+              </div>
+              <p className="text-[11px] text-slate-600 mt-1">
+                भाग १ व भाग २ वैधानिक ऑडिट पत्रक, १००% OIR वजावट आणि लेखापरीक्षक स्वाक्षरी ब्लॉक
+              </p>
+            </button>
 
-              <button
-                onClick={() => onNavigate?.('npa-defaulters')}
-                className="flex flex-col justify-between p-2.5 bg-amber-50/50 hover:bg-amber-100/60 border border-amber-200/70 rounded-sm transition-all text-left group"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-900">थकबाकीदार यादी</span>
-                    <span className="text-amber-600 group-hover:translate-x-1 transition-transform text-xs">➔</span>
-                  </div>
-                  <p className="text-[10px] text-amber-600 mt-1">पहिले २० थकबाकीदार आणि मोठे कर्जदार</p>
-                </div>
-              </button>
-            </div>
+            <button
+              onClick={() => onNavigate?.('collateral-compliance')}
+              className="p-3 bg-white hover:bg-primary/10 border border-slate-300 hover:border-primary rounded-sm transition text-left cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="text-primary" />
+                  <span>तारण पूर्तता ट्रॅकर (Collateral Compliance)</span>
+                </span>
+                <span className="text-primary font-bold">➔</span>
+              </div>
+              <p className="text-[11px] text-slate-600 mt-1">
+                स्थावर मालमत्ता मूल्यांकन, विमा मुदत आणि वार्षिक पाहणी पूर्तता लॉग
+              </p>
+            </button>
+
+            <button
+              onClick={() => onNavigate?.('npa-defaulters')}
+              className="p-3 bg-white hover:bg-primary/10 border border-slate-300 hover:border-primary rounded-sm transition text-left cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <Users size={14} className="text-amber-600" />
+                  <span>पहिले २० थकबाकीदार व मोठे कर्जदार</span>
+                </span>
+                <span className="text-primary font-bold">➔</span>
+              </div>
+              <p className="text-[11px] text-slate-600 mt-1">
+                संचालक मंडळ मासिक सभेसाठी टॉप २० NPA थकबाकीदार व मोठे नियमित कर्जदार
+              </p>
+            </button>
           </div>
         </div>
 
-        {/* Right: Audit Runs Log */}
-        <div className="bg-white p-2.5 rounded-sm shadow-sm border border-gray-200 flex flex-col">
-          <div className="text-[11px] font-bold text-primary border-b border-gray-200 pb-1 mb-2">
+        {/* Audit Runs Log */}
+        <div className="bg-white p-3 rounded-sm shadow-xs border border-slate-300 border-t-2 border-t-primary flex flex-col">
+          <div className="text-xs font-extrabold text-primary border-b border-slate-200 pb-1.5 mb-2">
             २. बॅच रन इतिहास (Audit Runs Log)
           </div>
-          <div className="flex-1 overflow-y-auto max-h-[250px] space-y-2 pr-1">
-            {runs.length === 0 ? (
-              <p className="text-[11px] text-gray-400 text-center py-6">अद्याप कोणतीही बॅच चालवली नाही.</p>
+          <div className="flex-1 overflow-y-auto max-h-[260px] space-y-1.5 pr-1 custom-scrollbar">
+            {loading && runs.length === 0 ? (
+              <p className="text-[11px] text-slate-400 text-center py-6">लोड होत आहे...</p>
+            ) : runs.length === 0 ? (
+              <p className="text-[11px] text-slate-400 text-center py-6">अद्याप कोणतीही बॅच चालवली नाही.</p>
             ) : (
               runs.map((r, i) => (
-                <div key={i} className="p-2 bg-gray-50 rounded-sm border border-gray-200 flex justify-between items-center text-[11px] hover:bg-blue-50/40 transition-colors">
+                <div
+                  key={r.npaClassificationRunID || i}
+                  className="px-2.5 py-1.5 bg-slate-50 rounded-sm border border-slate-200 flex justify-between items-center text-[11px] hover:bg-primary/5 transition-colors"
+                >
                   <div>
-                    <div className="font-bold text-gray-800">{new Date(r.runDate).toLocaleString('mr-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-                    <div className="text-[10px] text-gray-500 mt-0.5">युझर: {r.triggeredBy} | रेकॉर्ड्स: {r.recordsProcessed}</div>
+                    <div className="font-bold text-slate-800">
+                      {new Date(r.runDate).toLocaleString('mr-IN', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      युझर: {r.triggeredBy} | खाती: {r.recordsProcessed}
+                    </div>
+                    {r.remarks && <div className="text-[10px] text-primary font-medium">{r.remarks}</div>}
                   </div>
-                  <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold uppercase ${
-                    r.status === 'Success' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300'
-                  }`}>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-sm text-[9px] font-bold uppercase ${
+                      r.status === 'Success'
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                        : 'bg-rose-50 text-rose-800 border border-rose-300'
+                    }`}
+                  >
                     {r.status === 'Success' ? 'यशस्वी' : 'अयशस्वी'}
                   </span>
                 </div>
@@ -248,4 +343,3 @@ const NpaDashboard: React.FC<NpaDashboardProps> = ({ onNavigate }) => {
 };
 
 export default NpaDashboard;
-

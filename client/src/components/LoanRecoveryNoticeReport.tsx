@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import html2pdf from 'html2pdf.js';
+import { exportHtmlElementToPdf } from '../utils/daybookPdfExport';
 import { Printer, Download, FileText } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 
@@ -202,21 +202,19 @@ export default function LoanRecoveryNoticeReport() {
     if (!reportRef.current) return;
     setDownloadingPdf(true);
     try {
-      const opt = {
-        margin: [4, 5, 4, 5],
+      await exportHtmlElementToPdf({
+        element: reportRef.current,
         filename: `Loan_Recovery_Notice_${selectedAccount?.loanAccountNo || 'Report'}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-      };
-
-      await html2pdf().set(opt as any).from(reportRef.current).save();
-      setDownloadingPdf(false);
+        format: 'a4',
+        orientation: 'portrait',
+        marginMm: 5,
+        shrinkToSinglePageTolerance: 1.08
+      });
     } catch (err) {
       console.error('PDF generation error:', err);
-      setDownloadingPdf(false);
       handlePrint();
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 

@@ -1418,47 +1418,48 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
     });
   };
 
+  const cellInputBase =
+    'w-full h-[22px] px-1.5 py-0 text-[11px] leading-tight rounded-none focus:outline-none';
+  const cellSelectBase =
+    'w-full h-[22px] px-1 py-0 text-[11px] leading-tight bg-transparent border border-transparent focus:bg-white focus:border-primary focus:outline-none cursor-pointer';
+
   return (
-    <div className="p-3 bg-slate-50 min-h-screen font-sans">
-      {/* Top Header Bar */}
-      <div className="bg-white border border-slate-200 rounded-sm p-3 mb-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+    <div className="p-1.5 sm:p-2 bg-slate-50/70 h-[calc(100vh-3.15rem)] flex flex-col gap-1.5 overflow-hidden font-sans text-slate-800">
+      {/* Top ERP Header Bar */}
+      <div className="bg-white border border-slate-300 border-t-2 border-t-primary rounded-sm px-2.5 py-1.5 shadow-xs flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2">
           {onBack && (
             <button
               onClick={onBack}
-              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-sm transition cursor-pointer"
+              className="h-6 px-2 bg-white hover:bg-primary/10 hover:text-primary hover:border-primary text-slate-700 border border-slate-300 rounded-sm transition cursor-pointer flex items-center gap-1 text-[11px] font-bold"
               title="मागे जा"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-3 h-3" />
+              <span className="hidden sm:inline">मागे</span>
             </button>
           )}
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="p-1.5 bg-primary/10 text-primary rounded-sm border border-primary/20">
-                <FileSpreadsheet className="w-5 h-5" />
-              </div>
-              <h1 className="text-base font-black text-slate-900 tracking-tight">
-                खातेदार बल्क नोंदणी व संपादन (Customer Bulk Entry &amp; Edit Grid)
-              </h1>
-              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-300">
-                Excel Spreadsheet Mode
-              </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="w-5 h-5 bg-primary/10 text-primary rounded-sm border border-primary/20 flex items-center justify-center shrink-0">
+              <FileSpreadsheet className="w-3.5 h-3.5" />
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              एकाच स्क्रीनवर नवीन खातेदारांची नोंद करा किंवा विद्यमान खातेदार लोड करून बल्क एडिट करा (फक्त बदललेल्या ओळी अपडेट होतात).
-            </p>
+            <h1 className="text-xs sm:text-sm font-extrabold text-primary tracking-tight whitespace-nowrap">
+              खातेदार बल्क नोंदणी व संपादन (Customer Bulk Entry &amp; Edit)
+            </h1>
+            <span className="hidden xl:inline-block bg-primary/10 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-sm border border-primary/20">
+              Excel Grid
+            </span>
           </div>
         </div>
 
         {/* Action Controls in Header */}
-        <div className="flex items-center flex-wrap gap-2">
+        <div className="flex items-center flex-wrap gap-1.5">
           {isHoAdmin && branches.length > 0 && (
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded-sm px-2 py-1 text-xs">
-              <Building2 className="w-3.5 h-3.5 text-primary" />
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded-sm px-1.5 h-6 text-[11px]">
+              <Building2 className="w-3 h-3 text-primary shrink-0" />
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="bg-transparent font-bold text-slate-700 focus:outline-none"
+                className="bg-transparent font-bold text-slate-800 focus:outline-none text-[11px] cursor-pointer"
                 title="नवीन नोंदणीसाठी लक्ष्य शाखा"
               >
                 {branches.map((b) => (
@@ -1471,10 +1472,10 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
           )}
 
           {lastDraftSavedTime && (
-            <div className="flex items-center gap-1 text-[11px] text-slate-500 bg-slate-100 px-2.5 py-1 rounded-sm border border-slate-200">
-              <Clock className="w-3.5 h-3.5 text-emerald-600" />
+            <div className="hidden md:flex items-center gap-1 text-[10px] text-slate-600 bg-primary/5 px-2 h-6 rounded-sm border border-primary/20">
+              <Clock className="w-3 h-3 text-primary shrink-0" />
               <span>
-                ड्राफ्ट जतन: <strong className="text-slate-800">{lastDraftSavedTime}</strong>
+                ड्राफ्ट: <strong className="text-primary">{lastDraftSavedTime}</strong>
               </span>
             </div>
           )}
@@ -1489,19 +1490,19 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-sm border border-emerald-300 flex items-center gap-1.5 cursor-pointer transition"
+            className="h-6 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-sm border border-emerald-300 flex items-center gap-1 cursor-pointer transition"
             title="एक्सेल फाइल (.xlsx / .csv) निवडून थेट ग्रिडमध्ये डेटा आयात करा"
           >
-            <Upload className="w-3.5 h-3.5 text-emerald-700" />
-            <span>एक्सेल फाइल अपलोड</span>
+            <Upload className="w-3 h-3 text-emerald-700" />
+            <span>एक्सेल अपलोड</span>
           </button>
 
           <button
             onClick={handleDownloadSampleTemplate}
-            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-sm border border-slate-300 flex items-center gap-1.5 cursor-pointer transition"
+            className="h-6 px-2 bg-white hover:bg-primary/10 hover:text-primary hover:border-primary text-slate-700 text-[11px] font-bold rounded-sm border border-slate-300 flex items-center gap-1 cursor-pointer transition"
             title="खातेदारांच्या डेटा एन्ट्रीसाठी नमुना एक्सेल टेम्प्लेट डाऊनलोड करा"
           >
-            <Download className="w-3.5 h-3.5 text-slate-600" />
+            <Download className="w-3 h-3 text-primary" />
             <span>नमुना टेम्प्लेट</span>
           </button>
 
@@ -1512,10 +1513,10 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                 fetchExistingCustomers();
               }
             }}
-            className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-bold rounded-sm border border-sky-300 flex items-center gap-1.5 cursor-pointer transition"
+            className="h-6 px-2 bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold rounded-sm border border-primary/30 flex items-center gap-1 cursor-pointer transition"
             title="डेटाबेसमधील आधी भरलेले खातेदार ग्रिडमध्ये आणून बल्क एडिट करा"
           >
-            <FolderDown className="w-3.5 h-3.5 text-sky-700" />
+            <FolderDown className="w-3 h-3 text-primary" />
             <span>विद्यमान खातेदार लोड करा</span>
           </button>
 
@@ -1523,27 +1524,27 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
           <div className="relative">
             <button
               onClick={() => setShowQuickFill(!showQuickFill)}
-              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-sm border border-slate-300 flex items-center gap-1 cursor-pointer transition"
+              className="h-6 px-2 bg-white hover:bg-primary/10 hover:text-primary hover:border-primary text-slate-700 text-[11px] font-bold rounded-sm border border-slate-300 flex items-center gap-1 cursor-pointer transition"
               title="सर्व ओळींमध्ये समान गाव/पत्ता भरणे"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>स्मार्ट ऑटो-फिल</span>
+              <Sparkles className="w-3 h-3 text-primary" />
+              <span>ऑटो-फिल</span>
               <ChevronDown className="w-3 h-3" />
             </button>
 
             {showQuickFill && (
-              <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-300 rounded-sm shadow-lg p-3 z-50">
-                <div className="text-xs font-bold text-slate-800 mb-2 flex items-center justify-between">
+              <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-300 border-t-2 border-t-primary rounded-sm shadow-lg p-3 z-50">
+                <div className="text-xs font-bold text-primary mb-2 flex items-center justify-between">
                   <span>सर्व ओळींना समान माहिती लावा:</span>
-                  <button onClick={() => setShowQuickFill(false)} className="text-slate-400 hover:text-slate-600">
+                  <button onClick={() => setShowQuickFill(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
                 {sansthaDefaults && (
-                  <div className="p-2 bg-emerald-50 rounded-sm border border-emerald-200 mb-2.5">
-                    <div className="text-[11px] font-bold text-emerald-800 flex items-center gap-1 mb-1">
-                      <Building2 className="w-3.5 h-3.5 text-emerald-700" />
+                  <div className="p-2 bg-primary/5 rounded-sm border border-primary/20 mb-2.5">
+                    <div className="text-[11px] font-bold text-primary flex items-center gap-1 mb-1">
+                      <Building2 className="w-3.5 h-3.5 text-primary" />
                       <span>संस्थेचा पत्ता (Sanstha Master):</span>
                     </div>
                     <div className="text-[10px] text-slate-600 mb-1.5 font-medium leading-tight">
@@ -1552,7 +1553,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <button
                       type="button"
                       onClick={applySansthaAddressToAll}
-                      className="w-full py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-sm cursor-pointer transition"
+                      className="w-full py-1 bg-primary hover:opacity-90 text-white text-[11px] font-bold rounded-sm cursor-pointer transition"
                     >
                       सर्व ओळींना संस्थेचा पत्ता लावा
                     </button>
@@ -1568,7 +1569,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       value={quickFillVillage}
                       onChange={(e) => setQuickFillVillage(e.target.value)}
                       placeholder="उदा. मुंबई / सांगली"
-                      className="w-full px-2 py-1 border border-slate-300 rounded-sm text-xs"
+                      className="w-full px-2 py-1 border border-slate-300 rounded-sm text-xs focus:outline-none focus:border-primary"
                     />
                   </div>
                   <div>
@@ -1579,7 +1580,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       value={quickFillTaluka}
                       onChange={(e) => setQuickFillTaluka(e.target.value)}
                       placeholder="उदा. कडेगाव"
-                      className="w-full px-2 py-1 border border-slate-300 rounded-sm text-xs"
+                      className="w-full px-2 py-1 border border-slate-300 rounded-sm text-xs focus:outline-none focus:border-primary"
                     />
                   </div>
                   <div>
@@ -1590,7 +1591,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       value={quickFillDistrict}
                       onChange={(e) => setQuickFillDistrict(e.target.value)}
                       placeholder="उदा. सांगली"
-                      className="w-full px-2 py-1 border border-slate-300 rounded-sm text-xs"
+                      className="w-full px-2 py-1 border border-slate-300 rounded-sm text-xs focus:outline-none focus:border-primary"
                     />
                   </div>
                   <button
@@ -1605,9 +1606,9 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                   <button
                     type="button"
                     onClick={handleAutoFillEnglishNames}
-                    className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold rounded-sm flex items-center justify-center gap-1.5 cursor-pointer transition"
+                    className="w-full py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 text-[11px] font-bold rounded-sm flex items-center justify-center gap-1.5 cursor-pointer transition"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-white" />
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
                     <span>मराठीवरून इंग्रजी नावे भरा</span>
                   </button>
                 </div>
@@ -1618,247 +1619,228 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
           {invalidRows > 0 && (
             <button
               onClick={handleDownloadErrorExcel}
-              className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-sm border border-rose-200 flex items-center gap-1.5 cursor-pointer transition"
+              className="h-6 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold rounded-sm border border-rose-200 flex items-center gap-1 cursor-pointer transition"
               title="केवळ त्रुटी असलेल्या ओळी एक्सेलमध्ये डाऊनलोड करा"
             >
-              <Download className="w-3.5 h-3.5 text-rose-600" />
-              <span>त्रुटींची Excel ({invalidRows})</span>
+              <Download className="w-3 h-3 text-rose-600" />
+              <span>त्रुटी Excel ({invalidRows})</span>
             </button>
           )}
 
           <button
             onClick={handleClearAll}
-            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-sm border border-slate-300 flex items-center gap-1 cursor-pointer transition"
+            className="h-6 px-2 bg-white hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 text-slate-700 text-[11px] font-bold rounded-sm border border-slate-300 flex items-center gap-1 cursor-pointer transition"
             title="सर्व नोंदी साफ करा"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3 h-3" />
             <span>साफ करा</span>
           </button>
 
           <button
             onClick={() => handleBulkSave(true)}
             disabled={isSaving || saveableValidCount === 0}
-            className={`px-4 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer ${
+            className={`h-6 px-3 rounded-sm text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition cursor-pointer ${
               saveableValidCount > 0 && !isSaving
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
             }`}
             title="नवीन व बदललेल्या वैध नोंदी जतन करा"
           >
             {isSaving ? (
               <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <RefreshCw className="w-3 h-3 animate-spin" />
                 <span>जतन होत आहे...</span>
               </>
             ) : (
               <>
-                <Save className="w-4 h-4" />
-                <span>एकत्रित जतन करा ({saveableValidCount})</span>
+                <Save className="w-3 h-3" />
+                <span>जतन करा ({saveableValidCount})</span>
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* KPI Summary & Filter Ribbon */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 mb-3">
-        <div
-          onClick={() => setFilterMode('all')}
-          className={`p-2.5 rounded-sm border cursor-pointer transition flex items-center justify-between ${
-            filterMode === 'all' ? 'bg-white border-primary ring-1 ring-primary shadow-xs' : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-slate-100 text-slate-700 rounded-sm">
-              <Users className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">एकूण ओळी (Total)</div>
-              <div className="text-base font-black text-slate-900">{totalRows}</div>
-            </div>
-          </div>
-          {filterMode === 'all' && <span className="text-[10px] bg-primary/10 text-primary font-bold px-1.5 py-0.5 rounded-sm">सक्रिय</span>}
-        </div>
-
-        <div
-          onClick={() => setFilterMode('valid')}
-          className={`p-2.5 rounded-sm border cursor-pointer transition flex items-center justify-between ${
-            filterMode === 'valid' ? 'bg-emerald-50/50 border-emerald-500 ring-1 ring-emerald-500 shadow-xs' : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-sm">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">वैध नोंदी (Valid)</div>
-              <div className="text-base font-black text-emerald-800">{validRows}</div>
-            </div>
-          </div>
-          {filterMode === 'valid' && <span className="text-[10px] bg-emerald-600 text-white font-bold px-1.5 py-0.5 rounded-sm">सक्रिय</span>}
-        </div>
-
-        <div
-          onClick={() => setFilterMode('invalid')}
-          className={`p-2.5 rounded-sm border cursor-pointer transition flex items-center justify-between ${
-            filterMode === 'invalid' ? 'bg-rose-50/50 border-rose-500 ring-1 ring-rose-500 shadow-xs' : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-rose-100 text-rose-700 rounded-sm">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-rose-700 uppercase tracking-wider">त्रुटी असलेल्या (Errors)</div>
-              <div className="text-base font-black text-rose-800">{invalidRows}</div>
-            </div>
-          </div>
-          {filterMode === 'invalid' && <span className="text-[10px] bg-rose-600 text-white font-bold px-1.5 py-0.5 rounded-sm">सक्रिय</span>}
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-100 text-indigo-700 rounded-sm">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">पुढील CIF क्रमांक</div>
-              <div className="text-base font-black text-indigo-900">{nextCifPreview}</div>
-            </div>
-          </div>
-          {isValidatingServer && (
-            <span className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
-              <RefreshCw className="w-3 h-3 animate-spin" /> तपासणी चालू
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Action Toolbar (+Rows, Delete, Search) */}
-      <div className="bg-white border border-slate-200 rounded-sm p-2 mb-2 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+      {/* Single-Line Combined KPI Filter Pills + Add Rows + Search Toolbar */}
+      <div className="bg-white border border-slate-300 rounded-sm px-2.5 py-1 flex flex-wrap items-center justify-between gap-2 shadow-2xs shrink-0">
+        {/* Left: Filter Pills + Add Row Buttons */}
         <div className="flex items-center flex-wrap gap-1.5">
-          <span className="text-xs font-bold text-slate-600 mr-1">ओळी जोडा (Add):</span>
+          {/* Compact KPI Filter Pills */}
+          <button
+            type="button"
+            onClick={() => setFilterMode('all')}
+            className={`h-6 px-2 rounded-sm border text-[11px] font-bold flex items-center gap-1 cursor-pointer transition ${
+              filterMode === 'all'
+                ? 'bg-primary text-white border-primary'
+                : 'bg-white text-slate-700 border-slate-300 hover:border-primary'
+            }`}
+          >
+            <Users className="w-3 h-3" />
+            <span>एकूण: {totalRows}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFilterMode('valid')}
+            className={`h-6 px-2 rounded-sm border text-[11px] font-bold flex items-center gap-1 cursor-pointer transition ${
+              filterMode === 'valid'
+                ? 'bg-emerald-600 text-white border-emerald-600'
+                : 'bg-emerald-50/70 text-emerald-800 border-emerald-300 hover:border-emerald-600'
+            }`}
+          >
+            <CheckCircle2 className="w-3 h-3" />
+            <span>वैध: {validRows}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFilterMode('invalid')}
+            className={`h-6 px-2 rounded-sm border text-[11px] font-bold flex items-center gap-1 cursor-pointer transition ${
+              filterMode === 'invalid'
+                ? 'bg-rose-600 text-white border-rose-600'
+                : 'bg-rose-50/70 text-rose-800 border-rose-300 hover:border-rose-600'
+            }`}
+          >
+            <AlertTriangle className="w-3 h-3" />
+            <span>त्रुटी: {invalidRows}</span>
+          </button>
+
+          <span className="h-6 px-2 rounded-sm bg-primary/5 border border-primary/20 text-[11px] font-bold text-slate-700 inline-flex items-center gap-1">
+            <ShieldCheck className="w-3 h-3 text-primary" />
+            <span>पुढील CIF:</span>
+            <strong className="text-primary font-mono">{nextCifPreview}</strong>
+            {isValidatingServer && <RefreshCw className="w-3 h-3 animate-spin text-primary ml-0.5" />}
+          </span>
+
+          <div className="h-4 w-px bg-slate-300 mx-0.5 hidden sm:block" />
+
+          {/* Add Rows Buttons */}
+          <span className="text-[11px] font-extrabold text-primary">ओळी जोडा:</span>
           <button
             onClick={() => handleAddRows(1)}
-            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-sm border border-slate-300 flex items-center gap-1 cursor-pointer"
+            className="h-6 px-1.5 bg-white hover:bg-primary/10 hover:text-primary hover:border-primary text-slate-700 text-[11px] font-bold rounded-sm border border-slate-300 flex items-center gap-0.5 cursor-pointer transition"
           >
             <Plus className="w-3 h-3" /> +१
           </button>
           <button
             onClick={() => handleAddRows(5)}
-            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-sm border border-slate-300 cursor-pointer"
+            className="h-6 px-1.5 bg-white hover:bg-primary/10 hover:text-primary hover:border-primary text-slate-700 text-[11px] font-bold rounded-sm border border-slate-300 cursor-pointer transition"
           >
             +५
           </button>
           <button
             onClick={() => handleAddRows(10)}
-            className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold rounded-sm border border-primary/30 cursor-pointer"
+            className="h-6 px-2 bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold rounded-sm border border-primary/30 cursor-pointer transition"
           >
-            +१० ओळी
+            +१०
           </button>
           <button
             onClick={() => handleAddRows(50)}
-            className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold rounded-sm border border-primary/30 cursor-pointer"
+            className="h-6 px-2 bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold rounded-sm border border-primary/30 cursor-pointer transition"
           >
-            +५० ओळी
+            +५०
           </button>
           <button
             onClick={() => handleAddRows(100)}
-            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-sm shadow-xs cursor-pointer"
+            className="h-6 px-2 bg-primary hover:opacity-90 text-white text-[11px] font-extrabold rounded-sm shadow-2xs cursor-pointer transition"
           >
-            ⚡ +१०० ओळी
+            ⚡ +१००
           </button>
 
           <button
             onClick={handleAutoFillEnglishNames}
-            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-sm shadow-xs flex items-center gap-1 cursor-pointer transition ml-1"
+            className="h-6 px-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold rounded-sm flex items-center gap-1 cursor-pointer transition"
             title="मराठी नावांवरून इंग्रजी स्पेलिंग स्वयंचलित तयार करा"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-100" />
-            <span>⚡ इंग्रजी स्पेलिंग भरा</span>
+            <Sparkles className="w-3 h-3 text-amber-600" />
+            <span>इंग्रजी स्पेलिंग</span>
           </button>
 
           {selectedRowIds.size > 0 && (
             <button
               onClick={handleDeleteSelected}
-              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-sm ml-2 flex items-center gap-1 cursor-pointer transition shadow-xs"
+              className="h-6 px-2 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold rounded-sm flex items-center gap-1 cursor-pointer transition shadow-2xs"
             >
               <Trash2 className="w-3 h-3" />
-              <span>निवडलेल्या ओळी हटवा ({selectedRowIds.size})</span>
+              <span>हटवा ({selectedRowIds.size})</span>
             </button>
           )}
         </div>
 
+        {/* Right: Search */}
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+            <Search className="w-3 h-3 absolute left-2 top-1.5 text-slate-400 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="नावाने / मोबाईलने / CIF ने शोधा..."
-              className="pl-8 pr-6 py-1 text-xs border border-slate-300 rounded-sm w-56 focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="नाव / मोबाईल / CIF शोधा..."
+              className="h-6 pl-6 pr-5 text-[11px] border border-slate-300 rounded-sm w-48 focus:outline-none focus:border-primary bg-white text-slate-900"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600">
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1.5 top-1.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
                 <X className="w-3 h-3" />
               </button>
             )}
           </div>
-          <div className="text-xs text-slate-500 font-medium">
-            दाखवत आहे: <strong>{filteredRows.length}</strong> / {rows.length}
+          <div className="text-[11px] text-slate-600 font-medium whitespace-nowrap">
+            <strong className="text-primary">{filteredRows.length}</strong>/{rows.length}
           </div>
         </div>
       </div>
 
-      {/* EXCEL-STYLE SPREADSHEET GRID TABLE */}
-      <div className="bg-white border border-slate-300 rounded-sm shadow-xs overflow-hidden">
-        <div className="overflow-x-auto max-h-[65vh]">
-          <table className="w-full text-left border-collapse text-[11px]">
-            <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0 z-20 shadow-2xs select-none">
-              <tr>
-                <th className="p-1.5 w-10 text-center border-r border-slate-300">
+      {/* EXCEL-STYLE ULTRA-COMPACT SINGLE-LINE SPREADSHEET GRID */}
+      <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-300 border-t-2 border-t-primary rounded-sm shadow-xs overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse text-[11px] leading-tight">
+            <thead className="bg-slate-100 text-slate-800 font-bold border-b-2 border-primary/30 sticky top-0 z-20 shadow-2xs select-none whitespace-nowrap">
+              <tr className="h-6">
+                <th className="px-1 py-0.5 w-8 text-center border-r border-slate-300">
                   <input
                     type="checkbox"
                     checked={filteredRows.length > 0 && selectedRowIds.size === filteredRows.length}
                     onChange={(e) => toggleSelectAll(e.target.checked)}
-                    className="rounded-sm border-slate-300 text-primary cursor-pointer"
+                    className="w-3.5 h-3.5 rounded-sm border-slate-300 accent-primary cursor-pointer align-middle"
                   />
                 </th>
-                <th className="p-1.5 w-12 text-center border-r border-slate-300">#</th>
-                <th className="p-1.5 min-w-[95px] text-center border-r border-slate-300">प्रकार / CIF</th>
-                <th className="p-1.5 min-w-[70px] text-center border-r border-slate-300">स्थिती</th>
-                <th className="p-1.5 min-w-[110px] border-r border-slate-300 text-indigo-900 font-bold bg-indigo-50/40">
-                  जुना खातेदार क्र.
+                <th className="px-1.5 py-0.5 w-9 text-center border-r border-slate-300">#</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] text-center border-r border-slate-300">प्रकार / CIF</th>
+                <th className="px-1.5 py-0.5 min-w-[54px] text-center border-r border-slate-300">स्थिती</th>
+                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-slate-300 text-primary font-bold bg-primary/10">
+                  जुना क्र.
                 </th>
-                <th className="p-1.5 min-w-[120px] border-r border-slate-300 text-slate-900">
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300 text-slate-900">
                   पहिले नाव <span className="text-rose-600 font-black">*</span>
                 </th>
-                <th className="p-1.5 min-w-[110px] border-r border-slate-300">मधले नाव</th>
-                <th className="p-1.5 min-w-[120px] border-r border-slate-300 text-slate-900">
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">मधले नाव</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300 text-slate-900">
                   आडनाव <span className="text-rose-600 font-black">*</span>
                 </th>
-                <th className="p-1.5 min-w-[110px] border-r border-slate-300">First Name (Eng)</th>
-                <th className="p-1.5 min-w-[125px] border-r border-slate-300">Father / Middle (Eng)</th>
-                <th className="p-1.5 min-w-[110px] border-r border-slate-300">Last Name (Eng)</th>
-                <th className="p-1.5 min-w-[115px] border-r border-slate-300">मोबाईल क्र. (10 अंक)</th>
-                <th className="p-1.5 min-w-[125px] border-r border-slate-300">आधार क्र. (12 अंक)</th>
-                <th className="p-1.5 min-w-[110px] border-r border-slate-300">पॅन क्र. (PAN)</th>
-                <th className="p-1.5 min-w-[85px] border-r border-slate-300">लिंग</th>
-                <th className="p-1.5 min-w-[110px] border-r border-slate-300">वारसदार नाव</th>
-                <th className="p-1.5 min-w-[90px] border-r border-slate-300">नाते</th>
-                <th className="p-1.5 min-w-[100px] border-r border-slate-300">व्यवसाय</th>
-                <th className="p-1.5 min-w-[115px] border-r border-slate-300">जन्मतारीख</th>
-                <th className="p-1.5 min-w-[120px] border-r border-slate-300">गाव / शहर</th>
-                <th className="p-1.5 min-w-[100px] border-r border-slate-300">तालुका</th>
-                <th className="p-1.5 min-w-[100px] border-r border-slate-300">जिल्हा</th>
-                <th className="p-1.5 min-w-[140px] border-r border-slate-300">पत्ता</th>
-                <th className="p-1.5 min-w-[140px] border-r border-slate-300">ईमेल (Email)</th>
-                <th className="p-1.5 min-w-[110px] border-r border-slate-300">खातेदार प्रकार</th>
-                <th className="p-1.5 min-w-[100px] border-r border-slate-300">केवायसी</th>
-                <th className="p-1.5 min-w-[125px] border-r border-slate-300">CKYC क्र.</th>
-                <th className="p-1.5 min-w-[80px] border-r border-slate-300">जोखीम</th>
-                <th className="p-1.5 w-12 text-center">कृती</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">First Name (Eng)</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300">Middle (Eng)</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">Last Name (Eng)</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">मोबाईल (10 अंक)</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300">आधार (12 अंक)</th>
+                <th className="px-1.5 py-0.5 min-w-[102px] border-r border-slate-300">पॅन (PAN)</th>
+                <th className="px-1.5 py-0.5 min-w-[72px] border-r border-slate-300">लिंग</th>
+                <th className="px-1.5 py-0.5 min-w-[110px] border-r border-slate-300">वारसदार नाव</th>
+                <th className="px-1.5 py-0.5 min-w-[80px] border-r border-slate-300">नाते</th>
+                <th className="px-1.5 py-0.5 min-w-[90px] border-r border-slate-300">व्यवसाय</th>
+                <th className="px-1.5 py-0.5 min-w-[112px] border-r border-slate-300">जन्मतारीख</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">गाव / शहर</th>
+                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-slate-300">तालुका</th>
+                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-slate-300">जिल्हा</th>
+                <th className="px-1.5 py-0.5 min-w-[135px] border-r border-slate-300">पत्ता</th>
+                <th className="px-1.5 py-0.5 min-w-[130px] border-r border-slate-300">ईमेल (Email)</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">खातेदार प्रकार</th>
+                <th className="px-1.5 py-0.5 min-w-[92px] border-r border-slate-300">केवायसी</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300">CKYC क्र.</th>
+                <th className="px-1.5 py-0.5 min-w-[74px] border-r border-slate-300">जोखीम</th>
+                <th className="px-1 py-0.5 w-8 text-center">कृती</th>
               </tr>
             </thead>
 
@@ -1873,65 +1855,64 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                 return (
                   <tr
                     key={row.id}
-                    className={`border-b border-slate-200 transition-colors ${
+                    className={`h-[23px] border-b border-slate-200 transition-colors ${
                       isInvalid
-                        ? 'bg-rose-50/60 hover:bg-rose-50'
+                        ? 'bg-rose-50/50 hover:bg-rose-50'
                         : isExisting && row.isDirty
                         ? 'bg-amber-50/50 hover:bg-amber-50'
                         : isSelected
-                        ? 'bg-indigo-50/50'
-                        : 'bg-white hover:bg-slate-50/80'
+                        ? 'bg-primary/10'
+                        : 'bg-white hover:bg-primary/10'
                     }`}
                   >
-                    <td className="p-1 text-center border-r border-slate-200">
+                    <td className="px-1 py-0 text-center border-r border-slate-200">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleSelectRow(row.id)}
-                        className="rounded-sm border-slate-300 text-primary cursor-pointer"
+                        className="w-3.5 h-3.5 rounded-sm border-slate-300 accent-primary cursor-pointer align-middle"
                       />
                     </td>
 
-                    <td className="p-1 text-center border-r border-slate-200 text-slate-500 font-mono text-[10px]">
+                    <td className="px-1 py-0 text-center border-r border-slate-200 text-slate-500 font-mono text-[10px]">
                       {origIdx + 1}
                     </td>
 
-                    <td className="p-1 text-center border-r border-slate-200 bg-slate-50/60">
+                    <td className="px-1.5 py-0 text-center border-r border-slate-200 bg-slate-50/60 whitespace-nowrap">
                       {isExisting ? (
-                        <div className="flex flex-col items-center">
+                        <div className="inline-flex items-center gap-1" title={`CustomerID: ${row.customerID}`}>
                           <span
-                            className={`font-black text-[9px] px-1 py-0.5 rounded-sm border ${
+                            className={`font-bold text-[9px] leading-none px-1 py-0.5 rounded-xs border ${
                               row.isDirty
                                 ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                : 'bg-sky-100 text-sky-800 border-sky-300'
+                                : 'bg-primary/10 text-primary border-primary/20'
                             }`}
-                            title={`CustomerID: ${row.customerID}`}
                           >
-                            {row.isDirty ? 'बदललेले' : 'संपादित'}
+                            {row.isDirty ? 'बदल' : 'जुना'}
                           </span>
-                          <span className="text-[9px] font-mono text-slate-600 font-bold mt-0.5">
+                          <span className="text-[10px] font-mono text-primary font-bold">
                             {row.cifNo || `ID:${row.customerID}`}
                           </span>
                         </div>
                       ) : (
-                        <div className="flex flex-col items-center">
-                          <span className="bg-emerald-50 text-emerald-700 font-bold text-[9px] px-1.5 py-0.5 rounded-sm border border-emerald-200">
+                        <div className="inline-flex items-center gap-1">
+                          <span className="bg-emerald-50 text-emerald-700 font-bold text-[9px] leading-none px-1 py-0.5 rounded-xs border border-emerald-200">
                             नवीन
                           </span>
-                          <span className="text-[9px] font-mono text-emerald-700 font-bold mt-0.5">
+                          <span className="text-[10px] font-mono text-emerald-700 font-bold">
                             {newRowCifMap.get(row.id) || nextCifPreview}
                           </span>
                         </div>
                       )}
                     </td>
 
-                    <td className="p-1 text-center border-r border-slate-200">
+                    <td className="px-1 py-0 text-center border-r border-slate-200 whitespace-nowrap">
                       {isInvalid ? (
                         <div className="group relative inline-block cursor-help">
-                          <span className="bg-rose-600 text-white font-black text-[9px] px-1.5 py-0.5 rounded-sm shadow-2xs">
+                          <span className="bg-rose-600 text-white font-bold text-[9px] leading-none px-1 py-0.5 rounded-xs">
                             त्रुटी
                           </span>
-                          <div className="hidden group-hover:block absolute left-8 top-0 z-50 w-64 p-2 bg-slate-900 text-white text-[10px] rounded-sm shadow-lg text-left">
+                          <div className="hidden group-hover:block absolute left-7 top-0 z-50 w-64 p-2 bg-slate-900 text-white text-[10px] rounded-sm shadow-lg text-left whitespace-normal">
                             <div className="font-bold text-rose-300 mb-1">दुरुस्ती आवश्यक:</div>
                             <ul className="list-disc pl-3 space-y-0.5">
                               {validation.errors.map((err, eIdx) => (
@@ -1952,10 +1933,10 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         </div>
                       ) : validation.warnings.length > 0 ? (
                         <div className="group relative inline-block cursor-help">
-                          <span className="bg-amber-500 text-white font-black text-[9px] px-1.5 py-0.5 rounded-sm shadow-2xs">
+                          <span className="bg-amber-500 text-white font-bold text-[9px] leading-none px-1 py-0.5 rounded-xs">
                             सूचना
                           </span>
-                          <div className="hidden group-hover:block absolute left-8 top-0 z-50 w-64 p-2 bg-slate-900 text-white text-[10px] rounded-sm shadow-lg text-left">
+                          <div className="hidden group-hover:block absolute left-7 top-0 z-50 w-64 p-2 bg-slate-900 text-white text-[10px] rounded-sm shadow-lg text-left whitespace-normal">
                             <div className="font-bold text-amber-300 mb-1">सूचना (Warnings):</div>
                             <ul className="list-disc pl-3 space-y-0.5 text-amber-200">
                               {validation.warnings.map((warn, wIdx) => (
@@ -1965,13 +1946,13 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                           </div>
                         </div>
                       ) : (
-                        <span className="bg-emerald-100 text-emerald-800 font-bold text-[9px] px-1.5 py-0.5 rounded-sm">
+                        <span className="bg-emerald-100 text-emerald-800 font-bold text-[9px] leading-none px-1 py-0.5 rounded-xs">
                           वैध
                         </span>
                       )}
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200 bg-indigo-50/20">
+                    <td className="p-0 border-r border-slate-200 bg-primary/5">
                       <input
                         type="text"
                         maxLength={50}
@@ -1982,11 +1963,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'legacyCustomerNo')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'legacyCustomerNo')}
                         placeholder="जुना क्र."
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-indigo-500 font-medium"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary font-semibold text-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={50}
@@ -1997,13 +1978,15 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'firstName')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'firstName')}
                         placeholder="पहिले नाव"
-                        className={`w-full px-1.5 py-1 text-xs border rounded-xs focus:outline-none focus:ring-1 ${
-                          !row.firstName.trim() ? 'border-rose-400 bg-rose-50/40 text-slate-900' : 'border-slate-300 focus:border-primary'
+                        className={`${cellInputBase} border ${
+                          !row.firstName.trim()
+                            ? 'border-rose-300 bg-rose-50/40 text-slate-900 focus:bg-white focus:border-rose-500'
+                            : 'border-transparent bg-transparent focus:bg-white focus:border-primary'
                         }`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={50}
@@ -2014,11 +1997,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'middleName')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'middleName')}
                         placeholder="मधले नाव"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={50}
@@ -2029,13 +2012,15 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'lastName')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'lastName')}
                         placeholder="आडनाव"
-                        className={`w-full px-1.5 py-1 text-xs border rounded-xs focus:outline-none focus:ring-1 ${
-                          !row.lastName.trim() ? 'border-rose-400 bg-rose-50/40 text-slate-900' : 'border-slate-300 focus:border-primary'
+                        className={`${cellInputBase} border ${
+                          !row.lastName.trim()
+                            ? 'border-rose-300 bg-rose-50/40 text-slate-900 focus:bg-white focus:border-rose-500'
+                            : 'border-transparent bg-transparent focus:bg-white focus:border-primary'
                         }`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={50}
@@ -2046,11 +2031,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'firstNameEng')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'firstNameEng')}
                         placeholder="First Name"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={50}
@@ -2061,11 +2046,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'middleNameEng')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'middleNameEng')}
                         placeholder="Middle / Father"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={50}
@@ -2076,11 +2061,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'lastNameEng')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'lastNameEng')}
                         placeholder="Last Name"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={10}
@@ -2091,15 +2076,15 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'mobileNo')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'mobileNo')}
                         placeholder="98XXXXXXXX"
-                        className={`w-full px-1.5 py-1 text-xs font-mono border rounded-xs focus:outline-none ${
+                        className={`${cellInputBase} font-mono border ${
                           row.mobileNo && (!MOBILE_REGEX.test(row.mobileNo) || validation.errors.some((x) => x.includes('मोबाईल')))
                             ? 'border-rose-500 bg-rose-50 text-rose-900'
-                            : 'border-slate-300 focus:border-primary'
+                            : 'border-transparent bg-transparent focus:bg-white focus:border-primary'
                         }`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={12}
@@ -2110,15 +2095,15 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'aadhaarNo')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'aadhaarNo')}
                         placeholder="12 अंकी आधार"
-                        className={`w-full px-1.5 py-1 text-xs font-mono border rounded-xs focus:outline-none ${
+                        className={`${cellInputBase} font-mono border ${
                           row.aadhaarNo && (!isValidAadhaar(row.aadhaarNo).isValid || validation.errors.some((x) => x.includes('आधार')))
                             ? 'border-rose-500 bg-rose-50 text-rose-900'
-                            : 'border-slate-300 focus:border-primary'
+                            : 'border-transparent bg-transparent focus:bg-white focus:border-primary'
                         }`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={10}
@@ -2129,19 +2114,19 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'panNo')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'panNo')}
                         placeholder="ABCDE1234F"
-                        className={`w-full px-1.5 py-1 text-xs font-mono border rounded-xs focus:outline-none uppercase ${
+                        className={`${cellInputBase} font-mono uppercase border ${
                           row.panNo && (!PAN_REGEX.test(row.panNo) || validation.errors.some((x) => x.includes('पॅन')))
                             ? 'border-rose-500 bg-rose-50 text-rose-900'
-                            : 'border-slate-300 focus:border-primary'
+                            : 'border-transparent bg-transparent focus:bg-white focus:border-primary'
                         }`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <select
                         value={row.gender}
                         onChange={(e) => handleCellChange(row.id, 'gender', e.target.value)}
-                        className="w-full px-1 py-1 text-xs border border-slate-300 rounded-xs bg-white focus:outline-none"
+                        className={cellSelectBase}
                       >
                         <option value="Male">पुरुष</option>
                         <option value="Female">स्त्री</option>
@@ -2149,7 +2134,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={150}
@@ -2160,11 +2145,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'nomineeName')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'nomineeName')}
                         placeholder="वारसदार नाव"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={50}
@@ -2175,11 +2160,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'nomineeRelation')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'nomineeRelation')}
                         placeholder="नाते"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={100}
@@ -2190,23 +2175,25 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'occupation')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'occupation')}
                         placeholder="व्यवसाय"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="date"
                         max={new Date().toISOString().slice(0, 10)}
                         value={row.birthDate}
                         onChange={(e) => handleCellChange(row.id, 'birthDate', e.target.value)}
-                        className={`w-full px-1 py-0.5 text-xs border rounded-xs focus:outline-none ${
-                          validation.errors.some((x) => x.includes('जन्मतारीख')) ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                        className={`w-full h-[22px] px-1 py-0 text-[11px] font-mono rounded-none focus:outline-none border ${
+                          validation.errors.some((x) => x.includes('जन्मतारीख'))
+                            ? 'border-rose-500 bg-rose-50'
+                            : 'border-transparent bg-transparent focus:bg-white focus:border-primary'
                         }`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={100}
@@ -2217,11 +2204,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'village')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'village')}
                         placeholder="गाव/शहर"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={100}
@@ -2232,11 +2219,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'taluka')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'taluka')}
                         placeholder="तालुका"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={100}
@@ -2247,11 +2234,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'district')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'district')}
                         placeholder="जिल्हा"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={500}
@@ -2262,11 +2249,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'address')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'address')}
                         placeholder="पत्ता"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                        className={`${cellInputBase} bg-transparent border border-transparent focus:bg-white focus:border-primary`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="email"
                         maxLength={150}
@@ -2277,19 +2264,19 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'email')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'email')}
                         placeholder="email@example.com"
-                        className={`w-full px-1.5 py-1 text-xs border rounded-xs focus:outline-none ${
+                        className={`${cellInputBase} border ${
                           row.email && !EMAIL_REGEX.test(row.email.trim())
                             ? 'border-rose-500 bg-rose-50 text-rose-900'
-                            : 'border-slate-300 focus:border-primary'
+                            : 'border-transparent bg-transparent focus:bg-white focus:border-primary'
                         }`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <select
                         value={row.customerType}
                         onChange={(e) => handleCellChange(row.id, 'customerType', e.target.value)}
-                        className="w-full px-1 py-1 text-xs border border-slate-300 rounded-xs bg-white focus:outline-none"
+                        className={cellSelectBase}
                       >
                         <option value="Individual">व्यक्ती (Individual)</option>
                         <option value="Proprietorship">एकल व्यापारी</option>
@@ -2303,11 +2290,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <select
                         value={row.kycStatus}
                         onChange={(e) => handleCellChange(row.id, 'kycStatus', e.target.value)}
-                        className="w-full px-1 py-1 text-xs border border-slate-300 rounded-xs bg-white focus:outline-none"
+                        className={cellSelectBase}
                       >
                         <option value="Verified">Verified</option>
                         <option value="Pending">Pending</option>
@@ -2317,7 +2304,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <input
                         type="text"
                         maxLength={14}
@@ -2328,19 +2315,19 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         onPaste={(e) => handlePaste(e, origIdx, 'ckycNo')}
                         onKeyDown={(e) => handleKeyDownNavigate(e, visibleIdx, 'ckycNo')}
                         placeholder="14 अंकी CKYC"
-                        className={`w-full px-1.5 py-1 text-xs font-mono border rounded-xs focus:outline-none ${
+                        className={`${cellInputBase} font-mono border ${
                           row.ckycNo && (!CKYC_REGEX.test(row.ckycNo) || validation.errors.some((x) => x.includes('CKYC')))
                             ? 'border-rose-500 bg-rose-50 text-rose-900'
-                            : 'border-slate-300 focus:border-primary'
+                            : 'border-transparent bg-transparent focus:bg-white focus:border-primary'
                         }`}
                       />
                     </td>
 
-                    <td className="p-0.5 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200">
                       <select
                         value={row.riskCategory}
                         onChange={(e) => handleCellChange(row.id, 'riskCategory', e.target.value)}
-                        className="w-full px-1 py-1 text-xs border border-slate-300 rounded-xs bg-white focus:outline-none"
+                        className={cellSelectBase}
                       >
                         <option value="Low">Low</option>
                         <option value="Medium">Medium</option>
@@ -2348,13 +2335,13 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
-                    <td className="p-1 text-center">
+                    <td className="px-1 py-0 text-center">
                       <button
                         onClick={() => handleDeleteRow(row.id)}
-                        className="p-1 text-slate-400 hover:text-rose-600 rounded-sm transition cursor-pointer"
+                        className="p-0.5 text-slate-400 hover:text-rose-600 rounded-xs transition cursor-pointer"
                         title="ही ओळ हटवा"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3 h-3" />
                       </button>
                     </td>
                   </tr>
@@ -2365,13 +2352,13 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
         </div>
 
         {/* Grid Pagination Footer */}
-        <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-600">
-          <div className="flex items-center gap-2">
+        <div className="px-2.5 py-1 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-[11px] text-slate-600 shrink-0">
+          <div className="flex items-center gap-1.5">
             <span>प्रति पान ओळी:</span>
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              className="border border-slate-300 rounded-sm px-1.5 py-0.5 bg-white text-xs font-bold"
+              className="h-5 border border-slate-300 rounded-sm px-1 bg-white text-[11px] font-bold focus:outline-none focus:border-primary"
             >
               <option value={25}>25</option>
               <option value={50}>50</option>
@@ -2387,30 +2374,31 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={safePage <= 1}
-              className="px-2 py-1 border border-slate-300 rounded-sm bg-white hover:bg-slate-100 disabled:opacity-40 flex items-center gap-0.5 cursor-pointer"
+              className="h-5 px-2 border border-slate-300 rounded-sm bg-white hover:bg-primary/10 hover:text-primary hover:border-primary disabled:opacity-40 flex items-center gap-0.5 cursor-pointer transition"
             >
-              <ChevronLeft className="w-3.5 h-3.5" /> मागील
+              <ChevronLeft className="w-3 h-3" /> मागील
             </button>
-            <span className="px-2 font-bold text-slate-800">
+            <span className="h-5 px-2 rounded-sm bg-primary/10 text-primary border border-primary/20 font-bold inline-flex items-center">
               पान {safePage} / {totalPages}
             </span>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={safePage >= totalPages}
-              className="px-2 py-1 border border-slate-300 rounded-sm bg-white hover:bg-slate-100 disabled:opacity-40 flex items-center gap-0.5 cursor-pointer"
+              className="h-5 px-2 border border-slate-300 rounded-sm bg-white hover:bg-primary/10 hover:text-primary hover:border-primary disabled:opacity-40 flex items-center gap-0.5 cursor-pointer transition"
             >
-              पुढील <ChevronRight className="w-3.5 h-3.5" />
+              पुढील <ChevronRight className="w-3 h-3" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Bottom Sticky Action Summary Bar */}
-      <div className="mt-3 bg-white border border-slate-200 rounded-sm p-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
-        <div className="flex items-center gap-2 text-xs text-slate-600">
-          <Info className="w-4 h-4 text-primary shrink-0" />
+      {/* Compact Bottom Action Summary Bar */}
+      <div className="bg-white border border-slate-300 border-l-4 border-l-primary rounded-sm px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 shadow-xs shrink-0">
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
+          <Info className="w-3.5 h-3.5 text-primary shrink-0" />
           <span>
-            <strong>टीप:</strong> केवळ नवीन वैध आणि बदललेल्या विद्यमान (<strong>{saveableValidCount}</strong>) नोंदीच जतन केल्या जातील. न बदललेल्या जुन्या नोंदींवर कोणताही परिणाम होणार नाही.
+            <strong className="text-primary">टीप:</strong> केवळ नवीन वैध आणि बदललेल्या विद्यमान (
+            <strong className="text-primary">{saveableValidCount}</strong>) नोंदीच जतन केल्या जातील.
           </span>
         </div>
 
@@ -2418,7 +2406,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
           {onNavigateToCustomers && (
             <button
               onClick={onNavigateToCustomers}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-sm border border-slate-300 cursor-pointer transition"
+              className="h-7 px-2.5 bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold rounded-sm border border-primary/30 cursor-pointer transition"
             >
               📋 खातेदार यादी पहा
             </button>
@@ -2427,20 +2415,20 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
           <button
             onClick={() => handleBulkSave(true)}
             disabled={isSaving || saveableValidCount === 0}
-            className={`px-5 py-2 rounded-sm text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer ${
+            className={`h-7 px-3.5 rounded-sm text-[11px] font-extrabold flex items-center gap-1.5 shadow-2xs transition cursor-pointer ${
               saveableValidCount > 0 && !isSaving
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
             }`}
           >
             {isSaving ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 <span>{saveProgress || 'जतन होत आहे...'}</span>
               </>
             ) : (
               <>
-                <Save className="w-4 h-4" />
+                <Save className="w-3.5 h-3.5" />
                 <span>सर्व वैध खातेदार जतन करा ({saveableValidCount})</span>
               </>
             )}
@@ -2451,37 +2439,40 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
       {/* MODAL: LOAD EXISTING CUSTOMERS FOR BULK EDIT */}
       {showExistingModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-sm shadow-xl max-w-4xl w-full p-5 border border-slate-200 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b pb-3 mb-3">
+          <div className="bg-white rounded-sm shadow-xl max-w-4xl w-full p-4 border border-slate-300 border-t-4 border-t-primary max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 mb-3">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-sky-100 text-sky-800 rounded-sm">
+                <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded-sm">
                   <FolderDown className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">
+                  <h3 className="text-sm sm:text-base font-extrabold text-primary">
                     विद्यमान खातेदार डेटा लोड करा (Bulk Edit Customers)
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-[11px] text-slate-500">
                     डेटाबेसमधून खातेदार निवडून ग्रिडमध्ये आणा आणि त्यांचे नाव, पत्ता किंवा संपर्क माहिती एकाच वेळी अपडेट करा.
                   </p>
                 </div>
               </div>
-              <button onClick={() => setShowExistingModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
+              <button
+                onClick={() => setShowExistingModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-sm p-3 mb-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="bg-primary/5 border border-primary/20 rounded-sm p-2.5 mb-3 flex flex-wrap items-center justify-between gap-2.5 text-xs">
               <div className="flex items-center gap-2 flex-1 min-w-[220px]">
                 <div className="relative flex-1">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
                   <input
                     type="text"
                     value={existingSearch}
                     onChange={(e) => setExistingSearch(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && fetchExistingCustomers()}
                     placeholder="नाव, मधले नाव, जुना क्र., मोबाईल, आधार, पॅन किंवा CIF..."
-                    className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-sm text-xs bg-white"
+                    className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-sm text-xs bg-white focus:outline-none focus:border-primary"
                   />
                 </div>
                 <button
@@ -2499,7 +2490,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                   <select
                     value={existingBranchFilter}
                     onChange={(e) => setExistingBranchFilter(e.target.value)}
-                    className="border border-slate-300 rounded-sm px-2 py-1 bg-white font-medium"
+                    className="border border-slate-300 rounded-sm px-2 py-1 bg-white font-medium focus:outline-none focus:border-primary"
                   >
                     <option value="all">सर्व शाखा</option>
                     {branches.map((b) => (
@@ -2515,17 +2506,17 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     type="checkbox"
                     checked={existingOnlyIncomplete}
                     onChange={(e) => setExistingOnlyIncomplete(e.target.checked)}
-                    className="rounded-sm text-primary"
+                    className="rounded-sm accent-primary cursor-pointer"
                   />
                   <span>केवळ अपूर्ण माहिती</span>
                 </label>
 
-                <div className="flex items-center gap-1 text-slate-500">
+                <div className="flex items-center gap-1 text-slate-600">
                   <span>मर्यादा:</span>
                   <select
                     value={existingLimit}
                     onChange={(e) => setExistingLimit(Number(e.target.value))}
-                    className="border border-slate-300 rounded-sm px-1.5 py-1 bg-white"
+                    className="border border-slate-300 rounded-sm px-1.5 py-1 bg-white focus:outline-none focus:border-primary"
                   >
                     <option value={25}>२५</option>
                     <option value={50}>५०</option>
@@ -2537,11 +2528,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-sm mb-3 max-h-[48vh]">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 border-b border-slate-200">
-                  <tr>
-                    <th className="p-2 w-10 text-center">
+            <div className="flex-1 overflow-y-auto border border-slate-300 rounded-sm mb-2.5 max-h-[52vh] custom-scrollbar">
+              <table className="w-full text-left border-collapse text-[11px] leading-tight whitespace-nowrap">
+                <thead className="bg-slate-100 text-slate-800 font-bold sticky top-0 border-b-2 border-primary/30">
+                  <tr className="h-6">
+                    <th className="py-1 px-2 w-9 text-center border-r border-slate-200">
                       <input
                         type="checkbox"
                         checked={existingCustomersList.length > 0 && selectedExistingIds.size === existingCustomersList.length}
@@ -2552,18 +2543,18 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                             setSelectedExistingIds(new Set());
                           }
                         }}
-                        className="rounded-sm"
+                        className="w-3.5 h-3.5 rounded-sm accent-primary cursor-pointer align-middle"
                       />
                     </th>
-                    <th className="p-2 w-24">CIF क्रमांक</th>
-                    <th className="p-2">खातेदाराचे पूर्ण नाव</th>
-                    <th className="p-2 w-28">मोबाईल नंबर</th>
-                    <th className="p-2 w-32">आधार क्रमांक</th>
-                    <th className="p-2 w-24">पॅन क्रमांक</th>
-                    <th className="p-2 w-28">गाव / शहर</th>
+                    <th className="py-1 px-2 w-24 border-r border-slate-200">CIF क्रमांक</th>
+                    <th className="py-1 px-2 border-r border-slate-200">खातेदाराचे पूर्ण नाव</th>
+                    <th className="py-1 px-2 w-28 border-r border-slate-200">मोबाईल नंबर</th>
+                    <th className="py-1 px-2 w-32 border-r border-slate-200">आधार क्रमांक</th>
+                    <th className="py-1 px-2 w-24 border-r border-slate-200">पॅन क्रमांक</th>
+                    <th className="py-1 px-2 w-28">गाव / शहर</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-200/80">
                   {isLoadingExisting ? (
                     <tr>
                       <td colSpan={7} className="p-6 text-center text-slate-500">
@@ -2583,7 +2574,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       return (
                         <tr
                           key={c.customerID}
-                          className={`hover:bg-slate-50 cursor-pointer ${isChecked ? 'bg-sky-50/40' : ''}`}
+                          className={`h-6 hover:bg-primary/10 cursor-pointer transition-colors ${isChecked ? 'bg-primary/5' : ''}`}
                           onClick={() => {
                             setSelectedExistingIds((prev) => {
                               const next = new Set(prev);
@@ -2593,7 +2584,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                             });
                           }}
                         >
-                          <td className="p-2 text-center" onClick={(e) => e.stopPropagation()}>
+                          <td className="py-0.5 px-2 text-center border-r border-slate-200/70" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={isChecked}
@@ -2605,17 +2596,17 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                                   return next;
                                 });
                               }}
-                              className="rounded-sm"
+                              className="w-3.5 h-3.5 rounded-sm accent-primary cursor-pointer align-middle"
                             />
                           </td>
-                          <td className="p-2 font-mono font-bold text-indigo-700">{c.cifNo || '-'}</td>
-                          <td className="p-2 font-medium text-slate-900">
+                          <td className="py-0.5 px-2 font-mono font-bold text-primary border-r border-slate-200/70">{c.cifNo || '-'}</td>
+                          <td className="py-0.5 px-2 font-semibold text-slate-900 border-r border-slate-200/70">
                             {c.firstName} {c.middleName || ''} {c.lastName}
                           </td>
-                          <td className="p-2 font-mono">{c.mobileNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
-                          <td className="p-2 font-mono">{c.aadhaarNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
-                          <td className="p-2 font-mono">{c.panNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
-                          <td className="p-2">{c.village || <span className="text-slate-400 italic">रिकामे</span>}</td>
+                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70">{c.mobileNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
+                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70">{c.aadhaarNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
+                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70">{c.panNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
+                          <td className="py-0.5 px-2">{c.village || <span className="text-slate-400 italic">रिकामे</span>}</td>
                         </tr>
                       );
                     })
@@ -2624,9 +2615,9 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
               </table>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 text-xs">
               <div className="text-slate-600 font-medium">
-                निवडलेले खातेदार: <strong className="text-sky-800 font-black">{selectedExistingIds.size}</strong> /{' '}
+                निवडलेले खातेदार: <strong className="text-primary font-black">{selectedExistingIds.size}</strong> /{' '}
                 {existingCustomersList.length}
               </div>
 
@@ -2642,7 +2633,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                   disabled={selectedExistingIds.size === 0}
                   className={`px-3 py-1.5 rounded-sm font-bold transition cursor-pointer ${
                     selectedExistingIds.size > 0
-                      ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                      ? 'bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30'
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
@@ -2668,31 +2659,31 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
       {/* SUCCESS / BATCH RESULT MODAL */}
       {saveResultModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-sm shadow-xl max-w-md w-full p-5 border border-slate-200 text-center">
+          <div className="bg-white rounded-sm shadow-xl max-w-md w-full p-5 border border-slate-300 border-t-4 border-t-primary text-center">
             <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3">
               <CheckCircle2 className="w-7 h-7" />
             </div>
 
-            <h3 className="text-base font-black text-slate-900 mb-1">खातेदार बल्क व्यवहार यशस्वी!</h3>
+            <h3 className="text-base font-black text-primary mb-1">खातेदार बल्क व्यवहार यशस्वी!</h3>
             <p className="text-xs text-slate-500 mb-4">{saveResultModal.message}</p>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-sm p-3 mb-4 text-xs text-left space-y-1.5 font-medium">
+            <div className="bg-primary/5 border border-primary/20 rounded-sm p-3 mb-4 text-xs text-left space-y-1.5 font-medium">
               <div className="flex justify-between">
-                <span className="text-slate-500">बॅच क्रमांक:</span>
-                <span className="font-bold text-slate-800 font-mono">{saveResultModal.batchNumber}</span>
+                <span className="text-slate-600">बॅच क्रमांक:</span>
+                <span className="font-bold text-slate-900 font-mono">{saveResultModal.batchNumber}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">नवीन नोंदलेले खातेदार (Inserted):</span>
+                <span className="text-slate-600">नवीन नोंदलेले खातेदार (Inserted):</span>
                 <span className="font-black text-emerald-700">{saveResultModal.importedCount}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">अद्ययावत केलेले खातेदार (Updated):</span>
-                <span className="font-black text-sky-700">{saveResultModal.updatedCount}</span>
+                <span className="text-slate-600">अद्ययावत केलेले खातेदार (Updated):</span>
+                <span className="font-black text-primary">{saveResultModal.updatedCount}</span>
               </div>
               {saveResultModal.importedCount > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-slate-500">नवीन CIF क्रमांक श्रेणी:</span>
-                  <span className="font-bold text-indigo-700 font-mono">
+                  <span className="text-slate-600">नवीन CIF क्रमांक श्रेणी:</span>
+                  <span className="font-bold text-primary font-mono">
                     {saveResultModal.startCif} ते {saveResultModal.endCif}
                   </span>
                 </div>

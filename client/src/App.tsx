@@ -882,7 +882,7 @@ function App() {
           )
         )}
         {activeTab === 'loan-collection' && <LoanCollectionMaster onNavigate={handleNavigate} />}
-        {activeTab === 'loan-interest-posting' && <LoanInterestPostingMaster />}
+        {activeTab === 'loan-interest-posting' && <LoanInterestPostingMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-bulk-charges' && <LoanBulkChargesMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-documents' && <LoanDocumentsUpload onNavigate={handleNavigate} />}
         {(activeTab === 'bank-borrowing' || activeTab === 'borrowing-dashboard') && <BorrowingDashboard onNavigate={handleNavigate} />}
@@ -952,7 +952,7 @@ function App() {
         {(activeTab === 'investment' || activeTab === 'inv-institution') && <InvestmentInstitutionMaster />}
         {activeTab === 'inv-scheme' && <SettingsDashboard defaultCategory="schemes" defaultSub="inv-scheme-sub" />}
         {activeTab === 'inv-account' && <InvestmentAccountOpening />}
-        {activeTab === 'inv-claim' && <InvestmentMaturityClaim />}
+        {activeTab === 'inv-claim' && <InvestmentMaturityClaim onNavigate={handleNavigate} />}
         {activeTab === 'inv-accrual' && <InvestmentInterestAccrualPosting />}
         {(activeTab === 'inv-reports' || activeTab.startsWith('inv-reports&')) && <InvestmentReports />}
 
@@ -1029,7 +1029,7 @@ function App() {
         {activeTab === 'voter-list-report' && <VoterListReport />}
         {activeTab === 'saving-account-list-report' && <SavingAccountListReport />}
         {activeTab === 'saving-khatavani-report' && <SavingKhatavaniReport />}
-        {activeTab === 'npa-register' && <NpaRegister />}
+        {activeTab === 'npa-register' && <NpaRegister onNavigate={handleNavigate} />}
         {activeTab === 'gold-jewelry-report' && <GoldJewelryReport onNavigate={handleNavigate} />}
         {activeTab === 'loan-rate' && <LoanRateMaster isReportOnly={true} />}
         {activeTab === 'audit-logs' && <AuditLogReport />}

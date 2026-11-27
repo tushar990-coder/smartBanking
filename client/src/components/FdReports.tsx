@@ -93,6 +93,55 @@ interface FdDeletedEntryRow {
   reasonOrDetails: string;
 }
 
+interface FdRenewedReportRow {
+  renewalDate: string;
+  renewalCycleNo: number;
+  isAutoRenewal: boolean;
+  renewalOption: string;
+  branchID: number;
+  branchName: string;
+  customerID: number;
+  cifNo: string;
+  legacyCustomerNo?: string;
+  customerName: string;
+  mobileNo?: string;
+  oldFdAccountID: number;
+  oldAccountNo: string;
+  oldReceiptNo?: string;
+  oldLegacyAccountNumber?: string;
+  oldFdSchemeID: number;
+  oldSchemeName: string;
+  oldOpeningDate: string;
+  oldMaturityDate: string;
+  oldDepositAmount: number;
+  oldInterestRate: number;
+  reinvestedInterest: number;
+  interestPaidOut: number;
+  overdueInterest?: number;
+  totalRenewalInterest: number;
+  interestPayoutMode: string;
+  newFdAccountID: number;
+  newAccountNo: string;
+  newReceiptNo?: string;
+  newLegacyAccountNumber?: string;
+  isSameReceiptRetained?: boolean;
+  newFdSchemeID: number;
+  newSchemeName: string;
+  newOpeningDate: string;
+  newDurationDisplay: string;
+  newDepositAmount: number;
+  newInterestRate: number;
+  newMaturityDate: string;
+  newMaturityAmount: number;
+  newStatus: string;
+  isLienCarriedForward?: boolean;
+  lienLoanAccountNo?: string;
+  voucherID?: number;
+  voucherNo?: string;
+  interestVoucherNo?: string;
+  passingStatus?: string;
+}
+
 interface FdLedgerTxItem {
   fdTransactionID: number;
   fdAccountID?: number;
@@ -374,6 +423,11 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
   const [data, setData] = useState<FdAccountReportRow[]>([]);
   const [voucherPassingData, setVoucherPassingData] = useState<FdVoucherPassingRow[]>([]);
   const [deletedEntriesData, setDeletedEntriesData] = useState<FdDeletedEntryRow[]>([]);
+  const [renewedData, setRenewedData] = useState<FdRenewedReportRow[]>([]);
+  const [renewalAllDates, setRenewalAllDates] = useState<boolean>(true);
+  const [renewalTypeFilter, setRenewalTypeFilter] = useState<string>('ALL');
+  const [renewalPassingFilter, setRenewalPassingFilter] = useState<string>('ALL');
+  const [renewalColumnMode, setRenewalColumnMode] = useState<'compact' | 'full'>('compact');
   const getLocalTodayStr = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -541,7 +595,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     } else if (reportType !== 'AccrualProvision') {
       fetchReportData();
     }
-  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, fromDate, toDate, ledgerFullHistory, asOfDate, voucherPassingStatus]);
+  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, fromDate, toDate, ledgerFullHistory, asOfDate, voucherPassingStatus, renewalAllDates, renewalTypeFilter, renewalPassingFilter]);
 
   const fetchReportData = async () => {
     setLoading(true);
@@ -573,6 +627,18 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           }
         });
         setDeletedEntriesData(res.data || []);
+      } else if (reportType === 'RenewedFD') {
+        const res = await axios.get('/api/Reports/fd-renewed', {
+          params: {
+            branchID: branchID > 0 ? branchID : undefined,
+            fdSchemeID: selectedSchemeId > 0 ? selectedSchemeId : undefined,
+            fromDate: renewalAllDates ? undefined : (fromDate || undefined),
+            toDate: renewalAllDates ? undefined : (toDate || undefined),
+            renewalType: renewalTypeFilter !== 'ALL' ? renewalTypeFilter : undefined,
+            passingStatus: renewalPassingFilter !== 'ALL' ? renewalPassingFilter : undefined
+          }
+        });
+        setRenewedData(Array.isArray(res.data) ? res.data : []);
       } else {
         let endpoint = '/api/Reports/fd-register';
         if (reportType === 'Outstanding') endpoint = '/api/Reports/fd-outstanding';
@@ -824,6 +890,31 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
   const totalCustomerSummaryMaturity = filteredCustomerSummary.reduce((s, r) => s + (r.maturityAmount || 0), 0);
   const totalCustomerSummaryFdCount = filteredCustomerSummary.reduce((s, r) => s + (r.fdCount || 0), 0);
 
+  const filteredRenewedData = renewedData.filter((row) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase().trim();
+    return (
+      (row.customerName && row.customerName.toLowerCase().includes(term)) ||
+      (row.cifNo && row.cifNo.toLowerCase().includes(term)) ||
+      (row.legacyCustomerNo && row.legacyCustomerNo.toLowerCase().includes(term)) ||
+      (row.oldReceiptNo && row.oldReceiptNo.toLowerCase().includes(term)) ||
+      (row.oldLegacyAccountNumber && row.oldLegacyAccountNumber.toLowerCase().includes(term)) ||
+      (row.oldAccountNo && row.oldAccountNo.toLowerCase().includes(term)) ||
+      (row.newReceiptNo && row.newReceiptNo.toLowerCase().includes(term)) ||
+      (row.newLegacyAccountNumber && row.newLegacyAccountNumber.toLowerCase().includes(term)) ||
+      (row.newAccountNo && row.newAccountNo.toLowerCase().includes(term)) ||
+      (row.voucherNo && row.voucherNo.toLowerCase().includes(term)) ||
+      (row.oldSchemeName && row.oldSchemeName.toLowerCase().includes(term)) ||
+      (row.newSchemeName && row.newSchemeName.toLowerCase().includes(term))
+    );
+  });
+
+  const totalRenewedOldDeposit = filteredRenewedData.reduce((s, r) => s + (r.oldDepositAmount || 0), 0);
+  const totalRenewedReinvestedInt = filteredRenewedData.reduce((s, r) => s + (r.reinvestedInterest || 0), 0);
+  const totalRenewedPaidOutInt = filteredRenewedData.reduce((s, r) => s + (r.interestPaidOut || 0), 0);
+  const totalRenewedNewDeposit = filteredRenewedData.reduce((s, r) => s + (r.newDepositAmount || 0), 0);
+  const totalRenewedNewMaturity = filteredRenewedData.reduce((s, r) => s + (r.newMaturityAmount || 0), 0);
+
   const getReportTitle = () => {
     switch (reportType) {
       case 'CustomerSummary': return 'मुदतबंद ठेव यादी (ग्राहक-निहाय एकत्रित ठेवी)';
@@ -834,6 +925,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       case 'VoucherPassing': return 'मुदत ठेव व्हाउचर पासिंग अहवाल';
       case 'DeletedEntries': return 'मुदत ठेव थेट रद्द नोंदी व रोलबॅक अहवाल';
       case 'MigratedFD': return 'स्थलांतरित मुदत ठेव (FD) यादी अहवाल';
+      case 'RenewedFD': return 'मुदत ठेव नूतनीकरण अहवाल (Renewed FD Receipts)';
       default: return 'मुदत ठेव अहवाल';
     }
   };
@@ -848,6 +940,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       case 'VoucherPassing': return 'Fixed Deposit Voucher Passing Report';
       case 'DeletedEntries': return 'Fixed Deposit Deleted Entries & Rollback Audit';
       case 'MigratedFD': return 'Migrated Fixed Deposit Accounts Report';
+      case 'RenewedFD': return 'Fixed Deposit Renewed Receipts Register (Old Receipt -> New Receipt)';
       default: return 'Fixed Deposit Report';
     }
   };
@@ -858,6 +951,10 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
         return `दि. ${formatDisplayDate(asOfDate)} अखेर`;
       case 'Outstanding':
         return `दि. ${formatDisplayDate(toDate)} अखेर (चालू बाकी स्थिती)`;
+      case 'RenewedFD':
+        return renewalAllDates
+          ? 'संपूर्ण कालावधी (आजवर नूतनीकरण झालेल्या सर्व ठेव पावत्या)'
+          : `नूतनीकरण कालावधी: दि. ${formatDisplayDate(fromDate)} ते दि. ${formatDisplayDate(toDate)}`;
       case 'Register':
       case 'MaturityDue':
       case 'VoucherPassing':
@@ -1003,12 +1100,77 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       case 'CustomerSummary': return filteredCustomerSummary.length > 0;
       case 'VoucherPassing': return filteredVoucherPassing.length > 0;
       case 'DeletedEntries': return filteredDeletedEntries.length > 0;
+      case 'RenewedFD': return filteredRenewedData.length > 0;
       case 'MemberLedger': return !!customerLedger;
       default: return filteredData.length > 0;
     }
   };
 
   const handleExportExcel = () => {
+    if (reportType === 'RenewedFD') {
+      if (filteredRenewedData.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
+      const rows = filteredRenewedData.map((r, i) => ({
+        'अनु.': i + 1,
+        'नूतनीकरण दिनांक': formatDisplayDate(r.renewalDate),
+        'व्हाउचर क्र.': r.voucherNo || '-',
+        'CIF क्र.': r.cifNo || '-',
+        'जुना खातेदार क्र.': r.legacyCustomerNo || '-',
+        'खातेदाराचे नाव': r.customerName,
+        'जुनी पावती क्र.': r.oldReceiptNo || r.oldLegacyAccountNumber || '-',
+        'जुना CBS खाते क्र.': format14DigitDisplay(r.oldAccountNo),
+        'जुनी योजना': r.oldSchemeName,
+        'जुनी मुदत तारीख': formatDisplayDate(r.oldMaturityDate),
+        'जुनी मुद्दल (₹)': r.oldDepositAmount || 0,
+        'नूतनीकरण प्रकार': r.isAutoRenewal
+          ? `स्वयंचलित #${r.renewalCycleNo}`
+          : r.renewalOption === 'PrincipalOnly'
+          ? 'फक्त मुद्दल'
+          : 'मुद्दल + व्याज',
+        'ठेवीत जमा व्याज (₹)': r.reinvestedInterest || 0,
+        'अदा केलेले व्याज (₹)': r.interestPaidOut || 0,
+        'व्याज अदा पद्धत': r.interestPayoutMode || '-',
+        'नवीन पावती क्र.': r.newReceiptNo || r.newLegacyAccountNumber || '-',
+        'नवीन CBS खाते क्र.': format14DigitDisplay(r.newAccountNo),
+        'नवीन योजना': r.newSchemeName,
+        'नवीन व्याज दर (%)': r.newInterestRate,
+        'नवीन कालावधी': r.newDurationDisplay,
+        'नवीन मुद्दल (₹)': r.newDepositAmount || 0,
+        'नवीन मुदतपूर्ती तारीख': formatDisplayDate(r.newMaturityDate),
+        'नवीन मुदतपूर्ती रक्कम (₹)': r.newMaturityAmount || 0,
+        'पासिंग स्थिती': r.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'
+      }));
+      rows.push({
+        'अनु.': '' as any,
+        'नूतनीकरण दिनांक': '',
+        'व्हाउचर क्र.': '',
+        'CIF क्र.': '',
+        'जुना खातेदार क्र.': '',
+        'खातेदाराचे नाव': `एकूण नूतनीकृत पावत्या: ${filteredRenewedData.length}`,
+        'जुनी पावती क्र.': '',
+        'जुना CBS खाते क्र.': '',
+        'जुनी योजना': '',
+        'जुनी मुदत तारीख': 'एकूण (TOTAL):',
+        'जुनी मुद्दल (₹)': totalRenewedOldDeposit,
+        'नूतनीकरण प्रकार': '',
+        'ठेवीत जमा व्याज (₹)': totalRenewedReinvestedInt,
+        'अदा केलेले व्याज (₹)': totalRenewedPaidOutInt,
+        'व्याज अदा पद्धत': '',
+        'नवीन पावती क्र.': '',
+        'नवीन CBS खाते क्र.': '',
+        'नवीन योजना': '',
+        'नवीन व्याज दर (%)': '' as any,
+        'नवीन कालावधी': '',
+        'नवीन मुद्दल (₹)': totalRenewedNewDeposit,
+        'नवीन मुदतपूर्ती तारीख': '',
+        'नवीन मुदतपूर्ती रक्कम (₹)': totalRenewedNewMaturity,
+        'पासिंग स्थिती': ''
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'FD Renewed Receipts');
+      XLSX.writeFile(wb, `FD_Renewed_Receipts_${new Date().toISOString().split('T')[0]}.xlsx`);
+      return;
+    }
     if (reportType === 'CustomerSummary') {
       if (filteredCustomerSummary.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
       const rows = filteredCustomerSummary.map((r, i) => ({
@@ -1608,6 +1770,42 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       );
     }
 
+    if (reportType === 'RenewedFD') {
+      const pPlusIntCount = filteredRenewedData.filter((r) => r.renewalOption === 'PrincipalPlusInterest').length;
+      const pOnlyCount = filteredRenewedData.filter((r) => r.renewalOption === 'PrincipalOnly').length;
+      return (
+        <div className="border border-slate-900 bg-white px-2.5 py-1.5 my-1 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
+            <div className="border-r border-slate-300 pr-2 flex items-center justify-between gap-1">
+              <div>
+                <span className="text-slate-500 block text-[9.5px] uppercase font-bold">नूतनीकृत पावत्या</span>
+                <strong className="text-primary font-mono text-xs">{filteredRenewedData.length} पावत्या</strong>
+              </div>
+              <span className="text-[9.5px] text-slate-600 font-mono">
+                जमा:{pPlusIntCount} | अदा:{pOnlyCount}
+              </span>
+            </div>
+            <div className="border-r border-slate-300 pr-2">
+              <span className="text-slate-500 block text-[9.5px] uppercase font-bold">जुनी मुद्दल एकूण</span>
+              <strong className="text-slate-900 font-mono text-xs">₹ {fmtCurrency(totalRenewedOldDeposit)}</strong>
+            </div>
+            <div className="border-r border-slate-300 pr-2">
+              <span className="text-slate-500 block text-[9.5px] uppercase font-bold">जमा व्याज / अदा व्याज</span>
+              <strong className="text-amber-800 font-mono text-xs">
+                ₹ {fmtCurrency(totalRenewedReinvestedInt)} / <span className="text-indigo-700">₹ {fmtCurrency(totalRenewedPaidOutInt)}</span>
+              </strong>
+            </div>
+            <div>
+              <span className="text-slate-500 block text-[9.5px] uppercase font-bold">नवीन मुद्दल / मुदतपूर्ती</span>
+              <strong className="text-emerald-800 font-mono text-xs">
+                ₹ {fmtCurrency(totalRenewedNewDeposit)} / <span className="text-blue-800">₹ {fmtCurrency(totalRenewedNewMaturity)}</span>
+              </strong>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (reportType === 'CustomerSummary') {
       const avgDepositPerCust = filteredCustomerSummary.length > 0 ? totalCustomerSummaryDeposit / filteredCustomerSummary.length : 0;
       return (
@@ -1780,6 +1978,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           <option value="DeletedEntries">७. मुदत ठेव रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)</option>
           <option value="MigratedFD">८. स्थलांतरित मुदत ठेव (FD) यादी (Migrated FD Accounts Report)</option>
           <option value="CustomerSummary">९. मुदतबंद ठेव यादी (ग्राहक-निहाय एकत्रित ठेवी)</option>
+          <option value="RenewedFD">१०. मुदत ठेव नूतनीकरण अहवाल (FD Renewal Report)</option>
         </select>
       </div>
 
@@ -1804,8 +2003,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
         </div>
       )}
 
-      {/* 3. Scheme Selector FIRST (for MemberLedger as well as Register, Outstanding, MaturityDue, MigratedFD) */}
-      {(reportType === 'MemberLedger' || reportType === 'Register' || reportType === 'Outstanding' || reportType === 'MaturityDue' || reportType === 'MigratedFD') && (
+      {/* 3. Scheme Selector FIRST (for MemberLedger as well as Register, Outstanding, MaturityDue, MigratedFD, RenewedFD) */}
+      {(reportType === 'MemberLedger' || reportType === 'Register' || reportType === 'Outstanding' || reportType === 'MaturityDue' || reportType === 'MigratedFD' || reportType === 'RenewedFD') && (
         <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5">
           <label className="text-[10px] text-slate-600 font-semibold whitespace-nowrap">ठेव प्रकार:</label>
           <select
@@ -2077,9 +2276,25 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
         </div>
       )}
 
-      {/* 6. Date Range (for Register, MaturityDue, VoucherPassing, DeletedEntries, MemberLedger) */}
-      {(reportType === 'Register' || reportType === 'MaturityDue' || reportType === 'VoucherPassing' || reportType === 'DeletedEntries' || reportType === 'MemberLedger') && (
+      {/* 6. Date Range (for Register, MaturityDue, VoucherPassing, DeletedEntries, MemberLedger, RenewedFD) */}
+      {(reportType === 'Register' || reportType === 'MaturityDue' || reportType === 'VoucherPassing' || reportType === 'DeletedEntries' || reportType === 'MemberLedger' || reportType === 'RenewedFD') && (
         <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5">
+          {reportType === 'RenewedFD' && (
+            <label
+              className={`flex items-center gap-1 pr-1.5 mr-0.5 border-r border-slate-300 text-[10.5px] font-bold cursor-pointer select-none ${
+                renewalAllDates ? 'text-primary' : 'text-slate-600'
+              }`}
+              title="आजवर नूतनीकरण झालेल्या सर्व ठेव पावत्या दाखवा (विशिष्ट तारखेसाठी टिक काढा)"
+            >
+              <input
+                type="checkbox"
+                checked={renewalAllDates}
+                onChange={(e) => setRenewalAllDates(e.target.checked)}
+                className="w-3 h-3 accent-primary cursor-pointer rounded-xs"
+              />
+              <span>सर्व तारखा</span>
+            </label>
+          )}
           {reportType === 'MemberLedger' && (
             <label
               className={`flex items-center gap-1 pr-1.5 mr-0.5 border-r border-slate-300 text-[10.5px] font-bold cursor-pointer select-none ${
@@ -2101,15 +2316,17 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            disabled={reportType === 'MemberLedger' && ledgerFullHistory}
+            disabled={(reportType === 'MemberLedger' && ledgerFullHistory) || (reportType === 'RenewedFD' && renewalAllDates)}
             className={`h-5 text-[10.5px] font-mono border-none bg-transparent focus:ring-0 p-0 font-bold w-24 ${
-              reportType === 'MemberLedger' && ledgerFullHistory
+              (reportType === 'MemberLedger' && ledgerFullHistory) || (reportType === 'RenewedFD' && renewalAllDates)
                 ? 'text-slate-400 cursor-not-allowed opacity-50'
                 : 'text-slate-800'
             }`}
             title={
               reportType === 'MemberLedger' && ledgerFullHistory
                 ? 'ठेव तारखेपासून संपूर्ण इतिहास सुरू आहे (ठराविक तारखेसाठी संपूर्ण इतिहास बंद करा)'
+                : reportType === 'RenewedFD' && renewalAllDates
+                ? 'सर्व तारखा सुरू आहेत (कालावधी निवडण्यासाठी सर्व तारखा बंद करा)'
                 : 'या तारखेपासून'
             }
           />
@@ -2118,10 +2335,73 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="h-5 text-[10.5px] font-mono border-none bg-transparent focus:ring-0 p-0 text-slate-800 font-bold w-24"
+            disabled={reportType === 'RenewedFD' && renewalAllDates}
+            className={`h-5 text-[10.5px] font-mono border-none bg-transparent focus:ring-0 p-0 font-bold w-24 ${
+              reportType === 'RenewedFD' && renewalAllDates
+                ? 'text-slate-400 cursor-not-allowed opacity-50'
+                : 'text-slate-800'
+            }`}
             title="या तारखेपर्यंत"
           />
         </div>
+      )}
+
+      {/* 6B. Renewal Type, Passing & Column Density Controls (for RenewedFD) */}
+      {reportType === 'RenewedFD' && (
+        <>
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5">
+            <label className="text-[10px] text-slate-600 font-semibold whitespace-nowrap">प्रकार:</label>
+            <select
+              value={renewalTypeFilter}
+              onChange={(e) => setRenewalTypeFilter(e.target.value)}
+              className="h-5 text-[10.5px] border-none bg-transparent focus:ring-0 p-0 text-slate-800 font-semibold cursor-pointer"
+            >
+              <option value="ALL">सर्व नूतनीकरणे</option>
+              <option value="PrincipalPlusInterest">मुद्दल + व्याज</option>
+              <option value="PrincipalOnly">फक्त मुद्दल (व्याज अदा)</option>
+              <option value="AutoRenewal">स्वयंचलित (Auto)</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5">
+            <label className="text-[10px] text-slate-600 font-semibold whitespace-nowrap">पासिंग:</label>
+            <select
+              value={renewalPassingFilter}
+              onChange={(e) => setRenewalPassingFilter(e.target.value)}
+              className="h-5 text-[10.5px] border-none bg-transparent focus:ring-0 p-0 text-slate-800 font-semibold cursor-pointer"
+            >
+              <option value="ALL">सर्व</option>
+              <option value="Approved">मंजूर</option>
+              <option value="Pending">प्रलंबित</option>
+            </select>
+          </div>
+          <div
+            className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-300"
+            title="सुटसुटीत (१६ रकाने - A4 प्रिंटसाठी) किंवा संपूर्ण (२२ स्वतंत्र रकाने - CBS व व्हाउचर क्र. सह)"
+          >
+            <button
+              type="button"
+              onClick={() => setRenewalColumnMode('compact')}
+              className={`px-1.5 py-0.5 rounded-xs font-bold text-[10px] cursor-pointer transition-colors ${
+                renewalColumnMode === 'compact'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              सुटसुटीत (१६)
+            </button>
+            <button
+              type="button"
+              onClick={() => setRenewalColumnMode('full')}
+              className={`px-1.5 py-0.5 rounded-xs font-bold text-[10px] cursor-pointer transition-colors ${
+                renewalColumnMode === 'full'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              संपूर्ण (२२ रकाने)
+            </button>
+          </div>
+        </>
       )}
 
       {/* 7. Status Filter (for VoucherPassing) */}
@@ -2261,6 +2541,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                 <option value="DeletedEntries">७. मुदत ठेव रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)</option>
                 <option value="MigratedFD">८. स्थलांतरित मुदत ठेव (FD) यादी (Migrated FD Accounts Report)</option>
                 <option value="CustomerSummary">९. मुदतबंद ठेव यादी (ग्राहक-निहाय एकत्रित ठेवी)</option>
+                <option value="RenewedFD">१०. मुदत ठेव नूतनीकरण अहवाल (FD Renewal Report)</option>
               </select>
             </div>
           </div>
@@ -3437,9 +3718,250 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       )}
 
       {/* ============================================================
+          VIEW 5B: RENEWED FD RECEIPTS REPORT (१०. मुदत ठेव नूतनीकरण अहवाल — Strict Single-Line Multi-Column Grid)
+          ============================================================ */}
+      {reportType === 'RenewedFD' && (() => {
+        const isFull = renewalColumnMode === 'full';
+        return (
+          <div className="overflow-x-auto">
+            <table className="cbs-table w-full border-collapse border border-slate-900 text-[10.5px]">
+              <thead>
+                {/* Top Grouped Header Row */}
+                <tr className="text-center font-extrabold text-[10px] border-b border-slate-900">
+                  <th colSpan={isFull ? 5 : 3} className="border border-slate-900 py-1 px-1.5 bg-slate-100 text-slate-900">
+                    मूळ व खातेदार माहिती
+                  </th>
+                  <th colSpan={isFull ? 5 : 3} className="border border-slate-900 py-1 px-1.5 bg-amber-50 text-amber-950 border-l-2 border-l-slate-900">
+                    जुनी ठेव पावती तपशील (Old Receipt)
+                  </th>
+                  <th colSpan={isFull ? 4 : 3} className="border border-slate-900 py-1 px-1.5 bg-indigo-50 text-indigo-950 border-l-2 border-l-slate-900">
+                    नूतनीकरण व व्याज समायोजन (Interest)
+                  </th>
+                  <th colSpan={isFull ? 6 : 5} className="border border-slate-900 py-1 px-1.5 bg-emerald-50 text-emerald-950 border-l-2 border-l-slate-900">
+                    नवीन नूतनीकृत पावती तपशील (New Receipt)
+                  </th>
+                  <th colSpan={2} className="border border-slate-900 py-1 px-1.5 bg-slate-100 text-slate-900 border-l-2 border-l-slate-900">
+                    अखेर व पासिंग
+                  </th>
+                </tr>
+                {/* Column Sub-Header Row */}
+                <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 text-center font-bold text-[10px] whitespace-nowrap">
+                  <th className="border border-slate-900 py-1 px-1">#</th>
+                  <th className="border border-slate-900 py-1 px-1.5">नूतनीकरण दि.</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5">व्हाउचर क्र.</th>}
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5">CIF / जुना नं.</th>}
+                  <th className="border border-slate-900 py-1 px-2 text-left">खातेदाराचे नाव</th>
+
+                  <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60 border-l-2 border-l-slate-900">जुनी पावती क्र.</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60">जुना CBS खाते क्र.</th>}
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60 text-left">जुनी योजना</th>}
+                  <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60">जुनी मुदत दि.</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60 text-right">जुनी मुद्दल (₹)</th>
+
+                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 border-l-2 border-l-slate-900">नूतनीकरण प्रकार</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">जमा व्याज (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">अदा व्याज (₹)</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50">अदा पद्धत</th>}
+
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50 border-l-2 border-l-slate-900">नवीन पावती क्र.</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50">नवीन CBS खाते क्र.</th>}
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50 text-left">नवीन योजना</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50">दर % / मुदत</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50 text-right">नवीन मुद्दल (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50">नवीन मुदत दि.</th>
+
+                  <th className="border border-slate-900 py-1 px-1.5 text-right border-l-2 border-l-slate-900">मुदतपूर्ती (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1">पासिंग</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRenewedData.map((row, idx) => {
+                  const oldRecDisplay = row.oldReceiptNo || row.oldLegacyAccountNumber || format14DigitDisplay(row.oldAccountNo);
+                  const newRecDisplay = row.newReceiptNo || row.newLegacyAccountNumber || format14DigitDisplay(row.newAccountNo);
+                  const typeShort = row.isAutoRenewal
+                    ? `ऑटो #${row.renewalCycleNo}`
+                    : row.renewalOption === 'PrincipalOnly'
+                    ? 'फक्त मुद्दल'
+                    : 'मुद्दल+व्याज';
+                  return (
+                    <tr
+                      key={`ren-${row.newFdAccountID}-${idx}`}
+                      className="h-6 hover:bg-slate-50 text-slate-900 text-[10.5px] leading-tight whitespace-nowrap"
+                    >
+                      <td className="border border-slate-900 py-0.5 px-1 text-center font-mono text-slate-700">
+                        {idx + 1}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono font-semibold">
+                        {formatDisplayDate(row.renewalDate)}
+                      </td>
+                      {isFull && (
+                        <td
+                          className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-slate-700 max-w-[140px] truncate"
+                          title={row.interestVoucherNo ? `${row.voucherNo} | व्याज: ${row.interestVoucherNo}` : row.voucherNo}
+                        >
+                          {row.voucherNo || '-'}
+                        </td>
+                      )}
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-blue-900 font-semibold">
+                          {row.legacyCustomerNo ? `${row.cifNo} (${row.legacyCustomerNo})` : (row.cifNo || '-')}
+                        </td>
+                      )}
+                      <td
+                        className="border border-slate-900 py-0.5 px-2 font-semibold text-slate-950 max-w-[170px] truncate"
+                        title={`${row.customerName} (${row.cifNo || '-'})`}
+                      >
+                        {row.customerName}
+                      </td>
+
+                      {/* Old Receipt Columns */}
+                      <td
+                        className="border border-slate-900 py-0.5 px-1.5 text-center font-mono font-bold text-amber-900 border-l-2 border-l-slate-900"
+                        title={`जुना CBS क्र.: ${format14DigitDisplay(row.oldAccountNo)} | जुनी योजना: ${row.oldSchemeName} (${row.oldInterestRate}%)`}
+                      >
+                        {oldRecDisplay}
+                      </td>
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-slate-700">
+                          {format14DigitDisplay(row.oldAccountNo)}
+                        </td>
+                      )}
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-left text-slate-700 max-w-[125px] truncate" title={row.oldSchemeName}>
+                          {row.oldSchemeName}
+                        </td>
+                      )}
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-slate-700">
+                        {formatDisplayDate(row.oldMaturityDate)}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-slate-900">
+                        {fmtCurrency(row.oldDepositAmount)}
+                      </td>
+
+                      {/* Renewal & Interest Columns */}
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center border-l-2 border-l-slate-900">
+                        <span
+                          className={`inline-block px-1 py-0.2 rounded text-[9.5px] font-bold border ${
+                            row.isAutoRenewal
+                              ? 'bg-purple-50 text-purple-800 border-purple-300'
+                              : row.renewalOption === 'PrincipalOnly'
+                              ? 'bg-sky-50 text-sky-800 border-sky-300'
+                              : 'bg-indigo-50 text-indigo-800 border-indigo-300'
+                          }`}
+                          title={`नूतनीकरण फेरी क्र. #${row.renewalCycleNo}`}
+                        >
+                          {typeShort}
+                        </span>
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-amber-900">
+                        {row.reinvestedInterest > 0 ? fmtCurrency(row.reinvestedInterest) : '-'}
+                      </td>
+                      <td
+                        className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-indigo-800"
+                        title={row.interestPaidOut > 0 ? `अदा पद्धत: ${row.interestPayoutMode}${row.interestVoucherNo ? ` (${row.interestVoucherNo})` : ''}` : undefined}
+                      >
+                        {row.interestPaidOut > 0 ? fmtCurrency(row.interestPaidOut) : '-'}
+                      </td>
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center text-[10px] text-slate-700">
+                          {row.interestPayoutMode || '-'}
+                        </td>
+                      )}
+
+                      {/* New Receipt Columns */}
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono font-bold text-emerald-900 border-l-2 border-l-slate-900">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSchemeId(0);
+                            setLedgerViewMode('single');
+                            setSelectedCustomerID(row.customerID);
+                            setSelectedLedgerFdAccountId(row.newFdAccountID);
+                            setSavedSingleFdAccountId(row.newFdAccountID);
+                            handleReportTypeChange('MemberLedger');
+                          }}
+                          className="text-primary hover:underline cursor-pointer font-bold font-mono"
+                          title={`नवीन CBS क्र.: ${format14DigitDisplay(row.newAccountNo)} — खातावणी पाहण्यासाठी क्लिक करा`}
+                        >
+                          {newRecDisplay}
+                        </button>
+                      </td>
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-slate-800">
+                          {format14DigitDisplay(row.newAccountNo)}
+                        </td>
+                      )}
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-left text-slate-800 max-w-[125px] truncate" title={row.newSchemeName}>
+                        {row.newSchemeName}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-slate-800">
+                        {row.newInterestRate}% ({row.newDurationDisplay})
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-emerald-800">
+                        {fmtCurrency(row.newDepositAmount)}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-slate-800">
+                        {formatDisplayDate(row.newMaturityDate)}
+                      </td>
+
+                      {/* Maturity & Passing Columns */}
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-blue-900 border-l-2 border-l-slate-900">
+                        {fmtCurrency(row.newMaturityAmount)}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1 text-center">
+                        <span
+                          className={`inline-block px-1 py-0.2 rounded text-[9px] font-bold border ${
+                            row.passingStatus === 'Pending'
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          }`}
+                          title={row.voucherNo ? `व्हाउचर क्र.: ${row.voucherNo}` : undefined}
+                        >
+                          {row.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {filteredRenewedData.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-900 text-[10.5px] whitespace-nowrap">
+                    <td colSpan={isFull ? 9 : 5} className="border border-slate-900 py-1 px-2 text-right uppercase">
+                      एकूण नूतनीकरण बेरीज ({filteredRenewedData.length} पावत्या):
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-slate-950 bg-amber-100/50">
+                      ₹ {fmtCurrency(totalRenewedOldDeposit)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1 border-l-2 border-l-slate-900"></td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-amber-950 bg-indigo-100/40">
+                      ₹ {fmtCurrency(totalRenewedReinvestedInt)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-indigo-950 bg-indigo-100/40">
+                      ₹ {fmtCurrency(totalRenewedPaidOutInt)}
+                    </td>
+                    {isFull && <td className="border border-slate-900 py-1 px-1"></td>}
+                    <td colSpan={isFull ? 4 : 3} className="border border-slate-900 py-1 px-1 border-l-2 border-l-slate-900"></td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
+                      ₹ {fmtCurrency(totalRenewedNewDeposit)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1"></td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-blue-950 bg-blue-100/50 border-l-2 border-l-slate-900">
+                      ₹ {fmtCurrency(totalRenewedNewMaturity)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        );
+      })()}
+
+      {/* ============================================================
           VIEW 6: STANDARD FD TABLE (१. नोंदवही, २. बाकी अहवाल, ३. मुदतपूर्ती देय)
           ============================================================ */}
-      {reportType !== 'MemberLedger' && reportType !== 'VoucherPassing' && reportType !== 'DeletedEntries' && reportType !== 'MigratedFD' && reportType !== 'CustomerSummary' && (
+      {reportType !== 'MemberLedger' && reportType !== 'VoucherPassing' && reportType !== 'DeletedEntries' && reportType !== 'MigratedFD' && reportType !== 'CustomerSummary' && reportType !== 'RenewedFD' && (
         <div className="overflow-x-auto">
           <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
             <thead>

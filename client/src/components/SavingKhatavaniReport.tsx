@@ -20,7 +20,7 @@ const fmtCurrency = (n: number | null | undefined) => {
 
 export default function SavingKhatavaniReport() {
   const { user } = useAuth();
-  const canDeleteOrphanSavingTxn = ['admin', 'superadmin', 'manager', 'headoffice'].includes(
+  const canDeleteOrphanSavingTxn = ['admin', 'superadmin', 'super admin', 'manager', 'headoffice'].includes(
     (user?.roleName || user?.role || '').trim().toLowerCase()
   );
 

@@ -4,6 +4,7 @@ import axios from 'axios';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getCachedMasterData } from '../utils/apiCache';
+import { isHeadOfficeUser } from '../utils/branchAccess';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
@@ -148,7 +149,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const API_URL = '/api';
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const isHOUser = isHeadOfficeUser(user);
   const [allowDateOverride, setAllowDateOverride] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -171,7 +172,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   });
 
   useEffect(() => {
-    if (user?.branchID && user.role !== 'Admin') {
+    if (user?.branchID && !isHeadOfficeUser(user)) {
       setFormData(prev => ({ ...prev, branchID: user.branchID }));
     }
     if (user?.businessDate) {
@@ -1688,7 +1689,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         शाखा (Branch) <span className="text-red-500">*</span>
                       </label>
                     </div>
-                    {user?.role === 'Admin' ? (
+                    {isHeadOfficeUser(user) ? (
                       <select name="branchID" value={formData.branchID} onChange={handleChange} required
                         className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white font-medium">
                         {branches.map((b) => (

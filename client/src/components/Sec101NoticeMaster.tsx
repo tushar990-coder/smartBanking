@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import html2pdf from 'html2pdf.js';
+import { exportHtmlElementToPdf } from '../utils/daybookPdfExport';
 import {
   FileText,
   Printer,
@@ -475,15 +475,16 @@ export default function Sec101NoticeMaster({
     if (!printModalRef.current || !printNotice) return;
     setDownloadingPdf(true);
     try {
-      const opt = {
-        margin: [6, 8, 6, 8],
+      await exportHtmlElementToPdf({
+        element: printModalRef.current,
         filename: `Legal_Notice_${(printNotice.noticeNumber || 'Doc').replace(/[/\\]/g, '_')}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      };
-      await html2pdf().set(opt as any).from(printModalRef.current).save();
-    } catch {
+        format: 'a4',
+        orientation: 'portrait',
+        marginMm: 6,
+        shrinkToSinglePageTolerance: 1.08
+      });
+    } catch (err) {
+      console.error('Sec 101 Legal Notice PDF generation error:', err);
       window.print();
     } finally {
       setDownloadingPdf(false);

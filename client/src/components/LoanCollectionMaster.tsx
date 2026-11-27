@@ -308,7 +308,7 @@ const isGoldLoanAccountObj = (acc: any): boolean => {
 const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate }) => {
     const { user } = useAuth();
     const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
-    const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+    const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'Super Admin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
 
     const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);
     const [branches, setBranches] = useState<any[]>(() => {

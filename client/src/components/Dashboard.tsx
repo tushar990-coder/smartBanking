@@ -102,7 +102,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   });
   const [loading, setLoading] = useState(() => {
-    const initialBranch = (user && user.role !== 'Admin' && user.branchID) 
+    const initialBranch = (user && !isHeadOfficeUser(user) && user.branchID) 
       ? user.branchID.toString() 
       : (localStorage.getItem('globalBranchId') || (user?.branchID ? user.branchID.toString() : 'all'));
     return !localStorage.getItem(`cbs_dashboard_cache_${initialBranch}`);

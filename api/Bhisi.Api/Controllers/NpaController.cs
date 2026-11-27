@@ -26,14 +26,183 @@ namespace Bhisi.Api.Controllers
             _npaService = new NpaEngineService(context);
         }
 
+        private async Task<List<LoanAccountNpaStatus>> EnsureAndLoadSnapshotAsync(DateTime targetDate, int? branchId, bool includeSchedules = false)
+        {
+            DateTime cleanDate = targetDate.Date;
+
+            bool hasSnapshotForDate = await _context.LoanAccountNpaStatuses
+                .AsNoTracking()
+                .AnyAsync(s => s.AsOfDate.Date == cleanDate);
+
+            if (!hasSnapshotForDate)
+            {
+                await _npaService.RunClassificationAsync(cleanDate, "Auto-Snapshot");
+            }
+
+            IQueryable<LoanAccountNpaStatus> query = _context.LoanAccountNpaStatuses
+                .AsNoTracking()
+                .Include(s => s.LoanAccount)
+                    .ThenInclude(l => l!.Customer)
+                .Include(s => s.LoanAccount)
+                    .ThenInclude(l => l!.Member)
+                        .ThenInclude(m => m!.Customer)
+                .Include(s => s.LoanAccount)
+                    .ThenInclude(l => l!.LoanRate);
+
+            if (includeSchedules)
+            {
+                query = query.Include(s => s.LoanAccount!.LoanInstallmentSchedules);
+            }
+
+            var statuses = await query
+                .Where(s => s.AsOfDate.Date == cleanDate)
+                .ToListAsync();
+
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                statuses = statuses
+                    .Where(s => s.LoanAccount != null && s.LoanAccount.BranchID == branchId.Value)
+                    .ToList();
+            }
+
+            return statuses;
+        }
+
+        private async Task<Dictionary<int, (decimal Principal, decimal ReceivableInterest, decimal OverdueInterest)>> ReconstructSnapshotBalancesMapAsync(
+            List<LoanAccountNpaStatus> statuses,
+            DateTime asOfDate)
+        {
+            DateTime cleanDate = asOfDate.Date;
+            var loanIds = statuses.Select(s => s.LoanAccountID).Distinct().ToHashSet();
+
+            var postColsByLoan = (await _context.LoanCollections
+                .AsNoTracking()
+                .Where(c => loanIds.Contains(c.LoanAccountID) && c.CollectionDate.Date > cleanDate)
+                .ToListAsync())
+                .GroupBy(c => c.LoanAccountID)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<LoanCollection>)g.ToList());
+
+            var postDisbsByLoan = (await _context.LoanDisbursements
+                .AsNoTracking()
+                .Where(d => loanIds.Contains(d.LoanAccountID) && d.DisbursementDate.Date > cleanDate)
+                .ToListAsync())
+                .GroupBy(d => d.LoanAccountID)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<LoanDisbursement>)g.ToList());
+
+            var result = new Dictionary<int, (decimal Principal, decimal ReceivableInterest, decimal OverdueInterest)>();
+            foreach (var s in statuses)
+            {
+                if (s.LoanAccount == null)
+                {
+                    result[s.LoanAccountID] = (s.OutstandingBalance, 0m, 0m);
+                    continue;
+                }
+
+                postColsByLoan.TryGetValue(s.LoanAccountID, out var pCols);
+                postDisbsByLoan.TryGetValue(s.LoanAccountID, out var pDisbs);
+                var bal = NpaEngineService.ReconstructLoanBalancesAsOfDate(s.LoanAccount, cleanDate, pCols, pDisbs);
+
+                // Reconcile against stored snapshot OutstandingBalance so Principal + TotalInterest == s.OutstandingBalance
+                decimal principal = Math.Min(bal.Principal, s.OutstandingBalance);
+                decimal totalInt = Math.Max(0m, s.OutstandingBalance - principal);
+                decimal ovdInt = Math.Min(bal.OverdueInterest, totalInt);
+                decimal recInt = Math.Max(0m, totalInt - ovdInt);
+
+                result[s.LoanAccountID] = (principal, recInt, ovdInt);
+            }
+
+            return result;
+        }
+
+        private async Task<decimal> ResolveGlBddrProvisionBalanceAsync(DateTime asOfDate, int? branchId)
+        {
+            DateTime cleanDate = asOfDate.Date;
+
+            var mappedLedgerIds = await _context.AuditLedgerMappings
+                .AsNoTracking()
+                .Where(m => m.CategoryCode == "BAD_DEBT_RESERVE" && m.LedgerID > 0)
+                .Select(m => m.LedgerID)
+                .ToListAsync();
+
+            if (!mappedLedgerIds.Any())
+            {
+                mappedLedgerIds = await _context.Ledgers
+                    .AsNoTracking()
+                    .Where(l => l.IsActive &&
+                                (l.LedgerName.Contains("बुडीत कर्ज") ||
+                                 l.LedgerName.Contains("संशयित कर्ज") ||
+                                 l.LedgerName.Contains("BDDR") ||
+                                 l.LedgerName.Contains("NPA तरतूद")))
+                    .Select(l => l.LedgerID)
+                    .ToListAsync();
+            }
+
+            if (!mappedLedgerIds.Any()) return 0m;
+
+            var bddrLedgers = await _context.Ledgers
+                .AsNoTracking()
+                .Where(l => mappedLedgerIds.Contains(l.LedgerID))
+                .ToListAsync();
+
+            var fyBaseline = await FinancialYearBaselineHelper.ResolveBaselineAsync(_context, cleanDate, branchId: branchId);
+            int baselineFyId = fyBaseline.BaselineFinancialYearId;
+
+            decimal baseObCredit = 0m;
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                var branchObs = await _context.BranchLedgerOpeningBalances
+                    .AsNoTracking()
+                    .Where(b => b.BranchID == branchId.Value &&
+                                mappedLedgerIds.Contains(b.LedgerID) &&
+                                (baselineFyId == 0 || b.FinancialYearID == baselineFyId))
+                    .ToListAsync();
+
+                foreach (var ob in branchObs)
+                {
+                    baseObCredit += ob.OpeningBalanceType == "Cr" ? ob.OpeningBalance : -ob.OpeningBalance;
+                }
+            }
+            else
+            {
+                foreach (var l in bddrLedgers)
+                {
+                    baseObCredit += (l.OpeningBalanceType ?? "Cr") == "Cr" ? l.OpeningBalance : -l.OpeningBalance;
+                }
+            }
+
+            var vdQuery = _context.VoucherDetails
+                .AsNoTracking()
+                .Where(vd => mappedLedgerIds.Contains(vd.LedgerID) &&
+                             vd.Voucher != null &&
+                             vd.Voucher.Status == "Approved" &&
+                             vd.Voucher.VoucherDate.Date <= cleanDate);
+
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                int bId = branchId.Value;
+                vdQuery = vdQuery.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == bId);
+            }
+
+            if (fyBaseline.BaselineStartDate.HasValue)
+            {
+                DateTime bStart = fyBaseline.BaselineStartDate.Value.Date;
+                vdQuery = vdQuery.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate.Date >= bStart);
+            }
+
+            decimal totalCr = await vdQuery.Where(vd => vd.DrCr == "Cr").SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+            decimal totalDr = await vdQuery.Where(vd => vd.DrCr == "Dr").SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+
+            return Math.Max(0m, baseObCredit + totalCr - totalDr);
+        }
+
         // POST: api/npa/run
         [HttpPost("run")]
         public async Task<IActionResult> RunClassification([FromBody] NpaRunRequest request)
         {
             try
             {
-                var runDate = request.AsOfDate ?? DateTime.Today;
-                var run = await _npaService.RunClassificationAsync(runDate, request.TriggeredBy ?? "Auditor");
+                var runDate = (request?.AsOfDate ?? DateTime.Today).Date;
+                var run = await _npaService.RunClassificationAsync(runDate, request?.TriggeredBy ?? "Auditor");
                 return Ok(run);
             }
             catch (Exception ex)
@@ -47,6 +216,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<NpaClassificationRun>>> GetRuns()
         {
             return await _context.NpaClassificationRuns
+                .AsNoTracking()
                 .OrderByDescending(r => r.RunDate)
                 .Take(50)
                 .ToListAsync();
@@ -57,13 +227,13 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetAccountNpaStatus(int loanAccountId)
         {
             var status = await _context.LoanAccountNpaStatuses
+                .AsNoTracking()
                 .Where(s => s.LoanAccountID == loanAccountId)
                 .OrderByDescending(s => s.AsOfDate)
                 .FirstOrDefaultAsync();
 
             if (status == null)
             {
-                // Verify if loan account exists
                 var accountExists = await _context.LoanAccounts
                     .AnyAsync(l => l.LoanAccountID == loanAccountId);
 
@@ -72,7 +242,6 @@ namespace Bhisi.Api.Controllers
                     return NotFound(new { message = "Loan account not found" });
                 }
 
-                // If account exists but has no NPA status row, it is a healthy Standard (नियमित) account
                 return Ok(new
                 {
                     Category = "Standard",
@@ -95,93 +264,45 @@ namespace Bhisi.Api.Controllers
         [HttpGet("statement")]
         public async Task<IActionResult> GetNpaStatement([FromQuery] DateTime? asOfDate, [FromQuery] int? branchId = null)
         {
-            branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
-            var date = asOfDate ?? DateTime.Today;
-            
-            // Find the latest classification run before or on this date
-            var latestRun = await _context.NpaClassificationRuns
-                .Where(r => r.RunDate.Date <= date.Date && r.Status == "Success")
-                .OrderByDescending(r => r.RunDate)
-                .FirstOrDefaultAsync();
+            branchId = User?.Identity != null ? User.ResolveOptionalBranchId(branchId > 0 ? branchId : null) : branchId;
+            var date = (asOfDate ?? DateTime.Today).Date;
 
-            if (latestRun == null)
-            {
-                // If no run exists, trigger one automatically for this date
-                latestRun = await _npaService.RunClassificationAsync(date, "Auto-Triggered");
-            }
-
-            var statuses = await _context.LoanAccountNpaStatuses
-                .Include(s => s.LoanAccount)
-                .ThenInclude(l => l.Member)
-                .Where(s => s.AsOfDate.Date == date.Date)
-                .ToListAsync();
-
-            if (!statuses.Any())
-            {
-                // Fallback to latest available run
-                var lastAvailableDate = await _context.LoanAccountNpaStatuses
-                    .OrderByDescending(s => s.AsOfDate)
-                    .Select(s => s.AsOfDate)
-                    .FirstOrDefaultAsync();
-
-                if (lastAvailableDate != default)
-                {
-                    statuses = await _context.LoanAccountNpaStatuses
-                        .Include(s => s.LoanAccount)
-                        .ThenInclude(l => l.Member)
-                        .Where(s => s.AsOfDate.Date == lastAvailableDate.Date)
-                        .ToListAsync();
-                    date = lastAvailableDate;
-                }
-            }
-
-            if (branchId.HasValue && branchId.Value > 0)
-            {
-                statuses = statuses.Where(s => s.LoanAccount != null && s.LoanAccount.BranchID == branchId.Value).ToList();
-            }
+            var statuses = await EnsureAndLoadSnapshotAsync(date, branchId, includeSchedules: false);
+            var balMap = await ReconstructSnapshotBalancesMapAsync(statuses, date);
 
             decimal grossAdvances = statuses.Sum(s => s.OutstandingBalance);
-            decimal grossNpa = statuses.Where(s => s.Category != "Standard").Sum(s => s.OutstandingBalance);
-            decimal grossNpaPercent = grossAdvances > 0 ? (grossNpa / grossAdvances) * 100m : 0;
+            decimal grossPrincipalAdvances = statuses.Sum(s => balMap[s.LoanAccountID].Principal);
 
-            // Deductions: (a) Overdue Interest Reserve, (b) Lump-sum Repayment scheme deposits
-            // Fetch Overdue Interest Reserve ledger credit balance
-            var ledgerOverdueIntProv = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName == "थकीत व्याज तरतूद खाते");
-            decimal overdueInterestReserve = 0;
-            if (ledgerOverdueIntProv != null)
-            {
-                // In our implementation, we sum the balance of the contra log scoped to branch if specified
-                var oirQ = _context.OverdueInterestLedgers.AsQueryable();
-                if (branchId.HasValue && branchId.Value > 0)
-                {
-                    int bId = branchId.Value;
-                    var branchLoanIds = _context.LoanAccounts.Where(l => l.BranchID == bId).Select(l => l.LoanAccountID);
-                    oirQ = oirQ.Where(o => branchLoanIds.Contains(o.LoanAccountID));
-                }
-                overdueInterestReserve = await oirQ.SumAsync(l => l.CreditAmount - l.DebitAmount);
-                if (overdueInterestReserve < 0) overdueInterestReserve = 0;
-                
-                // Fallback: if ledger transactions are empty, sum interest balance from all active NPA accounts
-                if (overdueInterestReserve == 0)
-                {
-                    overdueInterestReserve = statuses.Where(s => s.Category != "Standard")
-                        .Sum(s => (s.LoanAccount?.InterestBalance ?? 0) + (s.LoanAccount?.OverdueInterestBalance ?? 0));
-                }
-            }
+            var npaStatuses = statuses.Where(s => s.Category != "Standard").ToList();
+            decimal grossNpa = npaStatuses.Sum(s => s.OutstandingBalance);
+            decimal npaPrincipal = npaStatuses.Sum(s => balMap[s.LoanAccountID].Principal);
+            decimal npaUnrealizedInterest = npaStatuses.Sum(s =>
+                balMap[s.LoanAccountID].ReceivableInterest + balMap[s.LoanAccountID].OverdueInterest);
 
-            // (b) Amount held in lump-sum-repayment-scheme/recovery deposit accounts
-            // Sum saving transactions in recovery deposit accounts or default to 0
-            decimal recoveryDeposits = 0;
+            decimal grossNpaPercent = grossAdvances > 0m ? (grossNpa / grossAdvances) * 100m : 0m;
 
+            // Statutory Policy: 100% Overdue Interest Reserve (OIR - थकीत व्याज तरतूद) on all NPA receivable interest
+            decimal overdueInterestReserve = npaUnrealizedInterest;
+            decimal recoveryDeposits = 0m;
             decimal totalDeductions = overdueInterestReserve + recoveryDeposits;
-            decimal totalProvision = statuses.Sum(s => s.ProvisionRequired);
 
-            decimal netAdvances = grossAdvances - totalProvision;
-            decimal netNpa = grossNpa - totalDeductions - totalProvision;
-            if (netNpa < 0) netNpa = 0;
-            decimal netNpaPercent = netAdvances > 0 ? (netNpa / netAdvances) * 100m : 0;
+            decimal totalProvisionRequired = statuses.Sum(s => s.ProvisionRequired);
+            decimal npaProvisionRequired = npaStatuses.Sum(s => s.ProvisionRequired);
+            decimal standardProvisionRequired = statuses.Where(s => s.Category == "Standard").Sum(s => s.ProvisionRequired);
 
-            var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync() ?? new SansthaDetail
+            decimal accountProvisionHeld = statuses.Sum(s => s.ProvisionHeld);
+            decimal glBddrBalance = await ResolveGlBddrProvisionBalanceAsync(date, branchId);
+            decimal provisionHeld = Math.Max(accountProvisionHeld, glBddrBalance);
+
+            // Effective BDDR deduction for Net NPA: uses actual ProvisionHeld if booked in GL/OB, else shows shortfall transparently
+            decimal effectiveProvisionForNet = provisionHeld > 0m ? provisionHeld : npaProvisionRequired;
+            decimal provisionShortfall = Math.Max(0m, npaProvisionRequired - provisionHeld);
+
+            decimal netAdvances = Math.Max(0m, grossAdvances - totalDeductions - effectiveProvisionForNet);
+            decimal netNpa = Math.Max(0m, grossNpa - totalDeductions - effectiveProvisionForNet);
+            decimal netNpaPercent = netAdvances > 0m ? (netNpa / netAdvances) * 100m : 0m;
+
+            var sanstha = await _context.SansthaDetails.AsNoTracking().FirstOrDefaultAsync() ?? new SansthaDetail
             {
                 SansthaName = "सहकारी पतसंस्था मर्यादित",
                 Address = "महाराष्ट्र"
@@ -192,13 +313,19 @@ namespace Bhisi.Api.Controllers
                 SansthaName = sanstha.SansthaName,
                 Address = sanstha.Address,
                 AsOfDate = date,
-                GrossAdvances = Math.Round(grossAdvances / 100000m, 2), // in Lakhs
+                GrossAdvances = Math.Round(grossAdvances / 100000m, 2),
+                GrossPrincipalAdvances = Math.Round(grossPrincipalAdvances / 100000m, 2),
                 GrossNpa = Math.Round(grossNpa / 100000m, 2),
+                NpaPrincipal = Math.Round(npaPrincipal / 100000m, 2),
                 GrossNpaPercent = Math.Round(grossNpaPercent, 2),
                 OverdueInterestReserve = Math.Round(overdueInterestReserve / 100000m, 2),
                 RecoveryDeposits = Math.Round(recoveryDeposits / 100000m, 2),
                 TotalDeductions = Math.Round(totalDeductions / 100000m, 2),
-                TotalProvision = Math.Round(totalProvision / 100000m, 2),
+                TotalProvision = Math.Round(npaProvisionRequired / 100000m, 2),
+                TotalProvisionIncludingStandard = Math.Round(totalProvisionRequired / 100000m, 2),
+                StandardProvisionRequired = Math.Round(standardProvisionRequired / 100000m, 2),
+                ProvisionHeld = Math.Round(provisionHeld / 100000m, 2),
+                ProvisionShortfall = Math.Round(provisionShortfall / 100000m, 2),
                 NetAdvances = Math.Round(netAdvances / 100000m, 2),
                 NetNpa = Math.Round(netNpa / 100000m, 2),
                 NetNpaPercent = Math.Round(netNpaPercent, 2)
@@ -211,34 +338,11 @@ namespace Bhisi.Api.Controllers
         [HttpGet("breakup")]
         public async Task<IActionResult> GetCategoryBreakup([FromQuery] DateTime? asOfDate, [FromQuery] int? branchId = null)
         {
-            branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
-            var date = asOfDate ?? DateTime.Today;
+            branchId = User?.Identity != null ? User.ResolveOptionalBranchId(branchId > 0 ? branchId : null) : branchId;
+            var date = (asOfDate ?? DateTime.Today).Date;
 
-            var statuses = await _context.LoanAccountNpaStatuses
-                .Include(s => s.LoanAccount)
-                .Where(s => s.AsOfDate.Date == date.Date)
-                .ToListAsync();
-
-            if (!statuses.Any())
-            {
-                var lastAvailableDate = await _context.LoanAccountNpaStatuses
-                    .OrderByDescending(s => s.AsOfDate)
-                    .Select(s => s.AsOfDate)
-                    .FirstOrDefaultAsync();
-
-                if (lastAvailableDate != default)
-                {
-                    statuses = await _context.LoanAccountNpaStatuses
-                        .Include(s => s.LoanAccount)
-                        .Where(s => s.AsOfDate.Date == lastAvailableDate.Date)
-                        .ToListAsync();
-                }
-            }
-
-            if (branchId.HasValue && branchId.Value > 0)
-            {
-                statuses = statuses.Where(s => s.LoanAccount != null && s.LoanAccount.BranchID == branchId.Value).ToList();
-            }
+            var statuses = await EnsureAndLoadSnapshotAsync(date, branchId, includeSchedules: false);
+            var balMap = await ReconstructSnapshotBalancesMapAsync(statuses, date);
 
             var categories = new[] { "Standard", "Sub-Standard", "Doubtful-1", "Doubtful-2", "Doubtful-3", "Loss" };
             var breakup = new List<CategoryBreakupDto>();
@@ -246,18 +350,23 @@ namespace Bhisi.Api.Controllers
             foreach (var cat in categories)
             {
                 var catStatuses = statuses.Where(s => s.Category == cat).ToList();
-                decimal outstanding = catStatuses.Sum(s => s.OutstandingBalance);
-                decimal secured = catStatuses.Sum(s => Math.Min(s.OutstandingBalance, s.CompliantCollateralValue));
-                decimal unsecured = outstanding - secured;
+                decimal grossOut = catStatuses.Sum(s => s.OutstandingBalance);
+                decimal principalOut = catStatuses.Sum(s => balMap[s.LoanAccountID].Principal);
+                decimal intOut = catStatuses.Sum(s => balMap[s.LoanAccountID].ReceivableInterest + balMap[s.LoanAccountID].OverdueInterest);
+                decimal oirReq = cat != "Standard" ? intOut : 0m;
+                decimal securedPrin = catStatuses.Sum(s => Math.Min(balMap[s.LoanAccountID].Principal, s.CompliantCollateralValue));
+                decimal unsecuredPrin = Math.Max(0m, principalOut - securedPrin);
 
                 breakup.Add(new CategoryBreakupDto
                 {
                     Category = cat,
                     CategoryMarathi = GetCategoryMarathi(cat),
                     AccountCount = catStatuses.Count,
-                    GrossOutstanding = Math.Round(outstanding / 100000m, 2),
-                    SecuredOutstanding = Math.Round(secured / 100000m, 2),
-                    UnsecuredOutstanding = Math.Round(unsecured / 100000m, 2),
+                    GrossOutstanding = Math.Round(grossOut / 100000m, 2),
+                    PrincipalOutstanding = Math.Round(principalOut / 100000m, 2),
+                    OverdueInterestReserve = Math.Round(oirReq / 100000m, 2),
+                    SecuredOutstanding = Math.Round(securedPrin / 100000m, 2),
+                    UnsecuredOutstanding = Math.Round(unsecuredPrin / 100000m, 2),
                     ProvisionRequired = Math.Round(catStatuses.Sum(s => s.ProvisionRequired) / 100000m, 2),
                     ProvisionHeld = Math.Round(catStatuses.Sum(s => s.ProvisionHeld) / 100000m, 2)
                 });
@@ -270,42 +379,10 @@ namespace Bhisi.Api.Controllers
         [HttpGet("defaulters")]
         public async Task<IActionResult> GetDefaultersAndLargeBorrowers([FromQuery] DateTime? asOfDate, [FromQuery] int? branchId = null)
         {
-            branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
-            var date = asOfDate ?? DateTime.Today;
+            branchId = User?.Identity != null ? User.ResolveOptionalBranchId(branchId > 0 ? branchId : null) : branchId;
+            var date = (asOfDate ?? DateTime.Today).Date;
 
-            var statuses = await _context.LoanAccountNpaStatuses
-                .Include(s => s.LoanAccount)
-                    .ThenInclude(l => l!.Customer)
-                .Include(s => s.LoanAccount)
-                    .ThenInclude(l => l!.Member)
-                        .ThenInclude(m => m!.Customer)
-                .Where(s => s.AsOfDate.Date == date.Date)
-                .ToListAsync();
-
-            if (!statuses.Any())
-            {
-                var lastAvailableDate = await _context.LoanAccountNpaStatuses
-                    .OrderByDescending(s => s.AsOfDate)
-                    .Select(s => s.AsOfDate)
-                    .FirstOrDefaultAsync();
-
-                if (lastAvailableDate != default)
-                {
-                    statuses = await _context.LoanAccountNpaStatuses
-                        .Include(s => s.LoanAccount)
-                            .ThenInclude(l => l!.Customer)
-                        .Include(s => s.LoanAccount)
-                            .ThenInclude(l => l!.Member)
-                                .ThenInclude(m => m!.Customer)
-                        .Where(s => s.AsOfDate.Date == lastAvailableDate.Date)
-                        .ToListAsync();
-                }
-            }
-
-            if (branchId.HasValue && branchId.Value > 0)
-            {
-                statuses = statuses.Where(s => s.LoanAccount != null && s.LoanAccount.BranchID == branchId.Value).ToList();
-            }
+            var statuses = await EnsureAndLoadSnapshotAsync(date, branchId, includeSchedules: false);
 
             var topDefaulters = statuses
                 .Where(s => s.Category != "Standard")
@@ -315,14 +392,14 @@ namespace Bhisi.Api.Controllers
                 {
                     LoanAccountID = s.LoanAccountID,
                     LoanAccountNo = s.LoanAccount?.LoanAccountNo ?? "",
-                    BorrowerName = s.LoanAccount?.Customer != null 
-                        ? $"{s.LoanAccount.Customer.FirstName} {s.LoanAccount.Customer.LastName}".Trim() 
-                        : (s.LoanAccount?.Member?.Customer != null ? $"{s.LoanAccount.Member.Customer.FirstName} {s.LoanAccount.Member.Customer.LastName}".Trim() : ""),
+                    BorrowerName = ResolveBorrowerFullName(s.LoanAccount),
                     Category = s.Category,
                     CategoryMarathi = GetCategoryMarathi(s.Category),
                     OutstandingBalance = Math.Round(s.OutstandingBalance / 100000m, 2),
                     OverdueDate = s.OverdueDate ?? s.OutOfOrderDate,
-                    OverdueDays = s.OverdueDate.HasValue ? (date - s.OverdueDate.Value).Days : (s.OutOfOrderDate.HasValue ? (date - s.OutOfOrderDate.Value).Days : 0)
+                    OverdueDays = s.OverdueDate.HasValue
+                        ? Math.Max(0, (date - s.OverdueDate.Value.Date).Days)
+                        : (s.OutOfOrderDate.HasValue ? Math.Max(0, (date - s.OutOfOrderDate.Value.Date).Days) : 0)
                 })
                 .ToList();
 
@@ -334,9 +411,7 @@ namespace Bhisi.Api.Controllers
                 {
                     LoanAccountID = s.LoanAccountID,
                     LoanAccountNo = s.LoanAccount?.LoanAccountNo ?? "",
-                    BorrowerName = s.LoanAccount?.Customer != null 
-                        ? $"{s.LoanAccount.Customer.FirstName} {s.LoanAccount.Customer.LastName}".Trim() 
-                        : (s.LoanAccount?.Member?.Customer != null ? $"{s.LoanAccount.Member.Customer.FirstName} {s.LoanAccount.Member.Customer.LastName}".Trim() : ""),
+                    BorrowerName = ResolveBorrowerFullName(s.LoanAccount),
                     Category = s.Category,
                     CategoryMarathi = GetCategoryMarathi(s.Category),
                     OutstandingBalance = Math.Round(s.OutstandingBalance / 100000m, 2),
@@ -356,140 +431,84 @@ namespace Bhisi.Api.Controllers
         [HttpGet("register")]
         public async Task<IActionResult> GetNpaRegister([FromQuery] DateTime? asOfDate, [FromQuery] int? branchId = null)
         {
-            branchId = User.ResolveOptionalBranchId(branchId > 0 ? branchId : null);
-            var date = asOfDate ?? DateTime.Today;
+            branchId = User?.Identity != null ? User.ResolveOptionalBranchId(branchId > 0 ? branchId : null) : branchId;
+            var date = (asOfDate ?? DateTime.Today).Date;
 
-            var statuses = await _context.LoanAccountNpaStatuses
-                .AsNoTracking()
-                .Include(s => s.LoanAccount)
-                    .ThenInclude(l => l!.Customer)
-                .Include(s => s.LoanAccount)
-                    .ThenInclude(l => l!.Member)
-                        .ThenInclude(m => m!.Customer)
-                .Include(s => s.LoanAccount)
-                    .ThenInclude(l => l!.LoanRate)
-                .Include(s => s.LoanAccount!.LoanInstallmentSchedules)
-                .Where(s => s.AsOfDate.Date == date.Date)
-                .ToListAsync();
+            var statuses = await EnsureAndLoadSnapshotAsync(date, branchId, includeSchedules: true);
+            var balMap = await ReconstructSnapshotBalancesMapAsync(statuses, date);
 
-            if (!statuses.Any())
+            string fy = NpaEngineService.GetFinancialYearStatic(date);
+            var config = await _context.NpaConfigs.AsNoTracking().FirstOrDefaultAsync(c => c.FinancialYear == fy);
+            int concessionDays = config?.ConcessionPeriodDays > 0 ? config.ConcessionPeriodDays : 180;
+
+            var slabs = await _context.NpaProvisionSlabs.AsNoTracking().Where(s => s.FinancialYear == fy).ToListAsync();
+            if (!slabs.Any())
             {
-                var lastAvailableDate = await _context.LoanAccountNpaStatuses
-                    .AsNoTracking()
-                    .OrderByDescending(s => s.AsOfDate)
-                    .Select(s => s.AsOfDate)
-                    .FirstOrDefaultAsync();
-
-                if (lastAvailableDate != default)
-                {
-                    statuses = await _context.LoanAccountNpaStatuses
-                        .AsNoTracking()
-                        .Include(s => s.LoanAccount)
-                            .ThenInclude(l => l!.Customer)
-                        .Include(s => s.LoanAccount)
-                            .ThenInclude(l => l!.Member)
-                                .ThenInclude(m => m!.Customer)
-                        .Include(s => s.LoanAccount)
-                            .ThenInclude(l => l!.LoanRate)
-                        .Include(s => s.LoanAccount!.LoanInstallmentSchedules)
-                        .Where(s => s.AsOfDate.Date == lastAvailableDate.Date)
-                        .ToListAsync();
-                    date = lastAvailableDate;
-                }
+                slabs = NpaEngineService.BuildDefaultSlabsForFy(fy);
             }
 
-            if (branchId.HasValue && branchId.Value > 0)
+            var register = statuses.Select(s =>
             {
-                statuses = statuses.Where(s => s.LoanAccount != null && s.LoanAccount.BranchID == branchId.Value).ToList();
-            }
-
-            var config = await _context.NpaConfigs.OrderByDescending(c => c.FinancialYear).FirstOrDefaultAsync();
-            int concessionDays = config?.ConcessionPeriodDays ?? 90;
-
-            var register = statuses.Select(s => {
                 var loan = s.LoanAccount!;
-                
-                // Unpaid schedules for principal and interest overdue calculation
-                var unpaidSchedules = loan.LoanInstallmentSchedules
-                    .Where(sch => sch.DueDate <= date.Date && sch.Status != "Paid")
+                var bal = balMap[s.LoanAccountID];
+
+                decimal principalBalance = bal.Principal;
+                decimal receivableInterest = bal.ReceivableInterest + bal.OverdueInterest;
+                decimal totalOutstanding = s.OutstandingBalance;
+
+                var unpaidSchedules = (loan.LoanInstallmentSchedules ?? new List<LoanInstallmentSchedule>())
+                    .Where(sch => sch.DueDate.Date <= date && sch.Status != "Paid")
                     .ToList();
-                
+
                 int overdueInstallments = unpaidSchedules.Count;
                 decimal overduePrincipal = unpaidSchedules.Sum(sch => sch.PrincipalAmount);
-                decimal scheduleInterestDue = unpaidSchedules.Sum(sch => sch.InterestAmount);
+                decimal overdueAmount = overduePrincipal > 0m
+                    ? Math.Min(totalOutstanding, overduePrincipal + receivableInterest)
+                    : (s.Category != "Standard" ? totalOutstanding : receivableInterest);
 
-                decimal dbInterest = loan.InterestBalance + loan.OverdueInterestBalance;
-                decimal receivableInterest = Math.Max(dbInterest, scheduleInterestDue);
-
-                // Calculate exact expected interest based on elapsed days from disbursement/opening date
-                DateTime startDate = loan.LoanDisbursementDate ?? loan.LastInstallmentPaidDate ?? loan.OpeningDate;
-                double elapsedDays = (date.Date - startDate.Date).TotalDays;
-                if (elapsedDays < 1) elapsedDays = 1;
-
-                decimal expectedInterest = 0;
-                if (loan.InterestRate > 0 && loan.PrincipalBalance > 0)
-                {
-                    expectedInterest = Math.Round(loan.PrincipalBalance * (loan.InterestRate / 100m) * ((decimal)elapsedDays / 365m), 2);
-                }
-
-                // 1. Fallback if stored interest is 0
-                if (receivableInterest == 0 && expectedInterest > 0)
-                {
-                    receivableInterest = expectedInterest;
-                }
-                // 2. Detect & fix legacy paise storage multiplier error (e.g. 13149.37 stored as 1314937)
-                else if (expectedInterest > 0 && receivableInterest > (expectedInterest * 5m))
-                {
-                    if (Math.Abs((receivableInterest / 100m) - expectedInterest) < (expectedInterest * 0.5m))
-                    {
-                        receivableInterest = Math.Round(receivableInterest / 100m, 2);
-                    }
-                    else
-                    {
-                        receivableInterest = expectedInterest;
-                    }
-                }
-
-                decimal totalOutstanding = loan.PrincipalBalance + receivableInterest;
-                decimal overdueAmount = overduePrincipal > 0 ? (overduePrincipal + receivableInterest) : (loan.PrincipalBalance + receivableInterest);
-                
                 int overdueMonths = 0;
                 DateTime? npaDate = null;
-                
+
                 if (s.OverdueDate.HasValue || s.OutOfOrderDate.HasValue)
                 {
-                    var oDate = s.OverdueDate ?? s.OutOfOrderDate!.Value;
-                    overdueMonths = (int)Math.Floor((date.Date - oDate).TotalDays / 30.0);
-                    npaDate = oDate.AddDays(concessionDays);
+                    var oDate = (s.OverdueDate ?? s.OutOfOrderDate!.Value).Date;
+                    overdueMonths = Math.Max(0, (int)Math.Floor((date - oDate).TotalDays / 30.0));
+                    if ((date - oDate).TotalDays >= concessionDays || s.Category != "Standard")
+                    {
+                        npaDate = oDate.AddDays(concessionDays);
+                    }
                 }
 
-                decimal balanceForProvisioning = loan.PrincipalBalance > 0 ? loan.PrincipalBalance : Math.Max(0, totalOutstanding - receivableInterest);
-                
-                decimal npaPercentage = 0;
-                if (balanceForProvisioning > 0)
+                // Provision base is strictly PrincipalBalance; 100% of ReceivableInterest on NPA accounts is OIR
+                decimal balanceForProvisioning = principalBalance;
+                decimal collateralVal = s.CompliantCollateralValue;
+                decimal securedPrincipal = Math.Min(balanceForProvisioning, collateralVal);
+                decimal unsecuredPrincipal = Math.Max(0m, balanceForProvisioning - securedPrincipal);
+
+                var (secPct, unsecPct) = NpaEngineService.ResolveSlabPercentages(s.Category, slabs);
+                decimal npaPercentage;
+                if (balanceForProvisioning > 0m)
                 {
                     npaPercentage = Math.Round((s.ProvisionRequired / balanceForProvisioning) * 100m, 2);
-                    if (npaPercentage > 100) npaPercentage = 100;
                 }
-                else if (s.Category == "Loss")
+                else
                 {
-                    npaPercentage = 100;
+                    npaPercentage = s.SecurityType == "Secured" ? secPct : unsecPct;
                 }
 
-                decimal collateralVal = s.CompliantCollateralValue > 0 ? s.CompliantCollateralValue : loan.SecurityValue;
-                decimal securedAmount = Math.Min(totalOutstanding, collateralVal);
-                decimal unsecuredAmount = Math.Max(0, totalOutstanding - securedAmount);
+                decimal oirAmount = s.Category != "Standard" ? receivableInterest : 0m;
 
                 return new NpaRegisterDto
                 {
                     LoanAccountID = s.LoanAccountID,
-                    AccountNo = loan.LoanAccountNo,
-                    MemberCode = loan.Member?.MemberCode ?? loan.Member?.LegacyMemberNo ?? (loan.MemberID > 0 ? loan.MemberID.ToString() : "-"),
-                    Name = loan.Customer != null ? $"{loan.Customer.FirstName} {loan.Customer.LastName}".Trim() : (loan.Member?.Customer != null ? $"{loan.Member.Customer.FirstName} {loan.Member.Customer.LastName}".Trim() : "Unknown"),
+                    AccountNo = loan.LoanAccountNo ?? "",
+                    LegacyAccountNumber = loan.LegacyAccountNumber ?? "",
+                    MemberCode = loan.Member?.MemberCode ?? loan.Member?.LegacyMemberNo ?? (loan.MemberID > 0 ? loan.MemberID.ToString()! : "-"),
+                    Name = ResolveBorrowerFullName(loan),
                     LoanType = loan.LoanRate?.ShortName ?? loan.LoanRate?.LoanType ?? "सामान्य कर्ज",
                     SanctionedAmount = Math.Round(loan.SanctionedAmount, 2),
-                    DisbursementDate = loan.LoanDisbursementDate,
-                    PrincipalBalance = Math.Round(loan.PrincipalBalance, 2),
+                    DisbursementDate = loan.LoanDisbursementDate ?? loan.OpeningDate,
+                    PrincipalBalance = Math.Round(principalBalance, 2),
                     OutstandingBalance = Math.Round(totalOutstanding, 2),
                     OverdueDate = s.OverdueDate ?? s.OutOfOrderDate,
                     OverdueAmount = Math.Round(overdueAmount, 2),
@@ -498,13 +517,18 @@ namespace Bhisi.Api.Controllers
                     OverdueMonths = overdueMonths,
                     NpaDate = npaDate,
                     ReceivableInterest = Math.Round(receivableInterest, 2),
+                    OirAmount = Math.Round(oirAmount, 2),
                     BalanceForProvisioning = Math.Round(balanceForProvisioning, 2),
-                    SecurityType = string.IsNullOrWhiteSpace(loan.SecurityDetails) ? s.SecurityType : loan.SecurityDetails,
+                    SecurityType = !string.IsNullOrWhiteSpace(loan.SecurityDetails)
+                        ? loan.SecurityDetails
+                        : (!string.IsNullOrWhiteSpace(loan.LoanRate?.SecurityType) ? loan.LoanRate.SecurityType : s.SecurityType),
                     CollateralValue = Math.Round(collateralVal, 2),
-                    SecuredAmount = Math.Round(securedAmount, 2),
-                    UnsecuredAmount = Math.Round(unsecuredAmount, 2),
+                    SecuredAmount = Math.Round(securedPrincipal, 2),
+                    UnsecuredAmount = Math.Round(unsecuredPrincipal, 2),
                     NpaPercentage = npaPercentage,
                     ProvisionAmount = Math.Round(s.ProvisionRequired, 2),
+                    TotalProvisionWithOir = Math.Round(s.ProvisionRequired + oirAmount, 2),
+                    ConcessionPeriodDays = concessionDays,
                     Category = s.Category,
                     CategoryMarathi = GetCategoryMarathi(s.Category)
                 };
@@ -520,26 +544,39 @@ namespace Bhisi.Api.Controllers
             var loan = await _context.LoanAccounts.FindAsync(request.LoanAccountID);
             if (loan == null) return NotFound("Loan account not found");
 
-            // Look up latest run
             var latestRun = await _context.NpaClassificationRuns
                 .OrderByDescending(r => r.RunDate)
                 .FirstOrDefaultAsync();
 
-            int runId = latestRun?.NpaClassificationRunID ?? 0;
+            if (latestRun == null)
+            {
+                latestRun = new NpaClassificationRun
+                {
+                    RunDate = DateTime.Now,
+                    TriggeredBy = "Auditor Loss Certification",
+                    RecordsProcessed = 1,
+                    Status = "Success",
+                    Remarks = "Created for Loss Asset Certification"
+                };
+                _context.NpaClassificationRuns.Add(latestRun);
+                await _context.SaveChangesAsync();
+            }
 
-            var asOfDate = request.AsOfDate ?? DateTime.Today;
+            var asOfDate = (request.AsOfDate ?? DateTime.Today).Date;
 
             var existingStatus = await _context.LoanAccountNpaStatuses
-                .FirstOrDefaultAsync(s => s.LoanAccountID == request.LoanAccountID && s.AsOfDate.Date == asOfDate.Date);
+                .FirstOrDefaultAsync(s => s.LoanAccountID == request.LoanAccountID && s.AsOfDate.Date == asOfDate);
 
             decimal outstanding = loan.PrincipalBalance + loan.InterestBalance + loan.OverdueInterestBalance;
+            decimal principalProvision = Math.Max(0m, loan.PrincipalBalance); // 100% BDDR on Principal + 100% OIR on Interest
 
             if (existingStatus != null)
             {
                 existingStatus.Category = "Loss";
                 existingStatus.IsAutoClassified = false;
                 existingStatus.AuditorRemarks = request.Remarks;
-                existingStatus.ProvisionRequired = outstanding; // 100% provision
+                existingStatus.OutstandingBalance = outstanding;
+                existingStatus.ProvisionRequired = principalProvision;
                 _context.Entry(existingStatus).State = EntityState.Modified;
             }
             else
@@ -547,15 +584,16 @@ namespace Bhisi.Api.Controllers
                 var newStatus = new LoanAccountNpaStatus
                 {
                     LoanAccountID = request.LoanAccountID,
-                    AsOfDate = asOfDate.Date,
+                    AsOfDate = asOfDate,
+                    OverdueDate = NpaEngineService.DeriveStatutoryOverdueDate(asOfDate, "Loss"),
                     Category = "Loss",
                     SecurityType = "Unsecured",
                     OutstandingBalance = outstanding,
-                    CompliantCollateralValue = 0,
-                    ProvisionRequired = outstanding,
-                    ProvisionHeld = 0,
+                    CompliantCollateralValue = 0m,
+                    ProvisionRequired = principalProvision,
+                    ProvisionHeld = loan.InterestProvisionBalance,
                     IsAutoClassified = false,
-                    LastClassificationRunId = runId,
+                    LastClassificationRunId = latestRun.NpaClassificationRunID,
                     AuditorRemarks = request.Remarks
                 };
                 _context.LoanAccountNpaStatuses.Add(newStatus);
@@ -567,13 +605,94 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/npa/compliance-logs
         [HttpGet("compliance-logs")]
-        public async Task<ActionResult<IEnumerable<CollateralComplianceLog>>> GetComplianceLogs()
+        public async Task<ActionResult<IEnumerable<object>>> GetComplianceLogs([FromQuery] int? branchId = null)
         {
-            return await _context.CollateralComplianceLogs
+            branchId = User?.Identity != null ? User.ResolveOptionalBranchId(branchId > 0 ? branchId : null) : branchId;
+
+            var query = _context.CollateralComplianceLogs
+                .AsNoTracking()
                 .Include(c => c.LoanAccount)
-                .ThenInclude(l => l!.Member)
+                    .ThenInclude(l => l!.Customer)
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Member)
+                        .ThenInclude(m => m!.Customer)
+                .AsQueryable();
+
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                int bId = branchId.Value;
+                query = query.Where(c => c.LoanAccount != null && c.LoanAccount.BranchID == bId);
+            }
+
+            var logs = await query
                 .OrderByDescending(c => c.ValuationDate)
+                .ThenByDescending(c => c.CollateralComplianceLogID)
                 .ToListAsync();
+
+            var shaped = logs.Select(c => new
+            {
+                c.CollateralComplianceLogID,
+                c.LoanAccountID,
+                c.CollateralType,
+                c.ValuationDate,
+                c.ValuationValue,
+                c.ValuersCount,
+                c.LastInspectionDate,
+                c.InsuranceExpiryDate,
+                c.LastStockStatementDate,
+                c.IsAuditorVerified,
+                c.IsMarginMaintained,
+                c.Remarks,
+                c.CreatedOn,
+                BorrowerName = ResolveBorrowerFullName(c.LoanAccount),
+                LoanAccount = c.LoanAccount == null ? null : new
+                {
+                    c.LoanAccount.LoanAccountID,
+                    c.LoanAccount.LoanAccountNo,
+                    c.LoanAccount.LegacyAccountNumber,
+                    c.LoanAccount.BranchID,
+                    BorrowerName = ResolveBorrowerFullName(c.LoanAccount)
+                }
+            });
+
+            return Ok(shaped);
+        }
+
+        // POST: api/npa/collateral-compliance
+        [HttpPost("collateral-compliance")]
+        public async Task<IActionResult> SaveCollateralComplianceLog([FromBody] CollateralComplianceLogRequest dto)
+        {
+            if (dto == null || dto.LoanAccountID <= 0)
+            {
+                return BadRequest(new { message = "कृपया वैध कर्ज खाते निवडा." });
+            }
+
+            var loan = await _context.LoanAccounts.AsNoTracking().FirstOrDefaultAsync(l => l.LoanAccountID == dto.LoanAccountID);
+            if (loan == null)
+            {
+                return NotFound(new { message = "कर्ज खाते सापडले नाही." });
+            }
+
+            var log = new CollateralComplianceLog
+            {
+                LoanAccountID = dto.LoanAccountID,
+                CollateralType = string.IsNullOrWhiteSpace(dto.CollateralType) ? "Immovable Property" : dto.CollateralType.Trim(),
+                ValuationDate = dto.ValuationDate.Date,
+                ValuationValue = dto.ValuationValue,
+                ValuersCount = dto.ValuersCount > 0 ? dto.ValuersCount : 1,
+                LastInspectionDate = dto.LastInspectionDate.Date,
+                InsuranceExpiryDate = dto.InsuranceExpiryDate.Date,
+                LastStockStatementDate = dto.LastStockStatementDate?.Date,
+                IsAuditorVerified = dto.IsAuditorVerified,
+                IsMarginMaintained = dto.IsMarginMaintained,
+                Remarks = dto.Remarks,
+                CreatedOn = DateTime.UtcNow
+            };
+
+            _context.CollateralComplianceLogs.Add(log);
+            await _context.SaveChangesAsync();
+
+            return Ok(log);
         }
 
         // GET: api/npa/config
@@ -581,16 +700,16 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetNpaConfig([FromQuery] string? financialYear)
         {
             var fy = financialYear;
-            if (string.IsNullOrEmpty(fy))
+            if (string.IsNullOrWhiteSpace(fy))
             {
-                var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
-                fy = activeFy?.YearCode.Trim() ?? "2026-27";
+                var activeFy = await _context.FinancialYears.AsNoTracking().FirstOrDefaultAsync(f => f.IsActive);
+                fy = FormatShortFyCode(activeFy?.YearCode) ?? NpaEngineService.GetFinancialYearStatic(DateTime.Today);
             }
 
             var config = await _context.NpaConfigs.FirstOrDefaultAsync(c => c.FinancialYear == fy);
             if (config == null)
             {
-                config = new NpaConfig { FinancialYear = fy, ConcessionPeriodDays = 180 };
+                config = new NpaConfig { FinancialYear = fy!, ConcessionPeriodDays = 180 };
                 _context.NpaConfigs.Add(config);
                 await _context.SaveChangesAsync();
             }
@@ -625,10 +744,10 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<NpaProvisionSlab>>> GetNpaSlabs([FromQuery] string? financialYear)
         {
             var fy = financialYear;
-            if (string.IsNullOrEmpty(fy))
+            if (string.IsNullOrWhiteSpace(fy))
             {
-                var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
-                fy = activeFy?.YearCode.Trim() ?? "2026-27";
+                var activeFy = await _context.FinancialYears.AsNoTracking().FirstOrDefaultAsync(f => f.IsActive);
+                fy = FormatShortFyCode(activeFy?.YearCode) ?? NpaEngineService.GetFinancialYearStatic(DateTime.Today);
             }
 
             var slabs = await _context.NpaProvisionSlabs
@@ -638,19 +757,7 @@ namespace Bhisi.Api.Controllers
 
             if (!slabs.Any())
             {
-                // Seed default RBI / Co-op Bank Slabs
-                slabs = new List<NpaProvisionSlab>
-                {
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, MinProvisionPercent = 0.40m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 15.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 25.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 80.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 40.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 90.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 100.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 100.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, MinProvisionPercent = 100.00m }
-                };
+                slabs = NpaEngineService.BuildDefaultSlabsForFy(fy!);
                 _context.NpaProvisionSlabs.AddRange(slabs);
                 await _context.SaveChangesAsync();
             }
@@ -681,6 +788,30 @@ namespace Bhisi.Api.Controllers
             return Ok(new { Message = "NPA Provisioning Slabs saved successfully.", Count = slabs.Count });
         }
 
+        private static string? FormatShortFyCode(string? rawFy)
+        {
+            if (string.IsNullOrWhiteSpace(rawFy)) return null;
+            var clean = rawFy.Trim();
+            var parts = clean.Split('-');
+            if (parts.Length == 2 && parts[0].Length == 4 && parts[1].Length == 4)
+            {
+                return $"{parts[0]}-{parts[1].Substring(2, 2)}";
+            }
+            return clean;
+        }
+
+        private static string ResolveBorrowerFullName(LoanAccount? loan)
+        {
+            if (loan == null) return "-";
+            var cust = loan.Customer ?? loan.Member?.Customer;
+            if (cust != null)
+            {
+                var full = $"{cust.FirstName} {cust.MiddleName} {cust.LastName}".Replace("  ", " ").Trim();
+                if (!string.IsNullOrWhiteSpace(full)) return full;
+            }
+            return "Unknown";
+        }
+
         private string GetCategoryMarathi(string cat)
         {
             return cat switch
@@ -709,18 +840,39 @@ namespace Bhisi.Api.Controllers
         public DateTime? AsOfDate { get; set; }
     }
 
+    public class CollateralComplianceLogRequest
+    {
+        public int LoanAccountID { get; set; }
+        public string CollateralType { get; set; } = "Immovable Property";
+        public DateTime ValuationDate { get; set; }
+        public decimal ValuationValue { get; set; }
+        public int ValuersCount { get; set; } = 1;
+        public DateTime LastInspectionDate { get; set; }
+        public DateTime InsuranceExpiryDate { get; set; }
+        public DateTime? LastStockStatementDate { get; set; }
+        public bool IsAuditorVerified { get; set; }
+        public bool IsMarginMaintained { get; set; } = true;
+        public string? Remarks { get; set; }
+    }
+
     public class NpaStatementDto
     {
         public string SansthaName { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
         public DateTime AsOfDate { get; set; }
         public decimal GrossAdvances { get; set; }
+        public decimal GrossPrincipalAdvances { get; set; }
         public decimal GrossNpa { get; set; }
+        public decimal NpaPrincipal { get; set; }
         public decimal GrossNpaPercent { get; set; }
         public decimal OverdueInterestReserve { get; set; }
         public decimal RecoveryDeposits { get; set; }
         public decimal TotalDeductions { get; set; }
         public decimal TotalProvision { get; set; }
+        public decimal TotalProvisionIncludingStandard { get; set; }
+        public decimal StandardProvisionRequired { get; set; }
+        public decimal ProvisionHeld { get; set; }
+        public decimal ProvisionShortfall { get; set; }
         public decimal NetAdvances { get; set; }
         public decimal NetNpa { get; set; }
         public decimal NetNpaPercent { get; set; }
@@ -732,6 +884,8 @@ namespace Bhisi.Api.Controllers
         public string CategoryMarathi { get; set; } = string.Empty;
         public int AccountCount { get; set; }
         public decimal GrossOutstanding { get; set; }
+        public decimal PrincipalOutstanding { get; set; }
+        public decimal OverdueInterestReserve { get; set; }
         public decimal SecuredOutstanding { get; set; }
         public decimal UnsecuredOutstanding { get; set; }
         public decimal ProvisionRequired { get; set; }
@@ -754,6 +908,7 @@ namespace Bhisi.Api.Controllers
     {
         public int LoanAccountID { get; set; }
         public string AccountNo { get; set; } = string.Empty;
+        public string LegacyAccountNumber { get; set; } = string.Empty;
         public string MemberCode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string LoanType { get; set; } = string.Empty;
@@ -768,6 +923,7 @@ namespace Bhisi.Api.Controllers
         public int OverdueMonths { get; set; }
         public DateTime? NpaDate { get; set; }
         public decimal ReceivableInterest { get; set; }
+        public decimal OirAmount { get; set; }
         public decimal BalanceForProvisioning { get; set; }
         public string SecurityType { get; set; } = string.Empty;
         public decimal CollateralValue { get; set; }
@@ -775,6 +931,8 @@ namespace Bhisi.Api.Controllers
         public decimal UnsecuredAmount { get; set; }
         public decimal NpaPercentage { get; set; }
         public decimal ProvisionAmount { get; set; }
+        public decimal TotalProvisionWithOir { get; set; }
+        public int ConcessionPeriodDays { get; set; }
         public string Category { get; set; } = string.Empty;
         public string CategoryMarathi { get; set; } = string.Empty;
     }

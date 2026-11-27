@@ -3343,7 +3343,15 @@ try
             BEGIN
                 IF NOT EXISTS (SELECT 1 FROM [Roles])
                 BEGIN
-                    INSERT INTO [Roles] ([RoleName], [RoleCode]) VALUES ('Admin', 'Admin'), ('Manager', 'Manager'), ('Cashier', 'Cashier');
+                    INSERT INTO [Roles] ([RoleName], [RoleCode]) VALUES ('SuperAdmin', 'SuperAdmin'), ('Admin', 'Admin'), ('Manager', 'Manager'), ('Cashier', 'Cashier');
+                END
+                ELSE IF NOT EXISTS (SELECT 1 FROM [Roles] WHERE [RoleName] IN ('SuperAdmin', 'Super Admin') OR [RoleCode] = 'SuperAdmin')
+                BEGIN
+                    IF COL_LENGTH('Roles', 'Description') IS NOT NULL AND COL_LENGTH('Roles', 'IsSystemRole') IS NOT NULL AND COL_LENGTH('Roles', 'Status') IS NOT NULL
+                        INSERT INTO [Roles] ([RoleCode], [RoleName], [Description], [IsSystemRole], [Status])
+                        VALUES ('SuperAdmin', 'SuperAdmin', N'सर्वोच्च प्रणाली प्रशासक (Master Super Administrator)', 1, 1);
+                    ELSE
+                        INSERT INTO [Roles] ([RoleName], [RoleCode]) VALUES ('SuperAdmin', 'SuperAdmin');
                 END
             END
 

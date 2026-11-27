@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace Bhisi.Api.Tests
@@ -711,6 +712,152 @@ namespace Bhisi.Api.Tests
             var restored = await db.InvestmentAccounts.FindAsync(504);
             Assert.Equal("Active", restored!.Status);
             Assert.Equal(156000m, restored.BookValue);
+        }
+
+        [Fact]
+        public async Task GetInvestmentRenewedReport_ReturnsPrincipalAndInterest_PrincipalOnlyWithBankPayout_AndExcludesRolledBack()
+        {
+            await using var db = CreateContext();
+            var businessDate = new DateTime(2026, 5, 20);
+            await SeedBaseInvestmentEnvironmentAsync(db, businessDate);
+
+            db.InvestmentAccounts.AddRange(
+                // 1) Inv 801: PrincipalAndInterest renewal (5,00,000 + 33,750 net reinvested + 3,750 TDS = 5,33,750)
+                new InvestmentAccount
+                {
+                    InvestmentAccountID = 801,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    InvestmentInstitutionID = 1,
+                    SchemeID = 1,
+                    InvestmentNo = "00160100000801",
+                    DepositReceiptNo = "INV-R-801",
+                    OldInvestmentNo = "801",
+                    InvestmentDate = new DateTime(2025, 5, 20),
+                    MaturityDate = new DateTime(2026, 5, 20),
+                    PrincipalAmount = 500000m,
+                    InterestRate = 7.50m,
+                    ExpectedMaturityAmount = 537500m,
+                    BookValue = 500000m,
+                    Status = "Active"
+                },
+                // 2) Inv 802: PrincipalOnly renewal (2,00,000 renewed; 15,000 gross interest - 1,500 TDS = 13,500 received in Bank 705)
+                new InvestmentAccount
+                {
+                    InvestmentAccountID = 802,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    InvestmentInstitutionID = 1,
+                    SchemeID = 1,
+                    InvestmentNo = "00160100000802",
+                    DepositReceiptNo = "INV-R-802",
+                    OldInvestmentNo = "802",
+                    InvestmentDate = new DateTime(2025, 5, 20),
+                    MaturityDate = new DateTime(2026, 5, 20),
+                    PrincipalAmount = 200000m,
+                    InterestRate = 7.50m,
+                    ExpectedMaturityAmount = 215000m,
+                    BookValue = 200000m,
+                    Status = "Active"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            var adminPrincipal = BuildAdminPrincipal(1, businessDate);
+            var invController = new InvestmentAccountsController(db);
+            AttachUser(invController, adminPrincipal);
+
+            // Execute 1: PrincipalAndInterest renewal on 801
+            var ren1Json = ParseOkJson(await invController.RenewInvestment(new RenewalRequest
+            {
+                OldInvestmentAccountID = 801,
+                NewSchemeID = 1,
+                RenewalType = "PrincipalAndInterest",
+                RenewalAmount = 533750m,
+                RenewalDate = businessDate,
+                NewInterestRate = 7.75m,
+                DurationType = "Months",
+                DurationValue = 12,
+                NewDepositReceiptNo = "INV-R-901",
+                TdsAmount = 3750m,
+                TdsLedgerID = 704
+            }));
+            Assert.NotNull(ren1Json.GetProperty("newAccountNo").GetString());
+
+            // Execute 2: PrincipalOnly renewal on 802 with Bank interest payout
+            var ren2Json = ParseOkJson(await invController.RenewInvestment(new RenewalRequest
+            {
+                OldInvestmentAccountID = 802,
+                NewSchemeID = 1,
+                RenewalType = "PrincipalOnly",
+                RenewalAmount = 200000m,
+                RenewalDate = businessDate,
+                NewInterestRate = 7.50m,
+                DurationType = "Months",
+                DurationValue = 12,
+                NewDepositReceiptNo = "INV-R-902",
+                InterestPayoutAmount = 15000m,
+                TdsAmount = 1500m,
+                TdsLedgerID = 704,
+                PaymentMode = "Bank",
+                BankLedgerID = 705
+            }));
+            int ren2VoucherId = ren2Json.GetProperty("voucherId").GetInt32();
+
+            var reportsController = new ReportsController(db, new MemoryCache(new MemoryCacheOptions()));
+            AttachUser(reportsController, adminPrincipal);
+
+            var allRowsRes = Assert.IsType<OkObjectResult>(await reportsController.GetInvestmentRenewedReport(
+                branchID: 1,
+                institutionID: null,
+                schemeID: null,
+                fromDate: null,
+                toDate: null));
+            var allRows = JsonDocument.Parse(JsonSerializer.Serialize(allRowsRes.Value)).RootElement;
+            Assert.Equal(2, allRows.GetArrayLength());
+
+            var row801 = allRows.EnumerateArray().First(x => x.GetProperty("OldInvestmentAccountID").GetInt32() == 801);
+            Assert.Equal("PrincipalAndInterest", row801.GetProperty("RenewalType").GetString());
+            Assert.Equal(500000m, row801.GetProperty("OldPrincipalAmount").GetDecimal());
+            Assert.Equal(33750m, row801.GetProperty("ReinvestedInterest").GetDecimal());
+            Assert.Equal(0m, row801.GetProperty("TotalCashOrBankReceived").GetDecimal());
+            Assert.Equal(3750m, row801.GetProperty("TdsAmount").GetDecimal());
+            Assert.Equal(533750m, row801.GetProperty("NewPrincipalAmount").GetDecimal());
+            Assert.Equal("INV-R-901", row801.GetProperty("NewDepositReceiptNo").GetString());
+            Assert.Equal("ठेवीत जमा", row801.GetProperty("ReceiptModeLabel").GetString());
+
+            var row802 = allRows.EnumerateArray().First(x => x.GetProperty("OldInvestmentAccountID").GetInt32() == 802);
+            Assert.Equal("PrincipalOnly", row802.GetProperty("RenewalType").GetString());
+            Assert.Equal(200000m, row802.GetProperty("OldPrincipalAmount").GetDecimal());
+            Assert.Equal(0m, row802.GetProperty("ReinvestedInterest").GetDecimal());
+            Assert.Equal(13500m, row802.GetProperty("TotalCashOrBankReceived").GetDecimal());
+            Assert.Equal(13500m, row802.GetProperty("NetInterestReceived").GetDecimal());
+            Assert.Equal(1500m, row802.GetProperty("TdsAmount").GetDecimal());
+            Assert.Equal(200000m, row802.GetProperty("NewPrincipalAmount").GetDecimal());
+            Assert.Equal("बँक जमा", row802.GetProperty("ReceiptModeLabel").GetString());
+
+            // Rollback renewal #2 voucher -> must disappear from Renewed Investments report
+            var rollbackSvc = new VoucherRollbackAndDeleteService(db);
+            var delRes = await rollbackSvc.DeleteVoucherWithRollbackAsync(ren2VoucherId, new VoucherDeleteRequestContext
+            {
+                UserId = 1,
+                Username = "admin",
+                UserRole = "Admin",
+                UserBranchId = 1,
+                IsHeadOfficeAdmin = true,
+                Reason = "गुंतवणूक नूतनीकरण रोलबॅक चाचणी"
+            });
+            Assert.True(delRes.Success, delRes.Message);
+
+            var afterRollbackRes = Assert.IsType<OkObjectResult>(await reportsController.GetInvestmentRenewedReport(
+                branchID: 1,
+                institutionID: null,
+                schemeID: null,
+                fromDate: null,
+                toDate: null));
+            var afterRollbackRows = JsonDocument.Parse(JsonSerializer.Serialize(afterRollbackRes.Value)).RootElement;
+            Assert.Equal(1, afterRollbackRows.GetArrayLength());
+            Assert.Equal(801, afterRollbackRows[0].GetProperty("OldInvestmentAccountID").GetInt32());
         }
     }
 }

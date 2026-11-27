@@ -104,10 +104,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var userContext = GetCurrentUserContext();
-                bool isHoOrAdmin = userContext.role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
+                bool isHoOrAdmin = Bhisi.Api.Helpers.UserContextExtensions.IsHeadOfficeRole(userContext.role);
 
                 var query = _context.LoanApplications.AsNoTracking()
                     .AsSplitQuery()
@@ -405,10 +402,7 @@ namespace Bhisi.Api.Controllers
 
                 // Branch resolution and branch code with multi-branch security check
                 var userContext = GetCurrentUserContext();
-                bool isHoOrAdmin = userContext.role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
+                bool isHoOrAdmin = Bhisi.Api.Helpers.UserContextExtensions.IsHeadOfficeRole(userContext.role);
 
                 if (!isHoOrAdmin)
                 {
@@ -490,10 +484,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var userContext = GetCurrentUserContext();
-                bool isHoOrAdmin = userContext.role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
+                bool isHoOrAdmin = Bhisi.Api.Helpers.UserContextExtensions.IsHeadOfficeRole(userContext.role);
 
                 var existing = await _context.LoanApplications.AsNoTracking().FirstOrDefaultAsync(a => a.LoanApplicationID == id);
                 if (existing != null)

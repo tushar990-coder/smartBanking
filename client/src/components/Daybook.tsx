@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import html2pdf from 'html2pdf.js';
+import { exportDaybookPagesToPdf } from '../utils/daybookPdfExport';
 import { getEffectiveBranchId, getLockedBranchId, isHeadOfficeUser } from '../utils/branchAccess';
 
 export interface DaybookProps {
@@ -54,6 +54,7 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
   const lockedBranchId = getLockedBranchId(user);
   const pagesAreaRef = useRef<HTMLDivElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [pdfProgressText, setPdfProgressText] = useState<string>('');
   const [reportViewType, setReportViewType] = useState<'detailed' | 'ledger-wise'>('detailed');
 
   const getInitialStatus = (): 'approved' | 'pending' | 'all' => {
@@ -274,31 +275,35 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
-    const [y, m, d] = dateStr.split('-');
+    const clean = dateStr.split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length !== 3) return clean;
+    const [y, m, d] = parts;
     return `${d}/${m}/${y}`;
   };
 
   const handleDownloadPdf = async () => {
     if (!pagesAreaRef.current) return;
     setDownloadingPdf(true);
+    setPdfProgressText('PDF...');
 
     const pdfPrefix = voucherStatus === 'pending' ? 'Draft_Daybook' : voucherStatus === 'all' ? 'Combined_Daybook' : 'Daybook';
-    const opt = {
-      margin: [5, 5, 5, 5],
-      filename: `${pdfPrefix}_Report_${fromDate}_to_${toDate}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
-      pagebreak: { mode: ['css', 'legacy'] }
-    };
+    const filename = `${pdfPrefix}_Report_${fromDate}_to_${toDate}.pdf`;
 
     try {
-      await html2pdf().set(opt as any).from(pagesAreaRef.current).save();
+      await exportDaybookPagesToPdf({
+        container: pagesAreaRef.current,
+        filename,
+        onProgress: (current, total) => {
+          setPdfProgressText(total > 1 ? `PDF (${current}/${total})...` : 'PDF...');
+        }
+      });
     } catch (err) {
       console.error('PDF generation error:', err);
       handlePrint();
     } finally {
       setDownloadingPdf(false);
+      setPdfProgressText('');
     }
   };
 
@@ -473,7 +478,7 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
               className={`h-6 bg-rose-600 hover:bg-rose-700 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${(pages.length === 0 || downloadingPdf) ? 'opacity-50 cursor-not-allowed' : ''}`}
               title="PDF डाउनलोड करा"
             >
-              <span>{downloadingPdf ? 'PDF...' : 'PDF'}</span>
+              <span>{downloadingPdf ? (pdfProgressText || 'PDF...') : 'PDF'}</span>
             </button>
 
             <button

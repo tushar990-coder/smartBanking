@@ -8118,6 +8118,658 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        // GET: api/Reports/investment-renewed (गुंतवणूक नूतनीकरण अहवाल - Old Investment -> Interest & TDS -> New Investment)
+        [HttpGet("investment-renewed")]
+        public async Task<IActionResult> GetInvestmentRenewedReport(
+            [FromQuery] int? branchID,
+            [FromQuery] int? institutionID,
+            [FromQuery] int? schemeID,
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate,
+            [FromQuery] string? renewalType = "ALL",
+            [FromQuery] string? passingStatus = "ALL")
+        {
+            try
+            {
+                bool isHoRole = User.IsHeadOfficeAdmin() ||
+                                User?.IsInRole("Admin") == true ||
+                                User?.IsInRole("SuperAdmin") == true ||
+                                User?.IsInRole("Super Admin") == true ||
+                                User?.IsInRole("HeadOffice") == true ||
+                                User?.IsInRole("HO_Manager") == true ||
+                                User?.IsInRole("HO Manager") == true;
+
+                int? effectiveBranchId = branchID;
+                if (!isHoRole)
+                {
+                    var claimBranch = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("DefaultBranchID")?.Value;
+                    if (int.TryParse(claimBranch, out int userBranchId) && userBranchId > 0)
+                    {
+                        effectiveBranchId = userBranchId;
+                    }
+                }
+
+                var query = _context.InvestmentRenewals
+                    .AsNoTracking()
+                    .Include(r => r.Branch)
+                    .Include(r => r.OldInvestmentAccount)
+                        .ThenInclude(a => a!.InvestmentInstitution)
+                    .Include(r => r.OldInvestmentAccount)
+                        .ThenInclude(a => a!.InvestmentScheme)
+                    .Include(r => r.NewInvestmentAccount)
+                        .ThenInclude(a => a!.InvestmentInstitution)
+                    .Include(r => r.NewInvestmentAccount)
+                        .ThenInclude(a => a!.InvestmentScheme)
+                    .Include(r => r.Voucher)
+                        .ThenInclude(v => v!.VoucherDetails)
+                            .ThenInclude(vd => vd.Ledger)
+                    .AsQueryable();
+
+                if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
+                {
+                    query = query.Where(r => r.BranchID == effectiveBranchId.Value);
+                }
+
+                if (fromDate.HasValue)
+                {
+                    query = query.Where(r => r.RenewalDate >= fromDate.Value.Date);
+                }
+
+                if (toDate.HasValue)
+                {
+                    query = query.Where(r => r.RenewalDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+                }
+
+                var renewals = await query
+                    .OrderBy(r => r.RenewalDate)
+                    .ThenBy(r => r.RenewalID)
+                    .ToListAsync();
+
+                var rows = new List<object>();
+
+                foreach (var ren in renewals)
+                {
+                    var oldAcc = ren.OldInvestmentAccount;
+                    var newAcc = ren.NewInvestmentAccount;
+                    if (oldAcc == null || newAcc == null)
+                    {
+                        continue;
+                    }
+
+                    if (ren.Voucher != null &&
+                        (string.Equals(ren.Voucher.Status, "Rejected", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(ren.Voucher.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    if (institutionID.HasValue && institutionID.Value > 0 &&
+                        newAcc.InvestmentInstitutionID != institutionID.Value &&
+                        oldAcc.InvestmentInstitutionID != institutionID.Value)
+                    {
+                        continue;
+                    }
+
+                    if (schemeID.HasValue && schemeID.Value > 0 &&
+                        newAcc.SchemeID != schemeID.Value &&
+                        oldAcc.SchemeID != schemeID.Value)
+                    {
+                        continue;
+                    }
+
+                    string normalizedType = string.IsNullOrWhiteSpace(ren.RenewalType)
+                        ? (newAcc.PrincipalAmount > oldAcc.PrincipalAmount + 0.01m ? "PrincipalAndInterest" : "PrincipalOnly")
+                        : ren.RenewalType.Trim();
+
+                    if (!string.IsNullOrWhiteSpace(renewalType) &&
+                        !string.Equals(renewalType, "ALL", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(normalizedType, renewalType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string rowPassingStatus = string.IsNullOrWhiteSpace(ren.Voucher?.Status) ? "Approved" : ren.Voucher!.Status;
+                    if (!string.IsNullOrWhiteSpace(passingStatus) &&
+                        !string.Equals(passingStatus, "ALL", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(rowPassingStatus, passingStatus, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    decimal oldPrincipal = Math.Round(oldAcc.PrincipalAmount, 2, MidpointRounding.AwayFromZero);
+                    decimal newPrincipal = Math.Round(newAcc.PrincipalAmount, 2, MidpointRounding.AwayFromZero);
+                    decimal reinvestedInterest = Math.Max(0m, Math.Round(newPrincipal - oldPrincipal, 2, MidpointRounding.AwayFromZero));
+                    decimal principalRefunded = Math.Max(0m, Math.Round(oldPrincipal - newPrincipal, 2, MidpointRounding.AwayFromZero));
+                    decimal tdsAmount = Math.Max(0m, Math.Round(ren.TdsAmount, 2, MidpointRounding.AwayFromZero));
+
+                    int newAssetLedgerId = newAcc.InvestmentScheme?.InvestmentAssetLedgerID ?? 0;
+                    int oldIncomeLedgerId = oldAcc.InvestmentScheme?.InterestIncomeLedgerID ?? 0;
+                    int tdsLedgerId = ren.TdsLedgerID
+                                      ?? oldAcc.InvestmentScheme?.TdsLedgerID
+                                      ?? newAcc.InvestmentScheme?.TdsLedgerID
+                                      ?? 0;
+
+                    decimal totalCashOrBankReceived = 0m;
+                    Ledger? payoutLedger = null;
+                    if (ren.Voucher?.VoucherDetails != null)
+                    {
+                        bool skippedAssetLine = false;
+                        foreach (var vd in ren.Voucher.VoucherDetails.Where(d => string.Equals(d.DrCr, "Dr", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            if (newAssetLedgerId > 0 && vd.LedgerID == newAssetLedgerId && !skippedAssetLine && Math.Abs(vd.Amount - newPrincipal) < 0.05m)
+                            {
+                                skippedAssetLine = true;
+                                continue;
+                            }
+                            if (tdsLedgerId > 0 && vd.LedgerID == tdsLedgerId && tdsAmount > 0m)
+                            {
+                                continue;
+                            }
+                            if (oldIncomeLedgerId > 0 && vd.LedgerID == oldIncomeLedgerId)
+                            {
+                                continue;
+                            }
+                            if (newAssetLedgerId <= 0 && !skippedAssetLine && Math.Abs(vd.Amount - newPrincipal) < 0.05m &&
+                                vd.Ledger != null &&
+                                !string.Equals(vd.Ledger.AccountType, "Cash", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(vd.Ledger.AccountType, "Bank", StringComparison.OrdinalIgnoreCase))
+                            {
+                                skippedAssetLine = true;
+                                continue;
+                            }
+
+                            totalCashOrBankReceived += vd.Amount;
+                            payoutLedger ??= vd.Ledger;
+                        }
+                    }
+
+                    decimal netInterestReceived = Math.Max(0m, Math.Round(totalCashOrBankReceived - principalRefunded, 2, MidpointRounding.AwayFromZero));
+                    decimal grossRenewalInterest = Math.Round(reinvestedInterest + netInterestReceived + tdsAmount, 2, MidpointRounding.AwayFromZero);
+
+                    string receiptModeLabel;
+                    if (totalCashOrBankReceived > 0.01m)
+                    {
+                        bool isCash = payoutLedger != null &&
+                            (string.Equals(payoutLedger.AccountType, "Cash", StringComparison.OrdinalIgnoreCase) ||
+                             (payoutLedger.LedgerName != null && payoutLedger.LedgerName.Contains("रोख")));
+                        receiptModeLabel = isCash ? "रोख जमा" : "बँक जमा";
+                    }
+                    else if (reinvestedInterest > 0.01m)
+                    {
+                        receiptModeLabel = "ठेवीत जमा";
+                    }
+                    else
+                    {
+                        receiptModeLabel = "-";
+                    }
+
+                    var inst = newAcc.InvestmentInstitution ?? oldAcc.InvestmentInstitution;
+
+                    rows.Add(new
+                    {
+                        RenewalID = ren.RenewalID,
+                        RenewalDate = ren.RenewalDate.ToString("yyyy-MM-dd"),
+                        RenewalType = normalizedType,
+
+                        BranchID = ren.BranchID,
+                        BranchName = ren.Branch != null ? ren.Branch.BranchName : "मुख्य शाखा",
+                        InvestmentInstitutionID = inst?.InstitutionID ?? newAcc.InvestmentInstitutionID,
+                        InstitutionName = inst?.InstitutionName ?? "बँक / संस्था",
+
+                        OldInvestmentAccountID = oldAcc.InvestmentAccountID,
+                        OldInvestmentNo = oldAcc.InvestmentNo ?? "",
+                        OldDepositReceiptNo = oldAcc.DepositReceiptNo ?? "",
+                        OldLegacyInvestmentNo = oldAcc.OldInvestmentNo ?? "",
+                        OldSchemeID = oldAcc.SchemeID,
+                        OldSchemeName = oldAcc.InvestmentScheme != null ? oldAcc.InvestmentScheme.SchemeName : "मुदत ठेव",
+                        OldInvestmentDate = oldAcc.InvestmentDate.ToString("yyyy-MM-dd"),
+                        OldMaturityDate = oldAcc.MaturityDate.ToString("yyyy-MM-dd"),
+                        OldPrincipalAmount = oldPrincipal,
+                        OldInterestRate = oldAcc.InterestRate,
+
+                        ReinvestedInterest = reinvestedInterest,
+                        PrincipalRefunded = principalRefunded,
+                        NetInterestReceived = netInterestReceived,
+                        TotalCashOrBankReceived = Math.Round(totalCashOrBankReceived, 2, MidpointRounding.AwayFromZero),
+                        TdsAmount = tdsAmount,
+                        GrossRenewalInterest = grossRenewalInterest,
+                        ReceiptModeLabel = receiptModeLabel,
+
+                        NewInvestmentAccountID = newAcc.InvestmentAccountID,
+                        NewInvestmentNo = newAcc.InvestmentNo ?? "",
+                        NewDepositReceiptNo = newAcc.DepositReceiptNo ?? "",
+                        NewLegacyInvestmentNo = newAcc.OldInvestmentNo ?? "",
+                        NewSchemeID = newAcc.SchemeID,
+                        NewSchemeName = newAcc.InvestmentScheme != null ? newAcc.InvestmentScheme.SchemeName : "मुदत ठेव",
+                        NewInvestmentDate = newAcc.InvestmentDate.ToString("yyyy-MM-dd"),
+                        NewPrincipalAmount = newPrincipal,
+                        NewInterestRate = newAcc.InterestRate,
+                        NewMaturityDate = newAcc.MaturityDate.ToString("yyyy-MM-dd"),
+                        NewExpectedMaturityAmount = newAcc.ExpectedMaturityAmount,
+                        NewBookValue = newAcc.BookValue,
+                        NewStatus = newAcc.Status ?? "Active",
+
+                        VoucherID = ren.VoucherID,
+                        VoucherNo = ren.Voucher?.VoucherNo ?? "",
+                        PassingStatus = rowPassingStatus
+                    });
+                }
+
+                return Ok(rows);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "गुंतवणूक नूतनीकरण अहवाल लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/fd-renewed (मुदत ठेव नूतनीकरण झालेल्या पावत्यांचा अहवाल - Strict Customer-First & Relational Chain)
+        [HttpGet("fd-renewed")]
+        public async Task<IActionResult> GetFdRenewedReport(
+            [FromQuery] int? branchID,
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate,
+            [FromQuery] int? fdSchemeID,
+            [FromQuery] string? dateBasis = "RenewalDate",
+            [FromQuery] string? renewalType = "ALL",
+            [FromQuery] string? passingStatus = "ALL")
+        {
+            try
+            {
+                bool isHoRole = User.IsHeadOfficeAdmin() ||
+                                User?.IsInRole("Admin") == true ||
+                                User?.IsInRole("SuperAdmin") == true ||
+                                User?.IsInRole("Super Admin") == true ||
+                                User?.IsInRole("HeadOffice") == true ||
+                                User?.IsInRole("HO_Manager") == true ||
+                                User?.IsInRole("HO Manager") == true;
+
+                int? effectiveBranchId = branchID;
+                if (!isHoRole)
+                {
+                    var claimBranch = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("DefaultBranchID")?.Value;
+                    if (int.TryParse(claimBranch, out int userBranchId) && userBranchId > 0)
+                    {
+                        effectiveBranchId = userBranchId;
+                    }
+                }
+
+                var childQuery = _context.FdAccounts
+                    .AsNoTracking()
+                    .Include(f => f.Branch)
+                    .Include(f => f.Customer)
+                    .Include(f => f.FdScheme)
+                    .Where(f => f.ParentFdAccountID != null && f.ParentFdAccountID > 0);
+
+                if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
+                {
+                    childQuery = childQuery.Where(f => f.BranchID == effectiveBranchId.Value);
+                }
+
+                var childAccounts = await childQuery
+                    .OrderBy(f => f.OpeningDate)
+                    .ThenBy(f => f.FdAccountID)
+                    .ToListAsync();
+
+                if (childAccounts.Count == 0)
+                {
+                    return Ok(new List<object>());
+                }
+
+                var childIds = childAccounts.Select(c => c.FdAccountID).ToList();
+                var parentIds = childAccounts
+                    .Where(c => c.ParentFdAccountID.HasValue)
+                    .Select(c => c.ParentFdAccountID!.Value)
+                    .Distinct()
+                    .ToList();
+
+                var parentMap = await _context.FdAccounts
+                    .AsNoTracking()
+                    .Include(f => f.FdScheme)
+                    .Where(f => parentIds.Contains(f.FdAccountID))
+                    .ToDictionaryAsync(f => f.FdAccountID);
+
+                var allInvolvedFdIds = childIds.Concat(parentIds).Distinct().ToList();
+
+                var involvedTxs = await _context.FdTransactions
+                    .AsNoTracking()
+                    .Include(t => t.Voucher)
+                    .Where(t => allInvolvedFdIds.Contains(t.FdAccountID) && t.VoucherID > 0 && t.Voucher != null)
+                    .OrderByDescending(t => t.FdTransactionID)
+                    .ToListAsync();
+
+                var txsByFdId = involvedTxs
+                    .GroupBy(t => t.FdAccountID)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                var relatedVoucherIds = involvedTxs
+                    .Where(t => t.Voucher?.RelatedVoucherID != null && t.Voucher.RelatedVoucherID > 0)
+                    .Select(t => t.Voucher!.RelatedVoucherID!.Value)
+                    .Distinct()
+                    .ToList();
+
+                var relatedVouchersMap = relatedVoucherIds.Count > 0
+                    ? await _context.Vouchers
+                        .AsNoTracking()
+                        .Where(v => relatedVoucherIds.Contains(v.VoucherID))
+                        .ToDictionaryAsync(v => v.VoucherID)
+                    : new Dictionary<int, Voucher>();
+
+                var autoLogs = await _context.FdAutoRenewalLogs
+                    .AsNoTracking()
+                    .Where(l => l.NewFdAccountID != null && childIds.Contains(l.NewFdAccountID.Value))
+                    .OrderByDescending(l => l.LogID)
+                    .ToListAsync();
+
+                var autoLogByNewId = autoLogs
+                    .Where(l => l.NewFdAccountID.HasValue)
+                    .GroupBy(l => l.NewFdAccountID!.Value)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                var autoVoucherIds = autoLogs
+                    .Where(l => l.VoucherID.HasValue && l.VoucherID.Value > 0)
+                    .Select(l => l.VoucherID!.Value)
+                    .Distinct()
+                    .ToList();
+
+                var autoVouchersMap = autoVoucherIds.Count > 0
+                    ? await _context.Vouchers
+                        .AsNoTracking()
+                        .Where(v => autoVoucherIds.Contains(v.VoucherID))
+                        .ToDictionaryAsync(v => v.VoucherID)
+                    : new Dictionary<int, Voucher>();
+
+                var rows = new List<(DateTime SortDate, int SortId, object Payload)>();
+
+                foreach (var newAcc in childAccounts)
+                {
+                    if (!newAcc.ParentFdAccountID.HasValue ||
+                        !parentMap.TryGetValue(newAcc.ParentFdAccountID.Value, out var oldAcc))
+                    {
+                        continue;
+                    }
+
+                    if (fdSchemeID.HasValue && fdSchemeID.Value > 0 &&
+                        newAcc.FdSchemeID != fdSchemeID.Value &&
+                        oldAcc.FdSchemeID != fdSchemeID.Value)
+                    {
+                        continue;
+                    }
+
+                    autoLogByNewId.TryGetValue(newAcc.FdAccountID, out var autoLog);
+                    if (autoLog != null && (autoLog.IsReverted || string.Equals(autoLog.Status, "Reverted", StringComparison.OrdinalIgnoreCase) || string.Equals(autoLog.Status, "Failed", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    txsByFdId.TryGetValue(newAcc.FdAccountID, out var newAccTxs);
+                    txsByFdId.TryGetValue(oldAcc.FdAccountID, out var oldAccTxs);
+
+                    // Resolve primary renewal voucher
+                    Voucher? primaryVoucher = newAccTxs?
+                        .Where(t => string.Equals(t.TransactionType, "Opening", StringComparison.OrdinalIgnoreCase) &&
+                                    FdRenewalRollbackHelper.IsFdRenewalVoucher(t.Voucher))
+                        .Select(t => t.Voucher)
+                        .FirstOrDefault();
+
+                    if (primaryVoucher == null && newAccTxs != null && oldAccTxs != null)
+                    {
+                        var newOpenVoucherIds = newAccTxs
+                            .Where(t => string.Equals(t.TransactionType, "Opening", StringComparison.OrdinalIgnoreCase) && t.VoucherID > 0)
+                            .Select(t => t.VoucherID)
+                            .ToHashSet();
+
+                        primaryVoucher = oldAccTxs
+                            .Where(t => string.Equals(t.TransactionType, "Renewal", StringComparison.OrdinalIgnoreCase) &&
+                                        t.VoucherID > 0 &&
+                                        newOpenVoucherIds.Contains(t.VoucherID))
+                            .Select(t => t.Voucher)
+                            .FirstOrDefault();
+                    }
+
+                    if (primaryVoucher == null && autoLog?.VoucherID != null)
+                    {
+                        autoVouchersMap.TryGetValue(autoLog.VoucherID.Value, out primaryVoucher);
+                    }
+
+                    if (primaryVoucher != null &&
+                        (string.Equals(primaryVoucher.Status, "Rejected", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(primaryVoucher.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    // Resolve sibling interest payout voucher (if PrincipalOnly renewal)
+                    Voucher? intVoucher = null;
+                    if (primaryVoucher?.RelatedVoucherID != null &&
+                        relatedVouchersMap.TryGetValue(primaryVoucher.RelatedVoucherID.Value, out var relVch) &&
+                        !string.Equals(relVch.Status, "Rejected", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(relVch.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                    {
+                        intVoucher = relVch;
+                    }
+                    else if (oldAccTxs != null)
+                    {
+                        string newAccClean = newAcc.AccountNo ?? "";
+                        intVoucher = oldAccTxs
+                            .Where(t => string.Equals(t.TransactionType, "Interest Payout", StringComparison.OrdinalIgnoreCase) &&
+                                        t.Voucher != null &&
+                                        !string.Equals(t.Voucher.Status, "Rejected", StringComparison.OrdinalIgnoreCase) &&
+                                        !string.Equals(t.Voucher.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                                        (!string.IsNullOrEmpty(newAccClean) && t.Voucher.VoucherNo.Contains(newAccClean)))
+                            .Select(t => t.Voucher)
+                            .FirstOrDefault();
+                    }
+
+                    bool isAutoRenewal = (autoLog != null) ||
+                        (primaryVoucher?.VoucherNo?.StartsWith("JV-FD-AUTOREN-", StringComparison.OrdinalIgnoreCase) == true);
+
+                    DateTime effectiveRenewalDate = (primaryVoucher?.VoucherDate ?? autoLog?.BatchDate ?? newAcc.OpeningDate).Date;
+                    DateTime filterTargetDate = string.Equals(dateBasis, "NewOpeningDate", StringComparison.OrdinalIgnoreCase)
+                        ? newAcc.OpeningDate.Date
+                        : effectiveRenewalDate;
+
+                    if (fromDate.HasValue && filterTargetDate < fromDate.Value.Date)
+                    {
+                        continue;
+                    }
+                    if (toDate.HasValue && filterTargetDate > toDate.Value.Date)
+                    {
+                        continue;
+                    }
+
+                    decimal reinvestedInterest = Math.Max(0m, Math.Round(newAcc.DepositAmount - oldAcc.DepositAmount, 2, MidpointRounding.AwayFromZero));
+
+                    decimal interestPaidOut = 0m;
+                    if (autoLog != null && autoLog.InterestPaidOut > 0m)
+                    {
+                        interestPaidOut = Math.Round(autoLog.InterestPaidOut, 2, MidpointRounding.AwayFromZero);
+                    }
+                    else if (intVoucher != null)
+                    {
+                        interestPaidOut = Math.Round(intVoucher.TotalAmount, 2, MidpointRounding.AwayFromZero);
+                    }
+
+                    decimal overdueInterest = 0m;
+                    if (oldAccTxs != null)
+                    {
+                        int? pVid = primaryVoucher?.VoucherID;
+                        int? iVid = intVoucher?.VoucherID;
+                        overdueInterest = oldAccTxs
+                            .Where(t => string.Equals(t.TransactionType, "Closure_Interest", StringComparison.OrdinalIgnoreCase) &&
+                                        ((pVid.HasValue && t.VoucherID == pVid.Value) || (iVid.HasValue && t.VoucherID == iVid.Value)))
+                            .Sum(t => t.Amount);
+                    }
+
+                    string resolvedRenewalOption;
+                    if (autoLog != null && !string.IsNullOrWhiteSpace(autoLog.RenewalOption))
+                    {
+                        resolvedRenewalOption = autoLog.RenewalOption;
+                    }
+                    else if (interestPaidOut > 0m && reinvestedInterest <= 0.01m)
+                    {
+                        resolvedRenewalOption = "PrincipalOnly";
+                    }
+                    else if (reinvestedInterest > 0.01m)
+                    {
+                        resolvedRenewalOption = "PrincipalPlusInterest";
+                    }
+                    else
+                    {
+                        resolvedRenewalOption = (oldAcc.Remarks != null && oldAcc.Remarks.Contains("PrincipalOnly", StringComparison.OrdinalIgnoreCase))
+                            ? "PrincipalOnly"
+                            : "PrincipalPlusInterest";
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(renewalType) && !string.Equals(renewalType, "ALL", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (string.Equals(renewalType, "AutoRenewal", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!isAutoRenewal) continue;
+                        }
+                        else if (!string.Equals(resolvedRenewalOption, renewalType, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+                    }
+
+                    string pStatus1 = string.IsNullOrWhiteSpace(primaryVoucher?.Status) ? "Approved" : primaryVoucher!.Status;
+                    string pStatus2 = intVoucher == null || string.IsNullOrWhiteSpace(intVoucher.Status) ? "Approved" : intVoucher.Status;
+                    string rowPassingStatus = (string.Equals(pStatus1, "Pending", StringComparison.OrdinalIgnoreCase) ||
+                                               string.Equals(pStatus2, "Pending", StringComparison.OrdinalIgnoreCase))
+                        ? "Pending"
+                        : pStatus1;
+
+                    if (!string.IsNullOrWhiteSpace(passingStatus) &&
+                        !string.Equals(passingStatus, "ALL", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(rowPassingStatus, passingStatus, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string payoutModeLabel;
+                    if (reinvestedInterest > 0.01m && interestPaidOut <= 0.01m)
+                    {
+                        payoutModeLabel = "ठेवीत जमा";
+                    }
+                    else if (interestPaidOut > 0.01m)
+                    {
+                        if (isAutoRenewal || (intVoucher?.VoucherNo?.StartsWith("JV-FD-INT-", StringComparison.OrdinalIgnoreCase) == true))
+                        {
+                            payoutModeLabel = "बचत वर्ग";
+                        }
+                        else if (intVoucher?.Narration != null &&
+                                 (intVoucher.Narration.Contains("Bank", StringComparison.OrdinalIgnoreCase) ||
+                                  intVoucher.Narration.Contains("बँक", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            payoutModeLabel = "बँक";
+                        }
+                        else
+                        {
+                            payoutModeLabel = "रोख";
+                        }
+                    }
+                    else
+                    {
+                        payoutModeLabel = "-";
+                    }
+
+                    string oldEffectiveReceipt = FdRenewalPolicyHelper.GetEffectiveReceiptNo(oldAcc);
+                    string newEffectiveReceipt = FdRenewalPolicyHelper.GetEffectiveReceiptNo(newAcc);
+                    bool isSameReceiptRetained = !string.IsNullOrWhiteSpace(oldEffectiveReceipt) &&
+                        string.Equals(oldEffectiveReceipt.Trim(), newEffectiveReceipt.Trim(), StringComparison.OrdinalIgnoreCase);
+
+                    string durationShort = "-";
+                    if (newAcc.DurationValue.HasValue && newAcc.DurationValue.Value > 0)
+                    {
+                        string dt = (newAcc.DurationType ?? "Months").Trim();
+                        string unitMr = string.Equals(dt, "Days", StringComparison.OrdinalIgnoreCase)
+                            ? "दि."
+                            : string.Equals(dt, "Years", StringComparison.OrdinalIgnoreCase)
+                                ? "व."
+                                : "म.";
+                        durationShort = $"{newAcc.DurationValue.Value}{unitMr}";
+                    }
+                    else if (newAcc.DurationInDays.HasValue && newAcc.DurationInDays.Value > 0)
+                    {
+                        durationShort = $"{newAcc.DurationInDays.Value}दि.";
+                    }
+
+                    var cust = newAcc.Customer;
+                    string fullCustomerName = cust != null
+                        ? $"{cust.FirstName} {(string.IsNullOrWhiteSpace(cust.MiddleName) ? "" : cust.MiddleName + " ")}{cust.LastName}".Trim()
+                        : "";
+
+                    rows.Add((effectiveRenewalDate, newAcc.FdAccountID, new
+                    {
+                        RenewalDate = effectiveRenewalDate.ToString("yyyy-MM-dd"),
+                        RenewalCycleNo = newAcc.RenewalCycleNo > 0 ? newAcc.RenewalCycleNo : 1,
+                        IsAutoRenewal = isAutoRenewal,
+                        RenewalOption = resolvedRenewalOption,
+
+                        BranchID = newAcc.BranchID,
+                        BranchName = newAcc.Branch != null ? newAcc.Branch.BranchName : "मुख्य शाखा",
+                        CustomerID = newAcc.CustomerID,
+                        CIFNo = cust?.CIFNo ?? "",
+                        LegacyCustomerNo = cust?.LegacyCustomerNo ?? "",
+                        CustomerName = fullCustomerName,
+                        MobileNo = cust?.MobileNo ?? "",
+
+                        OldFdAccountID = oldAcc.FdAccountID,
+                        OldAccountNo = oldAcc.AccountNo,
+                        OldReceiptNo = oldEffectiveReceipt,
+                        OldLegacyAccountNumber = oldAcc.LegacyAccountNumber ?? "",
+                        OldFdSchemeID = oldAcc.FdSchemeID,
+                        OldSchemeName = oldAcc.FdScheme != null ? oldAcc.FdScheme.SchemeName : "मुदत ठेव",
+                        OldOpeningDate = oldAcc.OpeningDate.ToString("yyyy-MM-dd"),
+                        OldMaturityDate = oldAcc.MaturityDate.ToString("yyyy-MM-dd"),
+                        OldDepositAmount = oldAcc.DepositAmount,
+                        OldInterestRate = oldAcc.InterestRate,
+
+                        ReinvestedInterest = reinvestedInterest,
+                        InterestPaidOut = interestPaidOut,
+                        OverdueInterest = Math.Round(overdueInterest, 2, MidpointRounding.AwayFromZero),
+                        TotalRenewalInterest = Math.Round(reinvestedInterest + interestPaidOut, 2, MidpointRounding.AwayFromZero),
+                        InterestPayoutMode = payoutModeLabel,
+
+                        NewFdAccountID = newAcc.FdAccountID,
+                        NewAccountNo = newAcc.AccountNo,
+                        NewReceiptNo = newEffectiveReceipt,
+                        NewLegacyAccountNumber = newAcc.LegacyAccountNumber ?? "",
+                        IsSameReceiptRetained = isSameReceiptRetained,
+                        NewFdSchemeID = newAcc.FdSchemeID,
+                        NewSchemeName = newAcc.FdScheme != null ? newAcc.FdScheme.SchemeName : "मुदत ठेव",
+                        NewOpeningDate = newAcc.OpeningDate.ToString("yyyy-MM-dd"),
+                        NewDurationDisplay = durationShort,
+                        NewDepositAmount = newAcc.DepositAmount,
+                        NewInterestRate = newAcc.InterestRate,
+                        NewMaturityDate = newAcc.MaturityDate.ToString("yyyy-MM-dd"),
+                        NewMaturityAmount = newAcc.MaturityAmount,
+                        NewStatus = newAcc.Status ?? "Active",
+                        IsLienCarriedForward = newAcc.IsLienMarked,
+                        LienLoanAccountNo = newAcc.LienLoanAccountNo ?? "",
+
+                        VoucherID = primaryVoucher?.VoucherID,
+                        VoucherNo = primaryVoucher?.VoucherNo ?? "",
+                        InterestVoucherNo = intVoucher?.VoucherNo ?? "",
+                        PassingStatus = rowPassingStatus
+                    }));
+                }
+
+                var sortedRows = rows
+                    .OrderBy(r => r.SortDate)
+                    .ThenBy(r => r.SortId)
+                    .Select(r => r.Payload)
+                    .ToList();
+
+                return Ok(sortedRows);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "मुदत ठेव नूतनीकरण अहवाल लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
         // GET: api/Reports/fd-register
         [HttpGet("fd-register")]
         public async Task<IActionResult> GetFdRegister([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? fdSchemeID)

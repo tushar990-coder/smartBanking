@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace Bhisi.Api.Tests
@@ -2100,6 +2101,206 @@ namespace Bhisi.Api.Tests
             Assert.IsType<OkObjectResult>(maturedRes);
             Assert.Equal("Closed", (await db.FdAccounts.FindAsync(1345))!.Status);
             Assert.Equal(214529m, (await db.SavingAccountMasters.FindAsync(601))!.CurrentBalance); // 1,04,529 + 1,10,000
+        }
+
+        [Fact]
+        public async Task GetFdRenewedReport_ReturnsPrincipalPlusInterest_PrincipalOnly_AndAutoRenewal_AndExcludesRolledBack()
+        {
+            using var db = CreateContext();
+            var businessDate = new DateTime(2026, 5, 15);
+            var (scheme, custA, custB) = await SeedBaseFdEnvironmentAsync(db, "RETAIN_ORIGINAL", allowManual: true, businessDate);
+
+            db.Ledgers.Add(new Ledger
+            {
+                LedgerID = 109,
+                GroupID = 1,
+                LedgerCode = "SB-LIAB",
+                LedgerName = "बचत ठेव दायित्व",
+                AccountType = "Savings",
+                IsActive = true
+            });
+
+            var savA = new SavingAccountMaster
+            {
+                SavingAccountID = 701,
+                BranchID = 1,
+                CustomerID = custA.CustomerID,
+                LedgerID = 109,
+                AccountNo = "00110100000701",
+                OpeningDate = new DateTime(2025, 1, 1),
+                CurrentBalance = 2000m,
+                Status = "Active"
+            };
+            db.SavingAccountMasters.Add(savA);
+
+            db.FdAccounts.AddRange(
+                // 1) FD 901: PrincipalPlusInterest manual renewal
+                new FdAccount
+                {
+                    FdAccountID = 901,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = scheme.FdSchemeID,
+                    AccountNo = "00110300009014",
+                    ReceiptNo = "R-901",
+                    LegacyAccountNumber = "901",
+                    OpeningDate = new DateTime(2025, 5, 15),
+                    MaturityDate = new DateTime(2026, 5, 15),
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 100000m,
+                    MaturityAmount = 110000m,
+                    InterestRate = 10.00m,
+                    Status = "Active"
+                },
+                // 2) FD 902: PrincipalOnly manual renewal with Saving Transfer interest payout
+                new FdAccount
+                {
+                    FdAccountID = 902,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custA.CustomerID,
+                    FdSchemeID = scheme.FdSchemeID,
+                    AccountNo = "00110300009022",
+                    ReceiptNo = "R-902",
+                    LegacyAccountNumber = "902",
+                    OpeningDate = new DateTime(2025, 5, 15),
+                    MaturityDate = new DateTime(2026, 5, 15),
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 50000m,
+                    MaturityAmount = 55000m,
+                    InterestRate = 10.00m,
+                    Status = "Active"
+                },
+                // 3) FD 903: Auto-Renewal batch
+                new FdAccount
+                {
+                    FdAccountID = 903,
+                    BranchID = 1,
+                    FinancialYearID = 1,
+                    CustomerID = custB.CustomerID,
+                    FdSchemeID = scheme.FdSchemeID,
+                    AccountNo = "00110300009030",
+                    ReceiptNo = "R-903",
+                    LegacyAccountNumber = "903",
+                    OpeningDate = new DateTime(2025, 5, 15),
+                    MaturityDate = new DateTime(2026, 5, 15),
+                    DurationType = "Months",
+                    DurationValue = 12,
+                    DurationInDays = 365,
+                    DepositAmount = 80000m,
+                    MaturityAmount = 88000m,
+                    InterestRate = 10.00m,
+                    IsAutoRenewable = true,
+                    AutoRenewalOption = "PrincipalPlusInterest",
+                    MaxAutoRenewalCycles = 3,
+                    AutoRenewalCount = 0,
+                    Status = "Active"
+                }
+            );
+            await db.SaveChangesAsync();
+
+            var principal = BuildPrincipal(10, "ho_admin", "Admin", branchId: 1, businessDate: businessDate);
+            var fdController = new FdAccountsController(db);
+            AttachUser(fdController, principal);
+
+            // Execute 1: Manual PrincipalPlusInterest on 901
+            Assert.IsType<OkObjectResult>(await fdController.Renew(901, new FdRenewalRequest
+            {
+                TargetSchemeID = scheme.FdSchemeID,
+                RenewalType = "PrincipalPlusInterest",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                InterestDebitMode = "Expense"
+            }));
+
+            // Execute 2: Manual PrincipalOnly on 902 (interest paid to Saving 701)
+            Assert.IsType<OkObjectResult>(await fdController.Renew(902, new FdRenewalRequest
+            {
+                TargetSchemeID = scheme.FdSchemeID,
+                RenewalType = "PrincipalOnly",
+                ClosureDate = businessDate,
+                DurationType = "Months",
+                DurationValue = 12,
+                PaymentMode = "Transfer",
+                SavingAccountID = savA.SavingAccountID,
+                InterestDebitMode = "Expense"
+            }));
+
+            // Execute 3: Auto-Renewal Batch on 903
+            var autoBatchJson = ParseOkJson(await fdController.RunAutoRenewalBatch(new AutoRenewalBatchRequest
+            {
+                BranchID = 1,
+                ProcessDate = businessDate,
+                SpecificAccountIDs = new List<int> { 903 }
+            }));
+            Assert.Equal(1, autoBatchJson.GetProperty("SuccessCount").GetInt32());
+            int autoVoucherId = autoBatchJson.GetProperty("Items")[0].GetProperty("VoucherID").GetInt32();
+
+            var reportsController = new ReportsController(db, new MemoryCache(new MemoryCacheOptions()));
+            AttachUser(reportsController, principal);
+
+            // Verify all 3 renewed receipts appear with exact split
+            var allRows = ParseOkJson(await reportsController.GetFdRenewedReport(
+                branchID: 1,
+                fromDate: null,
+                toDate: null,
+                fdSchemeID: null));
+            Assert.Equal(3, allRows.GetArrayLength());
+
+            var row901 = allRows.EnumerateArray().First(x => x.GetProperty("OldFdAccountID").GetInt32() == 901);
+            Assert.Equal("PrincipalPlusInterest", row901.GetProperty("RenewalOption").GetString());
+            Assert.False(row901.GetProperty("IsAutoRenewal").GetBoolean());
+            Assert.Equal(100000m, row901.GetProperty("OldDepositAmount").GetDecimal());
+            Assert.Equal(10000m, row901.GetProperty("ReinvestedInterest").GetDecimal());
+            Assert.Equal(0m, row901.GetProperty("InterestPaidOut").GetDecimal());
+            Assert.Equal(110000m, row901.GetProperty("NewDepositAmount").GetDecimal());
+            Assert.Equal("ठेवीत जमा", row901.GetProperty("InterestPayoutMode").GetString());
+
+            var row902 = allRows.EnumerateArray().First(x => x.GetProperty("OldFdAccountID").GetInt32() == 902);
+            Assert.Equal("PrincipalOnly", row902.GetProperty("RenewalOption").GetString());
+            Assert.Equal(50000m, row902.GetProperty("OldDepositAmount").GetDecimal());
+            Assert.Equal(0m, row902.GetProperty("ReinvestedInterest").GetDecimal());
+            Assert.Equal(5000m, row902.GetProperty("InterestPaidOut").GetDecimal());
+            Assert.Equal(50000m, row902.GetProperty("NewDepositAmount").GetDecimal());
+            Assert.Equal("बचत वर्ग", row902.GetProperty("InterestPayoutMode").GetString());
+
+            var row903 = allRows.EnumerateArray().First(x => x.GetProperty("OldFdAccountID").GetInt32() == 903);
+            Assert.True(row903.GetProperty("IsAutoRenewal").GetBoolean());
+            Assert.Equal(80000m, row903.GetProperty("OldDepositAmount").GetDecimal());
+            Assert.Equal(8000m, row903.GetProperty("ReinvestedInterest").GetDecimal());
+            Assert.Equal(88000m, row903.GetProperty("NewDepositAmount").GetDecimal());
+
+            // Verify RenewalType filter works
+            var onlyPrincipalRows = ParseOkJson(await reportsController.GetFdRenewedReport(
+                branchID: 1,
+                fromDate: businessDate,
+                toDate: businessDate,
+                fdSchemeID: scheme.FdSchemeID,
+                renewalType: "PrincipalOnly"));
+            Assert.Equal(1, onlyPrincipalRows.GetArrayLength());
+            Assert.Equal(902, onlyPrincipalRows[0].GetProperty("OldFdAccountID").GetInt32());
+
+            // Reject/Cancel Auto-Renewal voucher -> must be excluded from Renewal Report
+            var voucherPostingController = new VoucherPostingController(db, new VoucherRollbackAndDeleteService(db));
+            AttachUser(voucherPostingController, BuildPrincipal(11, "checker_ho", "Admin", branchId: 1, businessDate: businessDate));
+            await voucherPostingController.RejectVoucher(autoVoucherId, new VoucherPostingController.VoucherRejectDto
+            {
+                Reason = "ऑटो नूतनीकरण रद्द चाचणी"
+            });
+
+            var afterRollbackRows = ParseOkJson(await reportsController.GetFdRenewedReport(
+                branchID: 1,
+                fromDate: null,
+                toDate: null,
+                fdSchemeID: null));
+            Assert.Equal(2, afterRollbackRows.GetArrayLength());
+            Assert.DoesNotContain(afterRollbackRows.EnumerateArray(), x => x.GetProperty("OldFdAccountID").GetInt32() == 903);
         }
     }
 }

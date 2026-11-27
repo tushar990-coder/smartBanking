@@ -1602,50 +1602,34 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
             }
 
-            // 3. Compute statutory OverdueDate so computed OverdueDays conforms to IRAC norms
+            // 3. Compute statutory OverdueDate respecting configured ConcessionPeriodDays so subsequent NPA runs preserve classification
             DateTime asOfDate = dto.OpeningDate;
-            DateTime overdueDate = category switch
-            {
-                "Sub-Standard" => asOfDate.AddDays(-91),     // > 90 days overdue
-                "Doubtful-1"   => asOfDate.AddDays(-456),    // > 15 months overdue
-                "Doubtful-2"   => asOfDate.AddDays(-821),    // > 27 months overdue
-                "Doubtful-3"   => asOfDate.AddDays(-1186),   // > 39 months overdue
-                "Loss"         => asOfDate.AddDays(-1186),   // Certified Loss Asset
-                _              => asOfDate
-            };
+            string fy = Services.NpaEngineService.GetFinancialYearStatic(asOfDate);
+            var npaConfig = await _context.NpaConfigs.AsNoTracking().FirstOrDefaultAsync(c => c.FinancialYear == fy);
+            int concessionDays = npaConfig?.ConcessionPeriodDays > 0 ? npaConfig.ConcessionPeriodDays : 180;
 
-            // 4. Outstanding balance and collateral security assessment
+            DateTime overdueDate = Services.NpaEngineService.DeriveStatutoryOverdueDate(asOfDate, category, concessionDays);
+
+            // 4. Outstanding balance & Principal-only BDDR provisioning (100% OIR held separately on receivable interest)
             decimal totalOutstanding = loanAccount.PrincipalBalance + loanAccount.InterestBalance + loanAccount.OverdueInterestBalance;
+            decimal principalForProvision = Math.Max(0m, loanAccount.PrincipalBalance);
             decimal compliantCollateral = loanAccount.SecurityValue;
-            decimal securedAmount = Math.Min(totalOutstanding, compliantCollateral);
-            decimal unsecuredAmount = Math.Max(0, totalOutstanding - securedAmount);
+            decimal securedPrincipal = Math.Min(principalForProvision, compliantCollateral);
+            decimal unsecuredPrincipal = Math.Max(0m, principalForProvision - securedPrincipal);
 
             string securityType = "Unsecured";
-            if (securedAmount > 0 && unsecuredAmount > 0) securityType = "Mixed";
-            else if (securedAmount > 0) securityType = "Secured";
+            if (securedPrincipal > 0m && unsecuredPrincipal > 0m) securityType = "Mixed";
+            else if (securedPrincipal > 0m) securityType = "Secured";
 
-            // 5. Statutory Provision Calculation (IRAC Norms)
-            decimal securedPercent = category switch
+            // 5. Statutory Provision Calculation using unified FY Slabs
+            var fySlabs = await _context.NpaProvisionSlabs.AsNoTracking().Where(s => s.FinancialYear == fy).ToListAsync();
+            if (!fySlabs.Any())
             {
-                "Sub-Standard" => 10.0m,
-                "Doubtful-1"   => 25.0m,
-                "Doubtful-2"   => 40.0m,
-                "Doubtful-3"   => 100.0m,
-                "Loss"         => 100.0m,
-                _              => 0.25m
-            };
+                fySlabs = Services.NpaEngineService.BuildDefaultSlabsForFy(fy);
+            }
+            var (securedPercent, unsecuredPercent) = Services.NpaEngineService.ResolveSlabPercentages(category, fySlabs);
 
-            decimal unsecuredPercent = category switch
-            {
-                "Sub-Standard" => 15.0m,
-                "Doubtful-1"   => 100.0m,
-                "Doubtful-2"   => 100.0m,
-                "Doubtful-3"   => 100.0m,
-                "Loss"         => 100.0m,
-                _              => 0.25m
-            };
-
-            decimal provisionRequired = Math.Round((securedAmount * securedPercent / 100m) + (unsecuredAmount * unsecuredPercent / 100m), 2);
+            decimal provisionRequired = Math.Round((securedPrincipal * securedPercent / 100m) + (unsecuredPrincipal * unsecuredPercent / 100m), 2);
             decimal provisionHeld = loanAccount.InterestProvisionBalance;
 
             // 6. Insert or update LoanAccountNpaStatus record

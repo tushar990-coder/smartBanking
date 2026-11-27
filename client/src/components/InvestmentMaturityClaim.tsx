@@ -18,7 +18,8 @@ import {
   BookOpen,
   Info,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  FileText
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import BankLedgerSelect from './common/BankLedgerSelect';
@@ -89,7 +90,11 @@ const Field: React.FC<FieldProps> = ({ label, required, hint, action, className 
 
 const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
-const InvestmentMaturityClaim: React.FC = () => {
+interface InvestmentMaturityClaimProps {
+  onNavigate?: (tab: string) => void;
+}
+
+const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNavigate }) => {
   const { user } = useAuth();
   const getLocalTodayStr = () => {
     const n = new Date();
@@ -100,6 +105,7 @@ const InvestmentMaturityClaim: React.FC = () => {
   const isHOUser =
     user?.role === 'Admin' ||
     user?.role === 'SuperAdmin' ||
+    user?.role === 'Super Admin' ||
     user?.role === 'HeadOffice' ||
     user?.role === 'HO_Manager';
 
@@ -1079,6 +1085,17 @@ const InvestmentMaturityClaim: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate('inv-reports&reportType=renewed')}
+              className="px-2.5 py-1 rounded-md border border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-white font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="नूतनीकरण झालेल्या गुंतवणुकांचा अहवाल पहा"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>नूतनीकरण अहवाल पहा</span>
+            </button>
+          )}
           <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-semibold inline-flex items-center gap-1.5">
             <Landmark className="w-3.5 h-3.5 text-primary" />
             ठेवी: <strong className="font-mono text-slate-950">{accounts.length}</strong>

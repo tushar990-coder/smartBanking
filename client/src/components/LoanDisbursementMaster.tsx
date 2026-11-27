@@ -311,7 +311,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     }, [legacyLoanAccountNo, newAccountData.loanRateID, newAccountData.loanAccountID, accounts]);
 
     const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
-    const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+    const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'Super Admin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
     const [allowDateOverride, setAllowDateOverride] = useState(false);
 
     const [formData, setFormData] = useState<Partial<LoanDisbursement>>({

@@ -211,7 +211,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
   const { user } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'Super Admin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
   const [allowDateOverride, setAllowDateOverride] = useState(false);
 
   // Bulk Sheet States

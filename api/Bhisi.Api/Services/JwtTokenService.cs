@@ -43,13 +43,14 @@ namespace Bhisi.Api.Services
         {
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.UTF8.GetBytes(GetSigningKey());
+            string canonicalRole = Bhisi.Api.Helpers.UserContextExtensions.NormalizeRoleClaim(user.Role?.RoleName);
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(new[]
                 {
                     new Claim(ClaimTypes.NameIdentifier, user.UserID.ToString()),
                     new Claim(ClaimTypes.Name, user.Username),
-                    new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "User"),
+                    new Claim(ClaimTypes.Role, canonicalRole),
                     new Claim("BranchID", branchId.ToString()),
                     new Claim("DefaultBranchID", (user.DefaultBranchID ?? branchId).ToString()),
                     new Claim("FinancialYearID", financialYearId.ToString()),

@@ -5,6 +5,7 @@ import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSel
 import BankLedgerSelect from './common/BankLedgerSelect';
 import { useAuth } from '../context/AuthContext';
 import { getCachedMasterData, invalidateApiCache } from '../utils/apiCache';
+import { isHeadOfficeUser } from '../utils/branchAccess';
 
 interface Customer extends Partial<CustomerOption> {
   customerID?: number;
@@ -804,7 +805,7 @@ const SavingAccountMaster: React.FC = () => {
             {/* Branch Dropdown - 3 cols */}
             <div className="lg:col-span-3">
               <label className="block text-xs font-semibold text-gray-700 mb-0.5">शाखा (Branch) *</label>
-              {user?.role === 'Admin' ? (
+              {isHeadOfficeUser(user) ? (
                 <select
                   name="branchID"
                   value={formData.branchID}

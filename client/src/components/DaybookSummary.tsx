@@ -265,7 +265,10 @@ export default function DaybookSummary() {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
-    const [y, m, d] = dateStr.split('-');
+    const clean = dateStr.split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length !== 3) return clean;
+    const [y, m, d] = parts;
     return `${d}/${m}/${y}`;
   };
 

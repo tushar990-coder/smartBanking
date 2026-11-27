@@ -24,7 +24,8 @@ import {
   Lock,
   Unlock,
   X,
-  Printer
+  Printer,
+  FileText
 } from 'lucide-react';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import BankLedgerSelect from './common/BankLedgerSelect';
@@ -248,7 +249,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 }) => {
   const { user } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'Super Admin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
   const [allowDateOverride, setAllowDateOverride] = useState(false);
 
   const urlParams = new URLSearchParams(window.location.search);
@@ -2572,16 +2573,27 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
               </p>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-3 text-[11px] text-slate-600">
+          <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-slate-600">
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate('fd-reports&reportType=RenewedFD')}
+                className="px-2.5 py-1 rounded border border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-white font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                title="नूतनीकरण झालेल्या सर्व ठेव पावत्यांचा अहवाल पहा"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>नूतनीकरण अहवाल पहा</span>
+              </button>
+            )}
             {selectedAccount && (
               <>
-                <span>शाखा: <strong className="text-slate-900">{selectedAccount.branchID}</strong></span>
-                <span className="h-3 w-px bg-slate-300" />
-                <span>खाते: <strong className="font-mono text-primary">{selectedAccount.accountNo}</strong></span>
-                <span className="h-3 w-px bg-slate-300" />
+                <span className="hidden md:inline">शाखा: <strong className="text-slate-900">{selectedAccount.branchID}</strong></span>
+                <span className="hidden md:inline h-3 w-px bg-slate-300" />
+                <span className="hidden md:inline">खाते: <strong className="font-mono text-primary">{selectedAccount.accountNo}</strong></span>
+                <span className="hidden md:inline h-3 w-px bg-slate-300" />
               </>
             )}
-            <span>व्यवहार दिनांक: <strong className="text-slate-900">{formatDateDisplay(closureDate)}</strong></span>
+            <span className="hidden md:inline">व्यवहार दिनांक: <strong className="text-slate-900">{formatDateDisplay(closureDate)}</strong></span>
           </div>
         </div>
       </div>

@@ -17,15 +17,165 @@ namespace Bhisi.Api.Services
             _context = context;
         }
 
+        public static string GetFinancialYearStatic(DateTime date)
+        {
+            int year = date.Year;
+            if (date.Month >= 4)
+            {
+                return $"{year}-{((year + 1) % 100):D2}";
+            }
+            return $"{(year - 1)}-{(year % 100):D2}";
+        }
+
+        public static string NormalizeCategory(string? rawCategory)
+        {
+            return (rawCategory ?? "Standard").Trim() switch
+            {
+                "SubStandard" or "Sub-Standard" => "Sub-Standard",
+                "Doubtful1" or "Doubtful-1" => "Doubtful-1",
+                "Doubtful2" or "Doubtful-2" => "Doubtful-2",
+                "Doubtful3" or "Doubtful-3" => "Doubtful-3",
+                "Loss" => "Loss",
+                _ => "Standard"
+            };
+        }
+
+        /// <summary>
+        /// Single canonical slab table per Financial Year (Maharashtra Co-op Commissioner Circular &amp; RBI IRAC Norms).
+        /// </summary>
+        public static List<NpaProvisionSlab> BuildDefaultSlabsForFy(string fy)
+        {
+            var slabs = new List<NpaProvisionSlab>();
+
+            if (fy == "2024-25")
+            {
+                slabs.AddRange(new[]
+                {
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, NpaMonthsFrom = 0, NpaMonthsTo = 0, MinProvisionPercent = 0.25m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 5.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 15.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 60.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 20.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 70.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 25.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 80.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 0, NpaMonthsTo = 999, MinProvisionPercent = 100.00m }
+                });
+            }
+            else if (fy == "2025-26")
+            {
+                slabs.AddRange(new[]
+                {
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, NpaMonthsFrom = 0, NpaMonthsTo = 0, MinProvisionPercent = 0.25m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 6.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 20.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 70.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 25.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 80.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 30.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 90.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 0, NpaMonthsTo = 999, MinProvisionPercent = 100.00m }
+                });
+            }
+            else if (fy == "2026-27")
+            {
+                slabs.AddRange(new[]
+                {
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, NpaMonthsFrom = 0, NpaMonthsTo = 0, MinProvisionPercent = 0.25m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 8.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 25.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 80.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 30.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 90.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 40.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 100.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 0, NpaMonthsTo = 999, MinProvisionPercent = 100.00m }
+                });
+            }
+            else
+            {
+                slabs.AddRange(new[]
+                {
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, NpaMonthsFrom = 0, NpaMonthsTo = 0, MinProvisionPercent = 0.25m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 10.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 30.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 100.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 40.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 100.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 50.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 100.00m },
+                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 0, NpaMonthsTo = 999, MinProvisionPercent = 100.00m }
+                });
+            }
+
+            return slabs;
+        }
+
+        public static (decimal Principal, decimal ReceivableInterest, decimal OverdueInterest) ReconstructLoanBalancesAsOfDate(
+            LoanAccount loan,
+            DateTime asOfDate,
+            IReadOnlyList<LoanCollection>? postCollections,
+            IReadOnlyList<LoanDisbursement>? postDisbursements)
+        {
+            decimal postPrinPaid = postCollections?.Sum(c => c.PrincipalCollected) ?? 0m;
+            decimal postRecIntPaid = postCollections?.Sum(c => c.ReceivableInterestCollected + c.InterestWaived) ?? 0m;
+            decimal postPenPaid = postCollections?.Sum(c => (c.BookedPenaltySettled ?? c.PenaltyInterestCollected) + c.PenaltyWaived) ?? 0m;
+            decimal postDisb = postDisbursements?.Sum(d => d.DisbursementAmount) ?? 0m;
+
+            decimal histPrincipal = Math.Max(0m, loan.PrincipalBalance + postPrinPaid - postDisb);
+            decimal histInterest = Math.Max(0m, loan.InterestBalance + postRecIntPaid);
+            decimal histOverdueInt = Math.Max(0m, loan.OverdueInterestBalance + postPenPaid);
+
+            return (histPrincipal, histInterest, histOverdueInt);
+        }
+
+        public static (decimal SecuredPercent, decimal UnsecuredPercent) ResolveSlabPercentages(
+            string category,
+            IReadOnlyList<NpaProvisionSlab> slabs)
+        {
+            if (category == "Standard")
+            {
+                var slab = slabs.FirstOrDefault(s => s.Category == "Standard");
+                decimal pct = slab?.MinProvisionPercent ?? 0.25m;
+                return (pct, pct);
+            }
+            if (category == "Sub-Standard")
+            {
+                var slabSec = slabs.FirstOrDefault(s => s.Category == "Sub-Standard" && s.SecurityType == "Secured")
+                              ?? slabs.FirstOrDefault(s => s.Category == "Sub-Standard" && s.SecurityType == "Both")
+                              ?? slabs.FirstOrDefault(s => s.Category == "Sub-Standard");
+                var slabUnsec = slabs.FirstOrDefault(s => s.Category == "Sub-Standard" && s.SecurityType == "Unsecured")
+                                ?? slabs.FirstOrDefault(s => s.Category == "Sub-Standard" && s.SecurityType == "Both")
+                                ?? slabSec;
+                return (slabSec?.MinProvisionPercent ?? 5.0m, slabUnsec?.MinProvisionPercent ?? 5.0m);
+            }
+            if (category == "Loss")
+            {
+                var slab = slabs.FirstOrDefault(s => s.Category == "Loss");
+                decimal pct = slab?.MinProvisionPercent ?? 100.0m;
+                return (pct, pct);
+            }
+
+            // Doubtful-1 / Doubtful-2 / Doubtful-3
+            var dSec = slabs.FirstOrDefault(s => s.Category == category && s.SecurityType == "Secured")
+                       ?? slabs.FirstOrDefault(s => s.Category == category && s.SecurityType == "Both");
+            var dUnsec = slabs.FirstOrDefault(s => s.Category == category && s.SecurityType == "Unsecured")
+                         ?? slabs.FirstOrDefault(s => s.Category == category && s.SecurityType == "Both");
+
+            return (dSec?.MinProvisionPercent ?? 0m, dUnsec?.MinProvisionPercent ?? 0m);
+        }
+
         public async Task<NpaClassificationRun> RunClassificationAsync(DateTime asOfDate, string triggeredBy)
         {
+            DateTime targetDate = asOfDate.Date;
+
             using var dbTransaction = _context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory"
                 ? null
                 : await _context.Database.BeginTransactionAsync();
             try
             {
                 // 1. Determine Financial Year
-                string fy = GetFinancialYear(asOfDate);
+                string fy = GetFinancialYearStatic(targetDate);
 
                 // 2. Fetch Config & Slabs
                 var config = await _context.NpaConfigs.FirstOrDefaultAsync(c => c.FinancialYear == fy);
@@ -36,13 +186,11 @@ namespace Bhisi.Api.Services
                     await _context.SaveChangesAsync();
                 }
 
-                int concessionDays = config.ConcessionPeriodDays;
+                int concessionDays = config.ConcessionPeriodDays > 0 ? config.ConcessionPeriodDays : 180;
 
-                // Ensure slabs exist (if not seeded, we will throw or default)
                 var slabs = await _context.NpaProvisionSlabs.Where(s => s.FinancialYear == fy).ToListAsync();
                 if (!slabs.Any())
                 {
-                    // Fallback seed slabs if empty
                     await SeedSlabsForFyAsync(fy);
                     slabs = await _context.NpaProvisionSlabs.Where(s => s.FinancialYear == fy).ToListAsync();
                 }
@@ -53,122 +201,227 @@ namespace Bhisi.Api.Services
                     RunDate = DateTime.Now,
                     TriggeredBy = triggeredBy,
                     Status = "Running",
-                    Remarks = $"NPA Classification run as of {asOfDate:dd-MM-yyyy}"
+                    Remarks = $"NPA Classification run as of {targetDate:dd-MM-yyyy}"
                 };
                 _context.NpaClassificationRuns.Add(run);
                 await _context.SaveChangesAsync();
 
-                // 4. Fetch all data
-                var activeLoans = await _context.LoanAccounts
+                // 4. Fetch all candidate loans opened/disbursed on or before targetDate
+                var allCandidateLoans = await _context.LoanAccounts
                     .Include(l => l.LoanRate)
                     .Include(l => l.Customer)
                     .Include(l => l.Member)
-                    .Where(l => l.Status == "Active")
+                    .Where(l => (l.LoanDisbursementDate ?? l.OpeningDate).Date <= targetDate &&
+                                (l.Status == "Active" || l.Status == "Closed"))
                     .ToListAsync();
 
+                var candidateIds = allCandidateLoans.Select(l => l.LoanAccountID).ToHashSet();
 
-                var schedules = await _context.LoanInstallmentSchedules
-                    .Where(s => s.DueDate <= asOfDate)
+                // Preload all collections & disbursements (up to AND after targetDate for point-in-time reconstruction)
+                var allCollections = await _context.LoanCollections
+                    .AsNoTracking()
+                    .Where(c => candidateIds.Contains(c.LoanAccountID))
                     .ToListAsync();
 
-                var collections = await _context.LoanCollections
-                    .Where(c => c.CollectionDate <= asOfDate)
+                var allDisbursements = await _context.LoanDisbursements
+                    .AsNoTracking()
+                    .Where(d => candidateIds.Contains(d.LoanAccountID))
                     .ToListAsync();
 
-                var disbursements = await _context.LoanDisbursements
-                    .Where(d => d.DisbursementDate <= asOfDate)
-                    .ToListAsync();
+                var collectionsByLoan = allCollections
+                    .GroupBy(c => c.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.ToList());
 
-                var linkedAccounts = await _context.BorrowerLinkedAccounts.ToListAsync();
+                var disbursementsByLoan = allDisbursements
+                    .GroupBy(d => d.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.ToList());
 
-                var complianceLogs = await _context.CollateralComplianceLogs
-                    .Where(c => c.ValuationDate <= asOfDate)
+                // Reconstruct historical balances as of targetDate & filter loans actually open on targetDate
+                var reconstructedBalances = new Dictionary<int, (decimal Principal, decimal ReceivableInterest, decimal OverdueInterest)>();
+                var activeLoans = new List<LoanAccount>();
+
+                foreach (var loan in allCandidateLoans)
+                {
+                    var loanCols = collectionsByLoan.TryGetValue(loan.LoanAccountID, out var cList) ? cList : new List<LoanCollection>();
+                    var loanDisbs = disbursementsByLoan.TryGetValue(loan.LoanAccountID, out var dList) ? dList : new List<LoanDisbursement>();
+
+                    var postCols = loanCols.Where(c => c.CollectionDate.Date > targetDate).ToList();
+                    var postDisbs = loanDisbs.Where(d => d.DisbursementDate.Date > targetDate).ToList();
+
+                    if (loan.Status == "Closed" && postCols.Count == 0)
+                    {
+                        continue; // Already closed on or before targetDate
+                    }
+
+                    var bal = ReconstructLoanBalancesAsOfDate(loan, targetDate, postCols, postDisbs);
+                    if (loan.Status == "Closed" && (bal.Principal + bal.ReceivableInterest + bal.OverdueInterest) <= 0m)
+                    {
+                        continue;
+                    }
+
+                    reconstructedBalances[loan.LoanAccountID] = bal;
+                    activeLoans.Add(loan);
+                }
+
+                var activeLoanIds = activeLoans.Select(l => l.LoanAccountID).ToHashSet();
+
+                var schedulesByLoan = (await _context.LoanInstallmentSchedules
+                    .AsNoTracking()
+                    .Where(s => activeLoanIds.Contains(s.LoanAccountID))
+                    .OrderBy(s => s.InstallmentNo)
+                    .ToListAsync())
+                    .GroupBy(s => s.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                var linkedAccounts = await _context.BorrowerLinkedAccounts.AsNoTracking().ToListAsync();
+
+                var complianceLogsByLoan = (await _context.CollateralComplianceLogs
+                    .AsNoTracking()
+                    .Where(c => activeLoanIds.Contains(c.LoanAccountID) && c.ValuationDate.Date <= targetDate)
                     .OrderByDescending(c => c.ValuationDate)
+                    .ToListAsync())
+                    .GroupBy(c => c.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                var depositCollateralsByLoan = (await _context.LoanDepositCollaterals
+                    .AsNoTracking()
+                    .Where(c => c.LoanAccountID.HasValue &&
+                                activeLoanIds.Contains(c.LoanAccountID.Value) &&
+                                c.LienStatus != "Released")
+                    .ToListAsync())
+                    .GroupBy(c => c.LoanAccountID!.Value)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                var goldDetailsByLoan = (await _context.GoldLoanDetails
+                    .AsNoTracking()
+                    .Where(g => g.LoanAccountID.HasValue && activeLoanIds.Contains(g.LoanAccountID.Value))
+                    .ToListAsync())
+                    .GroupBy(g => g.LoanAccountID!.Value)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                // Preload existing statuses on targetDate and prior manual/OB statuses (eliminating N+1 queries)
+                var allExistingStatuses = await _context.LoanAccountNpaStatuses
+                    .Where(s => activeLoanIds.Contains(s.LoanAccountID))
                     .ToListAsync();
 
-                // 5. Check/Seed Contra Ledgers
-                var ledgerOverdueIntRec = await GetOrCreateLedgerAsync("थकीत व्याज येणे खाते", "इतर येणे", "Assets", true);
-                var ledgerOverdueIntProv = await GetOrCreateLedgerAsync("थकीत व्याज तरतूद खाते", "इतर देणे", "Liabilities", true);
-                var ledgerOverdueRecRec = await GetOrCreateLedgerAsync("थकीत वसुली खर्च येणे खाते", "इतर येणे", "Assets", true);
-                var ledgerOverdueRecProv = await GetOrCreateLedgerAsync("थकीत वसुली खर्च तरतूद खाते", "इतर देणे", "Liabilities", true);
+                var existingForDateMap = allExistingStatuses
+                    .Where(s => s.AsOfDate.Date == targetDate)
+                    .GroupBy(s => s.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LoanAccountNpaStatusID).First());
 
-                // 6. Step 1: Calculate Individual Statuses
+                var priorManualOrObMap = allExistingStatuses
+                    .Where(s => !s.IsAutoClassified && s.AsOfDate.Date <= targetDate)
+                    .GroupBy(s => s.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.AsOfDate).ThenByDescending(x => x.LoanAccountNpaStatusID).First());
+
+                var latestPriorStatusMap = allExistingStatuses
+                    .Where(s => s.AsOfDate.Date <= targetDate)
+                    .GroupBy(s => s.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.AsOfDate).ThenByDescending(x => x.LoanAccountNpaStatusID).First());
+
+                // Ensure contra ledgers exist for statutory reporting (without posting unapproved HQ-JV vouchers)
+                await GetOrCreateLedgerAsync("थकीत व्याज येणे खाते", "इतर येणे", "Assets", true);
+                await GetOrCreateLedgerAsync("थकीत व्याज तरतूद खाते", "इतर देणे", "Liabilities", true);
+                await GetOrCreateLedgerAsync("थकीत वसुली खर्च येणे खाते", "इतर येणे", "Assets", true);
+                await GetOrCreateLedgerAsync("थकीत वसुली खर्च तरतूद खाते", "इतर देणे", "Liabilities", true);
+
+                // Clean up any stale status rows on targetDate for loans no longer open on targetDate
+                var staleRowsForDate = await _context.LoanAccountNpaStatuses
+                    .Where(s => s.AsOfDate.Date == targetDate && !activeLoanIds.Contains(s.LoanAccountID))
+                    .ToListAsync();
+                if (staleRowsForDate.Any())
+                {
+                    _context.LoanAccountNpaStatuses.RemoveRange(staleRowsForDate);
+                }
+
+                // 5. Step 1: Calculate Individual Statuses
                 var individualStatuses = new Dictionary<int, (string Category, DateTime? OverdueDate, DateTime? OutOfOrderDate, decimal CompliantCollateral, string SecurityType)>();
 
                 foreach (var loan in activeLoans)
                 {
-                    bool isCcOd = loan.LoanRate?.IsCcOrOd ?? false;
-                    decimal totalOutstanding = loan.PrincipalBalance + loan.InterestBalance + loan.OverdueInterestBalance;
+                    var bal = reconstructedBalances[loan.LoanAccountID];
+                    decimal totalOutstanding = bal.Principal + bal.ReceivableInterest + bal.OverdueInterest;
 
-                    if (totalOutstanding <= 0)
+                    var loanComplianceLogs = complianceLogsByLoan.TryGetValue(loan.LoanAccountID, out var logs) ? logs : new List<CollateralComplianceLog>();
+                    var loanDepCols = depositCollateralsByLoan.TryGetValue(loan.LoanAccountID, out var dCols) ? dCols : new List<LoanDepositCollateral>();
+                    var loanGoldRows = goldDetailsByLoan.TryGetValue(loan.LoanAccountID, out var gRows) ? gRows : new List<GoldLoanDetail>();
+
+                    decimal compliantCollateralValue = ResolveEffectiveCollateralValue(
+                        loan, targetDate, loanComplianceLogs, loanDepCols, loanGoldRows, out string calculatedSecurityType);
+
+                    if (totalOutstanding <= 0m)
                     {
-                        individualStatuses[loan.LoanAccountID] = ("Standard", null, null, 0, "Unsecured");
+                        individualStatuses[loan.LoanAccountID] = ("Standard", null, null, compliantCollateralValue, calculatedSecurityType);
                         continue;
                     }
+
+                    bool isCcOd = loan.LoanRate?.IsCcOrOd ?? false;
+                    var loanSchedules = schedulesByLoan.TryGetValue(loan.LoanAccountID, out var schList) ? schList : new List<LoanInstallmentSchedule>();
+                    var loanColsUpToDate = collectionsByLoan.TryGetValue(loan.LoanAccountID, out var colAll)
+                        ? colAll.Where(c => c.CollectionDate.Date <= targetDate).ToList()
+                        : new List<LoanCollection>();
+                    var loanDisbsUpToDate = disbursementsByLoan.TryGetValue(loan.LoanAccountID, out var disbAll)
+                        ? disbAll.Where(d => d.DisbursementDate.Date <= targetDate).ToList()
+                        : new List<LoanDisbursement>();
+                    bool hasPostDateActivity = collectionsByLoan.TryGetValue(loan.LoanAccountID, out var colCheck) && colCheck.Any(c => c.CollectionDate.Date > targetDate);
+
+                    priorManualOrObMap.TryGetValue(loan.LoanAccountID, out var priorManualStatus);
 
                     DateTime? overdueDate = null;
                     DateTime? outOfOrderDate = null;
                     string category = "Standard";
 
-                    // A. Calculate Overdue/OutOfOrder Date
                     if (isCcOd)
                     {
                         decimal sanctionedLimit = loan.SanctionedAmount;
-                        // CC/OD limits drawing power fallback
-                        // Reconstruct continuous excess date if exceeds
-                        outOfOrderDate = GetOutOfOrderDateForCcOd(loan, asOfDate, sanctionedLimit, schedules, collections, disbursements, concessionDays);
+                        outOfOrderDate = GetOutOfOrderDateForCcOd(
+                            loan, targetDate, sanctionedLimit, bal, loanColsUpToDate, loanDisbsUpToDate);
                         if (outOfOrderDate.HasValue)
                         {
-                            int elapsedDays = (asOfDate - outOfOrderDate.Value).Days;
+                            int elapsedDays = Math.Max(0, (targetDate - outOfOrderDate.Value.Date).Days);
                             category = DetermineCategoryByDays(elapsedDays, slabs, concessionDays);
                         }
                     }
                     else
                     {
-                        overdueDate = GetOverdueDateForTermLoan(loan, asOfDate, schedules);
+                        overdueDate = GetOverdueDateForTermLoan(
+                            loan, targetDate, bal, loanSchedules, loanColsUpToDate, hasPostDateActivity, priorManualStatus, concessionDays);
                         if (overdueDate.HasValue)
                         {
-                            int elapsedDays = (asOfDate - overdueDate.Value).Days;
+                            int elapsedDays = Math.Max(0, (targetDate - overdueDate.Value.Date).Days);
                             category = DetermineCategoryByDays(elapsedDays, slabs, concessionDays);
                         }
                     }
 
-                    // B. Exemptions check (FD, Gold, LIC etc. are exempt unless collateral falls below or margin breached)
-                    bool isExemptAsset = IsExemptSecurityType(loan.LoanRate?.SecurityType ?? "");
-                    decimal compliantCollateralValue = 0;
-                    string calculatedSecurityType = "Unsecured";
-
-                    // Retrieve compliance logs for the account
-                    var latestLogs = complianceLogs.Where(c => c.LoanAccountID == loan.LoanAccountID).ToList();
-                    compliantCollateralValue = CalculateCompliantCollateralValue(loan, asOfDate, latestLogs, out calculatedSecurityType);
+                    // Exemptions check (FD, Gold, LIC, NSC, KVP etc. remain Standard if fully covered & margin maintained)
+                    bool isExemptAsset = IsExemptSecurityType(loan.LoanRate?.SecurityType ?? "") ||
+                                         IsExemptSecurityType(loan.LoanRate?.CollateralCategory ?? "");
 
                     if (isExemptAsset)
                     {
-                        var latestLog = latestLogs.FirstOrDefault();
-                        bool marginBreachedForMoreThan12Months = false;
-                        if (latestLog != null)
-                        {
-                            // Check if margin is breached and log is older than 12 months with breach
-                            if (!latestLog.IsMarginMaintained && (asOfDate - latestLog.ValuationDate).TotalDays > 365)
-                            {
-                                marginBreachedForMoreThan12Months = true;
-                            }
-                        }
+                        var latestLog = loanComplianceLogs.FirstOrDefault();
+                        bool marginBreachedForMoreThan12Months = latestLog != null &&
+                                                                 !latestLog.IsMarginMaintained &&
+                                                                 (targetDate - latestLog.ValuationDate.Date).TotalDays > 365;
 
-                        bool exemptBreached = totalOutstanding > compliantCollateralValue || marginBreachedForMoreThan12Months;
+                        bool exemptBreached = compliantCollateralValue <= 0m ||
+                                              totalOutstanding > compliantCollateralValue ||
+                                              marginBreachedForMoreThan12Months;
 
                         if (!exemptBreached && category != "Loss")
                         {
-                            category = "Standard"; // Keep standard by default if exempt and no breach
+                            category = "Standard";
                         }
                     }
 
-                    // If Auditor certified Loss Asset manually, keep Loss Asset status
-                    var existingManualLossStatus = await _context.LoanAccountNpaStatuses
-                        .Where(s => s.LoanAccountID == loan.LoanAccountID && !s.IsAutoClassified && s.Category == "Loss")
-                        .FirstOrDefaultAsync();
-
-                    if (existingManualLossStatus != null)
+                    // Preserve Auditor-certified Loss Asset
+                    if (priorManualStatus != null &&
+                        priorManualStatus.Category == "Loss" &&
+                        !(priorManualStatus.AuditorRemarks ?? "").StartsWith("Initial Opening Balance", StringComparison.OrdinalIgnoreCase))
+                    {
+                        category = "Loss";
+                    }
+                    else if (priorManualStatus != null && priorManualStatus.Category == "Loss")
                     {
                         category = "Loss";
                     }
@@ -176,10 +429,9 @@ namespace Bhisi.Api.Services
                     individualStatuses[loan.LoanAccountID] = (category, overdueDate, outOfOrderDate, compliantCollateralValue, calculatedSecurityType);
                 }
 
-                // 7. Step 2: Group Downgrade Rule (Single-Borrower-Multiple-Loans)
+                // 6. Step 2: Group Downgrade Rule (Single-Borrower-Multiple-Loans)
                 var finalStatuses = new Dictionary<int, (string Category, DateTime? OverdueDate, DateTime? OutOfOrderDate, decimal CompliantCollateral, string SecurityType)>();
-                
-                // Helper function to derive canonical borrower key
+
                 string GetBorrowerKey(LoanAccount l)
                 {
                     if (l.CustomerID.HasValue && l.CustomerID.Value > 0) return $"C_{l.CustomerID.Value}";
@@ -188,13 +440,11 @@ namespace Bhisi.Api.Services
                     return $"L_{l.LoanAccountID}";
                 }
 
-                // Helper map of MemberID to CustomerID
                 var memberCustMap = activeLoans
                     .Where(l => l.MemberID.HasValue && l.Member != null && l.Member.CustomerID.HasValue && l.Member.CustomerID.Value > 0)
                     .GroupBy(l => l.MemberID!.Value)
                     .ToDictionary(g => g.Key, g => g.First().Member!.CustomerID!.Value);
 
-                // Build adjacency list for borrower grouping using string keys
                 var borrowerToGroup = new Dictionary<string, HashSet<string>>();
                 foreach (var loan in activeLoans)
                 {
@@ -202,7 +452,6 @@ namespace Bhisi.Api.Services
                     if (!borrowerToGroup.ContainsKey(bKey))
                         borrowerToGroup[bKey] = new HashSet<string> { bKey };
 
-                    // Also link member key to customer key if both present
                     if (loan.MemberID.HasValue && loan.CustomerID.HasValue)
                     {
                         string mKey = $"M_{loan.MemberID.Value}";
@@ -222,7 +471,6 @@ namespace Bhisi.Api.Services
                     if (!borrowerToGroup.ContainsKey(parent)) borrowerToGroup[parent] = new HashSet<string> { parent };
                     if (!borrowerToGroup.ContainsKey(linked)) borrowerToGroup[linked] = new HashSet<string> { linked };
 
-                    // Merge groups
                     var merged = new HashSet<string>(borrowerToGroup[parent].Concat(borrowerToGroup[linked]));
                     foreach (var bKey in merged)
                     {
@@ -230,7 +478,6 @@ namespace Bhisi.Api.Services
                     }
                 }
 
-                // Map loan accounts to their borrower groups
                 var loanGroups = new List<List<LoanAccount>>();
                 var processedLoans = new HashSet<int>();
 
@@ -240,8 +487,10 @@ namespace Bhisi.Api.Services
 
                     string bKey = GetBorrowerKey(loan);
                     var groupKeys = borrowerToGroup.ContainsKey(bKey) ? borrowerToGroup[bKey] : new HashSet<string> { bKey };
-                    var loanGroup = activeLoans.Where(l => groupKeys.Contains(GetBorrowerKey(l)) || (l.MemberID.HasValue && groupKeys.Contains($"M_{l.MemberID.Value}"))).ToList();
-                    
+                    var loanGroup = activeLoans
+                        .Where(l => groupKeys.Contains(GetBorrowerKey(l)) || (l.MemberID.HasValue && groupKeys.Contains($"M_{l.MemberID.Value}")))
+                        .ToList();
+
                     loanGroups.Add(loanGroup);
                     foreach (var gl in loanGroup)
                     {
@@ -249,10 +498,8 @@ namespace Bhisi.Api.Services
                     }
                 }
 
-                // Apply downgrades within each borrower group
                 foreach (var group in loanGroups)
                 {
-                    // Find worst category in group
                     string worstCategory = "Standard";
                     foreach (var loan in group)
                     {
@@ -260,7 +507,6 @@ namespace Bhisi.Api.Services
                         worstCategory = GetWorstCategory(worstCategory, indCat);
                     }
 
-                    // Downgrade all loans in the group to the worst category
                     foreach (var loan in group)
                     {
                         var ind = individualStatuses[loan.LoanAccountID];
@@ -268,74 +514,63 @@ namespace Bhisi.Api.Services
                     }
                 }
 
-                // 8. Step 3: Compute Provisions and Save Statuses
+                // Preload OverdueInterestLedgers net balances for idempotent sub-ledger tracking (without rogue HQ-JV vouchers)
+                var oirRowsByLoan = (await _context.OverdueInterestLedgers
+                    .Where(o => activeLoanIds.Contains(o.LoanAccountID) && o.TransactionDate.Date <= targetDate)
+                    .ToListAsync())
+                    .GroupBy(o => o.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.Sum(x => x.DebitAmount - x.CreditAmount));
+
+                // 7. Step 3: Compute Principal-Based BDDR Provisions (100% OIR held separately on Receivable Interest) & Save Statuses
                 int recordsProcessed = 0;
                 foreach (var loan in activeLoans)
                 {
                     var status = finalStatuses[loan.LoanAccountID];
-                    decimal totalOutstanding = loan.PrincipalBalance + loan.InterestBalance + loan.OverdueInterestBalance;
+                    var bal = reconstructedBalances[loan.LoanAccountID];
+                    decimal principalBalance = bal.Principal;
+                    decimal unrealizedInterest = bal.ReceivableInterest + bal.OverdueInterest;
+                    decimal totalOutstanding = principalBalance + unrealizedInterest;
 
-                    decimal provisionRequired = 0;
-                    decimal securedAmount = Math.Min(totalOutstanding, status.CompliantCollateral);
-                    decimal unsecuredAmount = Math.Max(0, totalOutstanding - securedAmount);
+                    // Statutory Rule: 100% of unrealized interest on NPA accounts is covered by Overdue Interest Reserve (OIR).
+                    // BDDR / Loan Loss Provision is calculated strictly on PrincipalBalance!
+                    decimal securedPrincipal = Math.Min(principalBalance, status.CompliantCollateral);
+                    decimal unsecuredPrincipal = Math.Max(0m, principalBalance - securedPrincipal);
 
-                    // Look up slab percent
-                    decimal securedPercent = 0;
-                    decimal unsecuredPercent = 0;
+                    var (securedPercent, unsecuredPercent) = ResolveSlabPercentages(status.Category, slabs);
 
-                    if (status.Category == "Standard")
-                    {
-                        var slab = slabs.FirstOrDefault(s => s.Category == "Standard");
-                        securedPercent = slab?.MinProvisionPercent ?? 0.25m;
-                        unsecuredPercent = slab?.MinProvisionPercent ?? 0.25m;
-                    }
-                    else if (status.Category == "Sub-Standard")
-                    {
-                        var slab = slabs.FirstOrDefault(s => s.Category == "Sub-Standard");
-                        securedPercent = slab?.MinProvisionPercent ?? 5.0m;
-                        unsecuredPercent = slab?.MinProvisionPercent ?? 5.0m;
-                    }
-                    else if (status.Category == "Loss")
-                    {
-                        var slab = slabs.FirstOrDefault(s => s.Category == "Loss");
-                        securedPercent = slab?.MinProvisionPercent ?? 100.0m;
-                        unsecuredPercent = slab?.MinProvisionPercent ?? 100.0m;
-                    }
-                    else // Doubtful-1/2/3
-                    {
-                        var slabSecured = slabs.FirstOrDefault(s => s.Category == status.Category && s.SecurityType == "Secured");
-                        var slabUnsecured = slabs.FirstOrDefault(s => s.Category == status.Category && s.SecurityType == "Unsecured");
+                    decimal provisionRequired = Math.Round(
+                        (securedPrincipal * securedPercent / 100m) + (unsecuredPrincipal * unsecuredPercent / 100m),
+                        2);
 
-                        // If not found separately, fallback to "Both"
-                        if (slabSecured == null) slabSecured = slabs.FirstOrDefault(s => s.Category == status.Category && s.SecurityType == "Both");
-                        if (slabUnsecured == null) slabUnsecured = slabs.FirstOrDefault(s => s.Category == status.Category && s.SecurityType == "Both");
-
-                        securedPercent = slabSecured?.MinProvisionPercent ?? 0;
-                        unsecuredPercent = slabUnsecured?.MinProvisionPercent ?? 0;
-                    }
-
-                    provisionRequired = Math.Round((securedAmount * securedPercent / 100m) + (unsecuredAmount * unsecuredPercent / 100m), 2);
-
-                    // Reconstruct mix security type
                     string finalSecurityType = "Unsecured";
-                    if (securedAmount > 0 && unsecuredAmount > 0) finalSecurityType = "Mixed";
-                    else if (securedAmount > 0) finalSecurityType = "Secured";
+                    if (principalBalance > 0m)
+                    {
+                        if (securedPrincipal > 0m && unsecuredPrincipal > 0m) finalSecurityType = "Mixed";
+                        else if (securedPrincipal > 0m) finalSecurityType = "Secured";
+                    }
+                    else if (status.CompliantCollateral > 0m)
+                    {
+                        finalSecurityType = "Secured";
+                    }
 
-                    // Handle Manual vs Auto classification run override
-                    var existingStatus = await _context.LoanAccountNpaStatuses
-                        .FirstOrDefaultAsync(s => s.LoanAccountID == loan.LoanAccountID && s.AsOfDate.Date == asOfDate.Date);
+                    existingForDateMap.TryGetValue(loan.LoanAccountID, out var existingStatus);
+                    latestPriorStatusMap.TryGetValue(loan.LoanAccountID, out var latestPriorStatus);
 
                     bool isAutoClassified = true;
                     string finalCategory = status.Category;
-                    string? auditorRemarks = null;
+                    string? auditorRemarks = existingStatus?.AuditorRemarks;
 
                     if (existingStatus != null && !existingStatus.IsAutoClassified && existingStatus.Category == "Loss")
                     {
                         isAutoClassified = false;
                         finalCategory = "Loss";
                         auditorRemarks = existingStatus.AuditorRemarks;
-                        provisionRequired = totalOutstanding; // 100% for Loss Asset
+                        provisionRequired = principalBalance; // 100% of Principal (100% of Interest is in OIR)
                     }
+
+                    decimal preservedProvisionHeld = existingStatus?.ProvisionHeld > 0m
+                        ? existingStatus.ProvisionHeld
+                        : (latestPriorStatus?.ProvisionHeld > 0m ? latestPriorStatus.ProvisionHeld : loan.InterestProvisionBalance);
 
                     if (existingStatus != null)
                     {
@@ -346,6 +581,7 @@ namespace Bhisi.Api.Services
                         existingStatus.OutstandingBalance = totalOutstanding;
                         existingStatus.CompliantCollateralValue = status.CompliantCollateral;
                         existingStatus.ProvisionRequired = provisionRequired;
+                        existingStatus.ProvisionHeld = preservedProvisionHeld;
                         existingStatus.IsAutoClassified = isAutoClassified;
                         existingStatus.LastClassificationRunId = run.NpaClassificationRunID;
                         existingStatus.AuditorRemarks = auditorRemarks;
@@ -356,7 +592,7 @@ namespace Bhisi.Api.Services
                         var newStatus = new LoanAccountNpaStatus
                         {
                             LoanAccountID = loan.LoanAccountID,
-                            AsOfDate = asOfDate.Date,
+                            AsOfDate = targetDate,
                             OverdueDate = status.OverdueDate,
                             OutOfOrderDate = status.OutOfOrderDate,
                             Category = finalCategory,
@@ -364,7 +600,7 @@ namespace Bhisi.Api.Services
                             OutstandingBalance = totalOutstanding,
                             CompliantCollateralValue = status.CompliantCollateral,
                             ProvisionRequired = provisionRequired,
-                            ProvisionHeld = 0, // Filled up from provisioning ledgers / allocations
+                            ProvisionHeld = preservedProvisionHeld,
                             IsAutoClassified = isAutoClassified,
                             LastClassificationRunId = run.NpaClassificationRunID,
                             AuditorRemarks = auditorRemarks
@@ -372,17 +608,29 @@ namespace Bhisi.Api.Services
                         _context.LoanAccountNpaStatuses.Add(newStatus);
                     }
 
-                    // 9. Transitions - Income Recognition / Reversals
-                    // If account transitioned to NPA (Sub-Standard, Doubtful, Loss)
-                    if (finalCategory != "Standard")
+                    // Idempotent sub-ledger OIR tracking (only records net positive delta, NEVER creates unapproved HQ-JV vouchers)
+                    if (finalCategory != "Standard" && unrealizedInterest > 0m)
                     {
-                        await HandleNpaTransitionAccountingAsync(loan, asOfDate, ledgerOverdueIntRec, ledgerOverdueIntProv);
+                        decimal currentNetOir = oirRowsByLoan.TryGetValue(loan.LoanAccountID, out var netVal) ? netVal : 0m;
+                        decimal deltaOir = Math.Round(unrealizedInterest - Math.Max(0m, currentNetOir), 2);
+                        if (deltaOir > 0.01m)
+                        {
+                            _context.OverdueInterestLedgers.Add(new OverdueInterestLedger
+                            {
+                                LoanAccountID = loan.LoanAccountID,
+                                TransactionDate = targetDate,
+                                DebitAmount = deltaOir,
+                                CreditAmount = 0m,
+                                Particulars = $"100% OIR sub-ledger sync on NPA classification (A/C: {loan.LoanAccountNo})"
+                            });
+                            oirRowsByLoan[loan.LoanAccountID] = Math.Max(0m, currentNetOir) + deltaOir;
+                        }
                     }
 
                     recordsProcessed++;
                 }
 
-                // 10. Update Classification Run log
+                // 8. Update Classification Run log
                 run.Status = "Success";
                 run.RecordsProcessed = recordsProcessed;
                 _context.Entry(run).State = EntityState.Modified;
@@ -395,7 +643,7 @@ namespace Bhisi.Api.Services
 
                 return run;
             }
-            catch (Exception ex)
+            catch
             {
                 if (dbTransaction != null)
                 {
@@ -405,231 +653,293 @@ namespace Bhisi.Api.Services
             }
         }
 
-        private string GetFinancialYear(DateTime date)
-        {
-            int year = date.Year;
-            if (date.Month >= 4)
-            {
-                return $"{year}-{((year + 1) % 100):D2}";
-            }
-            else
-            {
-                return $"{(year - 1)}-{(year % 100):D2}";
-            }
-        }
-
         private string GetWorstCategory(string cat1, string cat2)
         {
             var rank = new List<string> { "Standard", "Sub-Standard", "Doubtful-1", "Doubtful-2", "Doubtful-3", "Loss" };
-            int r1 = rank.IndexOf(cat1);
-            int r2 = rank.IndexOf(cat2);
+            int r1 = Math.Max(0, rank.IndexOf(cat1));
+            int r2 = Math.Max(0, rank.IndexOf(cat2));
             return rank[Math.Max(r1, r2)];
         }
 
-        private string DetermineCategoryByDays(int overdueDays, List<NpaProvisionSlab> slabs, int concessionDays)
+        /// <summary>
+        /// Slab-aware IRAC category determination supporting both 90-day RBI and 180-day Co-op concession periods.
+        /// Measures post-NPA duration (overdueDays - concessionDays) against slab NpaMonthsTo boundaries.
+        /// </summary>
+        public static string DetermineCategoryByDays(int overdueDays, List<NpaProvisionSlab> slabs, int concessionDays)
         {
-            // If overdue days is strictly less than concession days, Standard.
             if (overdueDays < concessionDays) return "Standard";
 
-            double overdueMonths = overdueDays / 30.0;
-            double concessionMonths = concessionDays / 30.0;
+            double npaDays = overdueDays - concessionDays;
+            double npaMonths = npaDays / 30.0;
 
-            if (overdueMonths < concessionMonths) return "Standard";
-            if (overdueMonths <= 18.0) return "Sub-Standard";
-            if (overdueMonths <= 42.0) return "Doubtful-1";
-            if (overdueMonths <= 54.0) return "Doubtful-2";
+            decimal subStdMaxNpaMonths = slabs.FirstOrDefault(s => s.Category == "Sub-Standard")?.NpaMonthsTo ?? 12m;
+            decimal d1MaxNpaMonths = slabs.FirstOrDefault(s => s.Category == "Doubtful-1")?.NpaMonthsTo ?? 36m;
+            decimal d2MaxNpaMonths = slabs.FirstOrDefault(s => s.Category == "Doubtful-2")?.NpaMonthsTo ?? 48m;
+
+            if (subStdMaxNpaMonths <= 0) subStdMaxNpaMonths = 12m;
+            if (d1MaxNpaMonths <= subStdMaxNpaMonths) d1MaxNpaMonths = 36m;
+            if (d2MaxNpaMonths <= d1MaxNpaMonths) d2MaxNpaMonths = 48m;
+
+            if (npaMonths <= (double)subStdMaxNpaMonths) return "Sub-Standard";
+            if (npaMonths <= (double)d1MaxNpaMonths) return "Doubtful-1";
+            if (npaMonths <= (double)d2MaxNpaMonths) return "Doubtful-2";
             return "Doubtful-3";
         }
 
         private bool IsExemptSecurityType(string securityType)
         {
-            if (string.IsNullOrEmpty(securityType)) return false;
-            var t = securityType.ToLower();
-            return t.Contains("सोने") || t.Contains("ठेव") || t.Contains("fd") || t.Contains("gold") || t.Contains("lic") || t.Contains("nsc") || t.Contains("kvp") || t.Contains("ivp");
+            if (string.IsNullOrWhiteSpace(securityType)) return false;
+            var t = securityType.Trim().ToLowerInvariant();
+            return t.Contains("सोने") ||
+                   t.Contains("ठेव") ||
+                   t.Contains("fd") ||
+                   t.Contains("fixeddeposit") ||
+                   t.Contains("recurringdeposit") ||
+                   t.Contains("pigmydeposit") ||
+                   t.Contains("savingdeposit") ||
+                   t.Contains("gold") ||
+                   t.Contains("lic") ||
+                   t.Contains("nsc") ||
+                   t.Contains("kvp") ||
+                   t.Contains("ivp");
         }
 
-        private DateTime? GetOverdueDateForTermLoan(LoanAccount loan, DateTime asOfDate, List<LoanInstallmentSchedule> schedules)
+        private static int ResolveInstallmentPeriodMonths(string? frequency)
         {
-            if (loan.LoanRate != null && (loan.LoanRate.InterestCalculationMethod.Contains("Reducing") || loan.LoanRate.InterestCalculationMethod.Contains("घटती")))
+            if (string.IsNullOrWhiteSpace(frequency)) return 1;
+            var f = frequency.ToLowerInvariant();
+            if (f.Contains("वार्षिक") || f.Contains("year") || f.Contains("annual") || f.Contains("एकत्र") || f.Contains("bullet"))
+                return 12;
+            if (f.Contains("सहामाही") || f.Contains("half"))
+                return 6;
+            if (f.Contains("त्रैमासिक") || f.Contains("quarter"))
+                return 3;
+            return 1;
+        }
+
+        private DateTime? GetOverdueDateForTermLoan(
+            LoanAccount loan,
+            DateTime asOfDate,
+            (decimal Principal, decimal ReceivableInterest, decimal OverdueInterest) bal,
+            List<LoanInstallmentSchedule> loanSchedules,
+            List<LoanCollection> colsUpToDate,
+            bool hasPostDateActivity,
+            LoanAccountNpaStatus? priorManualStatus,
+            int concessionDays)
+        {
+            // 1. Schedule-first evaluation (accurate for BOTH Reducing EMI and Flat loans!)
+            if (loanSchedules.Count > 0)
             {
-                DateTime startDate = loan.LoanDisbursementDate ?? loan.OpeningDate;
-                if (asOfDate <= startDate) return null;
-
-                int totalDurationMonths = loan.DurationMonths;
-                if (totalDurationMonths <= 0) totalDurationMonths = 12; // Fallback
-
-                // Calculate elapsed months safely
-                int elapsedMonths = ((asOfDate.Year - startDate.Year) * 12) + asOfDate.Month - startDate.Month;
-                if (asOfDate.Day < startDate.Day) elapsedMonths--;
-                if (elapsedMonths < 0) elapsedMonths = 0;
-                if (elapsedMonths > totalDurationMonths) elapsedMonths = totalDurationMonths;
-
-                // Expected Principal
-                decimal expectedPrincipal = 0;
-                if (totalDurationMonths > 0)
+                if (!hasPostDateActivity)
                 {
-                    expectedPrincipal = (loan.SanctionedAmount / totalDurationMonths) * elapsedMonths;
-                }
-
-                decimal expectedBalance = loan.SanctionedAmount - expectedPrincipal;
-                
-                // If actual balance > expected balance, there is a principal shortfall
-                if (loan.PrincipalBalance > expectedBalance)
-                {
-                    decimal shortfall = loan.PrincipalBalance - expectedBalance;
-                    decimal monthlyPrincipal = loan.SanctionedAmount / totalDurationMonths;
-
-                    if (monthlyPrincipal > 0)
+                    var unpaidDue = loanSchedules
+                        .Where(s => s.DueDate.Date <= asOfDate.Date && s.Status != "Paid")
+                        .ToList();
+                    if (unpaidDue.Count > 0)
                     {
-                        int monthsOverdue = (int)Math.Ceiling(shortfall / monthlyPrincipal);
-                        if (monthsOverdue > 0)
+                        return unpaidDue.Min(s => s.DueDate.Date);
+                    }
+                }
+                else
+                {
+                    // Point-in-time schedule satisfaction using cumulative collections up to asOfDate
+                    decimal cumPaidUpToDate = colsUpToDate.Sum(c =>
+                        c.PrincipalCollected + c.InterestCollected + c.ReceivableInterestCollected + c.InterestWaived);
+
+                    foreach (var sch in loanSchedules.Where(s => s.DueDate.Date <= asOfDate.Date).OrderBy(s => s.InstallmentNo))
+                    {
+                        decimal instAmt = sch.TotalAmount > 0m ? sch.TotalAmount : (sch.PrincipalAmount + sch.InterestAmount);
+                        if (cumPaidUpToDate + 0.50m < instAmt)
                         {
-                            return asOfDate.AddMonths(-monthsOverdue);
+                            return sch.DueDate.Date;
                         }
+                        cumPaidUpToDate -= instAmt;
                     }
                 }
 
-                // Check Interest Overdue
-                if (loan.OverdueInterestBalance > 0 || loan.InterestBalance > 0)
+                if (loan.MaturityDate.HasValue && loan.MaturityDate.Value.Date <= asOfDate.Date && bal.Principal > 0m)
                 {
-                    DateTime lastPaid = loan.LastInstallmentPaidDate ?? startDate;
-                    if ((asOfDate - lastPaid).TotalDays > 30)
-                    {
-                        return lastPaid.AddMonths(1);
-                    }
-                }
-
-                if (loan.MaturityDate.HasValue && loan.MaturityDate.Value <= asOfDate && loan.PrincipalBalance > 0)
-                {
-                    return loan.MaturityDate.Value;
+                    return loan.MaturityDate.Value.Date;
                 }
 
                 return null;
             }
 
-            // FLAT LOGIC
-            var unpaidSchedules = schedules
-                .Where(s => s.LoanAccountID == loan.LoanAccountID && s.DueDate <= asOfDate && s.Status != "Paid")
-                .ToList();
-
-            if (unpaidSchedules.Any())
+            // 2. Preserve baseline OverdueDate for Migrated / Opening Balance NPA loans without installment schedule rows
+            if (priorManualStatus?.OverdueDate != null && priorManualStatus.OverdueDate.Value.Date <= asOfDate.Date && bal.Principal > 0m)
             {
-                return unpaidSchedules.Min(s => s.DueDate);
+                return priorManualStatus.OverdueDate.Value.Date;
             }
 
-            if (loan.MaturityDate.HasValue && loan.MaturityDate.Value <= asOfDate && loan.PrincipalBalance > 0)
+            string initCat = NormalizeCategory(loan.InitialNpaClassification);
+            if (loan.IsOpeningBalance && initCat != "Standard" && bal.Principal > 0m)
             {
-                return loan.MaturityDate.Value;
+                DateTime baseDate = loan.OpeningDate.Date <= asOfDate.Date ? loan.OpeningDate.Date : asOfDate.Date;
+                return DeriveStatutoryOverdueDate(baseDate, initCat, concessionDays);
+            }
+
+            // 3. Past Maturity Date check
+            if (loan.MaturityDate.HasValue && loan.MaturityDate.Value.Date <= asOfDate.Date && bal.Principal > 0m)
+            {
+                return loan.MaturityDate.Value.Date;
+            }
+
+            // 4. Fallback amortization check ONLY when no schedule rows exist
+            DateTime startDate = (loan.LoanDisbursementDate ?? loan.OpeningDate).Date;
+            if (asOfDate.Date <= startDate) return null;
+
+            int periodMonths = ResolveInstallmentPeriodMonths(loan.InstallmentFrequency);
+            int totalDurationMonths = loan.DurationMonths > 0 ? loan.DurationMonths : 12;
+
+            int elapsedMonths = ((asOfDate.Year - startDate.Year) * 12) + asOfDate.Month - startDate.Month;
+            if (asOfDate.Day < startDate.Day) elapsedMonths--;
+            if (elapsedMonths < periodMonths) return null;
+            if (elapsedMonths > totalDurationMonths) elapsedMonths = totalDurationMonths;
+
+            bool isReducing = loan.LoanRate != null &&
+                              ((loan.LoanRate.InterestCalculationMethod ?? "").Contains("Reducing", StringComparison.OrdinalIgnoreCase) ||
+                               (loan.LoanRate.InterestCalculationMethod ?? "").Contains("घटती", StringComparison.OrdinalIgnoreCase));
+
+            int totalPeriods = Math.Max(1, totalDurationMonths / periodMonths);
+            int elapsedPeriods = Math.Min(totalPeriods, elapsedMonths / periodMonths);
+
+            if (elapsedPeriods > 0 && loan.SanctionedAmount > 0m)
+            {
+                decimal expectedBalance;
+                double periodicRate = (double)(loan.InterestRate / 100m) * (periodMonths / 12.0);
+
+                if (isReducing && periodicRate > 0.0001)
+                {
+                    // True reducing-balance amortization curve: B_k = P * ((1+r)^N - (1+r)^k) / ((1+r)^N - 1)
+                    double powN = Math.Pow(1.0 + periodicRate, totalPeriods);
+                    double powK = Math.Pow(1.0 + periodicRate, elapsedPeriods);
+                    double factor = (powN - powK) / (powN - 1.0);
+                    expectedBalance = Math.Round(loan.SanctionedAmount * (decimal)Math.Max(0.0, factor), 2);
+                }
+                else
+                {
+                    decimal expectedPrincipalPaid = (loan.SanctionedAmount / totalPeriods) * elapsedPeriods;
+                    expectedBalance = Math.Max(0m, loan.SanctionedAmount - expectedPrincipalPaid);
+                }
+
+                if (bal.Principal > expectedBalance + 1m)
+                {
+                    decimal shortfall = bal.Principal - expectedBalance;
+                    decimal avgPeriodPrincipal = loan.SanctionedAmount / totalPeriods;
+                    if (avgPeriodPrincipal > 0m)
+                    {
+                        int periodsOverdue = Math.Max(1, (int)Math.Ceiling(shortfall / avgPeriodPrincipal));
+                        return asOfDate.Date.AddMonths(-(periodsOverdue * periodMonths));
+                    }
+                }
+            }
+
+            if ((bal.ReceivableInterest + bal.OverdueInterest) > 0m)
+            {
+                DateTime? lastPaid = colsUpToDate.Count > 0
+                    ? colsUpToDate.Max(c => (DateTime?)c.CollectionDate.Date)
+                    : loan.LastInstallmentPaidDate?.Date;
+                DateTime refDate = lastPaid ?? startDate;
+                if ((asOfDate.Date - refDate).TotalDays > (periodMonths * 30))
+                {
+                    return refDate.AddMonths(periodMonths);
+                }
             }
 
             return null;
         }
 
-        private DateTime? GetOutOfOrderDateForCcOd(LoanAccount loan, DateTime asOfDate, decimal limit,
-            List<LoanInstallmentSchedule> schedules, List<LoanCollection> collections, List<LoanDisbursement> disbursements, int concessionDays)
+        public static DateTime DeriveStatutoryOverdueDate(DateTime referenceDate, string category, int concessionDays = 180)
         {
-            // A CC/OD is irregular if:
-            // 1. Overdue interest unpaid for > concessionDays
-            // We can estimate the date interest became overdue by LastInstallmentPaidDate or OpeningDate + 1 month
-            DateTime interestOverdueSince = (loan.LastInstallmentPaidDate ?? loan.LoanDisbursementDate ?? loan.OpeningDate).AddMonths(1);
-            bool isInterestOverdue = (loan.InterestBalance + loan.OverdueInterestBalance) > 0 && interestOverdueSince <= asOfDate;
+            int cDays = concessionDays > 0 ? concessionDays : 180;
+            return category switch
+            {
+                "Sub-Standard" => referenceDate.Date.AddDays(-(cDays + 15)),     // ~0.5 months into Sub-Standard
+                "Doubtful-1"   => referenceDate.Date.AddDays(-(cDays + 380)),    // >12 months in NPA
+                "Doubtful-2"   => referenceDate.Date.AddDays(-(cDays + 1110)),   // >36 months in NPA
+                "Doubtful-3"   => referenceDate.Date.AddDays(-(cDays + 1480)),   // >48 months in NPA
+                "Loss"         => referenceDate.Date.AddDays(-(cDays + 1480)),
+                _              => referenceDate.Date
+            };
+        }
 
-            // 2. Limit has expired and not renewed
-            bool isExpired = loan.MaturityDate.HasValue && loan.MaturityDate.Value <= asOfDate;
+        private DateTime? GetOutOfOrderDateForCcOd(
+            LoanAccount loan,
+            DateTime asOfDate,
+            decimal limit,
+            (decimal Principal, decimal ReceivableInterest, decimal OverdueInterest) bal,
+            List<LoanCollection> colsUpToDate,
+            List<LoanDisbursement> disbsUpToDate)
+        {
+            DateTime? latestColDate = colsUpToDate.Count > 0
+                ? colsUpToDate.Max(c => (DateTime?)c.CollectionDate.Date)
+                : loan.LastInstallmentPaidDate?.Date;
 
-            // 3. Outstanding balance continuously exceeds sanctioned/drawing power limit
-            decimal outstanding = loan.PrincipalBalance + loan.InterestBalance + loan.OverdueInterestBalance;
-            bool isExceeded = outstanding > limit;
+            DateTime interestOverdueSince = (latestColDate ?? loan.LoanDisbursementDate?.Date ?? loan.OpeningDate.Date).AddMonths(1);
+            bool isInterestOverdue = (bal.ReceivableInterest + bal.OverdueInterest) > 0m && interestOverdueSince <= asOfDate.Date;
 
-            // 4. Credit summations in FY are less than 4x minimum of sanctioned limit or drawing power
+            bool isExpired = loan.MaturityDate.HasValue && loan.MaturityDate.Value.Date <= asOfDate.Date;
+
+            decimal outstanding = bal.Principal + bal.ReceivableInterest + bal.OverdueInterest;
+            bool isExceeded = limit > 0m && outstanding > limit;
+
             bool isCreditSummationInsufficient = false;
             DateTime fyStart = GetFinancialYearStartDate(asOfDate);
-            decimal collectionsInFy = collections
-                .Where(c => c.LoanAccountID == loan.LoanAccountID && c.CollectionDate >= fyStart && c.CollectionDate <= asOfDate)
+            decimal collectionsInFy = colsUpToDate
+                .Where(c => c.CollectionDate.Date >= fyStart && c.CollectionDate.Date <= asOfDate.Date)
                 .Sum(c => c.TotalAmountReceived);
 
-            decimal requiredCredit = 4 * limit;
-            // Evaluated at end of FY or if expired
-            if (asOfDate >= fyStart.AddMonths(12).AddDays(-1) || isExpired)
+            decimal requiredCredit = 4m * limit;
+            if (limit > 0m && (asOfDate.Date >= fyStart.AddMonths(12).AddDays(-1) || isExpired))
             {
                 isCreditSummationInsufficient = collectionsInFy < requiredCredit;
             }
 
-            // Find the earliest irregularity date
             var irregularityDates = new List<DateTime>();
-
-            if (isInterestOverdue)
-            {
-                irregularityDates.Add(interestOverdueSince);
-            }
-            if (isExpired && loan.MaturityDate.HasValue)
-            {
-                irregularityDates.Add(loan.MaturityDate.Value);
-            }
+            if (isInterestOverdue) irregularityDates.Add(interestOverdueSince);
+            if (isExpired && loan.MaturityDate.HasValue) irregularityDates.Add(loan.MaturityDate.Value.Date);
             if (isExceeded)
             {
-                DateTime exceedStartDate = GetContinuousExceedStartDate(loan, asOfDate, limit, collections, disbursements);
-                irregularityDates.Add(exceedStartDate);
+                irregularityDates.Add(GetContinuousExceedStartDate(loan, asOfDate, limit, outstanding, colsUpToDate, disbsUpToDate));
             }
-            if (isCreditSummationInsufficient)
-            {
-                irregularityDates.Add(fyStart);
-            }
+            if (isCreditSummationInsufficient) irregularityDates.Add(fyStart);
 
-            if (irregularityDates.Any())
-            {
-                return irregularityDates.Min();
-            }
-
-            return null;
+            return irregularityDates.Count > 0 ? irregularityDates.Min() : null;
         }
 
         private DateTime GetFinancialYearStartDate(DateTime date)
         {
             int year = date.Year;
-            if (date.Month >= 4) return new DateTime(year, 4, 1);
-            return new DateTime(year - 1, 4, 1);
+            return date.Month >= 4 ? new DateTime(year, 4, 1) : new DateTime(year - 1, 4, 1);
         }
 
-        private DateTime GetContinuousExceedStartDate(LoanAccount loan, DateTime asOfDate, decimal limit,
-            List<LoanCollection> collections, List<LoanDisbursement> disbursements)
+        private DateTime GetContinuousExceedStartDate(
+            LoanAccount loan,
+            DateTime asOfDate,
+            decimal limit,
+            decimal currentOutstandingAsOfDate,
+            List<LoanCollection> accountCollections,
+            List<LoanDisbursement> accountDisbursements)
         {
-            // Reconstruct running balance backwards from asOfDate
-            decimal runningBalance = loan.PrincipalBalance + loan.InterestBalance + loan.OverdueInterestBalance;
-            if (runningBalance <= limit) return asOfDate;
+            decimal runningBalance = currentOutstandingAsOfDate;
+            if (runningBalance <= limit) return asOfDate.Date;
 
-            // Combine transactions before asOfDate
             var txns = new List<(DateTime Date, decimal Amount, string Type)>();
-            
-            var accountCollections = collections.Where(c => c.LoanAccountID == loan.LoanAccountID && c.CollectionDate <= asOfDate).ToList();
-            var accountDisbursements = disbursements.Where(d => d.LoanAccountID == loan.LoanAccountID && d.DisbursementDate <= asOfDate).ToList();
-
             foreach (var c in accountCollections)
             {
-                // Collection is a credit (reduced balance). Working backward, we add it back.
-                txns.Add((c.CollectionDate, c.PrincipalCollected + c.InterestCollected + c.PenaltyInterestCollected, "Credit"));
+                txns.Add((c.CollectionDate.Date, c.PrincipalCollected + c.InterestCollected + c.ReceivableInterestCollected + c.PenaltyInterestCollected, "Credit"));
             }
             foreach (var d in accountDisbursements)
             {
-                // Disbursement is a debit (increased balance). Working backward, we subtract it.
-                txns.Add((d.DisbursementDate, d.DisbursementAmount, "Debit"));
+                txns.Add((d.DisbursementDate.Date, d.DisbursementAmount, "Debit"));
             }
 
-            // Sort descending by date
             var sortedTxns = txns.OrderByDescending(t => t.Date).ToList();
-            DateTime lastExceedDate = asOfDate;
+            DateTime lastExceedDate = asOfDate.Date;
 
             foreach (var t in sortedTxns)
             {
-                if (t.Type == "Credit")
-                {
-                    runningBalance += t.Amount;
-                }
-                else
-                {
-                    runningBalance -= t.Amount;
-                }
-
+                runningBalance = t.Type == "Credit" ? runningBalance + t.Amount : runningBalance - t.Amount;
                 if (runningBalance <= limit)
                 {
                     return lastExceedDate;
@@ -637,194 +947,103 @@ namespace Bhisi.Api.Services
                 lastExceedDate = t.Date;
             }
 
-            return loan.LoanDisbursementDate ?? loan.OpeningDate;
+            return (loan.LoanDisbursementDate ?? loan.OpeningDate).Date;
         }
 
-        private decimal CalculateCompliantCollateralValue(LoanAccount loan, DateTime asOfDate, List<CollateralComplianceLog> logs, out string securityType)
+        private decimal ResolveEffectiveCollateralValue(
+            LoanAccount loan,
+            DateTime asOfDate,
+            List<CollateralComplianceLog> logs,
+            List<LoanDepositCollateral> depositCollaterals,
+            List<GoldLoanDetail> goldDetails,
+            out string securityType)
+        {
+            // 1. If explicit Collateral Compliance Audit Logs exist for this loan, enforce statutory audit rules strictly
+            if (logs.Count > 0)
+            {
+                return EvaluateComplianceLogValue(loan, asOfDate, logs[0], out securityType);
+            }
+
+            // 2. Otherwise resolve from live CBS collateral records (Deposit Liens + Gold Ornaments + LoanAccount.SecurityValue)
+            decimal depositValue = depositCollaterals.Sum(c =>
+                c.CurrentDepositBalance > 0m
+                    ? c.CurrentDepositBalance
+                    : (c.DepositAmount > 0m ? c.DepositAmount : c.LienAmount));
+
+            decimal goldValue = goldDetails.Sum(g =>
+                g.ValuerValuation > 0m ? g.ValuerValuation : g.EstimatedValue);
+
+            decimal operationalCollateral = Math.Max(depositValue + goldValue, loan.SecurityValue);
+            if (operationalCollateral > 0m)
+            {
+                securityType = "Secured";
+                return Math.Round(operationalCollateral, 2);
+            }
+
+            securityType = "Unsecured";
+            return 0m;
+        }
+
+        private decimal EvaluateComplianceLogValue(
+            LoanAccount loan,
+            DateTime asOfDate,
+            CollateralComplianceLog log,
+            out string securityType)
         {
             securityType = "Unsecured";
-            var log = logs.FirstOrDefault();
-            if (log == null)
-            {
-                return 0; // NIL if no logs exist
-            }
 
-            // Check generic validation period of 3 years
-            if ((asOfDate - log.ValuationDate).TotalDays > (365 * 3))
-            {
-                return 0; // NIL if valuation older than 3 years
-            }
+            if ((asOfDate.Date - log.ValuationDate.Date).TotalDays > (365 * 3))
+                return 0m;
 
-            // Check insurance expiry
-            if (log.InsuranceExpiryDate < asOfDate)
-            {
-                return 0; // NIL if insurance has expired
-            }
+            if (log.InsuranceExpiryDate.Date < asOfDate.Date)
+                return 0m;
 
-            // Check annual physical inspection
-            if ((asOfDate - log.LastInspectionDate).TotalDays > 365)
-            {
-                return 0; // NIL if inspection older than 1 year
-            }
+            if ((asOfDate.Date - log.LastInspectionDate.Date).TotalDays > 365)
+                return 0m;
 
             decimal rawValue = log.ValuationValue;
 
             if (log.CollateralType == "Immovable Property")
             {
-                // If valued >= 100 Lakh, requires 2 valuers
-                if (rawValue >= 10000000 && log.ValuersCount < 2)
-                {
-                    return 0;
-                }
+                if (rawValue >= 10000000m && log.ValuersCount < 2) return 0m;
                 securityType = "Secured";
                 return rawValue;
             }
-            else if (log.CollateralType == "Plant & Machinery" || log.CollateralType == "Furniture & Fixtures")
+            if (log.CollateralType == "Plant & Machinery" || log.CollateralType == "Furniture & Fixtures")
             {
-                // If valued >= 50 Lakh, requires 2 valuers
-                if (rawValue >= 5000000 && log.ValuersCount < 2)
-                {
-                    return 0;
-                }
+                if (rawValue >= 5000000m && log.ValuersCount < 2) return 0m;
 
-                // Apply 10% p.a. straight-line depreciation from valuation date
-                double yearsElapsed = (asOfDate - log.ValuationDate).TotalDays / 365.25;
-                decimal deprRate = 0.10m;
-                decimal deprFactor = 1.0m - (decimal)Math.Min(1.0, yearsElapsed * (double)deprRate);
-                
+                double yearsElapsed = Math.Max(0.0, (asOfDate.Date - log.ValuationDate.Date).TotalDays / 365.25);
+                decimal deprFactor = 1.0m - (decimal)Math.Min(1.0, yearsElapsed * 0.10);
                 securityType = "Secured";
                 return Math.Round(rawValue * deprFactor, 2);
             }
-            else if (log.CollateralType == "Pledged Stock")
+            if (log.CollateralType == "Pledged Stock")
             {
-                // Monthly stock statement not older than 1 month
-                if (!log.LastStockStatementDate.HasValue || (asOfDate - log.LastStockStatementDate.Value).TotalDays > 30)
-                {
-                    return 0;
-                }
-
-                decimal limit = loan.SanctionedAmount;
-                // If limits > 10 Lakh, requires 6-monthly inspection (already covered since inspection checked < 1 year, but here we require < 180 days for stock)
-                if (limit > 1000000 && (asOfDate - log.LastInspectionDate).TotalDays > 180)
-                {
-                    return 0;
-                }
-
-                // If limits >= 25 Lakh, requires annual auditor verification
-                if (limit >= 2500000 && !log.IsAuditorVerified)
-                {
-                    return 0;
-                }
+                if (!log.LastStockStatementDate.HasValue || (asOfDate.Date - log.LastStockStatementDate.Value.Date).TotalDays > 30)
+                    return 0m;
+                if (loan.SanctionedAmount > 1000000m && (asOfDate.Date - log.LastInspectionDate.Date).TotalDays > 180)
+                    return 0m;
+                if (loan.SanctionedAmount >= 2500000m && !log.IsAuditorVerified)
+                    return 0m;
 
                 securityType = "Secured";
                 return rawValue;
             }
-            else if (log.CollateralType == "Other Exempt")
+            if (log.CollateralType == "Other Exempt")
             {
-                // Exemption check like Gold/FD/NSC
-                if (!log.IsMarginMaintained)
-                {
-                    return 0;
-                }
+                if (!log.IsMarginMaintained) return 0m;
                 securityType = "Secured";
                 return rawValue;
             }
 
-            return 0;
-        }
-
-        private async Task HandleNpaTransitionAccountingAsync(LoanAccount loan, DateTime asOfDate,
-            Ledger overdueIntRec, Ledger overdueIntProv)
-        {
-            decimal unrealizedInterest = loan.InterestBalance + loan.OverdueInterestBalance;
-            if (unrealizedInterest <= 0) return;
-
-            // Check if we have already posted a contra entry for this transition
-            bool alreadyPosted = await _context.OverdueInterestLedgers
-                .AnyAsync(l => l.LoanAccountID == loan.LoanAccountID && l.DebitAmount > 0 && l.TransactionDate.Date == asOfDate.Date);
-
-            if (alreadyPosted) return;
-
-            // Log in Contra tracking ledgers
-            var overdueTx = new OverdueInterestLedger
-                {
-                    LoanAccountID = loan.LoanAccountID,
-                    TransactionDate = asOfDate,
-                    DebitAmount = unrealizedInterest,
-                    CreditAmount = 0,
-                    Particulars = $"Unrealized interest moved to contra on NPA classification (A/C: {loan.LoanAccountNo})"
-                };
-            _context.OverdueInterestLedgers.Add(overdueTx);
-
-            // Fetch interest income ledger from LoanRate
-            int interestIncomeLedgerId = loan.LoanRate?.InterestLedgerID ?? 0;
-            if (interestIncomeLedgerId == 0)
+            if (rawValue > 0m)
             {
-                interestIncomeLedgerId = (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("व्याज")))?.LedgerID ?? 0;
+                securityType = "Secured";
+                return rawValue;
             }
 
-            if (interestIncomeLedgerId > 0)
-            {
-                // Post Journal Voucher to reverse interest income
-                var activeYear = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
-                string fyCode = activeYear?.YearCode ?? "26-27";
-                int count = await Helpers.VoucherNumberHelper.NextSequenceAsync(_context, $"HQ-JV-{fyCode}-", 5);
-                string voucherNo = $"HQ-JV-{fyCode}-{count:D5}";
-
-                var jv = new Voucher
-                {
-                    BranchID = loan.BranchID,
-                    VoucherNo = voucherNo,
-                    VoucherDate = asOfDate,
-                    VoucherType = "Journal",
-                    Narration = $"Accrued Interest Reversal on NPA classification for Account {loan.LoanAccountNo}",
-                    TotalAmount = unrealizedInterest
-                };
-                _context.Vouchers.Add(jv);
-                await _context.SaveChangesAsync();
-
-                // Debit Interest Income (reversing income)
-                _context.VoucherDetails.Add(new VoucherDetail
-                {
-                    VoucherID = jv.VoucherID,
-                    LedgerID = interestIncomeLedgerId,
-                    DrCr = "Dr",
-                    Amount = unrealizedInterest,
-                    MemberID = loan.MemberID
-                });
-
-                // Credit Overdue Interest Provision (Contra-Liability)
-                _context.VoucherDetails.Add(new VoucherDetail
-                {
-                    VoucherID = jv.VoucherID,
-                    LedgerID = overdueIntProv.LedgerID,
-                    DrCr = "Cr",
-                    Amount = unrealizedInterest,
-                    MemberID = loan.MemberID
-                });
-
-                // Also record the asset side in Ledger entries: Debit Overdue Interest Receivable, Credit general Interest Receivable (if applicable)
-                // Here we debit the Overdue Interest Receivable and credit the contra to match the ledger balances
-                _context.VoucherDetails.Add(new VoucherDetail
-                {
-                    VoucherID = jv.VoucherID,
-                    LedgerID = overdueIntRec.LedgerID,
-                    DrCr = "Dr",
-                    Amount = unrealizedInterest,
-                    MemberID = loan.MemberID
-                });
-
-                _context.VoucherDetails.Add(new VoucherDetail
-                {
-                    VoucherID = jv.VoucherID,
-                    LedgerID = loan.LoanRate?.OverdueInterestLedgerID ?? interestIncomeLedgerId, // Credit the standard receivable ledger
-                    DrCr = "Cr",
-                    Amount = unrealizedInterest,
-                    MemberID = loan.MemberID
-                });
-
-                overdueTx.VoucherID = jv.VoucherID;
-            }
+            return 0m;
         }
 
         private async Task<Ledger> GetOrCreateLedgerAsync(string name, string groupName, string nature, bool excludeRule35)
@@ -857,69 +1076,7 @@ namespace Bhisi.Api.Services
 
         private async Task SeedSlabsForFyAsync(string fy)
         {
-            var slabs = new List<NpaProvisionSlab>();
-
-            if (fy == "2024-25")
-            {
-                slabs.AddRange(new[]
-                {
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, MinProvisionPercent = 0.25m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 5.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 15.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 60.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 20.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 70.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 25.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 80.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, MinProvisionPercent = 100.00m }
-                });
-            }
-            else if (fy == "2025-26")
-            {
-                slabs.AddRange(new[]
-                {
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, MinProvisionPercent = 0.25m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 6.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 20.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 70.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 25.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 80.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 30.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 90.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, MinProvisionPercent = 100.00m }
-                });
-            }
-            else if (fy == "2026-27")
-            {
-                slabs.AddRange(new[]
-                {
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, MinProvisionPercent = 0.25m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 8.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 25.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 80.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 30.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 90.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 40.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 100.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, MinProvisionPercent = 100.00m }
-                });
-            }
-            else // 2027-28 and onwards default to highest slabs
-            {
-                slabs.AddRange(new[]
-                {
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 6, MinProvisionPercent = 0.25m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Sub-Standard", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 6, OverdueOrOutOfOrderMonthsTo = 18, NpaMonthsFrom = 0, NpaMonthsTo = 12, MinProvisionPercent = 10.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 30.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-1", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 18, OverdueOrOutOfOrderMonthsTo = 42, NpaMonthsFrom = 12, NpaMonthsTo = 36, MinProvisionPercent = 100.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 40.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-2", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 42, OverdueOrOutOfOrderMonthsTo = 54, NpaMonthsFrom = 36, NpaMonthsTo = 48, MinProvisionPercent = 100.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Secured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 50.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Doubtful-3", SecurityType = "Unsecured", OverdueOrOutOfOrderMonthsFrom = 54, OverdueOrOutOfOrderMonthsTo = 999, NpaMonthsFrom = 48, NpaMonthsTo = 999, MinProvisionPercent = 100.00m },
-                    new NpaProvisionSlab { FinancialYear = fy, Category = "Loss", SecurityType = "Both", OverdueOrOutOfOrderMonthsFrom = 0, OverdueOrOutOfOrderMonthsTo = 999, MinProvisionPercent = 100.00m }
-                });
-            }
-
+            var slabs = BuildDefaultSlabsForFy(fy);
             _context.NpaProvisionSlabs.AddRange(slabs);
             await _context.SaveChangesAsync();
         }

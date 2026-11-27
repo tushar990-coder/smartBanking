@@ -389,7 +389,7 @@ namespace Bhisi.Api.Controllers
             {
                 Token = jwt,
                 Username = user.Username,
-                Role = user.Role?.RoleName ?? "User",
+                Role = UserContextExtensions.NormalizeRoleClaim(user.Role?.RoleName),
                 BranchID = request.BranchID,
                 DefaultBranchID = user.DefaultBranchID ?? request.BranchID,
                 BranchName = branch.BranchName,

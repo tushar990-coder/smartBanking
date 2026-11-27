@@ -1,4 +1,4 @@
-export type RoleCode = 'Admin' | 'HO_Manager' | 'Branch_Manager' | 'Cashier' | 'Operator' | 'Auditor';
+export type RoleCode = 'SuperAdmin' | 'Admin' | 'HO_Manager' | 'Branch_Manager' | 'Cashier' | 'Operator' | 'Auditor';
 export type ActionType = 'View' | 'Add' | 'Edit' | 'Delete' | 'Print' | 'Approve';
 export type ModuleCode = 'Member' | 'Saving' | 'FD' | 'RD' | 'Loan' | 'Share' | 'Voucher' | 'Pigmy' | 'Reports' | 'Settings';
 
@@ -12,8 +12,44 @@ export interface RolePermissions {
   isAllBranches: boolean;
 }
 
+export function isSuperAdminRole(role?: string | null): boolean {
+  if (!role) return false;
+  const clean = role.trim().toLowerCase().replace(/[\s_]+/g, '');
+  return clean === 'superadmin';
+}
+
+export function isAdminOrSuperAdminRole(role?: string | null): boolean {
+  if (!role) return false;
+  const clean = role.trim().toLowerCase().replace(/[\s_]+/g, '');
+  return clean === 'superadmin' || clean === 'admin' || clean === 'systemadmin';
+}
+
+export function canAccessUserManagement(role?: string | null): boolean {
+  if (!role) return false;
+  const clean = role.trim().toLowerCase().replace(/[\s_]+/g, '');
+  return (
+    clean === 'superadmin' ||
+    clean === 'admin' ||
+    clean === 'systemadmin' ||
+    clean === 'headoffice' ||
+    clean === 'homanager'
+  );
+}
+
 // Master Role Permission Matrix Definition
 export const ROLE_PERMISSION_MATRIX: Record<RoleCode, Record<ModuleCode, RolePermissions>> = {
+  SuperAdmin: {
+    Member: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
+    Saving: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
+    FD: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
+    RD: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
+    Loan: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
+    Share: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
+    Voucher: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
+    Pigmy: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
+    Reports: { canView: true, canAdd: false, canEdit: false, canDelete: false, canPrint: true, canApprove: false, isAllBranches: true },
+    Settings: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true }
+  },
   Admin: {
     Member: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
     Saving: { canView: true, canAdd: true, canEdit: true, canDelete: true, canPrint: true, canApprove: true, isAllBranches: true },
@@ -99,9 +135,9 @@ export function hasPermission(
   let normalizedRole: RoleCode = 'Operator';
   const roleLower = role.toLowerCase().replace(/[\s\_]+/g, '');
   
-  if (
+  if (roleLower === 'superadmin') normalizedRole = 'SuperAdmin';
+  else if (
     roleLower === 'admin' ||
-    roleLower === 'superadmin' ||
     roleLower === 'systemadmin' ||
     roleLower === 'headoffice' ||
     roleLower === 'generalmanager' ||

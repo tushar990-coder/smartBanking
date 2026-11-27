@@ -83,7 +83,7 @@ namespace Bhisi.Api.Controllers
             string role = (User.GetUserRole() ?? string.Empty).Trim();
             string[] allowedRoles =
             {
-                "Admin", "SuperAdmin", "HeadOffice", "HO_Manager",
+                "Admin", "SuperAdmin", "Super Admin", "HeadOffice", "HO_Manager",
                 "Manager", "BranchManager", "Branch_Manager",
                 "CEO", "Chairman", "GeneralManager", "Officer"
             };

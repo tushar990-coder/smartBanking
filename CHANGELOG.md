@@ -1,5 +1,20 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-27] - आवृत्ती v2.6.51 (`SuperAdmin` सर्वोच्च रोल व अधिकार उतरंड, `NPA तरतूद` मुद्दल-आधारित BDDR + १००% OIR, `FD`/`गुंतवणूक` नूतनीकरण अहवाल, कोरी PDF दुरुस्ती व कॉम्पॅक्ट थीम UI)
+
+### 👑 1. युजर व्यवस्थापन व सुरक्षा मास्टर — `SuperAdmin (Super Admin)` रोल व अधिकार उतरंड
+- **`UsersController.cs`, `UserContextExtensions.cs`, `JwtTokenService.cs`, `Program.cs`, `tools/master_vps_update_schema.sql`, `UserMaster.tsx`, `permissionUtils.ts`, `Sidebar.tsx`, `SuperAdminRoleHierarchyTests.cs`:**
+  - सर्व संस्थांच्या डेटाबेसमध्ये `SuperAdmin` रोल स्वयंचलित सीडिंग (`Auto-Seeding`), पहिल्या `SuperAdmin` साठी सुरक्षित `Bootstrap` नियम आणि `SuperAdmin > Admin > HO_Manager > Manager` अशी कडक अधिकार उतरंड लागू केली.
+  - एकदा सक्रिय `SuperAdmin` तयार झाल्यावर सामान्य `Admin` ला `SuperAdmin` तयार करण्यास, स्वतःला `SuperAdmin` बनवण्यास किंवा `SuperAdmin` खात्याचे संपादन/रिसेट/लॉक करण्यास `403 Forbidden` ने प्रतिबंधित केले; तसेच `SuperAdmin` ला सर्व शाखांमध्ये (`SavingAccountMaster`, `FdAccountOpening`, `Dashboard`) आणि `युजर व्यवस्थापन` मेनूमध्ये पूर्ण अधिकार दिले.
+
+### 🛡️ 2. `NPA तरतूद माहिती` — मुद्दल-आधारित `BDDR` + स्वतंत्र १००% येणे व्याज तरतूद (`OIR`)
+- **`NpaEngineService.cs`, `NpaController.cs`, `LoanAccountsController.cs`, `NpaRegister.tsx`, `NpaStatementReport.tsx`, `NpaConfigMaster.tsx`, `CollateralComplianceTracker.tsx`, `NpaDashboard.tsx`, `NpaDefaultersList.tsx`, `NpaEngineTests.cs`:**
+  - नियामक नियमांनुसार `BDDR` तरतूद केवळ निव्वळ कर्ज मुद्दलावर (`PrincipalBalance`) आणि थकीत व्याजासाठी स्वतंत्र १००% `Overdue Interest Reserve (OIR)` लागू केले; तारण मूल्यांकन (`CollateralComplianceLogs`, `LoanDepositCollaterals`, `GoldLoanDetails`, `SecurityValue`), अचूक `AsOfDate` स्नॅपशॉट व `POST /api/npa/collateral-compliance` एन्डपॉइंट जोडले.
+
+### 📄 3. `FD` व `गुंतवणूक` नूतनीकरण अहवाल, कोरी PDF एक्सपोर्ट दुरुस्ती व कॉम्पॅक्ट थीम UI
+- **`ReportsController.cs`, `FdReports.tsx`, `InvestmentReports.tsx`, `ReportDashboard.tsx`, `daybookPdfExport.ts`, `Daybook.tsx`, `LegacyDaybook.tsx`, `DaybookSummary.tsx`, `LoanInterestPostingMaster.tsx`, `CustomerBulkEntry.tsx`:**
+  - `१०. मुदत ठेव नूतनीकरण अहवाल` आणि `६. गुंतवणूक नूतनीकरण अहवाल` समाविष्ट केले; डे-बुक व इतर अहवालांमधील Blank White PDF व ISO तारीख त्रुटी दूर केल्या; `कर्ज व्याज आकारणी` व `खातेदार बल्क नोंदणी` (`23px` सिंगल-लाईन रो) डायनॅमिक `--color-primary` थीमशी जुळवले (**२७६/२७६ xUnit चाचण्या व प्रॉडक्शन Vite बिल्ड उत्तीर्ण**).
+
 ## 📅 [2026-11-27] - आवृत्ती v2.6.50 (`मुदत ठेव` ओपनिंग बॅलन्स `On Principal` vs `On Interest` ताळेबंद वर्गीकरण, योजना बदलावर डायनॅमिक ऑटो-सिंक व `खातेदार व कर्मचारी बँक तपशील` कॉम्पॅक्ट UI)
 
 ### 🏦 1. मुदत ठेव (`FD`) ३१/०३/२०२६ साचलेले व्याज वर्गीकरण व क्लोजर सेटलमेंट (`Posting Method`)

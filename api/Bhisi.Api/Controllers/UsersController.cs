@@ -20,10 +20,128 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
+        private static int GetRoleSortOrder(string? roleName)
+        {
+            if (UserContextExtensions.IsSuperAdminRole(roleName)) return 0;
+            if (UserContextExtensions.IsAdminRole(roleName)) return 1;
+            string r = (roleName ?? string.Empty).Trim();
+            if (r.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("CEO", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Chairman", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("GeneralManager", StringComparison.OrdinalIgnoreCase)) return 2;
+            if (r.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("BranchManager", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Branch_Manager", StringComparison.OrdinalIgnoreCase)) return 3;
+            if (r.Equals("Accountant", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Officer", StringComparison.OrdinalIgnoreCase)) return 4;
+            if (r.Equals("Cashier", StringComparison.OrdinalIgnoreCase)) return 5;
+            if (r.Equals("Clerk", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Operator", StringComparison.OrdinalIgnoreCase)) return 6;
+            if (r.Equals("Auditor", StringComparison.OrdinalIgnoreCase)) return 7;
+            return 8;
+        }
+
+        private async Task EnsureSuperAdminRoleExistsAsync()
+        {
+            bool exists = await _context.Roles.AnyAsync(r =>
+                r.RoleName == "SuperAdmin" ||
+                r.RoleName == "Super Admin" ||
+                r.RoleCode == "SuperAdmin");
+
+            if (!exists)
+            {
+                _context.Roles.Add(new Role
+                {
+                    RoleCode = "SuperAdmin",
+                    RoleName = "SuperAdmin",
+                    Description = "सर्वोच्च प्रणाली प्रशासक (Master Super Administrator)",
+                    IsSystemRole = true,
+                    Status = true
+                });
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        private async Task<(bool isCallerSuperAdmin, bool canManageSuperAdmin, int callerUserId, string callerRole)> ResolveCallerHierarchyAsync()
+        {
+            int callerUserId = User?.GetUserId() ?? 0;
+            string callerUsername = User?.GetUsername() ?? string.Empty;
+            string callerRole = User?.GetUserRole() ?? string.Empty;
+
+            bool isCallerSuperAdmin = UserContextExtensions.IsSuperAdminRole(callerRole);
+            if (!isCallerSuperAdmin && callerUserId > 0)
+            {
+                var dbCallerRole = await _context.Users
+                    .AsNoTracking()
+                    .Where(u => u.UserID == callerUserId && u.IsActive && !u.IsLocked)
+                    .Select(u => u.Role != null ? u.Role.RoleName : null)
+                    .FirstOrDefaultAsync();
+
+                if (UserContextExtensions.IsSuperAdminRole(dbCallerRole))
+                {
+                    isCallerSuperAdmin = true;
+                    callerRole = "SuperAdmin";
+                }
+            }
+
+            if (isCallerSuperAdmin)
+            {
+                return (true, true, callerUserId, callerRole);
+            }
+
+            // Safe Bootstrap Rule: If zero active SuperAdmin accounts exist in DB yet,
+            // allow the Master Administrator (UserID == 1 / 'admin', or initial Admin if no 'admin' row exists)
+            // to create or promote the very first SuperAdmin.
+            bool anyActiveSuperAdminExists = await _context.Users
+                .AsNoTracking()
+                .Include(u => u.Role)
+                .AnyAsync(u => u.IsActive && !u.IsLocked && u.Role != null &&
+                               (u.Role.RoleName == "SuperAdmin" ||
+                                u.Role.RoleName == "Super Admin" ||
+                                u.Role.RoleCode == "SuperAdmin"));
+
+            if (!anyActiveSuperAdminExists)
+            {
+                bool hasMasterAdminRow = await _context.Users
+                    .AsNoTracking()
+                    .AnyAsync(u => u.UserID == 1 || u.Username.ToLower() == "admin");
+
+                bool isBootstrapMasterAdmin =
+                    callerUserId == 1 ||
+                    string.Equals(callerUsername, "admin", StringComparison.OrdinalIgnoreCase) ||
+                    (!hasMasterAdminRow && UserContextExtensions.IsAdminRole(callerRole));
+
+                if (isBootstrapMasterAdmin)
+                {
+                    return (false, true, callerUserId, callerRole);
+                }
+            }
+
+            return (false, false, callerUserId, callerRole);
+        }
+
+        private async Task<int> CountOtherActiveSuperAdminsAsync(int excludeUserId)
+        {
+            return await _context.Users
+                .AsNoTracking()
+                .Include(u => u.Role)
+                .CountAsync(u => u.UserID != excludeUserId &&
+                                 u.IsActive &&
+                                 !u.IsLocked &&
+                                 u.Role != null &&
+                                 (u.Role.RoleName == "SuperAdmin" ||
+                                  u.Role.RoleName == "Super Admin" ||
+                                  u.Role.RoleCode == "SuperAdmin"));
+        }
+
         // GET: api/Users
         [HttpGet]
         public async Task<ActionResult<IEnumerable<UserDto>>> GetUsers()
         {
+            await EnsureSuperAdminRoleExistsAsync();
+
             var users = await _context.Users
                 .Include(u => u.Role)
                 .Include(u => u.DefaultBranch)
@@ -50,14 +168,28 @@ namespace Bhisi.Api.Controllers
         [HttpGet("Roles")]
         public async Task<ActionResult<IEnumerable<Role>>> GetRoles()
         {
-            return await _context.Roles.ToListAsync();
+            await EnsureSuperAdminRoleExistsAsync();
+            var roles = await _context.Roles
+                .Where(r => r.Status)
+                .ToListAsync();
+
+            return roles
+                .OrderBy(r => GetRoleSortOrder(r.RoleName))
+                .ThenBy(r => r.RoleID)
+                .ToList();
         }
 
         // POST: api/Users
         [HttpPost]
         public async Task<ActionResult<UserDto>> CreateUser(CreateUserDto dto)
         {
-            if (await _context.Users.AnyAsync(u => u.Username == dto.Username))
+            string cleanUsername = (dto.Username ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(cleanUsername))
+            {
+                return BadRequest("युझरनेम प्रविष्ट करणे आवश्यक आहे.");
+            }
+
+            if (await _context.Users.AnyAsync(u => u.Username == cleanUsername))
             {
                 return BadRequest("Username already exists.");
             }
@@ -67,6 +199,20 @@ namespace Bhisi.Api.Controllers
             {
                 return BadRequest("अवैध रोल निवडला आहे.");
             }
+
+            var hierarchy = await ResolveCallerHierarchyAsync();
+            if (UserContextExtensions.IsSuperAdminRole(targetRole.RoleName) && !hierarchy.canManageSuperAdmin)
+            {
+                return StatusCode(403, "सुरक्षा नियम: 'SuperAdmin' रोल असलेला नवीन युजर तयार करण्याचा अधिकार फक्त 'SuperAdmin' लाच आहे.");
+            }
+
+            if (UserContextExtensions.IsAdminRole(targetRole.RoleName) &&
+                !hierarchy.isCallerSuperAdmin &&
+                !UserContextExtensions.IsAdminRole(hierarchy.callerRole))
+            {
+                return StatusCode(403, "सुरक्षा नियम: 'Admin' रोल देण्याचा अधिकार फक्त 'SuperAdmin' किंवा 'Admin' लाच आहे.");
+            }
+
             if (!UserContextExtensions.IsHeadOfficeRole(targetRole.RoleName) && (!dto.DefaultBranchID.HasValue || dto.DefaultBranchID.Value <= 0))
             {
                 return BadRequest("शाखा-स्तरीय रोलसाठी (Clerk / Cashier / Manager / Accountant) DefaultBranchID निवडणे अनिवार्य आहे.");
@@ -74,7 +220,7 @@ namespace Bhisi.Api.Controllers
 
             var user = new User
             {
-                Username = dto.Username,
+                Username = cleanUsername,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Welcome@123"), // Default password
                 RoleID = dto.RoleID,
                 DefaultBranchID = dto.DefaultBranchID,
@@ -87,7 +233,7 @@ namespace Bhisi.Api.Controllers
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
-            LogUserAudit("USER_CREATE", user.UserID, user.Username, $"Created user '{user.Username}' (RoleID={user.RoleID}, BranchID={user.DefaultBranchID})");
+            LogUserAudit("USER_CREATE", user.UserID, user.Username, $"Created user '{user.Username}' (Role={targetRole.RoleName}, RoleID={user.RoleID}, BranchID={user.DefaultBranchID})");
             await _context.SaveChangesAsync();
 
             // Load navigation properties for response
@@ -116,22 +262,25 @@ namespace Bhisi.Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateUser(int id, UpdateUserDto dto)
         {
-            var user = await _context.Users.FindAsync(id);
+            var user = await _context.Users
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.UserID == id);
             if (user == null)
             {
                 return NotFound();
             }
 
-            // Check if username is changed and already exists
-            if (user.Username != dto.Username && await _context.Users.AnyAsync(u => u.Username == dto.Username))
+            string cleanUsername = (dto.Username ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(cleanUsername))
             {
-                return BadRequest("Username already exists.");
+                return BadRequest("युझरनेम प्रविष्ट करणे आवश्यक आहे.");
             }
 
-            // Protect master administrator from deactivation
-            if ((user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase)) && !dto.IsActive)
+            // Check if username is changed and already exists
+            if (!string.Equals(user.Username, cleanUsername, StringComparison.OrdinalIgnoreCase) &&
+                await _context.Users.AnyAsync(u => u.Username == cleanUsername && u.UserID != id))
             {
-                return BadRequest("Master Administrator account cannot be deactivated.");
+                return BadRequest("Username already exists.");
             }
 
             var targetRole = await _context.Roles.FindAsync(dto.RoleID);
@@ -139,12 +288,63 @@ namespace Bhisi.Api.Controllers
             {
                 return BadRequest("अवैध रोल निवडला आहे.");
             }
+
+            var hierarchy = await ResolveCallerHierarchyAsync();
+            bool targetIsCurrentlySuperAdmin = UserContextExtensions.IsSuperAdminRole(user.Role?.RoleName);
+            bool targetWillBeSuperAdmin = UserContextExtensions.IsSuperAdminRole(targetRole.RoleName);
+            bool isMasterAdminTarget = user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase);
+
+            // 1. Protect SuperAdmin accounts & SuperAdmin role promotion from non-SuperAdmins
+            if ((targetIsCurrentlySuperAdmin || targetWillBeSuperAdmin) && !hierarchy.canManageSuperAdmin)
+            {
+                return StatusCode(403, "सुरक्षा नियम: 'SuperAdmin' खात्यामध्ये बदल करण्याचा किंवा 'SuperAdmin' रोल देण्याचा अधिकार फक्त 'SuperAdmin' लाच आहे.");
+            }
+
+            // 2. Protect Admin accounts from lower-tier HO_Manager edits
+            if ((UserContextExtensions.IsAdminRole(user.Role?.RoleName) || UserContextExtensions.IsAdminRole(targetRole.RoleName)) &&
+                !hierarchy.isCallerSuperAdmin &&
+                !UserContextExtensions.IsAdminRole(hierarchy.callerRole))
+            {
+                return StatusCode(403, "सुरक्षा नियम: 'Admin' खात्यामध्ये बदल करण्याचा अधिकार फक्त 'SuperAdmin' किंवा 'Admin' लाच आहे.");
+            }
+
+            // 3. Prevent self-deactivation
+            if (hierarchy.callerUserId > 0 && user.UserID == hierarchy.callerUserId && !dto.IsActive)
+            {
+                return BadRequest("सुरक्षा नियम: तुम्ही स्वतःचे चालू लॉगिन खाते निष्क्रिय (Deactivate) करू शकत नाही.");
+            }
+
+            // 4. Protect Master Administrator ('admin' / UserID=1) from deactivation or username rename
+            if (isMasterAdminTarget)
+            {
+                if (!dto.IsActive)
+                {
+                    return BadRequest("Master Administrator account cannot be deactivated.");
+                }
+                if (!hierarchy.isCallerSuperAdmin && hierarchy.callerUserId != user.UserID)
+                {
+                    return StatusCode(403, "सुरक्षा नियम: मास्टर 'admin' खात्यामध्ये बदल करण्याचा अधिकार फक्त 'SuperAdmin' लाच आहे.");
+                }
+            }
+
+            // 5. Protect the last remaining active SuperAdmin from being deactivated or demoted
+            if (targetIsCurrentlySuperAdmin && (!dto.IsActive || !targetWillBeSuperAdmin))
+            {
+                int otherActiveSuperAdmins = await CountOtherActiveSuperAdminsAsync(user.UserID);
+                if (otherActiveSuperAdmins == 0)
+                {
+                    return BadRequest("सुरक्षा नियम: सिस्टीममधील शेवटचा एकमेव सक्रिय 'SuperAdmin' युजर निष्क्रिय करता येणार नाही किंवा त्याचा रोल बदलता येणार नाही.");
+                }
+            }
+
             if (!UserContextExtensions.IsHeadOfficeRole(targetRole.RoleName) && (!dto.DefaultBranchID.HasValue || dto.DefaultBranchID.Value <= 0))
             {
                 return BadRequest("शाखा-स्तरीय रोलसाठी (Clerk / Cashier / Manager / Accountant) DefaultBranchID निवडणे अनिवार्य आहे.");
             }
 
-            user.Username = dto.Username;
+            user.Username = isMasterAdminTarget && string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase)
+                ? user.Username
+                : cleanUsername;
             user.RoleID = dto.RoleID;
             user.DefaultBranchID = dto.DefaultBranchID;
             user.IsActive = dto.IsActive;
@@ -152,7 +352,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
-                LogUserAudit("USER_UPDATE", user.UserID, user.Username, $"Updated user '{user.Username}' (RoleID={user.RoleID}, BranchID={user.DefaultBranchID}, Active={user.IsActive})");
+                LogUserAudit("USER_UPDATE", user.UserID, user.Username, $"Updated user '{user.Username}' (Role={targetRole.RoleName}, RoleID={user.RoleID}, BranchID={user.DefaultBranchID}, Active={user.IsActive})");
                 await _context.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
@@ -174,16 +374,32 @@ namespace Bhisi.Api.Controllers
         [HttpPost("{id}/reset-password")]
         public async Task<IActionResult> ResetPassword(int id)
         {
-            var user = await _context.Users.FindAsync(id);
+            var user = await _context.Users
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.UserID == id);
             if (user == null)
             {
                 return NotFound();
             }
 
-            // Protect master administrator account from accidental reset
-            if (user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase))
+            var hierarchy = await ResolveCallerHierarchyAsync();
+            bool targetIsSuperAdmin = UserContextExtensions.IsSuperAdminRole(user.Role?.RoleName);
+            bool isMasterAdminTarget = user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase);
+
+            if (targetIsSuperAdmin && !hierarchy.isCallerSuperAdmin)
+            {
+                return StatusCode(403, "सुरक्षा नियम: 'SuperAdmin' खात्याचा पासवर्ड रिसेट करण्याचा अधिकार फक्त 'SuperAdmin' लाच आहे.");
+            }
+
+            // Protect master administrator account from accidental reset by non-SuperAdmin
+            if (isMasterAdminTarget && !hierarchy.isCallerSuperAdmin)
             {
                 return BadRequest("Master Administrator account password cannot be reset from this interface.");
+            }
+
+            if (hierarchy.callerUserId > 0 && user.UserID == hierarchy.callerUserId)
+            {
+                return BadRequest("स्वतःचा पासवर्ड बदलण्यासाठी कृपया 'पासवर्ड बदला (Change Password)' पर्याय वापरा.");
             }
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword("Welcome@123");
@@ -202,16 +418,43 @@ namespace Bhisi.Api.Controllers
         [HttpPost("{id}/toggle-lock")]
         public async Task<IActionResult> ToggleLock(int id)
         {
-            var user = await _context.Users.FindAsync(id);
+            var user = await _context.Users
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.UserID == id);
             if (user == null)
             {
                 return NotFound();
             }
 
-            // Protect master administrator account from accidental lock
-            if (user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase))
+            var hierarchy = await ResolveCallerHierarchyAsync();
+            bool targetIsSuperAdmin = UserContextExtensions.IsSuperAdminRole(user.Role?.RoleName);
+            bool isMasterAdminTarget = user.UserID == 1 || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase);
+
+            if (targetIsSuperAdmin && !hierarchy.isCallerSuperAdmin)
+            {
+                return StatusCode(403, "सुरक्षा नियम: 'SuperAdmin' खाते लॉक किंवा अनलॉक करण्याचा अधिकार फक्त 'SuperAdmin' लाच आहे.");
+            }
+
+            // Prevent self-lock
+            if (hierarchy.callerUserId > 0 && user.UserID == hierarchy.callerUserId && !user.IsLocked)
+            {
+                return BadRequest("सुरक्षा नियम: तुम्ही स्वतःचे चालू लॉगिन खाते लॉक करू शकत नाही.");
+            }
+
+            // Protect master administrator account from lock by non-SuperAdmin
+            if (isMasterAdminTarget && !hierarchy.isCallerSuperAdmin)
             {
                 return BadRequest("Master Administrator account cannot be locked.");
+            }
+
+            // Protect last active SuperAdmin from being locked
+            if (targetIsSuperAdmin && !user.IsLocked)
+            {
+                int otherActiveSuperAdmins = await CountOtherActiveSuperAdminsAsync(user.UserID);
+                if (otherActiveSuperAdmins == 0)
+                {
+                    return BadRequest("सुरक्षा नियम: सिस्टीममधील शेवटचा एकमेव सक्रिय 'SuperAdmin' युजर लॉक करता येणार नाही.");
+                }
             }
 
             user.IsLocked = !user.IsLocked;

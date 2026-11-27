@@ -878,7 +878,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     }
   };
 
-  const canDeleteOrphanSavingTxn = ['admin', 'superadmin', 'manager', 'headoffice'].includes(
+  const canDeleteOrphanSavingTxn = ['admin', 'superadmin', 'super admin', 'manager', 'headoffice'].includes(
     (user?.roleName || user?.role || '').trim().toLowerCase()
   );
 

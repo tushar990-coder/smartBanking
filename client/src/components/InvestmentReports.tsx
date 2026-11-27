@@ -13,7 +13,8 @@ import {
   TrendingUp,
   Calendar,
   CheckCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Search
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import CbsReportLayout, { CbsPaperSize, CbsSignatureTier } from './common/CbsReportLayout';
@@ -46,6 +47,49 @@ interface InvestmentAccount {
   status: string;
 }
 
+interface InvestmentRenewedRow {
+  renewalID: number;
+  renewalDate: string;
+  renewalType: string;
+  branchID: number;
+  branchName: string;
+  investmentInstitutionID: number;
+  institutionName: string;
+  oldInvestmentAccountID: number;
+  oldInvestmentNo: string;
+  oldDepositReceiptNo?: string;
+  oldLegacyInvestmentNo?: string;
+  oldSchemeID: number;
+  oldSchemeName: string;
+  oldInvestmentDate: string;
+  oldMaturityDate: string;
+  oldPrincipalAmount: number;
+  oldInterestRate: number;
+  reinvestedInterest: number;
+  principalRefunded: number;
+  netInterestReceived: number;
+  totalCashOrBankReceived: number;
+  tdsAmount: number;
+  grossRenewalInterest: number;
+  receiptModeLabel: string;
+  newInvestmentAccountID: number;
+  newInvestmentNo: string;
+  newDepositReceiptNo?: string;
+  newLegacyInvestmentNo?: string;
+  newSchemeID: number;
+  newSchemeName: string;
+  newInvestmentDate: string;
+  newPrincipalAmount: number;
+  newInterestRate: number;
+  newMaturityDate: string;
+  newExpectedMaturityAmount: number;
+  newBookValue: number;
+  newStatus: string;
+  voucherID?: number;
+  voucherNo?: string;
+  passingStatus?: string;
+}
+
 const InvestmentReports: React.FC = () => {
   const { user, globalBranchId } = useAuth();
   const isHOUser = isHeadOfficeUser(user);
@@ -67,7 +111,21 @@ const InvestmentReports: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
 
-  const parseActiveReport = (): 'summary' | 'list' | 'maturityDue' | 'accrued' | 'auditSchedule' => {
+  const getLocalTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const initialBizStr = user?.businessDate ? user.businessDate.split('T')[0] : getLocalTodayStr();
+  const [renewedData, setRenewedData] = useState<InvestmentRenewedRow[]>([]);
+  const [renewalAllDates, setRenewalAllDates] = useState<boolean>(true);
+  const [fromDate, setFromDate] = useState<string>(() => `${initialBizStr.slice(0, 7)}-01`);
+  const [toDate, setToDate] = useState<string>(() => initialBizStr);
+  const [renewalTypeFilter, setRenewalTypeFilter] = useState<string>('ALL');
+  const [renewalPassingFilter, setRenewalPassingFilter] = useState<string>('ALL');
+  const [renewalColumnMode, setRenewalColumnMode] = useState<'compact' | 'full'>('compact');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+
+  const parseActiveReport = (): 'summary' | 'list' | 'maturityDue' | 'accrued' | 'auditSchedule' | 'renewed' => {
     const params = new URLSearchParams(window.location.search);
     const fullTab = params.get('tab') || '';
     let rep = params.get('reportType');
@@ -75,15 +133,32 @@ const InvestmentReports: React.FC = () => {
       rep = fullTab.split('reportType=')[1] || '';
     }
     const cleanRep = (rep || '').split('&')[0].trim();
-    if (cleanRep === 'list' || cleanRep === 'maturityDue' || cleanRep === 'accrued' || cleanRep === 'auditSchedule') {
+    if (
+      cleanRep === 'list' ||
+      cleanRep === 'maturityDue' ||
+      cleanRep === 'accrued' ||
+      cleanRep === 'auditSchedule' ||
+      cleanRep === 'renewed'
+    ) {
       return cleanRep;
     }
     return 'summary';
   };
 
   const [activeReport, setActiveReport] = useState<
-    'summary' | 'list' | 'maturityDue' | 'accrued' | 'auditSchedule'
+    'summary' | 'list' | 'maturityDue' | 'accrued' | 'auditSchedule' | 'renewed'
   >(parseActiveReport);
+
+  const handleReportTypeChange = (nextRep: 'summary' | 'list' | 'maturityDue' | 'accrued' | 'auditSchedule' | 'renewed') => {
+    setActiveReport(nextRep);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('reportType', nextRep);
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // ignore
+    }
+  };
 
   const API_URL = '/api';
 
@@ -100,9 +175,35 @@ const InvestmentReports: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetchAccounts();
-    fetchDashboard();
-  }, [selectedBranch, statusFilter, typeFilter]);
+    if (activeReport === 'renewed') {
+      fetchRenewedInvestments();
+    } else {
+      fetchAccounts();
+      fetchDashboard();
+    }
+  }, [activeReport, selectedBranch, statusFilter, typeFilter, selectedSchemeId, renewalAllDates, fromDate, toDate, renewalTypeFilter, renewalPassingFilter]);
+
+  const fetchRenewedInvestments = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/Reports/investment-renewed`, {
+        params: {
+          branchID: selectedBranch > 0 ? selectedBranch : undefined,
+          schemeID: selectedSchemeId ? Number(selectedSchemeId) : undefined,
+          fromDate: renewalAllDates ? undefined : (fromDate || undefined),
+          toDate: renewalAllDates ? undefined : (toDate || undefined),
+          renewalType: renewalTypeFilter !== 'ALL' ? renewalTypeFilter : undefined,
+          passingStatus: renewalPassingFilter !== 'ALL' ? renewalPassingFilter : undefined
+        }
+      });
+      setRenewedData(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error fetching renewed investments report', err);
+      setRenewedData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchSchemes = async () => {
     try {
@@ -218,7 +319,88 @@ const InvestmentReports: React.FC = () => {
   const shareAccounts = filteredAccounts.filter((a) => a.investmentType === 'Share');
   const depositAccounts = filteredAccounts.filter((a) => (a.investmentType || 'Deposit') !== 'Share');
 
+  const filteredRenewedData = renewedData.filter((row) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase().trim();
+    return (
+      (row.institutionName && row.institutionName.toLowerCase().includes(term)) ||
+      (row.oldDepositReceiptNo && row.oldDepositReceiptNo.toLowerCase().includes(term)) ||
+      (row.oldLegacyInvestmentNo && row.oldLegacyInvestmentNo.toLowerCase().includes(term)) ||
+      (row.oldInvestmentNo && row.oldInvestmentNo.toLowerCase().includes(term)) ||
+      (row.newDepositReceiptNo && row.newDepositReceiptNo.toLowerCase().includes(term)) ||
+      (row.newLegacyInvestmentNo && row.newLegacyInvestmentNo.toLowerCase().includes(term)) ||
+      (row.newInvestmentNo && row.newInvestmentNo.toLowerCase().includes(term)) ||
+      (row.voucherNo && row.voucherNo.toLowerCase().includes(term)) ||
+      (row.oldSchemeName && row.oldSchemeName.toLowerCase().includes(term)) ||
+      (row.newSchemeName && row.newSchemeName.toLowerCase().includes(term))
+    );
+  });
+
+  const totalRenewedOldPrincipal = filteredRenewedData.reduce((s, r) => s + (r.oldPrincipalAmount || 0), 0);
+  const totalRenewedReinvestedInt = filteredRenewedData.reduce((s, r) => s + (r.reinvestedInterest || 0), 0);
+  const totalRenewedNetReceived = filteredRenewedData.reduce((s, r) => s + (r.totalCashOrBankReceived || 0), 0);
+  const totalRenewedTds = filteredRenewedData.reduce((s, r) => s + (r.tdsAmount || 0), 0);
+  const totalRenewedNewPrincipal = filteredRenewedData.reduce((s, r) => s + (r.newPrincipalAmount || 0), 0);
+  const totalRenewedExpectedMaturity = filteredRenewedData.reduce((s, r) => s + (r.newExpectedMaturityAmount || 0), 0);
+
   const handleExportExcel = () => {
+    if (activeReport === 'renewed') {
+      if (filteredRenewedData.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा उपलब्ध नाही.');
+      const rows = filteredRenewedData.map((r, idx) => ({
+        'अनु.': idx + 1,
+        'नूतनीकरण दिनांक': formatDate(r.renewalDate),
+        'व्हाउचर क्र.': r.voucherNo || '-',
+        'गुंतवणूक बँक / संस्था': r.institutionName,
+        'जुनी पावती क्र.': r.oldDepositReceiptNo || r.oldLegacyInvestmentNo || '-',
+        'जुना CBS खाते क्र.': r.oldInvestmentNo,
+        'जुनी योजना': r.oldSchemeName,
+        'जुनी मुदत तारीख': formatDate(r.oldMaturityDate),
+        'जुनी मुद्दल (₹)': r.oldPrincipalAmount || 0,
+        'नूतनीकरण प्रकार': r.renewalType === 'PrincipalOnly' ? 'फक्त मुद्दल' : 'मुद्दल + व्याज',
+        'ठेवीत जमा व्याज (₹)': r.reinvestedInterest || 0,
+        'प्राप्त व्याज / परतावा (₹)': r.totalCashOrBankReceived || 0,
+        'TDS कपात (₹)': r.tdsAmount || 0,
+        'जमा पद्धत': r.receiptModeLabel || '-',
+        'नवीन पावती क्र.': r.newDepositReceiptNo || r.newLegacyInvestmentNo || '-',
+        'नवीन CBS खाते क्र.': r.newInvestmentNo,
+        'नवीन योजना': r.newSchemeName,
+        'नवीन व्याजदर (%)': r.newInterestRate,
+        'नवीन मुद्दल (₹)': r.newPrincipalAmount || 0,
+        'नवीन मुदतपूर्ती तारीख': formatDate(r.newMaturityDate),
+        'अपेक्षित मुदतपूर्ती रक्कम (₹)': r.newExpectedMaturityAmount || 0,
+        'पासिंग स्थिती': r.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'
+      }));
+      rows.push({
+        'अनु.': '' as any,
+        'नूतनीकरण दिनांक': '',
+        'व्हाउचर क्र.': '',
+        'गुंतवणूक बँक / संस्था': `एकूण नूतनीकृत गुंतवणुका: ${filteredRenewedData.length}`,
+        'जुनी पावती क्र.': '',
+        'जुना CBS खाते क्र.': '',
+        'जुनी योजना': '',
+        'जुनी मुदत तारीख': 'एकूण (TOTAL):',
+        'जुनी मुद्दल (₹)': totalRenewedOldPrincipal,
+        'नूतनीकरण प्रकार': '',
+        'ठेवीत जमा व्याज (₹)': totalRenewedReinvestedInt,
+        'प्राप्त व्याज / परतावा (₹)': totalRenewedNetReceived,
+        'TDS कपात (₹)': totalRenewedTds,
+        'जमा पद्धत': '',
+        'नवीन पावती क्र.': '',
+        'नवीन CBS खाते क्र.': '',
+        'नवीन योजना': '',
+        'नवीन व्याजदर (%)': '' as any,
+        'नवीन मुद्दल (₹)': totalRenewedNewPrincipal,
+        'नवीन मुदतपूर्ती तारीख': '',
+        'अपेक्षित मुदतपूर्ती रक्कम (₹)': totalRenewedExpectedMaturity,
+        'पासिंग स्थिती': ''
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'RenewedInvestments');
+      XLSX.writeFile(wb, `Investment_Renewed_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+      return;
+    }
+
     if (filteredAccounts.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा उपलब्ध नाही.');
     
     let rows: any[] = [];
@@ -302,6 +484,11 @@ const InvestmentReports: React.FC = () => {
           title: 'वैधानिक लेखापरीक्षण विवरणपत्र - गुंतवणूक शेड्यूल',
           subtitle: 'Statutory Audit Schedule - Statement of Investments'
         };
+      case 'renewed':
+        return {
+          title: 'गुंतवणूक नूतनीकरण अहवाल (Renewed Investments)',
+          subtitle: 'Renewed Institutional Investments Register (Old Receipt -> New Receipt)'
+        };
       case 'summary':
       default:
         return {
@@ -311,41 +498,70 @@ const InvestmentReports: React.FC = () => {
     }
   })();
 
-  const summaryBanner = (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center text-xs">
-      <div>
-        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण गुंतवणूक खाती</span>
-        <strong className="text-primary font-mono text-[11.5px]">
-          {filteredAccounts.length} खाती <span className="text-slate-500 font-normal">({depositAccounts.length} ठेवी / {shareAccounts.length} शेअर्स)</span>
-        </strong>
+  const summaryBanner =
+    activeReport === 'renewed' ? (
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center text-xs">
+        <div className="border-r border-slate-300 pr-2 flex items-center justify-between gap-1">
+          <div>
+            <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">नूतनीकृत गुंतवणुका</span>
+            <strong className="text-primary font-mono text-[11.5px]">{filteredRenewedData.length} पावत्या</strong>
+          </div>
+          <span className="text-[9.5px] text-slate-600 font-mono">
+            जमा:{filteredRenewedData.filter((r) => r.renewalType !== 'PrincipalOnly').length} | मुद्दल:{filteredRenewedData.filter((r) => r.renewalType === 'PrincipalOnly').length}
+          </span>
+        </div>
+        <div className="border-r border-slate-300 pr-2">
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">जुनी मुद्दल एकूण</span>
+          <strong className="text-slate-900 font-mono text-[11.5px]">₹{formatCurrency(totalRenewedOldPrincipal)}</strong>
+        </div>
+        <div className="border-r border-slate-300 pr-2">
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">जमा व्याज / प्राप्त / TDS</span>
+          <strong className="text-amber-800 font-mono text-[11px]">
+            ₹{formatCurrency(totalRenewedReinvestedInt)} / <span className="text-indigo-700">₹{formatCurrency(totalRenewedNetReceived)}</span> / <span className="text-rose-700">₹{formatCurrency(totalRenewedTds)}</span>
+          </strong>
+        </div>
+        <div className="sm:text-right">
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">नवीन मुद्दल / मुदतपूर्ती</span>
+          <strong className="text-emerald-800 font-mono text-[11.5px]">
+            ₹{formatCurrency(totalRenewedNewPrincipal)} / <span className="text-blue-900">₹{formatCurrency(totalRenewedExpectedMaturity)}</span>
+          </strong>
+        </div>
       </div>
-      <div>
-        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण मुद्दल रक्कम</span>
-        <strong className="text-slate-900 font-mono text-[11.5px]">
-          ₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.principalAmount || 0), 0))}
-        </strong>
+    ) : (
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center text-xs">
+        <div>
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण गुंतवणूक खाती</span>
+          <strong className="text-primary font-mono text-[11.5px]">
+            {filteredAccounts.length} खाती <span className="text-slate-500 font-normal">({depositAccounts.length} ठेवी / {shareAccounts.length} शेअर्स)</span>
+          </strong>
+        </div>
+        <div>
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण मुद्दल रक्कम</span>
+          <strong className="text-slate-900 font-mono text-[11.5px]">
+            ₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.principalAmount || 0), 0))}
+          </strong>
+        </div>
+        <div>
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">संचित येणे व्याज</span>
+          <strong className="text-emerald-700 font-mono text-[11.5px]">
+            ₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.accruedInterest || 0), 0))}
+          </strong>
+        </div>
+        <div className="sm:text-right">
+          <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण पुस्तकी मूल्य (Book Value)</span>
+          <strong className="text-blue-900 font-mono text-xs">
+            ₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.bookValue || 0), 0))}
+          </strong>
+        </div>
       </div>
-      <div>
-        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">संचित येणे व्याज</span>
-        <strong className="text-emerald-700 font-mono text-[11.5px]">
-          ₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.accruedInterest || 0), 0))}
-        </strong>
-      </div>
-      <div className="sm:text-right">
-        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण पुस्तकी मूल्य (Book Value)</span>
-        <strong className="text-blue-900 font-mono text-xs">
-          ₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.bookValue || 0), 0))}
-        </strong>
-      </div>
-    </div>
-  );
+    );
 
   const extraToolbarControls = (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
       {/* Report Type Selector */}
       <select
         value={activeReport}
-        onChange={(e: any) => setActiveReport(e.target.value)}
+        onChange={(e: any) => handleReportTypeChange(e.target.value)}
         className="h-6 border border-gray-300 rounded px-1.5 text-[11px] font-bold bg-white text-primary focus:outline-none focus:border-primary"
       >
         <option value="summary">१. पोर्टफोलिओ सारांश</option>
@@ -353,6 +569,7 @@ const InvestmentReports: React.FC = () => {
         <option value="maturityDue">३. मुदतपूर्ती देय पत्रक</option>
         <option value="accrued">४. संचित व येणे व्याज</option>
         <option value="auditSchedule">५. ऑडिट नमुना तक्ता</option>
+        <option value="renewed">६. गुंतवणूक नूतनीकरण अहवाल</option>
       </select>
 
       {/* Branch */}
@@ -373,16 +590,18 @@ const InvestmentReports: React.FC = () => {
         </select>
       </div>
 
-      {/* Type */}
-      <select
-        value={typeFilter}
-        onChange={(e) => setTypeFilter(e.target.value)}
-        className="h-6 border border-gray-300 rounded px-1 text-[10.5px] bg-white text-slate-800"
-      >
-        <option value="">सर्व प्रकार (ठेव/शेअर)</option>
-        <option value="Deposit">ठेव गुंतवणूक (Deposit)</option>
-        <option value="Share">शेअर गुंतवणूक (Share)</option>
-      </select>
+      {/* Type (non-renewed tabs) */}
+      {activeReport !== 'renewed' && (
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="h-6 border border-gray-300 rounded px-1 text-[10.5px] bg-white text-slate-800"
+        >
+          <option value="">सर्व प्रकार (ठेव/शेअर)</option>
+          <option value="Deposit">ठेव गुंतवणूक (Deposit)</option>
+          <option value="Share">शेअर गुंतवणूक (Share)</option>
+        </select>
+      )}
 
       {/* Scheme */}
       <div className="flex items-center gap-1">
@@ -401,6 +620,107 @@ const InvestmentReports: React.FC = () => {
         </select>
       </div>
 
+      {/* Dedicated Renewed Filters */}
+      {activeReport === 'renewed' && (
+        <>
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5">
+            <label
+              className={`flex items-center gap-1 pr-1.5 mr-0.5 border-r border-slate-300 text-[10.5px] font-bold cursor-pointer select-none ${
+                renewalAllDates ? 'text-primary' : 'text-slate-600'
+              }`}
+              title="आजवर नूतनीकरण झालेल्या सर्व गुंतवणुका दाखवा"
+            >
+              <input
+                type="checkbox"
+                checked={renewalAllDates}
+                onChange={(e) => setRenewalAllDates(e.target.checked)}
+                className="w-3 h-3 accent-primary cursor-pointer rounded-xs"
+              />
+              <span>सर्व तारखा</span>
+            </label>
+            <Calendar className="w-3 h-3 text-slate-500" />
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              disabled={renewalAllDates}
+              className={`h-5 text-[10.5px] font-mono border-none bg-transparent focus:ring-0 p-0 font-bold w-24 ${
+                renewalAllDates ? 'text-slate-400 cursor-not-allowed opacity-50' : 'text-slate-800'
+              }`}
+            />
+            <span className="text-slate-400 text-xs">-</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              disabled={renewalAllDates}
+              className={`h-5 text-[10.5px] font-mono border-none bg-transparent focus:ring-0 p-0 font-bold w-24 ${
+                renewalAllDates ? 'text-slate-400 cursor-not-allowed opacity-50' : 'text-slate-800'
+              }`}
+            />
+          </div>
+
+          <select
+            value={renewalTypeFilter}
+            onChange={(e) => setRenewalTypeFilter(e.target.value)}
+            className="h-6 border border-gray-300 rounded px-1 text-[10.5px] bg-white text-slate-800 font-semibold"
+          >
+            <option value="ALL">सर्व प्रकार</option>
+            <option value="PrincipalAndInterest">मुद्दल + व्याज</option>
+            <option value="PrincipalOnly">फक्त मुद्दल</option>
+          </select>
+
+          <select
+            value={renewalPassingFilter}
+            onChange={(e) => setRenewalPassingFilter(e.target.value)}
+            className="h-6 border border-gray-300 rounded px-1 text-[10.5px] bg-white text-slate-800 font-semibold"
+          >
+            <option value="ALL">सर्व पासिंग</option>
+            <option value="Approved">मंजूर</option>
+            <option value="Pending">प्रलंबित</option>
+          </select>
+
+          <div
+            className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-300"
+            title="सुटसुटीत (१६ रकाने - A4 प्रिंटसाठी) किंवा संपूर्ण (२२ स्वतंत्र रकाने)"
+          >
+            <button
+              type="button"
+              onClick={() => setRenewalColumnMode('compact')}
+              className={`px-1.5 py-0.5 rounded-xs font-bold text-[10px] cursor-pointer transition-colors ${
+                renewalColumnMode === 'compact'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              सुटसुटीत (१६)
+            </button>
+            <button
+              type="button"
+              onClick={() => setRenewalColumnMode('full')}
+              className={`px-1.5 py-0.5 rounded-xs font-bold text-[10px] cursor-pointer transition-colors ${
+                renewalColumnMode === 'full'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              संपूर्ण (२२ रकाने)
+            </button>
+          </div>
+
+          <div className="relative w-36 sm:w-44">
+            <Search className="w-3 h-3 absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="बँक / पावती / क्र. शोधा..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-5 pr-1.5 py-0.5 h-6 border border-slate-300 rounded text-[10.5px] focus:outline-none focus:border-primary bg-white"
+            />
+          </div>
+        </>
+      )}
+
       {/* Signature Tier */}
       <div className="flex items-center gap-1">
         <label className="text-[10.5px] font-semibold text-gray-600">स्वाक्षरी:</label>
@@ -417,8 +737,12 @@ const InvestmentReports: React.FC = () => {
       {/* Refresh / View */}
       <button
         onClick={() => {
-          fetchAccounts();
-          fetchDashboard();
+          if (activeReport === 'renewed') {
+            fetchRenewedInvestments();
+          } else {
+            fetchAccounts();
+            fetchDashboard();
+          }
         }}
         disabled={loading}
         className="h-6 bg-primary hover:opacity-90 text-white px-2 rounded text-[10.5px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
@@ -436,7 +760,13 @@ const InvestmentReports: React.FC = () => {
       titleStyle="classic-badge"
       reportTitle={reportTitle}
       reportSubtitle={reportSubtitle}
-      periodText={`दिनांक: ${new Date().toLocaleDateString('en-GB')}`}
+      periodText={
+        activeReport === 'renewed'
+          ? renewalAllDates
+            ? 'संपूर्ण कालावधी (नूतनीकृत गुंतवणुका)'
+            : `कालावधी: ${formatDate(fromDate)} ते ${formatDate(toDate)}`
+          : `दिनांक: ${new Date().toLocaleDateString('en-GB')}`
+      }
       branchName={getBranchName()}
       sansthaInfo={sansthaDetail}
       summaryBanner={summaryBanner}
@@ -458,7 +788,7 @@ const InvestmentReports: React.FC = () => {
       onExportExcel={handleExportExcel}
       extraToolbarControls={extraToolbarControls}
       isLoading={loading}
-      hasData={filteredAccounts.length > 0 || activeReport === 'summary'}
+      hasData={activeReport === 'renewed' ? filteredRenewedData.length > 0 : (filteredAccounts.length > 0 || activeReport === 'summary')}
       preparedBy="Admin"
     >
       {/* 1. Summary Report Tab */}
@@ -945,6 +1275,221 @@ const InvestmentReports: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 6. Renewed Investments Report Tab (६. गुंतवणूक नूतनीकरण अहवाल — Strict Single-Line Multi-Column Grid) */}
+      {activeReport === 'renewed' && (() => {
+        const isFull = renewalColumnMode === 'full';
+        return (
+          <div className="overflow-x-auto">
+            <table className="cbs-table w-full border-collapse border border-slate-900 text-[10.5px]">
+              <thead>
+                <tr className="text-center font-extrabold text-[10px] border-b border-slate-900">
+                  <th colSpan={isFull ? 4 : 3} className="border border-slate-900 py-1 px-1.5 bg-slate-100 text-slate-900">
+                    मूळ व संस्था माहिती
+                  </th>
+                  <th colSpan={isFull ? 5 : 3} className="border border-slate-900 py-1 px-1.5 bg-amber-50 text-amber-950 border-l-2 border-l-slate-900">
+                    जुनी गुंतवणूक पावती (Old Investment)
+                  </th>
+                  <th colSpan={isFull ? 5 : 4} className="border border-slate-900 py-1 px-1.5 bg-indigo-50 text-indigo-950 border-l-2 border-l-slate-900">
+                    व्याज व TDS समायोजन (Interest &amp; TDS)
+                  </th>
+                  <th colSpan={isFull ? 6 : 4} className="border border-slate-900 py-1 px-1.5 bg-emerald-50 text-emerald-950 border-l-2 border-l-slate-900">
+                    नवीन नूतनीकृत गुंतवणूक (New Investment)
+                  </th>
+                  <th colSpan={2} className="border border-slate-900 py-1 px-1.5 bg-slate-100 text-slate-900 border-l-2 border-l-slate-900">
+                    अखेर व पासिंग
+                  </th>
+                </tr>
+                <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 text-center font-bold text-[10px] whitespace-nowrap">
+                  <th className="border border-slate-900 py-1 px-1">#</th>
+                  <th className="border border-slate-900 py-1 px-1.5">नूतनीकरण दि.</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5">व्हाउचर क्र.</th>}
+                  <th className="border border-slate-900 py-1 px-2 text-left">गुंतवणूक बँक / संस्था</th>
+
+                  <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60 border-l-2 border-l-slate-900">जुनी पावती क्र.</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60">जुना CBS खाते क्र.</th>}
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60 text-left">जुनी योजना</th>}
+                  <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60">जुनी मुदत दि.</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60 text-right">जुनी मुद्दल (₹)</th>
+
+                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 border-l-2 border-l-slate-900">नूतनीकरण प्रकार</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">जमा व्याज (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">प्राप्त व्याज/परतावा (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">TDS (₹)</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50">जमा पद्धत</th>}
+
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50 border-l-2 border-l-slate-900">नवीन पावती क्र.</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50">नवीन CBS खाते क्र.</th>}
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50 text-left">नवीन योजना</th>}
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50">दर %</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50 text-right">नवीन मुद्दल (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50">नवीन मुदत दि.</th>
+
+                  <th className="border border-slate-900 py-1 px-1.5 text-right border-l-2 border-l-slate-900">अपेक्षित मुदतपूर्ती (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1">पासिंग</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRenewedData.map((row, idx) => {
+                  const oldRec = row.oldDepositReceiptNo || row.oldLegacyInvestmentNo || row.oldInvestmentNo;
+                  const newRec = row.newDepositReceiptNo || row.newLegacyInvestmentNo || row.newInvestmentNo;
+                  const isPrincipalOnly = row.renewalType === 'PrincipalOnly';
+                  return (
+                    <tr
+                      key={`inv-ren-${row.renewalID}-${idx}`}
+                      className="h-6 hover:bg-slate-50 text-slate-900 text-[10.5px] leading-tight whitespace-nowrap"
+                    >
+                      <td className="border border-slate-900 py-0.5 px-1 text-center font-mono text-slate-700">
+                        {idx + 1}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono font-semibold">
+                        {formatDate(row.renewalDate)}
+                      </td>
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-slate-700 max-w-[140px] truncate" title={row.voucherNo}>
+                          {row.voucherNo || '-'}
+                        </td>
+                      )}
+                      <td
+                        className="border border-slate-900 py-0.5 px-2 font-semibold text-slate-950 max-w-[180px] truncate"
+                        title={`${row.institutionName} | ${row.newSchemeName}`}
+                      >
+                        {row.institutionName}
+                      </td>
+
+                      <td
+                        className="border border-slate-900 py-0.5 px-1.5 text-center font-mono font-bold text-amber-900 border-l-2 border-l-slate-900"
+                        title={`जुना CBS क्र.: ${row.oldInvestmentNo} | जुनी योजना: ${row.oldSchemeName} (${row.oldInterestRate}%)`}
+                      >
+                        {oldRec}
+                      </td>
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-slate-700">
+                          {row.oldInvestmentNo}
+                        </td>
+                      )}
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-left text-slate-700 max-w-[125px] truncate" title={row.oldSchemeName}>
+                          {row.oldSchemeName}
+                        </td>
+                      )}
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-slate-700">
+                        {formatDate(row.oldMaturityDate)}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-slate-900">
+                        {formatCurrency(row.oldPrincipalAmount)}
+                      </td>
+
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center border-l-2 border-l-slate-900">
+                        <span
+                          className={`inline-block px-1 py-0.2 rounded text-[9.5px] font-bold border ${
+                            isPrincipalOnly
+                              ? 'bg-sky-50 text-sky-800 border-sky-300'
+                              : 'bg-indigo-50 text-indigo-800 border-indigo-300'
+                          }`}
+                        >
+                          {isPrincipalOnly ? 'फक्त मुद्दल' : 'मुद्दल+व्याज'}
+                        </span>
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-amber-900">
+                        {row.reinvestedInterest > 0 ? formatCurrency(row.reinvestedInterest) : '-'}
+                      </td>
+                      <td
+                        className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-indigo-800"
+                        title={row.totalCashOrBankReceived > 0 ? `जमा पद्धत: ${row.receiptModeLabel}` : undefined}
+                      >
+                        {row.totalCashOrBankReceived > 0 ? formatCurrency(row.totalCashOrBankReceived) : '-'}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-rose-800">
+                        {row.tdsAmount > 0 ? formatCurrency(row.tdsAmount) : '-'}
+                      </td>
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center text-[10px] text-slate-700">
+                          {row.receiptModeLabel || '-'}
+                        </td>
+                      )}
+
+                      <td
+                        className="border border-slate-900 py-0.5 px-1.5 text-center font-mono font-bold text-emerald-900 border-l-2 border-l-slate-900"
+                        title={`नवीन CBS क्र.: ${row.newInvestmentNo} | योजना: ${row.newSchemeName}`}
+                      >
+                        {newRec}
+                      </td>
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-slate-800">
+                          {row.newInvestmentNo}
+                        </td>
+                      )}
+                      {isFull && (
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-left text-slate-800 max-w-[125px] truncate" title={row.newSchemeName}>
+                          {row.newSchemeName}
+                        </td>
+                      )}
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-slate-800">
+                        {row.newInterestRate}%
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-emerald-800">
+                        {formatCurrency(row.newPrincipalAmount)}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-slate-800">
+                        {formatDate(row.newMaturityDate)}
+                      </td>
+
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-blue-900 border-l-2 border-l-slate-900">
+                        {formatCurrency(row.newExpectedMaturityAmount)}
+                      </td>
+                      <td className="border border-slate-900 py-0.5 px-1 text-center">
+                        <span
+                          className={`inline-block px-1 py-0.2 rounded text-[9px] font-bold border ${
+                            row.passingStatus === 'Pending'
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          }`}
+                          title={row.voucherNo ? `व्हाउचर क्र.: ${row.voucherNo}` : undefined}
+                        >
+                          {row.passingStatus === 'Pending' ? 'प्रलंबित' : 'मंजूर'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {filteredRenewedData.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-900 text-[10.5px] whitespace-nowrap">
+                    <td colSpan={isFull ? 8 : 5} className="border border-slate-900 py-1 px-2 text-right uppercase">
+                      एकूण नूतनीकृत गुंतवणूक बेरीज ({filteredRenewedData.length} पावत्या):
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-slate-950 bg-amber-100/50">
+                      ₹{formatCurrency(totalRenewedOldPrincipal)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1 border-l-2 border-l-slate-900"></td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-amber-950 bg-indigo-100/40">
+                      ₹{formatCurrency(totalRenewedReinvestedInt)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-indigo-950 bg-indigo-100/40">
+                      ₹{formatCurrency(totalRenewedNetReceived)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-rose-950 bg-rose-100/40">
+                      ₹{formatCurrency(totalRenewedTds)}
+                    </td>
+                    {isFull && <td className="border border-slate-900 py-1 px-1"></td>}
+                    <td colSpan={isFull ? 4 : 2} className="border border-slate-900 py-1 px-1 border-l-2 border-l-slate-900"></td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
+                      ₹{formatCurrency(totalRenewedNewPrincipal)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1"></td>
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-blue-950 bg-blue-100/50 border-l-2 border-l-slate-900">
+                      ₹{formatCurrency(totalRenewedExpectedMaturity)}
+                    </td>
+                    <td className="border border-slate-900 py-1 px-1"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        );
+      })()}
     </CbsReportLayout>
   );
 };

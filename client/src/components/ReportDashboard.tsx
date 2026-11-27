@@ -148,7 +148,8 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'fd-reports&reportType=VoucherPassing', name: 'मुदत ठेव व्हाउचर पासिंग अहवाल (Voucher Passing)' },
         { id: 'fd-reports&reportType=DeletedEntries', name: 'रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)' },
         { id: 'fd-reports&reportType=MigratedFD', name: 'स्थलांतरित मुदत ठेव यादी (Migrated FD Report)' },
-        { id: 'fd-customer-summary', name: 'ग्राहक-निहाय एकत्रित ठेवी (CBS Customer Summary)' }
+        { id: 'fd-customer-summary', name: 'ग्राहक-निहाय एकत्रित ठेवी (CBS Customer Summary)' },
+        { id: 'fd-reports&reportType=RenewedFD', name: 'मुदत ठेव नूतनीकरण अहवाल (FD Renewal Report)' }
       ]
     },
     {
@@ -218,6 +219,7 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'inv-reports&reportType=list', name: 'गुंतवणूक नोंदवही (Investment Register)' },
         { id: 'inv-reports&reportType=maturityDue', name: 'मुदतपूर्ती देय अहवाल (Maturity Schedule)' },
         { id: 'inv-reports&reportType=accrued', name: 'संचित / येणे व्याज अहवाल (Accrued Interest)' },
+        { id: 'inv-reports&reportType=renewed', name: 'गुंतवणूक नूतनीकरण अहवाल (Renewed Investments)' },
         { id: 'inv-reports&reportType=auditSchedule', name: 'वैधानिक ऑडिट नमुना - गुंतवणूक शेड्यूल (Audit Schedule)', spanFullOnSm: true }
       ]
     },

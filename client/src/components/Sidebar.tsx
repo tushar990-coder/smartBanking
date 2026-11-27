@@ -903,7 +903,9 @@ export default function Sidebar({
           </button>
         )}
 
-        {(user.role === 'Admin' || user.role === 'HO_Manager' || user.role === 'HO Manager') && (
+        {['superadmin', 'super admin', 'admin', 'systemadmin', 'headoffice', 'ho_manager', 'ho manager'].includes(
+          (user?.role || '').trim().toLowerCase()
+        ) && (
           <button 
             onClick={() => handleNavigate('users')}
             title="युजर व्यवस्थापन"

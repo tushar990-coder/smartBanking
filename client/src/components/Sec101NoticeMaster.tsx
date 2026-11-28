@@ -157,7 +157,7 @@ interface Sec101NoticeMasterProps {
 
 const POSTAL_STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   PENDING: { label: 'प्रलंबित', cls: 'bg-slate-100 text-slate-700' },
-  DISPATCHED: { label: 'रवाना (Dispatched)', cls: 'bg-sky-100 text-sky-900' },
+  DISPATCHED: { label: 'रवाना (Dispatched)', cls: 'bg-amber-100 text-[#5A1A14]' },
   DELIVERED: { label: 'प्राप्त (Delivered)', cls: 'bg-emerald-100 text-emerald-900' },
   RETURNED: { label: 'परत आली (Returned)', cls: 'bg-amber-100 text-amber-900' },
   REFUSED: { label: 'नाकारली (Refused)', cls: 'bg-rose-100 text-rose-900' },
@@ -710,7 +710,7 @@ export default function Sec101NoticeMaster({
                                 </span>
                               )}
                               {loan.hasActiveCase && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-orange-100 text-[#7C2418] border border-amber-200">
                                   दावा: {loan.activeCaseNumber}
                                 </span>
                               )}
@@ -1093,19 +1093,19 @@ export default function Sec101NoticeMaster({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-[11px] text-gray-700">
-                <thead className="bg-gray-100 text-[11px] font-bold text-gray-700 uppercase border-b">
+              <table className="w-full text-left text-[11px] text-gray-700 leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] text-[11px] font-bold text-amber-50 uppercase border-b">
                   <tr>
-                    <th className="p-2.5">नोटीस क्र. व तारीख</th>
-                    <th className="p-2.5">कर्जदार / प्राप्तकर्ता (CIF)</th>
-                    <th className="p-2.5">नोटीस प्रकार व कलम</th>
-                    <th className="p-2.5 text-right">मागणी रक्कम</th>
-                    <th className="p-2.5">मुदत तारीख</th>
-                    <th className="p-2.5">टपाल बारकोड व स्थिती</th>
-                    <th className="p-2.5 text-center">कृती</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">नोटीस क्र. व तारीख</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">कर्जदार / प्राप्तकर्ता (CIF)</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">नोटीस प्रकार व कलम</th>
+                    <th className="px-2 py-1.5.5 text-right whitespace-nowrap">मागणी रक्कम</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">मुदत तारीख</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">टपाल बारकोड व स्थिती</th>
+                    <th className="px-2 py-1.5.5 text-center whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-amber-100">
                   {filteredNotices.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="text-center py-6 text-gray-400">
@@ -1117,11 +1117,11 @@ export default function Sec101NoticeMaster({
                       const pMeta = POSTAL_STATUS_LABELS[n.postalStatus] || { label: n.postalStatus, cls: 'bg-slate-100 text-slate-800' };
                       return (
                         <tr key={n.noticeId} className="hover:bg-gray-50/80 transition">
-                          <td className="p-2.5 font-bold text-gray-900">
+                          <td className="px-2 py-1 font-bold text-gray-900 align-middle">
                             <div>{n.noticeNumber}</div>
                             <div className="text-[10px] text-gray-500 font-normal">{n.noticeDate}</div>
                           </td>
-                          <td className="p-2.5">
+                          <td className="px-2 py-1 align-middle">
                             <div className="font-bold text-gray-900 flex items-center gap-1.5 flex-wrap">
                               <span>{n.customerName || n.memberName}</span>
                               {n.recipientType && n.recipientType !== 'BORROWER' && (
@@ -1134,7 +1134,7 @@ export default function Sec101NoticeMaster({
                               खाते: {n.loanAccountNo} | CIF: {n.cifNo || n.memberCode || '-'} | {n.mobileNo}
                             </div>
                           </td>
-                          <td className="p-2.5">
+                          <td className="px-2 py-1 align-middle">
                             <div className="flex flex-col gap-0.5 items-start">
                               <span
                                 className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
@@ -1152,20 +1152,20 @@ export default function Sec101NoticeMaster({
                               </span>
                             </div>
                           </td>
-                          <td className="p-2.5 font-bold text-rose-700 text-right">₹{(n.totalDemandAmount || 0).toLocaleString('en-IN')}</td>
-                          <td className="p-2.5 text-gray-600">{n.dueDate}</td>
-                          <td className="p-2.5 text-[10px]">
+                          <td className="px-2 py-1 font-bold text-rose-700 text-right align-middle">₹{(n.totalDemandAmount || 0).toLocaleString('en-IN')}</td>
+                          <td className="px-2 py-1 text-gray-600 align-middle">{n.dueDate}</td>
+                          <td className="px-2 py-1 text-[10px] align-middle">
                             <div className="font-mono font-bold text-gray-800">{n.postalTrackingNo || '-'}</div>
                             <span className={`font-bold px-1.5 py-0.2 rounded inline-block mt-0.5 ${pMeta.cls}`}>
                               {pMeta.label}
                             </span>
                             {n.deliveredDate && <div className="text-[9px] text-gray-500">पोहोच: {n.deliveredDate}</div>}
                           </td>
-                          <td className="p-2.5 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={() => openPostalModal(n)}
-                                className="bg-sky-50 hover:bg-sky-100 text-sky-900 px-2 py-1 rounded text-[10px] font-bold inline-flex items-center gap-1 border border-sky-200"
+                                className="bg-amber-50 hover:bg-amber-100 text-[#5A1A14] px-2 py-1 rounded text-[10px] font-bold inline-flex items-center gap-1 border border-amber-200"
                                 title="टपाल स्थिती अपडेट करा"
                               >
                                 <Truck className="w-3 h-3" /> पोहोच
@@ -1194,7 +1194,7 @@ export default function Sec101NoticeMaster({
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3.5 text-xs">
             <h3 className="text-sm font-black text-slate-900 border-b pb-2 flex items-center gap-2">
-              <Truck className="w-4 h-4 text-sky-700" />
+              <Truck className="w-4 h-4 text-[#9A3412]" />
               टपाल पोहोच स्थिती अपडेट करा ({postalEditNotice.noticeNumber})
             </h3>
             <div>
@@ -1243,7 +1243,7 @@ export default function Sec101NoticeMaster({
               <button onClick={() => setPostalEditNotice(null)} className="px-3.5 py-1.5 rounded-lg bg-gray-100 font-bold text-gray-700">
                 रद्द करा
               </button>
-              <button onClick={handleSavePostalStatus} disabled={savingPostal} className="px-4 py-1.5 rounded-lg bg-sky-700 text-white font-bold">
+              <button onClick={handleSavePostalStatus} disabled={savingPostal} className="px-4 py-1.5 rounded-lg bg-[#9A3412] text-white font-bold">
                 {savingPostal ? 'सेव्ह होत आहे...' : 'सेव्ह करा'}
               </button>
             </div>
@@ -1305,33 +1305,33 @@ export default function Sec101NoticeMaster({
                 </p>
                 <p>सदर नोटीस दिनांकापर्यंत सदर खात्यावर खालीलप्रमाणे रक्कम थकीत आहे:</p>
 
-                <table className="w-full border text-xs border-slate-300">
-                  <thead className="bg-slate-100 font-bold">
+                <table className="w-full border text-[11px] border-slate-300 leading-tight border-collapse">
+                  <thead className="bg-[#5A1A14] font-bold text-amber-50">
                     <tr>
-                      <th className="border p-2 text-left">तपशील</th>
-                      <th className="border p-2 text-right">रक्कम (₹)</th>
+                      <th className="border px-2 py-1.5 text-left whitespace-nowrap">तपशील</th>
+                      <th className="border px-2 py-1.5 text-right whitespace-nowrap">रक्कम (₹)</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border p-2">१. थकीत मुद्दल (Principal Overdue)</td>
-                      <td className="border p-2 text-right">₹{(printNotice.principalDue || 0).toLocaleString('en-IN')}</td>
+                      <td className="border px-2 py-1 align-middle">१. थकीत मुद्दल (Principal Overdue)</td>
+                      <td className="border px-2 py-1 text-right align-middle">₹{(printNotice.principalDue || 0).toLocaleString('en-IN')}</td>
                     </tr>
                     <tr>
-                      <td className="border p-2">२. थकीत नियमित व्याज (Interest Overdue)</td>
-                      <td className="border p-2 text-right">₹{(printNotice.interestDue || 0).toLocaleString('en-IN')}</td>
+                      <td className="border px-2 py-1 align-middle">२. थकीत नियमित व्याज (Interest Overdue)</td>
+                      <td className="border px-2 py-1 text-right align-middle">₹{(printNotice.interestDue || 0).toLocaleString('en-IN')}</td>
                     </tr>
                     <tr>
-                      <td className="border p-2">३. दंडव्याज (Penal Interest)</td>
-                      <td className="border p-2 text-right">₹{(printNotice.penalInterestDue || 0).toLocaleString('en-IN')}</td>
+                      <td className="border px-2 py-1 align-middle">३. दंडव्याज (Penal Interest)</td>
+                      <td className="border px-2 py-1 text-right align-middle">₹{(printNotice.penalInterestDue || 0).toLocaleString('en-IN')}</td>
                     </tr>
                     <tr>
-                      <td className="border p-2">४. नोटीस व टपाल खर्च (Notice Fee)</td>
-                      <td className="border p-2 text-right">₹{(printNotice.noticeFee || 0).toLocaleString('en-IN')}</td>
+                      <td className="border px-2 py-1 align-middle">४. नोटीस व टपाल खर्च (Notice Fee)</td>
+                      <td className="border px-2 py-1 text-right align-middle">₹{(printNotice.noticeFee || 0).toLocaleString('en-IN')}</td>
                     </tr>
                     <tr className="bg-rose-50 font-bold text-rose-900">
-                      <td className="border p-2">एकूण मागणी रक्कम (Total Demand)</td>
-                      <td className="border p-2 text-right text-sm">₹{(printNotice.totalDemandAmount || 0).toLocaleString('en-IN')}</td>
+                      <td className="border px-2 py-1 align-middle">एकूण मागणी रक्कम (Total Demand)</td>
+                      <td className="border px-2 py-1 text-right text-sm align-middle">₹{(printNotice.totalDemandAmount || 0).toLocaleString('en-IN')}</td>
                     </tr>
                   </tbody>
                 </table>

@@ -454,9 +454,9 @@ export default function DeadstockOpeningBalance() {
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-2xs flex items-center justify-between">
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase">एकूण मूळ खरेदी किंमत</div>
-            <div className="text-base font-bold text-blue-700 mt-0.5">₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="text-base font-bold text-[#9A3412] mt-0.5">₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
-          <div className="p-2 rounded bg-blue-50 text-blue-600">
+          <div className="p-2 rounded bg-amber-50 text-[#B44814]">
             <IndianRupee size={18} />
           </div>
         </div>
@@ -693,14 +693,14 @@ export default function DeadstockOpeningBalance() {
           </div>
 
           {/* Live Calculation Preview Banner */}
-          <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-sm flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-3">
               <span className="text-slate-600 font-medium">
                 एकूण नग: <strong className="text-slate-900 font-bold">{safeQty}</strong>
               </span>
               <span className="text-slate-400">|</span>
               <span className="text-slate-600 font-medium">
-                एकूण मूळ किंमत: <strong className="text-blue-700 font-bold">₹{totalCostCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                एकूण मूळ किंमत: <strong className="text-[#9A3412] font-bold">₹{totalCostCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </span>
               <span className="text-slate-400">|</span>
               <span className="text-slate-600 font-medium">
@@ -791,23 +791,23 @@ export default function DeadstockOpeningBalance() {
 
         {/* Table Content */}
         <div className="overflow-x-auto flex-1">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-[11px] leading-tight">
             <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold text-[11px] border-b border-slate-200">
-                <th className="py-2 px-2.5 w-10 text-center">अ.क्र.</th>
-                <th className="py-2 px-2.5 w-28">मालमत्ता कोड</th>
-                <th className="py-2 px-2.5">मालमत्ता नाव</th>
-                <th className="py-2 px-2.5">वर्ग (Category)</th>
-                <th className="py-2 px-2.5">शाखा</th>
-                <th className="py-2 px-2.5 w-24">खरेदी तारीख</th>
-                <th className="py-2 px-2.5 text-right w-24">मूळ किंमत (₹)</th>
-                <th className="py-2 px-2.5 text-right w-24">घसारा (₹)</th>
-                <th className="py-2 px-2.5 text-right w-28 font-bold text-emerald-800">पुस्तकी मूल्य (₹)</th>
-                <th className="py-2 px-2.5">स्थान / कस्टोडियन</th>
-                <th className="py-2 px-2.5 w-16 text-center">कृती</th>
+              <tr className="bg-[#5A1A14] text-amber-50 font-bold text-[11px] border-b border-amber-400/30">
+                <th className="py-1.5 px-2.5 w-10 text-center whitespace-nowrap">अ.क्र.</th>
+                <th className="py-1.5 px-2.5 w-28 whitespace-nowrap">मालमत्ता कोड</th>
+                <th className="py-1.5 px-2.5 whitespace-nowrap">मालमत्ता नाव</th>
+                <th className="py-1.5 px-2.5 whitespace-nowrap">वर्ग (Category)</th>
+                <th className="py-1.5 px-2.5 whitespace-nowrap">शाखा</th>
+                <th className="py-1.5 px-2.5 w-24 whitespace-nowrap">खरेदी तारीख</th>
+                <th className="py-1.5 px-2.5 text-right w-24 whitespace-nowrap">मूळ किंमत (₹)</th>
+                <th className="py-1.5 px-2.5 text-right w-24 whitespace-nowrap">घसारा (₹)</th>
+                <th className="py-1.5 px-2.5 text-right w-28 font-bold text-emerald-200 whitespace-nowrap">पुस्तकी मूल्य (₹)</th>
+                <th className="py-1.5 px-2.5 whitespace-nowrap">स्थान / कस्टोडियन</th>
+                <th className="py-1.5 px-2.5 w-16 text-center whitespace-nowrap">कृती</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-amber-100">
               {loading ? (
                 <tr>
                   <td colSpan={11} className="py-8 text-center text-slate-400">
@@ -829,37 +829,37 @@ export default function DeadstockOpeningBalance() {
                     key={asset.assetID}
                     className="hover:bg-slate-50 transition-colors group text-slate-700"
                   >
-                    <td className="py-1.5 px-2.5 text-center text-[10px] text-slate-400 font-mono">
+                    <td className="py-1 px-2.5 text-center text-[10px] text-slate-400 font-mono align-middle">
                       {index + 1}
                     </td>
-                    <td className="py-1.5 px-2.5 font-mono font-bold text-primary">
+                    <td className="py-1 px-2.5 font-mono font-bold text-primary align-middle">
                       {asset.assetCode}
                     </td>
-                    <td className="py-1.5 px-2.5 font-medium text-slate-900">
+                    <td className="py-1 px-2.5 font-medium text-slate-900 align-middle">
                       {asset.assetName}
                     </td>
-                    <td className="py-1.5 px-2.5">
+                    <td className="py-1 px-2.5 align-middle">
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 border border-slate-200">
                         <Tag size={10} className="text-slate-400" />
                         {asset.category?.categoryName || '-'}
                       </span>
                     </td>
-                    <td className="py-1.5 px-2.5 text-slate-600">
+                    <td className="py-1 px-2.5 text-slate-600 align-middle">
                       {asset.branch?.branchName || `शाखा #${asset.branchID}`}
                     </td>
-                    <td className="py-1.5 px-2.5 text-slate-600 font-mono text-[11px]">
+                    <td className="py-1 px-2.5 text-slate-600 font-mono text-[11px] align-middle">
                       {asset.purchaseDate ? asset.purchaseDate.split('T')[0] : '-'}
                     </td>
-                    <td className="py-1.5 px-2.5 text-right font-mono font-medium text-slate-800">
+                    <td className="py-1 px-2.5 text-right font-mono font-medium text-slate-800 align-middle">
                       ₹{Number(asset.originalCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="py-1.5 px-2.5 text-right font-mono text-amber-700 font-medium">
+                    <td className="py-1 px-2.5 text-right font-mono text-amber-700 font-medium align-middle">
                       ₹{Number(asset.accumulatedDepreciation).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="py-1.5 px-2.5 text-right font-mono font-bold text-emerald-700 bg-emerald-50/30">
+                    <td className="py-1 px-2.5 text-right font-mono font-bold text-emerald-700 bg-emerald-50/30 align-middle">
                       ₹{Number(asset.currentBookValue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="py-1.5 px-2.5 text-slate-500 text-[11px]">
+                    <td className="py-1 px-2.5 text-slate-500 text-[11px] align-middle">
                       {asset.location || asset.custodian ? (
                         <span>
                           {asset.location && <span className="font-medium text-slate-700">{asset.location}</span>}
@@ -870,12 +870,12 @@ export default function DeadstockOpeningBalance() {
                         <span className="text-slate-300">-</span>
                       )}
                     </td>
-                    <td className="py-1.5 px-2.5 text-center">
+                    <td className="py-1 px-2.5 text-center align-middle">
                       <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
                           onClick={() => handleEditClick(asset)}
-                          className="p-1 hover:bg-blue-100 text-blue-600 rounded transition-all cursor-pointer"
+                          className="p-1 hover:bg-amber-100 text-[#B44814] rounded transition-all cursor-pointer"
                           title="दुरुस्त करा (Edit)"
                         >
                           <Edit2 size={12} />
@@ -900,7 +900,7 @@ export default function DeadstockOpeningBalance() {
                   <td colSpan={6} className="py-2 px-2.5 text-right text-xs uppercase tracking-wider">
                     एकूण (Total):
                   </td>
-                  <td className="py-2 px-2.5 text-right font-mono text-blue-800">
+                  <td className="py-2 px-2.5 text-right font-mono text-[#7C2418]">
                     ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
                   <td className="py-2 px-2.5 text-right font-mono text-amber-800">

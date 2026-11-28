@@ -324,11 +324,11 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
       <div className="bg-primary px-3.5 py-2.5 text-white flex items-center justify-between shadow-xs rounded-sm">
         <div className="flex items-center gap-2.5">
           <div className="p-1.5 bg-white/10 rounded border border-white/20">
-            <Layers className="w-5 h-5 text-blue-100" />
+            <Layers className="w-5 h-5 text-amber-100" />
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-wide">लॉकर व कपाट इन्व्हेंटरी (Locker & Cabinet Master)</h1>
-            <p className="text-[10px] text-blue-100 font-normal">
+            <p className="text-[10px] text-amber-100 font-normal">
               कपाटातील लॉकर्स, चावी क्रमांक, प्रकार मॅपिंग व थेट व्हिज्युअल नकाशा (Interactive Rack Matrix)
             </p>
           </div>
@@ -371,7 +371,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
 
           <button
             onClick={() => setIsBulkModalOpen(true)}
-            className="px-3 py-1.5 bg-white hover:bg-blue-50 text-primary font-bold rounded-md shadow-2xs flex items-center gap-1 text-[11px] cursor-pointer transition border border-white/50"
+            className="px-3 py-1.5 bg-white hover:bg-amber-50 text-primary font-bold rounded-md shadow-2xs flex items-center gap-1 text-[11px] cursor-pointer transition border border-white/50"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             <span>एकत्रित लॉकर्स जोडा (Bulk)</span>
@@ -403,9 +403,9 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
               : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
           }`}
         >
-          <List className="w-4 h-4 text-blue-600" />
+          <List className="w-4 h-4 text-[#B44814]" />
           <span>२. लॉकर यादी व व्यवस्थापन (Lockers Table List)</span>
-          <span className="px-2 py-0.5 bg-blue-100 text-blue-900 rounded-full text-[10px] font-bold border border-blue-200">
+          <span className="px-2 py-0.5 bg-amber-100 text-[#5A1A14] rounded-full text-[10px] font-bold border border-amber-200">
             {totalCount}
           </span>
         </button>
@@ -631,21 +631,21 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
       {mainTab === 'table' && (
         <div className="bg-white rounded-md border border-gray-300 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-[11px] leading-tight">
               <thead>
-                <tr className="bg-gray-100 text-gray-800 border-b border-gray-300 font-bold">
-                  <th className="py-2.5 px-3">कपाट क्र.</th>
-                  <th className="py-2.5 px-3">लॉकर क्र.</th>
-                  <th className="py-2.5 px-3">चावी क्र.</th>
-                  <th className="py-2.5 px-3">प्रकार व परिमाणे</th>
-                  <th className="py-2.5 px-3 text-right">वार्षिक भाडे</th>
-                  <th className="py-2.5 px-3 text-right">अनामत रक्कम</th>
-                  <th className="py-2.5 px-3 text-center">स्थिती (Status)</th>
-                  <th className="py-2.5 px-3">सध्याचे वाटप / सभासद</th>
-                  <th className="py-2.5 px-3 text-center">कृती (Actions)</th>
+                <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 font-bold">
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">कपाट क्र.</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">लॉकर क्र.</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">चावी क्र.</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">प्रकार व परिमाणे</th>
+                  <th className="py-1.5.5 px-2 text-right whitespace-nowrap">वार्षिक भाडे</th>
+                  <th className="py-1.5.5 px-2 text-right whitespace-nowrap">अनामत रक्कम</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">स्थिती (Status)</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">सध्याचे वाटप / सभासद</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">कृती (Actions)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 text-gray-700">
+              <tbody className="divide-y divide-amber-100 text-gray-700">
                 {filteredLockers.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-8 text-center text-gray-400 font-bold">
@@ -656,26 +656,26 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
                   filteredLockers.map((l) => {
                     const statusInfo = getStatusColor(l.status);
                     return (
-                      <tr key={l.lockerID} className="hover:bg-blue-50/40 transition-colors">
-                        <td className="py-2 px-3 font-bold text-gray-800">{l.cabinetNo}</td>
-                        <td className="py-2 px-3 font-black text-primary">{l.lockerNo}</td>
-                        <td className="py-2 px-3 font-mono font-bold text-amber-700">{l.keyNo}</td>
-                        <td className="py-2 px-3">
+                      <tr key={l.lockerID} className="hover:bg-amber-50/40 transition-colors">
+                        <td className="py-1 px-2 font-bold text-gray-800 align-middle">{l.cabinetNo}</td>
+                        <td className="py-1 px-2 font-black text-primary align-middle">{l.lockerNo}</td>
+                        <td className="py-1 px-2 font-mono font-bold text-amber-700 align-middle">{l.keyNo}</td>
+                        <td className="py-1 px-2 align-middle">
                           <span className="font-bold text-gray-800">{l.typeName}</span>
                           {l.dimensions && <span className="text-[10px] text-gray-500 ml-1">({l.dimensions})</span>}
                         </td>
-                        <td className="py-2 px-3 text-right font-mono font-bold text-emerald-800">
+                        <td className="py-1 px-2 text-right font-mono font-bold text-emerald-800 align-middle">
                           ₹{l.annualRent?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="py-2 px-3 text-right font-mono font-bold text-blue-800">
+                        <td className="py-1 px-2 text-right font-mono font-bold text-[#7C2418] align-middle">
                           ₹{l.securityDeposit?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-1 px-2 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusInfo.badge}`}>
                             {statusInfo.label}
                           </span>
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-1 px-2 align-middle">
                           {l.currentAllotment ? (
                             <div>
                               <p className="font-bold text-gray-900">{l.currentAllotment.memberName}</p>
@@ -685,7 +685,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
                             <span className="text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-1 px-2 text-center align-middle">
                           <div className="flex items-center justify-center space-x-1">
                             <button
                               onClick={() => setSelectedLockerDetail(l)}
@@ -697,7 +697,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
                             <button
                               onClick={() => handleEdit(l)}
                               title="दुरुस्त करा"
-                              className="p-1 text-blue-600 hover:bg-blue-50 rounded cursor-pointer"
+                              className="p-1 text-[#B44814] hover:bg-amber-50 rounded cursor-pointer"
                             >
                               <Edit2 size={14} />
                             </button>
@@ -726,10 +726,10 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
           <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="p-3 bg-primary text-white flex justify-between items-center">
               <div className="flex items-center space-x-2">
-                <Box size={18} className="text-blue-200" />
+                <Box size={18} className="text-amber-200" />
                 <div>
                   <h3 className="text-sm font-bold">लॉकर तपशील: {selectedLockerDetail.lockerNo}</h3>
-                  <p className="text-[10px] text-blue-100">कपाट: {selectedLockerDetail.cabinetNo} | चावी क्र.: {selectedLockerDetail.keyNo}</p>
+                  <p className="text-[10px] text-amber-100">कपाट: {selectedLockerDetail.cabinetNo} | चावी क्र.: {selectedLockerDetail.keyNo}</p>
                 </div>
               </div>
               <button 
@@ -752,7 +752,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-gray-400 uppercase">अनामत रक्कम</span>
-                  <p className="font-bold text-blue-700">₹{selectedLockerDetail.securityDeposit?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                  <p className="font-bold text-[#9A3412]">₹{selectedLockerDetail.securityDeposit?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-gray-400 uppercase">सध्याची स्थिती</span>
@@ -802,7 +802,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
                   handleEdit(selectedLockerDetail);
                   setSelectedLockerDetail(null);
                 }}
-                className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 cursor-pointer"
+                className="px-3 py-1.5 text-xs font-semibold text-[#9A3412] bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 cursor-pointer"
               >
                 दुरुस्त करा
               </button>
@@ -958,7 +958,7 @@ const LockerMaster: React.FC<LockerMasterProps> = ({ onNavigateToAllotment }) =>
             </div>
 
             <form onSubmit={handleBulkSubmit} className="p-4 space-y-3.5 text-xs">
-              <div className="p-3 bg-blue-50 border border-blue-200 text-blue-950 rounded text-xs leading-relaxed">
+              <div className="p-3 bg-amber-50 border border-amber-200 text-[#4A1410] rounded text-xs leading-relaxed">
                 💡 <strong>सूचना:</strong> या सुविधेमुळे तुम्ही एका कपाटातील सलग क्रमांकाचे लॉकर्स (उदा. L-101 ते L-150) आणि त्यांच्या चाव्या आपोआप तयार करू शकता.
               </div>
 

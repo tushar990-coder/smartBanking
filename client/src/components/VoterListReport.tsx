@@ -311,7 +311,7 @@ export default function VoterListReport() {
                 </td>
                 <td className="border border-slate-900 py-1 px-2 text-left text-[9.5px]">
                   {r.jointMemberNames !== '-' ? (
-                    <div className="font-semibold text-indigo-900">{r.jointMemberNames}</div>
+                    <div className="font-semibold text-[#5A1A14]">{r.jointMemberNames}</div>
                   ) : (
                     <span className="text-slate-400">-</span>
                   )}

@@ -550,12 +550,12 @@ const InvestmentSchemeMaster: React.FC = () => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <PieChart className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">शेअर्स भांडवल योजना (Shares)</div>
-            <div className="text-sm font-black text-indigo-900">{shareSchemesCount}</div>
+            <div className="text-sm font-black text-[#5A1A14]">{shareSchemesCount}</div>
           </div>
         </div>
 
@@ -601,7 +601,7 @@ const InvestmentSchemeMaster: React.FC = () => {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -615,8 +615,8 @@ const InvestmentSchemeMaster: React.FC = () => {
               </div>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                 isShareMode 
-                  ? 'bg-indigo-50 text-indigo-800 border-indigo-300' 
-                  : 'bg-blue-50 text-blue-800 border-blue-300'
+                  ? 'bg-orange-50 text-[#7C2418] border-amber-300' 
+                  : 'bg-amber-50 text-[#7C2418] border-amber-300'
               }`}>
                 {isShareMode ? '📊 शेअर्स भांडवल गुंतवणूक मोड' : '🏛️ बँक मुदत ठेव गुंतवणूक मोड'}
               </span>
@@ -647,7 +647,7 @@ const InvestmentSchemeMaster: React.FC = () => {
                 onClick={() => handleCategorySwitch('Share')}
                 className={`flex items-center justify-center gap-2 p-2.5 rounded-sm border font-bold text-xs transition cursor-pointer ${
                   isShareMode
-                    ? 'bg-indigo-800 text-white border-indigo-800 shadow-xs ring-1 ring-indigo-800'
+                    ? 'bg-[#7C2418] text-white border-[#7C2418] shadow-xs ring-1 ring-[#B44814]'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-slate-50'
                 }`}
               >
@@ -803,11 +803,11 @@ const InvestmentSchemeMaster: React.FC = () => {
                         name="durationDays"
                         value={formData.durationDays || ''}
                         onChange={handleChange}
-                        className={`${inputClass} font-mono font-bold text-blue-900 bg-blue-50/40 pr-12`}
+                        className={`${inputClass} font-mono font-bold text-[#5A1A14] bg-amber-50/40 pr-12`}
                         placeholder="उदा. 91, 180"
                         required={!isShareMode}
                       />
-                      <span className="absolute right-2 top-1 text-[11px] font-bold text-blue-700 pointer-events-none">
+                      <span className="absolute right-2 top-1 text-[11px] font-bold text-[#9A3412] pointer-events-none">
                         दिवस
                       </span>
                     </div>
@@ -880,13 +880,13 @@ const InvestmentSchemeMaster: React.FC = () => {
             </div>
           ) : (
             /* SHARE CAPITAL INVESTMENT SECTION */
-            <div className="bg-indigo-50/40 p-3.5 rounded-sm border border-indigo-200 border-t-2 border-indigo-800 space-y-2.5 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between border-b border-indigo-200 pb-1.5">
+            <div className="bg-orange-50/40 p-3.5 rounded-sm border border-amber-200 border-t-2 border-[#7C2418] space-y-2.5 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Coins className="w-4 h-4 text-indigo-800" />
-                  <h2 className="text-xs font-bold text-indigo-900">२. शेअर्स भांडवल व लाभांश तपशील (Share Capital & Dividend Details)</h2>
+                  <Coins className="w-4 h-4 text-[#7C2418]" />
+                  <h2 className="text-xs font-bold text-[#5A1A14]">२. शेअर्स भांडवल व लाभांश तपशील (Share Capital & Dividend Details)</h2>
                 </div>
-                <span className="text-[10px] bg-indigo-100 text-indigo-900 font-bold px-2 py-0.5 rounded border border-indigo-300">
+                <span className="text-[10px] bg-orange-100 text-[#5A1A14] font-bold px-2 py-0.5 rounded border border-amber-300">
                   🏛️ कायमस्वरूपी भांडवली मालमत्ता (Permanent Equity)
                 </span>
               </div>
@@ -903,7 +903,7 @@ const InvestmentSchemeMaster: React.FC = () => {
                     value={formData.faceValuePerShare}
                     onChange={handleChange}
                     onFocus={(e) => e.target.select()}
-                    className={`${inputClass} font-bold text-indigo-900 font-mono`}
+                    className={`${inputClass} font-bold text-[#5A1A14] font-mono`}
                     placeholder="उदा. 100, 500, 1000"
                     required={isShareMode}
                   />
@@ -933,9 +933,9 @@ const InvestmentSchemeMaster: React.FC = () => {
 
                 <div>
                   <label className={labelClass}>शेअर्स लाभांश प्रकार (Dividend Type)</label>
-                  <div className="px-2 py-1 bg-white border border-indigo-200 rounded-sm h-[28px] flex items-center gap-1.5">
-                    <TrendingUp className="w-3.5 h-3.5 text-indigo-700" />
-                    <span className="text-[11px] font-bold text-indigo-900">वार्षिक लाभांश (Annual Dividend by AGM)</span>
+                  <div className="px-2 py-1 bg-white border border-amber-200 rounded-sm h-[28px] flex items-center gap-1.5">
+                    <TrendingUp className="w-3.5 h-3.5 text-[#9A3412]" />
+                    <span className="text-[11px] font-bold text-[#5A1A14]">वार्षिक लाभांश (Annual Dividend by AGM)</span>
                   </div>
                   <span className="text-[10px] text-gray-500 block mt-0.5">
                     शेअर्सवर मासिक व्याज नसते; लाभांश जाहीर झाल्यावर थेट जमा होतो.
@@ -943,18 +943,18 @@ const InvestmentSchemeMaster: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-1 flex items-center justify-between border-t border-indigo-100">
-                <label className="flex items-center space-x-2 cursor-pointer bg-white p-1.5 rounded-sm border border-indigo-200 w-full sm:w-auto inline-flex hover:bg-indigo-50 transition-colors">
+              <div className="pt-1 flex items-center justify-between border-t border-amber-100">
+                <label className="flex items-center space-x-2 cursor-pointer bg-white p-1.5 rounded-sm border border-amber-200 w-full sm:w-auto inline-flex hover:bg-orange-50 transition-colors">
                   <input
                     type="checkbox"
                     name="isActive"
                     checked={formData.isActive}
                     onChange={handleChange as any}
-                    className="h-4 w-4 text-indigo-700 focus:ring-indigo-600 border-gray-300 rounded cursor-pointer"
+                    className="h-4 w-4 text-[#9A3412] focus:ring-[#B44814] border-gray-300 rounded cursor-pointer"
                   />
                   <span className="text-xs font-bold text-gray-800">ही शेअर्स गुंतवणूक योजना सक्रीय आहे (Is Active)</span>
                 </label>
-                <span className="text-[10px] text-indigo-800 font-medium">
+                <span className="text-[10px] text-[#7C2418] font-medium">
                   टीप: शेअर्स भांडवलाला कोणतीही मुदतपूर्ती तारीख (Maturity Date) नसते.
                 </span>
               </div>
@@ -1043,13 +1043,13 @@ const InvestmentSchemeMaster: React.FC = () => {
             </div>
           ) : (
             /* SHARE GL MAPPINGS (2 Ledgers - Asset & Dividend Income) */
-            <div className="bg-indigo-50/50 p-3.5 rounded-sm border border-indigo-200 space-y-2.5">
-              <div className="flex items-center justify-between border-b border-indigo-200 pb-1.5">
+            <div className="bg-orange-50/50 p-3.5 rounded-sm border border-amber-200 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
                 <div className="flex items-center gap-1.5">
-                  <BookOpen className="w-4 h-4 text-indigo-900" />
-                  <h2 className="text-xs font-bold text-indigo-900">३. शेअर्स खातावणी लेजर खाते मॅपिंग (Share Capital GL Ledger Mappings)</h2>
+                  <BookOpen className="w-4 h-4 text-[#5A1A14]" />
+                  <h2 className="text-xs font-bold text-[#5A1A14]">३. शेअर्स खातावणी लेजर खाते मॅपिंग (Share Capital GL Ledger Mappings)</h2>
                 </div>
-                <span className="text-[10px] text-indigo-800 font-mono">Permanent Asset & Dividend</span>
+                <span className="text-[10px] text-[#7C2418] font-mono">Permanent Asset & Dividend</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1103,7 +1103,7 @@ const InvestmentSchemeMaster: React.FC = () => {
               type="submit"
               disabled={saving}
               className={`px-6 py-2 ${
-                isEditMode ? 'bg-amber-600 hover:bg-amber-700' : isShareMode ? 'bg-indigo-800 hover:bg-indigo-900' : 'bg-primary hover:opacity-90'
+                isEditMode ? 'bg-amber-600 hover:bg-amber-700' : isShareMode ? 'bg-[#7C2418] hover:bg-[#5A1A14]' : 'bg-primary hover:opacity-90'
               } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
             >
               <Save className="w-4 h-4" />
@@ -1119,7 +1119,7 @@ const InvestmentSchemeMaster: React.FC = () => {
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1178,25 +1178,25 @@ const InvestmentSchemeMaster: React.FC = () => {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना कोड & नाव</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">संस्था / बँक</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">वर्गवारी</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">मुदत / दर्शनी मूल्य</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याज / लाभांश दर</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड मालमत्ता खाते</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">योजना कोड & नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">संस्था / बँक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">वर्गवारी</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">मुदत / दर्शनी मूल्य</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याज / लाभांश दर</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">मॅप्ड मालमत्ता खाते</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredSchemes.map((scheme) => {
                       const isShare = scheme.investmentType === 'Share';
                       return (
                         <tr key={scheme.schemeID} className="hover:bg-primary/5 transition-colors">
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                             <div className="flex items-center justify-center gap-1">
                               <button 
                                 type="button" 
@@ -1218,27 +1218,27 @@ const InvestmentSchemeMaster: React.FC = () => {
                               </button>
                             </div>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                             <div className="font-bold text-gray-900 font-mono">{scheme.schemeCode}</div>
                             <div className="text-gray-600 font-medium">{scheme.schemeName}</div>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-primary align-middle">
                             {scheme.investmentInstitution?.institutionName || scheme.institutionName || '-'}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                               isShare 
-                                ? 'bg-indigo-50 text-indigo-800 border-indigo-300' 
-                                : 'bg-blue-50 text-blue-800 border-blue-300'
+                                ? 'bg-orange-50 text-[#7C2418] border-amber-300' 
+                                : 'bg-amber-50 text-[#7C2418] border-amber-300'
                             }`}>
                               {isShare ? '📊 शेअर्स' : '🏛️ ठेव'}
                             </span>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                             {isShare ? (
-                              <span className="font-mono font-bold text-indigo-950">₹{scheme.interestRate} / शेअर</span>
+                              <span className="font-mono font-bold text-[#4A1410]">₹{scheme.interestRate} / शेअर</span>
                             ) : scheme.durationType === 'Days' ? (
-                              <span className="font-mono font-bold text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                              <span className="font-mono font-bold text-[#7C2418] bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                                 {scheme.durationDays || (scheme.durationMonths * 30)} दिवस
                               </span>
                             ) : (
@@ -1247,16 +1247,16 @@ const InvestmentSchemeMaster: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-bold font-mono align-middle">
                             {isShare ? (
-                              <span className="text-indigo-900">
+                              <span className="text-[#5A1A14]">
                                 {scheme.prematureWithdrawalRate > 0 ? `${scheme.prematureWithdrawalRate}% लाभांश` : 'AGM ठराव'}
                               </span>
                             ) : (
                               <span className="text-emerald-700">{scheme.interestRate}% p.a.</span>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                             {scheme.investmentAssetLedger?.ledgerName ? (
                               <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 font-bold" title={scheme.investmentAssetLedger.ledgerName}>
                                 {scheme.investmentAssetLedger.ledgerName}
@@ -1265,7 +1265,7 @@ const InvestmentSchemeMaster: React.FC = () => {
                               <span className="text-gray-400 italic">डिफॉल्ट मालमत्ता लेजर</span>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               scheme.isActive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                             }`}>

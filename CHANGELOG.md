@@ -1,5 +1,27 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-11-28] - आवृत्ती v2.6.54 (`Faint Pastel Rose-Maroon → Warm Ivory → Soft Apricot Gold` संपूर्ण २१६ फॉर्म्स युनिफाइड थीम व सर्व ८७+ फॉर्म्सचे कॉम्पॅक्ट सिंगल-लाईन 'यादी पहा' टेबल्स स्टँडर्डायझेशन)
+
+### 🎨 1. संपूर्ण SmartBanking ERP साठी `Faint Pastel Rose-Maroon → Ivory → Apricot Gold` युनिफाइड थीम (सर्व २१६ कॉम्पोनंट्स)
+- **`index.css`, `tailwind.config.js`, `App.tsx`, `ThemeSettingsMaster.tsx`:** डीफॉल्ट `pastel-maroon` (`--color-primary: #9A3412`) व `pastel-warm` कॅनव्हास टोकन्स, `.cbs-page-canvas`, `.cbs-top-banner`, `.cbs-card`, `.cbs-btn-primary`, `.cbs-table-head`, `.cbs-list-modal-shell` व `.cbs-list-table` ग्लोबल युटिलिटीज आणि `@media print` साठी स्वच्छ पांढरा बॅकग्राऊंड संरक्षित.
+- **डॅशबोर्ड, साईडबार, लॉगिन, सर्व ७ विभाग हब्स व २१६ फॉर्म्स:** `Dashboard.tsx`, `Sidebar.tsx`, `LoginForm.tsx`, `Member360Dashboard.tsx`, `CustomerMaster.tsx`, `TodaysTasksDashboard.tsx`, `AuroraHubLayout.tsx`, `SavingDashboard.tsx`, `LoanDashboard.tsx`, `FdRdDashboard.tsx`, `RdDashboard.tsx`, `PigmyDashboard.tsx`, `SharesDashboard.tsx`, `VoucherDashboard.tsx`, `CbsReportLayout.tsx`, `ReportDashboard.tsx`, `SettingsDashboard.tsx`, `DayEndDashboard.tsx`, `NpaDashboard.tsx`, `LockerDashboard.tsx` व सर्व मॉड्युल फॉर्म्स/अहवालांवर एकसमान सौम्य पेस्टल मरून-गोल्ड थीम लागू.
+
+### 📋 2. `नोंदणीकृत सभासद यादी` व सर्व ८७+ फॉर्म्सचे कॉम्पॅक्ट सिंगल-लाईन 'यादी पहा' पॉप-अप मॉडल्स व टेबल्स
+- **`MemberMaster.tsx`, `MemberListReport.tsx`:** `<td>` वरील `flex` बग दुरुस्त करून वाइड मॉडेल (`max-w-[97vw] xl:max-w-[1460px]`), १२ कॉम्पॅक्ट सिंगल-लाईन कॉलम्स (मोबाईल व गाव स्वतंत्र), `#5A1A14` स्टिकी हेडर व थेट एडिट सुविधा; तसेच A4 पोर्ट्रेट अहवालासाठी `table-fixed` संतुलित कॉलम रुंदी.
+- **सर्व ६ `<td flex>` क्रिटिकल बग्स निर्मूलन व ८७+ फॉर्म्स स्टँडर्डायझेशन:** `ShareMaster.tsx`, `LoanCollectionMaster.tsx`, `CompanyBranchMaster.tsx`, `DepartmentMaster.tsx`, `CustomerOpeningBalanceReport.tsx`, `NpaStatementReport.tsx` मधील `<td flex>` दुरुस्ती, सर्व बचत/FD/RD/पिग्मी/कर्ज/व्हाउचर/गुंतवणूक/बाह्य कर्ज/लॉकर/कलम १०१/सेटिंग्ज याद्यांमध्ये कॉम्पॅक्ट `py-1 px-2` सिंगल-लाईन रो, वाइड मॉडल्स, `#5A1A14` स्टिकी हेडर व पूर्ण कॉन्ट्रास्ट दुरुस्ती (`vite build` शून्य त्रुटींसह उत्तीर्ण).
+
+## 📅 [2026-11-28] - आवृत्ती v2.6.53 (`VPS Master Patch` झिरो-लॉक इन्स्टॉलर दुरुस्ती, `Aurora` लॉगिन पेज, `आजची कामे` स्क्रोल व यादी बगफिक्स आणि `Executive खातेदार नोंदणी`)
+
+### 🛠️ 1. `VPS Multi-App Master Patch` Robocopy Exit Code 9/11 फाईल-लॉक व २६-मिनिट स्नॅपशॉट हँग निवारण
+- **`tools/build_vps_multi_app_patch.ps1`:**
+  - **Step 1.5 स्नॅपशॉट ऑप्टिमायझेशन:** `App_Data`, `backups`, `backup`, `temp`, `scratch`, `Rollbacks`, `*.log`, `*.ldb`, `*.lock` वगळून `/R:1 /W:1` दिल्याने लॉक्ड फाईल्सवर अडकून २६ मिनिटे घेणारा स्नॅपशॉट आता २ सेकंदांत पूर्ण होतो.
+  - **Step 3/4 झिरो-लॉक बॅकएंड डिप्लॉय:** ASP.NET Core साठी अधिकृत `app_offline.htm` टाकून होस्ट प्रोसेस अनलोड केली जाते, लॉक आढळल्यास स्वयंचलित `W3SVC/WAS` थांबवून पुन्हा कॉपी होते, आणि `finally`/`catch` मध्ये `app_offline.htm` काढून IIS सेवा व AppPools सुरक्षितपणे पुन्हा सुरू होतात.
+
+### ✅ 2. `आजची कामे डॅशबोर्ड` संपूर्ण बगफिक्स व `Aurora` प्युअर-व्हेक्टर लॉगिन पेज + `खातेदार नोंदणी`
+- **`TodaysTasksDashboard.tsx`, `NotificationController.cs`, `NotificationEngineService.cs`:** स्क्रोल लॉक दुरुस्त, सर्व KPI/कार्ड काउंट्स क्लिकेबल (संपूर्ण स्क्रोल होणारी यादी), केस-इनसेन्सिटिव्ह + `Other` कॅच-ऑल मॅपिंग, Borrowing EMI `400` एरर निवारण व `force=true` लाईव्ह रिफ्रेश.
+- **`LoginForm.tsx`:** शून्य इमेज वापरून डॅशबोर्डच्या `Aurora Smart Banking` थीमशी जुळणारे प्युअर-व्हेक्टर लॉगिन पेज.
+- **`CustomerMaster.tsx`:** २-कॉलम `Executive CBS Onboarding Workstation` (उजवीकडे लाईव्ह CIF कार्ड प्रिव्ह्यू व KYC पूर्णता मीटर).
+
 ## 📅 [2026-11-28] - आवृत्ती v2.6.52 (`Aurora Smart Banking UI`, होव्हर-अ‍ॅनिमेटेड SVG आयकॉन्स, सर्व ७ विभाग हब्स, सर्व ८ पिग्मी फॉर्म्स, `नोंदणीकृत खातेदार यादी` ३६-कॉलम सिंगल-लाईन टेबल, `व्हाउचर पासिंग` कॉम्पॅक्ट ग्रिड, `नियम ३५ स्वनिधी` ऑडिट निवारण व `सभासद लाभांश खतावणी`)
 
 ### ✨ 1. `Aurora Smart Banking` मुख्य डॅशबोर्ड, साईडबार, `खातेदार ३६०°` व होव्हर-अ‍ॅनिमेटेड SVG आयकॉन्स

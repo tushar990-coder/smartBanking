@@ -119,7 +119,7 @@ export default function RdAccrualPosting() {
             </div>
           </div>
 
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-sm space-y-2 text-xs text-blue-700">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-sm space-y-2 text-xs text-[#9A3412]">
             <strong>महत्वाचे नियम:</strong>
             <ul className="list-disc list-inside space-y-1 mt-1 opacity-90">
               <li>व्याज तरतूद धावल्यामुळे (Provision Run) आरडी खात्यांवर त्रैमासिक चक्रवाढ व्याज मोजले जाते.</li>
@@ -131,7 +131,7 @@ export default function RdAccrualPosting() {
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-1.5 bg-primary hover:bg-[#004a75] text-white font-semibold rounded-sm transition duration-200 text-xs shadow-sm"
+              className="px-5 py-1.5 bg-primary hover:bg-[#7C2418] text-white font-semibold rounded-sm transition duration-200 text-xs shadow-sm"
             >
               {loading ? 'व्याज तरतूद प्रक्रिया चालू आहे...' : 'व्याज तरतूद रन करा (Process Provision)'}
             </button>

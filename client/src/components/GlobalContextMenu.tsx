@@ -102,7 +102,7 @@ const GlobalContextMenu: React.FC = () => {
         <span className="text-[11px] font-bold text-slate-800">
           क्विक अहवाल
         </span>
-        <span className="text-[9px] bg-blue-50 text-blue-700 font-semibold px-1.5 py-0.5 rounded border border-blue-200">
+        <span className="text-[9px] bg-amber-50 text-[#9A3412] font-semibold px-1.5 py-0.5 rounded border border-amber-200">
           नवीन टॅब ↗
         </span>
       </div>
@@ -118,10 +118,10 @@ const GlobalContextMenu: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => openInNewTab(item.tabName)}
-                className="w-full text-left px-3 py-1.5 rounded hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 flex items-center justify-between group transition-colors border-l-2 border-transparent hover:border-blue-600"
+                className="w-full text-left px-3 py-1.5 rounded hover:bg-amber-50/80 text-slate-700 hover:text-[#5A1A14] flex items-center justify-between group transition-colors border-l-2 border-transparent hover:border-[#9A3412]"
               >
-                <div className="font-semibold text-slate-800 group-hover:text-blue-900 leading-tight">{item.label}</div>
-                <span className="text-[10px] opacity-0 group-hover:opacity-100 text-blue-600 transition-opacity">↗</span>
+                <div className="font-semibold text-slate-800 group-hover:text-[#5A1A14] leading-tight">{item.label}</div>
+                <span className="text-[10px] opacity-0 group-hover:opacity-100 text-[#B44814] transition-opacity">↗</span>
               </button>
             ))}
           </div>
@@ -150,10 +150,10 @@ const GlobalContextMenu: React.FC = () => {
                     openInNewTab(item.tabName);
                   }
                 }}
-                className="w-full text-left px-3 py-1.5 rounded hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 flex items-center justify-between group transition-colors border-l-2 border-transparent hover:border-blue-600"
+                className="w-full text-left px-3 py-1.5 rounded hover:bg-amber-50/80 text-slate-700 hover:text-[#5A1A14] flex items-center justify-between group transition-colors border-l-2 border-transparent hover:border-[#9A3412]"
               >
-                <div className="font-semibold text-slate-800 group-hover:text-blue-900 leading-tight">{item.label}</div>
-                <span className="text-[10px] opacity-0 group-hover:opacity-100 text-blue-600 transition-opacity">↗</span>
+                <div className="font-semibold text-slate-800 group-hover:text-[#5A1A14] leading-tight">{item.label}</div>
+                <span className="text-[10px] opacity-0 group-hover:opacity-100 text-[#B44814] transition-opacity">↗</span>
               </button>
             ))}
           </div>
@@ -169,10 +169,10 @@ const GlobalContextMenu: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => openInNewTab(item.tabName)}
-                className="w-full text-left px-3 py-1.5 rounded hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 flex items-center justify-between group transition-colors border-l-2 border-transparent hover:border-blue-600"
+                className="w-full text-left px-3 py-1.5 rounded hover:bg-amber-50/80 text-slate-700 hover:text-[#5A1A14] flex items-center justify-between group transition-colors border-l-2 border-transparent hover:border-[#9A3412]"
               >
-                <div className="font-semibold text-slate-800 group-hover:text-blue-900 leading-tight">{item.label}</div>
-                <span className="text-[10px] opacity-0 group-hover:opacity-100 text-blue-600 transition-opacity">↗</span>
+                <div className="font-semibold text-slate-800 group-hover:text-[#5A1A14] leading-tight">{item.label}</div>
+                <span className="text-[10px] opacity-0 group-hover:opacity-100 text-[#B44814] transition-opacity">↗</span>
               </button>
             ))}
           </div>

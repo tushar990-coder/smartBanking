@@ -358,17 +358,17 @@ const DayEndDashboard: React.FC = () => {
     'मुख्य शाखा (Main Branch)';
 
   return (
-    <div className="p-2.5 sm:p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs text-slate-800">
-      {/* 1. TOP HEADER BANNER (Soft Multi-Tone Slate-Blue-Indigo Gradient with Crisp Border) */}
-      <div className="bg-gradient-to-r from-slate-100 via-blue-50 to-indigo-50 px-3.5 py-2.5 rounded-sm shadow-xs border-2 border-slate-300 border-b-4 border-b-primary flex flex-wrap items-center justify-between gap-2">
+    <div className="p-2.5 sm:p-3 max-w-7xl mx-auto cbs-page-canvas min-h-full space-y-3 font-sans text-xs text-[#4A1410]">
+      {/* 1. TOP HEADER BANNER (Pastel Maroon-Ivory-Gold) */}
+      <div className="cbs-top-banner px-3.5 py-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded bg-indigo-100 border border-indigo-400 flex items-center justify-center text-indigo-900 shadow-2xs shrink-0">
+          <div className="w-8 h-8 rounded bg-orange-100 border border-amber-400 flex items-center justify-center text-[#5A1A14] shadow-2xs shrink-0">
             <Lock className="w-4 h-4 stroke-[2.2]" />
           </div>
           <div>
             <h1 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
               <span>बिझनेस डेट व दिवस अखेर नियंत्रण</span>
-              <span className="text-xs font-semibold text-indigo-800 hidden sm:inline">
+              <span className="text-xs font-semibold text-[#7C2418] hidden sm:inline">
                 (Day End Control)
               </span>
             </h1>
@@ -380,8 +380,8 @@ const DayEndDashboard: React.FC = () => {
 
         <div className="flex items-center gap-2">
           {isHeadOfficeOrAdmin ? (
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-sm border border-indigo-400 shadow-2xs h-7">
-              <Building2 className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-sm border border-amber-400 shadow-2xs h-7">
+              <Building2 className="w-3.5 h-3.5 text-[#9A3412] shrink-0" />
               <select
                 value={selectedBranchId}
                 onChange={e => {
@@ -398,8 +398,8 @@ const DayEndDashboard: React.FC = () => {
               </select>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-sm border border-indigo-400 text-xs font-semibold text-slate-900 shadow-2xs h-7">
-              <Building2 className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-sm border border-amber-400 text-xs font-semibold text-slate-900 shadow-2xs h-7">
+              <Building2 className="w-3.5 h-3.5 text-[#9A3412] shrink-0" />
               <span>{selectedBranchName}</span>
             </div>
           )}
@@ -409,9 +409,9 @@ const DayEndDashboard: React.FC = () => {
             onClick={() => fetchDayEndData(selectedBranchId, false)}
             disabled={loading}
             title="ताजे करा (Refresh)"
-            className="px-2.5 py-1 rounded-sm bg-white hover:bg-indigo-50 border border-indigo-400 text-indigo-950 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition h-7 shadow-2xs"
+            className="px-2.5 py-1 rounded-sm bg-white hover:bg-orange-50 border border-amber-400 text-[#4A1410] text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition h-7 shadow-2xs"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-indigo-700 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-[#9A3412] ${loading ? 'animate-spin' : ''}`} />
             <span>रिफ्रेश</span>
           </button>
         </div>
@@ -460,9 +460,9 @@ const DayEndDashboard: React.FC = () => {
       )}
 
       {/* GROUP BOX 1: Active Business Date & Sequential Status (Indigo Top Accent + 3 Distinct Color Cards) */}
-      <div className="bg-white rounded-sm shadow-xs border-2 border-slate-300 border-t-4 border-t-indigo-600 overflow-hidden">
+      <div className="bg-white rounded-sm shadow-xs border-2 border-slate-300 border-t-4 border-t-[#9A3412] overflow-hidden">
         <div className="bg-slate-100 px-3.5 py-2 border-b border-slate-300 flex justify-between items-center">
-          <h2 className="text-xs font-bold text-indigo-950">
+          <h2 className="text-xs font-bold text-[#4A1410]">
             १. चालू बिझनेस डेट व क्रमवार स्थिती (Business Date Status)
           </h2>
           <span className="text-xs font-medium text-slate-600 bg-white px-2.5 py-0.5 rounded-sm border border-slate-300">
@@ -541,19 +541,19 @@ const DayEndDashboard: React.FC = () => {
           </div>
 
           {/* Card 3: Next Sequential Date -> ROYAL INDIGO / BLUE SHADE */}
-          <div className="bg-indigo-50/90 border-2 border-indigo-300 border-l-4 border-l-indigo-600 rounded-sm p-3 flex flex-col justify-between shadow-2xs">
+          <div className="bg-orange-50/90 border-2 border-amber-300 border-l-4 border-l-[#9A3412] rounded-sm p-3 flex flex-col justify-between shadow-2xs">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-bold text-indigo-950">
+              <span className="text-xs font-bold text-[#4A1410]">
                 दिवस बंद केल्यावर येणारी पुढची तारीख
               </span>
-              <Calendar className="w-3.5 h-3.5 text-indigo-700" />
+              <Calendar className="w-3.5 h-3.5 text-[#9A3412]" />
             </div>
             <div className="my-1.5">
-              <span className="text-sm font-bold text-indigo-950">
+              <span className="text-sm font-bold text-[#4A1410]">
                 {formatDisplayDate(nextSequentialDateStr)}
               </span>
             </div>
-            <span className="text-xs text-indigo-900 font-medium">
+            <span className="text-xs text-[#5A1A14] font-medium">
               दि. {formatDisplayDate(activeBusinessDateStr)} क्लोज केल्यावरच ही तारीख उघडेल
             </span>
           </div>
@@ -561,9 +561,9 @@ const DayEndDashboard: React.FC = () => {
       </div>
 
       {/* GROUP BOX 2: 3 Mandatory Tally Checks (Violet + Emerald + Sky-Blue Multi-Color Cards) */}
-      <div className="bg-white rounded-sm shadow-xs border-2 border-slate-300 border-t-4 border-t-blue-600 overflow-hidden">
+      <div className="bg-white rounded-sm shadow-xs border-2 border-slate-300 border-t-4 border-t-[#9A3412] overflow-hidden">
         <div className="bg-slate-100 px-3.5 py-2 border-b border-slate-300 flex justify-between items-center">
-          <h2 className="text-xs font-bold text-blue-950">
+          <h2 className="text-xs font-bold text-[#4A1410]">
             २. दिवस अखेरसाठी आवश्यक ३ ताळमेळ तपासण्या (दिनांक {formatDisplayDate(activeBusinessDateStr)})
           </h2>
           <span
@@ -732,7 +732,7 @@ const DayEndDashboard: React.FC = () => {
           <div
             className={`rounded-sm border-2 flex flex-col justify-between overflow-hidden shadow-2xs ${
               isTransferTallied
-                ? 'bg-sky-50/80 border-sky-400'
+                ? 'bg-amber-50/80 border-amber-400'
                 : 'bg-rose-50/90 border-rose-400'
             }`}
           >
@@ -740,12 +740,12 @@ const DayEndDashboard: React.FC = () => {
               <div
                 className={`flex items-center justify-between px-3 py-2 border-b ${
                   isTransferTallied
-                    ? 'bg-sky-100/90 border-sky-300'
+                    ? 'bg-amber-100/90 border-amber-300'
                     : 'bg-rose-100/90 border-rose-300'
                 }`}
               >
-                <span className="text-xs font-bold text-sky-950 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-sky-700" />
+                <span className="text-xs font-bold text-[#4A1410] flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#9A3412]" />
                   ३) ट्रान्सफर बॅलन्स टॅली (Transfer)
                 </span>
                 <span
@@ -784,12 +784,12 @@ const DayEndDashboard: React.FC = () => {
             <div
               className={`px-3 py-2 border-t flex items-center justify-between ${
                 isTransferTallied
-                  ? 'bg-sky-100/70 border-sky-300'
+                  ? 'bg-amber-100/70 border-amber-300'
                   : 'bg-rose-100/70 border-rose-300'
               }`}
             >
-              <span className="text-xs font-semibold text-sky-950">नावे-जमा फरक:</span>
-              <span className={`text-xs font-bold ${isTransferTallied ? 'text-sky-950' : 'text-rose-800'}`}>
+              <span className="text-xs font-semibold text-[#4A1410]">नावे-जमा फरक:</span>
+              <span className={`text-xs font-bold ${isTransferTallied ? 'text-[#4A1410]' : 'text-rose-800'}`}>
                 ₹ {transferDiff.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </span>
             </div>
@@ -817,7 +817,7 @@ const DayEndDashboard: React.FC = () => {
               {isAllTallied ? (
                 <span>
                   दिनांक <strong className="text-slate-950">{formatDisplayDate(activeBusinessDateStr)}</strong> चे सर्व ताळमेळ पूर्ण आहेत. आपण दिवस बंद करून पुढील तारीख{' '}
-                  <strong className="text-indigo-800">{formatDisplayDate(nextSequentialDateStr)}</strong> सुरू करू शकता.
+                  <strong className="text-[#7C2418]">{formatDisplayDate(nextSequentialDateStr)}</strong> सुरू करू शकता.
                 </span>
               ) : (
                 <span className="text-rose-900 font-semibold flex items-center gap-1.5">
@@ -835,11 +835,11 @@ const DayEndDashboard: React.FC = () => {
                 disabled={!canManageDayEnd || !isAllTallied || isDayClosed || eodRunning || loading}
                 className={`py-2 px-4 rounded-sm font-bold text-xs flex items-center justify-center gap-1.5 border-2 transition ${
                   canManageDayEnd && isAllTallied && !isDayClosed && !eodRunning
-                    ? 'bg-indigo-100 hover:bg-indigo-200 text-indigo-950 border-indigo-500 cursor-pointer shadow-2xs'
+                    ? 'bg-orange-100 hover:bg-amber-200 text-[#4A1410] border-[#B44814] cursor-pointer shadow-2xs'
                     : 'bg-slate-200 text-slate-500 border-slate-300 cursor-not-allowed'
                 }`}
               >
-                <Play className="w-3.5 h-3.5 fill-current text-indigo-800" />
+                <Play className="w-3.5 h-3.5 fill-current text-[#7C2418]" />
                 {eodRunning
                   ? 'दिवस अखेर सुरू आहे...'
                   : `दि. ${formatDisplayDate(activeBusinessDateStr)} चा दिवस बंद करा ➔ (${formatDisplayDate(nextSequentialDateStr)})`}

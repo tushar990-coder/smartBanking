@@ -366,7 +366,7 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
 
                     <div className="flex items-center gap-2">
                         <div className="hidden sm:flex items-center gap-3 text-gray-700 text-[11px] font-medium bg-white px-2.5 py-1 border border-gray-200 rounded-sm shadow-2xs">
-                            <span>एकूण वाटप: <strong className="text-blue-900 font-mono font-bold">₹{totalFilteredDisbursed.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</strong></span>
+                            <span>एकूण वाटप: <strong className="text-[#5A1A14] font-mono font-bold">₹{totalFilteredDisbursed.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</strong></span>
                             <span className="text-gray-300">|</span>
                             <span>एकूण निव्वळ अदा: <strong className="text-emerald-800 font-mono font-bold">₹{totalFilteredNetPaid.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</strong></span>
                         </div>
@@ -387,29 +387,29 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                 {/* Modal Table Content */}
                 <div className="flex-1 overflow-hidden flex flex-col p-2 bg-slate-100 min-h-0">
                     <div className="flex-1 overflow-x-auto overflow-y-auto bg-white rounded-sm shadow-xs border border-gray-200">
-                        <table className="w-full text-left border-collapse min-w-[1850px] text-xs">
-                            <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                        <table className="w-full text-left border-collapse min-w-[1850px] text-[11px] leading-tight">
+                            <thead className="bg-[#5A1A14] sticky top-0 z-10 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                                 <tr>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-center w-10">अ.क्र.</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-left">शाखा</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र. व टप्पा</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्जदार सभासद नाव</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-left bg-amber-50/70 text-amber-950">जामीनदार १</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-left bg-amber-50/70 text-amber-950">जामीनदार २</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज प्रकार</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-right">मंजूर रक्कम ₹</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-right bg-blue-50/70 text-blue-950">वाटप रक्कम ₹</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-center">वितरण दिनांक</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-right">हप्ता रक्कम ₹</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-center">हप्ते संख्या</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-right text-red-700">एकूण कपात ₹</th>
-                                    <th className="px-2 py-1.5 border-r border-gray-200 text-right bg-emerald-50/70 text-emerald-950">निव्वळ अदा ₹</th>
-                                    <th className="px-2 py-1.5 text-left w-28">पेमेंट पद्धत</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-10 whitespace-nowrap">अ.क्र.</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">शाखा</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खाते क्र. व टप्पा</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">कर्जदार सभासद नाव</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-left bg-amber-50/70 text-amber-950 whitespace-nowrap">जामीनदार १</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-left bg-amber-50/70 text-amber-950 whitespace-nowrap">जामीनदार २</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">कर्ज प्रकार</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मंजूर रक्कम ₹</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right bg-amber-50/70 text-[#4A1410] whitespace-nowrap">वाटप रक्कम ₹</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">वितरण दिनांक</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">हप्ता रक्कम ₹</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याजदर (%)</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">हप्ते संख्या</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right text-rose-200 whitespace-nowrap">एकूण कपात ₹</th>
+                                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right bg-emerald-50/70 text-emerald-950 whitespace-nowrap">निव्वळ अदा ₹</th>
+                                    <th className="px-2 py-1.5 text-left w-28 whitespace-nowrap">पेमेंट पद्धत</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                            <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                                 {loading ? (
                                     <tr>
                                         <td colSpan={17} className="text-center py-12 text-gray-500">
@@ -442,7 +442,7 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
 
                                         return (
                                             <tr key={d.loanDisbursementID} className="hover:bg-primary/5 transition-colors">
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                                                     <div className="flex items-center justify-center gap-1">
                                                         <button 
                                                             type="button" 
@@ -476,15 +476,15 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-2 py-1.5 text-center text-gray-500 font-mono text-[11px] border-r border-gray-200">
+                                                <td className="px-2 py-1 text-center text-gray-500 font-mono text-[11px] border-r border-gray-200 align-middle">
                                                     {index + 1}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 whitespace-nowrap">
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                                                <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap align-middle">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-[#7C2418] border border-amber-200">
                                                         {getBranchName(d)}
                                                     </span>
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 font-mono">
+                                                <td className="px-2 py-1 border-r border-gray-200 font-mono align-middle">
                                                     <div className="font-bold text-gray-900 tracking-tight">{format14DigitDisplay(acc.loanAccountNo) || `L-${d.loanAccountID}`}</div>
                                                     {acc.legacyAccountNumber && (
                                                         <div className="text-[9.5px] text-amber-950 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.2 mt-0.5 font-bold inline-block">
@@ -497,47 +497,47 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200">
+                                                <td className="px-2 py-1 border-r border-gray-200 align-middle">
                                                     <div className="font-bold text-primary">{getBorrowerName(d)}</div>
                                                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-mono mt-0.5">
                                                         {getBorrowerCode(d) && <span>कोड: {getBorrowerCode(d)}</span>}
                                                         {getBorrowerCif(d) && <span>CIF: {getBorrowerCif(d)}</span>}
                                                     </div>
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-amber-950 bg-amber-50/30 font-medium">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-amber-950 bg-amber-50/30 font-medium align-middle">
                                                     {g1Name}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-amber-950 bg-amber-50/30 font-medium">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-amber-950 bg-amber-50/30 font-medium align-middle">
                                                     {g2Name}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 font-semibold text-gray-700">
+                                                <td className="px-2 py-1 border-r border-gray-200 font-semibold text-gray-700 align-middle">
                                                     {acc.loanRate?.shortName || acc.loanRate?.loanType || '-'}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-800">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-gray-800 align-middle">
                                                     ₹{(acc.sanctionedAmount || d.sanctionedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-black text-blue-900 bg-blue-50/30">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-black text-[#5A1A14] bg-amber-50/30 align-middle">
                                                     ₹{(d.disbursementAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-[11px] font-semibold text-gray-700">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-center font-mono text-[11px] font-semibold text-gray-700 align-middle">
                                                     {formatDateSafe(d.disbursementDate)}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-700">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-gray-700 align-middle">
                                                     ₹{(acc.installmentAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-semibold">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-semibold align-middle">
                                                     {acc.interestRate}%
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-semibold">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-semibold align-middle">
                                                     {acc.noOfInstallments || '-'}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-red-600">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-red-600 align-middle">
                                                     ₹{totalDeds.toFixed(2)}
                                                 </td>
-                                                <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-black text-emerald-800 bg-emerald-50/30">
+                                                <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-black text-emerald-800 bg-emerald-50/30 align-middle">
                                                     ₹{(d.netAmountPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </td>
-                                                <td className="px-2 py-1.5 font-medium">
+                                                <td className="px-2 py-1 font-medium align-middle">
                                                     <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 border border-gray-200">
                                                         {d.paymentMode || 'Cash'}
                                                     </span>

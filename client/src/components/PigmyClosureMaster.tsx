@@ -1048,13 +1048,13 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
         </div>
 
         {/* Card 3: Scheme-Calculated Interest (Ledger auto-resolved from Pigmy Scheme) */}
-        <div className="bg-blue-50/50 p-2.5 rounded border border-blue-200 flex flex-col justify-between space-y-1.5">
+        <div className="bg-amber-50/50 p-2.5 rounded border border-amber-200 flex flex-col justify-between space-y-1.5">
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] text-blue-900 uppercase font-bold">
+              <span className="text-[10px] text-[#5A1A14] uppercase font-bold">
                 ३. देय व्याज (+)
               </span>
-              <span className="text-[10px] font-mono font-bold text-blue-800 bg-blue-100 px-1.5 rounded">
+              <span className="text-[10px] font-mono font-bold text-[#7C2418] bg-amber-100 px-1.5 rounded">
                 {activeTab === 'closure' ? (closurePreview?.prematureInterestRate ?? 0) : (withdrawalPreview?.appliedInterestRate ?? 0)}% p.a.
               </span>
             </div>
@@ -1065,14 +1065,14 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                 min="0"
                 value={customInterestAmount}
                 onChange={(e) => setCustomInterestAmount(e.target.value)}
-                className="w-full border border-blue-300 rounded px-2 py-1 text-xs font-mono font-bold text-emerald-700 bg-white"
+                className="w-full border border-amber-300 rounded px-2 py-1 text-xs font-mono font-bold text-emerald-700 bg-white"
               />
               {Math.abs(effectiveInterest - defaultInterest) > 0.01 && (
                 <button
                   type="button"
                   onClick={() => setCustomInterestAmount(String(defaultInterest))}
                   title="योजना डीफॉल्टवर रीसेट करा"
-                  className="px-1.5 py-1 text-[10px] bg-white border border-blue-300 rounded text-blue-700 font-bold cursor-pointer"
+                  className="px-1.5 py-1 text-[10px] bg-white border border-amber-300 rounded text-[#9A3412] font-bold cursor-pointer"
                 >
                   ↺
                 </button>
@@ -1092,7 +1092,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
               ⚠️ पिग्मी योजना सेटिंगमध्ये व्याज लेजर मॅप करा →
             </button>
           ) : (
-            <span className="text-[10px] text-blue-800 truncate" title={activePreviewObj?.calculationMethodLabel || ''}>
+            <span className="text-[10px] text-[#7C2418] truncate" title={activePreviewObj?.calculationMethodLabel || ''}>
               {activePreviewObj?.calculationMethodLabel || 'योजना नियमांनुसार व्याज'}
             </span>
           )}
@@ -1172,7 +1172,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
 
       {/* Mode 2: Bank */}
       {paymentMode === 'Bank' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-2.5 bg-blue-50/50 border border-blue-200 rounded">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-2.5 bg-amber-50/50 border border-amber-200 rounded">
           <BankLedgerSelect
             value={bankLedgerId}
             onChange={setBankLedgerId}
@@ -1180,7 +1180,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
             showCountBadge
           />
           <div>
-            <label className="block text-[11px] font-bold text-blue-950 mb-0.5">चेक / UTR संदर्भ क्र. (Cheque / UTR Ref No)</label>
+            <label className="block text-[11px] font-bold text-[#4A1410] mb-0.5">चेक / UTR संदर्भ क्र. (Cheque / UTR Ref No)</label>
             <input
               type="text"
               className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white h-[30px]"
@@ -1227,8 +1227,8 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
 
       {/* Mode 4: Adjust in Loan */}
       {paymentMode === 'Adjust in Loan' && (
-        <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded space-y-2.5">
-          <div className="font-bold text-xs text-indigo-950 flex items-center justify-between">
+        <div className="p-3 bg-orange-50/60 border border-amber-200 rounded space-y-2.5">
+          <div className="font-bold text-xs text-[#4A1410] flex items-center justify-between">
             <span>📉 कर्ज खाते समायोजन व Waterfall वसुली (Loan Set-Off)</span>
             {closurePreview?.hasDirectLien && (
               <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300 text-[10px]">
@@ -1245,12 +1245,12 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                 <div className="md:col-span-2">
-                  <label className="block text-[11px] font-bold text-indigo-950 mb-0.5">सक्रिय कर्ज खाते निवडा *</label>
+                  <label className="block text-[11px] font-bold text-[#4A1410] mb-0.5">सक्रिय कर्ज खाते निवडा *</label>
                   <select
                     value={targetLoanAccountId}
                     onChange={(e) => setTargetLoanAccountId(Number(e.target.value) || 0)}
                     disabled={activeTab === 'closure' && !!closurePreview?.hasDirectLien && !!closurePreview?.directLienLoanAccountId}
-                    className="w-full border border-indigo-300 rounded px-2 py-1.5 text-xs font-bold bg-white text-gray-900"
+                    className="w-full border border-amber-300 rounded px-2 py-1.5 text-xs font-bold bg-white text-gray-900"
                   >
                     {activeLoanList.map((ln) => (
                       <option key={ln.loanAccountId} value={ln.loanAccountId}>
@@ -1262,7 +1262,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-indigo-950 mb-0.5">
+                  <label className="block text-[11px] font-bold text-[#4A1410] mb-0.5">
                     कर्जात जमा होणारी रक्कम (₹) *
                   </label>
                   <input
@@ -1273,7 +1273,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                     readOnly={activeTab === 'closure' && !!closurePreview?.hasDirectLien}
                     value={loanAdjustAmountInput}
                     onChange={(e) => setLoanAdjustAmountInput(e.target.value)}
-                    className="w-full border border-indigo-300 rounded px-2 py-1.5 text-xs font-mono font-bold text-indigo-900 bg-white"
+                    className="w-full border border-amber-300 rounded px-2 py-1.5 text-xs font-mono font-bold text-[#5A1A14] bg-white"
                   />
                 </div>
               </div>
@@ -1348,28 +1348,28 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
               Dr ₹{totalPreviewDr.toFixed(2)} = Cr ₹{totalPreviewCr.toFixed(2)} {isVoucherBalanced ? '✓ संतुलित' : '⚠️ असंतुलित'}
             </span>
           </div>
-          <table className="w-full text-xs border-collapse">
-            <thead className="bg-slate-50 text-[10px] text-gray-600 font-bold border-b">
+          <table className="w-full text-[11px] border-collapse leading-tight">
+            <thead className="bg-[#5A1A14] text-[10px] text-amber-50 font-bold border-b">
               <tr>
-                <th className="p-1.5 text-left">जी.एल. खाते तपशील (GL Ledger)</th>
-                <th className="p-1.5 text-center w-20">प्रकार</th>
-                <th className="p-1.5 text-right w-32">नावे (Dr ₹)</th>
-                <th className="p-1.5 text-right w-32">जमा (Cr ₹)</th>
+                <th className="p-1.5 text-left whitespace-nowrap">जी.एल. खाते तपशील (GL Ledger)</th>
+                <th className="p-1.5 text-center w-20 whitespace-nowrap">प्रकार</th>
+                <th className="p-1.5 text-right w-32 whitespace-nowrap">नावे (Dr ₹)</th>
+                <th className="p-1.5 text-right w-32 whitespace-nowrap">जमा (Cr ₹)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 text-[11px]">
+            <tbody className="divide-y divide-amber-100 text-[11px]">
               {voucherPreviewLines.map((ln, idx) => (
                 <tr key={idx} className={ln.warning ? 'bg-red-50' : ''}>
                   <td className={`p-1.5 font-semibold ${ln.warning ? 'text-red-700' : 'text-gray-800'}`}>
                     {ln.ledgerLabel}
                   </td>
-                  <td className="p-1.5 text-center font-mono font-bold">
+                  <td className="p-1.5 text-center font-mono font-bold align-middle">
                     <span className={ln.drCr === 'Dr' ? 'text-amber-700' : 'text-emerald-700'}>{ln.drCr}</span>
                   </td>
-                  <td className="p-1.5 text-right font-mono font-bold text-gray-900">
+                  <td className="p-1.5 text-right font-mono font-bold text-gray-900 align-middle">
                     {ln.drCr === 'Dr' ? ln.amount.toFixed(2) : '-'}
                   </td>
-                  <td className="p-1.5 text-right font-mono font-bold text-gray-900">
+                  <td className="p-1.5 text-right font-mono font-bold text-gray-900 align-middle">
                     {ln.drCr === 'Cr' ? ln.amount.toFixed(2) : '-'}
                   </td>
                 </tr>
@@ -1386,7 +1386,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
       className="p-2.5 sm:p-3.5 w-full min-h-full font-sans text-xs"
       style={{
         background:
-          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+          'linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 45%, #FEF3E2 100%)',
       }}
     >
       <div className="max-w-[1640px] mx-auto space-y-3">
@@ -1415,30 +1415,30 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
       )}
 
       {/* Main Aurora Card */}
-      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 overflow-hidden flex flex-col print:hidden">
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(124,36,24,0.09)] border border-amber-200/75 overflow-hidden flex flex-col print:hidden">
         {/* Aurora Sapphire Header */}
         <div
           className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2.5"
           style={{
             background:
-              'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+              'linear-gradient(125deg, #5A1A14 0%, #7C2418 46%, #B44814 82%, #B44814 100%)',
           }}
         >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shadow-xs shrink-0">
-              <BanknotesIcon className="w-5 h-5 text-sky-200" />
+              <BanknotesIcon className="w-5 h-5 text-amber-200" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2 flex-wrap">
                 <span>पिग्मी विड्रॉल व खाते बंद व्यवस्थापन</span>
-                <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(Pigmy Withdrawal &amp; Closure)</span>
+                <span className="text-[11px] font-semibold text-amber-200 hidden sm:inline">(Pigmy Withdrawal &amp; Closure)</span>
                 {isPassingMode && (
                   <span className="ml-1 text-[10.5px] font-bold text-amber-100 bg-amber-600/60 px-2 py-0.5 rounded-full border border-amber-300/50">
                     चेकर तपासणी मोड
                   </span>
                 )}
               </h2>
-              <p className="text-[11px] text-blue-100/90 font-medium">
+              <p className="text-[11px] text-amber-100/90 font-medium">
                 डायनॅमिक कमिशन/दंड जी.एल. लेजर, कर्ज खाते समायोजन (Waterfall), बचत वर्ग व सायकल ट्रॅकिंग
               </p>
             </div>
@@ -1453,7 +1453,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                 setWithdrawalPreview(null);
               }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'withdrawal' ? 'bg-white text-[#0F2454] shadow-xs' : 'text-white/85 hover:text-white hover:bg-white/10'
+                activeTab === 'withdrawal' ? 'bg-white text-[#5A1A14] shadow-xs' : 'text-white/85 hover:text-white hover:bg-white/10'
               }`}
             >
               <BanknotesIcon className="w-4 h-4" />
@@ -1492,12 +1492,12 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500 font-bold uppercase">पिग्मी खाते क्र.</p>
-                    <p className="font-mono font-bold text-blue-900">{passingAccountData.accountNo}</p>
+                    <p className="font-mono font-bold text-[#5A1A14]">{passingAccountData.accountNo}</p>
                     <p className="text-[10px] text-gray-500">{passingAccountData.schemeName}</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500 font-bold uppercase">व्यवहार प्रकार</p>
-                    <p className="font-bold text-indigo-800">
+                    <p className="font-bold text-[#7C2418]">
                       {passingDetailsData.closureType === 'Withdrawal' ? 'अंशतः विड्रॉल (Partial)' : 'पूर्ण खाते बंद (Closure)'}
                     </p>
                     <p className="text-[10px] text-gray-500">पेमेंट: {passingDetailsData.paymentMode}</p>
@@ -1516,7 +1516,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                       ₹{Number(passingDetailsData.netPayable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </p>
                     {passingDetailsData.adjustInLoan && (
-                      <p className="text-[10px] text-indigo-700 font-bold">
+                      <p className="text-[10px] text-[#9A3412] font-bold">
                         कर्ज वजावट: ₹{Number(passingDetailsData.loanAdjustedAmount || 0).toFixed(2)}
                       </p>
                     )}
@@ -1528,24 +1528,24 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                     <div className="bg-slate-100 px-3 py-1.5 font-bold text-xs text-slate-800 border-b">
                       व्हाउचर लेखा नोंदी (Voucher GL Lines — {passingVoucherData.voucherNo})
                     </div>
-                    <table className="w-full text-xs border-collapse">
-                      <thead className="bg-slate-50 text-[10px] text-gray-600 font-bold border-b">
+                    <table className="w-full text-[11px] border-collapse leading-tight">
+                      <thead className="bg-[#5A1A14] text-[10px] text-amber-50 font-bold border-b">
                         <tr>
-                          <th className="p-2 text-left">जी.एल. खाते नाव (Ledger Name)</th>
-                          <th className="p-2 text-center w-20">Dr / Cr</th>
-                          <th className="p-2 text-right w-32">नावे (Dr ₹)</th>
-                          <th className="p-2 text-right w-32">जमा (Cr ₹)</th>
+                          <th className="px-2 py-1.5 text-left whitespace-nowrap">जी.एल. खाते नाव (Ledger Name)</th>
+                          <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">Dr / Cr</th>
+                          <th className="px-2 py-1.5 text-right w-32 whitespace-nowrap">नावे (Dr ₹)</th>
+                          <th className="px-2 py-1.5 text-right w-32 whitespace-nowrap">जमा (Cr ₹)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-amber-100">
                         {passingVoucherData.voucherDetails.map((vd: any) => (
                           <tr key={vd.voucherDetailID}>
-                            <td className="p-2 font-semibold text-gray-800">{vd.ledgerName}</td>
-                            <td className="p-2 text-center font-mono font-bold">{vd.drCr}</td>
-                            <td className="p-2 text-right font-mono font-bold">
+                            <td className="px-2 py-1 font-semibold text-gray-800 align-middle">{vd.ledgerName}</td>
+                            <td className="px-2 py-1 text-center font-mono font-bold align-middle">{vd.drCr}</td>
+                            <td className="px-2 py-1 text-right font-mono font-bold align-middle">
                               {vd.drCr === 'Dr' ? Number(vd.amount || 0).toFixed(2) : '-'}
                             </td>
-                            <td className="p-2 text-right font-mono font-bold">
+                            <td className="px-2 py-1 text-right font-mono font-bold align-middle">
                               {vd.drCr === 'Cr' ? Number(vd.amount || 0).toFixed(2) : '-'}
                             </td>
                           </tr>
@@ -1583,8 +1583,8 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
             )}
 
             {/* Search Account Card */}
-            <div className="bg-[#f8fbff] p-3.5 rounded-xl border border-blue-200/75 shadow-2xs">
-              <div className="text-[11px] font-extrabold text-[#0F2454] uppercase tracking-wider mb-2 pb-1.5 border-b border-blue-100 flex items-center justify-between">
+            <div className="bg-[#FFFBF7] p-3.5 rounded-xl border border-amber-200/75 shadow-2xs">
+              <div className="text-[11px] font-extrabold text-[#5A1A14] uppercase tracking-wider mb-2 pb-1.5 border-b border-amber-100 flex items-center justify-between">
                 <span>१. खाते शोध (Search Pigmy Account)</span>
                 <span className="text-[10px] text-primary font-bold">
                   {activeTab === 'withdrawal' ? 'मोड: अंशतः विड्रॉल (Partial Withdrawal)' : 'मोड: पूर्ण खाते बंद (Full Closure)'}
@@ -1640,7 +1640,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                     <label className="block text-[11px] font-medium text-gray-600 mb-0.5">थेट खाते / जुना क्र.</label>
                     <input
                       type="text"
-                      className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs bg-white font-bold text-blue-900"
+                      className="w-full h-[30px] border border-gray-300 rounded-sm px-2 text-xs bg-white font-bold text-[#5A1A14]"
                       placeholder="PG / जुना क्र."
                       value={accountNo}
                       onChange={(e) => setAccountNo(e.target.value)}
@@ -1649,7 +1649,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                   </div>
                   <button
                     type="button"
-                    className="bg-primary hover:bg-[#004a75] text-white h-[30px] px-3 rounded-sm font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer shrink-0"
+                    className="bg-primary hover:bg-[#7C2418] text-white h-[30px] px-3 rounded-sm font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer shrink-0"
                     onClick={handleSearch}
                     disabled={loading || !accountNo.trim()}
                   >
@@ -1679,7 +1679,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                         योजना: {closurePreview.schemeName}
                       </span>
                     )}
-                    <span className="bg-indigo-100 text-indigo-900 border border-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold">
+                    <span className="bg-orange-100 text-[#5A1A14] border border-amber-300 px-2 py-0.5 rounded text-[10px] font-bold">
                       सायकल #{closurePreview.currentCycleNumber}
                     </span>
                     {closurePreview.isPremature ? (
@@ -1702,7 +1702,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500 font-bold uppercase">खाते क्र.</p>
-                    <p className="font-mono font-bold text-xs text-blue-900 flex items-center gap-1 flex-wrap">
+                    <p className="font-mono font-bold text-xs text-[#5A1A14] flex items-center gap-1 flex-wrap">
                       <span>{closurePreview.accountNo}</span>
                       {closurePreview.legacyAccountNumber && (
                         <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 rounded font-mono font-bold text-[9.5px]">
@@ -1760,7 +1760,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                       <button
                         type="button"
                         onClick={() => setPaymentMode('Adjust in Loan')}
-                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold cursor-pointer"
+                        className="px-2.5 py-1 bg-[#B44814] hover:bg-[#9A3412] text-white rounded text-[11px] font-bold cursor-pointer"
                       >
                         📉 कर्ज खात्यात समायोजन निवडा
                       </button>
@@ -1784,13 +1784,13 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                 {/* TAB 1: PARTIAL WITHDRAWAL */}
                 {activeTab === 'withdrawal' && (
                   <div className="space-y-3 pt-1">
-                    <div className="p-3 bg-blue-50/70 border border-blue-200 rounded space-y-2.5">
+                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-xs text-blue-950 flex items-center gap-1">
+                        <h4 className="font-bold text-xs text-[#4A1410] flex items-center gap-1">
                           <BanknotesIcon className="w-4 h-4 text-primary" />
                           <span>३. अंशतः विड्रॉल रक्कम व परतावा हिशोब (Partial Withdrawal Settlement)</span>
                         </h4>
-                        <span className="text-[10px] text-blue-800 font-medium">
+                        <span className="text-[10px] text-[#7C2418] font-medium">
                           लागू स्लॅब: <span className="font-bold text-primary">{closurePreview.policyNote}</span>
                         </span>
                       </div>
@@ -1816,14 +1816,14 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                               type="button"
                               onClick={() => handlePreviewWithdrawal()}
                               disabled={loading || !withdrawalAmount}
-                              className="px-3.5 py-1.5 bg-primary hover:bg-[#004a75] text-white rounded text-xs font-bold whitespace-nowrap cursor-pointer disabled:opacity-50"
+                              className="px-3.5 py-1.5 bg-primary hover:bg-[#7C2418] text-white rounded text-xs font-bold whitespace-nowrap cursor-pointer disabled:opacity-50"
                             >
                               हिशोब तपासा
                             </button>
                           </div>
                         </div>
 
-                        <div className="text-[11px] text-gray-600 bg-white p-2 rounded border border-blue-200">
+                        <div className="text-[11px] text-gray-600 bg-white p-2 rounded border border-amber-200">
                           <span className="block text-[10px] text-gray-500 font-bold uppercase">खात्यात शिल्लक राहणारी रक्कम</span>
                           <span className="font-mono font-bold text-gray-900">
                             ₹ {Math.max(0, closurePreview.totalDepositedAmount - (parseFloat(withdrawalAmount) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -1832,7 +1832,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                       </div>
 
                       {withdrawalPreview && (
-                        <div className="mt-3 pt-2.5 border-t border-blue-200 space-y-3">
+                        <div className="mt-3 pt-2.5 border-t border-amber-200 space-y-3">
                           {renderSettlementControlsAndVoucherPreview()}
 
                           <div className="p-2 bg-amber-50 border border-amber-300 rounded text-[11px] text-amber-950">
@@ -1861,30 +1861,30 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                           <span>📜 या खात्याचा पूर्वीचा विड्रॉल इतिहास (Past Withdrawals & Cycles)</span>
                           <span className="text-[10px] font-mono text-gray-500">{withdrawalHistory.length} नोंदी</span>
                         </div>
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead className="bg-slate-50 text-gray-600 text-[10px] font-bold border-b">
+                        <table className="w-full text-left text-[11px] border-collapse leading-tight">
+                          <thead className="bg-[#5A1A14] text-amber-50 text-[10px] font-bold border-b">
                             <tr>
-                              <th className="p-1.5 text-center">सायकल #</th>
-                              <th className="p-1.5">तारीख</th>
-                              <th className="p-1.5 text-right">मुद्दल</th>
-                              <th className="p-1.5 text-right">कपात</th>
-                              <th className="p-1.5 text-right">देय परतावा</th>
-                              <th className="p-1.5">पेमेंट माध्यम</th>
-                              <th className="p-1.5 text-right">उर्वरित शिल्लक</th>
-                              <th className="p-1.5">व्हाउचर क्र.</th>
+                              <th className="p-1.5 text-center whitespace-nowrap">सायकल #</th>
+                              <th className="p-1.5 whitespace-nowrap">तारीख</th>
+                              <th className="p-1.5 text-right whitespace-nowrap">मुद्दल</th>
+                              <th className="p-1.5 text-right whitespace-nowrap">कपात</th>
+                              <th className="p-1.5 text-right whitespace-nowrap">देय परतावा</th>
+                              <th className="p-1.5 whitespace-nowrap">पेमेंट माध्यम</th>
+                              <th className="p-1.5 text-right whitespace-nowrap">उर्वरित शिल्लक</th>
+                              <th className="p-1.5 whitespace-nowrap">व्हाउचर क्र.</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-200 text-[11px]">
+                          <tbody className="divide-y divide-amber-100 text-[11px]">
                             {withdrawalHistory.map((item) => (
                               <tr key={item.withdrawalID} className="hover:bg-slate-50 font-mono">
-                                <td className="p-1.5 text-center font-bold text-indigo-700">#{item.cycleNumber}</td>
-                                <td className="p-1.5">{new Date(item.withdrawalDate).toLocaleDateString('en-GB')}</td>
-                                <td className="p-1.5 text-right font-bold text-gray-800">₹{item.requestedAmount.toFixed(2)}</td>
-                                <td className="p-1.5 text-right text-rose-600">₹{item.penaltyAmount.toFixed(2)}</td>
-                                <td className="p-1.5 text-right font-bold text-emerald-700">₹{item.netPaidAmount.toFixed(2)}</td>
-                                <td className="p-1.5 font-sans text-[10px] font-bold text-slate-700">{item.paymentMode || 'Cash'}</td>
-                                <td className="p-1.5 text-right font-bold text-blue-900">₹{item.remainingBalance.toFixed(2)}</td>
-                                <td className="p-1.5 text-gray-500 font-sans text-[10px]">{item.voucherNo || '-'}</td>
+                                <td className="p-1.5 text-center font-bold text-[#9A3412] align-middle">#{item.cycleNumber}</td>
+                                <td className="p-1.5 align-middle">{new Date(item.withdrawalDate).toLocaleDateString('en-GB')}</td>
+                                <td className="p-1.5 text-right font-bold text-gray-800 align-middle">₹{item.requestedAmount.toFixed(2)}</td>
+                                <td className="p-1.5 text-right text-rose-600 align-middle">₹{item.penaltyAmount.toFixed(2)}</td>
+                                <td className="p-1.5 text-right font-bold text-emerald-700 align-middle">₹{item.netPaidAmount.toFixed(2)}</td>
+                                <td className="p-1.5 font-sans text-[10px] font-bold text-slate-700 align-middle">{item.paymentMode || 'Cash'}</td>
+                                <td className="p-1.5 text-right font-bold text-[#5A1A14] align-middle">₹{item.remainingBalance.toFixed(2)}</td>
+                                <td className="p-1.5 text-gray-500 font-sans text-[10px] align-middle">{item.voucherNo || '-'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -2006,7 +2006,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="px-3.5 py-1.5 bg-primary hover:bg-[#004a75] text-white rounded text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  className="px-3.5 py-1.5 bg-primary hover:bg-[#7C2418] text-white rounded text-xs font-bold flex items-center gap-1 cursor-pointer"
                 >
                   <PrinterIcon className="w-4 h-4" />
                   <span>प्रिंट करा (Print)</span>
@@ -2044,51 +2044,51 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({
                 <div className="text-right"><strong>पेमेंट माध्यम:</strong> {receiptModalData.paymentMode}</div>
               </div>
 
-              <table className="w-full text-xs border border-gray-400 border-collapse">
+              <table className="w-full text-[11px] border border-gray-400 border-collapse leading-tight">
                 <thead>
-                  <tr className="bg-gray-100 border-b border-gray-400">
-                    <th className="p-2 text-left border-r border-gray-400">तपशील (Particulars)</th>
-                    <th className="p-2 text-right w-36">रक्कम (₹)</th>
+                  <tr className="bg-[#5A1A14] border-b border-gray-400 text-amber-50">
+                    <th className="px-2 py-1.5 text-left border-r border-gray-400 whitespace-nowrap">तपशील (Particulars)</th>
+                    <th className="px-2 py-1.5 text-right w-36 whitespace-nowrap">रक्कम (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-300">
                   <tr>
-                    <td className="p-2 border-r border-gray-400">
+                    <td className="px-2 py-1 border-r border-gray-400 align-middle">
                       {receiptModalData.type === 'Closure' ? 'एकूण जमा पिग्मी ठेव मुद्दल' : 'मागितलेली पिग्मी विड्रॉल मुद्दल'}
                     </td>
-                    <td className="p-2 text-right font-mono font-bold">{receiptModalData.principalAmount.toFixed(2)}</td>
+                    <td className="px-2 py-1 text-right font-mono font-bold align-middle">{receiptModalData.principalAmount.toFixed(2)}</td>
                   </tr>
                   {receiptModalData.penaltyAmount > 0 && (
                     <tr>
-                      <td className="p-2 border-r border-gray-400 text-rose-800">
+                      <td className="px-2 py-1 border-r border-gray-400 text-rose-800 align-middle">
                         वजा: मुदतपूर्व पिग्मी कमिशन / दंड कपात
                       </td>
-                      <td className="p-2 text-right font-mono font-bold text-rose-700">- {receiptModalData.penaltyAmount.toFixed(2)}</td>
+                      <td className="px-2 py-1 text-right font-mono font-bold text-rose-700 align-middle">- {receiptModalData.penaltyAmount.toFixed(2)}</td>
                     </tr>
                   )}
                   {receiptModalData.interestAmount > 0 && (
                     <tr>
-                      <td className="p-2 border-r border-gray-400 text-emerald-800">अधिक: देय पिग्मी व्याज</td>
-                      <td className="p-2 text-right font-mono font-bold text-emerald-700">+ {receiptModalData.interestAmount.toFixed(2)}</td>
+                      <td className="px-2 py-1 border-r border-gray-400 text-emerald-800 align-middle">अधिक: देय पिग्मी व्याज</td>
+                      <td className="px-2 py-1 text-right font-mono font-bold text-emerald-700 align-middle">+ {receiptModalData.interestAmount.toFixed(2)}</td>
                     </tr>
                   )}
                   <tr className="bg-gray-50 font-extrabold">
-                    <td className="p-2 border-r border-gray-400">एकूण निव्वळ देय रक्कम (Net Payable)</td>
-                    <td className="p-2 text-right font-mono text-sm">₹ {receiptModalData.netPayableAmount.toFixed(2)}</td>
+                    <td className="px-2 py-1 border-r border-gray-400 align-middle">एकूण निव्वळ देय रक्कम (Net Payable)</td>
+                    <td className="px-2 py-1 text-right font-mono text-sm align-middle">₹ {receiptModalData.netPayableAmount.toFixed(2)}</td>
                   </tr>
                   {receiptModalData.loanAdjustedAmount > 0 && (
                     <>
                       <tr>
-                        <td className="p-2 border-r border-gray-400 text-indigo-900">
+                        <td className="px-2 py-1 border-r border-gray-400 text-[#5A1A14] align-middle">
                           वजा: कर्ज खाते समायोजन ({receiptModalData.targetLoanNo || 'Loan Account'})
                         </td>
-                        <td className="p-2 text-right font-mono font-bold text-indigo-800">- {receiptModalData.loanAdjustedAmount.toFixed(2)}</td>
+                        <td className="px-2 py-1 text-right font-mono font-bold text-[#7C2418] align-middle">- {receiptModalData.loanAdjustedAmount.toFixed(2)}</td>
                       </tr>
                       <tr>
-                        <td className="p-2 border-r border-gray-400 font-bold">
+                        <td className="px-2 py-1 border-r border-gray-400 font-bold align-middle">
                           खातेदारास अदा शिल्लक परतावा ({receiptModalData.surplusPaymentMode || 'Cash'})
                         </td>
-                        <td className="p-2 text-right font-mono font-bold">₹ {receiptModalData.surplusPayoutAmount.toFixed(2)}</td>
+                        <td className="px-2 py-1 text-right font-mono font-bold align-middle">₹ {receiptModalData.surplusPayoutAmount.toFixed(2)}</td>
                       </tr>
                     </>
                   )}

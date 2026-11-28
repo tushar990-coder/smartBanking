@@ -24,9 +24,9 @@ export default function PigmyDashboard({ onNavigate }: PigmyDashboardProps) {
       icon: AnimatedCustomerIcon,
       tab: 'pigmy-agent',
       params: {},
-      gradient: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 55%, #1D4ED8 100%)',
-      shadowColor: 'rgba(29, 140, 248, 0.40)',
-      accentHex: '#1D74F5',
+      gradient: 'linear-gradient(135deg, #EA580C 0%, #B44814 55%, #7C2418 100%)',
+      shadowColor: 'rgba(180, 72, 20, 0.38)',
+      accentHex: '#9A3412',
     },
     {
       id: 'pigmy-account',
@@ -72,9 +72,9 @@ export default function PigmyDashboard({ onNavigate }: PigmyDashboardProps) {
       icon: AnimatedLoanIcon,
       tab: 'pigmy-commission',
       params: {},
-      gradient: 'linear-gradient(135deg, #60A5FA 0%, #2563EB 55%, #1E40AF 100%)',
-      shadowColor: 'rgba(37, 99, 235, 0.40)',
-      accentHex: '#2563EB',
+      gradient: 'linear-gradient(135deg, #F59E0B 0%, #B45309 55%, #78350F 100%)',
+      shadowColor: 'rgba(180, 83, 9, 0.38)',
+      accentHex: '#B45309',
     },
     {
       id: 'pigmy-interest',
@@ -96,9 +96,9 @@ export default function PigmyDashboard({ onNavigate }: PigmyDashboardProps) {
       icon: AnimatedAccountCloseIcon,
       tab: 'pigmy-closure',
       params: {},
-      gradient: 'linear-gradient(135deg, #22D3EE 0%, #0891B2 55%, #0369A1 100%)',
-      shadowColor: 'rgba(8, 145, 178, 0.38)',
-      accentHex: '#0E7490',
+      gradient: 'linear-gradient(135deg, #FB7185 0%, #E11D48 55%, #9F1239 100%)',
+      shadowColor: 'rgba(225, 29, 72, 0.36)',
+      accentHex: '#BE123C',
     },
   ];
 
@@ -108,10 +108,10 @@ export default function PigmyDashboard({ onNavigate }: PigmyDashboardProps) {
       titleMr="पिग्मी ठेव विभाग मुख्य हब"
       subtitleMr="पिग्मी एजंट नोंदणी • दैनंदिन वसुली • एजंट डे-बुक • कमिशन वाटप • व्याज आकारणी व खाते बंद"
       heroIcon={AnimatedSavingIcon}
-      heroEmblemGradient="linear-gradient(135deg, #34D399 0%, #10B981 52%, #0891B2 100%)"
-      heroGlowGradient="linear-gradient(135deg, #10B981 0%, #06B6D4 55%, #2563EB 100%)"
-      underlineGradient="linear-gradient(90deg, #10B981 0%, #06B6D4 50%, #2563EB 100%)"
-      accentSparkleColor="#10B981"
+      heroEmblemGradient="linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)"
+      heroGlowGradient="linear-gradient(135deg, #8C2D19 0%, #D97706 60%, #F59E0B 100%)"
+      underlineGradient="linear-gradient(90deg, #7C2418 0%, #D97706 55%, #F59E0B 100%)"
+      accentSparkleColor="#D97706"
       items={pigmyActionButtons}
       onNavigate={onNavigate}
     />

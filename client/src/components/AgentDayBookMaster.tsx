@@ -538,7 +538,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
       className="p-2.5 sm:p-3.5 w-full min-h-full font-sans text-xs"
       style={{
         background:
-          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+          'linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 45%, #FEF3E2 100%)',
       }}
     >
       <div className="max-w-[1680px] mx-auto space-y-3">
@@ -570,14 +570,14 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
       )}
       
       {/* Outer Aurora Container */}
-      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 overflow-hidden flex flex-col">
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(124,36,24,0.09)] border border-amber-200/75 overflow-hidden flex flex-col">
         
         {/* Aurora Sapphire Header Banner */}
         <div
           className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2"
           style={{
             background:
-              'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+              'linear-gradient(125deg, #5A1A14 0%, #7C2418 46%, #B44814 82%, #B44814 100%)',
           }}
         >
           <div className="flex items-center gap-3">
@@ -587,10 +587,10 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <div>
               <h2 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2">
                 <span>एजंट डे बुक</span>
-                <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(Agent Day Book — Cash Remittance)</span>
+                <span className="text-[11px] font-semibold text-amber-200 hidden sm:inline">(Agent Day Book — Cash Remittance)</span>
                 {isPassingMode && <span className="ml-1 text-[10.5px] font-bold text-amber-100 bg-amber-600/60 px-2 py-0.5 rounded-full border border-amber-300/50">फक्त वाचन मोड</span>}
               </h2>
-              <p className="text-[11px] text-blue-100/90 font-medium">एजंट दैनंदिन संकलन ताळमेळ, रोख भरणा, पावती जनरेशन आणि शिल्लक तपासणी</p>
+              <p className="text-[11px] text-amber-100/90 font-medium">एजंट दैनंदिन संकलन ताळमेळ, रोख भरणा, पावती जनरेशन आणि शिल्लक तपासणी</p>
             </div>
           </div>
 
@@ -608,7 +608,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <div className={`p-2.5 rounded-sm border text-xs font-bold ${
               message.startsWith('यशस्वी') || message.startsWith('Success')
                 ? 'bg-green-50 text-green-800 border-green-200' 
-                : 'bg-blue-50 text-blue-800 border-blue-200'
+                : 'bg-amber-50 text-[#7C2418] border-amber-200'
             }`}>
               {message}
             </div>
@@ -654,7 +654,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
 
         <div>
           <div className="flex items-center justify-between mb-0.5">
-            <label className="block text-[11px] font-bold text-blue-900">
+            <label className="block text-[11px] font-bold text-[#5A1A14]">
               🏦 शाखेत भरणा दिनांक (Deposit Date)
             </label>
             <span className="text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5" title="शाखेत भरणा दिनांक नेहमी युझरच्या लॉगिन बिझनेस डेटनुसार लॉक राहील.">
@@ -673,7 +673,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         </div>
 
         <button
-          className="bg-primary hover:bg-[#004a75] text-white px-3.5 py-1 rounded-sm font-bold shadow-sm transition-colors text-[11px]"
+          className="bg-primary hover:bg-[#7C2418] text-white px-3.5 py-1 rounded-sm font-bold shadow-sm transition-colors text-[11px]"
           onClick={fetchSummary}
         >
           रिफ्रेश (Refresh)
@@ -685,13 +685,13 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         <div className={`border rounded-sm p-2.5 mb-3 shadow-2xs ${
           summary.isFullyRemitted 
             ? 'bg-emerald-50/70 border-emerald-300' 
-            : 'bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border-blue-200'
+            : 'bg-gradient-to-r from-[#FDF2EE]/90 to-[#FEF3E2]/90 border-amber-200'
         }`}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1.5 border-b border-gray-200">
             <div className="flex items-center gap-2">
               <span className="text-base">{summary.isFullyRemitted ? '✅' : '📊'}</span>
               <div>
-                <h3 className={`text-xs font-bold ${summary.isFullyRemitted ? 'text-emerald-900' : 'text-blue-900'}`}>
+                <h3 className={`text-xs font-bold ${summary.isFullyRemitted ? 'text-emerald-900' : 'text-[#5A1A14]'}`}>
                   निवडलेल्या कालावधीतील संकलन तपशील ({new Date(collectionDateFrom).toLocaleDateString('en-GB')} ते {new Date(collectionDateTo).toLocaleDateString('en-GB')})
                 </h3>
                 <div className="text-[10px] text-gray-700 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
@@ -701,7 +701,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                   {(summary.rangeAlreadyRemitted || 0) > 0 && (
                     <>
                       <span>|</span>
-                      <span>आधीच भरणा (Remitted): <strong className="font-mono text-blue-700">₹ {(summary.rangeAlreadyRemitted || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                      <span>आधीच भरणा (Remitted): <strong className="font-mono text-[#9A3412]">₹ {(summary.rangeAlreadyRemitted || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
                     </>
                   )}
                   <span>|</span>
@@ -741,12 +741,12 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                       ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100' 
                       : (day.remittedAmount || 0) > 0
                         ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
-                        : 'bg-white border-blue-300 text-gray-800 hover:bg-blue-50'
+                        : 'bg-white border-amber-300 text-gray-800 hover:bg-amber-50'
                   }`}
                   title="या दिवसाच्या सर्व पावत्यांचे तपशील पाहण्यासाठी क्लिक करा"
                 >
-                  <span className="font-semibold text-blue-900 underline decoration-dotted">{new Date(day.date).toLocaleDateString('en-GB')}:</span>
-                  <span className="text-[10px] font-medium text-blue-700 bg-blue-50/80 px-1 rounded">({day.count} पावत्या 👁️)</span>
+                  <span className="font-semibold text-[#5A1A14] underline decoration-dotted">{new Date(day.date).toLocaleDateString('en-GB')}:</span>
+                  <span className="text-[10px] font-medium text-[#9A3412] bg-amber-50/80 px-1 rounded">({day.count} पावत्या 👁️)</span>
                   <span className="font-bold font-mono text-emerald-700">₹{day.amount.toLocaleString('en-IN')}</span>
                   {day.isRemitted ? (
                     <span className="bg-emerald-200/80 text-emerald-800 text-[9px] font-bold px-1.5 py-0.2 rounded">
@@ -757,7 +757,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                       ⏳ ₹{day.pendingAmount?.toLocaleString('en-IN')} बाकी
                     </span>
                   ) : (
-                    <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1.5 py-0.2 rounded">
+                    <span className="bg-amber-100 text-[#7C2418] text-[9px] font-bold px-1.5 py-0.2 rounded">
                       ⏳ भरणे बाकी
                     </span>
                   )}
@@ -768,8 +768,8 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
 
           {/* Scheme-Wise GL Ledger Breakup */}
           {summary.schemeBreakup && summary.schemeBreakup.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-blue-200/80 flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-wide mr-1">
+            <div className="mt-2 pt-2 border-t border-amber-200/80 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-bold text-[#5A1A14] uppercase tracking-wide mr-1">
                 योजनेनिहाय व लेजरनिहाय विभागणी (Scheme GL Breakup):
               </span>
               {summary.schemeBreakup.map((sb) => (
@@ -779,16 +779,16 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                     !sb.liabilityLedgerID
                       ? 'bg-red-50 border-red-300 text-red-900'
                       : sb.pendingAmount > 0
-                        ? 'bg-indigo-50/90 border-indigo-300 text-indigo-950'
+                        ? 'bg-orange-50/90 border-amber-300 text-[#4A1410]'
                         : 'bg-emerald-50 border-emerald-300 text-emerald-900'
                   }`}
                 >
                   <span className="font-bold">{sb.schemeName}</span>
-                  <span className="text-[10px] font-mono bg-white/80 px-1 rounded border border-indigo-200">
+                  <span className="text-[10px] font-mono bg-white/80 px-1 rounded border border-amber-200">
                     Cr: {sb.liabilityLedgerID ? `#${sb.liabilityLedgerID} ${sb.liabilityLedgerName}` : '⚠️ लेजर मॅप नाही'}
                   </span>
                   <span className="text-[10px] text-gray-600">({sb.accountsCount} खाती)</span>
-                  <span className="font-mono font-bold text-indigo-900">
+                  <span className="font-mono font-bold text-[#5A1A14]">
                     एकूण: ₹{sb.collectedAmount.toLocaleString('en-IN')}
                   </span>
                   {sb.pendingAmount > 0 && (
@@ -821,9 +821,9 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <h3 className="text-[10px] text-gray-500 font-bold uppercase">आज शाखेत भरलेली रोख</h3>
             <p className="text-sm font-extrabold text-red-600 mt-0.5">- ₹ {summary.cashDeposited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
           </div>
-          <div className="bg-white p-2.5 rounded-sm shadow-sm border-l-4 border-blue-600 border border-gray-200">
+          <div className="bg-white p-2.5 rounded-sm shadow-sm border-l-4 border-[#9A3412] border border-gray-200">
             <h3 className="text-[10px] text-gray-500 font-bold uppercase">एजंटकडील एकूण शिल्लक कॅश</h3>
-            <p className="text-sm font-extrabold text-blue-700 mt-0.5">₹ {(summary.totalPendingCash ?? summary.closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <p className="text-sm font-extrabold text-[#9A3412] mt-0.5">₹ {(summary.totalPendingCash ?? summary.closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
           </div>
         </div>
       )}
@@ -843,7 +843,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <input
               type="text"
               readOnly
-              className="w-full border border-gray-300 px-2 py-1 rounded-sm bg-gray-100 font-mono font-bold text-xs text-blue-700"
+              className="w-full border border-gray-300 px-2 py-1 rounded-sm bg-gray-100 font-mono font-bold text-xs text-[#9A3412]"
               value={summary ? `₹ ${(summary.totalPendingCash ?? summary.closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹ 0.00'}
             />
           </div>
@@ -866,7 +866,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
           </div>
 
           {paymentMode !== 'CASH' && (
-            <div className="mb-2 p-2 bg-blue-50/50 border border-blue-200 rounded-sm">
+            <div className="mb-2 p-2 bg-amber-50/50 border border-amber-200 rounded-sm">
               <BankLedgerSelect
                 value={bankLedgerId}
                 onChange={setBankLedgerId}
@@ -907,7 +907,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                       applyDenomToDepositAmount();
                       setAutoFilledFromExcel(false);
                     }}
-                    className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                    className="text-[10px] text-[#B44814] hover:text-[#7C2418] font-bold underline cursor-pointer"
                   >
                     नोटांची रक्कम घ्या (₹{totalDenominationAmount.toLocaleString('en-IN')})
                   </button>
@@ -925,7 +925,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
               }}
             />
             {summary?.schemeBreakup && summary.schemeBreakup.filter(s => s.pendingAmount > 0).length > 0 && (
-              <div className="mt-1.5 bg-indigo-50/70 border border-indigo-200 rounded-sm px-2 py-1 text-[10px] text-indigo-900 space-y-0.5">
+              <div className="mt-1.5 bg-orange-50/70 border border-amber-200 rounded-sm px-2 py-1 text-[10px] text-[#5A1A14] space-y-0.5">
                 <div className="font-bold">Daybook Cr लेजर्स (संकलनानुसार आपोआप विभागले जाईल):</div>
                 {summary.schemeBreakup.filter(s => s.pendingAmount > 0).map(sb => (
                   <div key={`form-sb-${sb.pigmySchemeID}`} className="flex justify-between font-mono">
@@ -1048,7 +1048,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <div className="flex gap-2">
               <button
                 type="button"
-                className="flex-1 bg-primary hover:bg-[#004a75] text-white px-3 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50 cursor-pointer"
+                className="flex-1 bg-primary hover:bg-[#7C2418] text-white px-3 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50 cursor-pointer"
                 disabled={!summary || (summary.totalPendingCash ?? summary.closingBalance) <= 0 || !depositAmount || summary.isFullyRemitted}
                 onClick={handleDeposit}
               >
@@ -1071,7 +1071,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         <div className="lg:col-span-8 bg-white p-3 rounded-sm shadow-sm border border-gray-200 min-w-0">
           <h2 className="text-[12px] font-bold text-gray-800 mb-2 border-b pb-1 flex justify-between items-center">
             <span>एजंट भरणा पावती इतिहास (Remittance Receipts History)</span>
-            <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-bold">
+            <span className="text-[10px] bg-amber-100 text-[#7C2418] px-2 py-0.5 rounded-sm font-bold">
               {summary?.recentRemittances?.length || 0} पावत्या
             </span>
           </h2>
@@ -1080,13 +1080,13 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <table className="min-w-full divide-y divide-gray-200 text-left text-[11px] border-collapse">
               <thead className="bg-primary text-white whitespace-nowrap">
                 <tr>
-                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold">पावती क्र.</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold text-center">भरणा दि.</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold text-center">संकलन कालावधी</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold text-center">प्रकार</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold">व्हाउचर क्र.</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold text-right">रक्कम (₹)</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400/70 font-semibold">तपशील</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400/70 font-semibold">पावती क्र.</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400/70 font-semibold text-center">भरणा दि.</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400/70 font-semibold text-center">संकलन कालावधी</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400/70 font-semibold text-center">प्रकार</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400/70 font-semibold">व्हाउचर क्र.</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400/70 font-semibold text-right">रक्कम (₹)</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400/70 font-semibold">तपशील</th>
                   <th className="px-2 py-1.5 font-semibold text-center">कृती</th>
                 </tr>
               </thead>
@@ -1113,7 +1113,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                     return (
                       <tr
                         key={item.depositId}
-                        className={`hover:bg-blue-50/50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'}`}
+                        className={`hover:bg-amber-50/50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'}`}
                       >
                         <td className="px-2 py-1 border-r border-gray-200 font-mono font-bold text-primary whitespace-nowrap align-middle">
                           {item.receiptNo}
@@ -1123,7 +1123,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                         </td>
                         <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap text-center align-middle">
                           {collectionPeriod !== '-' ? (
-                            <span className="inline-block font-mono font-semibold text-blue-900 text-[10px] bg-blue-50 px-1.5 py-0.5 rounded-sm border border-blue-200 leading-tight">
+                            <span className="inline-block font-mono font-semibold text-[#5A1A14] text-[10px] bg-amber-50 px-1.5 py-0.5 rounded-sm border border-amber-200 leading-tight">
                               {collectionPeriod}
                             </span>
                           ) : (
@@ -1155,7 +1155,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                           <button
                             type="button"
                             onClick={() => setSelectedReceipt(item)}
-                            className="border border-blue-500 text-blue-700 px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors font-semibold text-[10px] leading-tight cursor-pointer whitespace-nowrap"
+                            className="border border-[#B44814] text-[#9A3412] px-2 py-0.5 rounded-sm hover:bg-amber-50 transition-colors font-semibold text-[10px] leading-tight cursor-pointer whitespace-nowrap"
                             title="पावती प्रिंट करा"
                           >
                             प्रिंट
@@ -1193,7 +1193,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600 font-semibold">भरणा प्रकार (Payment Mode):</span>
-                <span className="font-bold text-blue-800">{getModeLabel(selectedReceipt.paymentMode)}</span>
+                <span className="font-bold text-[#7C2418]">{getModeLabel(selectedReceipt.paymentMode)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600 font-semibold">व्हाउचर क्र. (Voucher No):</span>
@@ -1201,12 +1201,12 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600 font-semibold">भरणा दिनांक (Deposit Date):</span>
-                <span className="font-semibold text-blue-900">{new Date(selectedReceipt.depositDate).toLocaleDateString('en-GB')}</span>
+                <span className="font-semibold text-[#5A1A14]">{new Date(selectedReceipt.depositDate).toLocaleDateString('en-GB')}</span>
               </div>
               {(selectedReceipt.collectionDateFrom || selectedReceipt.narration?.includes('[संकलन:')) && (
-                <div className="flex justify-between bg-blue-50/70 p-1 rounded border border-blue-200">
-                  <span className="text-blue-900 font-bold">संकलन कालावधी (Collection Period):</span>
-                  <span className="font-bold text-blue-900">
+                <div className="flex justify-between bg-amber-50/70 p-1 rounded border border-amber-200">
+                  <span className="text-[#5A1A14] font-bold">संकलन कालावधी (Collection Period):</span>
+                  <span className="font-bold text-[#5A1A14]">
                     {selectedReceipt.collectionDateFrom && selectedReceipt.collectionDateTo
                       ? `${new Date(selectedReceipt.collectionDateFrom).toLocaleDateString('en-GB')} ते ${new Date(selectedReceipt.collectionDateTo).toLocaleDateString('en-GB')}`
                       : selectedReceipt.narration?.split('[संकलन:')[1]?.split(']')[0]?.trim()}
@@ -1251,7 +1251,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
               </button>
               <button
                 onClick={() => window.print()}
-                className="px-4 py-1 bg-primary text-white rounded-sm text-xs font-bold hover:bg-[#004a75]"
+                className="px-4 py-1 bg-primary text-white rounded-sm text-xs font-bold hover:bg-[#7C2418]"
               >
                 प्रिंट काढा (Print Slip)
               </button>
@@ -1334,13 +1334,13 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-gray-200">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 text-blue-700 rounded-lg text-lg">
+                <div className="p-2 bg-amber-100 text-[#9A3412] rounded-lg text-lg">
                   📋
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
                     दैनिक संकलन पावती तपशील
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-50 text-[#9A3412] border border-amber-200">
                       {new Date(selectedDayInfo.date).toLocaleDateString('en-GB')}
                     </span>
                   </h3>
@@ -1365,7 +1365,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <div className="flex-1 overflow-y-auto">
               {loadingDayCollections ? (
                 <div className="py-12 flex flex-col items-center justify-center text-gray-500">
-                  <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+                  <div className="w-8 h-8 border-3 border-[#9A3412] border-t-transparent rounded-full animate-spin mb-3"></div>
                   <span className="text-xs font-medium">पावत्यांचा तपशील लोड होत आहे...</span>
                 </div>
               ) : dayCollections.length === 0 ? (
@@ -1389,7 +1389,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {dayCollections.map((col, idx) => (
-                        <tr key={col.collectionId} className="hover:bg-blue-50/50 transition-colors">
+                        <tr key={col.collectionId} className="hover:bg-amber-50/50 transition-colors">
                           <td className="px-3 py-2 text-center font-mono text-gray-500">{idx + 1}</td>
                           <td className="px-3 py-2 font-mono font-medium text-gray-800">
                             {col.receiptNo || `-`}
@@ -1400,7 +1400,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                             )}
                           </td>
                           <td className="px-3 py-2 font-mono">
-                            <div className="font-semibold text-blue-900">{col.accountNo}</div>
+                            <div className="font-semibold text-[#5A1A14]">{col.accountNo}</div>
                             {col.legacyAccountNumber && (
                               <div className="text-[10px] text-gray-500">
                                 जुना: <span className="font-semibold text-gray-700">{col.legacyAccountNumber}</span>
@@ -1408,7 +1408,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                             )}
                           </td>
                           <td className="px-3 py-2">
-                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-bold">
+                            <span className="px-1.5 py-0.5 rounded bg-orange-50 text-[#7C2418] border border-amber-200 text-[10px] font-bold">
                               {col.schemeName || (col.pigmySchemeID ? `योजना #${col.pigmySchemeID}` : '-')}
                             </span>
                           </td>
@@ -1424,7 +1424,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                           <td className="px-3 py-2 text-center">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               col.collectionSource === 'APP' 
-                                ? 'bg-indigo-100 text-indigo-700' 
+                                ? 'bg-orange-100 text-[#9A3412]' 
                                 : col.collectionSource === 'IMPORT' 
                                   ? 'bg-amber-100 text-amber-800' 
                                   : 'bg-gray-100 text-gray-700'

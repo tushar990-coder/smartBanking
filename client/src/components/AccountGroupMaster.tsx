@@ -475,9 +475,9 @@ export default function AccountGroupMaster() {
       case 'Assets':
         return <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold">मालमत्ता (Assets)</span>;
       case 'Liabilities':
-        return <span className="bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded text-[10px] font-bold">देणी (Liabilities)</span>;
+        return <span className="bg-amber-50 text-[#7C2418] border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold">देणी (Liabilities)</span>;
       case 'Income':
-        return <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded text-[10px] font-bold">उत्पन्न (Income)</span>;
+        return <span className="bg-orange-50 text-[#7C2418] border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold">उत्पन्न (Income)</span>;
       case 'Expenses':
         return <span className="bg-rose-50 text-rose-800 border border-rose-200 px-2 py-0.5 rounded text-[10px] font-bold">खर्च (Expenses)</span>;
       default:
@@ -554,12 +554,12 @@ export default function AccountGroupMaster() {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Building2 className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">उप-गट (Sub-Groups)</div>
-            <div className="text-sm font-black text-indigo-950">{subGroupsCount}</div>
+            <div className="text-sm font-black text-[#4A1410]">{subGroupsCount}</div>
           </div>
         </div>
 
@@ -595,7 +595,7 @@ export default function AccountGroupMaster() {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 mb-3.5 ${
-          editId ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editId ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -813,7 +813,7 @@ export default function AccountGroupMaster() {
                 type="button"
                 onClick={() => setNatureFilter('Liabilities')}
                 className={`px-2 py-0.5 rounded-xs transition-colors cursor-pointer ${
-                  natureFilter === 'Liabilities' ? 'bg-white text-blue-800 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
+                  natureFilter === 'Liabilities' ? 'bg-white text-[#7C2418] shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 देणी
@@ -822,7 +822,7 @@ export default function AccountGroupMaster() {
                 type="button"
                 onClick={() => setNatureFilter('Income')}
                 className={`px-2 py-0.5 rounded-xs transition-colors cursor-pointer ${
-                  natureFilter === 'Income' ? 'bg-white text-indigo-800 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
+                  natureFilter === 'Income' ? 'bg-white text-[#7C2418] shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 उत्पन्न
@@ -876,20 +876,20 @@ export default function AccountGroupMaster() {
 
         {/* Spreadsheet Data Grid */}
         <div className="overflow-x-auto max-h-[550px] scrollbar-thin">
-          <table className="min-w-full divide-y divide-slate-200 text-xs text-left border-collapse">
-            <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10 select-none">
+          <table className="min-w-full divide-y divide-slate-200 text-[11px] text-left border-collapse leading-tight">
+            <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30 sticky top-0 z-10 select-none">
               <tr>
-                <th className="px-2 py-2 border-r border-slate-200 font-bold text-center w-24">ताळेबंद क्रम</th>
-                <th className="px-2 py-2 border-r border-slate-200 font-bold text-center w-24">गट आयडी</th>
-                <th className="px-3 py-2 border-r border-slate-200 font-bold text-left">गटाचे नाव - मराठी</th>
-                <th className="px-3 py-2 border-r border-slate-200 font-bold text-left">गटाचे नाव - इंग्रजी</th>
-                <th className="px-3 py-2 border-r border-slate-200 font-bold text-left">मुख्य गट (Parent)</th>
-                <th className="px-3 py-2 border-r border-slate-200 font-bold text-center w-28">प्रकार (Nature)</th>
-                <th className="px-2 py-2 border-r border-slate-200 font-bold text-center w-24">स्टेटस</th>
-                <th className="px-2 py-2 font-bold text-center w-20">कृती</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center w-24 whitespace-nowrap">ताळेबंद क्रम</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center w-24 whitespace-nowrap">गट आयडी</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">गटाचे नाव - मराठी</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">गटाचे नाव - इंग्रजी</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">मुख्य गट (Parent)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center w-28 whitespace-nowrap">प्रकार (Nature)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center w-24 whitespace-nowrap">स्टेटस</th>
+                <th className="px-2 py-1.5 font-bold text-center w-20 whitespace-nowrap">कृती</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-amber-100 bg-white">
               {filteredGroups.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-400 font-medium">
@@ -905,7 +905,7 @@ export default function AccountGroupMaster() {
                     }`}
                   >
                     {/* Display Order with Controls */}
-                    <td className="px-1.5 py-1 border-r border-slate-100 text-center font-mono font-bold bg-slate-50/40">
+                    <td className="px-1.5 py-1 border-r border-slate-100 text-center font-mono font-bold bg-slate-50/40 align-middle">
                       <div className="flex items-center justify-center space-x-1">
                         <input 
                           type="number" 
@@ -935,14 +935,14 @@ export default function AccountGroupMaster() {
                     </td>
 
                     {/* Group ID / Code */}
-                    <td className="px-2 py-1 border-r border-slate-100 text-center font-mono font-bold text-slate-800 bg-slate-50/20">
+                    <td className="px-2 py-1 border-r border-slate-100 text-center font-mono font-bold text-slate-800 bg-slate-50/20 align-middle">
                       <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px]">
                         {group.groupCode || group.groupID}
                       </span>
                     </td>
 
                     {/* Marathi Name with Hierarchy Tree Indentation */}
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-left font-bold text-slate-900">
+                    <td className="px-2 py-1 border-r border-slate-100 text-left font-bold text-slate-900 align-middle">
                       {group.depth && group.depth > 0 ? (
                         <span className="text-slate-400 font-mono select-none" style={{ marginLeft: `${group.depth * 1}rem` }}>
                           └─{' '}
@@ -954,12 +954,12 @@ export default function AccountGroupMaster() {
                     </td>
 
                     {/* English Name */}
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-left text-slate-600 font-medium">
+                    <td className="px-2 py-1 border-r border-slate-100 text-left text-slate-600 font-medium align-middle">
                       {group.groupNameEnglish || '-'}
                     </td>
 
                     {/* Parent Group */}
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-left text-slate-700 text-[11px]">
+                    <td className="px-2 py-1 border-r border-slate-100 text-left text-slate-700 text-[11px] align-middle">
                       {group.parentGroup?.groupName ? (
                         <span className="flex items-center gap-1">
                           <span className="font-mono font-bold text-primary bg-primary/5 px-1 py-0.2 rounded border border-primary/10">
@@ -973,12 +973,12 @@ export default function AccountGroupMaster() {
                     </td>
 
                     {/* Nature Badge */}
-                    <td className="px-2 py-1.5 border-r border-slate-100 text-center">
+                    <td className="px-2 py-1 border-r border-slate-100 text-center align-middle">
                       {getNatureBadge(group.natureOfGroup)}
                     </td>
 
                     {/* Status Pill */}
-                    <td className="px-2 py-1.5 border-r border-slate-100 text-center">
+                    <td className="px-2 py-1 border-r border-slate-100 text-center align-middle">
                       <span className={`px-2 py-0.5 inline-flex text-[10px] font-bold rounded-full border ${
                         group.isActive ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
                       }`}>
@@ -987,7 +987,7 @@ export default function AccountGroupMaster() {
                     </td>
 
                     {/* Actions */}
-                    <td className="px-2 py-1 text-center whitespace-nowrap">
+                    <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
                       <div className="flex items-center justify-center gap-1">
                         <button 
                           type="button"
@@ -1020,7 +1020,7 @@ export default function AccountGroupMaster() {
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1079,19 +1079,19 @@ export default function AccountGroupMaster() {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">गट आयडी</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">गटाचे नाव - मराठी</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">गटाचे नाव - इंग्रजी</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">मुख्य गट (Parent)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">प्रकार (Nature)</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">गट आयडी</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">गटाचे नाव - मराठी</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">गटाचे नाव - इंग्रजी</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">मुख्य गट (Parent)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">प्रकार (Nature)</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
+                  <tbody className="divide-y divide-amber-100 bg-white">
                     {filteredGroups.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="px-4 py-8 text-center text-gray-500 font-medium">
@@ -1101,7 +1101,7 @@ export default function AccountGroupMaster() {
                     ) : (
                       filteredGroups.map((group) => (
                         <tr key={group.groupID} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 type="button"
@@ -1120,10 +1120,10 @@ export default function AccountGroupMaster() {
                               </button>
                             </div>
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-bold text-gray-900 bg-slate-50/50">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-bold text-gray-900 bg-slate-50/50 align-middle">
                             {group.groupCode || group.groupID}
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-gray-900">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-gray-900 align-middle">
                             {group.depth && group.depth > 0 ? (
                               <span className="text-gray-400 font-mono select-none" style={{ marginLeft: `${group.depth * 1}rem` }}>
                                 └─{' '}
@@ -1131,16 +1131,16 @@ export default function AccountGroupMaster() {
                             ) : null}
                             <span>{group.groupName}</span>
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 font-medium">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 font-medium align-middle">
                             {group.groupNameEnglish || '-'}
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-700">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-700 align-middle">
                             {group.parentGroup?.groupName || '-'}
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200 text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                             {getNatureBadge(group.natureOfGroup)}
                           </td>
-                          <td className="px-2 py-1 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             <span className={`px-1.5 py-0.5 inline-flex text-[10px] font-semibold rounded-sm border ${
                               group.isActive ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
                             }`}>

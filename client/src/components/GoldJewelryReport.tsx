@@ -834,7 +834,7 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
                         </span>
                       )}
                       {item.voucherStatus === 'PendingDisbursement' && (
-                        <span className="inline-block mt-0.5 px-1 py-0.2 rounded bg-blue-50 text-blue-800 border border-blue-200 text-[8.5px] font-bold">
+                        <span className="inline-block mt-0.5 px-1 py-0.2 rounded bg-amber-50 text-[#7C2418] border border-amber-200 text-[8.5px] font-bold">
                           वाटप बाकी
                         </span>
                       )}
@@ -1038,7 +1038,7 @@ export default function GoldJewelryReport({ onNavigate }: GoldJewelryReportProps
                           <button
                             type="button"
                             onClick={() => handleNavigateToCustody(item)}
-                            className="px-1.5 py-0.5 bg-sky-50 hover:bg-sky-100 text-sky-900 rounded text-[9.5px] font-bold border border-sky-300 cursor-pointer whitespace-nowrap"
+                            className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-[#5A1A14] rounded text-[9.5px] font-bold border border-amber-300 cursor-pointer whitespace-nowrap"
                             title="दागिन्यांचे लॉकर / कस्टडी ठिकाण पहा किंवा बदला"
                           >
                             कस्टडी

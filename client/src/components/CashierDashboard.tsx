@@ -1002,25 +1002,25 @@ export default function CashierDashboard({ onNavigate, initialTab = 'dashboard' 
               {/* Denomination Input Table */}
               <form onSubmit={handleDenomSubmit} className="space-y-4">
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse border border-gray-300 text-xs">
+                  <table className="w-full border-collapse border border-gray-300 text-[11px] leading-tight">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-900 font-bold border-b border-gray-300">
-                        <th className="border border-gray-300 py-1.5 px-3 text-left w-[25%]">नोटा / नाणी प्रकार</th>
-                        <th className="border border-gray-300 py-1.5 px-3 text-center w-[25%]">नोटांची संख्या (Pieces)</th>
-                        <th className="border border-gray-300 py-1.5 px-3 text-right w-[50%]">एकूण रक्कम (₹)</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
+                        <th className="border border-amber-400/25 py-1.5 px-2 text-left w-[25%] whitespace-nowrap">नोटा / नाणी प्रकार</th>
+                        <th className="border border-amber-400/25 py-1.5 px-2 text-center w-[25%] whitespace-nowrap">नोटांची संख्या (Pieces)</th>
+                        <th className="border border-amber-400/25 py-1.5 px-2 text-right w-[50%] whitespace-nowrap">एकूण रक्कम (₹)</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-amber-100">
                       {denominationsList.map((d) => {
                         const countVal = (denomCounts as any)[d.key] || 0;
                         const subTotal = d.isCoin ? Number(countVal) || 0 : countVal * d.value;
 
                         return (
                           <tr key={d.key} className="hover:bg-slate-50">
-                            <td className="border border-gray-300 py-1.5 px-3 font-bold text-slate-800">
+                            <td className="border border-gray-300 py-1 px-2 font-bold text-slate-800 align-middle">
                               {d.label}
                             </td>
-                            <td className="border border-gray-300 py-1 px-3 text-center">
+                            <td className="border border-gray-300 py-1 px-2 text-center align-middle">
                               <input
                                 type="number"
                                 min="0"
@@ -1036,7 +1036,7 @@ export default function CashierDashboard({ onNavigate, initialTab = 'dashboard' 
                                 className="w-24 text-center px-2 py-1 border border-gray-300 rounded-sm font-mono font-bold text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                               />
                             </td>
-                            <td className="border border-gray-300 py-1.5 px-3 text-right font-mono font-bold text-slate-900">
+                            <td className="border border-gray-300 py-1 px-2 text-right font-mono font-bold text-slate-900 align-middle">
                               ₹ {subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
                           </tr>
@@ -1150,19 +1150,19 @@ export default function CashierDashboard({ onNavigate, initialTab = 'dashboard' 
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse border border-gray-300">
+                  <table className="w-full text-left text-[11px] border-collapse border border-gray-300 leading-tight">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-900 font-bold border-b border-gray-300">
-                        <th className="py-2 px-3 border border-gray-300">तारीख</th>
-                        <th className="py-2 px-3 border border-gray-300">कडून (From)</th>
-                        <th className="py-2 px-3 border border-gray-300">कोणास (To)</th>
-                        <th className="py-2 px-3 border border-gray-300">प्रकार</th>
-                        <th className="py-2 px-3 border border-gray-300 text-right">रक्कम (₹)</th>
-                        <th className="py-2 px-3 border border-gray-300 text-center">स्थिती</th>
-                        <th className="py-2 px-3 border border-gray-300">शेरा / तपशील</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
+                        <th className="py-1.5 px-2 border border-amber-400/25 whitespace-nowrap">तारीख</th>
+                        <th className="py-1.5 px-2 border border-amber-400/25 whitespace-nowrap">कडून (From)</th>
+                        <th className="py-1.5 px-2 border border-amber-400/25 whitespace-nowrap">कोणास (To)</th>
+                        <th className="py-1.5 px-2 border border-amber-400/25 whitespace-nowrap">प्रकार</th>
+                        <th className="py-1.5 px-2 border border-amber-400/25 text-right whitespace-nowrap">रक्कम (₹)</th>
+                        <th className="py-1.5 px-2 border border-amber-400/25 text-center whitespace-nowrap">स्थिती</th>
+                        <th className="py-1.5 px-2 border border-amber-400/25 whitespace-nowrap">शेरा / तपशील</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-amber-100">
                       {recentAllocations.map((alloc, idx) => {
                         const aId = alloc.id ?? alloc.Id ?? idx;
                         const aDate = alloc.allocationDate ?? alloc.AllocationDate;
@@ -1174,25 +1174,25 @@ export default function CashierDashboard({ onNavigate, initialTab = 'dashboard' 
                         const aRemarks = alloc.remarks ?? alloc.Remarks;
                         return (
                           <tr key={`cd-alloc-${aId}`} className="hover:bg-slate-50 transition-colors">
-                            <td className="py-1.5 px-3 border border-gray-300 text-slate-700 font-mono">
+                            <td className="py-1 px-2 border border-gray-300 text-slate-700 font-mono align-middle">
                               {aDate ? new Date(aDate).toLocaleDateString('mr-IN') : '-'}
                             </td>
-                            <td className="py-1.5 px-3 border border-gray-300 font-semibold text-slate-900">
+                            <td className="py-1 px-2 border border-gray-300 font-semibold text-slate-900 align-middle">
                               {fromName}
                             </td>
-                            <td className="py-1.5 px-3 border border-gray-300 font-semibold text-slate-900">
+                            <td className="py-1 px-2 border border-gray-300 font-semibold text-slate-900 align-middle">
                               {toName}
                             </td>
-                            <td className="py-1.5 px-3 border border-gray-300">
+                            <td className="py-1 px-2 border border-gray-300 align-middle">
                               <span className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded text-[10px] font-bold border border-slate-300">
                                 {aType === 'HEAD_TO_TELLER' ? 'तिजोरीतून वाटप' : 
                                  aType === 'TELLER_TO_HEAD' ? 'तिजोरीत परतावा' : 'काउंटर हस्तांतरण'}
                               </span>
                             </td>
-                            <td className="py-1.5 px-3 border border-gray-300 font-mono font-bold text-right text-emerald-800">
+                            <td className="py-1 px-2 border border-gray-300 font-mono font-bold text-right text-emerald-800 align-middle">
                               {fmt(aAmt)}
                             </td>
-                            <td className="py-1.5 px-3 border border-gray-300 text-center">
+                            <td className="py-1 px-2 border border-gray-300 text-center align-middle">
                               <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
                                 aStatus === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
                                 aStatus === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
@@ -1200,7 +1200,7 @@ export default function CashierDashboard({ onNavigate, initialTab = 'dashboard' 
                                 {aStatus === 'ACCEPTED' ? 'स्वीकृत' : aStatus}
                               </span>
                             </td>
-                            <td className="py-1.5 px-3 border border-gray-300 text-slate-600 truncate max-w-xs text-[11px]">
+                            <td className="py-1 px-2 border border-gray-300 text-slate-600 truncate max-w-xs text-[11px] align-middle">
                               {aRemarks || '-'}
                             </td>
                           </tr>

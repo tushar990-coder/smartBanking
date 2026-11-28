@@ -230,7 +230,7 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
                 </span>
               )}
             </div>
-            <div className="bg-gradient-to-r from-primary via-[#004a75] to-primary text-white font-black px-4 py-0.5 rounded-full text-[10px] tracking-wider uppercase shadow-2xs">
+            <div className="bg-gradient-to-r from-primary via-[#7C2418] to-primary text-white font-black px-4 py-0.5 rounded-full text-[10px] tracking-wider uppercase shadow-2xs">
               मुदत ठेव पावती (FIXED DEPOSIT RECEIPT)
             </div>
             <div className="font-bold text-slate-700 font-mono text-right">
@@ -306,10 +306,10 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
                 </tr>
               ) : null}
               {account.isAutoRenewable && (
-                <tr className="border-t border-slate-200 bg-sky-50/50">
-                  <td className="p-1.5 font-bold text-sky-950 border-r border-slate-200">स्वयंचलित नूतनीकरण (Auto-Renewal)</td>
+                <tr className="border-t border-slate-200 bg-amber-50/50">
+                  <td className="p-1.5 font-bold text-[#4A1410] border-r border-slate-200">स्वयंचलित नूतनीकरण (Auto-Renewal)</td>
                   <td className="p-1.5 font-bold text-slate-800" colSpan={3}>
-                    <span className="bg-sky-600 text-white px-1.5 py-0.2 rounded text-[9px] font-black mr-1.5">सक्रिय (ENABLED)</span>
+                    <span className="bg-[#B44814] text-white px-1.5 py-0.2 rounded text-[9px] font-black mr-1.5">सक्रिय (ENABLED)</span>
                     पर्याय: <strong>{account.autoRenewalOption === 'PrincipalOnly' ? 'केवळ मुद्दल (व्याज बचत खात्यात जमा)' : 'मुद्दल + जमा व्याज (पुनर्गुंतवणूक)'}</strong>
                     {account.maxAutoRenewalCycles ? ` (कमाल मर्यादा: ${account.maxAutoRenewalCycles} वेळा)` : ''}
                   </td>
@@ -477,7 +477,7 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
           <div className="flex flex-col justify-between">
             <div className="flex items-center justify-between mb-1.5 h-4">
               <label className="font-bold text-slate-700 text-[11px]">३. वरचे अंतर (Top Margin)</label>
-              <span className="text-primary font-mono font-extrabold bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded text-[10px]">
+              <span className="text-primary font-mono font-extrabold bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded text-[10px]">
                 {topOffset} mm
               </span>
             </div>
@@ -516,7 +516,7 @@ ${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनी�
                     ↺ रिसेट
                   </button>
                 )}
-                <span className="text-primary font-mono font-extrabold bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded text-[10px]">
+                <span className="text-primary font-mono font-extrabold bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded text-[10px]">
                   {leftOffset} mm
                 </span>
               </div>

@@ -136,7 +136,7 @@ ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: �
           <button onClick={handleWhatsAppShare} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-sm shadow-sm font-medium text-xs transition-colors flex items-center gap-1 inline-flex">
             <span>📲</span> WhatsApp वर पाठवा
           </button>
-          <button onClick={handlePrint} className="bg-primary hover:bg-[#004a75] text-white px-3 py-1 rounded-sm shadow-sm font-medium text-xs transition-colors flex items-center gap-1 inline-flex">
+          <button onClick={handlePrint} className="bg-primary hover:bg-[#7C2418] text-white px-3 py-1 rounded-sm shadow-sm font-medium text-xs transition-colors flex items-center gap-1 inline-flex">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
@@ -183,7 +183,7 @@ ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: �
             {accountDetails && (
               <div className="flex justify-between pt-1 border-t border-dashed border-slate-300 text-[11px]">
                 <span className="text-gray-600">मंजूर मर्यादा: <strong className="text-slate-800">₹ {(accountDetails.sanctionedAmount || collection.loanAccount?.sanctionedAmount || 0).toLocaleString('en-IN')}</strong></span>
-                <span className="text-gray-600">एकूण वाटप: <strong className="text-blue-900">₹ {(accountDetails.totalDisbursedAmount || collection.loanAccount?.principalBalance || 0).toLocaleString('en-IN')}</strong></span>
+                <span className="text-gray-600">एकूण वाटप: <strong className="text-[#5A1A14]">₹ {(accountDetails.totalDisbursedAmount || collection.loanAccount?.principalBalance || 0).toLocaleString('en-IN')}</strong></span>
               </div>
             )}
           </div>
@@ -213,7 +213,7 @@ ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: �
                   {collection.paymentMode === 'Pigmy Transfer' ? 'पिग्मी ठेव वर्ग (Pigmy Transfer)' : collection.paymentMode}
                 </span>
                 {collection.paymentMode === 'Pigmy Transfer' && collection.transferFromPigmyAccountNo && (
-                  <span className="block text-[10px] text-blue-800 font-medium">
+                  <span className="block text-[10px] text-[#7C2418] font-medium">
                     पिग्मी खाते क्र: {collection.transferFromPigmyAccountNo}
                   </span>
                 )}

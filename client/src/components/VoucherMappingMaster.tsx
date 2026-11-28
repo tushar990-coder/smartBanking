@@ -256,7 +256,7 @@ export default function VoucherMappingMaster() {
           <h1 className="text-sm font-bold flex items-center gap-2">
             <span>⚙️</span> व्हाउचर मॅपिंग सेटिंग्ज (Voucher Mapping Master)
           </h1>
-          <p className="text-[11px] text-blue-100 mt-0.5 font-normal">
+          <p className="text-[11px] text-amber-100 mt-0.5 font-normal">
             ऑटोमॅटिक व्यवहारांसाठी डिफॉल्ट नावे (Debit) आणि जमा (Credit) खाती सेट करा. (उदा. शेअर भांडवल, लाभांश, कर्ज वसुली)
           </p>
         </div>
@@ -285,7 +285,7 @@ export default function VoucherMappingMaster() {
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
               : message.type === 'error'
               ? 'bg-red-50 text-red-800 border-red-200'
-              : 'bg-blue-50 text-blue-800 border-blue-200'
+              : 'bg-amber-50 text-[#7C2418] border-amber-200'
           }`}
         >
           <span>{message.text}</span>
@@ -302,7 +302,7 @@ export default function VoucherMappingMaster() {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3 rounded-sm shadow-xs border mb-3 transition-all duration-300 ${
-          isEditing ? 'border-primary ring-2 ring-primary/20 shadow-md bg-blue-50/10' : 'border-gray-200'
+          isEditing ? 'border-primary ring-2 ring-primary/20 shadow-md bg-amber-50/10' : 'border-gray-200'
         }`}
       >
         <div className="flex justify-between items-center border-b border-gray-200 pb-2 mb-3">
@@ -357,7 +357,7 @@ export default function VoucherMappingMaster() {
                   <button
                     type="button"
                     onClick={() => handleEdit(existingMappingForSelectedType)}
-                    className="font-bold underline text-primary cursor-pointer hover:text-blue-900 ml-2"
+                    className="font-bold underline text-primary cursor-pointer hover:text-[#5A1A14] ml-2"
                   >
                     संपादित करा
                   </button>
@@ -385,7 +385,7 @@ export default function VoucherMappingMaster() {
 
             {/* Credit Ledger (Cr) */}
             <div>
-              <label className="block text-[11px] font-bold text-blue-800 mb-1">
+              <label className="block text-[11px] font-bold text-[#7C2418] mb-1">
                 २. जमा खाते (Credit Ledger - Cr)
               </label>
               <SearchableSelect
@@ -418,7 +418,7 @@ export default function VoucherMappingMaster() {
               className={`px-6 py-1.5 rounded-sm font-bold text-white shadow-xs transition text-xs flex items-center gap-1.5 cursor-pointer ${
                 isEditing
                   ? 'bg-amber-600 hover:bg-amber-700'
-                  : 'bg-primary hover:bg-[#004a75]'
+                  : 'bg-primary hover:bg-[#7C2418]'
               }`}
             >
               <span>{isEditing ? '💾' : '➕'}</span>
@@ -440,17 +440,17 @@ export default function VoucherMappingMaster() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-xs">
-            <thead className="bg-gray-50 text-gray-700 font-bold">
+          <table className="min-w-full divide-y divide-gray-200 text-[11px] leading-tight border-collapse">
+            <thead className="bg-[#5A1A14] text-amber-50 font-bold">
               <tr>
-                <th className="px-3 py-2 text-left border-r border-gray-200 w-12">क्र.</th>
-                <th className="px-3 py-2 text-left border-r border-gray-200">व्यवहाराचा प्रकार (Transaction Type)</th>
-                <th className="px-3 py-2 text-left border-r border-gray-200">नावे खाते (Debit Ledger - Dr)</th>
-                <th className="px-3 py-2 text-left border-r border-gray-200">जमा खाते (Credit Ledger - Cr)</th>
-                <th className="px-3 py-2 text-center w-28">कृती (Actions)</th>
+                <th className="px-2 py-1.5 text-left border-r border-amber-400/25 w-12 whitespace-nowrap">क्र.</th>
+                <th className="px-2 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">व्यवहाराचा प्रकार (Transaction Type)</th>
+                <th className="px-2 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">नावे खाते (Debit Ledger - Dr)</th>
+                <th className="px-2 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">जमा खाते (Credit Ledger - Cr)</th>
+                <th className="px-2 py-1.5 text-center w-28 whitespace-nowrap">कृती (Actions)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-amber-100">
               {mappings.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-400 font-medium italic">
@@ -459,12 +459,12 @@ export default function VoucherMappingMaster() {
                 </tr>
               ) : (
                 mappings.map((m, idx) => (
-                  <tr key={m.mappingID} className={`hover:bg-blue-50/40 transition-colors ${editingId === m.mappingID ? 'bg-amber-50/60 font-semibold' : ''}`}>
-                    <td className="px-3 py-2 border-r border-gray-200 text-gray-500 font-mono">{idx + 1}</td>
-                    <td className="px-3 py-2 border-r border-gray-200 font-bold text-gray-900">
+                  <tr key={m.mappingID} className={`hover:bg-amber-50/40 transition-colors ${editingId === m.mappingID ? 'bg-amber-50/60 font-semibold' : ''}`}>
+                    <td className="px-2 py-1 border-r border-gray-200 text-gray-500 font-mono align-middle">{idx + 1}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 font-bold text-gray-900 align-middle">
                       {m.transactionType}
                     </td>
-                    <td className="px-3 py-2 border-r border-gray-200">
+                    <td className="px-2 py-1 border-r border-gray-200 align-middle">
                       {m.debitLedger ? (
                         <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium">
                           <span className="font-bold text-[10px] bg-emerald-200 text-emerald-900 px-1 rounded">Dr</span>
@@ -479,13 +479,13 @@ export default function VoucherMappingMaster() {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 border-r border-gray-200">
+                    <td className="px-2 py-1 border-r border-gray-200 align-middle">
                       {m.creditLedger ? (
-                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200 font-medium">
-                          <span className="font-bold text-[10px] bg-blue-200 text-blue-900 px-1 rounded">Cr</span>
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-50 text-[#5A1A14] border border-amber-200 font-medium">
+                          <span className="font-bold text-[10px] bg-amber-200 text-[#5A1A14] px-1 rounded">Cr</span>
                           <span>{m.creditLedger.ledgerID} - {m.creditLedger.ledgerName}</span>
                           {m.creditLedger.accountGroup?.groupName && (
-                            <span className="text-[10px] text-blue-700">[{m.creditLedger.accountGroup.groupName}]</span>
+                            <span className="text-[10px] text-[#9A3412]">[{m.creditLedger.accountGroup.groupName}]</span>
                           )}
                         </div>
                       ) : (
@@ -494,11 +494,11 @@ export default function VoucherMappingMaster() {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-center">
+                    <td className="px-2 py-1 text-center align-middle">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => handleEdit(m)}
-                          className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-primary border border-blue-300 rounded font-bold transition text-[10px] cursor-pointer"
+                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-primary border border-amber-300 rounded font-bold transition text-[10px] cursor-pointer"
                           title="मॅपिंग संपादित करा"
                         >
                           संपादित (Edit)

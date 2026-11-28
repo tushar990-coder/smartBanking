@@ -1797,9 +1797,9 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
       <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-300 border-t-2 border-t-primary rounded-sm shadow-xs overflow-hidden">
         <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
           <table className="w-full text-left border-collapse text-[11px] leading-tight">
-            <thead className="bg-slate-100 text-slate-800 font-bold border-b-2 border-primary/30 sticky top-0 z-20 shadow-2xs select-none whitespace-nowrap">
+            <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b-2 border-primary/30 sticky top-0 z-20 shadow-2xs select-none whitespace-nowrap">
               <tr className="h-6">
-                <th className="px-1 py-0.5 w-8 text-center border-r border-slate-300">
+                <th className="px-1 py-0.5 w-8 text-center border-r border-amber-400/25 whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={filteredRows.length > 0 && selectedRowIds.size === filteredRows.length}
@@ -1807,40 +1807,40 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     className="w-3.5 h-3.5 rounded-sm border-slate-300 accent-primary cursor-pointer align-middle"
                   />
                 </th>
-                <th className="px-1.5 py-0.5 w-9 text-center border-r border-slate-300">#</th>
-                <th className="px-1.5 py-0.5 min-w-[115px] text-center border-r border-slate-300">प्रकार / CIF</th>
-                <th className="px-1.5 py-0.5 min-w-[54px] text-center border-r border-slate-300">स्थिती</th>
-                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-slate-300 text-primary font-bold bg-primary/10">
+                <th className="px-1.5 py-0.5 w-9 text-center border-r border-amber-400/25 whitespace-nowrap">#</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] text-center border-r border-amber-400/25 whitespace-nowrap">प्रकार / CIF</th>
+                <th className="px-1.5 py-0.5 min-w-[54px] text-center border-r border-amber-400/25 whitespace-nowrap">स्थिती</th>
+                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-amber-400/25 text-amber-200 font-bold bg-primary/10 whitespace-nowrap">
                   जुना क्र.
                 </th>
-                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300 text-slate-900">
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-amber-400/25 text-amber-50 whitespace-nowrap">
                   पहिले नाव <span className="text-rose-600 font-black">*</span>
                 </th>
-                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">मधले नाव</th>
-                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300 text-slate-900">
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-amber-400/25 whitespace-nowrap">मधले नाव</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-amber-400/25 text-amber-50 whitespace-nowrap">
                   आडनाव <span className="text-rose-600 font-black">*</span>
                 </th>
-                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">First Name (Eng)</th>
-                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300">Middle (Eng)</th>
-                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">Last Name (Eng)</th>
-                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">मोबाईल (10 अंक)</th>
-                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300">आधार (12 अंक)</th>
-                <th className="px-1.5 py-0.5 min-w-[102px] border-r border-slate-300">पॅन (PAN)</th>
-                <th className="px-1.5 py-0.5 min-w-[72px] border-r border-slate-300">लिंग</th>
-                <th className="px-1.5 py-0.5 min-w-[110px] border-r border-slate-300">वारसदार नाव</th>
-                <th className="px-1.5 py-0.5 min-w-[80px] border-r border-slate-300">नाते</th>
-                <th className="px-1.5 py-0.5 min-w-[90px] border-r border-slate-300">व्यवसाय</th>
-                <th className="px-1.5 py-0.5 min-w-[112px] border-r border-slate-300">जन्मतारीख</th>
-                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">गाव / शहर</th>
-                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-slate-300">तालुका</th>
-                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-slate-300">जिल्हा</th>
-                <th className="px-1.5 py-0.5 min-w-[135px] border-r border-slate-300">पत्ता</th>
-                <th className="px-1.5 py-0.5 min-w-[130px] border-r border-slate-300">ईमेल (Email)</th>
-                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-slate-300">खातेदार प्रकार</th>
-                <th className="px-1.5 py-0.5 min-w-[92px] border-r border-slate-300">केवायसी</th>
-                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-slate-300">CKYC क्र.</th>
-                <th className="px-1.5 py-0.5 min-w-[74px] border-r border-slate-300">जोखीम</th>
-                <th className="px-1 py-0.5 w-8 text-center">कृती</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-amber-400/25 whitespace-nowrap">First Name (Eng)</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-amber-400/25 whitespace-nowrap">Middle (Eng)</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-amber-400/25 whitespace-nowrap">Last Name (Eng)</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-amber-400/25 whitespace-nowrap">मोबाईल (10 अंक)</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-amber-400/25 whitespace-nowrap">आधार (12 अंक)</th>
+                <th className="px-1.5 py-0.5 min-w-[102px] border-r border-amber-400/25 whitespace-nowrap">पॅन (PAN)</th>
+                <th className="px-1.5 py-0.5 min-w-[72px] border-r border-amber-400/25 whitespace-nowrap">लिंग</th>
+                <th className="px-1.5 py-0.5 min-w-[110px] border-r border-amber-400/25 whitespace-nowrap">वारसदार नाव</th>
+                <th className="px-1.5 py-0.5 min-w-[80px] border-r border-amber-400/25 whitespace-nowrap">नाते</th>
+                <th className="px-1.5 py-0.5 min-w-[90px] border-r border-amber-400/25 whitespace-nowrap">व्यवसाय</th>
+                <th className="px-1.5 py-0.5 min-w-[112px] border-r border-amber-400/25 whitespace-nowrap">जन्मतारीख</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-amber-400/25 whitespace-nowrap">गाव / शहर</th>
+                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-amber-400/25 whitespace-nowrap">तालुका</th>
+                <th className="px-1.5 py-0.5 min-w-[95px] border-r border-amber-400/25 whitespace-nowrap">जिल्हा</th>
+                <th className="px-1.5 py-0.5 min-w-[135px] border-r border-amber-400/25 whitespace-nowrap">पत्ता</th>
+                <th className="px-1.5 py-0.5 min-w-[130px] border-r border-amber-400/25 whitespace-nowrap">ईमेल (Email)</th>
+                <th className="px-1.5 py-0.5 min-w-[105px] border-r border-amber-400/25 whitespace-nowrap">खातेदार प्रकार</th>
+                <th className="px-1.5 py-0.5 min-w-[92px] border-r border-amber-400/25 whitespace-nowrap">केवायसी</th>
+                <th className="px-1.5 py-0.5 min-w-[115px] border-r border-amber-400/25 whitespace-nowrap">CKYC क्र.</th>
+                <th className="px-1.5 py-0.5 min-w-[74px] border-r border-amber-400/25 whitespace-nowrap">जोखीम</th>
+                <th className="px-1 py-0.5 w-8 text-center whitespace-nowrap">कृती</th>
               </tr>
             </thead>
 
@@ -1865,7 +1865,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         : 'bg-white hover:bg-primary/10'
                     }`}
                   >
-                    <td className="px-1 py-0 text-center border-r border-slate-200">
+                    <td className="px-1 py-0 text-center border-r border-slate-200 align-middle">
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -1874,11 +1874,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="px-1 py-0 text-center border-r border-slate-200 text-slate-500 font-mono text-[10px]">
+                    <td className="px-1 py-0 text-center border-r border-slate-200 text-slate-500 font-mono text-[10px] align-middle">
                       {origIdx + 1}
                     </td>
 
-                    <td className="px-1.5 py-0 text-center border-r border-slate-200 bg-slate-50/60 whitespace-nowrap">
+                    <td className="px-1.5 py-0 text-center border-r border-slate-200 bg-slate-50/60 whitespace-nowrap align-middle">
                       {isExisting ? (
                         <div className="inline-flex items-center gap-1" title={`CustomerID: ${row.customerID}`}>
                           <span
@@ -1906,7 +1906,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       )}
                     </td>
 
-                    <td className="px-1 py-0 text-center border-r border-slate-200 whitespace-nowrap">
+                    <td className="px-1 py-0 text-center border-r border-slate-200 whitespace-nowrap align-middle">
                       {isInvalid ? (
                         <div className="group relative inline-block cursor-help">
                           <span className="bg-rose-600 text-white font-bold text-[9px] leading-none px-1 py-0.5 rounded-xs">
@@ -1952,7 +1952,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       )}
                     </td>
 
-                    <td className="p-0 border-r border-slate-200 bg-primary/5">
+                    <td className="p-0 border-r border-slate-200 bg-primary/5 align-middle">
                       <input
                         type="text"
                         maxLength={50}
@@ -1967,7 +1967,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={50}
@@ -1986,7 +1986,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={50}
@@ -2001,7 +2001,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={50}
@@ -2020,7 +2020,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={50}
@@ -2035,7 +2035,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={50}
@@ -2050,7 +2050,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={50}
@@ -2065,7 +2065,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={10}
@@ -2084,7 +2084,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={12}
@@ -2103,7 +2103,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={10}
@@ -2122,7 +2122,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <select
                         value={row.gender}
                         onChange={(e) => handleCellChange(row.id, 'gender', e.target.value)}
@@ -2134,7 +2134,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={150}
@@ -2149,7 +2149,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={50}
@@ -2164,7 +2164,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={100}
@@ -2179,7 +2179,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="date"
                         max={new Date().toISOString().slice(0, 10)}
@@ -2193,7 +2193,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={100}
@@ -2208,7 +2208,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={100}
@@ -2223,7 +2223,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={100}
@@ -2238,7 +2238,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={500}
@@ -2253,7 +2253,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="email"
                         maxLength={150}
@@ -2272,7 +2272,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <select
                         value={row.customerType}
                         onChange={(e) => handleCellChange(row.id, 'customerType', e.target.value)}
@@ -2290,7 +2290,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <select
                         value={row.kycStatus}
                         onChange={(e) => handleCellChange(row.id, 'kycStatus', e.target.value)}
@@ -2304,7 +2304,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <input
                         type="text"
                         maxLength={14}
@@ -2323,7 +2323,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </td>
 
-                    <td className="p-0 border-r border-slate-200">
+                    <td className="p-0 border-r border-slate-200 align-middle">
                       <select
                         value={row.riskCategory}
                         onChange={(e) => handleCellChange(row.id, 'riskCategory', e.target.value)}
@@ -2335,7 +2335,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
-                    <td className="px-1 py-0 text-center">
+                    <td className="px-1 py-0 text-center align-middle">
                       <button
                         onClick={() => handleDeleteRow(row.id)}
                         className="p-0.5 text-slate-400 hover:text-rose-600 rounded-xs transition cursor-pointer"
@@ -2439,7 +2439,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
       {/* MODAL: LOAD EXISTING CUSTOMERS FOR BULK EDIT */}
       {showExistingModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-sm shadow-xl max-w-4xl w-full p-4 border border-slate-300 border-t-4 border-t-primary max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-sm shadow-xl max-w-[97vw] xl:max-w-[1460px] w-full p-4 border border-slate-300 border-t-4 border-t-primary max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 mb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded-sm">
@@ -2530,9 +2530,9 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
 
             <div className="flex-1 overflow-y-auto border border-slate-300 rounded-sm mb-2.5 max-h-[52vh] custom-scrollbar">
               <table className="w-full text-left border-collapse text-[11px] leading-tight whitespace-nowrap">
-                <thead className="bg-slate-100 text-slate-800 font-bold sticky top-0 border-b-2 border-primary/30">
+                <thead className="bg-[#5A1A14] text-amber-50 font-bold sticky top-0 border-b-2 border-primary/30">
                   <tr className="h-6">
-                    <th className="py-1 px-2 w-9 text-center border-r border-slate-200">
+                    <th className="py-1 px-2 w-9 text-center border-r border-amber-400/25 whitespace-nowrap">
                       <input
                         type="checkbox"
                         checked={existingCustomersList.length > 0 && selectedExistingIds.size === existingCustomersList.length}
@@ -2546,15 +2546,15 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         className="w-3.5 h-3.5 rounded-sm accent-primary cursor-pointer align-middle"
                       />
                     </th>
-                    <th className="py-1 px-2 w-24 border-r border-slate-200">CIF क्रमांक</th>
-                    <th className="py-1 px-2 border-r border-slate-200">खातेदाराचे पूर्ण नाव</th>
-                    <th className="py-1 px-2 w-28 border-r border-slate-200">मोबाईल नंबर</th>
-                    <th className="py-1 px-2 w-32 border-r border-slate-200">आधार क्रमांक</th>
-                    <th className="py-1 px-2 w-24 border-r border-slate-200">पॅन क्रमांक</th>
-                    <th className="py-1 px-2 w-28">गाव / शहर</th>
+                    <th className="py-1 px-2 w-24 border-r border-amber-400/25 whitespace-nowrap">CIF क्रमांक</th>
+                    <th className="py-1 px-2 border-r border-amber-400/25 whitespace-nowrap">खातेदाराचे पूर्ण नाव</th>
+                    <th className="py-1 px-2 w-28 border-r border-amber-400/25 whitespace-nowrap">मोबाईल नंबर</th>
+                    <th className="py-1 px-2 w-32 border-r border-amber-400/25 whitespace-nowrap">आधार क्रमांक</th>
+                    <th className="py-1 px-2 w-24 border-r border-amber-400/25 whitespace-nowrap">पॅन क्रमांक</th>
+                    <th className="py-1 px-2 w-28 whitespace-nowrap">गाव / शहर</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200/80">
+                <tbody className="divide-y divide-amber-100/80">
                   {isLoadingExisting ? (
                     <tr>
                       <td colSpan={7} className="p-6 text-center text-slate-500">
@@ -2584,7 +2584,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                             });
                           }}
                         >
-                          <td className="py-0.5 px-2 text-center border-r border-slate-200/70" onClick={(e) => e.stopPropagation()}>
+                          <td className="py-0.5 px-2 text-center border-r border-slate-200/70 align-middle" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={isChecked}
@@ -2599,14 +2599,14 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                               className="w-3.5 h-3.5 rounded-sm accent-primary cursor-pointer align-middle"
                             />
                           </td>
-                          <td className="py-0.5 px-2 font-mono font-bold text-primary border-r border-slate-200/70">{c.cifNo || '-'}</td>
-                          <td className="py-0.5 px-2 font-semibold text-slate-900 border-r border-slate-200/70">
+                          <td className="py-0.5 px-2 font-mono font-bold text-primary border-r border-slate-200/70 align-middle">{c.cifNo || '-'}</td>
+                          <td className="py-0.5 px-2 font-semibold text-slate-900 border-r border-slate-200/70 align-middle">
                             {c.firstName} {c.middleName || ''} {c.lastName}
                           </td>
-                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70">{c.mobileNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
-                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70">{c.aadhaarNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
-                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70">{c.panNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
-                          <td className="py-0.5 px-2">{c.village || <span className="text-slate-400 italic">रिकामे</span>}</td>
+                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70 align-middle">{c.mobileNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
+                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70 align-middle">{c.aadhaarNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
+                          <td className="py-0.5 px-2 font-mono border-r border-slate-200/70 align-middle">{c.panNo || <span className="text-slate-400 italic">रिकामे</span>}</td>
+                          <td className="py-0.5 px-2 align-middle">{c.village || <span className="text-slate-400 italic">रिकामे</span>}</td>
                         </tr>
                       );
                     })

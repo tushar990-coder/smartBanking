@@ -195,10 +195,10 @@ const ShareCertificatePreview: React.FC<Props> = ({ certificate, onClose, onPrin
                 onClick={() => setPaperBgColor('#f4f8fc')}
                 title="सॉफ्ट सिल्क ब्ल्यू (Soft Silk Blue)"
                 className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border transition flex items-center gap-1 cursor-pointer ${
-                  paperBgColor === '#f4f8fc' ? 'bg-blue-100 border-blue-500 text-blue-950 shadow-2xs' : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                  paperBgColor === '#f4f8fc' ? 'bg-amber-100 border-[#B44814] text-[#4A1410] shadow-2xs' : 'border-gray-200 hover:bg-gray-50 text-gray-700'
                 }`}
               >
-                <span className="w-2.5 h-2.5 rounded-full bg-[#f4f8fc] border border-blue-300"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#f4f8fc] border border-amber-300"></span>
                 सिल्क ब्ल्यू
               </button>
             </div>
@@ -310,7 +310,7 @@ const ShareCertificatePreview: React.FC<Props> = ({ certificate, onClose, onPrin
                     {sanstha?.registrationDate && <span> | नोंदणी दिनांक: {new Date(sanstha.registrationDate).toLocaleDateString('en-GB')}</span>}
                   </div>
                   {certificate.branchName && (
-                    <div className="text-[10px] text-blue-900 font-bold bg-blue-50/90 inline-block px-2.5 py-0.5 rounded border border-blue-200">
+                    <div className="text-[10px] text-[#5A1A14] font-bold bg-amber-50/90 inline-block px-2.5 py-0.5 rounded border border-amber-200">
                       शाखा: {certificate.branchName}
                     </div>
                   )}
@@ -326,7 +326,7 @@ const ShareCertificatePreview: React.FC<Props> = ({ certificate, onClose, onPrin
                     <span className="text-lg font-black tracking-widest uppercase text-amber-200">
                       भाग प्रमाणपत्र
                     </span>
-                    <span className="text-xs tracking-wider ml-2 text-blue-100 font-sans font-bold">
+                    <span className="text-xs tracking-wider ml-2 text-amber-100 font-sans font-bold">
                       ( OFFICIAL SHARE CERTIFICATE )
                     </span>
                   </div>
@@ -420,7 +420,7 @@ const ShareCertificatePreview: React.FC<Props> = ({ certificate, onClose, onPrin
                         {certificate.age ? `, वय: ${certificate.age}` : ''}
                       </span>
                     </div>
-                    <span className="text-[10px] bg-blue-100 text-blue-900 border border-blue-200 px-2 py-0.5 rounded font-bold shrink-0">
+                    <span className="text-[10px] bg-amber-100 text-[#5A1A14] border border-amber-200 px-2 py-0.5 rounded font-bold shrink-0">
                       {certificate.membershipType === 'Associate'
                         ? 'सह-सभासद (वर्ग ब)'
                         : certificate.membershipType === 'Nominal'
@@ -440,9 +440,9 @@ const ShareCertificatePreview: React.FC<Props> = ({ certificate, onClose, onPrin
                         </span>
                       </div>
                       {certificate.jointMemberNames && (
-                        <div className="bg-indigo-50/80 px-2 py-1 rounded border border-indigo-200">
-                          <span className="text-[10px] text-indigo-900 font-bold block">सह-धारक / संयुक्त सभासद (Joint Holder):</span>
-                          <span className="text-xs font-black text-indigo-950">
+                        <div className="bg-orange-50/80 px-2 py-1 rounded border border-amber-200">
+                          <span className="text-[10px] text-[#5A1A14] font-bold block">सह-धारक / संयुक्त सभासद (Joint Holder):</span>
+                          <span className="text-xs font-black text-[#4A1410]">
                             {certificate.jointMemberNames}
                           </span>
                         </div>
@@ -458,11 +458,11 @@ const ShareCertificatePreview: React.FC<Props> = ({ certificate, onClose, onPrin
                   <table className="w-full border-collapse text-xs border-2 border-[#102a43] text-center shadow-xs">
                     <thead>
                       <tr className="bg-[#102a43] text-amber-200 font-bold text-[11px]">
-                        <th className="border border-blue-900 py-1.5 px-2">शेअर क्रमांक पासून<br /><span className="text-[9px] text-blue-200 font-normal font-sans">(From Share No.)</span></th>
-                        <th className="border border-blue-900 py-1.5 px-2">शेअर क्रमांक पर्यंत<br /><span className="text-[9px] text-blue-200 font-normal font-sans">(To Share No.)</span></th>
-                        <th className="border border-blue-900 py-1.5 px-2">एकूण शेअर्स संख्या<br /><span className="text-[9px] text-blue-200 font-normal font-sans">(No. of Shares)</span></th>
-                        <th className="border border-blue-900 py-1.5 px-2">प्रती शेअर दर्शनी मूल्य<br /><span className="text-[9px] text-blue-200 font-normal font-sans">(Face Value)</span></th>
-                        <th className="border border-blue-900 py-1.5 px-2">एकूण जमा भागभांडवल रक्कम<br /><span className="text-[9px] text-blue-200 font-normal font-sans">(Total Share Capital ₹)</span></th>
+                        <th className="border border-[#7C2418] py-1.5 px-2">शेअर क्रमांक पासून<br /><span className="text-[9px] text-amber-200 font-normal font-sans">(From Share No.)</span></th>
+                        <th className="border border-[#7C2418] py-1.5 px-2">शेअर क्रमांक पर्यंत<br /><span className="text-[9px] text-amber-200 font-normal font-sans">(To Share No.)</span></th>
+                        <th className="border border-[#7C2418] py-1.5 px-2">एकूण शेअर्स संख्या<br /><span className="text-[9px] text-amber-200 font-normal font-sans">(No. of Shares)</span></th>
+                        <th className="border border-[#7C2418] py-1.5 px-2">प्रती शेअर दर्शनी मूल्य<br /><span className="text-[9px] text-amber-200 font-normal font-sans">(Face Value)</span></th>
+                        <th className="border border-[#7C2418] py-1.5 px-2">एकूण जमा भागभांडवल रक्कम<br /><span className="text-[9px] text-amber-200 font-normal font-sans">(Total Share Capital ₹)</span></th>
                       </tr>
                     </thead>
                     <tbody className="bg-white font-mono font-bold text-gray-900">
@@ -471,7 +471,7 @@ const ShareCertificatePreview: React.FC<Props> = ({ certificate, onClose, onPrin
                         <td className="border-r border-gray-300 py-2.5 text-sm">{certificate.toShareNo}</td>
                         <td className="border-r border-gray-300 py-2.5 text-sm text-emerald-800 font-black">{certificate.numberOfShares}</td>
                         <td className="border-r border-gray-300 py-2.5 text-sm">₹{certificate.faceValue.toFixed(2)}</td>
-                        <td className="py-2.5 text-base font-black text-blue-950 bg-blue-50/50">
+                        <td className="py-2.5 text-base font-black text-[#4A1410] bg-amber-50/50">
                           ₹{certificate.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>

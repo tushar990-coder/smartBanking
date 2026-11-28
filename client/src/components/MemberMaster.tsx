@@ -1130,12 +1130,12 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Coins className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण वाटप शेअर्स</div>
-            <div className="text-sm font-black text-indigo-950">{totalSharesAllMembers.toLocaleString('en-IN')} भाग</div>
+            <div className="text-sm font-black text-[#4A1410]">{totalSharesAllMembers.toLocaleString('en-IN')} भाग</div>
           </div>
         </div>
 
@@ -1171,7 +1171,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          editingId ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editingId ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1502,7 +1502,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
               <div>
                 <label className={labelClass}>
                   <span>शेअर्स नं. पासून (From Share No)</span>
-                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                  <span className="text-[10px] text-[#B44814] font-bold ml-1">[Auto]</span>
                 </label>
                 <input
                   type="text"
@@ -1515,7 +1515,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
               <div>
                 <label className={labelClass}>
                   <span>शेअर्स नं. पर्यंत (To Share No)</span>
-                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                  <span className="text-[10px] text-[#B44814] font-bold ml-1">[Auto]</span>
                 </label>
                 <input
                   type="text"
@@ -1528,7 +1528,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
               <div className="sm:col-span-2">
                 <label className={labelClass}>
                   <span>सर्टिफिकेट नं. (Certificate No)</span>
-                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                  <span className="text-[10px] text-[#B44814] font-bold ml-1">[Auto]</span>
                 </label>
                 <input
                   type="text"
@@ -1608,7 +1608,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
 
               {/* Dynamic Customer Saving Account Dropdown when Transfer is selected */}
               {shareConfig.paymentMode === 'Transfer' && (
-                <div className="sm:col-span-2 md:col-span-4 mt-1 p-2.5 bg-blue-50/60 rounded border border-blue-200 animate-in fade-in duration-200">
+                <div className="sm:col-span-2 md:col-span-4 mt-1 p-2.5 bg-amber-50/60 rounded border border-amber-200 animate-in fade-in duration-200">
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
                     <div className="sm:col-span-2">
                       <label className={labelClass}>
@@ -1628,7 +1628,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                           value={shareConfig.savingAccountId}
                           onChange={e => setShareConfig(prev => ({ ...prev, savingAccountId: e.target.value === '' ? '' : Number(e.target.value) }))}
                           required
-                          className={`${inputClass} font-bold text-blue-900 bg-white`}
+                          className={`${inputClass} font-bold text-[#5A1A14] bg-white`}
                         >
                           <option value="">-- बचत खाते निवडा (Select Account) --</option>
                           {customerSavingAccounts.map((acc: any) => {
@@ -1758,67 +1758,69 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
 
       {/* 👥 REGISTERED SHAREHOLDER MEMBERS LIST MODAL */}
       {isListModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs">
-          <div className="bg-white rounded shadow-2xl max-w-6xl w-full h-[88vh] flex flex-col overflow-hidden border border-slate-300">
+        <div className="fixed inset-0 bg-[#3B0F0B]/55 z-50 flex items-center justify-center p-2 sm:p-3 backdrop-blur-xs">
+          <div className="bg-[#FFFBF7] rounded-xl shadow-2xl max-w-[97vw] xl:max-w-[1460px] w-full h-[90vh] flex flex-col overflow-hidden border border-amber-300/80">
             
-            {/* Modal Top Ribbon */}
-            <div className="px-4 py-2.5 bg-primary text-white flex justify-between items-center shrink-0 border-b border-primary/20">
-              <div className="flex items-center gap-2">
-                <Award className="w-5 h-5 text-amber-300" />
+            {/* Modal Top Ribbon (Faint Pastel Maroon-Ivory-Gold) */}
+            <div className="cbs-top-banner px-4 py-2 flex justify-between items-center shrink-0 border-b border-amber-200/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg cbs-btn-primary flex items-center justify-center shrink-0">
+                  <Award className="w-4 h-4 text-amber-100" />
+                </div>
                 <div>
-                  <span className="font-bold text-sm">नोंदणीकृत सभासद यादी (Registered Shareholder Members: {members.length})</span>
-                  <p className="text-[10px] text-blue-100 font-normal">संस्थेचे अधिकृत भागधारक सभासद व शेअर्स तपशील (Form 'I' / Register of Members)</p>
+                  <span className="font-extrabold text-sm text-[#4A1410]">नोंदणीकृत सभासद यादी (Registered Shareholder Members: {members.length})</span>
+                  <p className="text-[10px] text-[#7C4A3A] font-medium">संस्थेचे अधिकृत भागधारक सभासद व शेअर्स तपशील (Form 'I' / Register of Members)</p>
                 </div>
               </div>
-              <button onClick={() => setIsListModalOpen(false)} className="text-white/80 hover:text-white p-1 cursor-pointer">
-                <X className="w-5 h-5" />
+              <button onClick={() => setIsListModalOpen(false)} className="text-[#7C2418] hover:text-[#4A1410] hover:bg-amber-100/80 rounded-lg p-1.5 transition cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Filter & Search Bar */}
-            <div className="p-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2.5 shrink-0">
+            <div className="px-3 py-2 bg-amber-50/50 border-b border-amber-200/75 flex flex-wrap justify-between items-center gap-2 shrink-0">
               
               {/* Type Tabs */}
-              <div className="flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded text-[11px]">
+              <div className="flex items-center gap-1 bg-white border border-amber-200/90 p-0.5 rounded-lg text-[11px]">
                 <button
                   type="button"
-                  onClick={() => setSelectedTypeFilter('All')}
-                  className={`px-2.5 py-1 rounded font-bold transition cursor-pointer ${selectedTypeFilter === 'All' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'}`}
+                  onClick={() => { setSelectedTypeFilter('All'); setMemberPage(1); }}
+                  className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer ${selectedTypeFilter === 'All' ? 'cbs-btn-primary text-white shadow-2xs' : 'text-[#6E493C] hover:bg-amber-50'}`}
                 >
                   सर्व सभासद ({members.length})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedTypeFilter('Regular')}
-                  className={`px-2.5 py-1 rounded font-bold transition cursor-pointer ${selectedTypeFilter === 'Regular' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'}`}
+                  onClick={() => { setSelectedTypeFilter('Regular'); setMemberPage(1); }}
+                  className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer ${selectedTypeFilter === 'Regular' ? 'cbs-btn-primary text-white shadow-2xs' : 'text-[#6E493C] hover:bg-amber-50'}`}
                 >
                   नियमित ('अ')
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedTypeFilter('Associate')}
-                  className={`px-2.5 py-1 rounded font-bold transition cursor-pointer ${selectedTypeFilter === 'Associate' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'}`}
+                  onClick={() => { setSelectedTypeFilter('Associate'); setMemberPage(1); }}
+                  className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer ${selectedTypeFilter === 'Associate' ? 'cbs-btn-primary text-white shadow-2xs' : 'text-[#6E493C] hover:bg-amber-50'}`}
                 >
                   सह-सभासद ('ब')
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedTypeFilter('Nominal')}
-                  className={`px-2.5 py-1 rounded font-bold transition cursor-pointer ${selectedTypeFilter === 'Nominal' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'}`}
+                  onClick={() => { setSelectedTypeFilter('Nominal'); setMemberPage(1); }}
+                  className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer ${selectedTypeFilter === 'Nominal' ? 'cbs-btn-primary text-white shadow-2xs' : 'text-[#6E493C] hover:bg-amber-50'}`}
                 >
                   नाममात्र ('क')
                 </button>
               </div>
 
               {/* Status Select, Sort, PageSize & Search */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
                     setMemberSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'));
                     setMemberPage(1);
                   }}
-                  className="border border-slate-300 rounded px-2.5 py-1 text-[11px] bg-white hover:bg-slate-100 font-bold text-primary cursor-pointer h-[28px] flex items-center gap-1"
+                  className="border border-amber-300 rounded-md px-2.5 py-1 text-[11px] bg-white hover:bg-amber-50 font-bold text-[#7C2418] cursor-pointer h-[28px] flex items-center gap-1"
                   title="यादीची क्रमवारी बदला (१ पासून किंवा शेवटून)"
                 >
                   {memberSortDir === 'asc' ? '⬆️ १ पासून (1, 2, 3...)' : '⬇️ शेवटून (शेवटचे आधी)'}
@@ -1830,7 +1832,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                     setSelectedStatusFilter(e.target.value);
                     setMemberPage(1);
                   }}
-                  className="border border-slate-300 rounded px-2.5 py-1 text-[11px] bg-white font-bold outline-none h-[28px]"
+                  className="border border-amber-300 rounded-md px-2 py-1 text-[11px] bg-white font-bold text-[#4A1410] outline-none h-[28px]"
                 >
                   <option value="All">सर्व स्थिती (All Status)</option>
                   <option value="Active">🟢 सक्रिय (Active)</option>
@@ -1839,14 +1841,14 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 </select>
 
                 <div className="flex items-center gap-1 text-[11px]">
-                  <span className="font-bold text-slate-600">प्रति पान:</span>
+                  <span className="font-bold text-[#6E493C]">प्रति पान:</span>
                   <select
                     value={memberPageSize}
                     onChange={e => {
                       setMemberPageSize(Number(e.target.value));
                       setMemberPage(1);
                     }}
-                    className="border border-slate-300 rounded px-2 py-1 text-[11px] bg-white font-bold text-primary outline-none h-[28px]"
+                    className="border border-amber-300 rounded-md px-2 py-1 text-[11px] bg-white font-bold text-[#7C2418] outline-none h-[28px]"
                   >
                     <option value={50}>50</option>
                     <option value={100}>100</option>
@@ -1857,8 +1859,8 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 </div>
 
                 {/* Instant Search Box */}
-                <div className="relative min-w-[220px]">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                <div className="relative min-w-[210px]">
+                  <Search className="w-3.5 h-3.5 text-[#9A6852] absolute left-2.5 top-2" />
                   <input
                     type="text"
                     value={searchQuery}
@@ -1867,77 +1869,110 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                       setMemberPage(1);
                     }}
                     placeholder="सभासद कोड, CIF, जुना क्र., नाव, मोबाईल..."
-                    className="w-full pl-8 pr-3 py-1 border border-slate-300 rounded text-[11px] focus:ring-1 focus:ring-primary focus:border-primary outline-none h-[28px]"
+                    className="w-full pl-8 pr-2.5 py-1 border border-amber-300 rounded-md text-[11px] bg-white text-[#4A1410] focus:ring-1 focus:ring-[#B44814] focus:border-[#B44814] outline-none h-[28px]"
                   />
                 </div>
               </div>
 
             </div>
 
-            {/* Table Content */}
-            <div className="flex-1 overflow-auto p-2">
-              <table className="w-full text-left border-collapse text-[11px]">
+            {/* Table Content — Compact Single-Line ERP Grid */}
+            <div className="flex-1 overflow-auto bg-white custom-scrollbar">
+              <table className="w-full text-left border-collapse text-[11px] leading-tight">
                 <thead>
-                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 sticky top-0 font-bold z-10">
-                    <th className="p-2">सभासद क्र.</th>
-                    <th className="p-2">जुना क्र. (LF)</th>
-                    <th className="p-2">CIF कोड</th>
-                    <th className="p-2">सभासदाचे पूर्ण नाव</th>
-                    <th className="p-2">प्रकार</th>
-                    <th className="p-2 text-right">शेअर्स</th>
-                    <th className="p-2 text-right">भाग भांडवल (₹)</th>
-                    <th className="p-2">मोबाईल व गाव</th>
-                    <th className="p-2 text-center">स्थिती</th>
+                  <tr className="bg-[#5A1A14] text-amber-50 sticky top-0 font-bold z-10 border-b border-amber-400/40">
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap w-9">अ.क्र.</th>
+                    <th className="px-2 py-1.5 whitespace-nowrap">सभासद क्र.</th>
+                    <th className="px-2 py-1.5 whitespace-nowrap">जुना क्र. (LF)</th>
+                    <th className="px-2 py-1.5 whitespace-nowrap">CIF कोड</th>
+                    <th className="px-2 py-1.5 whitespace-nowrap">सभासदाचे पूर्ण नाव</th>
+                    <th className="px-2 py-1.5 whitespace-nowrap">प्रकार</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">शेअर्स</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">भाग भांडवल (₹)</th>
+                    <th className="px-2 py-1.5 whitespace-nowrap">मोबाईल</th>
+                    <th className="px-2 py-1.5 whitespace-nowrap">गाव / पत्ता</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">स्थिती</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {paginatedMembers.map(m => (
-                    <tr key={m.memberID} className="border-b border-slate-100 hover:bg-slate-50 transition">
-                      <td className="p-2 font-black text-primary flex items-center gap-1">
-                        <Award className="w-3.5 h-3.5 text-amber-500" />
-                        <span>{m.memberCode}</span>
-                      </td>
-                      <td className="p-2 font-mono font-bold text-amber-800">{m.legacyMemberNo || '-'}</td>
-                      <td className="p-2 font-bold text-slate-600">{m.cifNo || '-'}</td>
-                      <td className="p-2 font-bold text-slate-800">
-                        <div>
-                          <span>{m.firstName} {m.middleName} {m.lastName}</span>
-                          {m.nickName && <span className="text-[10px] text-slate-400 font-normal ml-1">({m.nickName})</span>}
-                        </div>
-                      </td>
-                      <td className="p-2">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          m.membershipType === 'Regular' 
-                            ? 'bg-blue-50 text-blue-900 border-blue-200' 
-                            : m.membershipType === 'Associate'
-                            ? 'bg-purple-50 text-purple-900 border-purple-200'
-                            : 'bg-slate-50 text-slate-800 border-slate-200'
-                        }`}>
-                          {m.membershipType === 'Regular' ? 'नियमित (वर्ग अ)' : (m.membershipType === 'Associate' ? 'सह-सभासद (वर्ग ब)' : (m.membershipType === 'Nominal' ? 'नाममात्र (वर्ग क)' : m.membershipType))}
-                        </span>
-                      </td>
-                      <td className="p-2 text-right font-black text-emerald-800">
-                        {m.totalShareCount || 0}
-                      </td>
-                      <td className="p-2 text-right font-black text-slate-800">
-                        ₹{(m.totalShareAmount || 0).toLocaleString('en-IN')}
-                      </td>
-                      <td className="p-2 text-slate-600">
-                        <div className="font-medium text-slate-700">{m.mobileNo || '-'}</div>
-                        <div className="text-[10px] text-slate-400 truncate max-w-[140px]">{m.village || m.address || '-'}</div>
-                      </td>
-                      <td className="p-2 text-center">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          m.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {m.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-amber-100">
+                  {paginatedMembers.map((m, idx) => {
+                    const rowSr = memberPageSize === 0 ? idx + 1 : (safeMemberPage - 1) * memberPageSize + idx + 1;
+                    const fullName = `${m.firstName || ''} ${m.middleName || ''} ${m.lastName || ''}`.trim();
+                    const addrText = m.village || m.address || '-';
+                    return (
+                      <tr
+                        key={m.memberID}
+                        onDoubleClick={() => handleEdit(m)}
+                        className="odd:bg-white even:bg-[#FFFBF7] hover:bg-amber-50/90 transition-colors"
+                      >
+                        <td className="px-2 py-1 text-center font-mono text-[10px] text-[#7C4A3A] whitespace-nowrap align-middle">
+                          {rowSr}
+                        </td>
+                        <td className="px-2 py-1 whitespace-nowrap align-middle">
+                          <div className="inline-flex items-center gap-1 font-extrabold text-[#7C2418]">
+                            <Award className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>{m.memberCode}</span>
+                          </div>
+                        </td>
+                        <td className="px-2 py-1 font-mono font-bold text-[#9A3412] whitespace-nowrap align-middle">
+                          {m.legacyMemberNo || '-'}
+                        </td>
+                        <td className="px-2 py-1 font-mono font-semibold text-[#5A1A14] whitespace-nowrap align-middle">
+                          {m.cifNo || '-'}
+                        </td>
+                        <td className="px-2 py-1 font-bold text-[#4A1410] max-w-[230px] align-middle" title={`${fullName}${m.nickName ? ` (${m.nickName})` : ''}`}>
+                          <div className="truncate">
+                            <span>{fullName}</span>
+                            {m.nickName && <span className="text-[10px] text-[#9A6852] font-normal ml-1">({m.nickName})</span>}
+                          </div>
+                        </td>
+                        <td className="px-2 py-1 whitespace-nowrap align-middle">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${
+                            m.membershipType === 'Regular' 
+                              ? 'bg-amber-50 text-[#5A1A14] border-amber-200' 
+                              : m.membershipType === 'Associate'
+                              ? 'bg-purple-50 text-purple-900 border-purple-200'
+                              : 'bg-slate-50 text-slate-800 border-slate-200'
+                          }`}>
+                            {m.membershipType === 'Regular' ? 'नियमित (अ)' : (m.membershipType === 'Associate' ? 'सह-सभासद (ब)' : (m.membershipType === 'Nominal' ? 'नाममात्र (क)' : m.membershipType))}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 text-right font-extrabold text-emerald-800 whitespace-nowrap tabular-nums align-middle">
+                          {m.totalShareCount || 0}
+                        </td>
+                        <td className="px-2 py-1 text-right font-extrabold text-[#4A1410] whitespace-nowrap tabular-nums align-middle">
+                          ₹{(m.totalShareAmount || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-2 py-1 font-mono text-[#5A1A14] whitespace-nowrap align-middle">
+                          {m.mobileNo || '-'}
+                        </td>
+                        <td className="px-2 py-1 text-[#6E493C] max-w-[140px] align-middle" title={addrText}>
+                          <div className="truncate">{addrText}</div>
+                        </td>
+                        <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
+                            m.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                          }`}>
+                            {m.status === 'Active' ? 'सक्रिय' : m.status === 'Inactive' ? 'निष्क्रिय' : m.status === 'Mayat' ? 'मयत' : m.status}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(m)}
+                            className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-[#7C2418] border border-amber-300 rounded text-[10px] font-bold transition cursor-pointer"
+                            title="सभासद माहिती उघडा / एडिट करा"
+                          >
+                            ✏️ पहा
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {paginatedMembers.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="p-10 text-center text-slate-400">
+                      <td colSpan={12} className="p-10 text-center text-[#9A6852]">
                         <Award className="w-8 h-8 mx-auto mb-2 opacity-30 text-amber-600" />
                         <p className="font-semibold">कोणताही नोंदणीकृत सभासद सापडला नाही.</p>
                       </td>
@@ -1948,20 +1983,20 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
             </div>
 
             {/* Modal Bottom Summary & Pagination Bar */}
-            <div className="p-2.5 bg-slate-100 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-600 shrink-0">
+            <div className="px-3 py-2 bg-[#FCEAE4]/55 border-t border-amber-200/80 flex flex-wrap justify-between items-center gap-2 text-xs text-[#6E493C] shrink-0">
               <div className="flex flex-wrap items-center gap-4">
                 <span className="font-bold">
                   दाखवत आहे:{' '}
-                  <strong className="text-slate-900">
+                  <strong className="text-[#4A1410]">
                     {filteredMembers.length === 0
                       ? 0
                       : memberPageSize === 0
                         ? `1 ते ${filteredMembers.length}`
                         : `${(safeMemberPage - 1) * memberPageSize + 1} ते ${Math.min(safeMemberPage * memberPageSize, filteredMembers.length)}`}
                   </strong>{' '}
-                  (एकूण सभासद: <strong className="text-primary">{filteredMembers.length}</strong>)
+                  (एकूण सभासद: <strong className="text-[#9A3412]">{filteredMembers.length}</strong>)
                 </span>
-                <span className="font-semibold text-primary">
+                <span className="font-bold text-[#7C2418]">
                   एकूण भाग भांडवल: ₹{filteredMembers.reduce((acc, curr) => acc + (curr.totalShareAmount || 0), 0).toLocaleString('en-IN')}
                 </span>
               </div>
@@ -1972,7 +2007,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                     type="button"
                     disabled={safeMemberPage <= 1}
                     onClick={() => setMemberPage(1)}
-                    className="px-2 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                    className="px-2 py-1 bg-white border border-amber-300 rounded font-bold text-[#4A1410] hover:bg-amber-50 disabled:opacity-40 cursor-pointer"
                   >
                     ⏮️ पहिले
                   </button>
@@ -1980,18 +2015,18 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                     type="button"
                     disabled={safeMemberPage <= 1}
                     onClick={() => setMemberPage(p => Math.max(1, p - 1))}
-                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                    className="px-2.5 py-1 bg-white border border-amber-300 rounded font-bold text-[#4A1410] hover:bg-amber-50 disabled:opacity-40 cursor-pointer"
                   >
                     ⬅️ मागील पान
                   </button>
-                  <span className="px-2.5 py-1 bg-primary text-white rounded font-bold font-mono">
+                  <span className="px-2.5 py-1 cbs-btn-primary text-white rounded font-bold font-mono">
                     पान {safeMemberPage} / {totalMemberPages}
                   </span>
                   <button
                     type="button"
                     disabled={safeMemberPage >= totalMemberPages}
                     onClick={() => setMemberPage(p => Math.min(totalMemberPages, p + 1))}
-                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                    className="px-2.5 py-1 bg-white border border-amber-300 rounded font-bold text-[#4A1410] hover:bg-amber-50 disabled:opacity-40 cursor-pointer"
                   >
                     पुढील पान ➡️
                   </button>
@@ -1999,7 +2034,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                     type="button"
                     disabled={safeMemberPage >= totalMemberPages}
                     onClick={() => setMemberPage(totalMemberPages)}
-                    className="px-2 py-1 bg-white border border-slate-300 rounded font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                    className="px-2 py-1 bg-white border border-amber-300 rounded font-bold text-[#4A1410] hover:bg-amber-50 disabled:opacity-40 cursor-pointer"
                   >
                     शेवटचे ⏭️
                   </button>

@@ -374,7 +374,7 @@ export default function BorrowingAccountOpening({ onNavigate }: BorrowingAccount
             <h1 className="text-sm md:text-base font-bold">
               १. बाह्य कर्ज खाते उघडणे व मंजुरी मास्टर (Borrowing Account Opening &amp; Sanction)
             </h1>
-            <p className="text-[10.5px] text-blue-100">
+            <p className="text-[10.5px] text-amber-100">
               बँक / पतसंस्थेकडील मंजूर कर्ज खाते तयार करा, हप्त्यांच्या अटी व GL लेजर मॅपिंग निश्चित करा
             </p>
           </div>
@@ -503,12 +503,12 @@ export default function BorrowingAccountOpening({ onNavigate }: BorrowingAccount
         </div>
 
         {form.borrowingType === 'FD_AGAINST_LOAN' && (
-          <div className="p-2.5 bg-blue-50 border border-blue-200 rounded">
-            <label className="block font-bold text-blue-950 mb-0.5">तारण ठेवलेली संस्थेची मुदत ठेव पावती निवडा (Sanstha Investment FD)</label>
+          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded">
+            <label className="block font-bold text-[#4A1410] mb-0.5">तारण ठेवलेली संस्थेची मुदत ठेव पावती निवडा (Sanstha Investment FD)</label>
             <select
               value={form.pledgedInvestmentAccountID}
               onChange={(e) => setForm((p) => ({ ...p, pledgedInvestmentAccountID: e.target.value }))}
-              className="w-full border border-blue-300 rounded px-2 py-1.5 bg-white font-semibold"
+              className="w-full border border-amber-300 rounded px-2 py-1.5 bg-white font-semibold"
             >
               <option value="">-- सक्रिय गुंतवणूक FD निवडा --</option>
               {investmentAccounts.map((inv) => (
@@ -541,7 +541,7 @@ export default function BorrowingAccountOpening({ onNavigate }: BorrowingAccount
               value={form.sanctionedAmount}
               onChange={(e) => setForm((p) => ({ ...p, sanctionedAmount: e.target.value }))}
               placeholder="उदा. 500000"
-              className="w-full border border-slate-300 rounded px-2 py-1 font-mono font-bold text-blue-900 bg-white"
+              className="w-full border border-slate-300 rounded px-2 py-1 font-mono font-bold text-[#5A1A14] bg-white"
             />
           </div>
 
@@ -641,7 +641,7 @@ export default function BorrowingAccountOpening({ onNavigate }: BorrowingAccount
             <button
               type="button"
               onClick={handlePreviewSchedule}
-              className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold flex items-center justify-center gap-1 cursor-pointer"
+              className="w-full py-1.5 bg-[#B44814] hover:bg-[#9A3412] text-white rounded font-bold flex items-center justify-center gap-1 cursor-pointer"
             >
               <Calculator size={13} /> हप्ता तक्ता पहा
             </button>
@@ -754,7 +754,7 @@ export default function BorrowingAccountOpening({ onNavigate }: BorrowingAccount
             <button
               type="submit"
               disabled={saving}
-              className="px-5 py-1.5 bg-primary hover:bg-[#004a75] text-white rounded font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="px-5 py-1.5 bg-primary hover:bg-[#7C2418] text-white rounded font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <Save size={14} />
               <span>{saving ? 'सेव्ह होत आहे...' : editId ? 'खाते अद्ययावत करा' : 'बाह्य कर्ज खाते सेव्ह करा'}</span>
@@ -764,38 +764,38 @@ export default function BorrowingAccountOpening({ onNavigate }: BorrowingAccount
 
         {/* Live EMI Schedule Preview */}
         {schedulePreview && (
-          <div className="border border-indigo-200 rounded bg-indigo-50/30 p-2.5 space-y-2">
+          <div className="border border-amber-200 rounded bg-orange-50/30 p-2.5 space-y-2">
             <div className="flex items-center justify-between">
-              <div className="font-bold text-indigo-950">
+              <div className="font-bold text-[#4A1410]">
                 📅 संभाव्य हप्ता वेळापत्रक तक्ता ({schedulePreview.installmentsCount} हप्ते | एकूण मुद्दल: ₹{fmtAmt(schedulePreview.totalPrincipal)} + एकूण व्याज: ₹{fmtAmt(schedulePreview.totalInterest)} = ₹{fmtAmt(schedulePreview.totalPayable)})
               </div>
               <button type="button" onClick={() => setSchedulePreview(null)} className="text-slate-500 cursor-pointer">
                 <X size={14} />
               </button>
             </div>
-            <div className="max-h-56 overflow-y-auto bg-white border border-indigo-200 rounded">
-              <table className="min-w-full border-collapse text-[11px]">
-                <thead className="bg-indigo-50 sticky top-0">
+            <div className="max-h-56 overflow-y-auto bg-white border border-amber-200 rounded">
+              <table className="min-w-full border-collapse text-[11px] leading-tight">
+                <thead className="bg-orange-50 sticky top-0">
                   <tr>
-                    <th className="border px-2 py-1 text-center">हप्ता #</th>
-                    <th className="border px-2 py-1 text-center">देय दिनांक</th>
-                    <th className="border px-2 py-1 text-right">सुरुवातीची मुद्दल</th>
-                    <th className="border px-2 py-1 text-right">मुद्दल हप्ता</th>
-                    <th className="border px-2 py-1 text-right">व्याज</th>
-                    <th className="border px-2 py-1 text-right">एकूण हप्ता (EMI)</th>
-                    <th className="border px-2 py-1 text-right">अखेरची बाकी</th>
+                    <th className="border px-2 py-1 text-center whitespace-nowrap">हप्ता #</th>
+                    <th className="border px-2 py-1 text-center whitespace-nowrap">देय दिनांक</th>
+                    <th className="border px-2 py-1 text-right whitespace-nowrap">सुरुवातीची मुद्दल</th>
+                    <th className="border px-2 py-1 text-right whitespace-nowrap">मुद्दल हप्ता</th>
+                    <th className="border px-2 py-1 text-right whitespace-nowrap">व्याज</th>
+                    <th className="border px-2 py-1 text-right whitespace-nowrap">एकूण हप्ता (EMI)</th>
+                    <th className="border px-2 py-1 text-right whitespace-nowrap">अखेरची बाकी</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(schedulePreview.schedules || []).map((s: any) => (
                     <tr key={s.installmentNo}>
-                      <td className="border px-2 py-1 text-center font-mono font-bold">{s.installmentNo}</td>
-                      <td className="border px-2 py-1 text-center font-mono">{new Date(s.dueDate).toLocaleDateString('en-GB')}</td>
-                      <td className="border px-2 py-1 text-right font-mono">₹{fmtAmt(s.openingPrincipal)}</td>
-                      <td className="border px-2 py-1 text-right font-mono font-semibold">₹{fmtAmt(s.principalDue)}</td>
-                      <td className="border px-2 py-1 text-right font-mono text-rose-700">₹{fmtAmt(s.interestDue)}</td>
-                      <td className="border px-2 py-1 text-right font-mono font-bold text-indigo-900">₹{fmtAmt(s.totalInstallmentAmount)}</td>
-                      <td className="border px-2 py-1 text-right font-mono">₹{fmtAmt(s.closingPrincipal)}</td>
+                      <td className="border px-2 py-1 text-center font-mono font-bold align-middle">{s.installmentNo}</td>
+                      <td className="border px-2 py-1 text-center font-mono align-middle">{new Date(s.dueDate).toLocaleDateString('en-GB')}</td>
+                      <td className="border px-2 py-1 text-right font-mono align-middle">₹{fmtAmt(s.openingPrincipal)}</td>
+                      <td className="border px-2 py-1 text-right font-mono font-semibold align-middle">₹{fmtAmt(s.principalDue)}</td>
+                      <td className="border px-2 py-1 text-right font-mono text-rose-700 align-middle">₹{fmtAmt(s.interestDue)}</td>
+                      <td className="border px-2 py-1 text-right font-mono font-bold text-[#5A1A14] align-middle">₹{fmtAmt(s.totalInstallmentAmount)}</td>
+                      <td className="border px-2 py-1 text-right font-mono align-middle">₹{fmtAmt(s.closingPrincipal)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -814,40 +814,40 @@ export default function BorrowingAccountOpening({ onNavigate }: BorrowingAccount
           <div className="py-6 text-center text-slate-500">लोड होत आहे...</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full border-collapse text-[11px]">
-              <thead className="bg-slate-100 text-slate-700">
+            <table className="min-w-full border-collapse text-[11px] leading-tight">
+              <thead className="bg-[#5A1A14] text-amber-50">
                 <tr>
-                  <th className="border px-2 py-1.5 text-left">खाते क्र.</th>
-                  <th className="border px-2 py-1.5 text-left">बँक / पतसंस्था</th>
-                  <th className="border px-2 py-1.5 text-left">प्रकार व हप्ता पद्धत</th>
-                  <th className="border px-2 py-1.5 text-right">मंजूर मर्यादा</th>
-                  <th className="border px-2 py-1.5 text-right">उचललेली रक्कम</th>
-                  <th className="border px-2 py-1.5 text-center">व्याजदर / कालावधी</th>
-                  <th className="border px-2 py-1.5 text-center">स्थिती</th>
-                  <th className="border px-2 py-1.5 text-center">पुढील कृती</th>
+                  <th className="border px-2 py-1.5 text-left whitespace-nowrap">खाते क्र.</th>
+                  <th className="border px-2 py-1.5 text-left whitespace-nowrap">बँक / पतसंस्था</th>
+                  <th className="border px-2 py-1.5 text-left whitespace-nowrap">प्रकार व हप्ता पद्धत</th>
+                  <th className="border px-2 py-1.5 text-right whitespace-nowrap">मंजूर मर्यादा</th>
+                  <th className="border px-2 py-1.5 text-right whitespace-nowrap">उचललेली रक्कम</th>
+                  <th className="border px-2 py-1.5 text-center whitespace-nowrap">व्याजदर / कालावधी</th>
+                  <th className="border px-2 py-1.5 text-center whitespace-nowrap">स्थिती</th>
+                  <th className="border px-2 py-1.5 text-center whitespace-nowrap">पुढील कृती</th>
                 </tr>
               </thead>
               <tbody>
                 {accountsList.map((b) => (
                   <tr key={b.borrowingID} className="hover:bg-slate-50">
-                    <td className="border px-2 py-1.5 font-mono font-bold text-primary">
+                    <td className="border px-2 py-1 font-mono font-bold text-primary align-middle">
                       {b.borrowingNo}
                       <span className="block text-[10px] text-slate-500">{new Date(b.sanctionDate).toLocaleDateString('en-GB')}</span>
                     </td>
-                    <td className="border px-2 py-1.5">
+                    <td className="border px-2 py-1 align-middle">
                       <div className="font-bold">{b.lenderName}</div>
                       {b.externalLoanAccountNo && <div className="text-[10px] text-slate-500">A/c: {b.externalLoanAccountNo}</div>}
                     </td>
-                    <td className="border px-2 py-1.5">
+                    <td className="border px-2 py-1 align-middle">
                       <div className="font-semibold">{b.borrowingType}</div>
                       <div className="text-[10px] text-slate-500">{b.installmentType} • {b.installmentFrequency}</div>
                     </td>
-                    <td className="border px-2 py-1.5 text-right font-mono font-bold">₹{fmtAmt(b.sanctionedAmount)}</td>
-                    <td className="border px-2 py-1.5 text-right font-mono">₹{fmtAmt(b.disbursedAmount)}</td>
-                    <td className="border px-2 py-1.5 text-center font-mono">
+                    <td className="border px-2 py-1 text-right font-mono font-bold align-middle">₹{fmtAmt(b.sanctionedAmount)}</td>
+                    <td className="border px-2 py-1 text-right font-mono align-middle">₹{fmtAmt(b.disbursedAmount)}</td>
+                    <td className="border px-2 py-1 text-center font-mono align-middle">
                       {b.borrowingInterestRate}% • {b.tenureMonths}M ({b.totalInstallments} हप्ते)
                     </td>
-                    <td className="border px-2 py-1.5 text-center">
+                    <td className="border px-2 py-1 text-center align-middle">
                       <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
                         b.status === 'Sanctioned'
                           ? 'bg-amber-100 text-amber-900'
@@ -858,7 +858,7 @@ export default function BorrowingAccountOpening({ onNavigate }: BorrowingAccount
                         {b.status}
                       </span>
                     </td>
-                    <td className="border px-2 py-1.5 text-center">
+                    <td className="border px-2 py-1 text-center align-middle">
                       <div className="flex items-center justify-center gap-1">
                         {b.status !== 'Closed' && b.remainingSanctionLimit > 0 && onNavigate && (
                           <button

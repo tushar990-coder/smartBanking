@@ -121,7 +121,7 @@ export default function NotificationCenter({ onNavigate, branchId = 1 }: Notific
     if (priority === 'MEDIUM') {
       return <span className="bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">महत्त्वाचे (Medium)</span>;
     }
-    return <span className="bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">सामान्य (Low)</span>;
+    return <span className="bg-[#9A3412] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">सामान्य (Low)</span>;
   };
 
   const totalActive = counts['ALL'] || 0;
@@ -134,12 +134,12 @@ export default function NotificationCenter({ onNavigate, branchId = 1 }: Notific
           setIsOpen(!isOpen);
           if (!isOpen) fetchNotifications();
         }}
-        className="relative p-2 text-slate-600 hover:text-primary hover:bg-slate-100 rounded-xl transition-all border border-slate-200 shadow-2xs focus:outline-none"
+        className="relative p-1.5 text-[#7C2418] hover:text-[#4A1410] hover:bg-amber-100/70 rounded-lg transition-all border border-amber-200/80 shadow-2xs focus:outline-none cursor-pointer"
         title="सूचना केंद्र (Notification Center)"
       >
-        <Bell className="w-5 h-5" />
+        <Bell className="w-4 h-4" />
         {totalActive > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-bounce">
+          <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-xs animate-bounce">
             {totalActive > 99 ? '99+' : totalActive}
           </span>
         )}
@@ -147,31 +147,31 @@ export default function NotificationCenter({ onNavigate, branchId = 1 }: Notific
 
       {/* Dropdown Popover Drawer */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/30 backdrop-blur-xs flex justify-end">
-          <div className="w-full max-w-md bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col animate-slide-in-right">
+        <div className="fixed inset-0 z-50 overflow-hidden bg-stone-950/40 backdrop-blur-xs flex justify-end">
+          <div className="w-full max-w-md bg-white h-full shadow-2xl border-l border-amber-200/90 flex flex-col animate-slide-in-right">
             {/* Drawer Header */}
-            <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
+            <div className="cbs-top-banner p-4 pt-4.5 flex justify-between items-center border-b border-amber-200/80">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-primary/20 rounded-xl border border-primary/40">
-                  <Bell className="w-5 h-5 text-amber-400" />
+                <div className="p-2 cbs-btn-primary rounded-xl">
+                  <Bell className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm">सूचना केंद्र (Notification Engine)</h3>
-                  <p className="text-[11px] text-slate-400">प्रलंबित कामे व स्वयंचलित सूचना अलार्म</p>
+                  <h3 className="font-extrabold text-sm text-[#4A1410]">सूचना केंद्र (Notification Engine)</h3>
+                  <p className="text-[11px] text-[#7A5243]">प्रलंबित कामे व स्वयंचलित सूचना अलार्म</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleGenerateAuto}
                   disabled={generating}
-                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 transition text-xs flex items-center gap-1"
+                  className="p-1.5 rounded-lg bg-white/85 hover:bg-amber-50 text-[#7C2418] border border-amber-200 transition text-xs flex items-center gap-1 cursor-pointer"
                   title="ऑटो जनरेट करा"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${generating ? 'animate-spin' : ''}`} />
                 </button>
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition"
+                  className="p-1.5 rounded-lg hover:bg-amber-100/80 text-[#7C2418] hover:text-[#4A1410] transition cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -179,13 +179,13 @@ export default function NotificationCenter({ onNavigate, branchId = 1 }: Notific
             </div>
 
             {/* Filter Tabs */}
-            <div className="p-3 bg-slate-50 border-b border-slate-200 space-y-2">
+            <div className="p-3 bg-[#FFFBF7] border-b border-amber-200/70 space-y-2">
               {/* Priority Filters */}
               <div className="flex gap-1 overflow-x-auto text-[11px] font-medium pb-1">
                 <button
                   onClick={() => setSelectedPriority('ALL')}
-                  className={`px-2.5 py-1 rounded-lg border whitespace-nowrap ${
-                    selectedPriority === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'
+                  className={`px-2.5 py-1 rounded-lg border whitespace-nowrap cursor-pointer ${
+                    selectedPriority === 'ALL' ? 'bg-[#7C2418] text-white border-[#7C2418]' : 'bg-white text-[#5C3A2E] border-amber-200'
                   }`}
                 >
                   सर्व (All)

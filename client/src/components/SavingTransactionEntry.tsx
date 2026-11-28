@@ -1625,7 +1625,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
           ======================================================== */}
       {showTxnModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-white rounded-sm shadow-2xl border border-gray-300 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-sm shadow-2xl border border-gray-300 w-full max-w-[97vw] xl:max-w-[1460px] max-h-[90vh] flex flex-col overflow-hidden">
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4" />
@@ -1712,23 +1712,23 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
               </div>
 
               <div className="overflow-auto flex-1">
-                <table className="min-w-full divide-y divide-gray-200 text-xs border-collapse">
-                  <thead className="bg-slate-100 text-slate-800 border-b border-slate-300 sticky top-0 z-10 font-bold">
+                <table className="min-w-full divide-y divide-gray-200 text-[11px] border-collapse leading-tight">
+                  <thead className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 sticky top-0 z-10 font-bold">
                     <tr>
-                      <th className="px-2 py-2 border-r border-gray-200 text-center w-12">#</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left w-24">दिनांक</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left">खाते क्र.</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left">खातेदाराचे नाव</th>
-                      <th className="px-2 py-2 border-r border-gray-200 text-center w-20">प्रकार</th>
-                      <th className="px-2 py-2 border-r border-gray-200 text-center w-24">पद्धत</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">रक्कम (₹)</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-right w-28">शिल्लक (₹)</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left">तपशील</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left w-32">व्हाउचर क्र.</th>
-                      <th className="px-2 py-2 text-center w-20">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-12 whitespace-nowrap">#</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left w-24 whitespace-nowrap">दिनांक</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खाते क्र.</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खातेदाराचे नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-20 whitespace-nowrap">प्रकार</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">पद्धत</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-right w-28 whitespace-nowrap">रक्कम (₹)</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-right w-28 whitespace-nowrap">शिल्लक (₹)</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">तपशील</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left w-32 whitespace-nowrap">व्हाउचर क्र.</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
+                  <tbody className="divide-y divide-amber-100 bg-white">
                     {paginatedTransactions.length === 0 ? (
                       <tr>
                         <td colSpan={11} className="px-4 py-10 text-center text-gray-500 font-semibold">
@@ -1738,23 +1738,23 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                     ) : (
                       paginatedTransactions.map((t: any, index: number) => (
                         <tr key={t.transactionID} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500 font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center text-gray-500 font-mono align-middle">
                             {txnPageSize === 0 ? index + 1 : (safeTxnPage - 1) * txnPageSize + index + 1}
                           </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left whitespace-nowrap text-gray-700">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-left whitespace-nowrap text-gray-700 align-middle">
                           {new Date(t.transactionDate).toLocaleDateString('en-GB', {
                             day: '2-digit',
                             month: '2-digit',
                             year: 'numeric'
                           })}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-bold text-primary font-mono whitespace-nowrap">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-left font-bold text-primary font-mono whitespace-nowrap align-middle">
                           {t.accountNo}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-semibold text-gray-900">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-left font-semibold text-gray-900 align-middle">
                           {t.customerName}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <span
                             className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded-sm border ${
                               t.transactionType === 'Deposit' || t.transactionType === 'Interest'
@@ -1769,22 +1769,22 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                                 : t.transactionType}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap font-semibold text-gray-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap font-semibold text-gray-700 align-middle">
                           {t.paymentMode === 'Cash' ? 'रोख' : t.paymentMode === 'Transfer' ? 'ट्रान्सफर' : 'बँक'}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-right font-bold text-gray-900 font-mono whitespace-nowrap">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-right font-bold text-gray-900 font-mono whitespace-nowrap align-middle">
                           ₹{t.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono whitespace-nowrap">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono whitespace-nowrap align-middle">
                           ₹{t.balanceAfterTxn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left text-gray-600 max-w-[200px] truncate" title={t.narration || ''}>
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-left text-gray-600 max-w-[200px] truncate align-middle" title={t.narration || ''}>
                           {t.narration || '-'}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-bold text-primary whitespace-nowrap font-mono">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-left font-bold text-primary whitespace-nowrap font-mono align-middle">
                           {t.voucherNo || '-'}
                         </td>
-                        <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
                           {!t.voucherNo && canDeleteOrphanSavingTxn ? (
                             <button
                               type="button"

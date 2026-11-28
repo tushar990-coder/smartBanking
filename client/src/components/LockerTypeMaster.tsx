@@ -254,11 +254,11 @@ const LockerTypeMaster: React.FC = () => {
       <div className="bg-primary px-3.5 py-2.5 text-white flex items-center justify-between shadow-xs rounded-sm">
         <div className="flex items-center gap-2.5">
           <div className="p-1.5 bg-white/10 rounded border border-white/20">
-            <Layers className="w-5 h-5 text-blue-100" />
+            <Layers className="w-5 h-5 text-amber-100" />
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-wide">लॉकर प्रकार व दर मास्टर (Locker Type Master)</h1>
-            <p className="text-[10px] text-blue-100 font-normal">
+            <p className="text-[10px] text-amber-100 font-normal">
               लॉकरचे प्रकार, परिमाणे, वार्षिक भाडे, अनामत रक्कम व लेजर खाती (GL Mappings) निश्चित करा
             </p>
           </div>
@@ -291,13 +291,13 @@ const LockerTypeMaster: React.FC = () => {
       <div 
         ref={formContainerRef}
         className={`bg-white p-4 rounded-md shadow-2xs border transition-all duration-300 ${
-          isEditing ? 'border-primary ring-2 ring-primary/20 shadow-md bg-blue-50/10' : 'border-gray-300'
+          isEditing ? 'border-primary ring-2 ring-primary/20 shadow-md bg-amber-50/10' : 'border-gray-300'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div className="flex items-center justify-between border-b border-gray-200 pb-2">
             <h2 className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
-              {isEditing ? <Edit2 size={14} className="text-blue-600" /> : <PlusCircle size={14} className="text-emerald-600" />}
+              {isEditing ? <Edit2 size={14} className="text-[#B44814]" /> : <PlusCircle size={14} className="text-emerald-600" />}
               <span>{isEditing ? `लॉकर प्रकार दुरुस्त करा: "${formData.typeName}" (Edit Mode)` : '१. नवीन लॉकर प्रकार फॉर्म (Add Locker Type)'}</span>
             </h2>
             {isEditing && (
@@ -409,7 +409,7 @@ const LockerTypeMaster: React.FC = () => {
           </div>
 
           {/* Ledger Mappings */}
-          <div className="bg-blue-50/50 p-3 rounded border border-blue-200">
+          <div className="bg-amber-50/50 p-3 rounded border border-amber-200">
             <h3 className="text-[11px] font-bold text-primary mb-2 flex items-center gap-1">
               <Shield size={13} className="text-primary" /> जनरल लेजर खाती जोडणी (GL Account Mappings)
             </h3>
@@ -493,22 +493,22 @@ const LockerTypeMaster: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full text-left text-[11px] border-collapse leading-tight">
             <thead>
-              <tr className="bg-gray-100 text-gray-800 border-b border-gray-300 font-bold">
-                <th className="py-2.5 px-3">कोड</th>
-                <th className="py-2.5 px-3">प्रकाराचे नाव</th>
-                <th className="py-2.5 px-3">परिमाणे</th>
-                <th className="py-2.5 px-3 text-right">वार्षिक भाडे</th>
-                <th className="py-2.5 px-3 text-right">अनामत रक्कम</th>
-                <th className="py-2.5 px-3 text-right">विलंब शुल्क/महिना</th>
-                <th className="py-2.5 px-3 text-center">एकूण लॉकर</th>
-                <th className="py-2.5 px-3 text-center">उपलब्ध</th>
-                <th className="py-2.5 px-3 text-center">स्थिती</th>
-                <th className="py-2.5 px-3 text-center">कृती (Actions)</th>
+              <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 font-bold">
+                <th className="py-1.5.5 px-2 whitespace-nowrap">कोड</th>
+                <th className="py-1.5.5 px-2 whitespace-nowrap">प्रकाराचे नाव</th>
+                <th className="py-1.5.5 px-2 whitespace-nowrap">परिमाणे</th>
+                <th className="py-1.5.5 px-2 text-right whitespace-nowrap">वार्षिक भाडे</th>
+                <th className="py-1.5.5 px-2 text-right whitespace-nowrap">अनामत रक्कम</th>
+                <th className="py-1.5.5 px-2 text-right whitespace-nowrap">विलंब शुल्क/महिना</th>
+                <th className="py-1.5.5 px-2 text-center whitespace-nowrap">एकूण लॉकर</th>
+                <th className="py-1.5.5 px-2 text-center whitespace-nowrap">उपलब्ध</th>
+                <th className="py-1.5.5 px-2 text-center whitespace-nowrap">स्थिती</th>
+                <th className="py-1.5.5 px-2 text-center whitespace-nowrap">कृती (Actions)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 text-gray-700">
+            <tbody className="divide-y divide-amber-100 text-gray-700">
               {types.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-8 text-center text-gray-400 font-bold">
@@ -519,29 +519,29 @@ const LockerTypeMaster: React.FC = () => {
                 types.map((t) => (
                   <tr 
                     key={t.lockerTypeID} 
-                    className={`transition-colors ${isEditing && formData.lockerTypeID === t.lockerTypeID ? 'bg-blue-50 border-l-4 border-l-primary' : 'hover:bg-gray-50'}`}
+                    className={`transition-colors ${isEditing && formData.lockerTypeID === t.lockerTypeID ? 'bg-amber-50 border-l-4 border-l-primary' : 'hover:bg-gray-50'}`}
                   >
-                    <td className="py-2 px-3 font-bold text-gray-800">{t.typeCode}</td>
-                    <td className="py-2 px-3 font-bold text-gray-900">{t.typeName}</td>
-                    <td className="py-2 px-3 text-gray-500 font-mono">{t.dimensions || '-'}</td>
-                    <td className="py-2 px-3 text-right font-bold text-emerald-700 font-mono">₹{t.annualRent?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="py-2 px-3 text-right font-bold text-blue-700 font-mono">₹{t.securityDeposit?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="py-2 px-3 text-right text-gray-600 font-mono">₹{t.lateFeePerMonth?.toFixed(2) || '0.00'}</td>
-                    <td className="py-2 px-3 text-center font-bold text-gray-800">{t.totalLockersCount ?? 0}</td>
-                    <td className="py-2 px-3 text-center font-bold text-emerald-600">{t.availableLockersCount ?? 0}</td>
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-1 px-2 font-bold text-gray-800 align-middle">{t.typeCode}</td>
+                    <td className="py-1 px-2 font-bold text-gray-900 align-middle">{t.typeName}</td>
+                    <td className="py-1 px-2 text-gray-500 font-mono align-middle">{t.dimensions || '-'}</td>
+                    <td className="py-1 px-2 text-right font-bold text-emerald-700 font-mono align-middle">₹{t.annualRent?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td className="py-1 px-2 text-right font-bold text-[#9A3412] font-mono align-middle">₹{t.securityDeposit?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td className="py-1 px-2 text-right text-gray-600 font-mono align-middle">₹{t.lateFeePerMonth?.toFixed(2) || '0.00'}</td>
+                    <td className="py-1 px-2 text-center font-bold text-gray-800 align-middle">{t.totalLockersCount ?? 0}</td>
+                    <td className="py-1 px-2 text-center font-bold text-emerald-600 align-middle">{t.availableLockersCount ?? 0}</td>
+                    <td className="py-1 px-2 text-center align-middle">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                         t.isActive ? 'bg-emerald-50 text-emerald-900 border-emerald-300' : 'bg-gray-100 text-gray-600 border-gray-300'
                       }`}>
                         {t.isActive ? 'सक्रिय' : 'निष्क्रिय'}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-1 px-2 text-center align-middle">
                       <div className="flex items-center justify-center space-x-1.5">
                         <button
                           onClick={() => handleEdit(t)}
                           title="दुरुस्त करा (Edit)"
-                          className="px-2 py-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                          className="px-2 py-1 text-xs font-bold text-[#9A3412] bg-amber-50 hover:bg-[#B44814] hover:text-white border border-amber-200 rounded flex items-center gap-1 cursor-pointer transition-colors"
                         >
                           <Edit2 size={12} />
                           <span>दुरुस्त करा</span>

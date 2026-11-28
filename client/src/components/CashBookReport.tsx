@@ -571,7 +571,7 @@ export default function CashBookReport() {
                     <div className="flex-1 pb-1">
                       {/* Credit Opening Balance if any */}
                       {openBalCr > 0 && (
-                        <div className="flex border-b border-gray-400 font-extrabold bg-blue-50/70 print:bg-gray-100 text-gray-900">
+                        <div className="flex border-b border-gray-400 font-extrabold bg-amber-50/70 print:bg-gray-100 text-gray-900">
                           <div className="w-10 border-r border-gray-400 px-1 py-1 text-center">-</div>
                           <div className="flex-1 border-r border-gray-400 px-1 py-1 font-black text-rose-900 print:text-black">
                             📌 आरंभीची रोख शिल्लक (Cr)
@@ -639,14 +639,14 @@ export default function CashBookReport() {
                     </div>
 
                     {/* Row 2: Opening Balance */}
-                    <div className="flex border-b border-gray-800 font-extrabold bg-blue-50/70 print:bg-gray-200 text-gray-900">
+                    <div className="flex border-b border-gray-800 font-extrabold bg-amber-50/70 print:bg-gray-200 text-gray-900">
                       <div className="w-10 px-1 py-1"></div>
-                      <div className="flex-1 px-1 py-1 text-center font-black text-blue-900 print:text-black">
+                      <div className="flex-1 px-1 py-1 text-center font-black text-[#5A1A14] print:text-black">
                         {closingBalCr > 0
                           ? `📌 आरंभीची शिल्लक (${formatAmount(openBalDr)}) + अखेरची ${bookUnitLabel} ओव्हरड्राफ्ट (Cr: ${formatAmount(closingBalCr)})`
                           : `📌 आरंभीची ${bookUnitLabel} शिल्लक (Opening Balance)`}
                       </div>
-                      <div className="w-24 border-l border-gray-800 px-1 py-1 text-right font-mono font-black text-blue-900 print:text-black bg-blue-100 print:bg-gray-300">
+                      <div className="w-24 border-l border-gray-800 px-1 py-1 text-right font-mono font-black text-[#5A1A14] print:text-black bg-amber-100 print:bg-gray-300">
                         {formatAmount(openBalDr + closingBalCr)}
                       </div>
                       <div className="w-10 px-1 py-1 border-l border-gray-800"></div>

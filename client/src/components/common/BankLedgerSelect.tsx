@@ -86,12 +86,12 @@ const BankLedgerSelect: React.FC<BankLedgerSelectProps> = ({
       {(!hideLabel || showCountBadge) && (
         <div className="flex items-center justify-between gap-2 mb-0.5">
           {!hideLabel && label && (
-            <label htmlFor={id} className="block text-[11px] font-bold text-blue-950">
+            <label htmlFor={id} className="block text-[11px] font-bold text-[#4A1410]">
               {label}
             </label>
           )}
           {showCountBadge && (
-            <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-300 shrink-0">
+            <span className="bg-amber-100 text-[#7C2418] text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300 shrink-0">
               {bankLedgers.length} बँक जी.एल. खाती
             </span>
           )}
@@ -122,10 +122,10 @@ const BankLedgerSelect: React.FC<BankLedgerSelectProps> = ({
         placeholder={placeholder}
         className={
           className ||
-          `w-full text-[11px] border border-blue-400 rounded-sm px-2.5 py-1 flex justify-between items-center h-[30px] shadow-2xs ${
+          `w-full text-[11px] border border-amber-400 rounded-sm px-2.5 py-1 flex justify-between items-center h-[30px] shadow-2xs ${
             disabled
               ? 'bg-slate-100 text-slate-500 cursor-not-allowed opacity-75'
-              : 'bg-white text-blue-950 font-bold cursor-pointer hover:border-blue-500'
+              : 'bg-white text-[#4A1410] font-bold cursor-pointer hover:border-[#B44814]'
           }`
         }
       />

@@ -196,13 +196,13 @@ const FdAccrualPosting: React.FC = () => {
       {/* ERP Header Banner matching MemberMaster */}
       <div className="bg-primary px-3 py-2 text-white flex items-center justify-between shadow-xs rounded-sm">
         <div className="flex items-center gap-2">
-          <Calculator className="w-5 h-5 text-blue-200" />
+          <Calculator className="w-5 h-5 text-amber-200" />
           <div>
             <h1 className="text-sm font-bold tracking-wide">मुदत ठेव व्याज तरतूद (FD Interest Provision Run & Posting)</h1>
-            <p className="text-[10px] text-blue-100 font-normal">खातेदारानुसार (Customer-wise) व्याज मोजणी, मुद्दलावर / व्याजावर निवड आणि सिस्टीम ऑटो-व्हाउचर पोस्टिंग</p>
+            <p className="text-[10px] text-amber-100 font-normal">खातेदारानुसार (Customer-wise) व्याज मोजणी, मुद्दलावर / व्याजावर निवड आणि सिस्टीम ऑटो-व्हाउचर पोस्टिंग</p>
           </div>
         </div>
-        <span className="text-[10px] bg-blue-800/60 border border-blue-400/40 text-blue-100 font-semibold px-2 py-0.5 rounded font-mono">
+        <span className="text-[10px] bg-[#7C2418]/60 border border-amber-400/40 text-amber-100 font-semibold px-2 py-0.5 rounded font-mono">
           प्रोव्हिजन मॉड्यूल
         </span>
       </div>
@@ -237,7 +237,7 @@ const FdAccrualPosting: React.FC = () => {
               <select
                 value={branchID}
                 onChange={(e) => setBranchID(parseInt(e.target.value, 10))}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white"
               >
                 {branches.map((b) => (
                   <option key={b.branchID} value={b.branchID}>
@@ -259,7 +259,7 @@ const FdAccrualPosting: React.FC = () => {
               type="date"
               value={accrualDate}
               onChange={(e) => setAccrualDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white"
               required
             />
           </div>
@@ -388,7 +388,7 @@ const FdAccrualPosting: React.FC = () => {
                   placeholder="नाव, कोड किंवा पावतीने शोधा..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full border border-gray-300 pl-8 pr-2 py-1 rounded-sm text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                  className="w-full border border-gray-300 pl-8 pr-2 py-1 rounded-sm text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white"
                 />
               </div>
 
@@ -413,7 +413,7 @@ const FdAccrualPosting: React.FC = () => {
                       type="checkbox"
                       checked={selectedCount > 0 && selectedCount === previewItems.filter((i) => i.calculatedInterest > 0).length}
                       onChange={(e) => toggleSelectAll(e.target.checked)}
-                      className="w-3.5 h-3.5 text-primary rounded border-gray-300 focus:ring-blue-400 cursor-pointer"
+                      className="w-3.5 h-3.5 text-primary rounded border-gray-300 focus:ring-[#B44814] cursor-pointer"
                     />
                   </th>
                   <th className="px-2.5 py-1.5 border-r border-gray-200 text-left">पावती क्र.</th>
@@ -441,8 +441,8 @@ const FdAccrualPosting: React.FC = () => {
                   filteredItems.map((item) => (
                     <tr
                       key={item.fdAccountID}
-                      className={`hover:bg-blue-50/60 transition-colors ${
-                        item.isSelected ? 'bg-blue-50/30' : 'opacity-60'
+                      className={`hover:bg-amber-50/60 transition-colors ${
+                        item.isSelected ? 'bg-amber-50/30' : 'opacity-60'
                       }`}
                     >
                       <td className="px-2 py-1.5 border-r border-gray-100 text-center">
@@ -451,7 +451,7 @@ const FdAccrualPosting: React.FC = () => {
                           checked={item.isSelected}
                           onChange={() => toggleSelect(item.fdAccountID)}
                           disabled={item.calculatedInterest <= 0}
-                          className="w-3.5 h-3.5 text-primary rounded border-gray-300 focus:ring-blue-400 cursor-pointer disabled:opacity-30"
+                          className="w-3.5 h-3.5 text-primary rounded border-gray-300 focus:ring-[#B44814] cursor-pointer disabled:opacity-30"
                         />
                       </td>
                       <td className="px-2.5 py-1.5 border-r border-gray-100 text-left font-bold text-primary">
@@ -468,7 +468,7 @@ const FdAccrualPosting: React.FC = () => {
                         {formatDate(item.openingDate)}
                       </td>
                       <td className="px-2 py-1.5 border-r border-gray-100 text-center text-[11px]">
-                        <span className="font-semibold text-blue-700">
+                        <span className="font-semibold text-[#9A3412]">
                           {formatDate(item.fromDate || item.openingDate)}
                         </span>
                         {item.lastInterestPostingDate && (
@@ -483,7 +483,7 @@ const FdAccrualPosting: React.FC = () => {
                       <td className="px-2.5 py-1.5 border-r border-gray-100 text-right font-semibold text-purple-700">
                         ₹ {Math.round(item.alreadyAccruedInterest).toLocaleString('en-IN')}
                       </td>
-                      <td className="px-2.5 py-1.5 border-r border-gray-100 text-right font-bold text-blue-900 bg-blue-50/40">
+                      <td className="px-2.5 py-1.5 border-r border-gray-100 text-right font-bold text-[#5A1A14] bg-amber-50/40">
                         ₹ {Math.round(item.effectivePrincipal).toLocaleString('en-IN')}
                       </td>
                       <td className="px-2 py-1.5 border-r border-gray-100 text-center font-semibold text-gray-700">
@@ -497,7 +497,7 @@ const FdAccrualPosting: React.FC = () => {
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          item.calculationMethod === 'OnInterest' ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-blue-100 text-blue-800 border border-blue-200'
+                          item.calculationMethod === 'OnInterest' ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-[#7C2418] border border-amber-200'
                         }`}>
                           {item.calculationMethod === 'OnInterest' ? 'व्याजावर' : 'मुद्दलावर'}
                         </span>

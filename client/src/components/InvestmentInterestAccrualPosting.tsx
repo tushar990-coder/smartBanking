@@ -595,12 +595,12 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <CheckCircle className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">नोंदी (तरतूद / पावत्या)</div>
-            <div className="text-sm font-black text-indigo-900">
+            <div className="text-sm font-black text-[#5A1A14]">
               {accruals.length} / {receipts.length}
             </div>
           </div>
@@ -951,7 +951,7 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
                   }}
                   className={`px-3 py-1 text-xs font-bold rounded-sm border transition-all cursor-pointer ${
                     receiptType === 'ShareDividend'
-                      ? 'bg-indigo-800 text-white border-indigo-800 shadow-xs'
+                      ? 'bg-[#7C2418] text-white border-[#7C2418] shadow-xs'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-slate-50'
                   }`}
                 >
@@ -1133,7 +1133,7 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
                         ...(mode !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
                       }));
                     }}
-                    className={`${inputClass} font-bold text-blue-950 border-blue-300`}
+                    className={`${inputClass} font-bold text-[#4A1410] border-amber-300`}
                   >
                     <option value="Bank">🏦 बँक खाते (Bank Account)</option>
                     <option value="Cash">💵 रोख (Cash)</option>
@@ -1253,9 +1253,9 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                             {r.receiptType === 'ShareDividend' ? (
-                              <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-bold">लाभांश</span>
+                              <span className="px-1.5 py-0.5 rounded bg-orange-50 text-[#7C2418] border border-amber-200 text-[10px] font-bold">लाभांश</span>
                             ) : (
-                              <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold">व्याज</span>
+                              <span className="px-1.5 py-0.5 rounded bg-amber-50 text-[#7C2418] border border-amber-200 text-[10px] font-bold">व्याज</span>
                             )}
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-700">{formatDate(r.receiptDate)}</td>

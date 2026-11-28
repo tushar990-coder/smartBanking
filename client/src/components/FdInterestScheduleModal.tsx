@@ -200,7 +200,7 @@ export const FdInterestScheduleModal: React.FC<Props> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static">
       <div 
         ref={printAreaRef}
-        className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 print:max-h-none print:shadow-none print:border-none print:w-full"
+        className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-[97vw] xl:max-w-[1460px] max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 print:max-h-none print:shadow-none print:border-none print:w-full"
       >
         {/* Modal Header - Theme Aligned */}
         <div className="bg-primary text-white px-4 py-3 flex items-center justify-between border-b border-primary/80 shrink-0 print:bg-none print:text-black print:border-b-2 print:border-black print:px-0">
@@ -254,14 +254,14 @@ export const FdInterestScheduleModal: React.FC<Props> = ({
 
           {/* KPI Summary Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div className="bg-blue-50/70 border border-blue-200 px-3 py-2 rounded-lg">
-              <div className="text-[11px] font-medium text-blue-800">
+            <div className="bg-amber-50/70 border border-amber-200 px-3 py-2 rounded-lg">
+              <div className="text-[11px] font-medium text-[#7C2418]">
                 {isBulk ? 'प्रति पावती मुद्दल (₹)' : 'ठेव मुद्दल (Principal)'}
               </div>
-              <div className="text-base sm:text-lg font-black text-blue-950">
+              <div className="text-base sm:text-lg font-black text-[#4A1410]">
                 {formatCurrency(summary.principalAmount)}
               </div>
-              <div className="text-[10px] text-blue-700 font-mono">
+              <div className="text-[10px] text-[#9A3412] font-mono">
                 एकूण दिवस: {summary.totalDays} दिवस
               </div>
             </div>
@@ -335,7 +335,7 @@ export const FdInterestScheduleModal: React.FC<Props> = ({
                 </span>
               </div>
               <div className="flex items-center gap-3 font-semibold text-slate-800">
-                <span>एकूण ठेव: <b className="text-blue-900">{formatCurrency(grandTotalDeposit)}</b></span>
+                <span>एकूण ठेव: <b className="text-[#5A1A14]">{formatCurrency(grandTotalDeposit)}</b></span>
                 <span>एकूण सर्व पावत्यांचे व्याज: <b className="text-emerald-700">{formatCurrency(grandTotalInterest)}</b></span>
                 <span>एकूण एकत्रित मुदतपूर्ती: <b className="text-primary">{formatCurrency(grandTotalMaturity)}</b></span>
               </div>
@@ -379,21 +379,21 @@ export const FdInterestScheduleModal: React.FC<Props> = ({
               </span>
             </div>
             <div className="overflow-x-auto max-h-64 print:max-h-none">
-              <table className="w-full text-xs text-left border-collapse">
-                <thead className="bg-slate-100 text-slate-700 text-[11px] font-bold sticky top-0 border-b border-slate-300 z-10">
+              <table className="w-full text-[11px] text-left border-collapse leading-tight">
+                <thead className="bg-[#5A1A14] text-amber-50 text-[11px] font-bold sticky top-0 border-b border-amber-400/30 z-10">
                   <tr>
-                    <th className="px-2 py-1.5 text-center w-9 border-r border-slate-200 whitespace-nowrap">क्र.</th>
-                    <th className="px-2.5 py-1.5 text-left whitespace-nowrap border-r border-slate-200">टप्पा (Period)</th>
-                    <th className="px-2.5 py-1.5 text-center whitespace-nowrap border-r border-slate-200">कालावधी (From - To)</th>
-                    <th className="px-2 py-1.5 text-center whitespace-nowrap w-12 border-r border-slate-200">दिवस</th>
-                    <th className="px-2.5 py-1.5 text-right whitespace-nowrap border-r border-slate-200">आरंभी मुद्दल (₹)</th>
-                    <th className="px-2.5 py-1.5 text-right whitespace-nowrap border-r border-slate-200">या टप्प्याचे व्याज (₹)</th>
-                    <th className="px-2.5 py-1.5 text-right whitespace-nowrap border-r border-slate-200">{cumulativeColumnTitle}</th>
-                    <th className="px-2.5 py-1.5 text-right whitespace-nowrap border-r border-slate-200">अखेर शिल्लक (₹)</th>
+                    <th className="px-2 py-1.5 text-center w-9 border-r border-amber-400/25 whitespace-nowrap">क्र.</th>
+                    <th className="px-2.5 py-1.5 text-left whitespace-nowrap border-r border-amber-400/25">टप्पा (Period)</th>
+                    <th className="px-2.5 py-1.5 text-center whitespace-nowrap border-r border-amber-400/25">कालावधी (From - To)</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap w-12 border-r border-amber-400/25">दिवस</th>
+                    <th className="px-2.5 py-1.5 text-right whitespace-nowrap border-r border-amber-400/25">आरंभी मुद्दल (₹)</th>
+                    <th className="px-2.5 py-1.5 text-right whitespace-nowrap border-r border-amber-400/25">या टप्प्याचे व्याज (₹)</th>
+                    <th className="px-2.5 py-1.5 text-right whitespace-nowrap border-r border-amber-400/25">{cumulativeColumnTitle}</th>
+                    <th className="px-2.5 py-1.5 text-right whitespace-nowrap border-r border-amber-400/25">अखेर शिल्लक (₹)</th>
                     <th className="px-2.5 py-1.5 text-left whitespace-nowrap">शेरा / स्थिती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
+                <tbody className="divide-y divide-amber-100 font-medium">
                   {summary.periods.map((item, idx) => {
                     const isLast = idx === summary.periods.length - 1;
                     return (
@@ -401,23 +401,23 @@ export const FdInterestScheduleModal: React.FC<Props> = ({
                         key={item.periodNo}
                         className={isLast ? 'bg-emerald-50/80 font-bold text-emerald-950' : (idx % 2 === 0 ? 'bg-white hover:bg-slate-50/80' : 'bg-slate-50/40 hover:bg-slate-50/80')}
                       >
-                        <td className="px-2 py-1.5 text-center text-slate-500 font-mono border-r border-slate-100">{item.periodNo}</td>
-                        <td className="px-2.5 py-1.5 font-semibold text-slate-800 whitespace-nowrap border-r border-slate-100">{item.periodLabel}</td>
-                        <td className="px-2.5 py-1.5 text-center font-mono text-[11px] whitespace-nowrap border-r border-slate-100">
+                        <td className="px-2 py-1 text-center text-slate-500 font-mono border-r border-slate-100 align-middle">{item.periodNo}</td>
+                        <td className="px-2.5 py-1 font-semibold text-slate-800 whitespace-nowrap border-r border-slate-100 align-middle">{item.periodLabel}</td>
+                        <td className="px-2.5 py-1 text-center font-mono text-[11px] whitespace-nowrap border-r border-slate-100 align-middle">
                           <span className="text-slate-800">{formatDateDisplay(item.fromDate)}</span>
                           <span className="text-slate-400 font-sans mx-1 font-normal">ते</span>
                           <span className="text-slate-800">{formatDateDisplay(item.toDate)}</span>
                         </td>
-                        <td className="px-2 py-1.5 text-center font-mono text-slate-700 border-r border-slate-100">{item.days}</td>
-                        <td className="px-2.5 py-1.5 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap border-r border-slate-100">{formatCurrency(item.openingBalance)}</td>
-                        <td className="px-2.5 py-1.5 text-right font-mono text-emerald-700 font-bold tabular-nums whitespace-nowrap border-r border-slate-100">
+                        <td className="px-2 py-1 text-center font-mono text-slate-700 border-r border-slate-100 align-middle">{item.days}</td>
+                        <td className="px-2.5 py-1 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap border-r border-slate-100 align-middle">{formatCurrency(item.openingBalance)}</td>
+                        <td className="px-2.5 py-1 text-right font-mono text-emerald-700 font-bold tabular-nums whitespace-nowrap border-r border-slate-100 align-middle">
                           +{formatCurrency(item.interestAmount)}
                         </td>
-                        <td className="px-2.5 py-1.5 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap border-r border-slate-100">{formatCurrency(item.cumulativeInterest)}</td>
-                        <td className="px-2.5 py-1.5 text-right font-mono text-slate-900 font-bold tabular-nums whitespace-nowrap border-r border-slate-100">
+                        <td className="px-2.5 py-1 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap border-r border-slate-100 align-middle">{formatCurrency(item.cumulativeInterest)}</td>
+                        <td className="px-2.5 py-1 text-right font-mono text-slate-900 font-bold tabular-nums whitespace-nowrap border-r border-slate-100 align-middle">
                           {formatCurrency(item.closingBalance)}
                         </td>
-                        <td className="px-2.5 py-1.5 text-[11px] text-slate-600 whitespace-nowrap">
+                        <td className="px-2.5 py-1 text-[11px] text-slate-600 whitespace-nowrap align-middle">
                           {isLast && summary.schemeType === 'Cumulative' ? (
                             <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-bold text-[10px]">
                               🎉 अंतिम मुदतपूर्ती
@@ -431,31 +431,31 @@ export const FdInterestScheduleModal: React.FC<Props> = ({
                   {/* Overdue Period Row if applicable */}
                   {overdueDetails && overdueDetails.isOverdue && overdueDetails.overdueInterest > 0 && (
                     <tr className="bg-amber-100/80 font-bold text-amber-950 border-t-2 border-amber-300">
-                      <td className="px-2 py-1.5 text-center text-amber-900 font-mono border-r border-amber-200">+</td>
-                      <td className="px-2.5 py-1.5 font-bold text-amber-950 whitespace-nowrap border-r border-amber-200">
+                      <td className="px-2 py-1 text-center text-amber-900 font-mono border-r border-amber-200 align-middle">+</td>
+                      <td className="px-2.5 py-1 font-bold text-amber-950 whitespace-nowrap border-r border-amber-200 align-middle">
                         ⚠️ ओव्हरड्यू व्याज (Overdue)
                       </td>
-                      <td className="px-2.5 py-1.5 text-center font-mono text-[11px] whitespace-nowrap border-r border-amber-200">
+                      <td className="px-2.5 py-1 text-center font-mono text-[11px] whitespace-nowrap border-r border-amber-200 align-middle">
                         <span className="text-amber-900">{formatDateDisplay(summary.maturityDate)}</span>
                         <span className="text-amber-600 font-sans mx-1 font-normal">ते</span>
                         <span className="text-amber-900">{formatDateDisplay(overdueDetails.closureDate)}</span>
                       </td>
-                      <td className="px-2 py-1.5 text-center font-mono text-amber-900 border-r border-amber-200">
+                      <td className="px-2 py-1 text-center font-mono text-amber-900 border-r border-amber-200 align-middle">
                         {overdueDetails.overdueDays}d
                       </td>
-                      <td className="px-2.5 py-1.5 text-right font-mono text-amber-900 tabular-nums whitespace-nowrap border-r border-amber-200">
+                      <td className="px-2.5 py-1 text-right font-mono text-amber-900 tabular-nums whitespace-nowrap border-r border-amber-200 align-middle">
                         {formatCurrency(overdueDetails.baseAmount)}
                       </td>
-                      <td className="px-2.5 py-1.5 text-right font-mono text-amber-900 font-black tabular-nums whitespace-nowrap border-r border-amber-200">
+                      <td className="px-2.5 py-1 text-right font-mono text-amber-900 font-black tabular-nums whitespace-nowrap border-r border-amber-200 align-middle">
                         +{formatCurrency(overdueDetails.overdueInterest)}
                       </td>
-                      <td className="px-2.5 py-1.5 text-right font-mono text-amber-900 tabular-nums whitespace-nowrap border-r border-amber-200">
+                      <td className="px-2.5 py-1 text-right font-mono text-amber-900 tabular-nums whitespace-nowrap border-r border-amber-200 align-middle">
                         {formatCurrency(summary.totalInterest + overdueDetails.overdueInterest)}
                       </td>
-                      <td className="px-2.5 py-1.5 text-right font-mono text-amber-950 font-black tabular-nums whitespace-nowrap border-r border-amber-200">
+                      <td className="px-2.5 py-1 text-right font-mono text-amber-950 font-black tabular-nums whitespace-nowrap border-r border-amber-200 align-middle">
                         {formatCurrency(summary.maturityAmount + overdueDetails.overdueInterest)}
                       </td>
-                      <td className="px-2.5 py-1.5 text-[11px] text-amber-900 whitespace-nowrap">
+                      <td className="px-2.5 py-1 text-[11px] text-amber-900 whitespace-nowrap align-middle">
                         <span className="inline-flex items-center gap-1 bg-amber-200 text-amber-950 border border-amber-300 px-2 py-0.5 rounded-full font-bold text-[10px]">
                           मुदत संपल्यानंतरचा व्याज खर्च (@ {overdueDetails.effectiveOverdueRate}%)
                         </span>

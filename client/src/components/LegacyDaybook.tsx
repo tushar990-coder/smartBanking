@@ -839,16 +839,16 @@ export default function LegacyDaybook({ initialVoucherStatus }: LegacyDaybookPro
                     </div>
 
                     {/* Row 2: Opening Cash Balance */}
-                    <div className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-900 font-extrabold bg-blue-50/70 print:bg-gray-100 text-gray-900">
+                    <div className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-900 font-extrabold bg-amber-50/70 print:bg-gray-100 text-gray-900">
                       <div className="border-r border-gray-900 px-1 py-1"></div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-center font-black text-blue-900 print:text-black">
+                      <div className="border-r border-gray-900 px-1.5 py-1 text-center font-black text-[#5A1A14] print:text-black">
                         📌 आरंभीची रोख शिल्लक (Opening Balance)
                       </div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black text-blue-900 print:text-black">
+                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black text-[#5A1A14] print:text-black">
                         {formatAmount(pageData.openingBalance)}
                       </div>
                       <div className="border-r border-gray-900 px-1.5 py-1 text-center text-gray-400">-</div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black bg-blue-100 print:bg-gray-200">
+                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black bg-amber-100 print:bg-gray-200">
                         {formatAmount(pageData.openingBalance)}
                       </div>
                       <div className="px-1 py-1"></div>

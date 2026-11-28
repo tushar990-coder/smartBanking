@@ -281,7 +281,7 @@ export default function RdKhatavaniReport() {
         </div>
         <div>
           <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">परिपक्वता देय रक्कम</span>
-          <strong className="text-indigo-900 font-mono text-[11px]">₹ {fmtCurrency(reportData.maturityAmount)}</strong>
+          <strong className="text-[#5A1A14] font-mono text-[11px]">₹ {fmtCurrency(reportData.maturityAmount)}</strong>
         </div>
         <div className="sm:text-right">
           <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">हप्ते भरणा / स्थिती</span>

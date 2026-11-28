@@ -82,18 +82,18 @@ export default function ChangePasswordModal({ isOpen, onClose, isMandatory = fal
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 animate-in fade-in duration-200">
-      <div className="bg-white rounded-lg shadow-2xl border border-gray-200 w-full max-w-md overflow-hidden font-sans text-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/55 backdrop-blur-xs p-3 animate-in fade-in duration-200">
+      <div className="bg-white rounded-xl shadow-2xl border border-amber-300/80 w-full max-w-md overflow-hidden font-sans text-xs">
         
         {/* Header */}
-        <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800">
+        <div className="cbs-top-banner px-4 py-3 pt-3.5 flex items-center justify-between border-b border-amber-200/80">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-primary/20 text-emerald-400 rounded">
+            <div className="p-1.5 cbs-btn-primary text-white rounded-lg">
               <KeyRound size={16} />
             </div>
             <div>
-              <h3 className="font-bold text-sm tracking-tight">पासवर्ड बदला (Change Password)</h3>
-              <p className="text-[10px] text-slate-400">वापरकर्ता: <span className="text-white font-mono font-bold">{user.username}</span></p>
+              <h3 className="font-extrabold text-sm tracking-tight text-[#4A1410]">पासवर्ड बदला (Change Password)</h3>
+              <p className="text-[10px] text-[#7A5243]">वापरकर्ता: <span className="text-[#9A3412] font-mono font-bold">{user.username}</span></p>
             </div>
           </div>
 
@@ -101,7 +101,7 @@ export default function ChangePasswordModal({ isOpen, onClose, isMandatory = fal
             <button
               onClick={onClose}
               disabled={loading}
-              className="text-slate-400 hover:text-white p-1 rounded-sm transition-colors cursor-pointer"
+              className="text-[#7C2418] hover:text-[#4A1410] hover:bg-amber-100/80 p-1 rounded-lg transition-colors cursor-pointer"
               title="बंद करा"
             >
               <X size={16} />

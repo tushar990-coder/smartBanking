@@ -60,7 +60,7 @@ export default class ErrorBoundary extends Component<Props, State> {
               <button
                 type="button"
                 onClick={this.handleReset}
-                className="flex-1 px-4 py-2 bg-primary hover:bg-[#004a75] text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+                className="flex-1 px-4 py-2 bg-primary hover:bg-[#7C2418] text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
                 🏠 मुख्य डॅशबोर्ड
               </button>

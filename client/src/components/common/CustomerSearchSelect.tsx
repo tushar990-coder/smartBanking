@@ -352,7 +352,7 @@ export default function CustomerSearchSelect({
                     जुने कर्ज: {cust.legacyLoanAccountNo}
                   </span>
                 )}
-                <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 border border-blue-300 leading-none">
+                <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-amber-100/80 text-[#5A1A14] border border-amber-300 leading-none">
                   {cifDisplay}
                 </span>
                 {cust.legacyCustomerNo && (
@@ -376,7 +376,7 @@ export default function CustomerSearchSelect({
             <div className="flex items-center justify-between py-1 px-1 w-full gap-3">
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 {cust.cifNo && (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 shrink-0 whitespace-nowrap">
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 text-[#7C2418] border border-amber-200 shrink-0 whitespace-nowrap">
                     {cust.cifNo}
                   </span>
                 )}

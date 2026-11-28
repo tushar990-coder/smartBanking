@@ -717,7 +717,7 @@ export default function PigmyReports() {
                         </td>
                         <td className="border border-gray-900 py-1 px-3 font-medium">
                           {c.legacyCustomerNo ? (
-                            <span className="text-[10px] font-mono font-bold text-indigo-800 mr-1">[जुना CIF: {c.legacyCustomerNo}]</span>
+                            <span className="text-[10px] font-mono font-bold text-[#7C2418] mr-1">[जुना CIF: {c.legacyCustomerNo}]</span>
                           ) : c.cifNo ? (
                             <span className="text-[10px] font-mono text-slate-600 mr-1">[{c.cifNo}]</span>
                           ) : null}

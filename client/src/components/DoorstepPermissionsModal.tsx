@@ -265,17 +265,17 @@ export default function DoorstepPermissionsModal({
           {typeNote && <span className="text-[10px] text-slate-500 italic">{typeNote}</span>}
         </div>
 
-        <table className="w-full text-left text-xs border-collapse">
+        <table className="w-full text-left text-[11px] border-collapse leading-tight">
           <thead>
-            <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 text-[11px] font-semibold">
-              <th className="p-2 w-12 text-center">अ.क्र.</th>
-              <th className="p-2">खाते क्र.</th>
-              <th className="p-2">योजना / प्रकार</th>
-              <th className="p-2 text-right">शिल्लक रक्कम</th>
-              <th className="p-2 text-right">हप्ता / दैनंदिन</th>
-              <th className="p-2 text-center">एजंट वसुली परवानगी</th>
-              <th className="p-2 min-w-[200px]">अधिकृत एजंट (Assigned Agent)</th>
-              <th className="p-2 text-center">मोबाईल ॲप स्टेटस</th>
+            <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 text-[11px] font-semibold">
+              <th className="px-2 py-1.5 w-12 text-center whitespace-nowrap">अ.क्र.</th>
+              <th className="px-2 py-1.5 whitespace-nowrap">खाते क्र.</th>
+              <th className="px-2 py-1.5 whitespace-nowrap">योजना / प्रकार</th>
+              <th className="px-2 py-1.5 text-right whitespace-nowrap">शिल्लक रक्कम</th>
+              <th className="px-2 py-1.5 text-right whitespace-nowrap">हप्ता / दैनंदिन</th>
+              <th className="px-2 py-1.5 text-center whitespace-nowrap">एजंट वसुली परवानगी</th>
+              <th className="px-2 py-1.5 min-w-[200px] whitespace-nowrap">अधिकृत एजंट (Assigned Agent)</th>
+              <th className="px-2 py-1.5 text-center whitespace-nowrap">मोबाईल ॲप स्टेटस</th>
             </tr>
           </thead>
           <tbody>
@@ -286,16 +286,16 @@ export default function DoorstepPermissionsModal({
                   key={acc.accountID} 
                   className={`border-b border-slate-100 transition ${isAllowed ? 'bg-emerald-50/30' : 'bg-slate-50/40 opacity-90'}`}
                 >
-                  <td className="p-2 text-center text-slate-500 font-semibold">{idx + 1}</td>
-                  <td className="p-2 font-black text-slate-800">{acc.AccountNo || acc.accountNo}</td>
-                  <td className="p-2 text-slate-700">{acc.schemeOrType}</td>
-                  <td className="p-2 text-right font-mono font-bold text-slate-800">
+                  <td className="px-2 py-1 text-center text-slate-500 font-semibold align-middle">{idx + 1}</td>
+                  <td className="px-2 py-1 font-black text-slate-800 align-middle">{acc.AccountNo || acc.accountNo}</td>
+                  <td className="px-2 py-1 text-slate-700 align-middle">{acc.schemeOrType}</td>
+                  <td className="px-2 py-1 text-right font-mono font-bold text-slate-800 align-middle">
                     ₹{(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="p-2 text-right font-mono text-slate-600">
+                  <td className="px-2 py-1 text-right font-mono text-slate-600 align-middle">
                     {acc.targetOrEmiAmount > 0 ? `₹${acc.targetOrEmiAmount.toLocaleString('en-IN')}` : '-'}
                   </td>
-                  <td className="p-2 text-center">
+                  <td className="px-2 py-1 text-center align-middle">
                     <button
                       type="button"
                       onClick={() => handleToggle(type, acc.accountID, !isAllowed)}
@@ -309,7 +309,7 @@ export default function DoorstepPermissionsModal({
                       <span>{isAllowed ? 'परवानगी सुरू' : 'गोपनीय (बंद)'}</span>
                     </button>
                   </td>
-                  <td className="p-2">
+                  <td className="px-2 py-1 align-middle">
                     <select
                       value={acc.assignedAgentID || ''}
                       onChange={(e) => {
@@ -331,7 +331,7 @@ export default function DoorstepPermissionsModal({
                       ))}
                     </select>
                   </td>
-                  <td className="p-2 text-center">
+                  <td className="px-2 py-1 text-center align-middle">
                     {isAllowed && acc.assignedAgentID ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
                         <CheckCircle2 className="w-2.5 h-2.5" /> ॲपवर दिसेल
@@ -353,10 +353,10 @@ export default function DoorstepPermissionsModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-xs">
-      <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-300">
+      <div className="bg-white rounded-xl shadow-2xl max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-300">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-slate-900 via-[#B44814] to-slate-900 text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
               <ShieldCheck className="w-6 h-6" />
@@ -424,7 +424,7 @@ export default function DoorstepPermissionsModal({
                       if (selectedBulkAgentId) handleBulkAssign(selectedBulkAgentId as number);
                     }}
                     disabled={!selectedBulkAgentId}
-                    className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                    className="px-2.5 py-1 bg-orange-50 text-[#9A3412] border border-amber-200 hover:bg-orange-100 rounded text-xs font-bold transition disabled:opacity-50 cursor-pointer"
                   >
                     सर्व खाती या एजंटला द्या
                   </button>
@@ -451,7 +451,7 @@ export default function DoorstepPermissionsModal({
               {/* 2. Loan Accounts */}
               {renderAccountTable(
                 'कर्ज खाती (Loan Accounts - EMI Collection)',
-                <Landmark className="w-4 h-4 text-blue-600" />,
+                <Landmark className="w-4 h-4 text-[#B44814]" />,
                 loanList,
                 'loan',
                 'एजंट मोबाईलवर कर्ज EMI स्वीकारू शकेल (वॉटरफॉल नुसार जमा होईल)'

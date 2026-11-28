@@ -648,7 +648,7 @@ export default function LoanCollectionRegister() {
                               {fmtCurrency(getEffectiveTotalReceived(row))}
                             </td>
                             <td className="border border-gray-900 py-1 px-1.5 text-center font-mono text-[10.5px]">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${row.paymentMode === 'Cash' ? 'bg-emerald-50 text-emerald-800' : 'bg-blue-50 text-blue-800'}`}>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${row.paymentMode === 'Cash' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-[#7C2418]'}`}>
                                 {row.paymentMode === 'Cash' ? 'रोख' : 'वर्ग'}
                               </span>
                             </td>

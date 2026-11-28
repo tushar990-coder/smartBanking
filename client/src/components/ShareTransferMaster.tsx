@@ -558,12 +558,12 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">हस्तांतरित मूल्य (₹)</div>
-            <div className="text-sm font-black text-indigo-950 font-mono">₹{totalAmountTransferred.toLocaleString('en-IN')}</div>
+            <div className="text-sm font-black text-[#4A1410] font-mono">₹{totalAmountTransferred.toLocaleString('en-IN')}</div>
           </div>
         </div>
 
@@ -586,7 +586,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
               ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
               : message.type === 'error'
               ? 'bg-rose-50 text-rose-900 border-rose-300'
-              : 'bg-blue-50 text-blue-900 border-blue-300'
+              : 'bg-amber-50 text-[#5A1A14] border-amber-300'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -838,7 +838,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
                 type="date"
                 value={transferDate}
                 onChange={(e) => setTransferDate(e.target.value)}
-                className={`${inputClass} font-bold text-primary font-mono bg-blue-50/40 border-blue-300`}
+                className={`${inputClass} font-bold text-primary font-mono bg-amber-50/40 border-amber-300`}
                 required
               />
               <span className="text-[9px] text-gray-500 block mt-0.5">
@@ -873,7 +873,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
               <label className={labelClass}>
                 एकूण हस्तांतरित रक्कम (Amount ₹)
               </label>
-              <div className="px-2.5 py-1 bg-blue-50/70 border border-blue-200 rounded-sm font-mono font-black text-primary text-xs flex items-center h-[28px] shadow-2xs">
+              <div className="px-2.5 py-1 bg-amber-50/70 border border-amber-200 rounded-sm font-mono font-black text-primary text-xs flex items-center h-[28px] shadow-2xs">
                 ₹{transferAmount.toFixed(2)}
               </div>
             </div>
@@ -1069,21 +1069,21 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-[11px]">
-            <thead className="bg-slate-100 text-slate-700 font-bold">
+          <table className="min-w-full divide-y divide-gray-200 text-[11px] leading-tight border-collapse">
+            <thead className="bg-[#5A1A14] text-amber-50 font-bold">
               <tr>
-                <th className="px-2.5 py-1.5 text-center border-r border-gray-200 w-10">क्र.</th>
-                <th className="px-2.5 py-1.5 text-left border-r border-gray-200 w-24">दिनांक</th>
-                <th className="px-2.5 py-1.5 text-left border-r border-gray-200 w-28">प्रकार</th>
-                <th className="px-2.5 py-1.5 text-left border-r border-gray-200">सभासद नाव व क्र.</th>
-                <th className="px-2.5 py-1.5 text-right border-r border-gray-200 w-24">शेअर्स संख्या</th>
-                <th className="px-2.5 py-1.5 text-right border-r border-gray-200 w-24">रक्कम (₹)</th>
-                <th className="px-2.5 py-1.5 text-left border-r border-gray-200 w-24">व्हाउचर क्र.</th>
-                <th className="px-2.5 py-1.5 text-left border-r border-gray-200">तपशील (Narration)</th>
-                <th className="px-2.5 py-1.5 text-center w-24">कृती (Action)</th>
+                <th className="px-2.5 py-1.5 text-center border-r border-amber-400/25 w-10 whitespace-nowrap">क्र.</th>
+                <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 w-24 whitespace-nowrap">दिनांक</th>
+                <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 w-28 whitespace-nowrap">प्रकार</th>
+                <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">सभासद नाव व क्र.</th>
+                <th className="px-2.5 py-1.5 text-right border-r border-amber-400/25 w-24 whitespace-nowrap">शेअर्स संख्या</th>
+                <th className="px-2.5 py-1.5 text-right border-r border-amber-400/25 w-24 whitespace-nowrap">रक्कम (₹)</th>
+                <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 w-24 whitespace-nowrap">व्हाउचर क्र.</th>
+                <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">तपशील (Narration)</th>
+                <th className="px-2.5 py-1.5 text-center w-24 whitespace-nowrap">कृती (Action)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-amber-100 bg-white">
               {history.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-gray-400 font-medium italic">
@@ -1092,12 +1092,12 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
                 </tr>
               ) : (
                 history.map((item, idx) => (
-                  <tr key={item.transactionId} className="hover:bg-blue-50/40 transition-colors">
-                    <td className="px-2.5 py-1.5 border-r border-gray-200 text-center text-gray-500 font-mono">{idx + 1}</td>
-                    <td className="px-2.5 py-1.5 border-r border-gray-200 font-mono text-gray-800">
+                  <tr key={item.transactionId} className="hover:bg-amber-50/40 transition-colors">
+                    <td className="px-2.5 py-1 border-r border-gray-200 text-center text-gray-500 font-mono align-middle">{idx + 1}</td>
+                    <td className="px-2.5 py-1 border-r border-gray-200 font-mono text-gray-800 align-middle">
                       {new Date(item.transactionDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                     </td>
-                    <td className="px-2.5 py-1.5 border-r border-gray-200">
+                    <td className="px-2.5 py-1 border-r border-gray-200 align-middle">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                         item.transactionType === 'Transfer-Out'
                           ? 'bg-rose-50 text-rose-800 border border-rose-200'
@@ -1106,23 +1106,23 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
                         {item.transactionType === 'Transfer-Out' ? '📤 हस्तांतरित (Out)' : '📥 प्राप्त (In)'}
                       </span>
                     </td>
-                    <td className="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-900">
+                    <td className="px-2.5 py-1 border-r border-gray-200 font-bold text-gray-900 align-middle">
                       {item.memberCode ? <span className="font-mono text-primary mr-1">[{item.memberCode}]</span> : ''}
                       <span>{item.memberName}</span>
                     </td>
-                    <td className="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-900">
+                    <td className="px-2.5 py-1 border-r border-gray-200 text-right font-mono font-bold text-gray-900 align-middle">
                       {item.numberOfShares}
                     </td>
-                    <td className="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-black text-primary">
+                    <td className="px-2.5 py-1 border-r border-gray-200 text-right font-mono font-black text-primary align-middle">
                       ₹{item.amount.toFixed(2)}
                     </td>
-                    <td className="px-2.5 py-1.5 border-r border-gray-200 font-mono text-blue-700 font-semibold">
+                    <td className="px-2.5 py-1 border-r border-gray-200 font-mono text-[#9A3412] font-semibold align-middle">
                       {item.voucherNo || '-'}
                     </td>
-                    <td className="px-2.5 py-1.5 border-r border-gray-200 text-gray-600 text-[11px] truncate max-w-xs" title={item.narration}>
+                    <td className="px-2.5 py-1 border-r border-gray-200 text-gray-600 text-[11px] truncate max-w-xs align-middle" title={item.narration}>
                       {item.narration}
                     </td>
-                    <td className="px-2.5 py-1.5 text-center">
+                    <td className="px-2.5 py-1 text-center align-middle">
                       <button
                         type="button"
                         onClick={() => handleCancelTransfer(item)}
@@ -1144,7 +1144,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
       {/* 👥 5. VIEW LIST POPUP MODAL */}
       {isListModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-white rounded-sm shadow-2xl max-w-6xl w-full max-h-[92vh] flex flex-col border border-gray-300 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-sm shadow-2xl max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col border border-gray-300 animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 rounded-t-sm flex justify-between items-center border-b border-primary/40">
               <div className="flex items-center gap-2">
@@ -1193,21 +1193,21 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
 
             {/* Modal Table Body */}
             <div className="overflow-y-auto overflow-x-auto flex-1 p-2">
-              <table className="min-w-full divide-y divide-gray-200 text-[11px]">
-                <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 border-b border-slate-300 shadow-2xs">
+              <table className="min-w-full divide-y divide-gray-200 text-[11px] leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] text-amber-50 font-bold sticky top-0 border-b border-amber-400/30 shadow-2xs">
                   <tr>
-                    <th className="px-2.5 py-1.5 text-center border-r border-gray-200 w-10">क्र.</th>
-                    <th className="px-2.5 py-1.5 text-left border-r border-gray-200 w-24">दिनांक</th>
-                    <th className="px-2.5 py-1.5 text-left border-r border-gray-200 w-28">प्रकार</th>
-                    <th className="px-2.5 py-1.5 text-left border-r border-gray-200">सभासद नाव व क्र.</th>
-                    <th className="px-2.5 py-1.5 text-right border-r border-gray-200 w-24">शेअर्स संख्या</th>
-                    <th className="px-2.5 py-1.5 text-right border-r border-gray-200 w-24">रक्कम (₹)</th>
-                    <th className="px-2.5 py-1.5 text-left border-r border-gray-200 w-24">व्हाउचर क्र.</th>
-                    <th className="px-2.5 py-1.5 text-left border-r border-gray-200">ठराव / तपशील</th>
-                    <th className="px-2.5 py-1.5 text-center w-28">कृती (Action)</th>
+                    <th className="px-2.5 py-1.5 text-center border-r border-amber-400/25 w-10 whitespace-nowrap">क्र.</th>
+                    <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 w-24 whitespace-nowrap">दिनांक</th>
+                    <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 w-28 whitespace-nowrap">प्रकार</th>
+                    <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">सभासद नाव व क्र.</th>
+                    <th className="px-2.5 py-1.5 text-right border-r border-amber-400/25 w-24 whitespace-nowrap">शेअर्स संख्या</th>
+                    <th className="px-2.5 py-1.5 text-right border-r border-amber-400/25 w-24 whitespace-nowrap">रक्कम (₹)</th>
+                    <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 w-24 whitespace-nowrap">व्हाउचर क्र.</th>
+                    <th className="px-2.5 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">ठराव / तपशील</th>
+                    <th className="px-2.5 py-1.5 text-center w-28 whitespace-nowrap">कृती (Action)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-amber-100 bg-white">
                   {filteredHistory.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="px-4 py-8 text-center text-gray-400 font-medium italic">
@@ -1216,12 +1216,12 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
                     </tr>
                   ) : (
                     filteredHistory.map((item, idx) => (
-                      <tr key={item.transactionId} className="hover:bg-blue-50/50 transition-colors">
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-center text-gray-500 font-mono">{idx + 1}</td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 font-mono text-gray-800">
+                      <tr key={item.transactionId} className="hover:bg-amber-50/50 transition-colors">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-center text-gray-500 font-mono align-middle">{idx + 1}</td>
+                        <td className="px-2.5 py-1 border-r border-gray-200 font-mono text-gray-800 align-middle">
                           {new Date(item.transactionDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200">
+                        <td className="px-2.5 py-1 border-r border-gray-200 align-middle">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold inline-block ${
                             item.transactionType === 'Transfer-Out'
                               ? 'bg-rose-50 text-rose-800 border border-rose-200'
@@ -1230,23 +1230,23 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
                             {item.transactionType === 'Transfer-Out' ? '📤 हस्तांतरित (Out)' : '📥 प्राप्त (In)'}
                           </span>
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-900">
+                        <td className="px-2.5 py-1 border-r border-gray-200 font-bold text-gray-900 align-middle">
                           {item.memberCode ? <span className="font-mono text-primary mr-1">[{item.memberCode}]</span> : ''}
                           <span>{item.memberName}</span>
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-900">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-right font-mono font-bold text-gray-900 align-middle">
                           {item.numberOfShares}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-black text-primary">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-right font-mono font-black text-primary align-middle">
                           ₹{item.amount.toFixed(2)}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 font-mono text-blue-700 font-semibold">
+                        <td className="px-2.5 py-1 border-r border-gray-200 font-mono text-[#9A3412] font-semibold align-middle">
                           {item.voucherNo || '-'}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-gray-600 text-[11px] max-w-xs truncate" title={item.narration}>
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-gray-600 text-[11px] max-w-xs truncate align-middle" title={item.narration}>
                           {item.narration}
                         </td>
-                        <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
+                        <td className="px-2.5 py-1 text-center whitespace-nowrap align-middle">
                           <button
                             type="button"
                             onClick={() => handleCancelTransfer(item)}

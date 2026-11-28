@@ -145,8 +145,8 @@ const STAGE_STATUS_BADGE: Record<string, string> = {
 
 const TIMELINE_CATEGORY_BADGE: Record<string, string> = {
   NOTICE: 'bg-amber-100 text-amber-900 border-amber-300',
-  CASE: 'bg-indigo-100 text-indigo-900 border-indigo-300',
-  HEARING: 'bg-sky-100 text-sky-900 border-sky-300',
+  CASE: 'bg-orange-100 text-[#5A1A14] border-amber-300',
+  HEARING: 'bg-amber-100 text-[#5A1A14] border-amber-300',
   CERTIFICATE: 'bg-emerald-100 text-emerald-900 border-emerald-300',
   EXECUTION: 'bg-rose-100 text-rose-900 border-rose-300',
   EXPENSE: 'bg-orange-100 text-orange-900 border-orange-300',

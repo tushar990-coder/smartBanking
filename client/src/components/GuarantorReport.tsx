@@ -438,7 +438,7 @@ const GuarantorReport: React.FC = () => {
             {viewMode === 'grouped' && (
                 <button 
                     onClick={toggleAllExpand}
-                    className="h-6 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 px-1.5 rounded-xs text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    className="h-6 bg-amber-50 hover:bg-amber-100 text-[#7C2418] border border-amber-200 px-1.5 rounded-xs text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                     title={isAllExpanded ? 'सर्व तपशील बंद करा' : 'सर्व तपशील उघडा'}
                 >
                     <Layers size={11} /> {isAllExpanded ? 'बंद करा' : 'सर्व उघडा'}
@@ -456,7 +456,7 @@ const GuarantorReport: React.FC = () => {
             </div>
             <div className="bg-white p-2 rounded-xs border border-slate-200 shadow-2xs">
                 <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wide">हमी दिलेली खाती</span>
-                <span className="text-sm sm:text-base font-extrabold text-blue-700 font-mono">{totalGuaranteedLoansCount}</span>
+                <span className="text-sm sm:text-base font-extrabold text-[#9A3412] font-mono">{totalGuaranteedLoansCount}</span>
             </div>
             <div className="bg-white p-2 rounded-xs border border-slate-200 shadow-2xs">
                 <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wide">एकूण मंजूर जामीन</span>
@@ -464,7 +464,7 @@ const GuarantorReport: React.FC = () => {
             </div>
             <div className="bg-white p-2 rounded-xs border border-slate-200 shadow-2xs">
                 <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wide">एकूण मुद्दल बाकी</span>
-                <span className="text-sm sm:text-base font-extrabold text-indigo-700 font-mono">₹{totalPrincipalBalSum.toLocaleString('en-IN')}</span>
+                <span className="text-sm sm:text-base font-extrabold text-[#9A3412] font-mono">₹{totalPrincipalBalSum.toLocaleString('en-IN')}</span>
             </div>
             <div className="bg-white p-2 rounded-xs border border-emerald-300 bg-emerald-50/40 shadow-2xs">
                 <span className="text-[10px] text-emerald-800 font-bold block uppercase tracking-wide">एकूण चालू येणेबाकी</span>
@@ -589,7 +589,7 @@ const GuarantorReport: React.FC = () => {
                                                                 <div className="font-bold text-slate-950 text-xs flex items-center justify-between">
                                                                     <span>{g.guarantorName}</span>
                                                                     {loans.length > 1 && (
-                                                                        <span className="text-[9px] bg-blue-100 text-blue-800 font-bold px-1 rounded">
+                                                                        <span className="text-[9px] bg-amber-100 text-[#7C2418] font-bold px-1 rounded">
                                                                             {loans.length} खाती
                                                                         </span>
                                                                     )}
@@ -699,7 +699,7 @@ const GuarantorReport: React.FC = () => {
                                                                     थकीत कर्जदार
                                                                 </span>
                                                             ) : g.auditAlertCode === 'OWN_BORROWER' ? (
-                                                                <span className="px-1.5 py-0.5 rounded text-blue-900 bg-blue-100 font-semibold block leading-tight">
+                                                                <span className="px-1.5 py-0.5 rounded text-[#5A1A14] bg-amber-100 font-semibold block leading-tight">
                                                                     स्वतः कर्जदार
                                                                 </span>
                                                             ) : (
@@ -730,7 +730,7 @@ const GuarantorReport: React.FC = () => {
                                 <td className="border border-slate-900 py-2 px-2 text-right font-mono text-slate-950 font-bold">
                                     ₹{totalSanctionedAmtSum.toLocaleString('en-IN')}
                                 </td>
-                                <td className="border border-slate-900 py-2 px-2 text-right font-mono text-indigo-900 font-bold">
+                                <td className="border border-slate-900 py-2 px-2 text-right font-mono text-[#5A1A14] font-bold">
                                     ₹{totalPrincipalBalSum.toLocaleString('en-IN')}
                                 </td>
                                 <td className="border border-slate-900 py-2 px-2 text-right font-mono text-slate-900 font-bold">
@@ -770,7 +770,7 @@ const GuarantorReport: React.FC = () => {
                                 return (
                                     <React.Fragment key={g.guarantorMemberID}>
                                         {/* Master Guarantor Summary Row */}
-                                        <tr className="bg-slate-50/80 hover:bg-blue-50/40 border-t-2 border-slate-300 font-semibold text-slate-900 transition-colors">
+                                        <tr className="bg-slate-50/80 hover:bg-amber-50/40 border-t-2 border-slate-300 font-semibold text-slate-900 transition-colors">
                                             <td className="border border-slate-900 py-1.5 px-1 text-center font-mono font-bold text-slate-800 bg-slate-100">
                                                 {gIdx + 1}
                                             </td>
@@ -779,7 +779,7 @@ const GuarantorReport: React.FC = () => {
                                                     <button 
                                                         type="button"
                                                         onClick={() => toggleMemberExpand(g.guarantorMemberID)}
-                                                        className="text-primary hover:text-blue-900 no-print cursor-pointer p-0.5 rounded hover:bg-blue-100"
+                                                        className="text-primary hover:text-[#5A1A14] no-print cursor-pointer p-0.5 rounded hover:bg-amber-100"
                                                         title={isExpanded ? 'खाती लपवा' : 'खाती पहा'}
                                                     >
                                                         {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
@@ -859,7 +859,7 @@ const GuarantorReport: React.FC = () => {
                                                             </thead>
                                                             <tbody>
                                                                 {loans.map((l, lIdx) => (
-                                                                    <tr key={lIdx} className="hover:bg-blue-50/40 border-b border-slate-200">
+                                                                    <tr key={lIdx} className="hover:bg-amber-50/40 border-b border-slate-200">
                                                                         <td className="border border-slate-300 p-1 text-center font-mono">{lIdx + 1}</td>
                                                                         <td className="border border-slate-300 p-1 text-center font-mono font-bold text-primary">
                                                                             {l.loanAccountNo}

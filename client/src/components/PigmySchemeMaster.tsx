@@ -753,33 +753,33 @@ export default function PigmySchemeMaster() {
       className="p-3 sm:p-4 w-full min-h-screen flex flex-col text-[11px] font-sans"
       style={{
         background:
-          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+          'linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 45%, #FEF3E2 100%)',
       }}
     >
       <div className="max-w-[1640px] mx-auto w-full space-y-3">
       {/* Aurora Sapphire Header Banner */}
       <div
-        className="px-4 py-3 rounded-2xl shadow-[0_8px_24px_rgba(30,58,138,0.18)] text-white flex flex-wrap justify-between items-center gap-2.5"
+        className="px-4 py-3 rounded-2xl shadow-[0_8px_24px_rgba(124,36,24,0.18)] text-white flex flex-wrap justify-between items-center gap-2.5"
         style={{
           background:
-            'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+            'linear-gradient(125deg, #5A1A14 0%, #7C2418 46%, #B44814 82%, #B44814 100%)',
         }}
       >
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-sky-200 shadow-xs shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-amber-200 shadow-xs shrink-0">
             <Coins size={18} className="stroke-[2.4]" />
           </div>
           <div>
             <h1 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2 flex-wrap">
               <span>पिग्मी योजना मास्टर</span>
-              <span className="text-[11px] font-semibold text-sky-200 font-mono hidden sm:inline">(Pigmy Scheme Master)</span>
+              <span className="text-[11px] font-semibold text-amber-200 font-mono hidden sm:inline">(Pigmy Scheme Master)</span>
               {isEditMode && (
                 <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs animate-pulse">
                   ✏️ संपादन चालू (#{formData.schemeCode})
                 </span>
               )}
             </h1>
-            <p className="text-[11px] text-blue-100/90 font-medium">
+            <p className="text-[11px] text-amber-100/90 font-medium">
               नवीन पिग्मी योजना तयार करा, व्याजदर, मुदत, एजंट कमिशन व जनरल लेजर खाते मॅपिंग व्यवस्थापन
             </p>
           </div>
@@ -816,10 +816,10 @@ export default function PigmySchemeMaster() {
               fetchSchemesAndLedgers();
               setShowListModal(true);
             }}
-            className="px-3.5 py-1.5 bg-white text-[#0F2454] hover:bg-blue-50 rounded-full text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+            className="px-3.5 py-1.5 bg-white text-[#5A1A14] hover:bg-amber-50 rounded-full text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
             title="सर्व पिग्मी योजना यादी पॉप-अप मध्ये पहा"
           >
-            <Layers className="w-3.5 h-3.5 text-[#2563EB]" />
+            <Layers className="w-3.5 h-3.5 text-[#B44814]" />
             <span>नोंदवलेली योजना यादी ({schemes.length})</span>
           </button>
         </div>
@@ -827,17 +827,17 @@ export default function PigmySchemeMaster() {
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-blue-200/75 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 100%)' }}>
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-amber-200/75 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #D97706 0%, #B44814 100%)' }}>
             <Coins className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">एकूण पिग्मी योजना</div>
-            <div className="text-sm font-black text-[#0F2454]">{schemes.length}</div>
+            <div className="text-sm font-black text-[#5A1A14]">{schemes.length}</div>
           </div>
         </div>
 
-        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-blue-200/75 shadow-2xs flex items-center gap-3">
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-amber-200/75 shadow-2xs flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #4ADE80 0%, #16A34A 100%)' }}>
             <CheckCircle className="w-4 h-4" />
           </div>
@@ -847,17 +847,17 @@ export default function PigmySchemeMaster() {
           </div>
         </div>
 
-        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-blue-200/75 shadow-2xs flex items-center gap-3">
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-amber-200/75 shadow-2xs flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #A78BFA 0%, #7C3AED 100%)' }}>
             <Percent className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">सरासरी व्याजदर (% Avg)</div>
-            <div className="text-sm font-black text-indigo-950">{avgInterestRate}% p.a.</div>
+            <div className="text-sm font-black text-[#4A1410]">{avgInterestRate}% p.a.</div>
           </div>
         </div>
 
-        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-blue-200/75 shadow-2xs flex items-center gap-3">
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-xl border border-amber-200/75 shadow-2xs flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0" style={{ background: 'linear-gradient(135deg, #FBBF24 0%, #D97706 100%)' }}>
             <BookOpen className="w-4 h-4" />
           </div>
@@ -888,8 +888,8 @@ export default function PigmySchemeMaster() {
       {/* MAIN SINGLE UNIFIED FORM */}
       <div 
         ref={formContainerRef}
-        className={`bg-white/95 backdrop-blur-md p-4 rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border space-y-3.5 transition-all duration-300 ${
-          isEditMode ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 bg-blue-50/20' : 'border-blue-200/75'
+        className={`bg-white/95 backdrop-blur-md p-4 rounded-2xl shadow-[0_8px_28px_rgba(124,36,24,0.09)] border space-y-3.5 transition-all duration-300 ${
+          isEditMode ? 'border-[#B44814] ring-2 ring-[#B44814]/20 bg-amber-50/20' : 'border-amber-200/75'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1014,8 +1014,8 @@ export default function PigmySchemeMaster() {
             {/* Tenor & Return Slabs Matrix - Dynamic Slabs with Month Selection */}
             {useMemo(() => (
             <div className="mt-3 pt-3 border-t-2 border-primary/20 space-y-2.5">
-              <div className="p-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-sm">
-                <div className="flex items-center gap-1.5 font-bold text-xs text-blue-950">
+              <div className="p-2.5 bg-gradient-to-r from-[#FDF2EE] to-[#FEF3E2] border border-amber-200 rounded-sm">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-[#4A1410]">
                   <Layers className="w-4 h-4 text-primary" />
                   <span>कालावधीनुसार परतावा व दंड स्लॅब्स (Dynamic Return & Penalty Slabs)</span>
                   <span className="bg-primary text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
@@ -1025,47 +1025,47 @@ export default function PigmySchemeMaster() {
                     कमाल मुदत: {Math.max(...slabs.map((s) => Number(s.toDays) || 0))} दिवस
                   </span>
                 </div>
-                <p className="text-[10px] text-blue-800 mt-0.5 font-medium">
+                <p className="text-[10px] text-[#7C2418] mt-0.5 font-medium">
                   पिग्मी योजनेसाठी हवे तेवढे स्लॅब जोडा आणि कालावधी (दिवस) निवडा. ग्राहकाने मुदतपूर्व पैसे काढल्यास (Partial Return) किंवा खाते बंद केल्यास कालावधीनुसार व्याज अथवा दंड कपात आकारली जाईल.
                 </p>
               </div>
 
               {/* Slabs Table */}
               <div className="overflow-x-auto border border-gray-200 rounded-sm shadow-xs bg-white">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 text-gray-700 font-bold border-b border-gray-300 text-[11px]">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30 text-[11px]">
                     <tr>
-                      <th className="px-2 py-1.5 text-center w-14 border-r border-gray-200">#</th>
-                      <th className="px-2 py-1.5 text-center border-r border-gray-200 w-36">
+                      <th className="px-2 py-1.5 text-center w-14 border-r border-amber-400/25 whitespace-nowrap">#</th>
+                      <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-36 whitespace-nowrap">
                         कालावधी (दिवस)
                       </th>
-                      <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">
+                      <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-28 whitespace-nowrap">
                         व्याजदर (% p.a.)
                       </th>
-                      <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">
+                      <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-28 whitespace-nowrap">
                         दंड दर (% Penalty)
                       </th>
-                      <th className="px-2 py-1.5 text-left border-r border-gray-200">
+                      <th className="px-2 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">
                         नियम शेरा / वर्णन (Policy Note)
                       </th>
-                      <th className="px-2 py-1.5 text-center w-36 border-r border-gray-200">
+                      <th className="px-2 py-1.5 text-center w-36 border-r border-amber-400/25 whitespace-nowrap">
                         परतावा प्रकार (Outcome)
                       </th>
-                      <th className="px-2 py-1.5 text-center w-12">
+                      <th className="px-2 py-1.5 text-center w-12 whitespace-nowrap">
                         कृती
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px]">
+                  <tbody className="divide-y divide-amber-100 text-[11px]">
                     {slabs.map((slab, index) => {
                       const isPenalty = (Number(slab.penaltyRate) || 0) > 0;
                       const isInterest = (Number(slab.interestRate) || 0) > 0;
                       return (
-                        <tr key={index} className="hover:bg-blue-50/30 transition-colors">
-                          <td className="px-2 py-1.5 text-center font-bold text-gray-600 border-r border-gray-200 whitespace-nowrap">
+                        <tr key={index} className="hover:bg-amber-50/30 transition-colors">
+                          <td className="px-2 py-1 text-center font-bold text-gray-600 border-r border-gray-200 whitespace-nowrap align-middle">
                             स्लॅब {index + 1}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                             <div className="flex items-center justify-center gap-1 font-mono text-[11px]">
                               <span className="bg-slate-100 text-gray-700 px-1.5 py-0.5 rounded font-bold border border-gray-300" title="सुरुवातीचा दिवस (Start Day)">
                                 {slab.fromDays}
@@ -1088,7 +1088,7 @@ export default function PigmySchemeMaster() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <div className="relative">
                               <input
                                 type="number"
@@ -1104,7 +1104,7 @@ export default function PigmySchemeMaster() {
                               />
                             </div>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <div className="relative">
                               <input
                                 type="number"
@@ -1120,7 +1120,7 @@ export default function PigmySchemeMaster() {
                               />
                             </div>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <input
                               type="text"
                               value={slab.slabDescription || ''}
@@ -1129,7 +1129,7 @@ export default function PigmySchemeMaster() {
                               className="w-full border border-gray-300 rounded px-2 py-0.5 text-[11px] text-gray-800 focus:ring-1 focus:ring-primary focus:border-primary"
                             />
                           </td>
-                          <td className="px-2 py-1.5 text-center whitespace-nowrap border-r border-gray-200">
+                          <td className="px-2 py-1 text-center whitespace-nowrap border-r border-gray-200 align-middle">
                             {isPenalty ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
                                 🔴 {slab.penaltyRate}% दंड कपात
@@ -1144,7 +1144,7 @@ export default function PigmySchemeMaster() {
                               </span>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             <button
                               type="button"
                               onClick={() => handleDeleteSlab(index)}
@@ -1303,7 +1303,7 @@ export default function PigmySchemeMaster() {
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1362,22 +1362,22 @@ export default function PigmySchemeMaster() {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना कोड & नाव</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">मुदत & व्याजदर</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड देयता खाते</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">योजना कोड & नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">मुदत & व्याजदर</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">मॅप्ड देयता खाते</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredSchemes.map((s) => {
                       const schemeId = getSchemeId(s);
                       return (
                         <tr key={schemeId} className="hover:bg-primary/5 transition-colors">
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                             <div className="flex items-center justify-center gap-1">
                               <button 
                                 type="button" 
@@ -1399,30 +1399,30 @@ export default function PigmySchemeMaster() {
                               </button>
                             </div>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                             <div className="font-bold text-gray-900 font-mono">{s.schemeCode || schemeId}</div>
                             <div className="text-gray-600 font-medium">{s.schemeName}</div>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                             <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
                             <div className="text-gray-500 text-[10px]">
                               {s.tenureDays || (s.durationMonths > 60 ? s.durationMonths : s.durationMonths * 30)} दिवस ({s.durationMonths > 60 ? Math.round(s.durationMonths / 30) : s.durationMonths} म.) • {s.interestCalculationMethod || 'Flat'}
                             </div>
                             {s.interestPostingFrequency && (
-                              <div className="text-blue-700 font-bold text-[9px]">
+                              <div className="text-[#9A3412] font-bold text-[9px]">
                                 पोस्टिंग: {s.interestPostingFrequency}
                               </div>
                             )}
                             {s.slabs && s.slabs.length > 0 && (
                               <span
-                                className="inline-block mt-0.5 px-1.5 py-0.5 text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded"
+                                className="inline-block mt-0.5 px-1.5 py-0.5 text-[9px] font-bold bg-orange-50 text-[#9A3412] border border-amber-200 rounded"
                                 title={s.slabs.map((sl) => `${sl.fromDays}-${sl.toDays}D: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ')}
                               >
                                 📊 {s.slabs.length} स्लॅब्स
                               </span>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                             {s.pigmyLiabilityLedger?.ledgerName ? (
                               <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 font-bold" title={s.pigmyLiabilityLedger.ledgerName}>
                                 {s.pigmyLiabilityLedger.ledgerName}
@@ -1438,7 +1438,7 @@ export default function PigmySchemeMaster() {
                               </div>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               s.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                             }`}>

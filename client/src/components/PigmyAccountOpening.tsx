@@ -607,28 +607,28 @@ export default function PigmyAccountOpening() {
       className="p-3 sm:p-4 w-full min-h-full font-sans text-xs"
       style={{
         background:
-          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+          'linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 45%, #FEF3E2 100%)',
       }}
     >
       <div className="max-w-[1640px] mx-auto space-y-3">
       {/* Aurora Sapphire Header Banner */}
       <div
-        className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2 rounded-2xl shadow-[0_8px_24px_rgba(30,58,138,0.18)]"
+        className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2 rounded-2xl shadow-[0_8px_24px_rgba(124,36,24,0.18)]"
         style={{
           background:
-            'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+            'linear-gradient(125deg, #5A1A14 0%, #7C2418 46%, #B44814 82%, #B44814 100%)',
         }}
       >
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shadow-xs shrink-0">
-            <CreditCard className="w-5 h-5 text-sky-200" />
+            <CreditCard className="w-5 h-5 text-amber-200" />
           </div>
           <div>
             <h1 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2">
               <span>नवीन पिग्मी खाते उघडा</span>
-              <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(New Pigmy Account Opening)</span>
+              <span className="text-[11px] font-semibold text-amber-200 hidden sm:inline">(New Pigmy Account Opening)</span>
             </h1>
-            <p className="text-[11px] text-blue-100/90 font-medium">ऑटो-इन्क्रिमेंट खाते क्रमांक, एजंट लिंकिंग आणि पिग्मी खात्यांची व्यवस्थापन यादी</p>
+            <p className="text-[11px] text-amber-100/90 font-medium">ऑटो-इन्क्रिमेंट खाते क्रमांक, एजंट लिंकिंग आणि पिग्मी खात्यांची व्यवस्थापन यादी</p>
           </div>
         </div>
 
@@ -657,7 +657,7 @@ export default function PigmyAccountOpening() {
       )}
 
       {/* Main Form */}
-      <form onSubmit={handleSubmit} className="bg-white/95 backdrop-blur-md rounded-2xl p-4 sm:p-5 shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 space-y-5">
+      <form onSubmit={handleSubmit} className="bg-white/95 backdrop-blur-md rounded-2xl p-4 sm:p-5 shadow-[0_8px_28px_rgba(124,36,24,0.09)] border border-amber-200/75 space-y-5">
         
         {/* Section 1: Customer & Account Info */}
         <div>
@@ -687,7 +687,7 @@ export default function PigmyAccountOpening() {
                       type="button"
                       onClick={handleResetAccountNo}
                       title="ऑटो नंबरवर रिसेट करा"
-                      className="text-[10px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+                      className="text-[10px] text-[#9A3412] hover:text-[#5A1A14] font-bold underline cursor-pointer"
                     >
                       ↺ रीसेट
                     </button>
@@ -730,7 +730,7 @@ export default function PigmyAccountOpening() {
                 className={`w-full border rounded-lg px-2.5 py-1.5 font-semibold text-xs outline-none shadow-2xs transition-colors ${
                   duplicateLegacyAccount
                     ? 'border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600'
-                    : 'border-amber-300 bg-amber-50/30 text-slate-800 focus:border-blue-500'
+                    : 'border-amber-300 bg-amber-50/30 text-slate-800 focus:border-[#B44814]'
                 }`}
               />
               {duplicateLegacyAccount && (
@@ -761,8 +761,8 @@ export default function PigmyAccountOpening() {
 
           {/* RICH SELECTED CUSTOMER PROFILE CARD */}
           {selectedCustomer && (
-            <div className="mt-3.5 p-3.5 bg-gradient-to-r from-blue-50/80 via-slate-50 to-indigo-50/60 border border-blue-200 rounded-2xl shadow-xs space-y-2.5">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-blue-100 pb-2">
+            <div className="mt-3.5 p-3.5 bg-gradient-to-r from-[#FDF2EE]/80 via-slate-50 to-[#FEF3E2]/60 border border-amber-200 rounded-2xl shadow-xs space-y-2.5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-amber-100 pb-2">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-primary text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 flex items-center justify-center">
                     <User className="w-4 h-4 mx-auto" />
@@ -986,7 +986,7 @@ export default function PigmyAccountOpening() {
                 </div>
 
                 {paymentMode === 'Bank' && (
-                  <div className="md:col-span-2 p-2.5 bg-blue-50/60 border border-blue-200 rounded-xl">
+                  <div className="md:col-span-2 p-2.5 bg-amber-50/60 border border-amber-200 rounded-xl">
                     <BankLedgerSelect
                       value={bankLedgerId}
                       onChange={setBankLedgerId}
@@ -1075,20 +1075,20 @@ export default function PigmyAccountOpening() {
 
             {/* Modal Table Content using App Theme */}
             <div className="overflow-y-auto flex-1">
-              <table className="w-full text-xs text-left">
+              <table className="w-full text-[11px] text-left leading-tight border-collapse">
                 <thead className="bg-primary text-white font-semibold sticky top-0 z-10">
                   <tr>
-                    <th className="px-3 py-2.5">खाते क्रमांक (Account No)</th>
-                    <th className="px-3 py-2.5">खातेदाराचे नाव (Customer Name)</th>
-                    <th className="px-3 py-2.5">पिग्मी योजना (Scheme)</th>
-                    <th className="px-3 py-2.5">नियुक्त एजंट (Agent)</th>
-                    <th className="px-3 py-2.5 text-right">जमा रक्कम (Balance ₹)</th>
-                    <th className="px-3 py-2.5">उघडल्याची तारीख</th>
-                    <th className="px-3 py-2.5 text-center">स्थिती (Status)</th>
-                    <th className="px-3 py-2.5 text-right">कारवाई (Actions)</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">खाते क्रमांक (Account No)</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">खातेदाराचे नाव (Customer Name)</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">पिग्मी योजना (Scheme)</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">नियुक्त एजंट (Agent)</th>
+                    <th className="px-2 py-1.5.5 text-right whitespace-nowrap">जमा रक्कम (Balance ₹)</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">उघडल्याची तारीख</th>
+                    <th className="px-2 py-1.5.5 text-center whitespace-nowrap">स्थिती (Status)</th>
+                    <th className="px-2 py-1.5.5 text-right whitespace-nowrap">कारवाई (Actions)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-amber-100 bg-white">
                   {loadingAccounts ? (
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-slate-400">
@@ -1116,7 +1116,7 @@ export default function PigmyAccountOpening() {
 
                       return (
                         <tr key={`acc-${accId}-${idx}`} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-3 py-2.5 font-mono font-bold text-primary">
+                          <td className="px-2 py-1.5 font-mono font-bold text-primary align-middle">
                             <div>{format14DigitDisplay(accNo)}</div>
                             {(acc.legacyAccountNumber || acc.oldAccountNo) && (
                               <div className="text-[10px] text-amber-700 font-bold">
@@ -1124,22 +1124,22 @@ export default function PigmyAccountOpening() {
                               </div>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 font-bold text-slate-900">
+                          <td className="px-2 py-1.5 font-bold text-slate-900 align-middle">
                             👤 {customerName}
                           </td>
-                          <td className="px-3 py-2.5 text-slate-700 font-medium">
+                          <td className="px-2 py-1.5 text-slate-700 font-medium align-middle">
                             {schemeName}
                           </td>
-                          <td className="px-3 py-2.5 text-slate-700">
+                          <td className="px-2 py-1.5 text-slate-700 align-middle">
                             {agentName !== '-' ? `👤 ${agentName}` : '-'}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-extrabold text-emerald-700 font-mono">
+                          <td className="px-2 py-1.5 text-right font-extrabold text-emerald-700 font-mono align-middle">
                             ₹{balance.toLocaleString('en-IN')}
                           </td>
-                          <td className="px-3 py-2.5 text-slate-600 font-mono text-[11px]">
+                          <td className="px-2 py-1.5 text-slate-600 font-mono text-[11px] align-middle">
                             {openDate}
                           </td>
-                          <td className="px-3 py-2.5 text-center">
+                          <td className="px-2 py-1.5 text-center align-middle">
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-block ${
                               acc.status === 'Active' 
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
@@ -1148,7 +1148,7 @@ export default function PigmyAccountOpening() {
                               {acc.status || 'Active'}
                             </span>
                           </td>
-                          <td className="px-3 py-2.5 text-right space-x-1">
+                          <td className="px-2 py-1.5 text-right space-x-1 align-middle">
                             <button
                               onClick={() => handleOpenAccountModal(acc, false)}
                               className="px-2 py-1 bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/20 rounded font-bold text-[11px] transition inline-flex items-center gap-0.5"

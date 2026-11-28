@@ -506,7 +506,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                   (selectedBranch.branchType || '').toLowerCase() === 'headoffice'
                     ? 'bg-purple-100 text-purple-900 border-purple-300'
-                    : 'bg-blue-100 text-blue-900 border-blue-300'
+                    : 'bg-amber-100 text-[#5A1A14] border-amber-300'
                 }`}>
                   {(selectedBranch.branchType || '').toLowerCase() === 'headoffice' ? '👑 मुख्य कार्यालय (HO)' : '🏢 शाखा'}
                 </span>
@@ -641,9 +641,9 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
           <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex flex-col justify-between">
             <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between">
               <span>एकूण नावे शिल्लक (Dr)</span>
-              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+              <span className="w-2 h-2 rounded-full bg-[#D97706]"></span>
             </div>
-            <div className="text-sm font-black text-blue-900 mt-1">{fmtCurrency(metrics.totalDr)}</div>
+            <div className="text-sm font-black text-[#5A1A14] mt-1">{fmtCurrency(metrics.totalDr)}</div>
             <div className="text-[10px] text-gray-400 mt-0.5">मालमत्ता / खर्च खाती</div>
           </div>
 
@@ -813,28 +813,28 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
       {/* 📜 4. SPREADSHEET-LIKE DATA TABLE */}
       <div className="bg-white rounded-sm shadow-xs overflow-hidden border border-gray-200 border-t-2 border-primary">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
+          <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap leading-tight">
             <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
-                <th className="p-2 border-r border-gray-200 w-12 text-center">अ.क्र.</th>
-                <th className="p-2 border-r border-gray-200 w-20">कोड</th>
-                <th className="p-2 border-r border-gray-200 min-w-[200px]">खात्याचे नाव (Ledger Name)</th>
-                <th className="p-2 border-r border-gray-200 w-36">खाते गट (Group)</th>
-                <th className="p-2 border-r border-gray-200 w-24 text-center">गट स्वरूप</th>
-                <th className="p-2 border-r border-gray-200 w-36 text-right bg-purple-50/60 text-purple-900">
+              <tr className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-12 text-center whitespace-nowrap">अ.क्र.</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-20 whitespace-nowrap">कोड</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 min-w-[200px] whitespace-nowrap">खात्याचे नाव (Ledger Name)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-36 whitespace-nowrap">खाते गट (Group)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-24 text-center whitespace-nowrap">गट स्वरूप</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-36 text-right bg-purple-50/60 text-purple-900 whitespace-nowrap">
                   🏛️ HO / संस्था शिल्लक
                 </th>
-                <th className="p-2 border-r border-gray-200 w-44 text-right bg-blue-50/80 text-blue-950">
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-44 text-right bg-amber-50/80 text-[#4A1410] whitespace-nowrap">
                   🏢 शाखा शिल्लक (₹) *
                 </th>
-                <th className="p-2 border-r border-gray-200 w-24 text-center bg-blue-50/80 text-blue-950">
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-24 text-center bg-amber-50/80 text-[#4A1410] whitespace-nowrap">
                   प्रकार (Dr/Cr)
                 </th>
-                <th className="p-2 border-r border-gray-200 min-w-[150px]">शेरा / संदर्भ (Remarks)</th>
-                <th className="p-2 text-center w-28">क्रिया (Actions)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 min-w-[150px] whitespace-nowrap">शेरा / संदर्भ (Remarks)</th>
+                <th className="px-2 py-1.5 text-center w-28 whitespace-nowrap">क्रिया (Actions)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-amber-100 bg-white">
               {loading ? (
                 <tr>
                   <td colSpan={10} className="p-8 text-center text-gray-500">
@@ -860,36 +860,36 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                     <tr 
                       key={r.ledgerID} 
                       className={`transition-colors ${
-                        isModified ? 'bg-amber-50/70 font-semibold' : hasBranchBalance ? 'bg-blue-50/20' : 'hover:bg-slate-50'
+                        isModified ? 'bg-amber-50/70 font-semibold' : hasBranchBalance ? 'bg-amber-50/20' : 'hover:bg-slate-50'
                       }`}
                     >
-                      <td className="p-1.5 text-center border-r border-gray-200 text-gray-500">
+                      <td className="p-1.5 text-center border-r border-gray-200 text-gray-500 align-middle">
                         {index + 1}
                       </td>
 
-                      <td className="p-1.5 border-r border-gray-200 font-mono text-gray-700">
+                      <td className="p-1.5 border-r border-gray-200 font-mono text-gray-700 align-middle">
                         {r.ledgerCode || r.ledgerID}
                       </td>
 
-                      <td className="p-1.5 border-r border-gray-200">
+                      <td className="p-1.5 border-r border-gray-200 align-middle">
                         <div className="font-bold text-gray-900">{r.ledgerName}</div>
                         {r.ledgerNameEnglish && (
                           <div className="text-[10px] text-gray-500">{r.ledgerNameEnglish}</div>
                         )}
                       </td>
 
-                      <td className="p-1.5 border-r border-gray-200 text-gray-700">
+                      <td className="p-1.5 border-r border-gray-200 text-gray-700 align-middle">
                         {r.groupName}
                       </td>
 
-                      <td className="p-1.5 border-r border-gray-200 text-center">
+                      <td className="p-1.5 border-r border-gray-200 text-center align-middle">
                         {(() => {
                           const nature = r.accountNature || (r as any).natureOfGroup || '';
                           const isAsset = nature.includes('Asset') || nature.includes('मालमत्ता');
                           const isLiability = nature.includes('Liability') || nature.includes('देयता');
                           const isIncome = nature.includes('Income') || nature.includes('उत्पन्न');
                           const badgeColor = isAsset 
-                            ? 'bg-blue-100 text-blue-800'
+                            ? 'bg-amber-100 text-[#7C2418]'
                             : isLiability
                             ? 'bg-emerald-100 text-emerald-800'
                             : isIncome
@@ -904,7 +904,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                       </td>
 
                       {/* HO Master Balance (Read-only reference) */}
-                      <td className="p-1.5 border-r border-gray-200 text-right bg-purple-50/30 font-mono font-medium text-purple-900">
+                      <td className="p-1.5 border-r border-gray-200 text-right bg-purple-50/30 font-mono font-medium text-purple-900 align-middle">
                         {hasMasterBalance ? (
                           <span>
                             {fmtCurrency(r.masterOpeningBalance)}
@@ -916,7 +916,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                       </td>
 
                       {/* Branch Opening Balance Amount Input */}
-                      <td className="p-1 border-r border-gray-200 text-right bg-blue-50/30">
+                      <td className="p-1 border-r border-gray-200 text-right bg-amber-50/30 align-middle">
                         <div className="relative">
                           <input
                             type="number"
@@ -929,7 +929,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                               isModified 
                                 ? 'bg-amber-50 border-amber-400 text-amber-950 ring-1 ring-amber-300' 
                                 : r.openingBalance > 0
-                                ? 'bg-white border-blue-300 text-blue-950 font-bold'
+                                ? 'bg-white border-amber-300 text-[#4A1410] font-bold'
                                 : 'bg-white border-gray-200 text-gray-500'
                             }`}
                           />
@@ -937,13 +937,13 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                       </td>
 
                       {/* Branch Dr / Cr Selector */}
-                      <td className="p-1 border-r border-gray-200 text-center bg-blue-50/30">
+                      <td className="p-1 border-r border-gray-200 text-center bg-amber-50/30 align-middle">
                         <select
                           value={r.openingBalanceType || 'Dr'}
                           onChange={(e) => handleTypeChange(r.ledgerID, e.target.value)}
                           className={`text-xs font-bold px-1.5 py-0.5 border rounded-sm h-[28px] ${
                             r.openingBalanceType === 'Dr' 
-                              ? 'bg-blue-50 text-blue-800 border-blue-300' 
+                              ? 'bg-amber-50 text-[#7C2418] border-amber-300' 
                               : 'bg-emerald-50 text-emerald-800 border-emerald-300'
                           }`}
                         >
@@ -953,7 +953,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                       </td>
 
                       {/* Remarks */}
-                      <td className="p-1 border-r border-gray-200">
+                      <td className="p-1 border-r border-gray-200 align-middle">
                         <input
                           type="text"
                           value={r.remarks || ''}
@@ -964,7 +964,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                       </td>
 
                       {/* Row Actions */}
-                      <td className="p-1 text-center">
+                      <td className="p-1 text-center align-middle">
                         <div className="flex items-center justify-center gap-1">
                           {hasMasterBalance && (
                             <button
@@ -1004,7 +1004,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                   <td className="p-2 text-right border-r border-gray-200 text-purple-900 font-mono">
                     -
                   </td>
-                  <td className="p-2 text-right border-r border-gray-200 text-blue-950 font-mono text-xs">
+                  <td className="p-2 text-right border-r border-gray-200 text-[#4A1410] font-mono text-xs">
                     Dr: {fmtCurrency(metrics.totalDr)} | Cr: {fmtCurrency(metrics.totalCr)}
                   </td>
                   <td colSpan={3} className="p-2 text-left">
@@ -1024,7 +1024,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
       {/* 📊 5. MULTI-BRANCH ALLOCATION SPLIT SUMMARY MODAL */}
       {showSplitModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 w-full max-w-[97vw] xl:max-w-[1460px] max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
             
             {/* Modal Header */}
             <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
@@ -1075,31 +1075,31 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
 
             {/* Modal Table */}
             <div className="flex-1 overflow-auto p-3">
-              <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
+              <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap leading-tight">
                 <thead>
-                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
-                    <th className="p-2 border-r border-gray-200 w-12 text-center">अ.क्र.</th>
-                    <th className="p-2 border-r border-gray-200">खात्याचे नाव</th>
-                    <th className="p-2 border-r border-gray-200">खाते गट</th>
-                    <th className="p-2 border-r border-gray-200 text-right bg-purple-50 text-purple-900">
+                  <tr className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 w-12 text-center whitespace-nowrap">अ.क्र.</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">खात्याचे नाव</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">खाते गट</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right bg-purple-50 text-purple-900 whitespace-nowrap">
                       संस्था मुख्य शिल्लक (HO Total)
                     </th>
                     {/* Render column for each branch */}
                     {branches.map(b => (
-                      <th key={b.branchID} className="p-2 border-r border-gray-200 text-right bg-blue-50/70 text-blue-950">
+                      <th key={b.branchID} className="px-2 py-1.5 border-r border-amber-400/25 text-right bg-amber-50/70 text-[#4A1410] whitespace-nowrap">
                         {b.branchName}
                       </th>
                     ))}
-                    <th className="p-2 border-r border-gray-200 text-right bg-slate-200 font-black">
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right bg-[#5A1A14] font-black whitespace-nowrap">
                       एकूण विभागलेले (Allocated)
                     </th>
-                    <th className="p-2 border-r border-gray-200 text-right font-black">
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right font-black whitespace-nowrap">
                       तफावत (Difference)
                     </th>
-                    <th className="p-2 text-center w-24">स्थिती</th>
+                    <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">स्थिती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-amber-100 bg-white">
                   {splitSummaryData
                     .filter(s => {
                       if (!splitSearchTerm) return true;
@@ -1112,16 +1112,16 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
 
                       return (
                         <tr key={s.ledgerID} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-1.5 text-center border-r border-gray-200 text-gray-500">
+                          <td className="p-1.5 text-center border-r border-gray-200 text-gray-500 align-middle">
                             {idx + 1}
                           </td>
-                          <td className="p-1.5 border-r border-gray-200 font-bold text-gray-900">
+                          <td className="p-1.5 border-r border-gray-200 font-bold text-gray-900 align-middle">
                             {s.ledgerName}
                           </td>
-                          <td className="p-1.5 border-r border-gray-200 text-gray-600">
+                          <td className="p-1.5 border-r border-gray-200 text-gray-600 align-middle">
                             {s.groupName}
                           </td>
-                          <td className="p-1.5 border-r border-gray-200 text-right bg-purple-50/30 font-mono font-bold text-purple-950">
+                          <td className="p-1.5 border-r border-gray-200 text-right bg-purple-50/30 font-mono font-bold text-purple-950 align-middle">
                             {fmtCurrency(s.masterOpeningBalance)}
                             <span className="text-[9px] text-purple-700 ml-1">({s.masterOpeningBalanceType})</span>
                           </td>
@@ -1130,11 +1130,11 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                             const bData = s.branchBalances[b.branchID];
                             const amt = bData ? bData.amount : 0;
                             return (
-                              <td key={b.branchID} className="p-1.5 border-r border-gray-200 text-right font-mono">
+                              <td key={b.branchID} className="p-1.5 border-r border-gray-200 text-right font-mono align-middle">
                                 {amt > 0 ? (
-                                  <span className="font-bold text-blue-900">
+                                  <span className="font-bold text-[#5A1A14]">
                                     {fmtCurrency(amt)}
-                                    <span className="text-[9px] text-blue-700 ml-0.5">({bData.balanceType})</span>
+                                    <span className="text-[9px] text-[#9A3412] ml-0.5">({bData.balanceType})</span>
                                   </span>
                                 ) : (
                                   <span className="text-gray-300">0.00</span>
@@ -1142,7 +1142,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                               </td>
                             );
                           })}
-                          <td className="p-1.5 border-r border-gray-200 text-right bg-slate-50 font-mono font-black text-gray-900">
+                          <td className="p-1.5 border-r border-gray-200 text-right bg-slate-50 font-mono font-black text-gray-900 align-middle">
                             {fmtCurrency(s.totalAllocatedAmount)}
                           </td>
                           <td className={`p-1.5 border-r border-gray-200 text-right font-mono font-black ${
@@ -1150,7 +1150,7 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                           }`}>
                             {s.balanceDifference !== 0 ? fmtCurrency(s.balanceDifference) : '0.00'}
                           </td>
-                          <td className="p-1.5 text-center">
+                          <td className="p-1.5 text-center align-middle">
                             <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
                               isBalanced 
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 

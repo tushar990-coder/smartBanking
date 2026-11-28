@@ -22,9 +22,9 @@ export default function RdDashboard({ onNavigate }: RdDashboardProps) {
       icon: AnimatedSavingIcon,
       tab: 'rd-account',
       params: {},
-      gradient: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 55%, #1D4ED8 100%)',
-      shadowColor: 'rgba(29, 140, 248, 0.40)',
-      accentHex: '#1D74F5',
+      gradient: 'linear-gradient(135deg, #EA580C 0%, #B44814 55%, #7C2418 100%)',
+      shadowColor: 'rgba(180, 72, 20, 0.38)',
+      accentHex: '#9A3412',
     },
     {
       id: 'rd-collect',
@@ -58,9 +58,9 @@ export default function RdDashboard({ onNavigate }: RdDashboardProps) {
       icon: AnimatedAccountCloseIcon,
       tab: 'rd-withdrawal',
       params: {},
-      gradient: 'linear-gradient(135deg, #C084FC 0%, #9333EA 55%, #6B21A8 100%)',
-      shadowColor: 'rgba(147, 51, 234, 0.38)',
-      accentHex: '#7E22CE',
+      gradient: 'linear-gradient(135deg, #FB7185 0%, #E11D48 55%, #9F1239 100%)',
+      shadowColor: 'rgba(225, 29, 72, 0.36)',
+      accentHex: '#BE123C',
     },
     {
       id: 'rd-reports',
@@ -70,9 +70,9 @@ export default function RdDashboard({ onNavigate }: RdDashboardProps) {
       icon: AnimatedReportsIcon,
       tab: 'rd-reports',
       params: {},
-      gradient: 'linear-gradient(135deg, #22D3EE 0%, #0891B2 55%, #0369A1 100%)',
-      shadowColor: 'rgba(8, 145, 178, 0.38)',
-      accentHex: '#0E7490',
+      gradient: 'linear-gradient(135deg, #2DD4BF 0%, #0D9488 55%, #0F766E 100%)',
+      shadowColor: 'rgba(13, 148, 136, 0.36)',
+      accentHex: '#0F766E',
     },
   ];
 
@@ -82,10 +82,10 @@ export default function RdDashboard({ onNavigate }: RdDashboardProps) {
       titleMr="आवर्ती ठेव विभाग मुख्य हब"
       subtitleMr="नवीन आवर्ती ठेव नोंदणी • मासिक हप्ता वसुली • व्याज आकारणी • मुदतपूर्ती परतावा व अहवाल"
       heroIcon={AnimatedLoanCollectionIcon}
-      heroEmblemGradient="linear-gradient(135deg, #FBBF24 0%, #F59E0B 52%, #D97706 100%)"
-      heroGlowGradient="linear-gradient(135deg, #F59E0B 0%, #22C55E 55%, #2563EB 100%)"
-      underlineGradient="linear-gradient(90deg, #F59E0B 0%, #22C55E 50%, #0891B2 100%)"
-      accentSparkleColor="#F59E0B"
+      heroEmblemGradient="linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)"
+      heroGlowGradient="linear-gradient(135deg, #8C2D19 0%, #D97706 60%, #F59E0B 100%)"
+      underlineGradient="linear-gradient(90deg, #7C2418 0%, #D97706 55%, #F59E0B 100%)"
+      accentSparkleColor="#D97706"
       items={rdActionButtons}
       onNavigate={onNavigate}
     />

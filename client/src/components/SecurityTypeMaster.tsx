@@ -122,7 +122,7 @@ const SecurityTypeMaster: React.FC = () => {
             <div 
                 ref={formContainerRef}
                 className={`bg-white p-2 rounded-sm shadow-sm border transition-all duration-300 mb-3 ${
-                    editingId ? 'border-primary ring-2 ring-primary/20 shadow-md bg-blue-50/10' : 'border-gray-200'
+                    editingId ? 'border-primary ring-2 ring-primary/20 shadow-md bg-amber-50/10' : 'border-gray-200'
                 }`}
             >
                 <div className="flex justify-between items-center border-b pb-1 mb-2">
@@ -158,7 +158,7 @@ const SecurityTypeMaster: React.FC = () => {
                                 value={formData.name} 
                                 onChange={handleInputChange} 
                                 required 
-                                className={`w-full border px-2 py-1 rounded-sm focus:outline-none focus:border-blue-500 text-xs ${
+                                className={`w-full border px-2 py-1 rounded-sm focus:outline-none focus:border-[#B44814] text-xs ${
                                     editingId ? 'border-primary bg-amber-50/40 font-semibold' : 'border-gray-300'
                                 }`} 
                             />
@@ -180,7 +180,7 @@ const SecurityTypeMaster: React.FC = () => {
                                 रद्द करा (Cancel)
                             </button>
                         )}
-                        <button type="submit" className="bg-primary hover:bg-[#004a75] text-white px-6 py-1 rounded-sm font-medium text-xs">
+                        <button type="submit" className="bg-primary hover:bg-[#7C2418] text-white px-6 py-1 rounded-sm font-medium text-xs">
                             {editingId ? 'अपडेट करा (Update)' : 'सेव्ह करा (Save)'}
                         </button>
                     </div>
@@ -190,7 +190,7 @@ const SecurityTypeMaster: React.FC = () => {
             <div className="bg-white p-2 rounded-sm shadow-sm border border-gray-200">
                 <div className="flex justify-between items-center mb-2">
                     <div className="relative w-1/3">
-                        <input type="text" placeholder="शोधा..." className="w-full border border-gray-300 px-2 py-0.5 pl-6 rounded-sm text-xs focus:outline-none focus:border-blue-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                        <input type="text" placeholder="शोधा..." className="w-full border border-gray-300 px-2 py-0.5 pl-6 rounded-sm text-xs focus:outline-none focus:border-[#B44814]" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                         <Search className="w-3 h-3 text-gray-400 absolute left-1.5 top-1" />
                     </div>
                 </div>
@@ -218,7 +218,7 @@ const SecurityTypeMaster: React.FC = () => {
                                             </span>
                                         </td>
                                         <td className="p-1.5 border text-center">
-                                            <button onClick={() => handleEdit(st)} className="text-blue-600 hover:text-blue-900 mx-1" title="Edit">
+                                            <button onClick={() => handleEdit(st)} className="text-[#B44814] hover:text-[#5A1A14] mx-1" title="Edit">
                                                 <Edit className="w-3.5 h-3.5" />
                                             </button>
                                             <button onClick={() => handleDelete(st.securityTypeID)} className="text-red-600 hover:text-red-900 mx-1" title="Delete">

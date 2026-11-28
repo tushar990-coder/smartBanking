@@ -686,27 +686,27 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px] border-collapse whitespace-nowrap text-center border border-gray-800">
+            <table className="w-full text-[11px] border-collapse whitespace-nowrap text-center border border-gray-800 leading-tight">
               <thead>
-                <tr className="bg-gray-100 font-bold border-b border-gray-800 text-gray-900 divide-x divide-gray-800">
-                  <th className="p-1.5 border border-gray-800 w-10">अ.नं.</th>
-                  <th className="p-1.5 border border-gray-800 text-left pl-2">कर्ज प्रकार</th>
-                  <th className="p-1.5 border border-gray-800 text-center">कोड</th>
-                  <th className="p-1.5 border border-gray-800 text-left pl-2">संक्षिप्त नाव</th>
-                  <th className="p-1.5 border border-gray-800 text-center">तारणी प्रकार</th>
-                  <th className="p-1.5 border border-gray-800 text-right pr-2">व्याजदर (%)</th>
-                  <th className="p-1.5 border border-gray-800 text-right pr-2">थकीत दर (%)</th>
-                  <th className="p-1.5 border border-gray-800 text-center">मुदत (महिने)</th>
-                  <th className="p-1.5 border border-gray-800 text-center">हप्ता प्रकार</th>
-                  <th className="p-1.5 border border-gray-800 text-center">हप्ता संख्या</th>
-                  <th className="p-1.5 border border-gray-800 text-center">कर्ज हप्ता प्रकार</th>
-                  <th className="p-1.5 border border-gray-800 text-left pl-2">व्याज आकारणी पद्धत</th>
-                  <th className="p-1.5 border border-gray-800 text-left pl-2">पोस्टिंग वारंवारता</th>
-                  <th className="p-1.5 border border-gray-800 text-left pl-2">पोस्टिंग प्रकार</th>
-                  <th className="p-1.5 border border-gray-800 text-left pl-2">कर्ज खाते</th>
-                  <th className="p-1.5 border border-gray-800 text-left pl-2">व्याज खाते</th>
-                  <th className="p-1.5 border border-gray-800 text-left pl-2">थकीत व्याज खाते</th>
-                  <th className="p-1.5 border border-gray-800 text-center">स्थिती</th>
+                <tr className="bg-[#5A1A14] font-bold border-b border-gray-800 text-amber-50 divide-x divide-gray-800">
+                  <th className="p-1.5 border border-gray-800 w-10 whitespace-nowrap">अ.नं.</th>
+                  <th className="p-1.5 border border-gray-800 text-left pl-2 whitespace-nowrap">कर्ज प्रकार</th>
+                  <th className="p-1.5 border border-gray-800 text-center whitespace-nowrap">कोड</th>
+                  <th className="p-1.5 border border-gray-800 text-left pl-2 whitespace-nowrap">संक्षिप्त नाव</th>
+                  <th className="p-1.5 border border-gray-800 text-center whitespace-nowrap">तारणी प्रकार</th>
+                  <th className="p-1.5 border border-gray-800 text-right pr-2 whitespace-nowrap">व्याजदर (%)</th>
+                  <th className="p-1.5 border border-gray-800 text-right pr-2 whitespace-nowrap">थकीत दर (%)</th>
+                  <th className="p-1.5 border border-gray-800 text-center whitespace-nowrap">मुदत (महिने)</th>
+                  <th className="p-1.5 border border-gray-800 text-center whitespace-nowrap">हप्ता प्रकार</th>
+                  <th className="p-1.5 border border-gray-800 text-center whitespace-nowrap">हप्ता संख्या</th>
+                  <th className="p-1.5 border border-gray-800 text-center whitespace-nowrap">कर्ज हप्ता प्रकार</th>
+                  <th className="p-1.5 border border-gray-800 text-left pl-2 whitespace-nowrap">व्याज आकारणी पद्धत</th>
+                  <th className="p-1.5 border border-gray-800 text-left pl-2 whitespace-nowrap">पोस्टिंग वारंवारता</th>
+                  <th className="p-1.5 border border-gray-800 text-left pl-2 whitespace-nowrap">पोस्टिंग प्रकार</th>
+                  <th className="p-1.5 border border-gray-800 text-left pl-2 whitespace-nowrap">कर्ज खाते</th>
+                  <th className="p-1.5 border border-gray-800 text-left pl-2 whitespace-nowrap">व्याज खाते</th>
+                  <th className="p-1.5 border border-gray-800 text-left pl-2 whitespace-nowrap">थकीत व्याज खाते</th>
+                  <th className="p-1.5 border border-gray-800 text-center whitespace-nowrap">स्थिती</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
@@ -719,36 +719,36 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                 ) : (
                   filteredLoanRates.map((rate, idx) => (
                     <tr key={rate.loanRateID} className="hover:bg-gray-50 border border-gray-800 divide-x divide-gray-800">
-                      <td className="p-1.5 border border-gray-800 text-center font-medium">{idx + 1}</td>
-                      <td className="p-1.5 border border-gray-800 text-left pl-2 font-bold text-primary">{rate.loanType}</td>
-                      <td className="p-1.5 border border-gray-800 text-center font-mono font-bold">{rate.loanCode || '-'}</td>
-                      <td className="p-1.5 border border-gray-800 text-left pl-2 font-semibold">{rate.shortName || '-'}</td>
-                      <td className="p-1.5 border border-gray-800 text-center">{rate.securityType || '-'}</td>
-                      <td className="p-1.5 border border-gray-800 text-right pr-2 font-bold text-emerald-700">
+                      <td className="p-1.5 border border-gray-800 text-center font-medium align-middle">{idx + 1}</td>
+                      <td className="p-1.5 border border-gray-800 text-left pl-2 font-bold text-primary align-middle">{rate.loanType}</td>
+                      <td className="p-1.5 border border-gray-800 text-center font-mono font-bold align-middle">{rate.loanCode || '-'}</td>
+                      <td className="p-1.5 border border-gray-800 text-left pl-2 font-semibold align-middle">{rate.shortName || '-'}</td>
+                      <td className="p-1.5 border border-gray-800 text-center align-middle">{rate.securityType || '-'}</td>
+                      <td className="p-1.5 border border-gray-800 text-right pr-2 font-bold text-emerald-700 align-middle">
                         {formatPercent(rate.interestRate)}
                       </td>
-                      <td className="p-1.5 border border-gray-800 text-right pr-2 font-bold text-red-600">
+                      <td className="p-1.5 border border-gray-800 text-right pr-2 font-bold text-red-600 align-middle">
                         {formatPercent(rate.overdueInterestRate)}
                       </td>
-                      <td className="p-1.5 border border-gray-800 text-center font-bold">{rate.durationMonths || 0}</td>
-                      <td className="p-1.5 border border-gray-800 text-center">{rate.installmentType || '-'}</td>
-                      <td className="p-1.5 border border-gray-800 text-center font-bold">{rate.installmentCount || 0}</td>
-                      <td className="p-1.5 border border-gray-800 text-center">
+                      <td className="p-1.5 border border-gray-800 text-center font-bold align-middle">{rate.durationMonths || 0}</td>
+                      <td className="p-1.5 border border-gray-800 text-center align-middle">{rate.installmentType || '-'}</td>
+                      <td className="p-1.5 border border-gray-800 text-center font-bold align-middle">{rate.installmentCount || 0}</td>
+                      <td className="p-1.5 border border-gray-800 text-center align-middle">
                         {rate.loanInstallmentType && !rate.loanInstallmentType.includes('?') && !rate.loanInstallmentType.includes('à') ? rate.loanInstallmentType : 'कर्जावरती'}
                       </td>
-                      <td className="p-1.5 border border-gray-800 text-left pl-2">
+                      <td className="p-1.5 border border-gray-800 text-left pl-2 align-middle">
                         {rate.interestCalculationMethod && !rate.interestCalculationMethod.includes('?') && !rate.interestCalculationMethod.includes('à') ? rate.interestCalculationMethod : 'Reducing (घटती पद्धत)'}
                       </td>
-                      <td className="p-1.5 border border-gray-800 text-left pl-2">
+                      <td className="p-1.5 border border-gray-800 text-left pl-2 align-middle">
                         {rate.interestPostingFrequency && !rate.interestPostingFrequency.includes('?') && !rate.interestPostingFrequency.includes('à') ? rate.interestPostingFrequency : 'मासिक (Monthly)'}
                       </td>
-                      <td className="p-1.5 border border-gray-800 text-left pl-2">
+                      <td className="p-1.5 border border-gray-800 text-left pl-2 align-middle">
                         {rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') ? rate.interestPostingType : 'कर्जावर'}
                       </td>
-                      <td className="p-1.5 border border-gray-800 text-left pl-2">{getLedgerName(rate.loanLedgerID)}</td>
-                      <td className="p-1.5 border border-gray-800 text-left pl-2">{getLedgerName(rate.interestLedgerID)}</td>
-                      <td className="p-1.5 border border-gray-800 text-left pl-2">{getLedgerName(rate.overdueInterestLedgerID)}</td>
-                      <td className="p-1.5 border border-gray-800 text-center font-bold">
+                      <td className="p-1.5 border border-gray-800 text-left pl-2 align-middle">{getLedgerName(rate.loanLedgerID)}</td>
+                      <td className="p-1.5 border border-gray-800 text-left pl-2 align-middle">{getLedgerName(rate.interestLedgerID)}</td>
+                      <td className="p-1.5 border border-gray-800 text-left pl-2 align-middle">{getLedgerName(rate.overdueInterestLedgerID)}</td>
+                      <td className="p-1.5 border border-gray-800 text-center font-bold align-middle">
                         <span className={rate.isActive ? 'text-green-700' : 'text-red-600'}>
                           {rate.isActive ? 'सक्रिय' : 'निष्क्रिय'}
                         </span>
@@ -877,12 +877,12 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Percent className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सरासरी व्याजदर (% Avg)</div>
-            <div className="text-sm font-black text-indigo-950">{avgInterestRate}% p.a.</div>
+            <div className="text-sm font-black text-[#4A1410]">{avgInterestRate}% p.a.</div>
           </div>
         </div>
 
@@ -901,7 +901,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          isEditing ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          isEditing ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1005,7 +1005,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                       name="maxLtvPercentage" 
                       value={formData.maxLtvPercentage} 
                       onChange={handleChange} 
-                      className={`${inputClass} font-bold text-blue-700 font-mono`} 
+                      className={`${inputClass} font-bold text-[#9A3412] font-mono`} 
                       placeholder="उदा. 85.00" 
                       title="ठेवीच्या शिलकीवर किती टक्के कर्ज देता येईल"
                     />
@@ -1437,28 +1437,28 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-36">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज प्रकार</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">कोड</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">संक्षिप्त नाव</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">तारणी प्रकार</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">व्याजदर (%)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">थकीत दर (%)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">मुदत (महिने)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">हप्ता प्रकार</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">हप्ता संख्या</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज खाते</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">व्याज खाते</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-36 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">कर्ज प्रकार</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">कोड</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">संक्षिप्त नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">तारणी प्रकार</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">व्याजदर (%)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">थकीत दर (%)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">मुदत (महिने)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">हप्ता प्रकार</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">हप्ता संख्या</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">कर्ज खाते</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">व्याज खाते</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredLoanRates.map((rate) => (
                       <tr key={rate.loanRateID} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
@@ -1467,10 +1467,10 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                                 setSelectedSchemeFilter(rate.loanRateID.toString());
                                 setShowHistoryModal(true);
                               }}
-                              className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
+                              className="px-1.5 py-0.5 bg-orange-50 hover:bg-orange-100 text-[#7C2418] border border-amber-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
                               title="या योजनेचा दर बदल इतिहास पहा"
                             >
-                              <History className="w-3 h-3 text-indigo-700" />
+                              <History className="w-3 h-3 text-[#9A3412]" />
                               <span>इतिहास</span>
                             </button>
                             <button 
@@ -1493,40 +1493,40 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-primary align-middle">
                           {rate.loanType}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-gray-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-bold text-gray-700 align-middle">
                           {rate.loanCode || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-gray-800 align-middle">
                           {rate.shortName || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                           {rate.securityType || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-black text-emerald-700 font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-black text-emerald-700 font-mono align-middle">
                           {formatPercent(rate.interestRate)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-black text-rose-600 font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-black text-rose-600 font-mono align-middle">
                           {formatPercent(rate.overdueInterestRate)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold text-gray-800 font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-bold text-gray-800 font-mono align-middle">
                           {rate.durationMonths || 0}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-medium">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-medium align-middle">
                           {rate.installmentType || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-bold font-mono align-middle">
                           {rate.installmentCount || 0}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           {renderLedgerCell(rate.loanLedgerID)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           {renderLedgerCell(rate.interestLedgerID)}
                         </td>
-                        <td className="px-2 py-1.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             rate.isActive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                           }`}>
@@ -1668,31 +1668,31 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                 </div>
               ) : (
                 <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                  <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                    <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                       <tr>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-center w-12">अ.क्र.</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज योजना व कोड</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर बदल (% p.a.)</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">थकीत दर बदल (% p.a.)</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-left">संचालक मंडळ ठराव क्र.</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">ठराव दिनांक</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">लागू दिनांक (Effective)</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-left">बदलाचे कारण / टिपणी</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">बदल दिनांक व ऑपरेटर</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-12 whitespace-nowrap">अ.क्र.</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">कर्ज योजना व कोड</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याजदर बदल (% p.a.)</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">थकीत दर बदल (% p.a.)</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">संचालक मंडळ ठराव क्र.</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">ठराव दिनांक</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">लागू दिनांक (Effective)</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">बदलाचे कारण / टिपणी</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">बदल दिनांक व ऑपरेटर</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                    <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                       {filteredHistory.map((item, idx) => (
                         <tr key={item.historyID} className="hover:bg-amber-50/40 transition-colors">
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold text-gray-600">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-bold text-gray-600 align-middle">
                             {idx + 1}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-primary align-middle">
                             <div>{item.loanType}</div>
                             <span className="text-[10px] font-mono text-gray-500 font-semibold">{item.loanCode || '-'}</span>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                             <span className="font-mono text-gray-500 line-through mr-1.5">
                               {item.oldInterestRate !== undefined && item.oldInterestRate !== null ? `${item.oldInterestRate.toFixed(2)}%` : '0.00%'}
                             </span>
@@ -1701,7 +1701,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                               {item.newInterestRate !== undefined && item.newInterestRate !== null ? `${item.newInterestRate.toFixed(2)}%` : '0.00%'}
                             </span>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                             <span className="font-mono text-gray-500 line-through mr-1.5">
                               {item.oldOverdueRate !== undefined && item.oldOverdueRate !== null ? `${item.oldOverdueRate.toFixed(2)}%` : '0.00%'}
                             </span>
@@ -1710,19 +1710,19 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                               {item.newOverdueRate !== undefined && item.newOverdueRate !== null ? `${item.newOverdueRate.toFixed(2)}%` : '0.00%'}
                             </span>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-amber-900 font-sans">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-amber-900 font-sans align-middle">
                             {item.resolutionNo || '-'}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-mono align-middle">
                             {item.resolutionDate ? new Date(item.resolutionDate).toLocaleDateString('en-GB') : '-'}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-emerald-800">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-bold text-emerald-800 align-middle">
                             {item.effectiveDate ? new Date(item.effectiveDate).toLocaleDateString('en-GB') : '-'}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-800 font-sans">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-800 font-sans align-middle">
                             {item.revisionReason || '-'}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                             <div className="font-mono text-[10px] text-gray-800">
                               {item.changedAt ? new Date(item.changedAt).toLocaleString('en-GB') : '-'}
                             </div>

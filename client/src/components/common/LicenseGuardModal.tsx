@@ -136,12 +136,12 @@ const LicenseGuardModal: React.FC = () => {
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                <Server className="w-4 h-4 text-indigo-600" />
+                <Server className="w-4 h-4 text-[#B44814]" />
                 या संगणकाचा Machine Code:
               </span>
               <button
                 onClick={copyMachineCode}
-                className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition text-[11px]"
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#B44814] hover:bg-[#9A3412] text-white rounded-lg font-semibold transition text-[11px]"
               >
                 {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 <span>{copied ? 'कॉपी झाले!' : 'कॉपी करा'}</span>

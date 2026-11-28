@@ -11,7 +11,7 @@ namespace Bhisi.Api.Services
 {
     public interface INotificationEngineService
     {
-        Task<int> GenerateAutoNotificationsAsync(int branchId = 1);
+        Task<int> GenerateAutoNotificationsAsync(int branchId = 1, bool force = false);
         Task<List<SystemNotification>> GetNotificationsAsync(int branchId, string? module = null, string? priority = null, string? status = "Active", string? role = null);
         Task<Dictionary<string, int>> GetModuleCountsAsync(int branchId);
         Task<Dictionary<string, object>> GetTaskStatsAsync(int branchId);
@@ -30,12 +30,12 @@ namespace Bhisi.Api.Services
             _db = db;
         }
 
-        public async Task<int> GenerateAutoNotificationsAsync(int branchId = 1)
+        public async Task<int> GenerateAutoNotificationsAsync(int branchId = 1, bool force = false)
         {
             int createdCount = 0;
             DateTime today = DateTime.Today;
 
-            if (_lastGenPerBranchUtc.TryGetValue(branchId, out var lastRun) && DateTime.UtcNow - lastRun < GenCooldown)
+            if (!force && _lastGenPerBranchUtc.TryGetValue(branchId, out var lastRun) && DateTime.UtcNow - lastRun < GenCooldown)
             {
                 return 0;
             }
@@ -135,6 +135,23 @@ namespace Bhisi.Api.Services
                     {
                         var lkr = await _db.LockerAllotments.FindAsync(lkrId);
                         if (lkr == null || lkr.Status != "Active" || lkr.ExpiryDate.Date > today.AddDays(15)) shouldComplete = true;
+                    }
+                    else if (notif.ModuleName == "Loans" && notif.EntityName == "LoanAccount" && int.TryParse(notif.EntityID, out int lnId))
+                    {
+                        var ln = await _db.LoanAccounts.FindAsync(lnId);
+                        if (ln == null || ln.Status != "Active" || (ln.OverdueInterestBalance <= 0 && (!ln.MaturityDate.HasValue || ln.MaturityDate.Value.Date > today || ln.PrincipalBalance <= 0)))
+                            shouldComplete = true;
+                    }
+                    else if (notif.ModuleName == "Pigmy" && notif.EntityName == "PigmyAgent" && int.TryParse(notif.EntityID, out int agId))
+                    {
+                        bool hasPending = await _db.PigmyCollections.AnyAsync(p => p.AgentId == agId && !p.IsVoucherGenerated);
+                        if (!hasPending) shouldComplete = true;
+                    }
+                    else if (notif.ModuleName == "NPA" && notif.EntityName == "LoanAccount" && int.TryParse(notif.EntityID, out int npaLnId))
+                    {
+                        var ln = await _db.LoanAccounts.FindAsync(npaLnId);
+                        if (ln == null || ln.Status != "Active" || (ln.InitialNpaClassification == "Standard" && ln.OverdueInterestBalance <= 25000))
+                            shouldComplete = true;
                     }
                     else if (notif.ModuleName == "System" && notif.NotificationType == "DayEndPending")
                     {
@@ -627,7 +644,11 @@ namespace Bhisi.Api.Services
 
         public async Task<List<SystemNotification>> GetNotificationsAsync(int branchId, string? module = null, string? priority = null, string? status = "Active", string? role = null)
         {
-            var query = _db.SystemNotifications.Where(n => n.BranchID == branchId);
+            var query = _db.SystemNotifications.AsNoTracking().AsQueryable();
+            if (branchId > 0)
+            {
+                query = query.Where(n => n.BranchID == branchId);
+            }
 
             if (!string.IsNullOrEmpty(status) && status != "ALL")
             {
@@ -658,8 +679,13 @@ namespace Bhisi.Api.Services
 
         public async Task<Dictionary<string, int>> GetModuleCountsAsync(int branchId)
         {
-            var counts = await _db.SystemNotifications
-                .Where(n => n.BranchID == branchId && n.Status == "Active")
+            var baseQuery = _db.SystemNotifications.AsNoTracking().Where(n => n.Status == "Active");
+            if (branchId > 0)
+            {
+                baseQuery = baseQuery.Where(n => n.BranchID == branchId);
+            }
+
+            var counts = await baseQuery
                 .GroupBy(n => n.ModuleName)
                 .Select(g => new { Module = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Module, x => x.Count);
@@ -685,13 +711,20 @@ namespace Bhisi.Api.Services
         public async Task<Dictionary<string, object>> GetTaskStatsAsync(int branchId)
         {
             DateTime today = DateTime.Today;
-            var activeQuery = _db.SystemNotifications.Where(n => n.BranchID == branchId && n.Status == "Active");
+            var activeQuery = _db.SystemNotifications.AsNoTracking().Where(n => n.Status == "Active");
+            var completedQuery = _db.SystemNotifications.AsNoTracking().Where(n => n.Status == "Completed" && n.CompletedOn.HasValue && n.CompletedOn.Value.Date == today);
+
+            if (branchId > 0)
+            {
+                activeQuery = activeQuery.Where(n => n.BranchID == branchId);
+                completedQuery = completedQuery.Where(n => n.BranchID == branchId);
+            }
 
             int totalPending = await activeQuery.CountAsync();
             int urgentCount = await activeQuery.CountAsync(n => n.Priority == "URGENT");
             int highCount = await activeQuery.CountAsync(n => n.Priority == "HIGH");
             decimal totalAmount = await activeQuery.SumAsync(n => (decimal?)n.Amount) ?? 0m;
-            int completedToday = await _db.SystemNotifications.CountAsync(n => n.BranchID == branchId && n.Status == "Completed" && n.CompletedOn.HasValue && n.CompletedOn.Value.Date == today);
+            int completedToday = await completedQuery.CountAsync();
             
             int totalToday = totalPending + completedToday;
             int progressPercentage = totalToday > 0 ? (int)Math.Round((double)completedToday / totalToday * 100) : 100;

@@ -70,13 +70,13 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        // POST: api/Notification/generate?branchId=1
+        // POST: api/Notification/generate?branchId=1&force=false
         [HttpPost("generate")]
-        public async Task<IActionResult> GenerateNotifications([FromQuery] int branchId = 1)
+        public async Task<IActionResult> GenerateNotifications([FromQuery] int branchId = 1, [FromQuery] bool force = false)
         {
             try
             {
-                int created = await _notificationService.GenerateAutoNotificationsAsync(branchId);
+                int created = await _notificationService.GenerateAutoNotificationsAsync(branchId, force);
                 return Ok(new { message = $"स्वयंचलित सूचना यशस्वीरीत्या तयार झाल्या. ({created} नवीन नोंदी)", count = created });
             }
             catch (Exception ex)

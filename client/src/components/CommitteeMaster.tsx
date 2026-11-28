@@ -300,7 +300,7 @@ export default function CommitteeMaster() {
                 value={formData.designation}
                 onChange={handleChange}
                 required
-                className={`w-full border rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+                className={`w-full border rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] ${
                   editId ? 'border-primary bg-amber-50/40 font-semibold' : 'border-gray-300 bg-white'
                 }`}
               >
@@ -324,7 +324,7 @@ export default function CommitteeMaster() {
                 value={formData.status}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white"
               >
                 <option value="Active">चालू / कार्यरत (Active)</option>
                 <option value="Inactive">मुदत समाप्त / निवृत्त (Inactive)</option>
@@ -346,7 +346,7 @@ export default function CommitteeMaster() {
                 value={formData.termYear}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                 placeholder="उदा. २०२६-२०३१"
               />
             </div>
@@ -360,7 +360,7 @@ export default function CommitteeMaster() {
                 value={formData.category}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white"
               >
                 <option value="सर्वसाधारण">सर्वसाधारण (General)</option>
                 <option value="महिला राखीव">महिला राखीव (Women Reserved)</option>
@@ -378,7 +378,7 @@ export default function CommitteeMaster() {
                 name="dinNo"
                 value={formData.dinNo}
                 onChange={handleChange}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                 placeholder="उदा. DIN-847291"
               />
             </div>
@@ -390,7 +390,7 @@ export default function CommitteeMaster() {
                 name="resolutionNo"
                 value={formData.resolutionNo}
                 onChange={handleChange}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                 placeholder="उदा. ठराव क्र. ४ (अ)"
               />
             </div>
@@ -408,7 +408,7 @@ export default function CommitteeMaster() {
                 value={formData.joiningDate}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               />
             </div>
 
@@ -419,7 +419,7 @@ export default function CommitteeMaster() {
                 name="endDate"
                 value={formData.endDate}
                 onChange={handleChange}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               />
             </div>
 
@@ -430,7 +430,7 @@ export default function CommitteeMaster() {
                 name="remarks"
                 value={formData.remarks}
                 onChange={handleChange}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                 placeholder="इतर काही विशेष नोंदी किंवा निवडणूक तपशील..."
               />
             </div>
@@ -440,7 +440,7 @@ export default function CommitteeMaster() {
           <div className="flex gap-2 border-t border-gray-100 pt-2 mt-2">
             <button
               type="submit"
-              className="bg-primary hover:bg-[#004a75] text-white px-3 py-1 rounded-sm shadow-sm text-xs font-medium cursor-pointer"
+              className="bg-primary hover:bg-[#7C2418] text-white px-3 py-1 rounded-sm shadow-sm text-xs font-medium cursor-pointer"
             >
               {editId ? '✏️ अपडेट करा' : '💾 जतन करा'}
             </button>
@@ -460,7 +460,7 @@ export default function CommitteeMaster() {
         <div className="px-3 py-2 bg-gray-50 border-t border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 text-xs">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-gray-700">मा. संचालक मंडळ रजिस्टर</span>
-            <span className="bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded font-bold">
+            <span className="bg-amber-100 text-[#7C2418] text-[10px] px-2 py-0.5 rounded font-bold">
               एकूण: {filteredCommittee.length}
             </span>
           </div>
@@ -497,7 +497,7 @@ export default function CommitteeMaster() {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="🔍 नाव, पद, DIN किंवा ठरावाने शोधा..."
-              className="border border-gray-300 px-2 py-1 rounded-sm text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white w-52"
+              className="border border-gray-300 px-2 py-1 rounded-sm text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white w-52"
             />
           </div>
         </div>
@@ -506,22 +506,22 @@ export default function CommitteeMaster() {
         <div className="p-3">
           {viewMode === 'table' ? (
             <div className="overflow-x-auto border border-gray-200 rounded-sm">
-              <table className="w-full text-[11px] text-left">
+              <table className="w-full text-[11px] text-left leading-tight border-collapse">
                 <thead>
-                  <tr className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-center">#</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-left">संचालकाचे नाव</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-left">पद</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-left">मुदत वर्ष</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-left">वर्गवारी</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-left">DIN क्र.</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-left">निवड दिनांक</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-left">ठराव क्र.</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-center">स्थिती / अनुपालन</th>
-                    <th className="border-b border-gray-200 px-2 py-1.5 text-center">कृती</th>
+                  <tr className="bg-[#5A1A14] text-amber-50 font-semibold border-b border-amber-400/30">
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-center whitespace-nowrap">#</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">संचालकाचे नाव</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">पद</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">मुदत वर्ष</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">वर्गवारी</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">DIN क्र.</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">निवड दिनांक</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">ठराव क्र.</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-center whitespace-nowrap">स्थिती / अनुपालन</th>
+                    <th className="border-b border-amber-400/25 px-2 py-1.5 text-center whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-amber-100">
                   {loading ? (
                     <tr>
                       <td colSpan={10} className="text-center py-4 text-gray-400">लोड होत आहे...</td>
@@ -532,25 +532,25 @@ export default function CommitteeMaster() {
                     </tr>
                   ) : (
                     filteredCommittee.map((item, idx) => (
-                      <tr key={item.committeeMemberID} className="hover:bg-blue-50 transition-colors">
-                        <td className="border-b border-gray-100 px-2 py-1 text-center font-medium text-gray-500">{idx + 1}</td>
-                        <td className="border-b border-gray-100 px-2 py-1 font-medium text-gray-800">
+                      <tr key={item.committeeMemberID} className="hover:bg-amber-50 transition-colors">
+                        <td className="border-b border-gray-100 px-2 py-1 text-center font-medium text-gray-500 align-middle">{idx + 1}</td>
+                        <td className="border-b border-gray-100 px-2 py-1 font-medium text-gray-800 align-middle">
                           {item.memberName}
                           <span className="block text-[10px] font-normal text-gray-500">कोड: {item.memberCode}</span>
                         </td>
-                        <td className="border-b border-gray-100 px-2 py-1">
-                          <span className="inline-block bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[10px]">
+                        <td className="border-b border-gray-100 px-2 py-1 align-middle">
+                          <span className="inline-block bg-amber-50 text-[#9A3412] px-1.5 py-0.5 rounded text-[10px]">
                             {item.designation}
                           </span>
                         </td>
-                        <td className="border-b border-gray-100 px-2 py-1 text-gray-700">{item.termYear || '-'}</td>
-                        <td className="border-b border-gray-100 px-2 py-1 text-gray-700">{item.category || 'सर्वसाधारण'}</td>
-                        <td className="border-b border-gray-100 px-2 py-1 font-mono text-gray-600">{item.dinNo || '-'}</td>
-                        <td className="border-b border-gray-100 px-2 py-1 text-gray-700">
+                        <td className="border-b border-gray-100 px-2 py-1 text-gray-700 align-middle">{item.termYear || '-'}</td>
+                        <td className="border-b border-gray-100 px-2 py-1 text-gray-700 align-middle">{item.category || 'सर्वसाधारण'}</td>
+                        <td className="border-b border-gray-100 px-2 py-1 font-mono text-gray-600 align-middle">{item.dinNo || '-'}</td>
+                        <td className="border-b border-gray-100 px-2 py-1 text-gray-700 align-middle">
                           {item.joiningDate ? new Date(item.joiningDate).toLocaleDateString('en-GB') : '-'}
                         </td>
-                        <td className="border-b border-gray-100 px-2 py-1 text-gray-700">{item.resolutionNo || '-'}</td>
-                        <td className="border-b border-gray-100 px-2 py-1 text-center">
+                        <td className="border-b border-gray-100 px-2 py-1 text-gray-700 align-middle">{item.resolutionNo || '-'}</td>
+                        <td className="border-b border-gray-100 px-2 py-1 text-center align-middle">
                           <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${
                             item.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
                           }`}>
@@ -560,10 +560,10 @@ export default function CommitteeMaster() {
                             <span className="block text-[9px] font-bold text-red-600 mt-0.5">⚠️ ७३/C थकबाकीदार</span>
                           )}
                         </td>
-                        <td className="border-b border-gray-100 px-2 py-1 text-center">
+                        <td className="border-b border-gray-100 px-2 py-1 text-center align-middle">
                           <button
                             onClick={() => handleEdit(item)}
-                            className="text-blue-600 hover:text-blue-800 mr-2 text-[11px]"
+                            className="text-[#B44814] hover:text-[#7C2418] mr-2 text-[11px]"
                             title="संपादन"
                           >
                             ✏️
@@ -589,7 +589,7 @@ export default function CommitteeMaster() {
                 <div key={item.committeeMemberID} className="bg-white rounded border border-gray-200 p-3 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between">
                   <div>
                     <div className="flex justify-between items-start mb-2">
-                      <span className="bg-blue-50 text-blue-800 text-xs font-bold px-2 py-0.5 rounded">
+                      <span className="bg-amber-50 text-[#7C2418] text-xs font-bold px-2 py-0.5 rounded">
                         {item.designation}
                       </span>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
@@ -609,7 +609,7 @@ export default function CommitteeMaster() {
                   </div>
 
                   <div className="flex justify-end gap-2 border-t border-gray-100 pt-2 mt-2">
-                    <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">✏️ संपादन</button>
+                    <button onClick={() => handleEdit(item)} className="text-[#B44814] hover:text-[#7C2418] text-xs font-medium">✏️ संपादन</button>
                     <button onClick={() => handleDelete(item.committeeMemberID)} className="text-red-600 hover:text-red-800 text-xs font-medium">🗑️ काढा</button>
                   </div>
                 </div>
@@ -652,30 +652,30 @@ export default function CommitteeMaster() {
                 </p>
               </div>
 
-              <table className="w-full text-xs text-left border-collapse border border-gray-400">
+              <table className="w-full text-[11px] text-left border-collapse border border-gray-400 leading-tight">
                 <thead>
-                  <tr className="bg-gray-100 border-b border-gray-400 font-bold text-gray-800">
-                    <th className="border border-gray-400 p-1.5 text-center">अ.क्र.</th>
-                    <th className="border border-gray-400 p-1.5">संचालकाचे नाव</th>
-                    <th className="border border-gray-400 p-1.5">पद</th>
-                    <th className="border border-gray-400 p-1.5">मुदत वर्ष</th>
-                    <th className="border border-gray-400 p-1.5">आरक्षण वर्गवारी</th>
-                    <th className="border border-gray-400 p-1.5">DIN क्र.</th>
-                    <th className="border border-gray-400 p-1.5">ठराव क्र.</th>
-                    <th className="border border-gray-400 p-1.5 text-center">स्वाक्षरी</th>
+                  <tr className="bg-[#5A1A14] border-b border-gray-400 font-bold text-amber-50">
+                    <th className="border border-gray-400 p-1.5 text-center whitespace-nowrap">अ.क्र.</th>
+                    <th className="border border-gray-400 p-1.5 whitespace-nowrap">संचालकाचे नाव</th>
+                    <th className="border border-gray-400 p-1.5 whitespace-nowrap">पद</th>
+                    <th className="border border-gray-400 p-1.5 whitespace-nowrap">मुदत वर्ष</th>
+                    <th className="border border-gray-400 p-1.5 whitespace-nowrap">आरक्षण वर्गवारी</th>
+                    <th className="border border-gray-400 p-1.5 whitespace-nowrap">DIN क्र.</th>
+                    <th className="border border-gray-400 p-1.5 whitespace-nowrap">ठराव क्र.</th>
+                    <th className="border border-gray-400 p-1.5 text-center whitespace-nowrap">स्वाक्षरी</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCommittee.map((item, idx) => (
                     <tr key={item.committeeMemberID} className="border-b border-gray-300">
-                      <td className="border border-gray-300 p-1.5 text-center font-bold">{idx + 1}</td>
-                      <td className="border border-gray-300 p-1.5 font-bold">{item.memberName}</td>
-                      <td className="border border-gray-300 p-1.5 font-semibold">{item.designation}</td>
-                      <td className="border border-gray-300 p-1.5">{item.termYear || '-'}</td>
-                      <td className="border border-gray-300 p-1.5">{item.category || 'सर्वसाधारण'}</td>
-                      <td className="border border-gray-300 p-1.5 font-mono">{item.dinNo || '-'}</td>
-                      <td className="border border-gray-300 p-1.5">{item.resolutionNo || '-'}</td>
-                      <td className="border border-gray-300 p-1.5 text-center text-gray-300">____________</td>
+                      <td className="border border-gray-300 p-1.5 text-center font-bold align-middle">{idx + 1}</td>
+                      <td className="border border-gray-300 p-1.5 font-bold align-middle">{item.memberName}</td>
+                      <td className="border border-gray-300 p-1.5 font-semibold align-middle">{item.designation}</td>
+                      <td className="border border-gray-300 p-1.5 align-middle">{item.termYear || '-'}</td>
+                      <td className="border border-gray-300 p-1.5 align-middle">{item.category || 'सर्वसाधारण'}</td>
+                      <td className="border border-gray-300 p-1.5 font-mono align-middle">{item.dinNo || '-'}</td>
+                      <td className="border border-gray-300 p-1.5 align-middle">{item.resolutionNo || '-'}</td>
+                      <td className="border border-gray-300 p-1.5 text-center text-gray-300 align-middle">____________</td>
                     </tr>
                   ))}
                 </tbody>

@@ -460,7 +460,7 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-primary hover:bg-[#004a75] text-white px-5 py-1.5 rounded text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="bg-primary hover:bg-[#7C2418] text-white px-5 py-1.5 rounded text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <ShieldAlert size={14} />
                   <span>{submitting ? 'क्लेम प्रक्रिया सुरू आहे...' : '⚖️ क्लेम सेटल करा आणि व्हाउचर तयार करा'}</span>

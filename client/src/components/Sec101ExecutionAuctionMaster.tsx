@@ -83,8 +83,8 @@ interface Sec101ExecutionAuctionMasterProps {
 
 const EXECUTION_STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   WARRANT_ISSUED: { label: 'वॉरंट जारी', cls: 'bg-amber-100 text-amber-900' },
-  ATTACHED: { label: 'जप्ती / पंचनामा पूर्ण', cls: 'bg-sky-100 text-sky-900' },
-  AUCTION_SCHEDULED: { label: 'लिलाव जाहीरनामा प्रसिद्ध', cls: 'bg-indigo-100 text-indigo-900' },
+  ATTACHED: { label: 'जप्ती / पंचनामा पूर्ण', cls: 'bg-amber-100 text-[#5A1A14]' },
+  AUCTION_SCHEDULED: { label: 'लिलाव जाहीरनामा प्रसिद्ध', cls: 'bg-orange-100 text-[#5A1A14]' },
   AUCTION_COMPLETED: { label: 'लिलाव विक्री पूर्ण', cls: 'bg-emerald-100 text-emerald-900' },
   SETTLED: { label: 'वसुली सेटलमेंट पूर्ण', cls: 'bg-teal-100 text-teal-900' },
   CANCELLED: { label: 'रद्द (Cancelled)', cls: 'bg-slate-200 text-slate-700' },
@@ -564,17 +564,17 @@ export default function Sec101ExecutionAuctionMaster({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-[11px] text-gray-700">
-                <thead className="bg-gray-100 text-[11px] font-bold text-gray-700 uppercase border-b">
+              <table className="w-full text-left text-[11px] text-gray-700 leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] text-[11px] font-bold text-amber-50 uppercase border-b">
                   <tr>
-                    <th className="p-2.5">कर्जदार व दाखला</th>
-                    <th className="p-2.5">प्रकार</th>
-                    <th className="p-2.5">तपशील व रक्कम</th>
-                    <th className="p-2.5">स्थिती</th>
-                    <th className="p-2.5 text-center">नियम १०७ टप्पे / प्रिंट</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">कर्जदार व दाखला</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">प्रकार</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">तपशील व रक्कम</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">स्थिती</th>
+                    <th className="px-2 py-1.5.5 text-center whitespace-nowrap">नियम १०७ टप्पे / प्रिंट</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-amber-100">
                   {executions.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="text-center py-6 text-gray-400">
@@ -587,18 +587,18 @@ export default function Sec101ExecutionAuctionMaster({
                       const stMeta = EXECUTION_STATUS_LABELS[stKey] || { label: stKey, cls: 'bg-slate-100 text-slate-800' };
                       return (
                         <tr key={e.executionId} className="hover:bg-gray-50/80 transition">
-                          <td className="p-2.5">
+                          <td className="px-2 py-1 align-middle">
                             <div className="font-bold text-gray-900">{e.customerName || e.memberName}</div>
                             <div className="text-[10px] text-gray-500 font-mono">
                               CIF: {e.cifNo || e.memberCode || '-'} | {e.certificateNumber || e.caseNumber}
                             </div>
                           </td>
-                          <td className="p-2.5">
+                          <td className="px-2 py-1 align-middle">
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800">
                               {EXECUTION_TYPE_LABELS[e.executionType] || e.executionType}
                             </span>
                           </td>
-                          <td className="p-2.5 text-[10px]">
+                          <td className="px-2 py-1 text-[10px] align-middle">
                             <div className="font-semibold text-gray-800 max-w-[180px] truncate">
                               {e.executionType.includes('SALARY') ? e.employerName || '-' : e.propertyDetails || '-'}
                             </div>
@@ -615,16 +615,16 @@ export default function Sec101ExecutionAuctionMaster({
                               </div>
                             )}
                           </td>
-                          <td className="p-2.5">
+                          <td className="px-2 py-1 align-middle">
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${stMeta.cls}`}>{stMeta.label}</span>
                           </td>
-                          <td className="p-2.5">
+                          <td className="px-2 py-1 align-middle">
                             <div className="flex flex-wrap items-center justify-center gap-1">
                               {stKey !== 'SETTLED' && stKey !== 'CANCELLED' && (
                                 <>
                                   <button
                                     onClick={() => openStageModal(e)}
-                                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 px-2 py-1 rounded text-[10px] font-bold inline-flex items-center gap-0.5"
+                                    className="bg-orange-50 hover:bg-orange-100 text-[#5A1A14] border border-amber-200 px-2 py-1 rounded text-[10px] font-bold inline-flex items-center gap-0.5"
                                   >
                                     <ArrowUpRight className="w-3 h-3" /> टप्पा
                                   </button>
@@ -896,7 +896,7 @@ export default function Sec101ExecutionAuctionMaster({
             {printDoc.mode === 'PANCHANAMA' && (
               <>
                 <div className="text-center">
-                  <span className="bg-sky-100 text-sky-900 border border-sky-300 text-xs font-extrabold px-4 py-1 rounded-full">
+                  <span className="bg-amber-100 text-[#5A1A14] border border-amber-300 text-xs font-extrabold px-4 py-1 rounded-full">
                     महाराष्ट्र सहकारी संस्था नियम १९६१ चे नियम १०७ अन्वये मालमत्ता जप्ती पंचनामा
                   </span>
                 </div>

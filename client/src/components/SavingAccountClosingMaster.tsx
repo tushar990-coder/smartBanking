@@ -487,7 +487,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                   name="closureDate"
                   value={formData.closureDate}
                   onChange={handleInputChange}
-                  className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs"
+                  className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs"
                   required
                 />
               </div>
@@ -499,7 +499,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                   name="closingCharges"
                   value={formData.closingCharges}
                   onChange={handleInputChange}
-                  className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs"
+                  className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs"
                   min="0"
                 />
               </div>
@@ -510,7 +510,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                   name="paymentMode"
                   value={formData.paymentMode}
                   onChange={handleInputChange}
-                  className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs bg-white"
+                  className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs bg-white"
                 >
                   <option value="Cash">रोख (Cash)</option>
                   <option value="Transfer">हस्तांतरण (Transfer)</option>
@@ -546,7 +546,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
               )}
 
               {formData.paymentMode === 'Bank' && (
-                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-3 bg-blue-50/60 border border-blue-200 p-2 rounded-sm">
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-3 bg-amber-50/60 border border-amber-200 p-2 rounded-sm">
                   <div className="md:col-span-2">
                     <BankLedgerSelect
                       value={formData.bankLedgerID}
@@ -556,7 +556,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-blue-950 mb-0.5">
+                    <label className="block text-[11px] font-bold text-[#4A1410] mb-0.5">
                       चेक क्र. / UTR क्र. (Cheque / UTR No.)
                     </label>
                     <input
@@ -566,7 +566,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                       onChange={handleInputChange}
                       disabled={isPassingMode}
                       placeholder="ऐच्छिक (उदा. CHQ / UTR No.)"
-                      className="w-full border border-blue-300 px-2 py-1 rounded-sm focus:outline-none focus:border-blue-500 text-xs bg-white h-[30px]"
+                      className="w-full border border-amber-300 px-2 py-1 rounded-sm focus:outline-none focus:border-[#B44814] text-xs bg-white h-[30px]"
                     />
                   </div>
                 </div>
@@ -629,7 +629,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                   <span className="font-semibold text-gray-500">खातेदार:</span>
                   <p className="font-bold text-sm text-primary truncate">{selectedAccount.customerName}</p>
                   {selectedAccount.cifNo && (
-                    <span className="text-[10px] font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 font-mono">
+                    <span className="text-[10px] font-bold bg-amber-50 text-[#7C2418] px-1.5 py-0.5 rounded border border-amber-200 font-mono">
                       CIF: {selectedAccount.cifNo}
                     </span>
                   )}
@@ -663,20 +663,20 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
       <div className="mt-3">
         <h2 className="text-sm font-bold text-gray-800 mb-1 border-b pb-0.5">बंद केलेल्या खात्यांची यादी (Closed Accounts History)</h2>
         <div className="overflow-x-auto bg-white rounded-sm shadow-sm border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200 text-xs text-center">
+          <table className="min-w-full divide-y divide-gray-200 text-[11px] text-center leading-tight border-collapse">
             <thead className="bg-primary text-white">
               <tr>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">खाते क्र. (A/c No)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">नाव (Customer Name)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">बंद तारीख (Closure Date)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-right">एकूण शिल्लक (Gross Bal)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-right">चार्जेस (Charges)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-right">दिलेली रक्कम (Paid Amt)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-center">पद्धत (Mode)</th>
-                <th className="px-2 py-1.5 font-medium text-center">व्हाउचर (Voucher No)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-left whitespace-nowrap">खाते क्र. (A/c No)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-left whitespace-nowrap">नाव (Customer Name)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-left whitespace-nowrap">बंद तारीख (Closure Date)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-right whitespace-nowrap">एकूण शिल्लक (Gross Bal)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-right whitespace-nowrap">चार्जेस (Charges)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-right whitespace-nowrap">दिलेली रक्कम (Paid Amt)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-center whitespace-nowrap">पद्धत (Mode)</th>
+                <th className="px-2 py-1.5 font-medium text-center whitespace-nowrap">व्हाउचर (Voucher No)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-amber-100">
               {closings.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-4 text-center text-gray-500">
@@ -686,16 +686,16 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
               ) : (
                 closings.map((c) => (
                   <tr key={c.closingID} className="hover:bg-gray-50">
-                    <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-red-600">{c.accountNo}</td>
-                    <td className="px-2 py-1 border-r border-gray-200 text-left">{c.customerName || 'अज्ञात'}</td>
-                    <td className="px-2 py-1 border-r border-gray-200 text-left">
+                    <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-red-600 align-middle">{c.accountNo}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">{c.customerName || 'अज्ञात'}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                       {new Date(c.closureDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                     </td>
-                    <td className="px-2 py-1 border-r border-gray-200 text-right">₹{c.grossBalance.toFixed(2)}</td>
-                    <td className="px-2 py-1 border-r border-gray-200 text-right text-red-500">₹{c.closingCharges.toFixed(2)}</td>
-                    <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-gray-800">₹{c.netPayable.toFixed(2)}</td>
-                    <td className="px-2 py-1 border-r border-gray-200 text-center">{c.paymentMode}</td>
-                    <td className="px-2 py-1 text-center font-medium text-blue-700">{c.voucherNo || '-'}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-right align-middle">₹{c.grossBalance.toFixed(2)}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-right text-red-500 align-middle">₹{c.closingCharges.toFixed(2)}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-gray-800 align-middle">₹{c.netPayable.toFixed(2)}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">{c.paymentMode}</td>
+                    <td className="px-2 py-1 text-center font-medium text-[#9A3412] align-middle">{c.voucherNo || '-'}</td>
                   </tr>
                 ))
               )}

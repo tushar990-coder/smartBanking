@@ -305,12 +305,12 @@ export default function SystemUpdateMaster() {
         
         {/* Card 1: Current Software Version */}
         <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-[#B44814] shrink-0">
             <Layers size={20} />
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">सध्याची आवृत्ती (Version)</span>
-            <span className="text-sm font-extrabold text-blue-700 font-mono tracking-tight block">
+            <span className="text-sm font-extrabold text-[#9A3412] font-mono tracking-tight block">
               v{versionInfo?.currentVersion || '1.0.0'}
             </span>
             <span className="text-[10px] text-slate-400 block truncate">
@@ -343,12 +343,12 @@ export default function SystemUpdateMaster() {
 
         {/* Card 3: Sanstha / Branch Profile */}
         <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-orange-50 border border-amber-200 flex items-center justify-center text-[#B44814] shrink-0">
             <Building2 size={20} />
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">संस्था व शाखा नाव</span>
-            <span className="text-xs font-bold text-indigo-950 truncate block" title={versionInfo?.sansthaName || 'स्मार्ट बँकिंग प्रणाली'}>
+            <span className="text-xs font-bold text-[#4A1410] truncate block" title={versionInfo?.sansthaName || 'स्मार्ट बँकिंग प्रणाली'}>
               {versionInfo?.sansthaName || 'स्मार्ट बँकिंग प्रणाली'}
             </span>
             <span className="text-[10px] text-slate-500 block truncate">
@@ -377,7 +377,7 @@ export default function SystemUpdateMaster() {
 
       {/* Current Version What's New Changelog Banner */}
       {versionInfo?.changelog && versionInfo.changelog.length > 0 && (
-        <div className="bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-blue-50/90 border border-emerald-200/90 rounded-lg p-4 shadow-2xs animate-in fade-in duration-200">
+        <div className="bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-[#FEF3E2]/90 border border-emerald-200/90 rounded-lg p-4 shadow-2xs animate-in fade-in duration-200">
           <div className="flex items-center gap-2 mb-2">
             <span className="flex h-2.5 w-2.5 relative">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -444,14 +444,14 @@ export default function SystemUpdateMaster() {
         {activeTab === 'online' && (
           <div className="p-4 sm:p-6 space-y-4">
             
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-blue-50/60 rounded-lg border border-blue-100">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-amber-50/60 rounded-lg border border-amber-100">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-full bg-[#B44814] text-white flex items-center justify-center shrink-0">
                   <CloudDownload size={20} />
                 </div>
                 <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-blue-950">क्लाउड सर्व्हरवरून थेट ऑटो-अपडेट</h3>
-                  <p className="text-xs text-blue-800/80 mt-0.5">
+                  <h3 className="text-xs sm:text-sm font-bold text-[#4A1410]">क्लाउड सर्व्हरवरून थेट ऑटो-अपडेट</h3>
+                  <p className="text-xs text-[#7C2418]/80 mt-0.5">
                     इंटरनेट उपलब्ध असल्यास 'Check for Updates' वर क्लिक करून नवीनतम आवृत्ती तपासा.
                   </p>
                 </div>
@@ -460,7 +460,7 @@ export default function SystemUpdateMaster() {
               <button
                 onClick={handleCheckOnline}
                 disabled={isCheckingOnline}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                className="px-4 py-2 bg-[#B44814] hover:bg-[#9A3412] text-white rounded text-xs font-bold shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
               >
                 {isCheckingOnline ? (
                   <>
@@ -688,30 +688,30 @@ export default function SystemUpdateMaster() {
               </div>
             ) : (
               <div className="overflow-x-auto border border-slate-200 rounded">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <table className="w-full text-[11px] text-left leading-tight border-collapse">
+                  <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="py-2 px-3">आवृत्ती (Version)</th>
-                      <th className="py-2 px-3">दिनांक व वेळ</th>
-                      <th className="py-2 px-3">पॅच नाव</th>
-                      <th className="py-2 px-3">स्थिती</th>
-                      <th className="py-2 px-3">तपशील (Remarks)</th>
+                      <th className="py-1.5 px-2 whitespace-nowrap">आवृत्ती (Version)</th>
+                      <th className="py-1.5 px-2 whitespace-nowrap">दिनांक व वेळ</th>
+                      <th className="py-1.5 px-2 whitespace-nowrap">पॅच नाव</th>
+                      <th className="py-1.5 px-2 whitespace-nowrap">स्थिती</th>
+                      <th className="py-1.5 px-2 whitespace-nowrap">तपशील (Remarks)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-amber-100">
                     {versionInfo.history.map((h) => (
                       <tr key={h.id} className="hover:bg-slate-50">
-                        <td className="py-2 px-3 font-mono font-bold text-primary">v{h.versionNumber}</td>
-                        <td className="py-2 px-3 text-slate-600 font-mono text-[11px]">
+                        <td className="py-1 px-2 font-mono font-bold text-primary align-middle">v{h.versionNumber}</td>
+                        <td className="py-1 px-2 text-slate-600 font-mono text-[11px] align-middle">
                           {new Date(h.appliedOn).toLocaleString('en-GB')}
                         </td>
-                        <td className="py-2 px-3 font-medium text-slate-800">{h.patchName}</td>
-                        <td className="py-2 px-3">
+                        <td className="py-1 px-2 font-medium text-slate-800 align-middle">{h.patchName}</td>
+                        <td className="py-1 px-2 align-middle">
                           <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[10px] font-bold">
                             {h.status}
                           </span>
                         </td>
-                        <td className="py-2 px-3 text-slate-500 text-[11px] max-w-xs truncate">{h.remarks || '-'}</td>
+                        <td className="py-1 px-2 text-slate-500 text-[11px] max-w-xs truncate align-middle">{h.remarks || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -763,7 +763,7 @@ export default function SystemUpdateMaster() {
                 <span>३. सर्व्हर फाइल्स रिप्लेसमेंट</span>
               </div>
 
-              <div className={`flex items-center gap-2 ${applyStep >= 4 ? 'text-blue-700 font-bold animate-pulse' : 'text-slate-400'}`}>
+              <div className={`flex items-center gap-2 ${applyStep >= 4 ? 'text-[#9A3412] font-bold animate-pulse' : 'text-slate-400'}`}>
                 {applyStep >= 5 ? <Check size={14} className="text-emerald-600" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current" />}
                 <span>४. सर्व्हर रीस्टार्ट व स्वयंचलित रीलोड</span>
               </div>

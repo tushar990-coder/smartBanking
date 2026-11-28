@@ -2677,9 +2677,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
               <button
                 type="button"
                 onClick={() => openRenewedPrintModal(renewedSuccessData, 'endorsement')}
-                className="bg-sky-100 hover:bg-sky-200 text-sky-950 font-bold px-3 py-1.5 rounded-sm text-xs shadow-sm flex items-center gap-1.5 cursor-pointer transition-all border border-sky-300"
+                className="bg-amber-100 hover:bg-amber-200 text-[#4A1410] font-bold px-3 py-1.5 rounded-sm text-xs shadow-sm flex items-center gap-1.5 cursor-pointer transition-all border border-amber-300"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-sky-800" />
+                <RotateCcw className="w-3.5 h-3.5 text-[#7C2418]" />
                 <span>मागील शेरा प्रिंट (Endorsement)</span>
               </button>
               <button
@@ -2847,7 +2847,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               });
                               setShowMultiFdModal(true);
                             }}
-                            className="text-[10px] text-primary hover:underline font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200 flex items-center gap-1 cursor-pointer"
+                            className="text-[10px] text-primary hover:underline font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1 cursor-pointer"
                           >
                             <Layers className="w-3 h-3" />
                             <span>{customerMatchingFds.length} मुदत ठेवी उपलब्ध – निवडा</span>
@@ -2975,19 +2975,19 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           </legend>
 
                           <div className="overflow-x-auto mt-1 border border-slate-200 rounded-sm">
-                            <table className="w-full border-collapse text-[11.5px] bg-white">
+                            <table className="w-full border-collapse text-[11.5px] bg-white leading-tight">
                               <tbody>
                                 <tr className="border-b border-slate-200">
                                   <th className="w-28 sm:w-32 bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     खातेदार
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-bold text-slate-900 border-r border-slate-200">
+                                  <td className="px-2.5 py-1 font-bold text-slate-900 border-r border-slate-200 align-middle">
                                     {acc.customerName || acc.memberName || '-'}
                                   </td>
                                   <th className="w-24 sm:w-28 bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     CIF क्र.
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono text-slate-800">
+                                  <td className="px-2.5 py-1 font-mono text-slate-800 align-middle">
                                     {acc.cifNo || (acc.customerID ? `CIF-${acc.customerID}` : '-')}
                                   </td>
                                 </tr>
@@ -2995,13 +2995,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     खाते क्र.
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono font-bold text-primary border-r border-slate-200">
+                                  <td className="px-2.5 py-1 font-mono font-bold text-primary border-r border-slate-200 align-middle">
                                     {acc.accountNo}
                                   </td>
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     जुना क्र.
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono font-bold text-slate-800">
+                                  <td className="px-2.5 py-1 font-mono font-bold text-slate-800 align-middle">
                                     {acc.legacyAccountNumber?.trim() || '-'}
                                   </td>
                                 </tr>
@@ -3009,13 +3009,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     ठेव योजना
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-medium text-slate-800 border-r border-slate-200">
+                                  <td className="px-2.5 py-1 font-medium text-slate-800 border-r border-slate-200 align-middle">
                                     {acc.schemeName}
                                   </td>
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     खाते स्थिती
                                   </th>
-                                  <td className="px-2.5 py-1.5">
+                                  <td className="px-2.5 py-1 align-middle">
                                     {!isPassingMode && (acc.status === 'Closed' || acc.status === 'Renewed') ? (
                                       <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-rose-50 text-rose-800 border-rose-300">
                                         {acc.status === 'Renewed' ? 'नूतनीकरण झालेले (Renewed)' : 'बंद झालेले (Closed)'}
@@ -3038,13 +3038,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     सुरू दिनांक
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono text-slate-800 border-r border-slate-200">
+                                  <td className="px-2.5 py-1 font-mono text-slate-800 border-r border-slate-200 align-middle">
                                     {formatDateDisplay(acc.openingDate)}
                                   </td>
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     मुदतपूर्ती दिनांक
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono font-bold text-slate-900">
+                                  <td className="px-2.5 py-1 font-mono font-bold text-slate-900 align-middle">
                                     {formatDateDisplay(acc.maturityDate)}
                                     {elapsedDaysInfo && elapsedDaysInfo.contractedDays > 0 && (
                                       <span className="ml-1.5 text-[10px] font-normal text-slate-500 font-sans">
@@ -3057,7 +3057,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   <th className="bg-amber-50/70 px-2.5 py-1.5 text-left font-medium text-slate-700 border-r border-slate-200 whitespace-nowrap">
                                     व्यवहार दिनांक
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono font-bold text-slate-900 border-r border-slate-200">
+                                  <td className="px-2.5 py-1 font-mono font-bold text-slate-900 border-r border-slate-200 align-middle">
                                     {formatDateDisplay(closureDate)}
                                     <span className="ml-1.5 text-[9.5px] font-normal text-slate-500 font-sans">
                                       (सक्रिय सीबीएस)
@@ -3066,7 +3066,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   <th className="bg-amber-50/70 px-2.5 py-1.5 text-left font-medium text-slate-700 border-r border-slate-200 whitespace-nowrap">
                                     व्यवहार दिनांक पर्यंतचे दिवस
                                   </th>
-                                  <td className="px-2.5 py-1.5">
+                                  <td className="px-2.5 py-1 align-middle">
                                     {elapsedDaysInfo ? (
                                       <div className="flex items-center gap-1.5 flex-wrap">
                                         <span className="font-mono font-black text-xs text-primary">
@@ -3083,7 +3083,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                           </span>
                                         )}
                                         {elapsedDaysInfo.isOverdue && (
-                                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-indigo-800 bg-indigo-50 border border-indigo-300 px-1.5 py-0.5 rounded-sm">
+                                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[#7C2418] bg-orange-50 border border-amber-300 px-1.5 py-0.5 rounded-sm">
                                             ⏳ मुदतीनंतर +{elapsedDaysInfo.overdueDays} दिवस ओव्हरड्यू
                                           </span>
                                         )}
@@ -3097,13 +3097,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     ठेव मुद्दल
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono font-bold text-slate-900 border-r border-slate-200">
+                                  <td className="px-2.5 py-1 font-mono font-bold text-slate-900 border-r border-slate-200 align-middle">
                                     ₹ {fmt(acc.depositAmount)}
                                   </td>
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     व्याजदर
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono font-bold text-blue-700">
+                                  <td className="px-2.5 py-1 font-mono font-bold text-[#9A3412] align-middle">
                                     {acc.interestRate}% p.a.
                                     {acc.isSeniorCitizen && (
                                       <span className="ml-1.5 text-[10px] text-amber-700 font-normal">
@@ -3116,13 +3116,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     मुदतपूर्ती रक्कम
                                   </th>
-                                  <td className="px-2.5 py-1.5 font-mono font-bold text-emerald-700 border-r border-slate-200">
+                                  <td className="px-2.5 py-1 font-mono font-bold text-emerald-700 border-r border-slate-200 align-middle">
                                     ₹ {fmt(acc.maturityAmount || 0)}
                                   </td>
                                   <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
                                     इतर तपशील
                                   </th>
-                                  <td className="px-2.5 py-1.5 text-slate-700">
+                                  <td className="px-2.5 py-1 text-slate-700 align-middle">
                                     {acc.isSeniorCitizen ? 'ज्येष्ठ नागरिक ठेव' : 'नियमित ठेव'}
                                     {acc.legacyAccruedInt > 0 ? ` • जुने संचित व्याज: ₹ ${fmt(acc.legacyAccruedInt)}` : ''}
                                   </td>
@@ -3266,7 +3266,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                           renewalSimulation.targetScheme.interestType === 'Cumulative'
                                             ? 'bg-purple-50 text-purple-800 border-purple-300'
                                             : renewalSimulation.targetScheme.interestType === 'MIS' || renewalSimulation.targetScheme.interestType === 'Monthly Interest'
-                                            ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                            ? 'bg-amber-50 text-[#7C2418] border-amber-300'
                                             : 'bg-emerald-50 text-emerald-800 border-emerald-300'
                                         }`}>
                                           {renewalSimulation.targetScheme.interestType === 'Cumulative'
@@ -3324,13 +3324,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                           योजना कालावधी स्लॅब दर तक्ता (Tenor Slabs):
                                         </span>
                                         <div className="overflow-x-auto max-h-32 border border-slate-200 rounded bg-white">
-                                          <table className="w-full text-left text-[10.5px] border-collapse">
-                                            <thead className="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200 font-bold">
+                                          <table className="w-full text-left text-[10.5px] border-collapse leading-tight">
+                                            <thead className="bg-[#5A1A14] text-amber-50 sticky top-0 border-b border-amber-400/30 font-bold">
                                               <tr>
-                                                <th className="p-1.5 border-r border-slate-200">कालावधी (दिवस)</th>
-                                                <th className="p-1.5 border-r border-slate-200 text-right">सामान्य दर (%)</th>
-                                                <th className="p-1.5 border-r border-slate-200 text-right">ज्येष्ठ नागरिक (%)</th>
-                                                <th className="p-1.5 text-center">स्थिती</th>
+                                                <th className="p-1.5 border-r border-amber-400/25 whitespace-nowrap">कालावधी (दिवस)</th>
+                                                <th className="p-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">सामान्य दर (%)</th>
+                                                <th className="p-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">ज्येष्ठ नागरिक (%)</th>
+                                                <th className="p-1.5 text-center whitespace-nowrap">स्थिती</th>
                                               </tr>
                                             </thead>
                                             <tbody>
@@ -3338,16 +3338,16 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                                 const isMatched = renewalSimulation.matchedSlab === slab;
                                                 return (
                                                   <tr key={idx} className={`border-b border-slate-100 last:border-0 ${isMatched ? 'bg-emerald-100/70 font-bold text-emerald-950' : 'text-slate-700'}`}>
-                                                    <td className="p-1.5 border-r border-slate-200">
+                                                    <td className="p-1.5 border-r border-slate-200 align-middle">
                                                       {slab.fromDays} ते {slab.toDays} दिवस
                                                     </td>
-                                                    <td className="p-1.5 border-r border-slate-200 text-right font-mono">
+                                                    <td className="p-1.5 border-r border-slate-200 text-right font-mono align-middle">
                                                       {slab.interestRate}%
                                                     </td>
-                                                    <td className="p-1.5 border-r border-slate-200 text-right font-mono text-emerald-700">
+                                                    <td className="p-1.5 border-r border-slate-200 text-right font-mono text-emerald-700 align-middle">
                                                       {slab.seniorCitizenRate}%
                                                     </td>
-                                                    <td className="p-1.5 text-center">
+                                                    <td className="p-1.5 text-center align-middle">
                                                       {isMatched ? (
                                                         <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded font-black">
                                                           ✓ लागू स्लॅब
@@ -3545,7 +3545,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                             onClick={() => setReceiptNoMode('CUSTOM')}
                                             className={`px-2.5 py-1 rounded text-[11px] font-bold border cursor-pointer ${
                                               receiptNoMode === 'CUSTOM'
-                                                ? 'bg-indigo-600 text-white border-indigo-700'
+                                                ? 'bg-[#B44814] text-white border-[#7C2418]'
                                                 : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                                             }`}
                                           >
@@ -3577,47 +3577,47 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
                                 {/* Live Renewal Simulation & Maturity Calculator Card */}
                                 {renewalSimulation && (
-                                  <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-emerald-50 border-2 border-indigo-200 rounded-sm p-3 space-y-2 text-xs shadow-2xs mt-2">
-                                    <div className="flex items-center justify-between border-b border-indigo-200/80 pb-1.5 font-bold text-indigo-950">
+                                  <div className="bg-gradient-to-r from-[#FDF2EE] via-[#FFFBF7] to-emerald-50 border-2 border-amber-200 rounded-sm p-3 space-y-2 text-xs shadow-2xs mt-2">
+                                    <div className="flex items-center justify-between border-b border-amber-200/80 pb-1.5 font-bold text-[#4A1410]">
                                       <div className="flex items-center gap-1.5">
-                                        <Scale className="w-4 h-4 text-indigo-700" />
+                                        <Scale className="w-4 h-4 text-[#9A3412]" />
                                         <span>📊 नूतनीकरण मुदतपूर्ती अंदाजपत्रक (Live Renewal Calculation Preview)</span>
                                       </div>
-                                      <span className="text-[10px] bg-indigo-200/80 text-indigo-900 px-2 py-0.5 rounded font-black">
+                                      <span className="text-[10px] bg-amber-200/80 text-[#5A1A14] px-2 py-0.5 rounded font-black">
                                         लागू दर: {renewalSimulation.appliedRate}%
                                       </span>
                                     </div>
 
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-[11px]">
-                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                      <div className="bg-white p-2 rounded border border-amber-100 shadow-2xs">
                                         <span className="text-gray-500 block text-[10px]">नवीन ठेव मुद्दल (New Deposit):</span>
                                         <strong className="text-slate-900 font-mono text-xs">
                                           ₹{renewalSimulation.newDepositAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </strong>
                                       </div>
 
-                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                      <div className="bg-white p-2 rounded border border-amber-100 shadow-2xs">
                                         <span className="text-gray-500 block text-[10px]">नूतनीकरण सुरुवात दिनांक:</span>
                                         <span className="font-bold text-slate-800">
                                           {formatDateDisplay(renewalSimulation.effectiveStartDateStr)}
                                         </span>
                                       </div>
 
-                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                      <div className="bg-white p-2 rounded border border-amber-100 shadow-2xs">
                                         <span className="text-gray-500 block text-[10px]">नवीन मुदतपूर्ती दिनांक:</span>
                                         <span className="font-bold text-amber-800 font-mono">
                                           {renewalSimulation.simMaturityDateStr}
                                         </span>
                                       </div>
 
-                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                      <div className="bg-white p-2 rounded border border-amber-100 shadow-2xs">
                                         <span className="text-gray-500 block text-[10px]">नवीन मुदतपूर्ती रक्कम (Maturity Amount):</span>
                                         <strong className="text-emerald-700 font-mono text-xs font-black">
                                           ₹{renewalSimulation.simMaturityAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </strong>
                                       </div>
 
-                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                      <div className="bg-white p-2 rounded border border-amber-100 shadow-2xs">
                                         <span className="text-gray-500 block text-[10px]">अपेक्षित एकूण परतावा / व्याज:</span>
                                         <strong className="text-primary font-mono text-xs">
                                           ₹{renewalSimulation.estimatedInterest.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -3625,9 +3625,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                       </div>
 
                                       {renewalSimulation.monthlyPayout > 0 && (
-                                        <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                        <div className="bg-white p-2 rounded border border-amber-100 shadow-2xs">
                                           <span className="text-gray-500 block text-[10px]">मासिक व्याज परतावा (Monthly Payout):</span>
-                                          <strong className="text-blue-700 font-mono text-xs">
+                                          <strong className="text-[#9A3412] font-mono text-xs">
                                             ₹{renewalSimulation.monthlyPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })} / महिना
                                           </strong>
                                         </div>
@@ -3800,8 +3800,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                             </FormRow>
 
                                             {surplusAmt > 0 && (
-                                              <div className="bg-white border border-blue-200 rounded-sm p-2.5 space-y-2">
-                                                <div className="text-[11px] font-bold text-blue-900">
+                                              <div className="bg-white border border-amber-200 rounded-sm p-2.5 space-y-2">
+                                                <div className="text-[11px] font-bold text-[#5A1A14]">
                                                   शिल्लक परतावा वाटप (Surplus Payout: ₹{fmt(surplusAmt)})
                                                 </div>
 
@@ -3978,26 +3978,26 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               <span className="text-[11px] text-slate-500">एकूण टप्पे: {scheduleSummary.periods.length}</span>
                             </div>
                             <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-sm mt-1">
-                              <table className="w-full border-collapse text-[11px]">
-                                <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-bold sticky top-0">
+                              <table className="w-full border-collapse text-[11px] leading-tight">
+                                <thead className="bg-[#5A1A14] text-amber-50 text-[10px] uppercase font-bold sticky top-0">
                                   <tr>
-                                    <th className="px-2 py-1 text-left">टप्पा</th>
-                                    <th className="px-2 py-1 text-center">कालावधी</th>
-                                    <th className="px-2 py-1 text-center">दिवस</th>
-                                    <th className="px-2 py-1 text-right">आरंभी शिल्लक (₹)</th>
-                                    <th className="px-2 py-1 text-right">व्याज (₹)</th>
-                                    <th className="px-2 py-1 text-right">अंतिम शिल्लक (₹)</th>
+                                    <th className="px-2 py-1 text-left whitespace-nowrap">टप्पा</th>
+                                    <th className="px-2 py-1 text-center whitespace-nowrap">कालावधी</th>
+                                    <th className="px-2 py-1 text-center whitespace-nowrap">दिवस</th>
+                                    <th className="px-2 py-1 text-right whitespace-nowrap">आरंभी शिल्लक (₹)</th>
+                                    <th className="px-2 py-1 text-right whitespace-nowrap">व्याज (₹)</th>
+                                    <th className="px-2 py-1 text-right whitespace-nowrap">अंतिम शिल्लक (₹)</th>
                                   </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100">
+                                <tbody className="divide-y divide-amber-100">
                                   {scheduleSummary.periods.map((q, idx) => (
                                     <tr key={idx} className="hover:bg-slate-50">
-                                      <td className="px-2 py-1 font-semibold text-slate-800">{q.periodLabel}</td>
-                                      <td className="px-2 py-1 text-center text-slate-600">{q.fromDate} ते {q.toDate}</td>
-                                      <td className="px-2 py-1 text-center font-mono">{q.days}</td>
-                                      <td className="px-2 py-1 text-right font-mono">{fmt(q.openingBalance)}</td>
-                                      <td className="px-2 py-1 text-right font-mono font-semibold text-primary">{fmt(q.interestAmount)}</td>
-                                      <td className="px-2 py-1 text-right font-mono font-semibold text-slate-900">{fmt(q.closingBalance)}</td>
+                                      <td className="px-2 py-1 font-semibold text-slate-800 align-middle">{q.periodLabel}</td>
+                                      <td className="px-2 py-1 text-center text-slate-600 align-middle">{q.fromDate} ते {q.toDate}</td>
+                                      <td className="px-2 py-1 text-center font-mono align-middle">{q.days}</td>
+                                      <td className="px-2 py-1 text-right font-mono align-middle">{fmt(q.openingBalance)}</td>
+                                      <td className="px-2 py-1 text-right font-mono font-semibold text-primary align-middle">{fmt(q.interestAmount)}</td>
+                                      <td className="px-2 py-1 text-right font-mono font-semibold text-slate-900 align-middle">{fmt(q.closingBalance)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -4014,7 +4014,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                     <div className="lg:col-span-5 space-y-3.5 lg:sticky lg:top-2">
                       {/* Group Box 5: Settlement Summary */}
                       <fieldset className="border border-slate-200 rounded-md px-3.5 pt-2 pb-3.5 bg-white shadow-2xs">
-                        <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-sky-50/70 border border-slate-200 rounded-sm inline-flex items-center gap-1.5">
+                        <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-amber-50/70 border border-slate-200 rounded-sm inline-flex items-center gap-1.5">
                           <Scale className="w-3.5 h-3.5 text-primary shrink-0" />
                           <span>थेट सेटलमेंट सारांश (Settlement Summary)</span>
                         </legend>
@@ -4023,7 +4023,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           <span className="text-[10.5px] font-medium text-slate-500">व्यवहार तपशील</span>
                           <div className="flex items-center gap-1.5">
                             {elapsedDaysInfo && (
-                              <span className="text-[10px] font-mono font-semibold text-sky-700 bg-sky-50 border border-sky-200/80 px-2 py-0.5 rounded-sm">
+                              <span className="text-[10px] font-mono font-semibold text-[#9A3412] bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-sm">
                                 कालावधी: {elapsedDaysInfo.elapsedDays} दिवस
                               </span>
                             )}
@@ -4048,16 +4048,16 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                             const hasMemo = previewSplit.unbackedLegacyMemo > 0;
                             if (!hasCap && !hasProv && !hasMemo) return null;
                             return (
-                              <div className="px-2.5 py-2 bg-sky-50/60 rounded-sm border border-sky-200/80 space-y-1">
+                              <div className="px-2.5 py-2 bg-amber-50/60 rounded-sm border border-amber-200/80 space-y-1">
                                 <div className="flex justify-between items-center text-[11px]">
-                                  <dt className="text-sky-700 font-semibold">
+                                  <dt className="text-[#9A3412] font-semibold">
                                     आधी पोस्ट केलेले व्याज (Posting Intr Audit)
                                   </dt>
-                                  <dd className="font-mono font-bold text-sky-700">
+                                  <dd className="font-mono font-bold text-[#9A3412]">
                                     ₹ {fmt(previewSplit.totalPostedAvailable)}
                                   </dd>
                                 </div>
-                                <div className="text-[10px] text-sky-600 space-y-0.5 pt-0.5 border-t border-sky-200/50">
+                                <div className="text-[10px] text-[#B44814] space-y-0.5 pt-0.5 border-t border-amber-200/50">
                                   {hasCap && (
                                     <div className="flex justify-between">
                                       <span>• कॅपिटलाइझ्ड व्याज (On Interest — FD दायित्व)</span>
@@ -4150,15 +4150,15 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                         setExpenseIntrDebitInput('');
                                         setPrematureReversalInput('');
                                       }}
-                                      className="w-28 h-7 text-right font-mono font-bold text-xs bg-amber-50/50 border border-amber-200 rounded-sm px-2 text-slate-700 focus:outline-none focus:border-sky-400 focus:bg-white"
+                                      className="w-28 h-7 text-right font-mono font-bold text-xs bg-amber-50/50 border border-amber-200 rounded-sm px-2 text-slate-700 focus:outline-none focus:border-amber-400 focus:bg-white"
                                       title="व्याज रक्कम थेट येथे बदला"
                                     />
                                   </dd>
                                 </div>
 
                                 {/* Subheader */}
-                                <div className="px-2.5 py-1.5 bg-sky-50/60 border-b border-slate-200/70 flex flex-wrap items-center justify-between gap-1.5">
-                                  <span className="text-[10.5px] font-semibold text-sky-700">
+                                <div className="px-2.5 py-1.5 bg-amber-50/60 border-b border-slate-200/70 flex flex-wrap items-center justify-between gap-1.5">
+                                  <span className="text-[10.5px] font-semibold text-[#9A3412]">
                                     व्याज नावे लेजर विभागणी (POSTING + नफा-तोटा)
                                   </span>
                                   {!isPeriodic && split.unbackedLegacyMemo > 0 && (
@@ -4417,7 +4417,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                     setManualOverrideReason('थेट सेटलमेंट संपादन');
                                     setCustomOverdueInterest(val);
                                   }}
-                                  className="w-28 h-7 text-right font-mono font-bold text-xs bg-white border border-amber-200 rounded-sm px-2 text-slate-700 focus:outline-none focus:border-sky-400"
+                                  className="w-28 h-7 text-right font-mono font-bold text-xs bg-white border border-amber-200 rounded-sm px-2 text-slate-700 focus:outline-none focus:border-amber-400"
                                   title="ओव्हरड्यू व्याज थेट येथे बदला"
                                 />
                               </dd>
@@ -4453,7 +4453,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           </div>
                         )}
 
-                        <div className="mt-2.5 px-3 py-2.5 rounded-sm bg-sky-50/70 border border-sky-200/90 flex items-center justify-between gap-2">
+                        <div className="mt-2.5 px-3 py-2.5 rounded-sm bg-amber-50/70 border border-amber-200/90 flex items-center justify-between gap-2">
                           <div>
                             <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
                               {actionType === 'Renewal'
@@ -4464,14 +4464,14 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               {actionType === 'Renewal' ? 'नवीन मुदत ठेव पावतीमध्ये जमा' : `पद्धत: ${paymentModeLabel}`}
                             </div>
                           </div>
-                          <div className="text-xl font-mono font-bold text-sky-700 tracking-tight">₹ {fmt(finalAmount)}</div>
+                          <div className="text-xl font-mono font-bold text-[#9A3412] tracking-tight">₹ {fmt(finalAmount)}</div>
                         </div>
                       </fieldset>
 
                       {/* Group Box 6: Voucher Entries (Clean, without separate override box) */}
                       {voucherPreview && (
                         <fieldset className="border border-slate-200 rounded-md px-3.5 pt-2 pb-3 bg-white shadow-2xs">
-                          <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-sky-50/70 border border-slate-200 rounded-sm inline-flex items-center gap-1.5">
+                          <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-amber-50/70 border border-slate-200 rounded-sm inline-flex items-center gap-1.5">
                             <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
                             <span>लेखा व्हाउचर नोंदी (Accounting Voucher)</span>
                           </legend>
@@ -4487,7 +4487,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setShowVoucherPreview(!showVoucherPreview)}
-                                className="text-[11px] text-sky-700 hover:underline font-semibold flex items-center gap-0.5 cursor-pointer"
+                                className="text-[11px] text-[#9A3412] hover:underline font-semibold flex items-center gap-0.5 cursor-pointer"
                               >
                                 {showVoucherPreview ? <>लपवा <ChevronUp className="w-3 h-3" /></> : <>पाहा <ChevronDown className="w-3 h-3" /></>}
                               </button>
@@ -4497,15 +4497,15 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           <div className="mt-1 space-y-2">
                             {showVoucherPreview && (
                               <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-sm">
-                                <table className="w-full border-collapse text-[11px]">
-                                  <thead className="bg-slate-50 text-slate-600 text-[10px] uppercase font-bold sticky top-0 border-b border-slate-200">
+                                <table className="w-full border-collapse text-[11px] leading-tight">
+                                  <thead className="bg-[#5A1A14] text-amber-50 text-[10px] uppercase font-bold sticky top-0 border-b border-amber-400/30">
                                     <tr>
-                                      <th className="py-1 px-3 text-left w-12">Dr/Cr</th>
-                                      <th className="py-1 px-2 text-left">खाते (Ledger)</th>
-                                      <th className="py-1 px-3 text-right w-28">रक्कम (₹)</th>
+                                      <th className="py-1 px-2 text-left w-12 whitespace-nowrap">Dr/Cr</th>
+                                      <th className="py-1 px-2 text-left whitespace-nowrap">खाते (Ledger)</th>
+                                      <th className="py-1 px-2 text-right w-28 whitespace-nowrap">रक्कम (₹)</th>
                                     </tr>
                                   </thead>
-                                  <tbody className="divide-y divide-slate-100">
+                                  <tbody className="divide-y divide-amber-100">
                                     {voucherPreview.map((entry, idx) => {
                                       const prevGroup = idx > 0 ? voucherPreview[idx - 1].voucherGroup : null;
                                       const isNewGroup = entry.voucherGroup && entry.voucherGroup !== prevGroup;
@@ -4519,11 +4519,11 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                             </tr>
                                           )}
                                           <tr>
-                                            <td className="py-1 px-3 font-bold text-slate-600">{entry.drCr}</td>
-                                            <td className="py-1 px-2 font-medium text-slate-800 truncate max-w-[160px]" title={entry.ledgerName}>
+                                            <td className="py-1 px-2 font-bold text-slate-600 align-middle">{entry.drCr}</td>
+                                            <td className="py-1 px-2 font-medium text-slate-800 truncate max-w-[160px] align-middle" title={entry.ledgerName}>
                                               {entry.ledgerName}
                                             </td>
-                                            <td className="py-1 px-3 text-right font-mono font-semibold text-slate-900 whitespace-nowrap">
+                                            <td className="py-1 px-2 text-right font-mono font-semibold text-slate-900 whitespace-nowrap align-middle">
                                               {fmt(entry.amount)}
                                             </td>
                                           </tr>
@@ -4590,8 +4590,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                             पावतीवर कर्ज तारण ({activeLoansData?.directLienLoanNo || acc.lienLoanAccountNo || 'सक्रिय कर्ज'}) – कर्जात समायोजित केल्याशिवाय ठेव मोडता येणार नाही (नूतनीकरण करा).
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1.5 text-blue-900 bg-blue-50 border border-blue-200 rounded-sm px-2 py-1 font-medium">
-                            <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span className="flex items-center gap-1.5 text-[#5A1A14] bg-amber-50 border border-amber-200 rounded-sm px-2 py-1 font-medium">
+                            <Info className="w-3.5 h-3.5 text-[#B44814] shrink-0" />
                             खातेदाराकडे सक्रिय कर्ज बाकी <b>₹{fmt(activeLoansData?.totalOutstandingLiability || 0)}</b> आहे (ही पावती तारण नाही — थेट परतावा अनुज्ञेय).
                           </span>
                         )
@@ -4780,9 +4780,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       {/* Interactive Multi-FD Account Selector Modal (CIF-First) */}
       {showMultiFdModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl max-w-2xl w-full overflow-hidden border border-blue-300">
+          <div className="bg-white rounded-md shadow-2xl max-w-2xl w-full overflow-hidden border border-amber-300">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 px-4 py-3 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-[#7C2418] via-[#B44814] to-[#D97706] px-4 py-3 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="p-1.5 bg-white/10 rounded-sm">
                   <BookOpen className="w-5 h-5 text-amber-300" />
@@ -4790,11 +4790,11 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                 <div>
                   <div className="font-bold text-sm flex items-center gap-2">
                     <span>मुदत ठेव पावती निवडा (Select FD Receipt)</span>
-                    <span className="text-[10px] bg-amber-400 text-blue-950 font-black px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] bg-amber-400 text-[#4A1410] font-black px-2 py-0.5 rounded-full">
                       एकूण {customerMatchingFds.length} मुदत ठेवी
                     </span>
                   </div>
-                  <p className="text-xs text-blue-200 mt-0.5">
+                  <p className="text-xs text-amber-200 mt-0.5">
                     खातेदार: <strong className="text-white">{multiFdCustomerInfo?.name || 'खातेदार'}</strong>
                     {multiFdCustomerInfo?.cifNo && multiFdCustomerInfo.cifNo !== '-' && (
                       <span className="ml-2 font-mono text-amber-200">
@@ -4839,12 +4839,12 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                       }}
                       className={`p-3 rounded border text-left cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                         isCurrent
-                          ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-400 shadow-sm'
-                          : 'bg-white hover:bg-blue-50/40 border-slate-200 hover:border-blue-300 shadow-2xs'
+                          ? 'bg-amber-50/80 border-[#B44814] ring-2 ring-[#B44814] shadow-sm'
+                          : 'bg-white hover:bg-amber-50/40 border-slate-200 hover:border-amber-300 shadow-2xs'
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-sm mt-0.5 ${isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <div className={`p-2 rounded-sm mt-0.5 ${isCurrent ? 'bg-[#B44814] text-white' : 'bg-slate-100 text-slate-600'}`}>
                           <BookOpen className="w-4 h-4" />
                         </div>
                         <div>
@@ -4853,7 +4853,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               {acc.receiptNo || acc.accountNo}
                             </span>
                             {acc.receiptNo && acc.receiptNo !== acc.accountNo && (
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-[#7C2418] border border-amber-200">
                                 CBS: {acc.accountNo}
                               </span>
                             )}
@@ -4918,8 +4918,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           }}
                           className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                             isCurrent
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-300'
+                              ? 'bg-[#B44814] text-white hover:bg-[#9A3412]'
+                              : 'bg-white hover:bg-[#B44814] hover:text-white text-[#9A3412] border border-amber-300'
                           }`}
                         >
                           <CheckCircle className="w-3.5 h-3.5" />

@@ -322,8 +322,8 @@ export default function CustomerOpeningBalanceForm() {
 
         <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
           {isFilteringByLedger && selectedLedger && (
-            <div className="px-2.5 py-1 bg-blue-50 text-blue-800 border border-blue-200 rounded flex items-center gap-1 shadow-2xs">
-              <span className="text-[10px] text-blue-500 font-normal">लेजर:</span>
+            <div className="px-2.5 py-1 bg-amber-50 text-[#7C2418] border border-amber-200 rounded flex items-center gap-1 shadow-2xs">
+              <span className="text-[10px] text-[#D97706] font-normal">लेजर:</span>
               <span className="font-bold truncate max-w-[150px]">{selectedLedger.ledgerName}</span>
             </div>
           )}
@@ -444,7 +444,7 @@ export default function CustomerOpeningBalanceForm() {
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[11px] font-bold text-gray-700">प्रकार (Dr / Cr) *</label>
                   {selectedLedger && (
-                    <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded font-semibold">
+                    <span className="text-[9px] text-[#9A3412] bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-semibold">
                       लेजरनुसार: {getLedgerDefaultBalanceType(selectedLedger) === 'Cr' ? 'जमा (Cr)' : 'नावे (Dr)'}
                     </span>
                   )}
@@ -506,7 +506,7 @@ export default function CustomerOpeningBalanceForm() {
                   onClick={() => setShowAllLedgers(prev => !prev)}
                   className={`px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
                     showAllLedgers 
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-2xs' 
+                      ? 'bg-[#B44814] text-white border-[#9A3412] shadow-2xs' 
                       : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
                   }`}
                   title={showAllLedgers ? "फक्त निवडलेले लेजर पाहा" : "सर्व लेजर्सच्या नोंदी पाहा"}
@@ -529,15 +529,15 @@ export default function CustomerOpeningBalanceForm() {
           </div>
 
           <div className="overflow-y-auto max-h-[500px]">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-[11px] leading-tight">
               <thead>
-                <tr className="bg-gray-100 text-gray-700 border-b">
-                  <th className="p-2">CIF कोड</th>
-                  <th className="p-2">खातेदाराचे नाव</th>
-                  <th className="p-2">लेजर खाते</th>
-                  <th className="p-2 text-right">रक्कम (₹)</th>
-                  <th className="p-2 text-center">प्रकार</th>
-                  <th className="p-2 text-center">कृती</th>
+                <tr className="bg-[#5A1A14] text-amber-50 border-b">
+                  <th className="px-2 py-1.5 whitespace-nowrap">CIF कोड</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">खातेदाराचे नाव</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">लेजर खाते</th>
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap">रक्कम (₹)</th>
+                  <th className="px-2 py-1.5 text-center whitespace-nowrap">प्रकार</th>
+                  <th className="px-2 py-1.5 text-center whitespace-nowrap">कृती</th>
                 </tr>
               </thead>
               <tbody>
@@ -550,26 +550,26 @@ export default function CustomerOpeningBalanceForm() {
                         : 'hover:bg-gray-50'
                     }`}
                   >
-                    <td className="p-2 font-bold text-blue-900">{b.customer?.cifNo}</td>
-                    <td className="p-2 font-semibold text-gray-800">
+                    <td className="px-2 py-1 font-bold text-[#5A1A14] align-middle">{b.customer?.cifNo}</td>
+                    <td className="px-2 py-1 font-semibold text-gray-800 align-middle">
                       {b.customer?.firstName} {b.customer?.middleName || ''} {b.customer?.lastName}
                     </td>
-                    <td className="p-2 text-gray-600">{b.ledger?.ledgerName}</td>
-                    <td className="p-2 text-right font-bold">
+                    <td className="px-2 py-1 text-gray-600 align-middle">{b.ledger?.ledgerName}</td>
+                    <td className="px-2 py-1 text-right font-bold align-middle">
                       ₹{Number(b.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="p-2 text-center">
+                    <td className="px-2 py-1 text-center align-middle">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${b.balanceType === 'Dr' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                         {b.balanceType === 'Dr' ? 'नावे (Dr)' : 'जमा (Cr)'}
                       </span>
                     </td>
-                    <td className="p-2 text-center whitespace-nowrap">
+                    <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
                       <button
                         onClick={() => handleEdit(b)}
                         className={`p-1 rounded transition cursor-pointer mr-1.5 ${
                           editingId === b.customerOpeningBalanceID
                             ? 'text-amber-700 bg-amber-100 font-bold'
-                            : 'text-blue-600 hover:bg-blue-50'
+                            : 'text-[#B44814] hover:bg-amber-50'
                         }`}
                         title="दुरुस्त करा (Edit)"
                       >
@@ -599,7 +599,7 @@ export default function CustomerOpeningBalanceForm() {
                             <button
                               type="button"
                               onClick={() => setShowAllLedgers(true)}
-                              className="mt-3 px-3 py-1 bg-white border border-gray-300 rounded text-[11px] font-bold text-blue-600 hover:bg-blue-50 transition shadow-2xs cursor-pointer"
+                              className="mt-3 px-3 py-1 bg-white border border-gray-300 rounded text-[11px] font-bold text-[#B44814] hover:bg-amber-50 transition shadow-2xs cursor-pointer"
                             >
                               सर्व लेजर्सच्या नोंदी पाहा ({balances.length})
                             </button>

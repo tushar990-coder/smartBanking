@@ -618,12 +618,12 @@ export default function FinancialYearMaster() {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-sky-50 text-sky-700 border border-sky-200 rounded">
+          <div className="p-2 bg-amber-50 text-[#9A3412] border border-amber-200 rounded">
             <Unlock className="w-4 h-4" />
           </div>
           <div>
             <div className="text-xs text-gray-500 font-bold">चालू (Open) वर्षे</div>
-            <div className="text-sm font-black text-sky-900">{openYearsCount}</div>
+            <div className="text-sm font-black text-[#5A1A14]">{openYearsCount}</div>
           </div>
         </div>
 
@@ -801,18 +801,18 @@ export default function FinancialYearMaster() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+          <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap leading-tight">
             <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
-                <th className="p-2 border-r border-gray-200 text-left">वर्षाचा कोड (Year Code)</th>
-                <th className="p-2 border-r border-gray-200 text-left">सुरुवात तारीख (Start Date)</th>
-                <th className="p-2 border-r border-gray-200 text-left">शेवटची तारीख (End Date)</th>
-                <th className="p-2 border-r border-gray-200 text-center">सक्रिय स्थिती (Active)</th>
-                <th className="p-2 border-r border-gray-200 text-center">ऑडिट लॉक स्थिती (Lock Status)</th>
-                <th className="p-2 text-center">वार्षिक अखेर व कृती (Year-End & Actions)</th>
+              <tr className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">वर्षाचा कोड (Year Code)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">सुरुवात तारीख (Start Date)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">शेवटची तारीख (End Date)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">सक्रिय स्थिती (Active)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">ऑडिट लॉक स्थिती (Lock Status)</th>
+                <th className="px-2 py-1.5 text-center whitespace-nowrap">वार्षिक अखेर व कृती (Year-End & Actions)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-amber-100 bg-white">
               {years.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-6 text-center text-gray-400 italic">
@@ -822,16 +822,16 @@ export default function FinancialYearMaster() {
               ) : (
                 years.map(year => (
                   <tr key={year.financialYearID} className="hover:bg-primary/5 transition-colors">
-                    <td className="p-2 border-r border-gray-200 text-left font-bold text-primary font-mono">
+                    <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-primary font-mono align-middle">
                       {year.yearCode}
                     </td>
-                    <td className="p-2 border-r border-gray-200 text-left font-semibold text-gray-800">
+                    <td className="px-2 py-1 border-r border-gray-200 text-left font-semibold text-gray-800 align-middle">
                       {formatDisplayDate(year.startDate)}
                     </td>
-                    <td className="p-2 border-r border-gray-200 text-left font-semibold text-gray-800">
+                    <td className="px-2 py-1 border-r border-gray-200 text-left font-semibold text-gray-800 align-middle">
                       {formatDisplayDate(year.endDate)}
                     </td>
-                    <td className="p-2 border-r border-gray-200 text-center">
+                    <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                       <span
                         className={`px-2 py-0.5 inline-flex text-xs font-bold rounded-sm border ${
                           year.isActive
@@ -842,12 +842,12 @@ export default function FinancialYearMaster() {
                         {year.isActive ? '✅ सक्रिय (Active)' : 'निष्क्रिय'}
                       </span>
                     </td>
-                    <td className="p-2 border-r border-gray-200 text-center">
+                    <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                       <span
                         className={`px-2 py-0.5 inline-flex items-center gap-1 text-xs font-bold rounded-sm border ${
                           year.isClosed
                             ? 'bg-rose-100 text-rose-800 border-rose-300'
-                            : 'bg-sky-50 text-sky-900 border-sky-300'
+                            : 'bg-amber-50 text-[#5A1A14] border-amber-300'
                         }`}
                       >
                         {year.isClosed ? (
@@ -861,7 +861,7 @@ export default function FinancialYearMaster() {
                         )}
                       </span>
                     </td>
-                    <td className="p-2 text-center">
+                    <td className="px-2 py-1 text-center align-middle">
                       <div className="flex flex-wrap items-center justify-center gap-1.5">
                         <button
                           type="button"

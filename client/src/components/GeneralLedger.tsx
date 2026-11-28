@@ -285,7 +285,7 @@ export default function GeneralLedger() {
               </td>
               <td className="border border-slate-900 py-1 px-2 text-right font-mono">-</td>
               <td className="border border-slate-900 py-1 px-2 text-right font-mono">-</td>
-              <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-bal font-bold text-indigo-950">
+              <td className="border border-slate-900 py-1 px-2 cbs-num-cell cbs-amt-bal font-bold text-[#4A1410]">
                 {fmtCurrency(reportData?.openingBalance)} {reportData?.openingType || ''}
               </td>
             </tr>

@@ -256,7 +256,7 @@ export default function FdCustomerSummaryReport({
       </div>
       <div>
         <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण ठेव पावत्या</span>
-        <strong className="text-blue-700 font-mono text-xs">
+        <strong className="text-[#9A3412] font-mono text-xs">
           {totalFilteredFdCount.toLocaleString('en-IN')} ठेवी
         </strong>
       </div>
@@ -338,7 +338,7 @@ export default function FdCustomerSummaryReport({
           onClick={() => setSummaryViewMode('DualColumn')}
           className={`px-1.5 py-0.5 rounded-xs font-semibold cursor-pointer transition-colors ${
             summaryViewMode === 'DualColumn' 
-              ? 'bg-blue-800 text-white font-bold shadow-2xs' 
+              ? 'bg-[#7C2418] text-white font-bold shadow-2xs' 
               : 'text-slate-600 hover:text-slate-900'
           }`}
           title="२-स्तंभी फोटो प्रिंट फॉरमॅट"
@@ -350,7 +350,7 @@ export default function FdCustomerSummaryReport({
           onClick={() => setSummaryViewMode('Detailed')}
           className={`px-1.5 py-0.5 rounded-xs font-semibold cursor-pointer transition-colors ${
             summaryViewMode === 'Detailed' 
-              ? 'bg-blue-800 text-white font-bold shadow-2xs' 
+              ? 'bg-[#7C2418] text-white font-bold shadow-2xs' 
               : 'text-slate-600 hover:text-slate-900'
           }`}
           title="पावतीनिहाय ड्रिलडाऊन"
@@ -580,8 +580,8 @@ export default function FdCustomerSummaryReport({
                         <td className="border border-slate-900 py-1 px-2 text-center font-mono text-[10px]">
                           {r.mobileNo || '-'}
                         </td>
-                        <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-blue-800">
-                          <span className="bg-blue-50 text-blue-900 px-1.5 py-0.5 rounded border border-blue-200">
+                        <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-[#7C2418]">
+                          <span className="bg-amber-50 text-[#5A1A14] px-1.5 py-0.5 rounded border border-amber-200">
                             {r.fdCount} ठेवी
                           </span>
                         </td>
@@ -606,10 +606,10 @@ export default function FdCustomerSummaryReport({
 
                       {/* Expandable nested table of all active FD receipts for this customer */}
                       {isExpanded && r.accounts && r.accounts.length > 0 && (
-                        <tr className="bg-blue-50/50">
+                        <tr className="bg-amber-50/50">
                           <td colSpan={8} className="border border-slate-900 p-2.5">
-                            <div className="bg-white rounded border border-blue-200 shadow-2xs p-2">
-                              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 mb-1.5 pb-1 border-b border-blue-100">
+                            <div className="bg-white rounded border border-amber-200 shadow-2xs p-2">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-[#5A1A14] mb-1.5 pb-1 border-b border-amber-100">
                                 <Receipt size={13} className="text-primary" />
                                 <span>{r.customerName} - एकूण सक्रिय मुदत ठेव पावत्या ({r.accounts.length})</span>
                               </div>
@@ -627,7 +627,7 @@ export default function FdCustomerSummaryReport({
                                 </thead>
                                 <tbody>
                                   {r.accounts.map((acc, aIdx) => (
-                                    <tr key={acc.fdAccountID || aIdx} className="hover:bg-blue-50/30">
+                                    <tr key={acc.fdAccountID || aIdx} className="hover:bg-amber-50/30">
                                       <td className="border border-slate-300 p-1 text-center font-mono font-bold text-primary">
                                         {acc.accountNo}
                                         {acc.legacyAccountNumber && (
@@ -659,7 +659,7 @@ export default function FdCustomerSummaryReport({
                   <td colSpan={4} className="border border-slate-900 py-1.5 px-3 text-right uppercase tracking-wider">
                     एकूण बेरीज ({filteredRows.length} खातेदार):
                   </td>
-                  <td className="border border-slate-900 py-1.5 px-2 text-center font-mono font-black text-blue-900">
+                  <td className="border border-slate-900 py-1.5 px-2 text-center font-mono font-black text-[#5A1A14]">
                     {totalFilteredFdCount} ठेवी
                   </td>
                   <td className="border border-slate-900 py-1.5 px-2.5 text-right font-mono font-black text-emerald-950 bg-emerald-100/40">

@@ -1406,12 +1406,12 @@ const FdOpeningBalanceMigration: React.FC = () => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Percent className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सरासरी व्याजदर</div>
-            <div className="text-sm font-black text-indigo-950">{avgRate}% p.a.</div>
+            <div className="text-sm font-black text-[#4A1410]">{avgRate}% p.a.</div>
           </div>
         </div>
 
@@ -1447,7 +1447,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          editingAccountId ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editingAccountId ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1485,7 +1485,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                     खातेदार निवडा (Customer / CIF) <span className="text-red-500">*</span>
                   </label>
                   {selectedCustomer && (
-                    <span className="text-[10px] text-blue-900 font-bold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200 font-mono">
+                    <span className="text-[10px] text-[#5A1A14] font-bold bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 font-mono">
                       {selectedCustomer.cifNo ? `CIF: ${selectedCustomer.cifNo}` : (selectedCustomer.legacyCustomerNo ? `जुना: ${selectedCustomer.legacyCustomerNo}` : `ID: ${selectedCustomer.customerID}`)}
                     </span>
                   )}
@@ -1523,14 +1523,14 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
                 />
                 {selectedCustomer && (
-                  <div className="mt-1 flex items-center justify-between text-[11px] bg-sky-50/70 border border-sky-200 px-2 py-1 rounded text-sky-950 font-bold shadow-2xs">
+                  <div className="mt-1 flex items-center justify-between text-[11px] bg-amber-50/70 border border-amber-200 px-2 py-1 rounded text-[#4A1410] font-bold shadow-2xs">
                     <div className="flex items-center gap-1.5 truncate">
-                      <span className="text-sky-700">👤 खातेदार:</span>
+                      <span className="text-[#9A3412]">👤 खातेदार:</span>
                       <span className="font-extrabold text-slate-900">
                         {selectedCustomer.fullName || [selectedCustomer.firstName, selectedCustomer.middleName, selectedCustomer.lastName].filter(Boolean).join(' ') || (selectedCustomer as any).customerName}
                       </span>
                       {selectedCustomer.cifNo && (
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-300 ml-1">
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-[#5A1A14] border border-amber-300 ml-1">
                           CIF: {selectedCustomer.cifNo}
                         </span>
                       )}
@@ -1613,7 +1613,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   name="accountNo"
                   value={formData.accountNo}
                   onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold text-primary bg-blue-50/20`}
+                  className={`${inputClass} font-mono font-bold text-primary bg-amber-50/20`}
                   placeholder="उदा. 001-401-0000001-1 (स्वयंचलित)"
                   required
                 />
@@ -1765,7 +1765,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   value={formData.maturityDate}
                   onChange={handleChange}
                   className={`${inputClass} font-mono font-bold ${
-                    isManualMaturityDateEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-blue-50/20'
+                    isManualMaturityDateEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-amber-50/20'
                   }`}
                   required
                 />
@@ -1887,7 +1887,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   value={formData.interestRate}
                   onChange={handleChange}
                   className={`${inputClass} font-mono font-bold ${
-                    isManualRateEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-blue-50/20'
+                    isManualRateEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-amber-50/20'
                   }`}
                   required
                 />
@@ -1922,7 +1922,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                       <button
                         type="button"
                         onClick={handleOpenFormSchedule}
-                        className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-1.5 py-0.5 rounded text-[10px] font-bold shadow-xs hover:shadow flex items-center gap-0.5 transition-all cursor-pointer whitespace-nowrap ml-1"
+                        className="bg-[#B44814] hover:bg-[#9A3412] active:scale-95 text-white px-1.5 py-0.5 rounded text-[10px] font-bold shadow-xs hover:shadow flex items-center gap-0.5 transition-all cursor-pointer whitespace-nowrap ml-1"
                         title="सविस्तर तिमाही/मासिक व्याज तक्ता व वेळापत्रक पहा"
                       >
                         <span>📊</span>
@@ -1938,7 +1938,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   onChange={handleChange}
                   onFocus={(e) => e.target.select()}
                   className={`${inputClass} font-mono font-bold ${
-                    isManualMaturityEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-blue-50/20'
+                    isManualMaturityEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-amber-50/20'
                   }`}
                   placeholder="उदा. 108243"
                   required
@@ -1954,7 +1954,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleOpenFormSchedule}
-                      className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                      className="text-[10px] text-[#9A3412] hover:text-[#5A1A14] font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
                       title="सविस्तर तिमाही/मासिक व्याज तक्ता पहा"
                     >
                       <span>📊 वेळापत्रक तक्ता</span>
@@ -1971,7 +1971,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                       शेवटची तारीख
                     </label>
                     {formData.lastInterestPostingDate && (
-                      <span className="text-[8px] bg-blue-100 text-blue-800 px-1 py-0.2 rounded font-bold border border-blue-300">
+                      <span className="text-[8px] bg-amber-100 text-[#7C2418] px-1 py-0.2 rounded font-bold border border-amber-300">
                         कट-ऑफ
                       </span>
                     )}
@@ -2225,36 +2225,36 @@ const FdOpeningBalanceMigration: React.FC = () => {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center sticky left-0 bg-slate-100 z-10 w-28">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">नवीन खाते क्र. (CBS Account No)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना पावती क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left min-w-[170px]">खातेदाराचे नाव & CIF</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना नाव</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">ठेव तारीख</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">ठेव मुद्दल (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">मुदतपूर्ती दिनांक</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">मुदतपूर्ती रक्कम (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">मागील जमा व्याज (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">शेवटची व्याज तारीख</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">वारसदार व नाते</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left max-w-[200px]">शेरा</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center sticky left-0 bg-[#5A1A14] z-10 w-28 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">नवीन खाते क्र. (CBS Account No)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">जुना पावती क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left min-w-[170px] whitespace-nowrap">खातेदाराचे नाव & CIF</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">योजना नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">ठेव तारीख</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">कालावधी</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">ठेव मुद्दल (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याजदर (%)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">मुदतपूर्ती दिनांक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मुदतपूर्ती रक्कम (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मागील जमा व्याज (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">शेवटची व्याज तारीख</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">वारसदार व नाते</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left max-w-[200px] whitespace-nowrap">शेरा</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredAccounts.map((acc) => (
                       <tr key={acc.fdAccountID} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap sticky left-0 bg-white z-10 shadow-r">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap sticky left-0 bg-white z-10 shadow-r align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
                               onClick={() => handleOpenGridSchedule(acc)} 
-                              className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
+                              className="px-1.5 py-0.5 bg-orange-50 hover:bg-orange-100 text-[#7C2418] border border-amber-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
                               title="व्याज वेळापत्रक तक्ता पहा (View Interest Schedule)"
                             >
                               <span>📊</span>
@@ -2280,10 +2280,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-primary">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-mono font-bold text-primary align-middle">
                           {formatAccountNo(acc.accountNo)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-amber-900">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-mono font-bold text-amber-900 align-middle">
                           {acc.legacyAccountNumber ? (
                             <span className="bg-amber-50 text-amber-900 px-1.5 py-0.5 rounded border border-amber-300">
                               {acc.legacyAccountNumber}
@@ -2292,7 +2292,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                             <span className="text-gray-400 font-normal">-</span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           <div className="font-bold text-gray-900">{acc.customerName || acc.memberName}</div>
                           <div className="text-[10px] text-gray-500 font-mono">
                             {acc.cifNo ? `CIF: ${acc.cifNo}` : ''}
@@ -2301,34 +2301,34 @@ const FdOpeningBalanceMigration: React.FC = () => {
                             {!acc.cifNo && !acc.memberCode ? '-' : ''}
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-gray-800 align-middle">
                           {acc.schemeName || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-medium text-slate-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-medium text-slate-800 align-middle">
                           {formatDateDisplay(acc.openingDate)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono align-middle">
                           {formatDurationDisplay(acc)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-emerald-700 align-middle">
                           ₹{(acc.depositAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono align-middle">
                           {acc.interestRate}%
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-gray-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono text-gray-700 align-middle">
                           {formatDateDisplay(acc.maturityDate)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-primary">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-primary align-middle">
                           ₹{(acc.maturityAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-medium text-amber-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-medium text-amber-800 align-middle">
                           ₹{(acc.legacyAccruedInt || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-blue-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-bold text-[#9A3412] align-middle">
                           {formatDateDisplay(acc.lastInterestPostingDate)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-800 align-middle">
                           {acc.nomineeName ? (
                             <div>
                               <span className="font-medium">{acc.nomineeName}</span>
@@ -2340,10 +2340,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
                             <span className="text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-600 max-w-[200px] truncate" title={acc.remarks || ''}>
+                        <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 max-w-[200px] truncate align-middle" title={acc.remarks || ''}>
                           {acc.remarks || '-'}
                         </td>
-                        <td className="px-2 py-1.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             acc.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                           }`}>

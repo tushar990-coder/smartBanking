@@ -176,7 +176,7 @@ const getNatureBadgeColor = (nature?: string, isInvalid?: boolean): string => {
   if (isInvalid) return 'bg-red-100 text-red-800 border-red-300';
   const norm = (nature || '').trim().toLowerCase();
   if (norm === 'liabilities') return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-  if (norm === 'income') return 'bg-indigo-100 text-indigo-800 border-indigo-300';
+  if (norm === 'income') return 'bg-orange-100 text-[#7C2418] border-amber-300';
   if (norm === 'assets') return 'bg-amber-100 text-amber-800 border-amber-300';
   return 'bg-slate-100 text-slate-700 border-slate-300';
 };
@@ -883,8 +883,8 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
       </div>
 
       {/* Info Banner */}
-      <div className="mb-3 p-2.5 rounded border border-blue-200 bg-blue-50/80 text-blue-950 flex items-start gap-2">
-        <Info size={16} className="shrink-0 mt-0.5 text-blue-700" />
+      <div className="mb-3 p-2.5 rounded border border-amber-200 bg-amber-50/80 text-[#4A1410] flex items-start gap-2">
+        <Info size={16} className="shrink-0 mt-0.5 text-[#9A3412]" />
         <div className="space-y-0.5 text-[11px] leading-relaxed">
           <div>
             <strong>१) `क्रम (Sequence)` चा दुहेरी उपयोग:</strong> फॉर्म व प्रिंट यादीत कॉलम्स डावीकडून उजवीकडे याच क्रमाने दिसतील, आणि पगारातून अपुरी (कमी) कपात आल्यास याच प्राधान्यक्रमाने वसुली जमा होईल.
@@ -1393,7 +1393,7 @@ export default function DemandSettingsMaster({ onNavigate }: DemandSettingsMaste
                               </div>
                             )}
                             {row.itemType === 'RD' && (
-                              <div className="text-[10px] text-blue-700 font-medium">
+                              <div className="text-[10px] text-[#9A3412] font-medium">
                                 &gt; १ RD असल्यास फॉर्मवर खाली उप-ओळ तयार होईल
                               </div>
                             )}

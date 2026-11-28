@@ -416,7 +416,7 @@ export default function RdReports() {
                 window.history.pushState({}, '', '?tab=rd-khatavani-report');
                 window.dispatchEvent(new Event('popstate'));
               }}
-              className="h-6 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 px-2 rounded-sm text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+              className="h-6 bg-orange-50 hover:bg-orange-100 text-[#7C2418] border border-amber-200 px-2 rounded-sm text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
               title="आरडी खतावणी उघडा"
             >
               <span>📖</span>
@@ -498,7 +498,7 @@ export default function RdReports() {
           </div>
 
           <div className="flex items-center gap-2 text-[11px] text-gray-600">
-            <span className="bg-indigo-50 px-2 py-0.5 rounded text-indigo-800 border border-indigo-200 font-medium">
+            <span className="bg-orange-50 px-2 py-0.5 rounded text-[#7C2418] border border-amber-200 font-medium">
               {reportType === 'register' || reportType === 'closed'
                 ? `${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)}`
                 : `दि. ${formatDisplayDate(toDate)} अखेर`}
@@ -612,7 +612,7 @@ export default function RdReports() {
                       <td className="border border-gray-900 py-1 px-3 font-medium">
                         <div className="text-gray-900 font-semibold">{a.memberName}</div>
                         {selectedSchemeId === 'all' && a.schemeName && (
-                          <div className="text-[9.5px] font-sans text-indigo-700 font-medium tracking-tight">
+                          <div className="text-[9.5px] font-sans text-[#9A3412] font-medium tracking-tight">
                             योजना: {a.schemeName}
                           </div>
                         )}

@@ -22,9 +22,9 @@ export default function SharesDashboard({ onNavigate }: SharesDashboardProps) {
       icon: AnimatedCustomerIcon,
       tab: 'members',
       params: {},
-      gradient: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 55%, #1D4ED8 100%)',
-      shadowColor: 'rgba(29, 140, 248, 0.40)',
-      accentHex: '#1D74F5',
+      gradient: 'linear-gradient(135deg, #EA580C 0%, #B44814 55%, #7C2418 100%)',
+      shadowColor: 'rgba(180, 72, 20, 0.38)',
+      accentHex: '#9A3412',
     },
     {
       id: 'share-purchase',
@@ -70,9 +70,9 @@ export default function SharesDashboard({ onNavigate }: SharesDashboardProps) {
       icon: AnimatedAccountCloseIcon,
       tab: 'member-closure',
       params: {},
-      gradient: 'linear-gradient(135deg, #22D3EE 0%, #0891B2 55%, #0369A1 100%)',
-      shadowColor: 'rgba(8, 145, 178, 0.38)',
-      accentHex: '#0E7490',
+      gradient: 'linear-gradient(135deg, #FB7185 0%, #E11D48 55%, #9F1239 100%)',
+      shadowColor: 'rgba(225, 29, 72, 0.36)',
+      accentHex: '#BE123C',
     },
   ];
 
@@ -82,10 +82,10 @@ export default function SharesDashboard({ onNavigate }: SharesDashboardProps) {
       titleMr="सभासद व शेअर्स विभाग मुख्य हब"
       subtitleMr="नवीन सभासद नोंदणी • भाग भांडवल खरेदी व वाटप • भाग हस्तांतरण • परतावा व सभासदत्व समाप्ती"
       heroIcon={AnimatedCustomerIcon}
-      heroEmblemGradient="linear-gradient(135deg, #60A5FA 0%, #2563EB 52%, #1E40AF 100%)"
-      heroGlowGradient="linear-gradient(135deg, #2563EB 0%, #7C3AED 55%, #06B6D4 100%)"
-      underlineGradient="linear-gradient(90deg, #2563EB 0%, #7C3AED 50%, #06B6D4 100%)"
-      accentSparkleColor="#2563EB"
+      heroEmblemGradient="linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)"
+      heroGlowGradient="linear-gradient(135deg, #8C2D19 0%, #D97706 60%, #F59E0B 100%)"
+      underlineGradient="linear-gradient(90deg, #7C2418 0%, #D97706 55%, #F59E0B 100%)"
+      accentSparkleColor="#D97706"
       items={sharesActionButtons}
       onNavigate={onNavigate}
     />

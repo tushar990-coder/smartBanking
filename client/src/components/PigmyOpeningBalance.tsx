@@ -773,7 +773,7 @@ export default function PigmyOpeningBalance() {
           <button
             type="button"
             onClick={handleDownloadImportTemplate}
-            className="px-2.5 py-1 bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            className="px-2.5 py-1 bg-white hover:bg-amber-50 text-[#9A3412] border border-amber-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
             title="मल्टी-स्कीम पिग्मी ओपनिंग एक्सेल टेम्पलेट डाउनलोड करा"
           >
             <Download className="w-3.5 h-3.5" />
@@ -846,12 +846,12 @@ export default function PigmyOpeningBalance() {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <User className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सक्रिय एजंट्स (Active Agents)</div>
-            <div className="text-sm font-black text-indigo-950">{activeAgentsCount}</div>
+            <div className="text-sm font-black text-[#4A1410]">{activeAgentsCount}</div>
           </div>
         </div>
 
@@ -921,7 +921,7 @@ export default function PigmyOpeningBalance() {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          editingAccountId ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editingAccountId ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1089,7 +1089,7 @@ export default function PigmyOpeningBalance() {
       {/* ========================================================================= */}
       {showMigratedModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1148,22 +1148,22 @@ export default function PigmyOpeningBalance() {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्रमांक</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">सभासद नाव & कोड</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">पिग्मी योजना</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">एजंट नाव</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">आरंभिक शिल्लक (₹)</th>
-                      <th className="px-2 py-1.5 text-center w-24">उघडल्याची तारीख</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खाते क्रमांक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">सभासद नाव & कोड</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">पिग्मी योजना</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">एजंट नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">आरंभिक शिल्लक (₹)</th>
+                      <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">उघडल्याची तारीख</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredAccounts.map((acc) => (
                       <tr key={acc.pigmyAccountID} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
@@ -1185,7 +1185,7 @@ export default function PigmyOpeningBalance() {
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           <div className="font-mono font-bold text-primary">{acc.formattedAccountNo || format14DigitDisplay(acc.accountNo)}</div>
                           {acc.previousAccountNo && (
                             <div className="text-[10px] text-slate-500 font-mono">मागील: {acc.previousAccountNo}</div>
@@ -1194,20 +1194,20 @@ export default function PigmyOpeningBalance() {
                             <div className="text-[10px] text-amber-700 font-mono font-bold">जुना: {acc.legacyAccountNumber}</div>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           <div className="font-bold text-gray-900">{acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : `खातेदार ID: ${acc.customerID}`}</div>
                           <div className="text-[10px] text-gray-500 font-mono">CIF: {acc.customer?.cifNo || '-'}</div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-gray-800 align-middle">
                           {acc.pigmyScheme?.schemeName || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-gray-700 align-middle">
                           {acc.pigmyAgent?.agentName || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-emerald-700 align-middle">
                           ₹{Number((acc.openingBalance !== undefined && acc.openingBalance !== null && acc.openingBalance !== '') ? acc.openingBalance : (acc.totalDepositedAmount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 text-center font-mono text-gray-600">
+                        <td className="px-2 py-1 text-center font-mono text-gray-600 align-middle">
                           {acc.openingDate ? new Date(acc.openingDate).toLocaleDateString('en-IN') : '-'}
                         </td>
                       </tr>
@@ -1333,7 +1333,7 @@ export default function PigmyOpeningBalance() {
                 {/* Row 3: Agent */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <span className="text-slate-500 font-semibold flex items-center gap-1.5">
-                    <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                    <UserCheck className="w-3.5 h-3.5 text-[#B44814]" />
                     <span>पिग्मी एजंट:</span>
                   </span>
                   <span className="font-bold text-slate-800">{successModalData.agentName}</span>
@@ -1412,7 +1412,7 @@ export default function PigmyOpeningBalance() {
       {/* ========================================================================= */}
       {showImportModal && excelImportPreview && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             <div className="bg-emerald-700 text-white px-4 py-2.5 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5" />
@@ -1447,7 +1447,7 @@ export default function PigmyOpeningBalance() {
               {excelImportPreview.schemeSummary.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {excelImportPreview.schemeSummary.map(ss => (
-                    <span key={`imp-ss-${ss.schemeId}`} className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-900 border border-indigo-200 font-bold">
+                    <span key={`imp-ss-${ss.schemeId}`} className="px-2 py-0.5 rounded bg-orange-50 text-[#5A1A14] border border-amber-200 font-bold">
                       {ss.schemeName}: {ss.count} खाती (₹{ss.totalBalance.toLocaleString('en-IN')})
                     </span>
                   ))}
@@ -1456,37 +1456,37 @@ export default function PigmyOpeningBalance() {
             </div>
 
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
-              <table className="w-full text-left border-collapse text-[11px] bg-white border border-gray-200">
-                <thead className="bg-slate-100 sticky top-0 text-gray-700 font-bold border-b border-gray-300">
+              <table className="w-full text-left border-collapse text-[11px] bg-white border border-gray-200 leading-tight">
+                <thead className="bg-[#5A1A14] sticky top-0 text-amber-50 font-bold border-b border-amber-400/30">
                   <tr>
-                    <th className="p-1.5 border-r border-gray-200 text-center">ओळ</th>
-                    <th className="p-1.5 border-r border-gray-200">खातेदार (CIF)</th>
-                    <th className="p-1.5 border-r border-gray-200">पिग्मी योजना</th>
-                    <th className="p-1.5 border-r border-gray-200">एजंट</th>
-                    <th className="p-1.5 border-r border-gray-200">जुना क्र.</th>
-                    <th className="p-1.5 border-r border-gray-200 text-right">शिल्लक (₹)</th>
-                    <th className="p-1.5">स्थिती / त्रुटी</th>
+                    <th className="p-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">ओळ</th>
+                    <th className="p-1.5 border-r border-amber-400/25 whitespace-nowrap">खातेदार (CIF)</th>
+                    <th className="p-1.5 border-r border-amber-400/25 whitespace-nowrap">पिग्मी योजना</th>
+                    <th className="p-1.5 border-r border-amber-400/25 whitespace-nowrap">एजंट</th>
+                    <th className="p-1.5 border-r border-amber-400/25 whitespace-nowrap">जुना क्र.</th>
+                    <th className="p-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">शिल्लक (₹)</th>
+                    <th className="p-1.5 whitespace-nowrap">स्थिती / त्रुटी</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-amber-100">
                   {excelImportPreview.rows.map((r) => (
                     <tr key={`imp-row-${r.rowNumber}`} className={r.isValid ? 'hover:bg-emerald-50/40' : 'bg-red-50'}>
-                      <td className="p-1.5 border-r border-gray-200 text-center font-mono">{r.rowNumber}</td>
-                      <td className="p-1.5 border-r border-gray-200">
+                      <td className="p-1.5 border-r border-gray-200 text-center font-mono align-middle">{r.rowNumber}</td>
+                      <td className="p-1.5 border-r border-gray-200 align-middle">
                         <div className="font-bold text-gray-900">{r.customerName}</div>
                         <div className="text-[10px] font-mono text-gray-500">{r.customerCif}</div>
                       </td>
-                      <td className="p-1.5 border-r border-gray-200">
-                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold">
+                      <td className="p-1.5 border-r border-gray-200 align-middle">
+                        <span className="px-1.5 py-0.5 rounded bg-orange-50 text-[#7C2418] border border-amber-200 font-bold">
                           {r.schemeName}
                         </span>
                       </td>
-                      <td className="p-1.5 border-r border-gray-200">{r.agentName}</td>
-                      <td className="p-1.5 border-r border-gray-200 font-mono">{r.legacyAccountNumber || '-'}</td>
-                      <td className="p-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">
+                      <td className="p-1.5 border-r border-gray-200 align-middle">{r.agentName}</td>
+                      <td className="p-1.5 border-r border-gray-200 font-mono align-middle">{r.legacyAccountNumber || '-'}</td>
+                      <td className="p-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700 align-middle">
                         ₹{r.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="p-1.5">
+                      <td className="p-1.5 align-middle">
                         {r.isValid ? (
                           <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">✓ वैध</span>
                         ) : (

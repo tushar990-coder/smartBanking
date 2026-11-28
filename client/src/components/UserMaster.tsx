@@ -806,18 +806,18 @@ export default function UserMaster() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
+          <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap leading-tight">
             <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
-                <th className="px-2.5 py-1.5 border-r border-gray-200 text-center w-12">ID</th>
-                <th className="px-2.5 py-1.5 border-r border-gray-200">युझरनेम (Username)</th>
-                <th className="px-2.5 py-1.5 border-r border-gray-200">रोल (Role)</th>
-                <th className="px-2.5 py-1.5 border-r border-gray-200">डिफॉल्ट शाखा (Branch)</th>
-                <th className="px-2.5 py-1.5 border-r border-gray-200 text-center">स्थिती (Status)</th>
-                <th className="px-2.5 py-1.5 text-center w-48">सुरक्षा कृती (Actions)</th>
+              <tr className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
+                <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-center w-12 whitespace-nowrap">ID</th>
+                <th className="px-2.5 py-1.5 border-r border-amber-400/25 whitespace-nowrap">युझरनेम (Username)</th>
+                <th className="px-2.5 py-1.5 border-r border-amber-400/25 whitespace-nowrap">रोल (Role)</th>
+                <th className="px-2.5 py-1.5 border-r border-amber-400/25 whitespace-nowrap">डिफॉल्ट शाखा (Branch)</th>
+                <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">स्थिती (Status)</th>
+                <th className="px-2.5 py-1.5 text-center w-48 whitespace-nowrap">सुरक्षा कृती (Actions)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-amber-100 bg-white">
               {filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-6 text-center text-gray-400 italic">
@@ -836,8 +836,8 @@ export default function UserMaster() {
 
                   return (
                     <tr key={rowUser.userID} className="hover:bg-primary/10 transition-colors">
-                      <td className="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono text-gray-600">{rowUser.userID}</td>
-                      <td className="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-900">
+                      <td className="px-2.5 py-1 border-r border-gray-200 text-center font-mono text-gray-600 align-middle">{rowUser.userID}</td>
+                      <td className="px-2.5 py-1 border-r border-gray-200 font-bold text-gray-900 align-middle">
                         <div className="flex items-center gap-1.5">
                           {rowIsSuperAdmin ? (
                             <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -857,15 +857,15 @@ export default function UserMaster() {
                           </div>
                         )}
                       </td>
-                      <td className="px-2.5 py-1.5 border-r border-gray-200">
+                      <td className="px-2.5 py-1 border-r border-gray-200 align-middle">
                         {renderRoleBadge(rowUser.roleName)}
                       </td>
-                      <td className="px-2.5 py-1.5 border-r border-gray-200 text-gray-800 font-medium">
+                      <td className="px-2.5 py-1 border-r border-gray-200 text-gray-800 font-medium align-middle">
                         {rowUser.branchName
                           ? `🏢 ${rowUser.branchName}${isHeadOfficeRoleName(rowUser.roleName) ? ' (सर्व शाखा प्रवेश)' : ''}`
                           : '🌐 सर्व शाखा (All Branches)'}
                       </td>
-                      <td className="px-2.5 py-1.5 border-r border-gray-200 text-center">
+                      <td className="px-2.5 py-1 border-r border-gray-200 text-center align-middle">
                         <div className="flex items-center justify-center gap-1">
                           {rowUser.isActive ? (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
@@ -883,7 +883,7 @@ export default function UserMaster() {
                           )}
                         </div>
                       </td>
-                      <td className="px-2.5 py-1.5 text-center">
+                      <td className="px-2.5 py-1 text-center align-middle">
                         <div className="flex items-center justify-center gap-1">
                           {protectedSuperAdminForNonSuper ? (
                             <span

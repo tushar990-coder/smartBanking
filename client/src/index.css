@@ -3,7 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: #005689; 
+  --color-primary: #9A3412;
+  --cbs-maroon-deep: #4A1410;
+  --cbs-maroon: #7C2418;
+  --cbs-terracotta: #B44814;
+  --cbs-gold: #D97706;
+  --cbs-ivory: #FFFBF7;
+  --cbs-canvas-bg: linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 46%, #FEF3E2 82%, #FCE3BE 100%);
+  --cbs-banner-bg: linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FEF0D8 82%, #FCE0B8 100%);
+  --cbs-brand-gradient: linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%);
+}
+
+:root[data-theme='pastel-maroon'] {
+  --color-primary: #9A3412; /* Faint Pastel Maroon-Terracotta-Gold (Default) */
 }
 
 :root[data-theme='blue'] {
@@ -56,6 +68,12 @@
 
 
 /* Application Background Modes */
+:root[data-bg-theme='pastel-warm'] body,
+:root[data-bg-theme='pastel-warm'] main,
+:root[data-bg-theme='pastel-warm'] .app-main-content {
+  background: linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 46%, #FEF3E2 82%, #FCE3BE 100%) !important;
+}
+
 :root[data-bg-theme='slate-soft'] body,
 :root[data-bg-theme='slate-soft'] main,
 :root[data-bg-theme='slate-soft'] .app-main-content {
@@ -84,6 +102,121 @@
 :root[data-bg-theme='neutral-gray'] main,
 :root[data-bg-theme='neutral-gray'] .app-main-content {
   background-color: #e2e8f0 !important;
+}
+
+/* ========================================================================= */
+/* SMARTBANKING UNIFIED PASTEL MAROON-IVORY-GOLD DESIGN SYSTEM UTILITIES     */
+/* ========================================================================= */
+@layer components {
+  .cbs-page-canvas {
+    background: radial-gradient(circle at 12% 10%, #FDE8E1 0%, rgba(253, 232, 225, 0) 45%),
+      radial-gradient(circle at 88% 12%, #FDE6C4 0%, rgba(253, 230, 196, 0) 44%),
+      radial-gradient(circle at 78% 85%, #FCD9B6 0%, rgba(252, 217, 182, 0) 44%),
+      linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 46%, #FEF3E2 82%, #FCE3BE 100%);
+  }
+
+  .cbs-top-banner {
+    background: linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FEF0D8 82%, #FCE0B8 100%);
+    border: 1px solid rgba(252, 211, 77, 0.75);
+    color: #4A1410;
+    box-shadow: 0 8px 24px rgba(124, 36, 24, 0.08);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cbs-top-banner::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%);
+  }
+
+  .cbs-card {
+    background-color: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(253, 230, 138, 0.78);
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 16px rgba(124, 36, 24, 0.05);
+  }
+
+  .cbs-card-header {
+    background: linear-gradient(90deg, #FDF4EF 0%, #FFFBF7 52%, #FEF5E7 100%);
+    border-bottom: 1px solid rgba(253, 230, 138, 0.72);
+    color: #4A1410;
+  }
+
+  .cbs-btn-primary {
+    background: linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(154, 52, 18, 0.25);
+  }
+
+  .cbs-btn-primary:hover {
+    filter: brightness(1.06);
+  }
+
+  .cbs-table-head {
+    background-color: #5A1A14;
+    color: #FFFBEB;
+  }
+
+  /* Compact Single-Line ERP List View & Popup Modal Standard */
+  .cbs-list-modal-shell {
+    background-color: #FFFBF7;
+    border: 1px solid rgba(252, 211, 77, 0.85);
+    border-radius: 0.75rem;
+    box-shadow: 0 24px 54px rgba(59, 15, 11, 0.28);
+  }
+
+  .cbs-list-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .cbs-list-table thead th {
+    background-color: #5A1A14;
+    color: #FFFBEB;
+    font-weight: 700;
+    font-size: 10.5px;
+    padding: 6px 8px;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-bottom: 1px solid rgba(251, 191, 36, 0.4);
+  }
+
+  .cbs-list-table tbody td {
+    padding: 4px 8px;
+    vertical-align: middle;
+    border-bottom: 1px solid #FEF3C7;
+  }
+
+  .cbs-list-table tbody tr:nth-child(odd) {
+    background-color: #ffffff;
+  }
+
+  .cbs-list-table tbody tr:nth-child(even) {
+    background-color: #FFFBF7;
+  }
+
+  .cbs-list-table tbody tr:hover {
+    background-color: rgba(254, 243, 199, 0.72);
+  }
+}
+
+@media print {
+  .cbs-page-canvas,
+  body,
+  main,
+  .app-main-content {
+    background: #ffffff !important;
+    background-image: none !important;
+  }
 }
 
 
@@ -118,7 +251,7 @@ input[type=number] {
 .custom-scrollbar,
 .sidebar-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(37, 99, 235, 0.4) transparent;
+  scrollbar-color: rgba(180, 72, 20, 0.35) transparent;
   scroll-behavior: smooth;
 }
 
@@ -139,34 +272,34 @@ input[type=number] {
 
 .custom-scrollbar:hover::-webkit-scrollbar-track,
 .sidebar-scrollbar:hover::-webkit-scrollbar-track {
-  background: rgba(37, 99, 235, 0.04);
+  background: rgba(180, 72, 20, 0.05);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb,
 .sidebar-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(96, 165, 250, 0.35); /* Subtle smooth pill by default */
+  background: rgba(194, 102, 54, 0.32); /* Subtle warm pill by default */
   border-radius: 9999px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Glowing Aurora Sky-Blue & Violet on Sidebar Hover */
+/* Warm Maroon, Terracotta & Saffron Gold on Sidebar Hover */
 .custom-scrollbar:hover::-webkit-scrollbar-thumb,
 .sidebar-scrollbar:hover::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(29, 140, 248, 0.75) 0%, rgba(37, 99, 235, 0.8) 55%, rgba(124, 58, 237, 0.8) 100%);
-  box-shadow: 0 0 6px rgba(37, 99, 235, 0.35);
+  background: linear-gradient(180deg, rgba(124, 36, 24, 0.68) 0%, rgba(180, 72, 20, 0.74) 55%, rgba(217, 119, 6, 0.76) 100%);
+  box-shadow: 0 0 6px rgba(180, 72, 20, 0.25);
 }
 
 /* Interactive Feedback on Active / Direct Hover */
 .custom-scrollbar::-webkit-scrollbar-thumb:hover,
 .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #1d8cf8 0%, #2563eb 55%, #7c3aed 100%);
-  box-shadow: 0 0 10px rgba(37, 99, 235, 0.6);
+  background: linear-gradient(180deg, #7c2418 0%, #b44814 55%, #d97706 100%);
+  box-shadow: 0 0 10px rgba(180, 72, 20, 0.45);
   cursor: grab;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:active,
 .sidebar-scrollbar::-webkit-scrollbar-thumb:active {
-  background: linear-gradient(180deg, #0284c7 0%, #1d4ed8 55%, #6d28d9 100%);
+  background: linear-gradient(180deg, #5a1a14 0%, #9a3412 55%, #b45309 100%);
   cursor: grabbing;
 }
 

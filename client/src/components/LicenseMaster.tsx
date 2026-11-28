@@ -146,7 +146,7 @@ const LicenseMaster: React.FC = () => {
         {/* Machine Code Card */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
           <div className="flex items-center gap-3 text-slate-800 font-bold text-base pb-3 border-b border-slate-100">
-            <Server className="w-5 h-5 text-indigo-600" />
+            <Server className="w-5 h-5 text-[#B44814]" />
             <span>संगणक मशीन कोड (Hardware Machine Code)</span>
           </div>
 
@@ -160,7 +160,7 @@ const LicenseMaster: React.FC = () => {
             </code>
             <button
               onClick={copyMachineCode}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition shadow-sm shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#B44814] hover:bg-[#9A3412] text-white rounded-lg text-xs font-semibold transition shadow-sm shrink-0"
             >
               {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5 text-white" />}
               <span>{copied ? 'कॉपी झाले!' : 'कॉपी करा'}</span>
@@ -227,7 +227,7 @@ const LicenseMaster: React.FC = () => {
 
             <div className="flex justify-between py-1.5">
               <span className="text-slate-500">प्लॅन प्रकार:</span>
-              <span className="font-semibold text-indigo-700">{status?.planName || 'Enterprise Core'}</span>
+              <span className="font-semibold text-[#9A3412]">{status?.planName || 'Enterprise Core'}</span>
             </div>
           </div>
         </div>

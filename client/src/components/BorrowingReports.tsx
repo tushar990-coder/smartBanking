@@ -146,7 +146,7 @@ export default function BorrowingReports({ onNavigate }: BorrowingReportsProps) 
       {/* Top Bar */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#9A3412] flex items-center justify-center">
             <BookOpen className="w-5 h-5" />
           </div>
           <div>
@@ -192,7 +192,7 @@ export default function BorrowingReports({ onNavigate }: BorrowingReportsProps) 
             onClick={() => setActiveSubTab(t.id as any)}
             className={`px-4 py-2 rounded-xl text-xs font-bold border transition ${
               activeSubTab === t.id
-                ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                ? 'bg-[#B44814] text-white border-[#7C2418] shadow-sm'
                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
             }`}
           >
@@ -289,7 +289,7 @@ export default function BorrowingReports({ onNavigate }: BorrowingReportsProps) 
                         <td className="px-2.5 py-1.5 border">
                           <span className="font-semibold">{e.refNo}</span> — {e.particulars}
                         </td>
-                        <td className="px-2.5 py-1.5 border text-right font-semibold text-indigo-700">
+                        <td className="px-2.5 py-1.5 border text-right font-semibold text-[#9A3412]">
                           {e.creditBorrowed > 0 ? fmtAmt(e.creditBorrowed) : '—'}
                         </td>
                         <td className="px-2.5 py-1.5 border text-right font-semibold text-emerald-700">
@@ -334,7 +334,7 @@ export default function BorrowingReports({ onNavigate }: BorrowingReportsProps) 
                   onClick={() => setEmiHorizonDays(d)}
                   className={`px-3 py-1 rounded-lg text-xs font-bold border ${
                     emiHorizonDays === d
-                      ? 'bg-indigo-600 text-white border-indigo-700'
+                      ? 'bg-[#B44814] text-white border-[#7C2418]'
                       : 'bg-slate-50 text-slate-700 border-slate-200'
                   }`}
                 >

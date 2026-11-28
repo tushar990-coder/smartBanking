@@ -350,38 +350,38 @@ export default function AgentCommissionMaster() {
   const totalPaidAmount = historyList.reduce((sum, h) => sum + (h.calculatedCommission || 0), 0);
 
   const labelClass = "block text-[11px] font-bold text-[#1E3A5F] mb-1";
-  const inputClass = "w-full text-xs border border-blue-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] bg-white text-slate-900 font-semibold shadow-2xs";
+  const inputClass = "w-full text-xs border border-amber-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#B44814]/20 focus:border-[#B44814] bg-white text-slate-900 font-semibold shadow-2xs";
 
   return (
     <div
       className="p-3 sm:p-4 w-full min-h-full font-sans text-xs"
       style={{
         background:
-          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+          'linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 45%, #FEF3E2 100%)',
       }}
     >
       <div className="max-w-[1640px] mx-auto space-y-3">
       {/* Outer Aurora Container */}
-      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 overflow-hidden flex flex-col">
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(124,36,24,0.09)] border border-amber-200/75 overflow-hidden flex flex-col">
         
         {/* Aurora Sapphire Header Banner */}
         <div
           className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2"
           style={{
             background:
-              'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+              'linear-gradient(125deg, #5A1A14 0%, #7C2418 46%, #B44814 82%, #B44814 100%)',
           }}
         >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shadow-xs shrink-0">
-              <Calculator className="w-5 h-5 text-sky-200" />
+              <Calculator className="w-5 h-5 text-amber-200" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2">
                 <span>पिग्मी एजंट कमिशन व्यवस्थापन</span>
-                <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(Pigmy Agent Commission Center)</span>
+                <span className="text-[11px] font-semibold text-amber-200 hidden sm:inline">(Pigmy Agent Commission Center)</span>
               </h2>
-              <p className="text-[11px] text-blue-100/90 font-medium">एजंटनिहाय दर निश्चिती, दैनंदिन/मासिक कमिशन गणना, व्हाउचर नोंदणी व वाटप इतिहास</p>
+              <p className="text-[11px] text-amber-100/90 font-medium">एजंटनिहाय दर निश्चिती, दैनंदिन/मासिक कमिशन गणना, व्हाउचर नोंदणी व वाटप इतिहास</p>
             </div>
           </div>
 
@@ -398,12 +398,12 @@ export default function AgentCommissionMaster() {
         <div className="p-3.5 space-y-3.5">
 
           {/* Aurora Segmented Tabs Navigation */}
-          <div className="inline-flex flex-wrap items-center p-1 bg-[#eff6ff] rounded-xl border border-blue-200/80 gap-1 print:hidden">
+          <div className="inline-flex flex-wrap items-center p-1 bg-[#FDF2EE] rounded-xl border border-amber-200/80 gap-1 print:hidden">
             <button
               type="button"
               onClick={() => setActiveTab('payouts')}
               className={`px-3 py-1.5 text-[11.5px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
-                activeTab === 'payouts' ? 'bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
+                activeTab === 'payouts' ? 'bg-gradient-to-r from-[#B44814] to-[#B44814] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
               }`}
             >
               <Calculator className="w-3.5 h-3.5" />
@@ -419,7 +419,7 @@ export default function AgentCommissionMaster() {
               type="button"
               onClick={() => setActiveTab('settings')}
               className={`px-3 py-1.5 text-[11.5px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
-                activeTab === 'settings' ? 'bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
+                activeTab === 'settings' ? 'bg-gradient-to-r from-[#B44814] to-[#B44814] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
               }`}
             >
               <Settings className="w-3.5 h-3.5" />
@@ -430,7 +430,7 @@ export default function AgentCommissionMaster() {
               type="button"
               onClick={() => setActiveTab('history')}
               className={`px-3 py-1.5 text-[11.5px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
-                activeTab === 'history' ? 'bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
+                activeTab === 'history' ? 'bg-gradient-to-r from-[#B44814] to-[#B44814] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
               }`}
             >
               <History className="w-3.5 h-3.5" />
@@ -520,26 +520,26 @@ export default function AgentCommissionMaster() {
                 <AlertCircle className="w-4 h-4 text-amber-500" />
                 <span>प्रलंबित एजंट कमिशन वाटप सूची (Pending Payout Sheet)</span>
               </h3>
-              <span className="text-xs font-extrabold text-blue-700 bg-blue-50 px-3 py-1 rounded-xl border border-blue-200 font-mono">
+              <span className="text-xs font-extrabold text-[#9A3412] bg-amber-50 px-3 py-1 rounded-xl border border-amber-200 font-mono">
                 एकूण प्रलंबित कमिशन: ₹ {totalPendingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </span>
             </div>
 
-            <div className="overflow-x-auto border border-blue-200/80 rounded-xl">
-              <table className="w-full text-left border-collapse text-[11px]">
+            <div className="overflow-x-auto border border-amber-200/80 rounded-xl">
+              <table className="w-full text-left border-collapse text-[11px] leading-tight">
                 <thead>
-                  <tr className="bg-[#0F2454] text-white font-bold whitespace-nowrap">
-                    <th className="py-1.5 px-2.5 border-r border-white/15">एजंट नाव व कोड</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15">प्रॉडक्ट</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center">कालावधी</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center">वारंवारता</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right">एकूण संकलन (₹)</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right">कमिशन (₹)</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center">स्थिती</th>
-                    <th className="py-1.5 px-2.5 text-center">कृती</th>
+                  <tr className="bg-[#5A1A14] text-white font-bold whitespace-nowrap">
+                    <th className="py-1.5 px-2.5 border-r border-white/15 whitespace-nowrap">एजंट नाव व कोड</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 whitespace-nowrap">प्रॉडक्ट</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center whitespace-nowrap">कालावधी</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center whitespace-nowrap">वारंवारता</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right whitespace-nowrap">एकूण संकलन (₹)</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right whitespace-nowrap">कमिशन (₹)</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center whitespace-nowrap">स्थिती</th>
+                    <th className="py-1.5 px-2.5 text-center whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-blue-100/70">
+                <tbody className="divide-y divide-amber-100/70">
                   {pending.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-slate-500 font-bold">
@@ -548,14 +548,14 @@ export default function AgentCommissionMaster() {
                     </tr>
                   ) : (
                     pending.map((p, idx) => (
-                      <tr key={p.commissionId} className={`hover:bg-blue-50/50 transition ${idx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'}`}>
-                        <td className="py-1.5 px-2.5 font-bold text-slate-900 whitespace-nowrap">
+                      <tr key={p.commissionId} className={`hover:bg-amber-50/50 transition ${idx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'}`}>
+                        <td className="py-1 px-2.5 font-bold text-slate-900 whitespace-nowrap align-middle">
                           {p.agent?.agentName || `Agent ID: ${p.agentId}`}
                           {p.agent?.agentCode && <span className="ml-1 text-[10px] text-slate-500 font-mono">({p.agent.agentCode})</span>}
                         </td>
-                        <td className="py-1.5 px-2.5 whitespace-nowrap">
+                        <td className="py-1 px-2.5 whitespace-nowrap align-middle">
                           <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold ${
-                            p.productType === 'LOAN' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                            p.productType === 'LOAN' ? 'bg-amber-100 text-[#7C2418] border border-amber-200' :
                             p.productType === 'RD' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
                             p.productType === 'SAVING' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                             'bg-amber-100 text-amber-800 border border-amber-200'
@@ -566,24 +566,24 @@ export default function AgentCommissionMaster() {
                              '🪙 पिग्मी'}
                           </span>
                         </td>
-                        <td className="py-1.5 px-2.5 text-center font-mono whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-center font-mono whitespace-nowrap align-middle">
                           {new Date(p.periodStartDate).toLocaleDateString('en-GB')} - {new Date(p.periodEndDate).toLocaleDateString('en-GB')}
                         </td>
-                        <td className="py-1.5 px-2.5 text-center font-bold text-slate-600 whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-center font-bold text-slate-600 whitespace-nowrap align-middle">
                           {p.calculationFrequency}
                         </td>
-                        <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap align-middle">
                           ₹ {(p.totalCollectionAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="py-1.5 px-2.5 text-right font-mono font-extrabold text-[#1D4ED8] bg-blue-50/50 whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-right font-mono font-extrabold text-[#9A3412] bg-amber-50/50 whitespace-nowrap align-middle">
                           ₹ {(p.calculatedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="py-1.5 px-2.5 text-center whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-center whitespace-nowrap align-middle">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
                             {p.status}
                           </span>
                         </td>
-                        <td className="py-1.5 px-2.5 text-center whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-center whitespace-nowrap align-middle">
                           <button
                             onClick={() => {
                               setSelectedPayCommission(p);
@@ -592,7 +592,7 @@ export default function AgentCommissionMaster() {
                               setReferenceNo('');
                               setSelectedAgentSbAccountId('');
                             }}
-                            className="bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] hover:opacity-95 text-white px-2.5 py-1 rounded-lg text-[10.5px] font-bold shadow-2xs transition inline-flex items-center justify-center gap-1 cursor-pointer"
+                            className="bg-gradient-to-r from-[#B44814] to-[#B44814] hover:opacity-95 text-white px-2.5 py-1 rounded-lg text-[10.5px] font-bold shadow-2xs transition inline-flex items-center justify-center gap-1 cursor-pointer"
                           >
                             <CreditCard className="w-3 h-3" />
                             <span>पेमेंट करा</span>
@@ -702,7 +702,7 @@ export default function AgentCommissionMaster() {
 
               <button
                 type="submit"
-                className="w-full py-2 bg-primary hover:bg-[#004a75] text-white font-extrabold rounded-xl shadow-2xs transition duration-200 text-xs flex items-center justify-center gap-1.5"
+                className="w-full py-2 bg-primary hover:bg-[#7C2418] text-white font-extrabold rounded-xl shadow-2xs transition duration-200 text-xs flex items-center justify-center gap-1.5"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>सेटिंग सेव्ह करा (Save Rate)</span>
@@ -713,23 +713,23 @@ export default function AgentCommissionMaster() {
           {/* Active Settings List Table */}
           <div className="md:col-span-2 bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs space-y-3">
             <h3 className="font-bold text-sm text-primary border-b pb-2 flex items-center gap-1.5">
-              <Settings className="w-4 h-4 text-blue-600" />
+              <Settings className="w-4 h-4 text-[#B44814]" />
               <span>सक्रिय एजंट कमिशन दर सूची (Active Commission Rates)</span>
             </h3>
 
             <div className="overflow-x-auto border border-gray-200 rounded-2xl">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse leading-tight">
                 <thead>
-                  <tr className="border-b border-gray-200 text-gray-700 text-[11px] font-extrabold uppercase tracking-wider bg-gray-100/80">
-                    <th className="py-2.5 px-3">लागू एजंट (Agent)</th>
-                    <th className="py-2.5 px-3">प्रॉडक्ट (Product)</th>
-                    <th className="py-2.5 px-3 text-center">प्रकार (Type)</th>
-                    <th className="py-2.5 px-3 text-right">दर मूल्य (Commission Rate)</th>
-                    <th className="py-2.5 px-3 text-center">वारंवारता (Frequency)</th>
-                    <th className="py-2.5 px-3 text-center">कृती (Action)</th>
+                  <tr className="border-b border-amber-400/30 text-amber-50 text-[11px] font-extrabold uppercase tracking-wider bg-[#5A1A14]">
+                    <th className="py-1.5.5 px-2 whitespace-nowrap">लागू एजंट (Agent)</th>
+                    <th className="py-1.5.5 px-2 whitespace-nowrap">प्रॉडक्ट (Product)</th>
+                    <th className="py-1.5.5 px-2 text-center whitespace-nowrap">प्रकार (Type)</th>
+                    <th className="py-1.5.5 px-2 text-right whitespace-nowrap">दर मूल्य (Commission Rate)</th>
+                    <th className="py-1.5.5 px-2 text-center whitespace-nowrap">वारंवारता (Frequency)</th>
+                    <th className="py-1.5.5 px-2 text-center whitespace-nowrap">कृती (Action)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 text-xs">
+                <tbody className="divide-y divide-amber-100 text-xs">
                   {settings.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8 text-center text-gray-500 font-bold">
@@ -738,13 +738,13 @@ export default function AgentCommissionMaster() {
                     </tr>
                   ) : (
                     settings.map((s) => (
-                      <tr key={s.settingId} className="hover:bg-blue-50/40 transition">
-                        <td className="py-2.5 px-3 font-bold text-gray-900">
+                      <tr key={s.settingId} className="hover:bg-amber-50/40 transition">
+                        <td className="py-1.5 px-2 font-bold text-gray-900 align-middle">
                           {s.agent ? `${s.agent.agentName} (${s.agent.agentCode || `#${s.agentId}`})` : 'सर्व एजंट्स (Default)'}
                         </td>
-                        <td className="py-2.5 px-3">
+                        <td className="py-1.5 px-2 align-middle">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            s.productType === 'LOAN' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                            s.productType === 'LOAN' ? 'bg-amber-100 text-[#7C2418] border border-amber-200' :
                             s.productType === 'RD' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
                             s.productType === 'SAVING' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                             'bg-amber-100 text-amber-800 border border-amber-200'
@@ -755,17 +755,17 @@ export default function AgentCommissionMaster() {
                              '🪙 पिग्मी (Pigmy)'}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-1.5 px-2 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             s.commissionType === 'PERCENTAGE' ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
                           }`}>
                             {s.commissionType === 'PERCENTAGE' ? 'टक्केवारी' : 'ठराविक'}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-800">
+                        <td className="py-1.5 px-2 text-right font-mono font-bold text-gray-800 align-middle">
                           {s.commissionType === 'PERCENTAGE' ? `${s.commissionValue}%` : `₹ ${s.commissionValue.toLocaleString('en-IN')}`}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-bold text-gray-600">
+                        <td className="py-1.5 px-2 text-center font-bold text-gray-600 align-middle">
                           <div>{s.calculationFrequency}</div>
                           {(s.productType === 'PIGMY' || !s.productType) && s.deductPrematureWithdrawals && (
                             <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold">
@@ -773,7 +773,7 @@ export default function AgentCommissionMaster() {
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-1.5 px-2 text-center align-middle">
                           <button
                             type="button"
                             onClick={() => handleDeleteSetting(s.settingId)}
@@ -840,7 +840,7 @@ export default function AgentCommissionMaster() {
             <div className="flex items-end">
               <button
                 onClick={fetchHistory}
-                className="w-full py-2 bg-primary hover:bg-[#004a75] text-white font-extrabold rounded-xl shadow-2xs transition duration-200 text-xs flex items-center justify-center gap-1.5"
+                className="w-full py-2 bg-primary hover:bg-[#7C2418] text-white font-extrabold rounded-xl shadow-2xs transition duration-200 text-xs flex items-center justify-center gap-1.5"
               >
                 <Search className="w-4 h-4" />
                 <span>शोधा (Apply Filter)</span>
@@ -860,21 +860,21 @@ export default function AgentCommissionMaster() {
               </span>
             </div>
 
-            <div className="overflow-x-auto border border-blue-200/80 rounded-xl">
-              <table className="w-full text-left border-collapse text-[11px]">
+            <div className="overflow-x-auto border border-amber-200/80 rounded-xl">
+              <table className="w-full text-left border-collapse text-[11px] leading-tight">
                 <thead>
-                  <tr className="bg-[#0F2454] text-white font-bold whitespace-nowrap">
-                    <th className="py-1.5 px-2.5 border-r border-white/15">व्हाउचर क्र.</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15">एजंट नाव</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15">प्रॉडक्ट</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center">कालावधी</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right">एकूण संकलन (₹)</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right">अदा कमिशन (₹)</th>
-                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center">स्थिती</th>
-                    <th className="py-1.5 px-2.5 text-center">पावती</th>
+                  <tr className="bg-[#5A1A14] text-white font-bold whitespace-nowrap">
+                    <th className="py-1.5 px-2.5 border-r border-white/15 whitespace-nowrap">व्हाउचर क्र.</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 whitespace-nowrap">एजंट नाव</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 whitespace-nowrap">प्रॉडक्ट</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center whitespace-nowrap">कालावधी</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right whitespace-nowrap">एकूण संकलन (₹)</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-right whitespace-nowrap">अदा कमिशन (₹)</th>
+                    <th className="py-1.5 px-2.5 border-r border-white/15 text-center whitespace-nowrap">स्थिती</th>
+                    <th className="py-1.5 px-2.5 text-center whitespace-nowrap">पावती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-blue-100/70">
+                <tbody className="divide-y divide-amber-100/70">
                   {historyList.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-slate-500 font-bold">
@@ -883,14 +883,14 @@ export default function AgentCommissionMaster() {
                     </tr>
                   ) : (
                     historyList.map((h, idx) => (
-                      <tr key={h.commissionId} className={`hover:bg-blue-50/50 transition ${idx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'}`}>
-                        <td className="py-1.5 px-2.5 font-mono font-bold text-[#1D4ED8] whitespace-nowrap">{h.voucherNo || '-'}</td>
-                        <td className="py-1.5 px-2.5 font-bold text-slate-900 whitespace-nowrap">
+                      <tr key={h.commissionId} className={`hover:bg-amber-50/50 transition ${idx % 2 === 1 ? 'bg-slate-50/45' : 'bg-white'}`}>
+                        <td className="py-1 px-2.5 font-mono font-bold text-[#9A3412] whitespace-nowrap align-middle">{h.voucherNo || '-'}</td>
+                        <td className="py-1 px-2.5 font-bold text-slate-900 whitespace-nowrap align-middle">
                           {h.agentName} {h.agentCode && <span className="text-[10px] text-slate-500 font-mono">({h.agentCode})</span>}
                         </td>
-                        <td className="py-1.5 px-2.5 whitespace-nowrap">
+                        <td className="py-1 px-2.5 whitespace-nowrap align-middle">
                           <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold ${
-                            h.productType === 'LOAN' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                            h.productType === 'LOAN' ? 'bg-amber-100 text-[#7C2418] border border-amber-200' :
                             h.productType === 'RD' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
                             h.productType === 'SAVING' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                             'bg-amber-100 text-amber-800 border border-amber-200'
@@ -901,24 +901,24 @@ export default function AgentCommissionMaster() {
                              '🪙 पिग्मी'}
                           </span>
                         </td>
-                        <td className="py-1.5 px-2.5 text-center font-mono whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-center font-mono whitespace-nowrap align-middle">
                           {new Date(h.periodStartDate).toLocaleDateString('en-GB')} - {new Date(h.periodEndDate).toLocaleDateString('en-GB')}
                         </td>
-                        <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap align-middle">
                           ₹ {(h.totalCollectionAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="py-1.5 px-2.5 text-right font-mono font-extrabold text-emerald-700 bg-emerald-50/50 whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-right font-mono font-extrabold text-emerald-700 bg-emerald-50/50 whitespace-nowrap align-middle">
                           ₹ {(h.calculatedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="py-1.5 px-2.5 text-center whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-center whitespace-nowrap align-middle">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                             {h.status}
                           </span>
                         </td>
-                        <td className="py-1.5 px-2.5 text-center whitespace-nowrap">
+                        <td className="py-1 px-2.5 text-center whitespace-nowrap align-middle">
                           <button
                             onClick={() => setPrintCommission(h)}
-                            className="p-1 text-[#2563EB] hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                            className="p-1 text-[#B44814] hover:bg-amber-50 rounded-lg transition cursor-pointer"
                             title="पावती प्रिंट करा"
                           >
                             <Printer className="w-4 h-4" />
@@ -947,7 +947,7 @@ export default function AgentCommissionMaster() {
               <button onClick={() => setSelectedPayCommission(null)} className="text-gray-400 hover:text-gray-600 font-bold">✕</button>
             </div>
 
-            <div className="bg-blue-50/60 p-3 rounded-2xl border border-blue-200 space-y-1.5 text-xs">
+            <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200 space-y-1.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-500">एजंटचे नाव:</span>
                 <span className="font-bold text-gray-900">{selectedPayCommission.agent?.agentName}</span>
@@ -1037,7 +1037,7 @@ export default function AgentCommissionMaster() {
               )}
 
               {paymentMode === 'BANK' && (
-                <div className="space-y-2.5 p-3 bg-blue-50/50 border border-blue-200 rounded-xl">
+                <div className="space-y-2.5 p-3 bg-amber-50/50 border border-amber-200 rounded-xl">
                   <BankLedgerSelect
                     value={bankLedgerId}
                     onChange={setBankLedgerId}
@@ -1117,21 +1117,21 @@ export default function AgentCommissionMaster() {
                 </div>
               </div>
 
-              <table className="w-full border-collapse border border-black text-xs">
+              <table className="w-full border-collapse border border-black text-[11px] leading-tight">
                 <thead>
-                  <tr className="border-b border-black bg-gray-100 font-bold">
-                    <th className="border-r border-black p-2 text-left">तपशील (Particulars)</th>
-                    <th className="p-2 text-right">रक्कम (₹ Amount)</th>
+                  <tr className="border-b border-black bg-[#5A1A14] font-bold text-amber-50">
+                    <th className="border-r border-black px-2 py-1.5 text-left whitespace-nowrap">तपशील (Particulars)</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">रक्कम (₹ Amount)</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr className="border-b border-black">
-                    <td className="border-r border-black p-2">कालावधीतील एकूण संकलित पिग्मी ठेव (Total Remittance)</td>
-                    <td className="p-2 text-right font-mono font-bold">₹ {printCommission.totalCollectionAmount.toFixed(2)}</td>
+                    <td className="border-r border-black px-2 py-1 align-middle">कालावधीतील एकूण संकलित पिग्मी ठेव (Total Remittance)</td>
+                    <td className="px-2 py-1 text-right font-mono font-bold align-middle">₹ {printCommission.totalCollectionAmount.toFixed(2)}</td>
                   </tr>
                   <tr>
-                    <td className="border-r border-black p-2 font-bold">अदा करण्यात आलेले कमिशन (Net Commission Paid)</td>
-                    <td className="p-2 text-right font-mono font-extrabold text-sm">₹ {printCommission.calculatedCommission.toFixed(2)}</td>
+                    <td className="border-r border-black px-2 py-1 font-bold align-middle">अदा करण्यात आलेले कमिशन (Net Commission Paid)</td>
+                    <td className="px-2 py-1 text-right font-mono font-extrabold text-sm align-middle">₹ {printCommission.calculatedCommission.toFixed(2)}</td>
                   </tr>
                 </tbody>
               </table>

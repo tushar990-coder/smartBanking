@@ -150,12 +150,12 @@ export default function MemberListReport() {
   const getStatusBadge = (status?: string | null) => {
     const s = (status || 'Active').toLowerCase();
     if (s.includes('active') || s.includes('सक्रिय') || s.includes('चालू')) {
-      return <span className="text-emerald-800 font-bold">सक्रिय (Active)</span>;
+      return <span className="text-emerald-800 font-bold whitespace-nowrap">सक्रिय</span>;
     }
     if (s.includes('inactive') || s.includes('बंद') || s.includes('रद्द')) {
-      return <span className="text-rose-800 font-bold">बंद (Closed)</span>;
+      return <span className="text-rose-800 font-bold whitespace-nowrap">बंद</span>;
     }
-    return <span className="text-slate-800 font-semibold">{status || 'Active'}</span>;
+    return <span className="text-slate-800 font-semibold whitespace-nowrap">{status || 'Active'}</span>;
   };
 
   // Filter toolbar controls
@@ -243,66 +243,69 @@ export default function MemberListReport() {
         </div>
       }
     >
-      <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
+      <table className="cbs-table w-full table-fixed border-collapse border border-slate-900 text-[11px] leading-tight">
         <thead>
-          <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 text-center font-bold">
-            <th className="border border-slate-900 py-1.5 px-1 w-[5%] text-center">अ.क्र.</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[14%] text-center">CIF क्रमांक</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-center">सभासद क्र.</th>
-            <th className="border border-slate-900 py-1.5 px-3 w-[35%] text-left">सभासदाचे नाव</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[14%] text-center">मोबाईल नं.</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[10%] text-center">स्थिती</th>
-            <th className="border border-slate-900 py-1.5 px-2 w-[10%] text-center">दाखल दिनांक</th>
+          <tr className="bg-[#5A1A14] print:bg-slate-100 text-amber-50 print:text-slate-900 border-b border-slate-900 text-center font-bold">
+            <th className="border border-slate-900 py-1 px-1 w-[6%] text-center whitespace-nowrap">अ.क्र.</th>
+            <th className="border border-slate-900 py-1 px-1.5 w-[14%] text-center whitespace-nowrap">CIF क्रमांक</th>
+            <th className="border border-slate-900 py-1 px-1.5 w-[12%] text-center whitespace-nowrap">सभासद क्र.</th>
+            <th className="border border-slate-900 py-1 px-2 w-[33%] text-left whitespace-nowrap">सभासदाचे नाव</th>
+            <th className="border border-slate-900 py-1 px-1.5 w-[14%] text-center whitespace-nowrap">मोबाईल नं.</th>
+            <th className="border border-slate-900 py-1 px-1 w-[9%] text-center whitespace-nowrap">स्थिती</th>
+            <th className="border border-slate-900 py-1 px-1.5 w-[12%] text-center whitespace-nowrap">दाखल दिनांक</th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={7} className="text-center py-8 text-slate-500 font-semibold border border-slate-900">
+              <td colSpan={7} className="text-center py-6 text-slate-500 font-semibold border border-slate-900">
                 माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
               </td>
             </tr>
           ) : filteredData.length === 0 ? (
             <tr>
-              <td colSpan={7} className="text-center py-8 text-slate-500 font-semibold border border-slate-900">
+              <td colSpan={7} className="text-center py-6 text-slate-500 font-semibold border border-slate-900">
                 कोणतीही सभासद नोंद आढळली नाही.
               </td>
             </tr>
           ) : (
-            filteredData.map((m, idx) => (
-              <tr key={m.memberID || idx} className="hover:bg-slate-50 text-slate-900 text-[11px]">
-                <td className="border border-slate-900 py-1 px-1 text-center font-mono font-medium">
-                  {idx + 1}
-                </td>
-                <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-slate-900">
-                  {m.cifNo || '-'}
-                </td>
-                <td className="border border-slate-900 py-1 px-2 text-center font-mono font-semibold text-primary">
-                  {m.memberCode || '-'}
-                </td>
-                <td className="border border-slate-900 py-1 px-3 font-medium">
-                  {`${m.firstName || ''} ${m.middleName || ''} ${m.lastName || ''}`.trim()}
-                </td>
-                <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-700">
-                  {m.mobileNo || '-'}
-                </td>
-                <td className="border border-slate-900 py-1 px-2 text-center text-[10.5px]">
-                  {getStatusBadge(m.status)}
-                </td>
-                <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-700">
-                  {formatDisplayDate(m.joiningDate)}
-                </td>
-              </tr>
-            ))
+            filteredData.map((m, idx) => {
+              const fullName = `${m.firstName || ''} ${m.middleName || ''} ${m.lastName || ''}`.trim();
+              return (
+                <tr key={m.memberID || idx} className="odd:bg-white even:bg-[#FFFBF7] hover:bg-amber-50/70 text-slate-900 text-[10.5px]">
+                  <td className="border border-slate-900 py-0.5 px-1 text-center font-mono font-medium whitespace-nowrap">
+                    {idx + 1}
+                  </td>
+                  <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono font-bold text-slate-900 whitespace-nowrap truncate" title={m.cifNo || '-'}>
+                    {m.cifNo || '-'}
+                  </td>
+                  <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono font-semibold text-primary whitespace-nowrap truncate" title={m.memberCode || '-'}>
+                    {m.memberCode || '-'}
+                  </td>
+                  <td className="border border-slate-900 py-0.5 px-2 font-medium truncate" title={fullName}>
+                    {fullName}
+                  </td>
+                  <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-slate-700 whitespace-nowrap">
+                    {m.mobileNo || '-'}
+                  </td>
+                  <td className="border border-slate-900 py-0.5 px-1 text-center text-[10px] whitespace-nowrap">
+                    {getStatusBadge(m.status)}
+                  </td>
+                  <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-slate-700 whitespace-nowrap">
+                    {formatDisplayDate(m.joiningDate)}
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
         {filteredData.length > 0 && (
           <tfoot>
-            <tr className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-900 text-xs">
-              <td colSpan={3} className="border border-slate-900 py-1.5 px-3 text-right uppercase tracking-wider">
+            <tr className="bg-amber-50/80 print:bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-900 text-[11px]">
+              <td colSpan={3} className="border border-slate-900 py-1 px-2 text-right uppercase tracking-wider">
                 एकूण नोंदणीकृत सभासद:
               </td>
-              <td colSpan={4} className="border border-slate-900 py-1.5 px-3 text-left font-bold text-primary">
+              <td colSpan={4} className="border border-slate-900 py-1 px-2 text-left font-bold text-primary">
                 {filteredData.length} सभासद
               </td>
             </tr>

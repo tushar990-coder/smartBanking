@@ -230,7 +230,7 @@ export default function CoOpAuditComplianceMaster() {
   return (
     <div className="w-full min-h-full font-sans relative overflow-y-auto bg-slate-50 pb-16">
       {/* Subtle Background Blurs */}
-      <div className="absolute top-[-5%] left-[-5%] w-[35rem] h-[35rem] bg-indigo-100/40 rounded-full blur-[100px] pointer-events-none"></div>
+      <div className="absolute top-[-5%] left-[-5%] w-[35rem] h-[35rem] bg-orange-100/40 rounded-full blur-[100px] pointer-events-none"></div>
       <div className="absolute top-[20%] right-[-5%] w-[35rem] h-[35rem] bg-emerald-100/40 rounded-full blur-[100px] pointer-events-none"></div>
 
       <div className="p-4 md:p-6 max-w-7xl mx-auto relative z-10 space-y-6">
@@ -238,7 +238,7 @@ export default function CoOpAuditComplianceMaster() {
         {/* Header Banner */}
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="p-3 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-200 shadow-xs">
+            <div className="p-3 bg-orange-50 text-[#9A3412] rounded-xl border border-amber-200 shadow-xs">
               <span className="text-2xl">🏛️</span>
             </div>
             <div>
@@ -286,7 +286,7 @@ export default function CoOpAuditComplianceMaster() {
           <button
             onClick={() => setActiveSubTab('mapping')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeSubTab === 'mapping' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              activeSubTab === 'mapping' ? 'bg-[#B44814] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <span>⚙️ १. ऑडीट लेजर मॅपिंग</span>
@@ -295,7 +295,7 @@ export default function CoOpAuditComplianceMaster() {
           <button
             onClick={() => setActiveSubTab('scorecard')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeSubTab === 'scorecard' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              activeSubTab === 'scorecard' ? 'bg-[#B44814] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <span>🏆 २. ऑडीट ग्रेड व डॅशबोर्ड</span>
@@ -304,7 +304,7 @@ export default function CoOpAuditComplianceMaster() {
           <button
             onClick={() => setActiveSubTab('owned-funds')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeSubTab === 'owned-funds' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              activeSubTab === 'owned-funds' ? 'bg-[#B44814] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <span>💼 ३. स्वनिधी व कर्ज मर्यादा</span>
@@ -313,7 +313,7 @@ export default function CoOpAuditComplianceMaster() {
           <button
             onClick={() => setActiveSubTab('cd-ratio')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeSubTab === 'cd-ratio' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              activeSubTab === 'cd-ratio' ? 'bg-[#B44814] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <span>📊 ४. C.D. रेशो व स्प्रेड</span>
@@ -322,7 +322,7 @@ export default function CoOpAuditComplianceMaster() {
           <button
             onClick={() => setActiveSubTab('crr-slr')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeSubTab === 'crr-slr' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              activeSubTab === 'crr-slr' ? 'bg-[#B44814] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <span>💧 ५. CRR व SLR तरलता</span>
@@ -331,7 +331,7 @@ export default function CoOpAuditComplianceMaster() {
           <button
             onClick={() => setActiveSubTab('crar')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeSubTab === 'crar' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              activeSubTab === 'crar' ? 'bg-[#B44814] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <span>🛡️ ६. CRAR भांडवल पर्याप्तता</span>
@@ -346,7 +346,7 @@ export default function CoOpAuditComplianceMaster() {
 
         {loading ? (
           <div className="flex justify-center items-center py-20 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#9A3412]"></div>
           </div>
         ) : (
           <>
@@ -369,7 +369,7 @@ export default function CoOpAuditComplianceMaster() {
                       placeholder="🔍 ऑडीट हेड शोधा..."
                       value={mappingSearchTerm}
                       onChange={(e) => setMappingSearchTerm(e.target.value)}
-                      className="px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-500 w-full sm:w-48 bg-slate-50"
+                      className="px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-[#9A3412] focus:ring-1 focus:ring-[#B44814] w-full sm:w-48 bg-slate-50"
                     />
                     <button
                       onClick={handleAutoSuggest}
@@ -379,7 +379,7 @@ export default function CoOpAuditComplianceMaster() {
                     </button>
                     <button
                       onClick={handleSaveMappings}
-                      className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                      className="px-4 py-1.5 bg-[#B44814] hover:bg-[#9A3412] text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
                     >
                       <span>💾 Save Mappings</span>
                     </button>
@@ -387,33 +387,33 @@ export default function CoOpAuditComplianceMaster() {
                 </div>
 
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-xs text-left">
-                    <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider">
+                  <table className="min-w-full divide-y divide-slate-200 text-[11px] text-left leading-tight border-collapse">
+                    <thead className="bg-[#5A1A14] text-amber-50 font-bold uppercase tracking-wider">
                       <tr>
-                        <th className="px-4 py-3 border-r border-slate-200 w-12 text-center">अ.क्र.</th>
-                        <th className="px-4 py-3 border-r border-slate-200 w-1/3">मानक ऑडीट हेड / वर्गवारी</th>
-                        <th className="px-4 py-3 border-r border-slate-200 w-36">विभाग (Group)</th>
-                        <th className="px-4 py-3">पतसंस्थेचे संबंधित General Ledger (Search & Select)</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 w-12 text-center whitespace-nowrap">अ.क्र.</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 w-1/3 whitespace-nowrap">मानक ऑडीट हेड / वर्गवारी</th>
+                        <th className="px-2 py-1.5 border-r border-amber-400/25 w-36 whitespace-nowrap">विभाग (Group)</th>
+                        <th className="px-2 py-1.5 whitespace-nowrap">पतसंस्थेचे संबंधित General Ledger (Search & Select)</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white font-medium">
+                    <tbody className="divide-y divide-amber-100 bg-white font-medium">
                       {filteredCategories.map((cat, idx) => {
                         const currentLedgerId = savedMappings[cat.code] || 0;
                         return (
                           <tr key={cat.code} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="px-4 py-3 border-r border-slate-200 text-center font-bold text-slate-500">
+                            <td className="px-2 py-1 border-r border-slate-200 text-center font-bold text-slate-500 align-middle">
                               {idx + 1}
                             </td>
-                            <td className="px-4 py-3 border-r border-slate-200 font-bold text-slate-800">
+                            <td className="px-2 py-1 border-r border-slate-200 font-bold text-slate-800 align-middle">
                               {cat.name}
                               <div className="text-[10px] font-mono text-slate-400 font-normal">Code: {cat.code}</div>
                             </td>
-                            <td className="px-4 py-3 border-r border-slate-200">
+                            <td className="px-2 py-1 border-r border-slate-200 align-middle">
                               <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                                 {cat.group}
                               </span>
                             </td>
-                            <td className="px-4 py-2">
+                            <td className="px-2 py-1 align-middle">
                               <SearchableSelect
                                 options={ledgerOptions}
                                 value={currentLedgerId}
@@ -432,7 +432,7 @@ export default function CoOpAuditComplianceMaster() {
                 <div className="flex justify-end border-t border-slate-100 pt-4">
                   <button
                     onClick={handleSaveMappings}
-                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
+                    className="px-6 py-2.5 bg-[#B44814] hover:bg-[#9A3412] text-white font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
                   >
                     💾 सर्व लेजर मॅपिंग सेव्ह करा
                   </button>
@@ -447,7 +447,7 @@ export default function CoOpAuditComplianceMaster() {
                   <div className="space-y-2 text-center md:text-left">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">विशेष लेखापरीक्षक ऑडीट वर्गवारी रेटिंग</span>
                     <h2 className="text-2xl font-black text-slate-800">
-                      संस्थेचे एकूण ऑडीट गुण: <span className="text-indigo-600">{scorecardData.finalScore} / १००</span>
+                      संस्थेचे एकूण ऑडीट गुण: <span className="text-[#B44814]">{scorecardData.finalScore} / १००</span>
                     </h2>
                     <p className="text-xs text-slate-500 font-semibold">
                       ६००-गुणांच्या ६ स्तंभांवर आधारित व पेनल्टी गुण वजा करून निश्चित केलेली अंतिम वर्गवारी
@@ -465,7 +465,7 @@ export default function CoOpAuditComplianceMaster() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
                     <p className="text-xs font-bold text-slate-500">१. भाग भांडवल पर्याप्तता (Capital)</p>
-                    <p className="text-xl font-extrabold text-indigo-700">{scorecardData.capitalAdequacyScore} / १०० <span className="text-xs font-normal text-slate-500">(वेटेज: १५%)</span></p>
+                    <p className="text-xl font-extrabold text-[#9A3412]">{scorecardData.capitalAdequacyScore} / १०० <span className="text-xs font-normal text-slate-500">(वेटेज: १५%)</span></p>
                   </div>
 
                   <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
@@ -480,7 +480,7 @@ export default function CoOpAuditComplianceMaster() {
 
                   <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
                     <p className="text-xs font-bold text-slate-500">४. उत्पन्न व नफा क्षमता</p>
-                    <p className="text-xl font-extrabold text-blue-700">{scorecardData.earningsScore} / १०० <span className="text-xs font-normal text-slate-500">(वेटेज: २०%)</span></p>
+                    <p className="text-xl font-extrabold text-[#9A3412]">{scorecardData.earningsScore} / १०० <span className="text-xs font-normal text-slate-500">(वेटेज: २०%)</span></p>
                   </div>
 
                   <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
@@ -508,29 +508,29 @@ export default function CoOpAuditComplianceMaster() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
-                    <table className="min-w-full divide-y divide-slate-200 text-left">
-                      <thead className="bg-slate-100 font-bold text-slate-700">
+                    <table className="min-w-full divide-y divide-slate-200 text-left leading-tight border-collapse">
+                      <thead className="bg-[#5A1A14] font-bold text-amber-50">
                         <tr>
-                          <th className="p-3">तपशील</th>
-                          <th className="p-3 text-right">रक्कम (₹)</th>
+                          <th className="px-2 py-1.5 whitespace-nowrap">तपशील</th>
+                          <th className="px-2 py-1.5 text-right whitespace-nowrap">रक्कम (₹)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-200 bg-white font-medium">
+                      <tbody className="divide-y divide-amber-100 bg-white font-medium">
                         <tr>
-                          <td className="p-3">अ. वसूल भाग भांडवल + शेअर्स अनामत</td>
-                          <td className="p-3 text-right font-bold">₹{ownedFundsData.totalPartA?.toLocaleString('en-IN')}</td>
+                          <td className="px-2 py-1 align-middle">अ. वसूल भाग भांडवल + शेअर्स अनामत</td>
+                          <td className="px-2 py-1 text-right font-bold align-middle">₹{ownedFundsData.totalPartA?.toLocaleString('en-IN')}</td>
                         </tr>
                         <tr>
-                          <td className="p-3">ब. वैधानिक व इतर राखीव निधी</td>
-                          <td className="p-3 text-right font-bold">₹{ownedFundsData.totalPartB?.toLocaleString('en-IN')}</td>
+                          <td className="px-2 py-1 align-middle">ब. वैधानिक व इतर राखीव निधी</td>
+                          <td className="px-2 py-1 text-right font-bold align-middle">₹{ownedFundsData.totalPartB?.toLocaleString('en-IN')}</td>
                         </tr>
                         <tr className="bg-rose-50/50 text-rose-800">
-                          <td className="p-3">क. वजा: संचित तोटा व न केलेल्या तरतुदी</td>
-                          <td className="p-3 text-right font-bold">- ₹{ownedFundsData.totalPartC?.toLocaleString('en-IN')}</td>
+                          <td className="px-2 py-1 align-middle">क. वजा: संचित तोटा व न केलेल्या तरतुदी</td>
+                          <td className="px-2 py-1 text-right font-bold align-middle">- ₹{ownedFundsData.totalPartC?.toLocaleString('en-IN')}</td>
                         </tr>
                         <tr className="bg-emerald-100 text-emerald-900 font-black text-sm">
-                          <td className="p-3">एकूण निव्वळ स्वनिधी (अ + ब - क)</td>
-                          <td className="p-3 text-right">₹{ownedFundsData.netOwnedFunds?.toLocaleString('en-IN')}</td>
+                          <td className="px-2 py-1 align-middle">एकूण निव्वळ स्वनिधी (अ + ब - क)</td>
+                          <td className="px-2 py-1 text-right align-middle">₹{ownedFundsData.netOwnedFunds?.toLocaleString('en-IN')}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -541,17 +541,17 @@ export default function CoOpAuditComplianceMaster() {
                     <div className="space-y-3">
                       <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-700">वैयक्तिक सभासद कमाल कर्ज मर्यादा (१५% स्वनिधी)</span>
-                        <span className="text-sm font-extrabold text-indigo-700">₹{ownedFundsData.individualLoanLimit15Percent?.toLocaleString('en-IN')}</span>
+                        <span className="text-sm font-extrabold text-[#9A3412]">₹{ownedFundsData.individualLoanLimit15Percent?.toLocaleString('en-IN')}</span>
                       </div>
 
                       <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-700">कुटुंब / ग्रुप कमाल कर्ज मर्यादा (२०% स्वनिधी)</span>
-                        <span className="text-sm font-extrabold text-indigo-700">₹{ownedFundsData.groupLoanLimit20Percent?.toLocaleString('en-IN')}</span>
+                        <span className="text-sm font-extrabold text-[#9A3412]">₹{ownedFundsData.groupLoanLimit20Percent?.toLocaleString('en-IN')}</span>
                       </div>
 
                       <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-700">कलम ४३ बाहेरील कर्ज उभारणी मर्यादा (१० पट)</span>
-                        <span className="text-sm font-extrabold text-indigo-700">₹{ownedFundsData.section43MaxBorrowingLimit?.toLocaleString('en-IN')}</span>
+                        <span className="text-sm font-extrabold text-[#9A3412]">₹{ownedFundsData.section43MaxBorrowingLimit?.toLocaleString('en-IN')}</span>
                       </div>
                     </div>
                   </div>
@@ -580,9 +580,9 @@ export default function CoOpAuditComplianceMaster() {
                     <p className="text-xl font-extrabold text-slate-800">₹{cdRatioData.totalDeposits?.toLocaleString('en-IN')}</p>
                   </div>
 
-                  <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200 text-center space-y-1">
-                    <span className="text-xs font-bold text-indigo-800 uppercase">C.D. रेशो (प्रमाण)</span>
-                    <p className="text-2xl font-black text-indigo-700">{cdRatioData.cdRatioPercent}%</p>
+                  <div className="bg-orange-50 p-4 rounded-xl border border-amber-200 text-center space-y-1">
+                    <span className="text-xs font-bold text-[#7C2418] uppercase">C.D. रेशो (प्रमाण)</span>
+                    <p className="text-2xl font-black text-[#9A3412]">{cdRatioData.cdRatioPercent}%</p>
                     <span className="text-[11px] font-bold text-slate-600 block">{cdRatioData.statusText}</span>
                   </div>
                 </div>
@@ -625,7 +625,7 @@ export default function CoOpAuditComplianceMaster() {
                     <div className="space-y-1 text-xs">
                       <div className="flex justify-between"><span>एकूण ठेवी:</span><span className="font-bold">₹{crrSlrData.totalDeposits?.toLocaleString('en-IN')}</span></div>
                       <div className="flex justify-between"><span>आवश्यक २% CRR:</span><span className="font-bold">₹{crrSlrData.requiredCrr2Percent?.toLocaleString('en-IN')}</span></div>
-                      <div className="flex justify-between"><span>प्रत्यक्ष उपलब्ध CRR:</span><span className="font-extrabold text-indigo-700">₹{crrSlrData.actualCrrAmount?.toLocaleString('en-IN')} ({crrSlrData.actualCrrPercent}%)</span></div>
+                      <div className="flex justify-between"><span>प्रत्यक्ष उपलब्ध CRR:</span><span className="font-extrabold text-[#9A3412]">₹{crrSlrData.actualCrrAmount?.toLocaleString('en-IN')} ({crrSlrData.actualCrrPercent}%)</span></div>
                     </div>
                   </div>
 
@@ -645,7 +645,7 @@ export default function CoOpAuditComplianceMaster() {
                     <div className="space-y-1 text-xs">
                       <div className="flex justify-between"><span>एकूण ठेवी:</span><span className="font-bold">₹{crrSlrData.totalDeposits?.toLocaleString('en-IN')}</span></div>
                       <div className="flex justify-between"><span>आवश्यक २५% SLR:</span><span className="font-bold">₹{crrSlrData.requiredSlr25Percent?.toLocaleString('en-IN')}</span></div>
-                      <div className="flex justify-between"><span>प्रत्यक्ष उपलब्ध SLR:</span><span className="font-extrabold text-indigo-700">₹{crrSlrData.actualSlrAmount?.toLocaleString('en-IN')} ({crrSlrData.actualSlrPercent}%)</span></div>
+                      <div className="flex justify-between"><span>प्रत्यक्ष उपलब्ध SLR:</span><span className="font-extrabold text-[#9A3412]">₹{crrSlrData.actualSlrAmount?.toLocaleString('en-IN')} ({crrSlrData.actualSlrPercent}%)</span></div>
                     </div>
                   </div>
                 </div>
@@ -662,10 +662,10 @@ export default function CoOpAuditComplianceMaster() {
                   </p>
                 </div>
 
-                <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-200 flex justify-between items-center">
+                <div className="bg-orange-50 p-5 rounded-xl border border-amber-200 flex justify-between items-center">
                   <div>
-                    <span className="text-xs font-bold text-indigo-800 uppercase">प्राप्त CRAR (Capital Adequacy Ratio)</span>
-                    <p className="text-3xl font-black text-indigo-700">{crarData.crarPercent}%</p>
+                    <span className="text-xs font-bold text-[#7C2418] uppercase">प्राप्त CRAR (Capital Adequacy Ratio)</span>
+                    <p className="text-3xl font-black text-[#9A3412]">{crarData.crarPercent}%</p>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                     crarData.isCrarCompliant ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'

@@ -389,7 +389,7 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
                   voucherStatus === 'pending'
                     ? 'border-amber-500 text-amber-900 bg-amber-50 focus:border-amber-600 focus:ring-amber-500'
                     : voucherStatus === 'all'
-                    ? 'border-indigo-500 text-indigo-900 bg-indigo-50 focus:border-indigo-600 focus:ring-indigo-500'
+                    ? 'border-[#B44814] text-[#5A1A14] bg-orange-50 focus:border-[#9A3412] focus:ring-[#B44814]'
                     : 'border-emerald-600 text-emerald-900 bg-emerald-50 focus:border-emerald-700 focus:ring-emerald-600'
                 }`}
                 title="रोजकीर्द प्रकार निवडा (पक्की / कच्ची / एकत्रित)"
@@ -568,7 +568,7 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
                       voucherStatus === 'pending'
                         ? 'border-amber-800 bg-amber-200 print:bg-gray-100 text-amber-950 print:text-black'
                         : voucherStatus === 'all'
-                        ? 'border-indigo-800 bg-indigo-100 print:bg-gray-100 text-indigo-950 print:text-black'
+                        ? 'border-[#7C2418] bg-orange-100 print:bg-gray-100 text-[#4A1410] print:text-black'
                         : 'border-gray-900 bg-gray-200 print:bg-gray-100 text-gray-900'
                     }`}>
                       {voucherStatus === 'pending'
@@ -769,16 +769,16 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
                     </div>
 
                     {/* Row 2: Opening Cash Balance */}
-                    <div className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-900 font-extrabold bg-blue-50/70 print:bg-gray-100 text-gray-900">
+                    <div className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-900 font-extrabold bg-amber-50/70 print:bg-gray-100 text-gray-900">
                       <div className="border-r border-gray-900 px-1 py-1"></div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-center font-black text-blue-900 print:text-black">
+                      <div className="border-r border-gray-900 px-1.5 py-1 text-center font-black text-[#5A1A14] print:text-black">
                         📌 आरंभीची रोख शिल्लक (Opening Balance)
                       </div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black text-blue-900 print:text-black">
+                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black text-[#5A1A14] print:text-black">
                         {formatAmount(pageData.openingBalance)}
                       </div>
                       <div className="border-r border-gray-900 px-1.5 py-1 text-center text-gray-400">-</div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black bg-blue-100 print:bg-gray-200">
+                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black bg-amber-100 print:bg-gray-200">
                         {formatAmount(pageData.openingBalance)}
                       </div>
                       <div className="px-1 py-1"></div>

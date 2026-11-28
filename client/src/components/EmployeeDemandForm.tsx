@@ -951,10 +951,10 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
 
       {/* Enterprise Editable Grid */}
       <div className="flex-1 bg-white border border-slate-400 rounded-sm shadow-sm overflow-auto max-h-[560px]">
-        <table className="min-w-full border-collapse text-[11px]">
-          <thead className="bg-slate-200 text-slate-900 sticky top-0 z-20 shadow-2xs">
+        <table className="min-w-full border-collapse text-[11px] leading-tight">
+          <thead className="bg-[#5A1A14] text-amber-50 sticky top-0 z-20 shadow-2xs">
             <tr>
-              <th className="border border-slate-400 px-1.5 py-1.5 w-8 text-center">
+              <th className="border border-slate-400 px-1.5 py-1.5 w-8 text-center whitespace-nowrap">
                 <input
                   type="checkbox"
                   checked={allVisibleSelected}
@@ -962,19 +962,19 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                   className="w-3.5 h-3.5 accent-primary cursor-pointer"
                 />
               </th>
-              <th className="border border-slate-400 px-1.5 py-1.5 w-10 text-center">अ. नं.</th>
-              <th className="border border-slate-400 px-1.5 py-1.5 w-16 text-center">Emp Code</th>
-              <th className="border border-slate-400 px-1.5 py-1.5 w-20 text-center">CIF</th>
-              <th className="border border-slate-400 px-2 py-1.5 min-w-[180px] text-left">खातेदाराचे नाव</th>
+              <th className="border border-slate-400 px-1.5 py-1.5 w-10 text-center whitespace-nowrap">अ. नं.</th>
+              <th className="border border-slate-400 px-1.5 py-1.5 w-16 text-center whitespace-nowrap">Emp Code</th>
+              <th className="border border-slate-400 px-1.5 py-1.5 w-20 text-center whitespace-nowrap">CIF</th>
+              <th className="border border-slate-400 px-2 py-1.5 min-w-[180px] text-left whitespace-nowrap">खातेदाराचे नाव</th>
 
               {displaySlots.map((slot) => {
                 if (slot.kind === 'RD_ZONE') {
                   return (
                     <React.Fragment key="rd-zone-header">
-                      <th className="border border-slate-400 px-2 py-1 min-w-[155px] text-left bg-indigo-50">
+                      <th className="border border-slate-400 px-2 py-1 min-w-[155px] text-left bg-orange-50 whitespace-nowrap">
                         RD योजना / खाते
                       </th>
-                      <th className="border border-slate-400 px-2 py-1 min-w-[90px] text-right bg-indigo-50">
+                      <th className="border border-slate-400 px-2 py-1 min-w-[90px] text-right bg-orange-50 whitespace-nowrap">
                         RD हप्ता
                       </th>
                     </React.Fragment>
@@ -985,31 +985,31 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                 return col.itemType === 'LOAN' ? (
                   <React.Fragment key={col.demandColumnSettingId}>
                     {col.showBalanceColumn && (
-                      <th className="border border-slate-400 px-2 py-1 min-w-[95px] text-right bg-slate-100">
+                      <th className="border border-slate-400 px-2 py-1 min-w-[95px] text-right bg-[#5A1A14] whitespace-nowrap">
                         {col.columnHeaderMr}
                         <div className="text-[10px] font-semibold text-slate-600">(बाकी)</div>
                       </th>
                     )}
-                    <th className="border border-slate-400 px-2 py-1 min-w-[95px] text-right bg-blue-50">
+                    <th className="border border-slate-400 px-2 py-1 min-w-[95px] text-right bg-amber-50 whitespace-nowrap">
                       {col.columnHeaderMr}
-                      <div className="text-[10px] font-bold text-blue-800">(हप्ता / येणेबाकी)</div>
+                      <div className="text-[10px] font-bold text-[#7C2418]">(हप्ता / येणेबाकी)</div>
                     </th>
-                    <th className="border border-slate-400 px-2 py-1 min-w-[85px] text-right bg-blue-50">
+                    <th className="border border-slate-400 px-2 py-1 min-w-[85px] text-right bg-amber-50 whitespace-nowrap">
                       {col.columnHeaderMr}
-                      <div className="text-[10px] font-bold text-blue-800">(व्याज)</div>
+                      <div className="text-[10px] font-bold text-[#7C2418]">(व्याज)</div>
                     </th>
                   </React.Fragment>
                 ) : (
                   <th
                     key={col.demandColumnSettingId}
-                    className="border border-slate-400 px-2 py-1 min-w-[100px] text-right bg-emerald-50"
+                    className="border border-slate-400 px-2 py-1 min-w-[100px] text-right bg-emerald-50 whitespace-nowrap"
                   >
                     {col.columnHeaderMr}
                   </th>
                 );
               })}
 
-              <th className="border border-slate-400 px-2 py-1 min-w-[95px] text-right bg-amber-50 font-bold">
+              <th className="border border-slate-400 px-2 py-1 min-w-[95px] text-right bg-amber-50 font-bold whitespace-nowrap">
                 एकूण
               </th>
             </tr>
@@ -1033,8 +1033,8 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                 return (
                   <React.Fragment key={rowKey}>
                     {/* Primary Employee Row */}
-                    <tr className={`${rowHighlight} hover:bg-blue-50/40`}>
-                      <td className="border border-slate-300 px-1.5 py-1 text-center">
+                    <tr className={`${rowHighlight} hover:bg-amber-50/40`}>
+                      <td className="border border-slate-300 px-1.5 py-1 text-center align-middle">
                         <input
                           type="checkbox"
                           checked={row.isSelected}
@@ -1042,12 +1042,12 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                           className="w-3.5 h-3.5 accent-primary cursor-pointer"
                         />
                       </td>
-                      <td className="border border-slate-300 px-1.5 py-1 text-center font-medium">{row.srNo}</td>
-                      <td className="border border-slate-300 px-1.5 py-1 text-center font-mono">{row.empCode}</td>
-                      <td className="border border-slate-300 px-1.5 py-1 text-center font-mono text-[10px]">
+                      <td className="border border-slate-300 px-1.5 py-1 text-center font-medium align-middle">{row.srNo}</td>
+                      <td className="border border-slate-300 px-1.5 py-1 text-center font-mono align-middle">{row.empCode}</td>
+                      <td className="border border-slate-300 px-1.5 py-1 text-center font-mono text-[10px] align-middle">
                         {row.cifNo}
                       </td>
-                      <td className="border border-slate-300 px-2 py-1 font-semibold text-slate-800">
+                      <td className="border border-slate-300 px-2 py-1 font-semibold text-slate-800 align-middle">
                         {row.memberName}
                         {row.isMember === false && (
                           <span className="ml-1.5 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
@@ -1063,7 +1063,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                         if (slot.kind === 'RD_ZONE') {
                           return (
                             <React.Fragment key="rd-zone-primary">
-                              <td className="border border-slate-300 px-2 py-1 text-left text-[10px] text-indigo-950 bg-indigo-50/30">
+                              <td className="border border-slate-300 px-2 py-1 text-left text-[10px] text-[#4A1410] bg-orange-50/30 align-middle">
                                 {row.primaryRd ? (
                                   <span className="font-medium">
                                     {row.primaryRd.displaySubLabel}
@@ -1073,7 +1073,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                   <span className="text-slate-400">-</span>
                                 )}
                               </td>
-                              <td className="border border-slate-300 p-0.5 bg-indigo-50/30">
+                              <td className="border border-slate-300 p-0.5 bg-orange-50/30 align-middle">
                                 {row.primaryRd ? (
                                   <input
                                     type="number"
@@ -1098,13 +1098,13 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                           if (col.itemType === 'LOAN') {
                             return (
                               <React.Fragment key={col.demandColumnSettingId}>
-                                {col.showBalanceColumn && <td className="border border-slate-300 px-1.5 py-1 text-right">0</td>}
-                                <td className="border border-slate-300 px-1.5 py-1 text-right">0</td>
-                                <td className="border border-slate-300 px-1.5 py-1 text-right">0</td>
+                                {col.showBalanceColumn && <td className="border border-slate-300 px-1.5 py-1 text-right align-middle">0</td>}
+                                <td className="border border-slate-300 px-1.5 py-1 text-right align-middle">0</td>
+                                <td className="border border-slate-300 px-1.5 py-1 text-right align-middle">0</td>
                               </React.Fragment>
                             );
                           }
-                          return <td key={col.demandColumnSettingId} className="border border-slate-300 px-1.5 py-1 text-right">0</td>;
+                          return <td key={col.demandColumnSettingId} className="border border-slate-300 px-1.5 py-1 text-right align-middle">0</td>;
                         }
 
                         if (col.itemType === 'LOAN') {
@@ -1121,13 +1121,13 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                 >
                                   {fmtNum(cell.currentBalanceAmount)}
                                   {(cell.accountCount || 0) > 1 && (
-                                    <span className="ml-1 text-[9px] px-1 rounded bg-blue-100 text-blue-800 font-sans">
+                                    <span className="ml-1 text-[9px] px-1 rounded bg-amber-100 text-[#7C2418] font-sans">
                                       {cell.accountCount} खाती
                                     </span>
                                   )}
                                 </td>
                               )}
-                              <td className="border border-slate-300 p-0.5">
+                              <td className="border border-slate-300 p-0.5 align-middle">
                                 <input
                                   type="number"
                                   min={0}
@@ -1140,7 +1140,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                   className="w-full px-1.5 py-0.5 text-right font-mono bg-transparent focus:bg-yellow-50 focus:outline-none border border-transparent focus:border-primary rounded-2xs"
                                 />
                               </td>
-                              <td className="border border-slate-300 p-0.5">
+                              <td className="border border-slate-300 p-0.5 align-middle">
                                 <input
                                   type="number"
                                   min={0}
@@ -1158,7 +1158,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                         }
 
                         return (
-                          <td key={col.demandColumnSettingId} className="border border-slate-300 p-0.5">
+                          <td key={col.demandColumnSettingId} className="border border-slate-300 p-0.5 align-middle">
                             <div className="flex items-center">
                               {col.itemType === 'THRIFT_SAVING' && cell.hasSubLedgerAccount === false && (
                                 <span
@@ -1193,7 +1193,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                       })}
 
                       {/* Employee Row Grand Total */}
-                      <td className="border border-slate-300 px-2 py-1 text-right font-mono font-bold text-slate-900 bg-amber-50/60">
+                      <td className="border border-slate-300 px-2 py-1 text-right font-mono font-bold text-slate-900 bg-amber-50/60 align-middle">
                         {fmtNum(row.totalDeduction)}
                       </td>
                     </tr>
@@ -1203,13 +1203,13 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                       (row.rdSubRows || []).map((sr) => (
                         <tr
                           key={`${rowKey}-rd-${sr.subRowIndex}-${sr.accountId}`}
-                          className="bg-indigo-50/50 hover:bg-indigo-100/50 text-slate-700"
+                          className="bg-orange-50/50 hover:bg-orange-100/50 text-slate-700"
                         >
-                          <td className="border border-slate-300"></td>
-                          <td className="border border-slate-300 text-center text-[10px] text-indigo-600">↳</td>
-                          <td className="border border-slate-300"></td>
-                          <td className="border border-slate-300"></td>
-                          <td className="border border-slate-300 px-2 py-0.5 text-[10px] text-indigo-800 italic">
+                          <td className="border border-slate-300 align-middle"></td>
+                          <td className="border border-slate-300 text-center text-[10px] text-[#B44814] align-middle">↳</td>
+                          <td className="border border-slate-300 align-middle"></td>
+                          <td className="border border-slate-300 align-middle"></td>
+                          <td className="border border-slate-300 px-2 py-0.5 text-[10px] text-[#7C2418] italic align-middle">
                             अतिरिक्त RD (क्रम {sr.sequenceOrder})
                           </td>
 
@@ -1217,11 +1217,11 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                             if (slot.kind === 'RD_ZONE') {
                               return (
                                 <React.Fragment key="rd-zone-sub">
-                                  <td className="border border-slate-300 px-2 py-0.5 text-left text-[10px] font-semibold text-indigo-950">
+                                  <td className="border border-slate-300 px-2 py-0.5 text-left text-[10px] font-semibold text-[#4A1410] align-middle">
                                     {sr.displaySubLabel}
-                                    <span className="ml-1 text-[9px] text-indigo-700">(Seq {sr.sequenceOrder})</span>
+                                    <span className="ml-1 text-[9px] text-[#9A3412]">(Seq {sr.sequenceOrder})</span>
                                   </td>
-                                  <td className="border border-slate-300 p-0.5">
+                                  <td className="border border-slate-300 p-0.5 align-middle">
                                     <input
                                       type="number"
                                       min={0}
@@ -1229,7 +1229,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                                       disabled={!row.isSelected}
                                       value={sr.demandPrincipalOrDeposit}
                                       onChange={(e) => handleRdAmountChange(rowKey, sr.subRowIndex, e.target.value)}
-                                      className="w-full px-1.5 py-0.5 text-right font-mono font-semibold text-indigo-950 bg-white/80 focus:bg-yellow-50 focus:outline-none border border-indigo-200 focus:border-primary rounded-2xs"
+                                      className="w-full px-1.5 py-0.5 text-right font-mono font-semibold text-[#4A1410] bg-white/80 focus:bg-yellow-50 focus:outline-none border border-amber-200 focus:border-primary rounded-2xs"
                                     />
                                   </td>
                                 </React.Fragment>
@@ -1240,17 +1240,17 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
                             return col.itemType === 'LOAN' ? (
                               <React.Fragment key={col.demandColumnSettingId}>
                                 {col.showBalanceColumn && (
-                                  <td className="border border-slate-300 bg-slate-100/60"></td>
+                                  <td className="border border-slate-300 bg-slate-100/60 align-middle"></td>
                                 )}
-                                <td className="border border-slate-300 bg-slate-100/60"></td>
-                                <td className="border border-slate-300 bg-slate-100/60"></td>
+                                <td className="border border-slate-300 bg-slate-100/60 align-middle"></td>
+                                <td className="border border-slate-300 bg-slate-100/60 align-middle"></td>
                               </React.Fragment>
                             ) : (
-                              <td key={col.demandColumnSettingId} className="border border-slate-300 bg-slate-100/60"></td>
+                              <td key={col.demandColumnSettingId} className="border border-slate-300 bg-slate-100/60 align-middle"></td>
                             );
                           })}
 
-                          <td className="border border-slate-300 px-2 py-0.5 text-right text-[10px] text-slate-400">
+                          <td className="border border-slate-300 px-2 py-0.5 text-right text-[10px] text-slate-400 align-middle">
                             (वर समाविष्ट)
                           </td>
                         </tr>
@@ -1406,7 +1406,7 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
       {/* Saved Notices Modal ("यादी पहा") */}
       {isListModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-3">
-          <div className="bg-white rounded shadow-xl border border-slate-300 w-full max-w-5xl max-h-[85vh] flex flex-col">
+          <div className="bg-white rounded shadow-xl border border-slate-300 w-full max-w-[97vw] xl:max-w-[1460px] max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-4 py-2.5 bg-primary text-white">
               <h3 className="font-bold text-sm">जतन केलेल्या पगार डिमान्ड नोटीस यादी (Saved Demand Notices)</h3>
               <button
@@ -1424,56 +1424,56 @@ export default function EmployeeDemandForm({ onNavigate }: EmployeeDemandFormPro
               ) : savedNotices.length === 0 ? (
                 <div className="py-8 text-center text-slate-500">अद्याप कोणतीही डिमान्ड नोटीस जतन केलेली नाही.</div>
               ) : (
-                <table className="min-w-full border-collapse text-xs">
-                  <thead className="bg-slate-100 text-slate-800">
+                <table className="min-w-full border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] text-amber-50">
                     <tr>
-                      <th className="border border-slate-300 px-2 py-1.5 text-left">नोटीस क्र.</th>
-                      <th className="border border-slate-300 px-2 py-1.5 text-left">नियोक्ता (Employer)</th>
-                      <th className="border border-slate-300 px-2 py-1.5 text-center">दिनांक (अखेर)</th>
-                      <th className="border border-slate-300 px-2 py-1.5 text-center">खातेदार</th>
-                      <th className="border border-slate-300 px-2 py-1.5 text-right">एकूण डिमान्ड</th>
-                      <th className="border border-slate-300 px-2 py-1.5 text-right">वसूल</th>
-                      <th className="border border-slate-300 px-2 py-1.5 text-right">शिल्लक</th>
-                      <th className="border border-slate-300 px-2 py-1.5 text-center">स्थिती</th>
-                      <th className="border border-slate-300 px-2 py-1.5 text-center">कृती</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">नोटीस क्र.</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">नियोक्ता (Employer)</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-center whitespace-nowrap">दिनांक (अखेर)</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-center whitespace-nowrap">खातेदार</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-right whitespace-nowrap">एकूण डिमान्ड</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-right whitespace-nowrap">वसूल</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-right whitespace-nowrap">शिल्लक</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-center whitespace-nowrap">स्थिती</th>
+                      <th className="border border-amber-400/25 px-2 py-1.5 text-center whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
                   <tbody>
                     {savedNotices.map((n) => (
                       <tr key={n.demandNoticeId} className="hover:bg-slate-50">
-                        <td className="border border-slate-300 px-2 py-1.5 font-mono font-bold text-primary">
+                        <td className="border border-slate-300 px-2 py-1 font-mono font-bold text-primary align-middle">
                           {n.noticeNumber}
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 font-semibold">{n.employerName}</td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center">
+                        <td className="border border-slate-300 px-2 py-1 font-semibold align-middle">{n.employerName}</td>
+                        <td className="border border-slate-300 px-2 py-1 text-center align-middle">
                           {(n.demandDate || '').split('T')[0]}
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center">
+                        <td className="border border-slate-300 px-2 py-1 text-center align-middle">
                           {n.recoveredMemberCount}/{n.memberCount}
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-right font-mono font-semibold">
+                        <td className="border border-slate-300 px-2 py-1 text-right font-mono font-semibold align-middle">
                           ₹{fmtDec(n.totalDemandAmount)}
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-right font-mono text-emerald-700">
+                        <td className="border border-slate-300 px-2 py-1 text-right font-mono text-emerald-700 align-middle">
                           ₹{fmtDec(n.totalRecoveredAmount)}
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-right font-mono font-bold text-rose-700">
+                        <td className="border border-slate-300 px-2 py-1 text-right font-mono font-bold text-rose-700 align-middle">
                           ₹{fmtDec(n.pendingAmount)}
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center">
+                        <td className="border border-slate-300 px-2 py-1 text-center align-middle">
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               n.status === 'Received'
                                 ? 'bg-green-100 text-green-800'
                                 : n.status === 'PartiallyReceived'
                                 ? 'bg-amber-100 text-amber-800'
-                                : 'bg-blue-100 text-blue-800'
+                                : 'bg-amber-100 text-[#7C2418]'
                             }`}
                           >
                             {n.status}
                           </span>
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center">
+                        <td className="border border-slate-300 px-2 py-1 text-center align-middle">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"

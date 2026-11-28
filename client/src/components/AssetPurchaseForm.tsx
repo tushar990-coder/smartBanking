@@ -374,14 +374,14 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch)</label>
                 <select name="branchID" value={formData.purchase.branchID} onChange={handlePurchaseChange}
                   disabled={!isHeadOfficeUser(user)}
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-slate-100 disabled:text-slate-600">
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#B44814] disabled:bg-slate-100 disabled:text-slate-600">
                   {(isHeadOfficeUser(user) ? branches : branches.filter((b: any) => Number(b.branchID) === effectiveBranchId)).map((b: any) => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
                 </select>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">विक्रेत्याचे नाव (Supplier Name) *</label>
                 <input type="text" name="supplierName" value={formData.purchase.supplierName} onChange={handlePurchaseChange} required
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                   placeholder="उदा. Shivam Electronics Pvt. Ltd." />
               </div>
               <div>
@@ -402,18 +402,18 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">बिल नंबर (Invoice No) *</label>
                 <input type="text" name="invoiceNo" value={formData.purchase.invoiceNo} onChange={handlePurchaseChange} required
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                   placeholder="उदा. INV/2026/0045" />
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">करपात्र रक्कम (Taxable Amt ₹) *</label>
                 <input type="number" name="taxableAmount" value={formData.purchase.taxableAmount || ''} onChange={handlePurchaseChange} required min="0" step="0.01"
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]" />
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">GST रक्कम (GST Amt ₹)</label>
                 <input type="number" name="gstAmount" value={formData.purchase.gstAmount || ''} onChange={handlePurchaseChange} min="0" step="0.01"
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]" />
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">एकूण रक्कम (Total Amount ₹)</label>
@@ -431,7 +431,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मालमत्ता वर्ग (Asset Category) *</label>
                 <select value={formData.categoryID} onChange={handleCategoryChange} required
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#B44814]">
                   <option value={0}>-- वर्ग निवडा --</option>
                   {categories.map((c) => <option key={c.categoryID} value={c.categoryID}>{c.categoryName}</option>)}
                 </select>
@@ -439,23 +439,23 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मालमत्ता नाव (Asset Name) *</label>
                 <input type="text" name="assetName" value={formData.assetName} onChange={handleGeneralChange} required
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                   placeholder="उदा. Dell Laptop" />
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">कोड प्रीफिक्स (Code Prefix) *</label>
                 <input type="text" name="assetCodePrefix" value={formData.assetCodePrefix} onChange={handleGeneralChange} required
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                   placeholder="उदा. DELL-HQ" />
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">नगांचे प्रमाण (Quantity) *</label>
                 <input type="number" name="quantity" value={formData.quantity} onChange={handleGeneralChange} required min="1"
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814]" />
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-100 text-blue-800 p-2 rounded-sm text-[11px] font-medium">
+            <div className="bg-amber-50 border border-amber-100 text-[#7C2418] p-2 rounded-sm text-[11px] font-medium">
               💡 हे खरेदी जतन केल्यास सिस्टीम मध्ये एकूण <strong>{formData.quantity}</strong> मालमत्ता तयार होतील 
               ज्यांचे कोड <strong>{formData.assetCodePrefix || 'PREFIX'}-001</strong> पासून 
               ते <strong>{formData.assetCodePrefix || 'PREFIX'}-{(formData.quantity).toString().padStart(3, '0')}</strong> पर्यंत असतील 
@@ -478,7 +478,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
                   <div>
                     <label className="block text-[11px] font-medium text-gray-600 mb-0.5">पेमेंट पद्धत (Payment Mode) *</label>
                     <select name="paymentMode" value={formData.purchase.paymentMode} onChange={handlePurchaseChange}
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#B44814]">
                       <option value="Bank">बँक खाते (Bank Payment)</option>
                       <option value="Cash">रोख रक्कम (Cash Payment)</option>
                       <option value="Credit">उधार खरेदी (Credit / Supplier)</option>
@@ -487,7 +487,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
                   <div>
                     <label className="block text-[11px] font-medium text-gray-600 mb-0.5">नावे खाते (Debit Asset Ledger) *</label>
                     <select name="debitLedgerID" value={formData.debitLedgerID} onChange={handleGeneralChange} required
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#B44814]">
                       <option value={0}>-- मालमत्ता लेजर निवडा --</option>
                       {ledgers.map((l) => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                     </select>
@@ -512,7 +512,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
                     <div>
                       <label className="block text-[11px] font-medium text-gray-600 mb-0.5">जमा उधार खाते (Credit Supplier Ledger) *</label>
                       <select name="creditLedgerID" value={formData.creditLedgerID} onChange={handleGeneralChange} required
-                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#B44814]">
                         <option value={0}>-- सप्लायर खाते निवडा --</option>
                         {ledgers.map((l) => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                       </select>

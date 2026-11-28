@@ -1739,7 +1739,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       className="p-2.5 sm:p-3.5 w-full min-h-full font-sans text-xs"
       style={{
         background:
-          'linear-gradient(135deg, #eef2ff 0%, #f8fbff 45%, #e0f2fe 100%)',
+          'linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 45%, #FEF3E2 100%)',
       }}
     >
       <div className="max-w-[1680px] mx-auto space-y-3">
@@ -1771,27 +1771,27 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       )}
       
       {/* Outer Aurora Container */}
-      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.09)] border border-blue-200/75 overflow-hidden flex flex-col">
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_8px_28px_rgba(124,36,24,0.09)] border border-amber-200/75 overflow-hidden flex flex-col">
         
         {/* Aurora Sapphire Header Banner */}
         <div
           className="px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2"
           style={{
             background:
-              'linear-gradient(125deg, #0F2454 0%, #1E3A8A 46%, #2563EB 82%, #4F46E5 100%)',
+              'linear-gradient(125deg, #5A1A14 0%, #7C2418 46%, #B44814 82%, #B44814 100%)',
           }}
         >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shadow-xs shrink-0">
-              <UserGroupIcon className="w-5 h-5 text-sky-200" />
+              <UserGroupIcon className="w-5 h-5 text-amber-200" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-extrabold tracking-tight flex items-center gap-2 flex-wrap">
                 <span>पिग्मी दैनंदिन जमा</span>
-                <span className="text-[11px] font-semibold text-sky-200 hidden sm:inline">(Pigmy Deposit Collection Center)</span>
+                <span className="text-[11px] font-semibold text-amber-200 hidden sm:inline">(Pigmy Deposit Collection Center)</span>
                 {isPassingMode && <span className="ml-1 text-[10.5px] font-bold text-amber-100 bg-amber-600/60 px-2 py-0.5 rounded-full border border-amber-300/50">फक्त वाचन मोड</span>}
               </h2>
-              <p className="text-[11px] text-blue-100/90 font-medium">एजंटनिहाय बल्क कलेक्शन पत्रक, एकल खाते नोंदणी आणि मोबाईल अ‍ॅप सिंक ताळमेळ</p>
+              <p className="text-[11px] text-amber-100/90 font-medium">एजंटनिहाय बल्क कलेक्शन पत्रक, एकल खाते नोंदणी आणि मोबाईल अ‍ॅप सिंक ताळमेळ</p>
             </div>
           </div>
 
@@ -1811,12 +1811,12 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         <div className="p-3.5 space-y-3.5">
 
           {/* Aurora Mode Navigation Tabs */}
-          <div className="inline-flex flex-wrap items-center p-1 bg-[#eff6ff] rounded-xl border border-blue-200/80 gap-1 print:hidden">
+          <div className="inline-flex flex-wrap items-center p-1 bg-[#FDF2EE] rounded-xl border border-amber-200/80 gap-1 print:hidden">
             <button
               type="button"
               onClick={() => setActiveTab('bulk')}
               className={`px-3 py-1.5 text-[11.5px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
-                activeTab === 'bulk' ? 'bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
+                activeTab === 'bulk' ? 'bg-gradient-to-r from-[#B44814] to-[#B44814] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
               }`}
             >
               <UserGroupIcon className="w-3.5 h-3.5" />
@@ -1827,7 +1827,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               type="button"
               onClick={() => setActiveTab('monthly')}
               className={`px-3 py-1.5 text-[11.5px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
-                activeTab === 'monthly' ? 'bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
+                activeTab === 'monthly' ? 'bg-gradient-to-r from-[#B44814] to-[#B44814] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
               }`}
             >
               <CalendarDaysIcon className="w-3.5 h-3.5" />
@@ -1838,7 +1838,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               type="button"
               onClick={() => setActiveTab('manual')}
               className={`px-3 py-1.5 text-[11.5px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
-                activeTab === 'manual' ? 'bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
+                activeTab === 'manual' ? 'bg-gradient-to-r from-[#B44814] to-[#B44814] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
               }`}
             >
               <PlusIcon className="w-3.5 h-3.5" />
@@ -1849,7 +1849,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               type="button"
               onClick={() => setActiveTab('app')}
               className={`px-3 py-1.5 text-[11.5px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
-                activeTab === 'app' ? 'bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
+                activeTab === 'app' ? 'bg-gradient-to-r from-[#B44814] to-[#B44814] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
               }`}
             >
               <DevicePhoneMobileIcon className="w-3.5 h-3.5" />
@@ -1860,7 +1860,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               type="button"
               onClick={() => setActiveTab('history')}
               className={`px-3 py-1.5 text-[11.5px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
-                activeTab === 'history' ? 'bg-gradient-to-r from-[#1D8CF8] to-[#2563EB] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
+                activeTab === 'history' ? 'bg-gradient-to-r from-[#B44814] to-[#B44814] text-white shadow-xs' : 'text-[#1E3A5F] hover:bg-white/80'
               }`}
             >
               <ClockIcon className="w-3.5 h-3.5" />
@@ -1873,14 +1873,14 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         <div className="space-y-3">
           
           {/* Header Controls: Select Agent, Scheme & Date */}
-          <div className="bg-[#f8fbff] p-3 rounded-xl border border-blue-200/75 shadow-2xs grid grid-cols-1 md:grid-cols-5 gap-2.5">
+          <div className="bg-[#FFFBF7] p-3 rounded-xl border border-amber-200/75 shadow-2xs grid grid-cols-1 md:grid-cols-5 gap-2.5">
             
             {/* SELECT AGENT */}
             <div>
               <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center justify-between">
                 <span>१. पिग्मी एजंट निवडा (Select Agent) *</span>
                 {selectedAgentId && (
-                  <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.5 rounded-sm">
+                  <span className="text-[10px] bg-amber-100 text-[#7C2418] font-bold px-1.5 py-0.5 rounded-sm">
                     {totalSheetCount} खाती उपलब्ध
                   </span>
                 )}
@@ -1891,7 +1891,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   setSelectedAgentId(e.target.value ? Number(e.target.value) : '');
                   setBulkAmounts({});
                 }}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               >
                 <option value="">-- पिग्मी एजंट निवडा --</option>
                 {agents.map((a) => {
@@ -1917,7 +1917,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   setSelectedBulkSchemeId(e.target.value ? Number(e.target.value) : '');
                   setBulkAmounts({});
                 }}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               >
                 <option value="">-- सर्व योजना (All Schemes) --</option>
                 {schemes.filter(s => !s.status || s.status === 'Active').map((s) => (
@@ -1944,7 +1944,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 type="date"
                 value={collectionDate || activeBusinessDate}
                 onChange={(e) => setCollectionDate(e.target.value)}
-                className={`w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-400 ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800' : 'bg-white text-gray-900 border-amber-400'}`}
+                className={`w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814] ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800' : 'bg-white text-gray-900 border-amber-400'}`}
                 disabled={!allowDateOverride}
                 readOnly={!allowDateOverride}
               />
@@ -1983,7 +1983,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   placeholder="नाव, खाते क्र. किंवा मोबाईल..."
                   value={sheetSearchTerm}
                   onChange={(e) => setSheetSearchTerm(e.target.value)}
-                  className="w-full pl-7 pr-2 py-1 border border-gray-300 rounded-sm bg-white text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full pl-7 pr-2 py-1 border border-gray-300 rounded-sm bg-white text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                 />
               </div>
             </div>
@@ -2000,7 +2000,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   setBulkPaymentMode(mode);
                   if (mode === 'Cash') setBulkBankLedgerId(0);
                 }}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               >
                 <option value="Cash">💵 रोख (Cash)</option>
                 <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
@@ -2008,7 +2008,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             </div>
 
             {bulkPaymentMode === 'Bank' && (
-              <div className="md:col-span-5 bg-blue-50/70 p-2 rounded border border-blue-200">
+              <div className="md:col-span-5 bg-amber-50/70 p-2 rounded border border-amber-200">
                 <BankLedgerSelect
                   value={bulkBankLedgerId}
                   onChange={setBulkBankLedgerId}
@@ -2020,11 +2020,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
           {/* Daily Excel Tools Bar */}
           {selectedAgentId && (
-            <div className="bg-blue-50/70 p-2 rounded border border-blue-200 flex flex-wrap items-center justify-between gap-2 print:hidden">
-              <div className="flex items-center gap-1.5 text-xs text-blue-900 font-bold">
-                <DocumentArrowUpIcon className="w-4 h-4 text-blue-600" />
+            <div className="bg-amber-50/70 p-2 rounded border border-amber-200 flex flex-wrap items-center justify-between gap-2 print:hidden">
+              <div className="flex items-center gap-1.5 text-xs text-[#5A1A14] font-bold">
+                <DocumentArrowUpIcon className="w-4 h-4 text-[#B44814]" />
                 <span>दैनिक एक्सेल टूल्स (Daily Excel Tools)</span>
-                <span className="text-[10px] text-blue-700 font-normal">
+                <span className="text-[10px] text-[#9A3412] font-normal">
                   (निवडलेल्या {collectionDate} तारखेपर्यंतची सक्रिय खाती)
                 </span>
               </div>
@@ -2032,9 +2032,9 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 <button
                   type="button"
                   onClick={handleDownloadDailyTemplate}
-                  className="px-2.5 py-1 bg-white hover:bg-blue-50 text-blue-700 font-bold rounded-sm border border-blue-300 shadow-2xs flex items-center gap-1.5 text-[11px] cursor-pointer"
+                  className="px-2.5 py-1 bg-white hover:bg-amber-50 text-[#9A3412] font-bold rounded-sm border border-amber-300 shadow-2xs flex items-center gap-1.5 text-[11px] cursor-pointer"
                 >
-                  <ArrowDownTrayIcon className="w-3.5 h-3.5 text-blue-600" />
+                  <ArrowDownTrayIcon className="w-3.5 h-3.5 text-[#B44814]" />
                   <span>📥 दैनिक टेम्पलेट डाउनलोड</span>
                 </button>
 
@@ -2076,11 +2076,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             <div className="space-y-3">
               
               {/* Sheet Instructions */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-blue-50/80 border border-blue-200 rounded-sm p-2 text-xs text-blue-900">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-amber-50/80 border border-amber-200 rounded-sm p-2 text-xs text-[#5A1A14]">
                 <div className="flex items-center gap-1.5">
                   <SparklesIcon className="w-4 h-4 text-primary shrink-0" />
                   <span>
-                    <strong>रॅपिड एंट्री टीप:</strong> आजची जमा रक्कम टाकून कीबोर्डवरील <kbd className="px-1.5 py-0.2 bg-white border border-blue-300 rounded-sm font-mono font-bold text-[10px]">Enter</kbd> दाबल्यास आपोआप पुढील ओळीवर फोकस होईल.
+                    <strong>रॅपिड एंट्री टीप:</strong> आजची जमा रक्कम टाकून कीबोर्डवरील <kbd className="px-1.5 py-0.2 bg-white border border-amber-300 rounded-sm font-mono font-bold text-[10px]">Enter</kbd> दाबल्यास आपोआप पुढील ओळीवर फोकस होईल.
                   </span>
                 </div>
                 <button
@@ -2112,22 +2112,22 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                     खालील खाती या एजंटशी किंवा सिस्टीमशी जुळली नाहीत, म्हणून त्यांची रक्कम वगळली गेली आहे:
                   </p>
                   <div className="overflow-x-auto max-h-40 border border-red-200 rounded-sm bg-white">
-                    <table className="w-full text-left text-[11px] border-collapse">
+                    <table className="w-full text-left text-[11px] border-collapse leading-tight">
                       <thead className="bg-red-100/70 text-red-900 border-b border-red-200">
                         <tr>
-                          <th className="p-1.5 font-bold border-r border-red-200">अ.क्र.</th>
-                          <th className="p-1.5 font-bold border-r border-red-200">एक्सेलमधील खाते क्र.</th>
-                          <th className="p-1.5 font-bold text-right border-r border-red-200">एक्सेल रक्कम</th>
-                          <th className="p-1.5 font-bold">अवैध असण्याचे कारण</th>
+                          <th className="p-1.5 font-bold border-r border-red-200 whitespace-nowrap">अ.क्र.</th>
+                          <th className="p-1.5 font-bold border-r border-red-200 whitespace-nowrap">एक्सेलमधील खाते क्र.</th>
+                          <th className="p-1.5 font-bold text-right border-r border-red-200 whitespace-nowrap">एक्सेल रक्कम</th>
+                          <th className="p-1.5 font-bold whitespace-nowrap">अवैध असण्याचे कारण</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-red-100">
                         {dailyInvalidImports.map((inv, i) => (
                           <tr key={i} className="hover:bg-red-50">
-                            <td className="p-1 text-center font-mono text-gray-500 border-r border-red-100">{i + 1}</td>
-                            <td className="p-1 font-mono font-bold text-red-700 border-r border-red-100">{inv.rawAcc}</td>
-                            <td className="p-1 text-right font-mono font-bold text-red-700 border-r border-red-100">₹ {inv.rawAmt.toLocaleString('en-IN')}</td>
-                            <td className="p-1 text-red-800 font-medium">{inv.reason}</td>
+                            <td className="p-1 text-center font-mono text-gray-500 border-r border-red-100 align-middle">{i + 1}</td>
+                            <td className="p-1 font-mono font-bold text-red-700 border-r border-red-100 align-middle">{inv.rawAcc}</td>
+                            <td className="p-1 text-right font-mono font-bold text-red-700 border-r border-red-100 align-middle">₹ {inv.rawAmt.toLocaleString('en-IN')}</td>
+                            <td className="p-1 text-red-800 font-medium align-middle">{inv.reason}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2138,21 +2138,21 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
               {/* Table Sheet */}
               <div className="overflow-x-auto border border-gray-200 rounded-sm shadow-2xs">
-                <table className="w-full text-xs text-left border-collapse bg-white">
+                <table className="w-full text-[11px] text-left border-collapse bg-white leading-tight">
                   <thead>
-                    <tr className="bg-gray-100 text-gray-700 text-[11px] font-bold uppercase tracking-wider border-b border-gray-200">
-                      <th className="py-2 px-2.5 text-center w-10 border-r border-gray-200">#</th>
-                      <th className="py-2 px-2.5 border-r border-gray-200">खाते क्रमांक (Account No)</th>
-                      <th className="py-2 px-2.5 border-r border-gray-200">पिग्मी योजना (Scheme)</th>
-                      <th className="py-2 px-2.5 border-r border-gray-200">खातेदाराचे नाव (Customer Name)</th>
-                      <th className="py-2 px-2.5 border-r border-gray-200">मोबाईल नंबर (Mobile)</th>
-                      <th className="py-2 px-2.5 text-right border-r border-gray-200">सध्याची जमा ठेव (Current ₹)</th>
-                      <th className="py-2 px-3 text-right bg-emerald-100/70 text-emerald-900 font-extrabold">
+                    <tr className="bg-[#5A1A14] text-amber-50 text-[11px] font-bold uppercase tracking-wider border-b border-amber-400/30">
+                      <th className="py-1.5 px-2.5 text-center w-10 border-r border-amber-400/25 whitespace-nowrap">#</th>
+                      <th className="py-1.5 px-2.5 border-r border-amber-400/25 whitespace-nowrap">खाते क्रमांक (Account No)</th>
+                      <th className="py-1.5 px-2.5 border-r border-amber-400/25 whitespace-nowrap">पिग्मी योजना (Scheme)</th>
+                      <th className="py-1.5 px-2.5 border-r border-amber-400/25 whitespace-nowrap">खातेदाराचे नाव (Customer Name)</th>
+                      <th className="py-1.5 px-2.5 border-r border-amber-400/25 whitespace-nowrap">मोबाईल नंबर (Mobile)</th>
+                      <th className="py-1.5 px-2.5 text-right border-r border-amber-400/25 whitespace-nowrap">सध्याची जमा ठेव (Current ₹)</th>
+                      <th className="py-1.5 px-2 text-right bg-emerald-100/70 text-emerald-900 font-extrabold whitespace-nowrap">
                         आजची जमा रक्कम (Collection Amount ₹)
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-xs">
+                  <tbody className="divide-y divide-amber-100 text-xs">
                     {filteredAgentAccounts.map((acc, index) => {
                       const accId = acc.pigmyAccountID;
                       const customerName = getCustomerFullName(acc.customer);
@@ -2163,33 +2163,33 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                         <tr 
                           key={accId} 
                           className={`transition-colors ${
-                            hasEntered ? 'bg-emerald-50/80 font-semibold' : 'hover:bg-blue-50/40'
+                            hasEntered ? 'bg-emerald-50/80 font-semibold' : 'hover:bg-amber-50/40'
                           }`}
                         >
-                          <td className="py-1.5 px-2.5 text-center font-mono text-gray-500 font-bold border-r border-gray-200">
+                          <td className="py-1 px-2.5 text-center font-mono text-gray-500 font-bold border-r border-gray-200 align-middle">
                             {index + 1}
                           </td>
-                          <td className="py-1.5 px-2.5 font-mono font-bold text-primary border-r border-gray-200">
+                          <td className="py-1 px-2.5 font-mono font-bold text-primary border-r border-gray-200 align-middle">
                             <div>{format14DigitDisplay(acc.accountNo)}</div>
                             {(acc as any).legacyAccountNumber && (
                               <div className="text-[10px] text-amber-700 font-bold">जुना: {(acc as any).legacyAccountNumber}</div>
                             )}
                           </td>
-                          <td className="py-1.5 px-2.5 border-r border-gray-200">
-                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-bold">
+                          <td className="py-1 px-2.5 border-r border-gray-200 align-middle">
+                            <span className="px-1.5 py-0.5 rounded bg-orange-50 text-[#7C2418] border border-amber-200 text-[10px] font-bold">
                               {getAccountSchemeName(acc) || '-'}
                             </span>
                           </td>
-                          <td className="py-1.5 px-2.5 font-bold text-gray-900 border-r border-gray-200">
+                          <td className="py-1 px-2.5 font-bold text-gray-900 border-r border-gray-200 align-middle">
                             {customerName}
                           </td>
-                          <td className="py-1.5 px-2.5 font-mono text-gray-600 border-r border-gray-200">
+                          <td className="py-1 px-2.5 font-mono text-gray-600 border-r border-gray-200 align-middle">
                             {acc.customer?.mobileNo || '-'}
                           </td>
-                          <td className="py-1.5 px-2.5 text-right font-mono font-bold text-gray-700 border-r border-gray-200">
+                          <td className="py-1 px-2.5 text-right font-mono font-bold text-gray-700 border-r border-gray-200 align-middle">
                             ₹ {currentBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
-                          <td className="py-1 px-2.5 bg-emerald-50/40">
+                          <td className="py-1 px-2.5 bg-emerald-50/40 align-middle">
                             <input
                               ref={(el) => (inputRefs.current[accId] = el)}
                               type="number"
@@ -2227,15 +2227,15 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 
                 <div className="grid grid-cols-3 gap-4 text-xs w-full md:w-auto">
                   <div>
-                    <span className="text-blue-100 text-[10px] block font-medium uppercase">एकूण खाती</span>
+                    <span className="text-amber-100 text-[10px] block font-medium uppercase">एकूण खाती</span>
                     <span className="font-mono font-bold text-sm text-white">{totalSheetCount}</span>
                   </div>
                   <div>
-                    <span className="text-blue-100 text-[10px] block font-medium uppercase">जमा खाती</span>
+                    <span className="text-amber-100 text-[10px] block font-medium uppercase">जमा खाती</span>
                     <span className="font-mono font-bold text-sm text-emerald-300">{collectedCount}</span>
                   </div>
                   <div>
-                    <span className="text-blue-100 text-[10px] block font-medium uppercase">एकूण रोख जमा (Remittance)</span>
+                    <span className="text-amber-100 text-[10px] block font-medium uppercase">एकूण रोख जमा (Remittance)</span>
                     <span className="font-mono font-extrabold text-base text-yellow-300">
                       ₹ {totalBulkRemittance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </span>
@@ -2293,7 +2293,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                       else window.location.href = '/?tab=pigmy-daybook';
                     }
                   }}
-                  className="text-[11px] bg-blue-700 hover:bg-blue-800 text-white px-2.5 py-1 rounded-sm font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-xs"
+                  className="text-[11px] bg-[#9A3412] hover:bg-[#7C2418] text-white px-2.5 py-1 rounded-sm font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-xs"
                 >
                   📖 एजंट डे बुक (कॅश भरणा) वर जा ➔
                 </button>
@@ -2323,7 +2323,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   setMonthlyImportPreview(null);
                   setExistingMonthlyWarning(null);
                 }}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               >
                 <option value="">-- पिग्मी एजंट निवडा --</option>
                 {agents.map((a) => {
@@ -2350,7 +2350,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   setMonthlyImportPreview(null);
                   setExistingMonthlyWarning(null);
                 }}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               >
                 <option value="">-- सर्व योजना (All Schemes) --</option>
                 {schemes.filter(s => !s.status || s.status === 'Active').map((s) => (
@@ -2374,7 +2374,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   setMonthlyImportPreview(null);
                   setExistingMonthlyWarning(null);
                 }}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               />
             </div>
 
@@ -2390,7 +2390,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   setMonthlyPaymentMode(mode);
                   if (mode === 'Cash') setMonthlyBankLedgerId(0);
                 }}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
               >
                 <option value="Cash">💵 रोख (Cash)</option>
                 <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
@@ -2403,9 +2403,9 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 type="button"
                 onClick={handleDownloadMonthlyTemplate}
                 disabled={!selectedMonthlyAgentId}
-                className="flex-1 px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-700 font-bold rounded-sm border border-blue-300 shadow-2xs flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-2.5 py-1.5 bg-white hover:bg-amber-50 text-[#9A3412] font-bold rounded-sm border border-amber-300 shadow-2xs flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <ArrowDownTrayIcon className="w-4 h-4 text-blue-600" />
+                <ArrowDownTrayIcon className="w-4 h-4 text-[#B44814]" />
                 <span>📥 मासिक टेम्पलेट</span>
               </button>
 
@@ -2428,7 +2428,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             </div>
 
             {monthlyPaymentMode === 'Bank' && (
-              <div className="md:col-span-5 bg-blue-50/70 p-2 rounded border border-blue-200">
+              <div className="md:col-span-5 bg-amber-50/70 p-2 rounded border border-amber-200">
                 <BankLedgerSelect
                   value={monthlyBankLedgerId}
                   onChange={setMonthlyBankLedgerId}
@@ -2447,8 +2447,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 तुम्ही संपूर्ण महिन्याचे (१ ते ३०/३१ तारखांचे) कलेक्शन एकाच एक्सेल चार्टद्वारे थेट आयात करू शकता.
                 'डेली पिग्मि कलेक्शन चार्ट format' किंवा 'मासिक टेम्पलेट' फाईल वापरून अपलोड करा.
               </p>
-              <div className="inline-flex items-center gap-2 text-[11px] text-blue-700 bg-blue-50 px-3 py-1 rounded border border-blue-200">
-                <ShieldCheckIcon className="w-4 h-4 text-blue-600" />
+              <div className="inline-flex items-center gap-2 text-[11px] text-[#9A3412] bg-amber-50 px-3 py-1 rounded border border-amber-200">
+                <ShieldCheckIcon className="w-4 h-4 text-[#B44814]" />
                 <span>खाते उघडल्याच्या तारखेची (Opening Date) आपोआप पडताळणी केली जाते.</span>
               </div>
             </div>
@@ -2489,12 +2489,12 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
               {/* Scheme-Wise Collection Breakup */}
               {monthlyImportPreview.schemeSummary && monthlyImportPreview.schemeSummary.length > 0 && (
-                <div className="bg-indigo-50/80 border border-indigo-200 rounded p-2.5 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-bold text-indigo-950">📊 योजनेनिहाय संकलन गोषवारा:</span>
+                <div className="bg-orange-50/80 border border-amber-200 rounded p-2.5 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold text-[#4A1410]">📊 योजनेनिहाय संकलन गोषवारा:</span>
                   {monthlyImportPreview.schemeSummary.map(ss => (
                     <span
                       key={`ms-${ss.schemeId}`}
-                      className="px-2.5 py-0.5 rounded bg-white border border-indigo-300 text-indigo-900 font-semibold shadow-2xs flex items-center gap-1.5"
+                      className="px-2.5 py-0.5 rounded bg-white border border-amber-300 text-[#5A1A14] font-semibold shadow-2xs flex items-center gap-1.5"
                     >
                       <span>{ss.schemeName}</span>
                       <span className="text-[10px] text-gray-500">({ss.accountsCount} खाती)</span>
@@ -2609,24 +2609,24 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 </div>
 
                 <div className="overflow-x-auto max-h-96">
-                  <table className="w-full text-left border-collapse text-[11px]">
-                    <thead className="bg-gray-100 text-gray-700 sticky top-0 border-b border-gray-300 z-10">
+                  <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                    <thead className="bg-[#5A1A14] text-amber-50 sticky top-0 border-b border-amber-400/30 z-10">
                       <tr>
-                        <th className="p-1.5 font-bold border-r border-gray-300 w-8 text-center">अ.क्र.</th>
-                        <th className="p-1.5 font-bold border-r border-gray-300 min-w-[140px]">खाते क्र. (A/C No)</th>
-                        <th className="p-1.5 font-bold border-r border-gray-300 min-w-[150px]">खातेदाराचे नाव</th>
+                        <th className="p-1.5 font-bold border-r border-amber-400/25 w-8 text-center whitespace-nowrap">अ.क्र.</th>
+                        <th className="p-1.5 font-bold border-r border-amber-400/25 min-w-[140px] whitespace-nowrap">खाते क्र. (A/C No)</th>
+                        <th className="p-1.5 font-bold border-r border-amber-400/25 min-w-[150px] whitespace-nowrap">खातेदाराचे नाव</th>
                         {monthlyImportPreview.columns.map((col, idx) => (
-                          <th key={idx} className="p-1 font-bold border-r border-gray-300 text-center min-w-[50px] whitespace-nowrap bg-gray-100">
+                          <th key={idx} className="p-1 font-bold border-r border-amber-400/25 text-center min-w-[50px] whitespace-nowrap bg-[#5A1A14]">
                             {col}
                           </th>
                         ))}
-                        <th className="p-1.5 font-bold text-right min-w-[100px] bg-blue-50 text-blue-900 border-l border-gray-300 whitespace-nowrap">
+                        <th className="p-1.5 font-bold text-right min-w-[100px] bg-amber-50 text-[#5A1A14] border-l border-amber-400/25 whitespace-nowrap">
                           एकूण जमा (Total)
                         </th>
-                        <th className="p-1.5 font-bold text-center w-24 whitespace-nowrap bg-gray-100 border-l border-gray-300">स्थिती (Status)</th>
+                        <th className="p-1.5 font-bold text-center w-24 whitespace-nowrap bg-[#5A1A14] border-l border-amber-400/25">स्थिती (Status)</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-amber-100">
                       {monthlyImportPreview.rows
                         .filter(r => {
                           if (previewFilter === 'valid') return r.isValid && r.pigmyAccountId > 0;
@@ -2639,15 +2639,15 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                             <tr key={idx} className={`transition-colors ${
                               isInvalid 
                                 ? 'bg-red-50/70 hover:bg-red-100/70 border-l-4 border-l-red-600' 
-                                : 'hover:bg-blue-50/40'
+                                : 'hover:bg-amber-50/40'
                             }`}>
-                              <td className="p-1.5 text-center text-gray-500 border-r border-gray-200">{idx + 1}</td>
-                              <td className="p-1.5 font-mono font-bold border-r border-gray-200 whitespace-nowrap">
+                              <td className="p-1.5 text-center text-gray-500 border-r border-gray-200 align-middle">{idx + 1}</td>
+                              <td className="p-1.5 font-mono font-bold border-r border-gray-200 whitespace-nowrap align-middle">
                                 <span className={isInvalid ? "text-red-700 font-extrabold" : "text-gray-900"}>
                                   {row.pigmyAccountId > 0 ? format14DigitDisplay(row.accountNo) : (row.accountNo || 'अवैध खाते')}
                                 </span>
                                 {row.schemeName && (
-                                  <div className={`text-[10px] font-bold mt-0.5 ${isInvalid ? 'text-red-600' : 'text-indigo-700'}`}>
+                                  <div className={`text-[10px] font-bold mt-0.5 ${isInvalid ? 'text-red-600' : 'text-[#9A3412]'}`}>
                                     {row.schemeName}
                                   </div>
                                 )}
@@ -2657,7 +2657,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                                   </div>
                                 )}
                               </td>
-                              <td className="p-1.5 border-r border-gray-200 whitespace-nowrap">
+                              <td className="p-1.5 border-r border-gray-200 whitespace-nowrap align-middle">
                                 <div className={isInvalid ? "font-bold text-red-900" : "text-gray-800"}>
                                   {row.customerName}
                                 </div>
@@ -2683,11 +2683,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                                 );
                               })}
                               <td className={`p-1.5 text-right font-mono font-black border-l border-gray-200 whitespace-nowrap ${
-                                isInvalid ? 'text-red-700 bg-red-100/50 line-through' : 'text-primary bg-blue-50/50'
+                                isInvalid ? 'text-red-700 bg-red-100/50 line-through' : 'text-primary bg-amber-50/50'
                               }`}>
                                 ₹ {row.rowTotal.toLocaleString('en-IN')}
                               </td>
-                              <td className="p-1.5 text-center border-l border-gray-200 whitespace-nowrap">
+                              <td className="p-1.5 text-center border-l border-gray-200 whitespace-nowrap align-middle">
                                 {isInvalid ? (
                                   <span className="px-2 py-0.5 bg-red-100 text-red-800 text-[10px] font-black rounded-sm border border-red-300 shadow-2xs">
                                     ❌ अवैध खाते
@@ -2757,7 +2757,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   });
 
                   return (
-                    <div className="mx-3 my-2 p-2.5 bg-blue-50/90 border border-blue-200 rounded-sm text-[11px] text-blue-900 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                    <div className="mx-3 my-2 p-2.5 bg-amber-50/90 border border-amber-200 rounded-sm text-[11px] text-[#5A1A14] flex flex-wrap items-center justify-between gap-2 shadow-2xs">
                       <div className="flex items-center gap-1.5">
                         <span className="text-base">📑</span>
                         <span>
@@ -2796,7 +2796,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                     className={`px-4 py-1.5 font-bold rounded-sm shadow-sm flex items-center gap-2 text-xs transition-all ${
                       existingMonthlyWarning || monthlyImportPreview.hasFutureDates
                         ? 'bg-red-100 text-red-700 border border-red-300 cursor-not-allowed' 
-                        : 'bg-primary hover:bg-blue-800 text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+                        : 'bg-primary hover:bg-[#7C2418] text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
                   >
                     {monthlySaving ? (
@@ -2859,15 +2859,15 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                         });
                         setShowMultiPigmyModal(true);
                       }}
-                      className="text-[10px] text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
+                      className="text-[10px] text-[#9A3412] hover:text-[#5A1A14] font-bold flex items-center gap-1 cursor-pointer bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-200 transition-colors"
                     >
-                      <CreditCardIcon className="w-3 h-3 text-blue-600" />
+                      <CreditCardIcon className="w-3 h-3 text-[#B44814]" />
                       <span>खातेदाराची {customerMatchingPigmys.length} पिग्मी खाती उपलब्ध (खाते निवडा ⚡)</span>
                     </button>
                   )}
                 </div>
                 <select 
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                   value={manualForm.pigmyAccountId}
                   onChange={(e) => setManualForm({...manualForm, pigmyAccountId: e.target.value})}
                   required
@@ -2882,7 +2882,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               </div>
 
               {selectedSingleAccount && (
-                <div className="md:col-span-2 bg-blue-50/80 p-2.5 rounded-sm border border-blue-200 flex items-center justify-between text-xs">
+                <div className="md:col-span-2 bg-amber-50/80 p-2.5 rounded-sm border border-amber-200 flex items-center justify-between text-xs">
                   <div>
                     <p className="text-[10px] text-gray-500 font-bold uppercase">सध्याची एकूण ठेव (Current Balance)</p>
                     <p className="text-sm font-extrabold text-primary font-mono">
@@ -2907,7 +2907,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 </div>
                 <input 
                   type="date" 
-                  className={`w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-400 ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800' : 'bg-white border-amber-400'}`}
+                  className={`w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814] ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800' : 'bg-white border-amber-400'}`}
                   value={manualForm.collectionDate || activeBusinessDate}
                   onChange={(e) => setManualForm({...manualForm, collectionDate: e.target.value})}
                   required
@@ -2922,7 +2922,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   type="number" 
                   min="1"
                   step="0.01"
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-mono font-extrabold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-mono font-extrabold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                   value={manualForm.collectionAmount}
                   onChange={(e) => setManualForm({...manualForm, collectionAmount: e.target.value})}
                   placeholder="0.00"
@@ -2940,7 +2940,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                     if (mode === 'Cash') setManualBankLedgerId(0);
                   }}
                   disabled={isPassingMode}
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                 >
                   <option value="Cash">💵 रोख (Cash)</option>
                   <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
@@ -2948,7 +2948,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               </div>
 
               {manualPaymentMode === 'Bank' && (
-                <div className="md:col-span-2 bg-blue-50/70 p-2.5 rounded border border-blue-200">
+                <div className="md:col-span-2 bg-amber-50/70 p-2.5 rounded border border-amber-200">
                   <BankLedgerSelect
                     value={manualBankLedgerId}
                     onChange={setManualBankLedgerId}
@@ -2964,7 +2964,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 <button 
                   type="submit" 
                   disabled={loading}
-                  className="flex items-center gap-1 px-4 py-1.5 bg-primary hover:bg-[#004a75] text-white font-bold rounded-sm text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-1 px-4 py-1.5 bg-primary hover:bg-[#7C2418] text-white font-bold rounded-sm text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> : <CheckCircleIcon className="w-3.5 h-3.5" />}
                   <span>कलेक्शन सेव्ह करा (Save Collection)</span>
@@ -2980,7 +2980,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         <div className="bg-gray-50/80 p-3 rounded border border-gray-200 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-gray-200">
             <div className="flex items-center gap-2">
-              <DevicePhoneMobileIcon className="w-5 h-5 text-indigo-600" />
+              <DevicePhoneMobileIcon className="w-5 h-5 text-[#B44814]" />
               <div>
                 <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
                   मोबाईल अ‍ॅप सिंक व तपासणी (Mobile App Sync & Audit Queue)
@@ -2995,7 +2995,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   type="button"
                   onClick={() => setMobileSyncView('queue')}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded-xs transition ${
-                    mobileSyncView === 'queue' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                    mobileSyncView === 'queue' ? 'bg-[#B44814] text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
                   📡 सिंक यादी व ऑडिट (Live Queue)
@@ -3004,7 +3004,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   type="button"
                   onClick={() => setMobileSyncView('json')}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded-xs transition ${
-                    mobileSyncView === 'json' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                    mobileSyncView === 'json' ? 'bg-[#B44814] text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
                   ⚡ ऑफलाईन JSON सिंक (JSON Tool)
@@ -3017,7 +3017,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 className="p-1.5 border border-gray-300 rounded-sm bg-white hover:bg-gray-100 text-gray-700"
                 title="रिफ्रेश करा"
               >
-                <ArrowPathIcon className={`w-3.5 h-3.5 ${mobileQueueLoading ? 'animate-spin text-indigo-600' : ''}`} />
+                <ArrowPathIcon className={`w-3.5 h-3.5 ${mobileQueueLoading ? 'animate-spin text-[#B44814]' : ''}`} />
               </button>
             </div>
           </div>
@@ -3026,9 +3026,9 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             <div className="space-y-3">
               {/* Summary KPIs & Agent Filter */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                <div className="bg-white p-2.5 rounded border border-indigo-100 shadow-2xs">
+                <div className="bg-white p-2.5 rounded border border-amber-100 shadow-2xs">
                   <span className="text-[10px] text-gray-500 font-bold block uppercase">आजचे मोबाईल कलेक्शन</span>
-                  <span className="text-base font-extrabold text-indigo-700 font-mono">
+                  <span className="text-base font-extrabold text-[#9A3412] font-mono">
                     {mobileQueue?.totalCount || 0} पावत्या
                   </span>
                 </div>
@@ -3047,7 +3047,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 <div className="bg-white p-2 rounded border border-gray-200 shadow-2xs flex flex-col justify-center">
                   <label className="text-[10px] font-bold text-gray-600 uppercase mb-1">एजंटनुसार फिल्टर</label>
                   <select
-                    className="border border-gray-300 rounded-sm px-1.5 py-0.5 text-xs bg-white font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="border border-gray-300 rounded-sm px-1.5 py-0.5 text-xs bg-white font-semibold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                     value={selectedQueueAgent}
                     onChange={(e) => setSelectedQueueAgent(e.target.value ? Number(e.target.value) : '')}
                   >
@@ -3093,7 +3093,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
               {/* Live Sync Approval / Bank Ledger Controls when pending or non-CASH items exist */}
               {(pendingMobileQueueItems.length > 0 || hasNonCashInMobileQueue) && (
-                <div className="bg-white p-2.5 rounded border border-indigo-200 shadow-2xs space-y-2">
+                <div className="bg-white p-2.5 rounded border border-amber-200 shadow-2xs space-y-2">
                   <div className="flex flex-col md:flex-row md:items-end justify-between gap-2.5">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 flex-1">
                       <div>
@@ -3107,7 +3107,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                             setAppSyncPaymentMode(mode);
                             if (mode === 'Cash' && !hasNonCashInMobileQueue) setAppSyncBankLedgerId(0);
                           }}
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                         >
                           <option value="Cash">💵 रोख (Cash)</option>
                           <option value="Bank">🏦 बँक / UPI / Online (Bank)</option>
@@ -3128,7 +3128,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                         type="button"
                         onClick={handleApproveMobileQueue}
                         disabled={loading}
-                        className="px-3.5 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        className="px-3.5 py-1.5 bg-[#9A3412] hover:bg-[#7C2418] text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
                       >
                         {loading ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> : <CheckCircleIcon className="w-3.5 h-3.5" />}
                         <span>प्रलंबित सिंक व्हाउचर तयार करा ({pendingMobileQueueItems.length})</span>
@@ -3140,23 +3140,23 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
               {/* Live Collections Table */}
               <div className="overflow-x-auto border border-gray-200 rounded-sm bg-white">
-                <table className="w-full text-xs text-left border-collapse">
+                <table className="w-full text-[11px] text-left border-collapse leading-tight">
                   <thead>
-                    <tr className="bg-gray-100 text-gray-700 text-[11px] font-bold uppercase tracking-wider border-b border-gray-200">
-                      <th className="py-2 px-2.5">पावती क्रमांक (Receipt)</th>
-                      <th className="py-2 px-2.5">खाते क्रमांक (Account)</th>
-                      <th className="py-2 px-2.5">खातेदाराचे नाव (Customer)</th>
-                      <th className="py-2 px-2.5">एजंट (Agent)</th>
-                      <th className="py-2 px-2.5 text-right">रक्कम (Amount ₹)</th>
-                      <th className="py-2 px-2.5 text-center">मोड (Mode)</th>
-                      <th className="py-2 px-2.5 text-center">तपासणी स्थिती (Status)</th>
+                    <tr className="bg-[#5A1A14] text-amber-50 text-[11px] font-bold uppercase tracking-wider border-b border-amber-400/30">
+                      <th className="py-1.5 px-2.5 whitespace-nowrap">पावती क्रमांक (Receipt)</th>
+                      <th className="py-1.5 px-2.5 whitespace-nowrap">खाते क्रमांक (Account)</th>
+                      <th className="py-1.5 px-2.5 whitespace-nowrap">खातेदाराचे नाव (Customer)</th>
+                      <th className="py-1.5 px-2.5 whitespace-nowrap">एजंट (Agent)</th>
+                      <th className="py-1.5 px-2.5 text-right whitespace-nowrap">रक्कम (Amount ₹)</th>
+                      <th className="py-1.5 px-2.5 text-center whitespace-nowrap">मोड (Mode)</th>
+                      <th className="py-1.5 px-2.5 text-center whitespace-nowrap">तपासणी स्थिती (Status)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-xs">
+                  <tbody className="divide-y divide-amber-100 text-xs">
                     {mobileQueueLoading ? (
                       <tr>
                         <td colSpan={7} className="py-8 text-center text-gray-500">
-                          <ArrowPathIcon className="w-5 h-5 animate-spin mx-auto text-indigo-600 mb-1" />
+                          <ArrowPathIcon className="w-5 h-5 animate-spin mx-auto text-[#B44814] mb-1" />
                           मोबाईल सिंक माहिती लोड होत आहे...
                         </td>
                       </tr>
@@ -3168,8 +3168,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                       </tr>
                     ) : (
                       mobileQueue.items.map((item) => (
-                        <tr key={item.collectionId} className="hover:bg-indigo-50/40 transition">
-                          <td className="py-2 px-2.5 font-mono font-bold text-gray-900">
+                        <tr key={item.collectionId} className="hover:bg-orange-50/40 transition">
+                          <td className="py-1 px-2.5 font-mono font-bold text-gray-900 align-middle">
                             {item.receiptNo}
                             {item.syncReferenceId && (
                               <div className="text-[9px] text-gray-400 truncate max-w-[120px]" title={item.syncReferenceId}>
@@ -3177,21 +3177,21 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                               </div>
                             )}
                           </td>
-                          <td className="py-2 px-2.5 font-mono font-bold text-primary">{item.pigmyAccountNo}</td>
-                          <td className="py-2 px-2.5">
+                          <td className="py-1 px-2.5 font-mono font-bold text-primary align-middle">{item.pigmyAccountNo}</td>
+                          <td className="py-1 px-2.5 align-middle">
                             <div className="font-bold text-gray-900">{item.customerName || '-'}</div>
                             {item.mobileNo && <div className="text-[10px] text-gray-500 font-mono">{item.mobileNo}</div>}
                           </td>
-                          <td className="py-2 px-2.5 font-semibold text-gray-700">{item.agentName}</td>
-                          <td className="py-2 px-2.5 text-right font-mono font-bold text-emerald-700">
+                          <td className="py-1 px-2.5 font-semibold text-gray-700 align-middle">{item.agentName}</td>
+                          <td className="py-1 px-2.5 text-right font-mono font-bold text-emerald-700 align-middle">
                             ₹ {item.collectionAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
-                          <td className="py-2 px-2.5 text-center">
+                          <td className="py-1 px-2.5 text-center align-middle">
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-700 border border-gray-200">
                               {item.paymentMode || 'CASH'}
                             </span>
                           </td>
-                          <td className="py-2 px-2.5 text-center">
+                          <td className="py-1 px-2.5 text-center align-middle">
                             {item.isVoucherGenerated ? (
                               <span className="inline-flex items-center gap-0.5 text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded border border-emerald-200">
                                 <CheckCircleIcon className="w-3 h-3 text-emerald-600" /> सिंक व व्हाउचर पूर्ण
@@ -3211,16 +3211,16 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="flex justify-between items-center bg-indigo-50 border border-indigo-200 rounded p-2 text-xs text-indigo-900">
+              <div className="flex justify-between items-center bg-orange-50 border border-amber-200 rounded p-2 text-xs text-[#5A1A14]">
                 <span>
                   <strong>ऑफलाइन बॅच सिंक:</strong> मोबाईल अ‍ॅप नेटवर्क नसताना ऑफलाइन साठवलेला व्यवहार डेटा JSON स्वरूपात खाली पेस्ट करून सिंक करा.
                 </span>
-                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 font-bold text-[10px] rounded">
+                <span className="px-2 py-0.5 bg-orange-100 text-[#7C2418] font-bold text-[10px] rounded">
                   Idempotency Protected
                 </span>
               </div>
 
-              <div className="bg-white p-2.5 rounded border border-indigo-200 grid grid-cols-1 md:grid-cols-3 gap-2.5 items-end">
+              <div className="bg-white p-2.5 rounded border border-amber-200 grid grid-cols-1 md:grid-cols-3 gap-2.5 items-end">
                 <div>
                   <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
                     जमा पद्धत (Sync Payment Mode) *
@@ -3232,7 +3232,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                       setAppSyncPaymentMode(mode);
                       if (mode === 'Cash' && !hasNonCashInAppSyncJson) setAppSyncBankLedgerId(0);
                     }}
-                    className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-[#B44814]"
                   >
                     <option value="Cash">💵 रोख (Cash)</option>
                     <option value="Bank">🏦 बँक / UPI / Online (Bank)</option>
@@ -3260,7 +3260,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 <button 
                   onClick={handleAppSync}
                   disabled={loading}
-                  className="flex items-center gap-1 px-4 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-sm text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-1 px-4 py-1.5 bg-[#9A3412] hover:bg-[#7C2418] text-white font-bold rounded-sm text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> : <DocumentArrowUpIcon className="w-3.5 h-3.5" />}
                   <span>सिंक डेटा सेव्ह करा (Process Offline Sync)</span>
@@ -3330,19 +3330,19 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           </div>
 
           <div className="overflow-x-auto border border-gray-200 rounded-sm">
-            <table className="w-full text-xs text-left border-collapse">
+            <table className="w-full text-[11px] text-left border-collapse leading-tight">
               <thead>
-                <tr className="bg-gray-100 text-gray-700 text-[11px] font-bold uppercase tracking-wider border-b border-gray-200">
-                  <th className="py-2 px-2.5">पावती क्र. (Receipt No)</th>
-                  <th className="py-2 px-2.5">तारीख (Date)</th>
-                  <th className="py-2 px-2.5">खाते क्रमांक (Account)</th>
-                  <th className="py-2 px-2.5">ग्राहक (Customer)</th>
-                  <th className="py-2 px-2.5">एजंट (Agent)</th>
-                  <th className="py-2 px-2.5 text-right">जमा रक्कम (Amount ₹)</th>
-                  <th className="py-2 px-2.5 text-center">माध्यम (Source)</th>
+                <tr className="bg-[#5A1A14] text-amber-50 text-[11px] font-bold uppercase tracking-wider border-b border-amber-400/30">
+                  <th className="py-1.5 px-2.5 whitespace-nowrap">पावती क्र. (Receipt No)</th>
+                  <th className="py-1.5 px-2.5 whitespace-nowrap">तारीख (Date)</th>
+                  <th className="py-1.5 px-2.5 whitespace-nowrap">खाते क्रमांक (Account)</th>
+                  <th className="py-1.5 px-2.5 whitespace-nowrap">ग्राहक (Customer)</th>
+                  <th className="py-1.5 px-2.5 whitespace-nowrap">एजंट (Agent)</th>
+                  <th className="py-1.5 px-2.5 text-right whitespace-nowrap">जमा रक्कम (Amount ₹)</th>
+                  <th className="py-1.5 px-2.5 text-center whitespace-nowrap">माध्यम (Source)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 text-xs">
+              <tbody className="divide-y divide-amber-100 text-xs">
                 {paginatedHistory.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-gray-500 font-medium">
@@ -3351,16 +3351,16 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   </tr>
                 ) : (
                   paginatedHistory.map((item) => (
-                    <tr key={item.collectionId} className="hover:bg-blue-50/40 transition">
-                      <td className="py-2 px-2.5 font-mono font-bold text-gray-900">{item.receiptNo}</td>
-                      <td className="py-2 px-2.5">{new Date(item.collectionDate).toLocaleDateString('en-GB')}</td>
-                      <td className="py-2 px-2.5 font-mono font-bold text-primary">{item.pigmyAccountNo}</td>
-                      <td className="py-2 px-2.5 font-semibold text-gray-800">{item.customerName || '-'}</td>
-                      <td className="py-2 px-2.5 font-semibold text-gray-700">{item.agentName}</td>
-                      <td className="py-2 px-2.5 text-right font-mono font-bold text-emerald-700">
+                    <tr key={item.collectionId} className="hover:bg-amber-50/40 transition">
+                      <td className="py-1 px-2.5 font-mono font-bold text-gray-900 align-middle">{item.receiptNo}</td>
+                      <td className="py-1 px-2.5 align-middle">{new Date(item.collectionDate).toLocaleDateString('en-GB')}</td>
+                      <td className="py-1 px-2.5 font-mono font-bold text-primary align-middle">{item.pigmyAccountNo}</td>
+                      <td className="py-1 px-2.5 font-semibold text-gray-800 align-middle">{item.customerName || '-'}</td>
+                      <td className="py-1 px-2.5 font-semibold text-gray-700 align-middle">{item.agentName}</td>
+                      <td className="py-1 px-2.5 text-right font-mono font-bold text-emerald-700 align-middle">
                         ₹ {item.collectionAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="py-2 px-2.5 text-center">
+                      <td className="py-1 px-2.5 text-center align-middle">
                         <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold ${
                           item.collectionSource === 'MANUAL' ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
                         }`}>
@@ -3504,9 +3504,9 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       {/* Interactive Multi-Pigmy Account Selector Modal (CIF-First) */}
       {showMultiPigmyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl max-w-2xl w-full overflow-hidden border border-blue-300">
+          <div className="bg-white rounded-md shadow-2xl max-w-2xl w-full overflow-hidden border border-amber-300">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 px-4 py-3 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-[#7C2418] via-[#B44814] to-[#D97706] px-4 py-3 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="p-1.5 bg-white/10 rounded-sm">
                   <CreditCardIcon className="w-5 h-5 text-amber-300" />
@@ -3514,11 +3514,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 <div>
                   <div className="font-bold text-sm flex items-center gap-2">
                     <span>पिग्मी खाते निवडा (Select Pigmy Account)</span>
-                    <span className="text-[10px] bg-amber-400 text-blue-950 font-black px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] bg-amber-400 text-[#4A1410] font-black px-2 py-0.5 rounded-full">
                       एकूण {customerMatchingPigmys.length} पिग्मी खाती
                     </span>
                   </div>
-                  <p className="text-xs text-blue-200 mt-0.5">
+                  <p className="text-xs text-amber-200 mt-0.5">
                     खातेदार: <strong className="text-white">{multiPigmyCustomerInfo?.name || 'खातेदार'}</strong>
                     {multiPigmyCustomerInfo?.cifNo && multiPigmyCustomerInfo.cifNo !== '-' && (
                       <span className="ml-2 font-mono text-amber-200">
@@ -3560,12 +3560,12 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                       }}
                       className={`p-3 rounded border text-left cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                         isCurrent
-                          ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-400 shadow-sm'
-                          : 'bg-white hover:bg-blue-50/40 border-slate-200 hover:border-blue-300 shadow-2xs'
+                          ? 'bg-amber-50/80 border-[#B44814] ring-2 ring-[#B44814] shadow-sm'
+                          : 'bg-white hover:bg-amber-50/40 border-slate-200 hover:border-amber-300 shadow-2xs'
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-sm mt-0.5 ${isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <div className={`p-2 rounded-sm mt-0.5 ${isCurrent ? 'bg-[#B44814] text-white' : 'bg-slate-100 text-slate-600'}`}>
                           <CreditCardIcon className="w-4 h-4" />
                         </div>
                         <div>
@@ -3609,8 +3609,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                           }}
                           className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                             isCurrent
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-300'
+                              ? 'bg-[#B44814] text-white hover:bg-[#9A3412]'
+                              : 'bg-white hover:bg-[#B44814] hover:text-white text-[#9A3412] border border-amber-300'
                           }`}
                         >
                           <CheckCircleIcon className="w-3.5 h-3.5" />

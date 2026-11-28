@@ -362,31 +362,31 @@ export default function CashSchemeSettingMaster() {
             </div>
           ) : (
             <div className="overflow-x-auto border border-gray-200 rounded-sm">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 text-gray-700 font-bold border-b border-gray-300">
+              <table className="w-full text-left text-[11px] border-collapse leading-tight">
+                <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
                   <tr>
-                    <th className="py-2 px-3 border-r border-gray-200">काउंटर / कॅशिअर</th>
-                    <th className="py-2 px-3 border-r border-gray-200 text-center w-28">भूमिका</th>
-                    <th className="py-2 px-3 border-r border-gray-200 min-w-[280px]">विशिष्ट रोख खाते (Counter Cash GL Ledger)</th>
-                    <th className="py-2 px-3 border-r border-gray-200 min-w-[150px]">कमाल मर्यादा (Max Limit ₹)</th>
-                    <th className="py-2 px-3 text-center w-20">स्थिती</th>
+                    <th className="py-1.5 px-2 border-r border-amber-400/25 whitespace-nowrap">काउंटर / कॅशिअर</th>
+                    <th className="py-1.5 px-2 border-r border-amber-400/25 text-center w-28 whitespace-nowrap">भूमिका</th>
+                    <th className="py-1.5 px-2 border-r border-amber-400/25 min-w-[280px] whitespace-nowrap">विशिष्ट रोख खाते (Counter Cash GL Ledger)</th>
+                    <th className="py-1.5 px-2 border-r border-amber-400/25 min-w-[150px] whitespace-nowrap">कमाल मर्यादा (Max Limit ₹)</th>
+                    <th className="py-1.5 px-2 text-center w-20 whitespace-nowrap">स्थिती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                   {cashiers.map((c, idx) => (
                     <tr key={c.id} className={`hover:bg-primary/5 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
-                      <td className="py-2 px-3 border-r border-gray-200">
+                      <td className="py-1 px-2 border-r border-gray-200 align-middle">
                         <div className="font-bold text-gray-900">{c.cashierName}</div>
                         <div className="text-[10px] text-gray-500 font-mono">{c.counterNumber}</div>
                       </td>
-                      <td className="py-2 px-3 border-r border-gray-200 text-center">
+                      <td className="py-1 px-2 border-r border-gray-200 text-center align-middle">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           c.isHeadCashier ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-700 border border-slate-300'
                         }`}>
                           {c.isHeadCashier ? 'हेड कॅशिअर' : 'टेलर / काउंटर'}
                         </span>
                       </td>
-                      <td className="py-2 px-3 border-r border-gray-200">
+                      <td className="py-1 px-2 border-r border-gray-200 align-middle">
                         <SearchableSelect
                           value={c.cashLedgerId || 0}
                           options={ledgerOptions}
@@ -394,7 +394,7 @@ export default function CashSchemeSettingMaster() {
                           placeholder="-- डिफॉल्ट मुख्य रोख खाते वापरा --"
                         />
                       </td>
-                      <td className="py-2 px-3 border-r border-gray-200">
+                      <td className="py-1 px-2 border-r border-gray-200 align-middle">
                         <input
                           type="number"
                           value={c.maxCashLimit}
@@ -402,7 +402,7 @@ export default function CashSchemeSettingMaster() {
                           className={`${inputClass} font-bold text-gray-900 font-mono`}
                         />
                       </td>
-                      <td className="py-2 px-3 text-center">
+                      <td className="py-1 px-2 text-center align-middle">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           c.isActive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-500 border border-slate-300'
                         }`}>

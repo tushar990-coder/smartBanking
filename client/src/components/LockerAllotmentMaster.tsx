@@ -663,7 +663,7 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
             {/* Step 2: Member & Joint Holders */}
             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
               <h2 className="text-xs font-bold text-slate-800 mb-2 flex items-center gap-1.5">
-                <User size={15} className="text-blue-600" /> २. सभासद व सह-धारक तपशील (Customer & Joint Holders)
+                <User size={15} className="text-[#B44814]" /> २. सभासद व सह-धारक तपशील (Customer & Joint Holders)
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
@@ -825,7 +825,7 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
                     name="securityDepositAmount"
                     value={formData.securityDepositAmount}
                     onChange={handleChange}
-                    className={`${inputClass} font-bold text-blue-700`}
+                    className={`${inputClass} font-bold text-[#9A3412]`}
                   />
                 </div>
                 <div>
@@ -985,22 +985,22 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
           {/* Table */}
           <div className="bg-white rounded-lg shadow-xs border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-[11px] border-collapse leading-tight">
                 <thead>
-                  <tr className="bg-slate-100/80 text-slate-700 border-b border-slate-200 font-bold">
-                    <th className="py-2 px-3">खाते क्रमांक</th>
-                    <th className="py-2 px-3">कपाट व लॉकर क्र.</th>
-                    <th className="py-2 px-3">सभासद नाव</th>
-                    <th className="py-2 px-3">पद्धत</th>
-                    <th className="py-2 px-3">वाटप दिनांक</th>
-                    <th className="py-2 px-3">मुदत समाप्ती</th>
-                    <th className="py-2 px-3 text-right">डिपॉझिट</th>
-                    <th className="py-2 px-3 text-center">व्हिजिट्स</th>
-                    <th className="py-2 px-3 text-center">स्थिती</th>
-                    <th className="py-2 px-3 text-center">कृती</th>
+                  <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 font-bold">
+                    <th className="py-1.5 px-2 whitespace-nowrap">खाते क्रमांक</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">कपाट व लॉकर क्र.</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">सभासद नाव</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">पद्धत</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">वाटप दिनांक</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">मुदत समाप्ती</th>
+                    <th className="py-1.5 px-2 text-right whitespace-nowrap">डिपॉझिट</th>
+                    <th className="py-1.5 px-2 text-center whitespace-nowrap">व्हिजिट्स</th>
+                    <th className="py-1.5 px-2 text-center whitespace-nowrap">स्थिती</th>
+                    <th className="py-1.5 px-2 text-center whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
+                <tbody className="divide-y divide-amber-100 text-slate-700">
                   {filteredAllotments.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="py-6 text-center text-slate-400">
@@ -1010,18 +1010,18 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
                   ) : (
                     filteredAllotments.map((a) => (
                       <tr key={a.allotmentID} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-2 px-3 font-mono font-bold text-emerald-800">{a.lockerAccountNo}</td>
-                        <td className="py-2 px-3">
+                        <td className="py-1 px-2 font-mono font-bold text-emerald-800 align-middle">{a.lockerAccountNo}</td>
+                        <td className="py-1 px-2 align-middle">
                           <span className="font-bold text-slate-800">{a.cabinetNo} - {a.lockerNo}</span>
                           <span className="text-[10px] text-slate-500 block">चावी: {a.keyNo} ({a.typeName})</span>
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-1 px-2 align-middle">
                           <span className="font-bold text-slate-800 block">{a.memberName}</span>
                           <span className="text-[10px] text-slate-500">सभासद क्र.: {a.memberNo}</span>
                         </td>
-                        <td className="py-2 px-3 font-semibold text-slate-600">{a.operatingInstruction}</td>
-                        <td className="py-2 px-3 text-slate-600">{new Date(a.allotmentDate).toLocaleDateString('en-GB')}</td>
-                        <td className="py-2 px-3">
+                        <td className="py-1 px-2 font-semibold text-slate-600 align-middle">{a.operatingInstruction}</td>
+                        <td className="py-1 px-2 text-slate-600 align-middle">{new Date(a.allotmentDate).toLocaleDateString('en-GB')}</td>
+                        <td className="py-1 px-2 align-middle">
                           <span className={`font-bold ${a.isOverdue ? 'text-rose-600' : 'text-slate-800'}`}>
                             {new Date(a.expiryDate).toLocaleDateString('en-GB')}
                           </span>
@@ -1031,18 +1031,18 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
                             </span>
                           )}
                         </td>
-                        <td className="py-2 px-3 text-right font-bold text-blue-700">
+                        <td className="py-1 px-2 text-right font-bold text-[#9A3412] align-middle">
                           ₹{a.securityDepositAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="py-2 px-3 text-center font-bold text-purple-700">{a.totalVisitsCount}</td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-1 px-2 text-center font-bold text-purple-700 align-middle">{a.totalVisitsCount}</td>
+                        <td className="py-1 px-2 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             a.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
                           }`}>
                             {a.status === 'Active' ? 'सक्रिय' : 'बंद / समर्पित'}
                           </span>
                         </td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-1 px-2 text-center align-middle">
                           <div className="flex items-center justify-center space-x-1">
                             <button
                               onClick={() => setViewAllotment(a)}
@@ -1124,25 +1124,25 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
               </div>
 
               <div className="border border-slate-300 rounded overflow-hidden text-xs font-sans">
-                <table className="w-full">
-                  <thead className="bg-slate-100 border-b border-slate-300 font-bold">
+                <table className="w-full leading-tight border-collapse">
+                  <thead className="bg-[#5A1A14] border-b border-amber-400/30 font-bold text-amber-50">
                     <tr>
-                      <th className="p-2 text-left">तपशील</th>
-                      <th className="p-2 text-right">रक्कम (₹)</th>
+                      <th className="px-2 py-1.5 text-left whitespace-nowrap">तपशील</th>
+                      <th className="px-2 py-1.5 text-right whitespace-nowrap">रक्कम (₹)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-amber-100">
                     <tr>
-                      <td className="p-2">अनामत रक्कम (Locker Caution / Security Deposit)</td>
-                      <td className="p-2 text-right font-bold">₹{printAllotment.securityDepositAmount?.toFixed(2)}</td>
+                      <td className="px-2 py-1 align-middle">अनामत रक्कम (Locker Caution / Security Deposit)</td>
+                      <td className="px-2 py-1 text-right font-bold align-middle">₹{printAllotment.securityDepositAmount?.toFixed(2)}</td>
                     </tr>
                     <tr>
-                      <td className="p-2">अग्रीम वार्षिक भाडे (Advance Annual Rent - 1 Year)</td>
-                      <td className="p-2 text-right font-bold">₹{printAllotment.annualRent?.toFixed(2)}</td>
+                      <td className="px-2 py-1 align-middle">अग्रीम वार्षिक भाडे (Advance Annual Rent - 1 Year)</td>
+                      <td className="px-2 py-1 text-right font-bold align-middle">₹{printAllotment.annualRent?.toFixed(2)}</td>
                     </tr>
                     <tr className="bg-slate-50 font-bold text-slate-900">
-                      <td className="p-2">एकूण जमा रक्कम (Total Amount Received)</td>
-                      <td className="p-2 text-right text-emerald-800 font-black">
+                      <td className="px-2 py-1 align-middle">एकूण जमा रक्कम (Total Amount Received)</td>
+                      <td className="px-2 py-1 text-right text-emerald-800 font-black align-middle">
                         ₹{(printAllotment.securityDepositAmount + printAllotment.annualRent).toFixed(2)}
                       </td>
                     </tr>

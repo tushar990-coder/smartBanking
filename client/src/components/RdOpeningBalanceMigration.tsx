@@ -709,12 +709,12 @@ export default function RdOpeningBalanceMigration() {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Percent className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सरासरी व्याजदर</div>
-            <div className="text-sm font-black text-indigo-950">{avgRate}% p.a.</div>
+            <div className="text-sm font-black text-[#4A1410]">{avgRate}% p.a.</div>
           </div>
         </div>
 
@@ -744,7 +744,7 @@ export default function RdOpeningBalanceMigration() {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          editingAccountId ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editingAccountId ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -895,7 +895,7 @@ export default function RdOpeningBalanceMigration() {
                   value={formData.totalPaidInstallments}
                   onChange={handleChange}
                   onFocus={(e) => e.target.select()}
-                  className={`${inputClass} font-mono font-bold text-indigo-800`}
+                  className={`${inputClass} font-mono font-bold text-[#7C2418]`}
                   min="0"
                   required
                 />
@@ -963,7 +963,7 @@ export default function RdOpeningBalanceMigration() {
                   name="maturityDate"
                   value={formData.maturityDate}
                   onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold text-indigo-900 bg-slate-50`}
+                  className={`${inputClass} font-mono font-bold text-[#5A1A14] bg-slate-50`}
                 />
               </div>
             </div>
@@ -993,7 +993,7 @@ export default function RdOpeningBalanceMigration() {
 
                 <div className="bg-white p-2.5 rounded border border-emerald-100 shadow-2xs">
                   <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण मुदतपूर्ती रक्कम:</span>
-                  <strong className="text-indigo-700 text-sm font-bold font-mono">
+                  <strong className="text-[#9A3412] text-sm font-bold font-mono">
                     ₹ {(parseFloat(formData.maturityAmount?.toString() || '0') || 0).toLocaleString('en-IN')}
                   </strong>
                   <span className="text-[10px] text-slate-500 block mt-0.5">
@@ -1016,25 +1016,25 @@ export default function RdOpeningBalanceMigration() {
               {/* Detailed Schedule Table */}
               {showSchedule && (
                 <div className="mt-2.5 bg-white border border-emerald-200 rounded overflow-hidden max-h-80 overflow-y-auto shadow-inner">
-                  <table className="w-full text-[11px] text-left">
+                  <table className="w-full text-[11px] text-left leading-tight border-collapse">
                     <thead className="bg-emerald-100/60 sticky top-0 border-b border-emerald-200 text-emerald-900">
                       <tr>
-                        <th className="px-2 py-1.5 font-bold">हप्ता क्र.</th>
-                        <th className="px-2 py-1.5 font-bold">दिनांक</th>
-                        <th className="px-2 py-1.5 font-bold">स्थिती</th>
-                        <th className="px-2 py-1.5 font-bold text-right">हप्ता रक्कम</th>
-                        <th className="px-2 py-1.5 font-bold text-right">नावे रक्कम</th>
-                        <th className="px-2 py-1.5 font-bold text-right">एकूण शिल्लक रक्कम</th>
-                        <th className="px-2 py-1.5 font-bold text-right">व्याज</th>
+                        <th className="px-2 py-1.5 font-bold whitespace-nowrap">हप्ता क्र.</th>
+                        <th className="px-2 py-1.5 font-bold whitespace-nowrap">दिनांक</th>
+                        <th className="px-2 py-1.5 font-bold whitespace-nowrap">स्थिती</th>
+                        <th className="px-2 py-1.5 font-bold text-right whitespace-nowrap">हप्ता रक्कम</th>
+                        <th className="px-2 py-1.5 font-bold text-right whitespace-nowrap">नावे रक्कम</th>
+                        <th className="px-2 py-1.5 font-bold text-right whitespace-nowrap">एकूण शिल्लक रक्कम</th>
+                        <th className="px-2 py-1.5 font-bold text-right whitespace-nowrap">व्याज</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-emerald-50">
                       {generateSchedule().length > 0 ? (
                         generateSchedule().map((row, idx) => (
                           <tr key={idx} className={row.isPaid ? 'bg-emerald-50/40 hover:bg-emerald-50/70' : 'hover:bg-slate-50'}>
-                            <td className="px-2 py-1 font-mono font-bold text-slate-700">{row.month}</td>
-                            <td className="px-2 py-1">{row.date}</td>
-                            <td className="px-2 py-1">
+                            <td className="px-2 py-1 font-mono font-bold text-slate-700 align-middle">{row.month}</td>
+                            <td className="px-2 py-1 align-middle">{row.date}</td>
+                            <td className="px-2 py-1 align-middle">
                               {row.isPaid ? (
                                 <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded border border-emerald-300">
                                   ✓ आधीच जमा
@@ -1045,10 +1045,10 @@ export default function RdOpeningBalanceMigration() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-2 py-1 text-right font-mono text-slate-700">₹{row.deposit.toLocaleString('en-IN')}</td>
-                            <td className="px-2 py-1 text-right font-mono text-slate-400">-</td>
-                            <td className="px-2 py-1 text-right font-mono font-bold text-slate-800">₹{row.balance.toLocaleString('en-IN')}</td>
-                            <td className="px-2 py-1 text-right font-mono text-emerald-600">₹{row.interest.toFixed(2)}</td>
+                            <td className="px-2 py-1 text-right font-mono text-slate-700 align-middle">₹{row.deposit.toLocaleString('en-IN')}</td>
+                            <td className="px-2 py-1 text-right font-mono text-slate-400 align-middle">-</td>
+                            <td className="px-2 py-1 text-right font-mono font-bold text-slate-800 align-middle">₹{row.balance.toLocaleString('en-IN')}</td>
+                            <td className="px-2 py-1 text-right font-mono text-emerald-600 align-middle">₹{row.interest.toFixed(2)}</td>
                           </tr>
                         ))
                       ) : (
@@ -1063,7 +1063,7 @@ export default function RdOpeningBalanceMigration() {
                       <tr>
                         <td colSpan={3} className="px-2 py-2 text-right">एकूण (Total):</td>
                         <td className="px-2 py-2 text-right font-mono text-slate-800">₹{((parseFloat(formData.installmentAmount?.toString() || '0') || 0) * (parseInt(formData.durationMonths?.toString() || '12', 10) || 12)).toLocaleString('en-IN')}</td>
-                        <td colSpan={2} className="px-2 py-2 text-right font-mono text-indigo-800">मुदतपूर्ती: ₹{(parseFloat(formData.maturityAmount?.toString() || '0') || 0).toLocaleString('en-IN')}</td>
+                        <td colSpan={2} className="px-2 py-2 text-right font-mono text-[#7C2418]">मुदतपूर्ती: ₹{(parseFloat(formData.maturityAmount?.toString() || '0') || 0).toLocaleString('en-IN')}</td>
                         <td className="px-2 py-2 text-right font-mono text-emerald-700">
                           ₹{Math.max(0, (parseFloat(formData.maturityAmount?.toString() || '0') || 0) - ((parseFloat(formData.installmentAmount?.toString() || '0') || 0) * (parseInt(formData.durationMonths?.toString() || '12', 10) || 12))).toLocaleString('en-IN')}
                         </td>
@@ -1152,7 +1152,7 @@ export default function RdOpeningBalanceMigration() {
       {/* ========================================================================= */}
       {showMigratedModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1222,23 +1222,23 @@ export default function RdOpeningBalanceMigration() {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र. & जुना क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदार नाव & CIF</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">हप्ता & जमा हप्ते</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">एकूण जमा मुद्दल (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">मुदतपूर्ती दिनांक</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खाते क्र. & जुना क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खातेदार नाव & CIF</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">हप्ता & जमा हप्ते</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">एकूण जमा मुद्दल (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याजदर (%)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">मुदतपूर्ती दिनांक</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredAccounts.map((acc) => (
                       <tr key={acc.rdAccountID || acc.rdAccountId} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
@@ -1260,13 +1260,13 @@ export default function RdOpeningBalanceMigration() {
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           <div className="font-mono font-bold text-primary">{acc.accountNo}</div>
                           {acc.legacyAccountNumber && (
                             <div className="text-[10px] text-gray-500 font-mono">जुना: {acc.legacyAccountNumber}</div>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           <div className="font-bold text-gray-900">
                             {acc.customerName || (acc.customer ? [acc.customer.firstName, acc.customer.middleName, acc.customer.lastName].filter(Boolean).join(' ') : (acc.member ? [acc.member.firstName, acc.member.middleName, acc.member.lastName].filter(Boolean).join(' ') : '-'))}
                           </div>
@@ -1274,20 +1274,20 @@ export default function RdOpeningBalanceMigration() {
                             CIF: {acc.cifNo || acc.customer?.cifNo || (acc.customerID ? `CUST-${acc.customerID}` : (acc.member?.memberCode || '-'))}
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right align-middle">
                           <div className="font-bold text-gray-800 font-mono">₹{acc.installmentAmount}</div>
                           <div className="text-[10px] text-gray-500">{acc.totalPaidInstallments} हप्ते जमा</div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-emerald-700 align-middle">
                           ₹{(acc.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono align-middle">
                           {acc.interestRate}%
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-gray-600">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono text-gray-600 align-middle">
                           {acc.maturityDate ? acc.maturityDate.split('T')[0] : '-'}
                         </td>
-                        <td className="px-2 py-1.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             acc.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                           }`}>

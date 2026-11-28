@@ -330,7 +330,7 @@ export default function InterestCalculator() {
     setFTotal(p + calcInterest);
   }, [fPrincipal, fRate, fDuration, fDurationType]);
 
-  const inputClass = "w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-[11px] h-[24px]";
+  const inputClass = "w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-[11px] h-[24px]";
   const labelClass = "block text-[11px] font-semibold text-gray-700 mb-0.5";
 
   return (
@@ -631,8 +631,8 @@ export default function InterestCalculator() {
                   <div className="flex items-center gap-2">
                     <label className="w-1/3 text-[11px] font-bold text-gray-700 text-right">मुदत :</label>
                     <div className="w-2/3 flex gap-1">
-                      <input type="number" value={fDuration} onChange={(e) => setFDuration(e.target.value === '' ? '' : parseInt(e.target.value))} className="flex-1 border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 h-[24px] text-[11px]" />
-                      <select value={fDurationType} onChange={(e) => setFDurationType(e.target.value as any)} className="flex-1 border border-gray-300 px-1 py-0.5 rounded-sm bg-white focus:outline-none focus:border-blue-500 h-[24px] text-[11px]">
+                      <input type="number" value={fDuration} onChange={(e) => setFDuration(e.target.value === '' ? '' : parseInt(e.target.value))} className="flex-1 border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-[#B44814] h-[24px] text-[11px]" />
+                      <select value={fDurationType} onChange={(e) => setFDurationType(e.target.value as any)} className="flex-1 border border-gray-300 px-1 py-0.5 rounded-sm bg-white focus:outline-none focus:border-[#B44814] h-[24px] text-[11px]">
                         <option value="months">महिने</option>
                         <option value="years">वर्ष</option>
                         <option value="days">दिवस</option>
@@ -648,7 +648,7 @@ export default function InterestCalculator() {
                     <span className="font-semibold text-gray-600">एकूण व्याज :</span>
                     <span className="font-extrabold px-1 text-xs text-red-600">₹{fInterest.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between items-center bg-white border-l-4 border-indigo-500 text-gray-900 p-1.5 rounded shadow-sm text-[11px] mt-2">
+                  <div className="flex justify-between items-center bg-white border-l-4 border-[#B44814] text-gray-900 p-1.5 rounded shadow-sm text-[11px] mt-2">
                     <span className="font-semibold text-gray-600">एकूण परतफेड (मुद्दल + व्याज) :</span>
                     <span className="font-extrabold px-1 text-sm text-green-700">₹{fTotal.toFixed(2)}</span>
                   </div>

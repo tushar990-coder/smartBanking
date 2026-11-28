@@ -616,9 +616,11 @@ export default function CustomerOpeningBalanceReport() {
                 <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-700">
                   {idx + 1}
                 </td>
-                <td className="border border-slate-900 py-1 px-3 font-bold text-slate-950 flex items-center justify-between">
-                  <span>{l.ledgerName}</span>
-                  <span className="text-[10px] text-primary underline no-print">तपशील पहा ›</span>
+                <td className="border border-slate-900 py-1 px-3 font-bold text-slate-950 align-middle">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{l.ledgerName}</span>
+                    <span className="text-[10px] text-primary underline no-print whitespace-nowrap">तपशील पहा ›</span>
+                  </div>
                 </td>
                 <td className="border border-slate-900 py-1 px-2 text-slate-700">
                   {l.accountType}

@@ -990,7 +990,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
 
     if (tt === 'opening' || (!isDebit && (vn.startsWith('JV-FD-OP-') || vn.startsWith('REC-FD-')))) {
       return (
-        <span className="inline-block ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-50 text-sky-800 border border-sky-200 align-middle">
+        <span className="inline-block ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-[#7C2418] border border-amber-200 align-middle">
           ठेव मुद्दल
         </span>
       );
@@ -1579,7 +1579,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             </div>
             <div className="border-r border-slate-300 pr-2">
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">एकूण मुदतपूर्ती रक्कम</span>
-              <strong className="text-blue-700 font-mono text-xs">₹ {fmtCurrency(totalMaturitySum)}</strong>
+              <strong className="text-[#9A3412] font-mono text-xs">₹ {fmtCurrency(totalMaturitySum)}</strong>
             </div>
             <div>
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">सरासरी ठेव रक्कम</span>
@@ -1604,7 +1604,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             </div>
             <div className="border-r border-slate-300 pr-2">
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">पोस्ट झालेले व्याज</span>
-              <strong className="text-blue-700 font-mono text-xs">₹ {fmtCurrency(totalPostedInterestSum)}</strong>
+              <strong className="text-[#9A3412] font-mono text-xs">₹ {fmtCurrency(totalPostedInterestSum)}</strong>
             </div>
             <div>
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">एकूण बाकी (मुद्दल + पोस्ट व्याज)</span>
@@ -1629,7 +1629,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             </div>
             <div className="border-r border-slate-300 pr-2">
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">एकूण देय मुदतपूर्ती रक्कम</span>
-              <strong className="text-blue-700 font-mono text-xs">₹ {fmtCurrency(totalMaturitySum)}</strong>
+              <strong className="text-[#9A3412] font-mono text-xs">₹ {fmtCurrency(totalMaturitySum)}</strong>
             </div>
             <div>
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">कालावधी</span>
@@ -1670,7 +1670,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                   ? 'सिंगल (खातेनिहाय) खाती'
                   : 'एकत्रित समाविष्ट खाती'}
               </span>
-              <strong className="text-blue-700 font-mono text-xs">
+              <strong className="text-[#9A3412] font-mono text-xs">
                 {activeSingleAccount
                   ? `${activeSingleAccount.accountNo}${activeSingleAccount.legacyAccountNumber ? ` (जुनी: ${activeSingleAccount.legacyAccountNumber})` : ''}`
                   : `${summary.accountsCount} खाती`}
@@ -1759,7 +1759,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             </div>
             <div className="border-r border-slate-300 pr-2">
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">एकूण मुदतपूर्ती रक्कम</span>
-              <strong className="text-blue-700 font-mono text-xs">₹ {fmtCurrency(totalMaturitySum)}</strong>
+              <strong className="text-[#9A3412] font-mono text-xs">₹ {fmtCurrency(totalMaturitySum)}</strong>
             </div>
             <div>
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">साचलेले जुने व्याज</span>
@@ -1792,13 +1792,13 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             <div className="border-r border-slate-300 pr-2">
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">जमा व्याज / अदा व्याज</span>
               <strong className="text-amber-800 font-mono text-xs">
-                ₹ {fmtCurrency(totalRenewedReinvestedInt)} / <span className="text-indigo-700">₹ {fmtCurrency(totalRenewedPaidOutInt)}</span>
+                ₹ {fmtCurrency(totalRenewedReinvestedInt)} / <span className="text-[#9A3412]">₹ {fmtCurrency(totalRenewedPaidOutInt)}</span>
               </strong>
             </div>
             <div>
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">नवीन मुद्दल / मुदतपूर्ती</span>
               <strong className="text-emerald-800 font-mono text-xs">
-                ₹ {fmtCurrency(totalRenewedNewDeposit)} / <span className="text-blue-800">₹ {fmtCurrency(totalRenewedNewMaturity)}</span>
+                ₹ {fmtCurrency(totalRenewedNewDeposit)} / <span className="text-[#7C2418]">₹ {fmtCurrency(totalRenewedNewMaturity)}</span>
               </strong>
             </div>
           </div>
@@ -1817,7 +1817,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             </div>
             <div className="border-r border-slate-300 pr-2">
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">एकूण ठेव पावत्या</span>
-              <strong className="text-blue-700 font-mono text-xs">{totalCustomerSummaryFdCount.toLocaleString('en-IN')} ठेवी</strong>
+              <strong className="text-[#9A3412] font-mono text-xs">{totalCustomerSummaryFdCount.toLocaleString('en-IN')} ठेवी</strong>
             </div>
             <div className="border-r border-slate-300 pr-2">
               <span className="text-slate-500 block text-[9.5px] uppercase font-bold">एकूण ठेव रक्कम</span>
@@ -2115,7 +2115,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                               🏷️ जुना ठेव: {oldNo}
                             </span>
                           )}
-                          <span className="px-1 py-0.2 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded font-mono font-bold text-[9.5px] shrink-0">
+                          <span className="px-1 py-0.2 bg-orange-50 text-[#7C2418] border border-amber-200 rounded font-mono font-bold text-[9.5px] shrink-0">
                             {a.accountNo}
                           </span>
                           <span className="font-bold text-slate-900 truncate">{a.customerName}</span>
@@ -2134,7 +2134,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                 if (context === 'value') {
                   return (
                     <div className="flex items-center gap-1.5 text-[10.5px] truncate">
-                      <span className="px-1 bg-sky-50 text-sky-800 border border-sky-200 rounded font-mono font-bold text-[9.5px] shrink-0">
+                      <span className="px-1 bg-amber-50 text-[#7C2418] border border-amber-200 rounded font-mono font-bold text-[9.5px] shrink-0">
                         {c.cifNo}
                       </span>
                       <span className="font-bold text-slate-900 truncate">{c.customerName}</span>
@@ -2147,7 +2147,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                   <div className="flex flex-col text-[11px] leading-tight">
                     <div className="flex items-center justify-between gap-1.5">
                       <div className="flex items-center gap-1 min-w-0">
-                        <span className="px-1 py-0.2 bg-sky-50 text-sky-800 border border-sky-200 rounded font-mono font-bold text-[9.5px] shrink-0">
+                        <span className="px-1 py-0.2 bg-amber-50 text-[#7C2418] border border-amber-200 rounded font-mono font-bold text-[9.5px] shrink-0">
                           {c.cifNo}
                         </span>
                         {c.legacyCustomerNo && (
@@ -2727,14 +2727,14 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                             {cust.customerName}
                           </td>
                           <td className="border border-slate-900 py-1 px-2 text-center">
-                            <span className="bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full font-bold text-[10px] font-mono">
+                            <span className="bg-amber-50 text-[#7C2418] border border-amber-200 px-2 py-0.5 rounded-full font-bold text-[10px] font-mono">
                               {cust.fdCount} {cust.fdCount > 1 ? 'ठेवी' : 'ठेव'}
                             </span>
                           </td>
                           <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-emerald-800 text-xs">
                             ₹ {fmtCurrency(cust.depositAmount)}
                           </td>
-                          <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-blue-900">
+                          <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-[#5A1A14]">
                             ₹ {fmtCurrency(cust.maturityAmount)}
                           </td>
                           <td className="border border-slate-900 py-1 px-2 text-center font-mono text-[10px] text-slate-600">
@@ -2781,7 +2781,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                         </td>
                                         <td className="border border-slate-300 p-1 text-center font-mono">{acc.interestRate}%</td>
                                         <td className="border border-slate-300 p-1 text-center font-mono">{formatDisplayDate(acc.maturityDate)}</td>
-                                        <td className="border border-slate-300 p-1 text-right font-mono font-bold text-blue-900">
+                                        <td className="border border-slate-300 p-1 text-right font-mono font-bold text-[#5A1A14]">
                                           ₹ {fmtCurrency(acc.maturityAmount)}
                                         </td>
                                         <td className="border border-slate-300 p-1 text-center">
@@ -2812,7 +2812,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
                       ₹ {fmtCurrency(totalCustomerSummaryDeposit)}
                     </td>
-                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-blue-950 bg-blue-100/50">
+                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-[#4A1410] bg-amber-100/50">
                       ₹ {fmtCurrency(totalCustomerSummaryMaturity)}
                     </td>
                     <td className="border border-slate-900 py-1.5 px-2 text-center"></td>
@@ -2838,7 +2838,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
               <span
                 className={`px-2 py-0.5 rounded font-bold border ${
                   ledgerViewMode === 'consolidated'
-                    ? 'bg-indigo-50 text-indigo-900 border-indigo-300'
+                    ? 'bg-orange-50 text-[#5A1A14] border-amber-300'
                     : 'bg-primary/10 text-primary border-primary/30'
                 }`}
               >
@@ -2889,7 +2889,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                           <span className="text-slate-700">मुद्दल: ₹ {fmtCurrency(grp.displayDeposit)}</span>
                           <span className="text-rose-800">नावे: ₹ {fmtCurrency(grp.displayDebit)}</span>
                           <span className="text-emerald-800">जमा: ₹ {fmtCurrency(grp.displayCredit)}</span>
-                          <span className="text-blue-950">अखेर शिल्लक: ₹ {fmtCurrency(grp.displayClosing)}</span>
+                          <span className="text-[#4A1410]">अखेर शिल्लक: ₹ {fmtCurrency(grp.displayClosing)}</span>
                         </div>
                       </div>
                     )}
@@ -2908,7 +2908,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                             </div>
                             <div className="text-[11px] font-mono font-bold text-slate-800">
                               एकूण ठेव मुद्दल: <span className="text-emerald-800">₹ {fmtCurrency(grp.consolidated.totalDepositAmount)}</span>
-                              {' | '}मुदतपूर्ती मूल्य: <span className="text-blue-900">₹ {fmtCurrency(grp.consolidated.totalMaturityAmount)}</span>
+                              {' | '}मुदतपूर्ती मूल्य: <span className="text-[#5A1A14]">₹ {fmtCurrency(grp.consolidated.totalMaturityAmount)}</span>
                             </div>
                           </div>
 
@@ -2953,7 +2953,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                       <td className="border border-slate-300 py-0.5 px-1.5 text-center font-mono">{acc.interestRate}%</td>
                                       <td className="border border-slate-300 py-0.5 px-1.5 text-right font-mono font-semibold">₹ {fmtCurrency(acc.depositAmount)}</td>
                                       <td className="border border-slate-300 py-0.5 px-1.5 text-right font-mono">₹ {fmtCurrency(acc.openingBalance ?? 0)}</td>
-                                      <td className="border border-slate-300 py-0.5 px-1.5 text-right font-mono font-bold text-blue-950">₹ {fmtCurrency(acc.closingBalance ?? 0)}</td>
+                                      <td className="border border-slate-300 py-0.5 px-1.5 text-right font-mono font-bold text-[#4A1410]">₹ {fmtCurrency(acc.closingBalance ?? 0)}</td>
                                       <td className="border border-slate-300 py-0.5 px-1.5 text-center text-[10px]">{acc.status}</td>
                                     </tr>
                                   ))}
@@ -3057,7 +3057,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                             <div className="font-sans text-[9.5px] text-slate-600 truncate">{tx.customerName}</div>
                                           )}
                                         </td>
-                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono font-semibold text-blue-900">
+                                        <td className="border border-slate-900 py-1 px-2 text-center font-mono font-semibold text-[#5A1A14]">
                                           <div>{tx.voucherNo || '-'}</div>
                                           {tx.passingStatus && (
                                             <span
@@ -3106,7 +3106,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                   <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-emerald-900 bg-emerald-100/60">
                                     ₹ {fmtCurrency(grp.consolidated.periodTotalCredit)}
                                   </td>
-                                  <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-blue-950 bg-blue-100/60">
+                                  <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-[#4A1410] bg-amber-100/60">
                                     ₹ {fmtCurrency(grp.consolidated.closingBalance)}
                                   </td>
                                 </tr>
@@ -3129,7 +3129,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                           {' '}- एकूण नावे (Dr): <span className="font-mono font-bold text-rose-700">₹ {fmtCurrency(grp.consolidated.periodTotalDebit)}</span>
                                           {' '}={' '}
                                           <strong className="text-slate-950">
-                                            अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-blue-900">₹ {fmtCurrency(grp.consolidated.closingBalance)}</span>
+                                            अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-[#5A1A14]">₹ {fmtCurrency(grp.consolidated.closingBalance)}</span>
                                           </strong>
                                         </>
                                       );
@@ -3159,7 +3159,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                     {acc.schemeName}
                                   </span>
                                   {customerLedger.isAllCustomers && acc.customerName && (
-                                    <span className="text-[11px] font-bold text-slate-900 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded">
+                                    <span className="text-[11px] font-bold text-slate-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                                       खातेदार: {acc.customerName} {acc.cifNo ? `(${acc.cifNo})` : ''}
                                     </span>
                                   )}
@@ -3208,7 +3208,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                 </div>
                                 <div>
                                   <span className="text-slate-500 block text-[10px]">मुदतपूर्ती रक्कम:</span>
-                                  <strong className="font-mono text-blue-900 font-bold">₹ {fmtCurrency(acc.maturityAmount)}</strong>
+                                  <strong className="font-mono text-[#5A1A14] font-bold">₹ {fmtCurrency(acc.maturityAmount)}</strong>
                                 </div>
                                 <div>
                                   <span className="text-slate-500 block text-[10px]">वारसदार (Nominee):</span>
@@ -3360,7 +3360,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                             <td className="border border-slate-900 py-1 px-2 text-center font-mono">
                                               {formatDisplayDate(tx.transactionDate)}
                                             </td>
-                                            <td className="border border-slate-900 py-1 px-2 text-center font-mono font-semibold text-blue-900">
+                                            <td className="border border-slate-900 py-1 px-2 text-center font-mono font-semibold text-[#5A1A14]">
                                               <div>{tx.voucherNo || '-'}</div>
                                               {tx.passingStatus && (
                                                 <span
@@ -3412,7 +3412,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                       <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-emerald-900 bg-emerald-100/60">
                                         ₹ {fmtCurrency(acc.periodTotalCredit ?? 0)}
                                       </td>
-                                      <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-blue-950 bg-blue-100/60">
+                                      <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-[#4A1410] bg-amber-100/60">
                                         ₹ {fmtCurrency(acc.closingBalance ?? (acc.transactions?.slice(-1)[0]?.balance ?? acc.depositAmount))}
                                       </td>
                                     </tr>
@@ -3436,7 +3436,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                                               {' '}- एकूण नावे (Dr): <span className="font-mono font-bold text-rose-700">₹ {fmtCurrency(acc.periodTotalDebit ?? 0)}</span>
                                               {' '}={' '}
                                               <strong className="text-slate-950">
-                                                अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-blue-900">₹ {fmtCurrency(acc.closingBalance ?? 0)}</span>
+                                                अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-[#5A1A14]">₹ {fmtCurrency(acc.closingBalance ?? 0)}</span>
                                               </strong>
                                             </>
                                           );
@@ -3465,7 +3465,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                     <span>आरंभी: ₹ {fmtCurrency(ledgerViewData.summary.totalOpening)}</span>
                     <span className="text-rose-800">नावे: ₹ {fmtCurrency(ledgerViewData.summary.totalDebit)}</span>
                     <span className="text-emerald-800">जमा: ₹ {fmtCurrency(ledgerViewData.summary.totalCredit)}</span>
-                    <span className="text-blue-950 text-sm">अखेर शिल्लक: ₹ {fmtCurrency(ledgerViewData.summary.totalClosing)}</span>
+                    <span className="text-[#4A1410] text-sm">अखेर शिल्लक: ₹ {fmtCurrency(ledgerViewData.summary.totalClosing)}</span>
                   </div>
                 </div>
               )}
@@ -3497,7 +3497,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
               {filteredVoucherPassing.map((v, idx) => (
                 <tr key={v.voucherID || idx} className="hover:bg-slate-50 text-slate-900 text-[11px]">
                   <td className="border border-slate-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
-                  <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-blue-900">{v.voucherNo}</td>
+                  <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-[#5A1A14]">{v.voucherNo}</td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono">{formatDisplayDate(v.voucherDate)}</td>
                   <td className="border border-slate-900 py-1 px-2">
                     <span className="font-semibold">{v.transactionType}</span>
@@ -3566,7 +3566,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                     </span>
                   </td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-slate-900">{d.accountNo || '-'}</td>
-                  <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-blue-900">{d.voucherNo || '-'}</td>
+                  <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-[#5A1A14]">{d.voucherNo || '-'}</td>
                   <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-rose-800">{fmtCurrency(d.amount)}</td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-medium">{d.deletedBy}</td>
                   <td className="border border-slate-900 py-1 px-2 text-center text-[10px]">
@@ -3637,7 +3637,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                       <span className="text-slate-400">-</span>
                     )}
                   </td>
-                  <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-blue-900">
+                  <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-[#5A1A14]">
                     {row.cifNo || '-'}
                   </td>
                   <td className="border border-slate-900 py-1 px-3 text-left font-bold text-slate-950">
@@ -3653,9 +3653,9 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                   <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">{fmtCurrency(row.depositAmount)}</td>
                   <td className="border border-slate-900 py-1 px-1 text-center font-mono">{row.interestRate}%</td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono">{formatDisplayDate(row.maturityDate)}</td>
-                  <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-blue-900">{fmtCurrency(row.maturityAmount)}</td>
+                  <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-[#5A1A14]">{fmtCurrency(row.maturityAmount)}</td>
                   <td className="border border-slate-900 py-1 px-2 text-right font-mono font-medium text-amber-800">{fmtCurrency(row.legacyAccruedInt)}</td>
-                  <td className="border border-slate-900 py-1 px-2 text-center font-mono text-[10px] text-blue-700">
+                  <td className="border border-slate-900 py-1 px-2 text-center font-mono text-[10px] text-[#9A3412]">
                     {formatDisplayDate(row.lastInterestPostingDate)}
                   </td>
                   <td className="border border-slate-900 py-1 px-2 text-left text-[10px]">
@@ -3703,7 +3703,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                     ₹ {fmtCurrency(totalDepositSum)}
                   </td>
                   <td colSpan={2} className="border border-slate-900 py-1.5 px-2 text-center"></td>
-                  <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-blue-950 bg-blue-100/50">
+                  <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-[#4A1410] bg-amber-100/50">
                     ₹ {fmtCurrency(totalMaturitySum)}
                   </td>
                   <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-amber-950 bg-amber-100/50">
@@ -3734,7 +3734,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                   <th colSpan={isFull ? 5 : 3} className="border border-slate-900 py-1 px-1.5 bg-amber-50 text-amber-950 border-l-2 border-l-slate-900">
                     जुनी ठेव पावती तपशील (Old Receipt)
                   </th>
-                  <th colSpan={isFull ? 4 : 3} className="border border-slate-900 py-1 px-1.5 bg-indigo-50 text-indigo-950 border-l-2 border-l-slate-900">
+                  <th colSpan={isFull ? 4 : 3} className="border border-slate-900 py-1 px-1.5 bg-orange-50 text-[#4A1410] border-l-2 border-l-slate-900">
                     नूतनीकरण व व्याज समायोजन (Interest)
                   </th>
                   <th colSpan={isFull ? 6 : 5} className="border border-slate-900 py-1 px-1.5 bg-emerald-50 text-emerald-950 border-l-2 border-l-slate-900">
@@ -3758,10 +3758,10 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                   <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60">जुनी मुदत दि.</th>
                   <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60 text-right">जुनी मुद्दल (₹)</th>
 
-                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 border-l-2 border-l-slate-900">नूतनीकरण प्रकार</th>
-                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">जमा व्याज (₹)</th>
-                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">अदा व्याज (₹)</th>
-                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50">अदा पद्धत</th>}
+                  <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50 border-l-2 border-l-slate-900">नूतनीकरण प्रकार</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50 text-right">जमा व्याज (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50 text-right">अदा व्याज (₹)</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50">अदा पद्धत</th>}
 
                   <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50 border-l-2 border-l-slate-900">नवीन पावती क्र.</th>
                   {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50">नवीन CBS खाते क्र.</th>}
@@ -3803,7 +3803,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                         </td>
                       )}
                       {isFull && (
-                        <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-blue-900 font-semibold">
+                        <td className="border border-slate-900 py-0.5 px-1.5 text-center font-mono text-[10px] text-[#5A1A14] font-semibold">
                           {row.legacyCustomerNo ? `${row.cifNo} (${row.legacyCustomerNo})` : (row.cifNo || '-')}
                         </td>
                       )}
@@ -3845,8 +3845,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                             row.isAutoRenewal
                               ? 'bg-purple-50 text-purple-800 border-purple-300'
                               : row.renewalOption === 'PrincipalOnly'
-                              ? 'bg-sky-50 text-sky-800 border-sky-300'
-                              : 'bg-indigo-50 text-indigo-800 border-indigo-300'
+                              ? 'bg-amber-50 text-[#7C2418] border-amber-300'
+                              : 'bg-orange-50 text-[#7C2418] border-amber-300'
                           }`}
                           title={`नूतनीकरण फेरी क्र. #${row.renewalCycleNo}`}
                         >
@@ -3857,7 +3857,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                         {row.reinvestedInterest > 0 ? fmtCurrency(row.reinvestedInterest) : '-'}
                       </td>
                       <td
-                        className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-indigo-800"
+                        className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-[#7C2418]"
                         title={row.interestPaidOut > 0 ? `अदा पद्धत: ${row.interestPayoutMode}${row.interestVoucherNo ? ` (${row.interestVoucherNo})` : ''}` : undefined}
                       >
                         {row.interestPaidOut > 0 ? fmtCurrency(row.interestPaidOut) : '-'}
@@ -3905,7 +3905,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                       </td>
 
                       {/* Maturity & Passing Columns */}
-                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-blue-900 border-l-2 border-l-slate-900">
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-[#5A1A14] border-l-2 border-l-slate-900">
                         {fmtCurrency(row.newMaturityAmount)}
                       </td>
                       <td className="border border-slate-900 py-0.5 px-1 text-center">
@@ -3934,10 +3934,10 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                       ₹ {fmtCurrency(totalRenewedOldDeposit)}
                     </td>
                     <td className="border border-slate-900 py-1 px-1 border-l-2 border-l-slate-900"></td>
-                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-amber-950 bg-indigo-100/40">
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-amber-950 bg-orange-100/40">
                       ₹ {fmtCurrency(totalRenewedReinvestedInt)}
                     </td>
-                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-indigo-950 bg-indigo-100/40">
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-[#4A1410] bg-orange-100/40">
                       ₹ {fmtCurrency(totalRenewedPaidOutInt)}
                     </td>
                     {isFull && <td className="border border-slate-900 py-1 px-1"></td>}
@@ -3946,7 +3946,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                       ₹ {fmtCurrency(totalRenewedNewDeposit)}
                     </td>
                     <td className="border border-slate-900 py-1 px-1"></td>
-                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-blue-950 bg-blue-100/50 border-l-2 border-l-slate-900">
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-[#4A1410] bg-amber-100/50 border-l-2 border-l-slate-900">
                       ₹ {fmtCurrency(totalRenewedNewMaturity)}
                     </td>
                     <td className="border border-slate-900 py-1 px-1"></td>
@@ -3998,7 +3998,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                       </div>
                     )}
                   </td>
-                  <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-blue-900">
+                  <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-[#5A1A14]">
                     {row.cifNo || '-'}
                   </td>
                   <td className="border border-slate-900 py-1 px-3 font-medium">{row.customerName || row.memberName}</td>
@@ -4022,7 +4022,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                   <td className="border border-slate-900 py-1 px-1 text-center font-mono">{row.interestRate}%</td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono">{formatDisplayDate(row.maturityDate)}</td>
                   {(reportType === 'Register' || reportType === 'MaturityDue') && (
-                    <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-blue-900">
+                    <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-[#5A1A14]">
                       {fmtCurrency(row.maturityAmount)}
                     </td>
                   )}
@@ -4068,7 +4068,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                   )}
                   <td colSpan={2} className="border border-slate-900 py-1.5 px-2 text-center"></td>
                   {(reportType === 'Register' || reportType === 'MaturityDue') && (
-                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-blue-950 bg-blue-100/50">
+                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-[#4A1410] bg-amber-100/50">
                       ₹ {fmtCurrency(totalMaturitySum)}
                     </td>
                   )}

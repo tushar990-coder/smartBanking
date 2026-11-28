@@ -203,10 +203,10 @@ const AssetReports: React.FC = () => {
       {/* Summary Statistics Panel */}
       {activeTab === 'register' && (
         <div className="grid grid-cols-5 gap-3 mb-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-sm p-3 shadow-xs">
-            <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">एकूण मालमत्ता (Assets)</p>
-            <p className="text-lg font-black text-blue-800">{totalCount}</p>
-            <p className="text-[11px] font-semibold text-blue-700">नोंदणीकृत मालमत्ता</p>
+          <div className="bg-gradient-to-br from-[#FDF2EE] to-[#FCE3BE] border border-amber-200 rounded-sm p-3 shadow-xs">
+            <p className="text-[10px] text-[#B44814] font-bold uppercase tracking-wider">एकूण मालमत्ता (Assets)</p>
+            <p className="text-lg font-black text-[#7C2418]">{totalCount}</p>
+            <p className="text-[11px] font-semibold text-[#9A3412]">नोंदणीकृत मालमत्ता</p>
           </div>
           <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-sm p-3 shadow-xs">
             <p className="text-[10px] text-green-600 font-bold uppercase tracking-wider">एकूण मूळ किंमत (Cost)</p>
@@ -249,9 +249,9 @@ const AssetReports: React.FC = () => {
         <div className="bg-primary text-white px-4 py-2 rounded-t flex items-center justify-between print:hidden">
           <h2 className="text-sm font-bold">📊 मालमत्ता अहवाल (Asset Management Reports)</h2>
           <div className="flex gap-1">
-            <button onClick={() => setActiveTab('register')} className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${activeTab === 'register' ? 'bg-white text-primary' : 'bg-[#004a75] text-white'}`}>📋 मालमत्ता रजिस्टर</button>
-            <button onClick={() => setActiveTab('depreciation')} className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${activeTab === 'depreciation' ? 'bg-white text-primary' : 'bg-[#004a75] text-white'}`}>⚡ घसारा आकारणी (Depr Run)</button>
-            <button onClick={() => setActiveTab('maintenance')} className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${activeTab === 'maintenance' ? 'bg-white text-primary' : 'bg-[#004a75] text-white'}`}>🛠️ देखभाल रजिस्टर</button>
+            <button onClick={() => setActiveTab('register')} className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${activeTab === 'register' ? 'bg-white text-primary' : 'bg-[#7C2418] text-white'}`}>📋 मालमत्ता रजिस्टर</button>
+            <button onClick={() => setActiveTab('depreciation')} className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${activeTab === 'depreciation' ? 'bg-white text-primary' : 'bg-[#7C2418] text-white'}`}>⚡ घसारा आकारणी (Depr Run)</button>
+            <button onClick={() => setActiveTab('maintenance')} className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${activeTab === 'maintenance' ? 'bg-white text-primary' : 'bg-[#7C2418] text-white'}`}>🛠️ देखभाल रजिस्टर</button>
           </div>
         </div>
 
@@ -320,10 +320,10 @@ const AssetReports: React.FC = () => {
                     ) : assets.length === 0 ? (
                       <tr><td colSpan={12} className="text-center py-4 text-gray-400">अहवालासाठी कोणतीही नोंद नाही.</td></tr>
                     ) : assets.map((a, idx) => (
-                      <tr key={a.assetID} className="hover:bg-blue-50 border-b border-gray-100 transition-colors">
+                      <tr key={a.assetID} className="hover:bg-amber-50 border-b border-gray-100 transition-colors">
                         <td className="px-2.5 py-1">{idx + 1}</td>
                         <td className="px-2.5 py-1">{a.branch?.branchName}</td>
-                        <td className="px-2.5 py-1 font-mono font-medium text-blue-700">{a.assetCode}</td>
+                        <td className="px-2.5 py-1 font-mono font-medium text-[#9A3412]">{a.assetCode}</td>
                         <td className="px-2.5 py-1 font-medium">{a.assetName}</td>
                         <td className="px-2.5 py-1">{a.category?.categoryName}</td>
                         <td className="px-2.5 py-1">{new Date(a.purchaseDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
@@ -389,7 +389,7 @@ const AssetReports: React.FC = () => {
                   <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} required className="w-full border rounded px-2 py-1 mt-0.5" />
                 </div>
                 <div>
-                  <button type="submit" disabled={depLoading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-1.5 rounded-sm font-semibold">
+                  <button type="submit" disabled={depLoading} className="w-full bg-[#B44814] hover:bg-[#9A3412] text-white py-1.5 rounded-sm font-semibold">
                     {depLoading ? 'गणना चालू आहे...' : '⚡ घसारा मोजा (Calculate Preview)'}
                   </button>
                 </div>
@@ -415,14 +415,14 @@ const AssetReports: React.FC = () => {
                       </thead>
                       <tbody>
                         {depPreview.map((item, idx) => (
-                          <tr key={item.assetID} className="hover:bg-blue-50 border-b border-gray-100 transition-colors">
+                          <tr key={item.assetID} className="hover:bg-amber-50 border-b border-gray-100 transition-colors">
                             <td className="px-2.5 py-1">{idx + 1}</td>
                             <td className="px-2.5 py-1 text-gray-600 font-medium">
                               <span className="bg-slate-100 text-slate-700 px-1 py-0.5 rounded text-[10px]">
                                 {item.branchName || `शाखा ${item.branchID}`}
                               </span>
                             </td>
-                            <td className="px-2.5 py-1 font-mono font-medium text-blue-700">{item.assetCode}</td>
+                            <td className="px-2.5 py-1 font-mono font-medium text-[#9A3412]">{item.assetCode}</td>
                             <td className="px-2.5 py-1">{item.assetName}</td>
                             <td className="px-2.5 py-1 text-right">₹{fmt(item.bookValueBefore)}</td>
                             <td className="px-2.5 py-1 text-right text-green-700">{item.rate}%</td>
@@ -507,16 +507,16 @@ const AssetReports: React.FC = () => {
                   ) : maintenances.length === 0 ? (
                     <tr><td colSpan={10} className="text-center py-4 text-gray-400">कोणतीही देखभाल नोंद सापडली नाही.</td></tr>
                   ) : maintenances.map((m, idx) => (
-                    <tr key={m.maintenanceID} className="hover:bg-blue-50 border-b border-gray-100 transition-colors">
+                    <tr key={m.maintenanceID} className="hover:bg-amber-50 border-b border-gray-100 transition-colors">
                       <td className="px-2.5 py-1">{idx + 1}</td>
-                      <td className="px-2.5 py-1 font-mono font-medium text-blue-700">{m.asset?.assetCode}</td>
+                      <td className="px-2.5 py-1 font-mono font-medium text-[#9A3412]">{m.asset?.assetCode}</td>
                       <td className="px-2.5 py-1 font-medium">{m.asset?.assetName}</td>
                       <td className="px-2.5 py-1">{new Date(m.maintenanceDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
                       <td className="px-2.5 py-1 font-semibold text-orange-700">{m.maintenanceType}</td>
                       <td className="px-2.5 py-1">{m.serviceProvider}</td>
                       <td className="px-2.5 py-1 text-right font-bold text-gray-800">₹{fmt(m.cost)}</td>
                       <td className="px-2.5 py-1">{m.nextServiceDate ? new Date(m.nextServiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</td>
-                      <td className="px-2.5 py-1 text-blue-800 font-bold">{m.voucher?.voucherNo || 'Manual'}</td>
+                      <td className="px-2.5 py-1 text-[#7C2418] font-bold">{m.voucher?.voucherNo || 'Manual'}</td>
                       <td className="px-2.5 py-1 text-gray-500 italic truncate max-w-[150px]">{m.remarks || '-'}</td>
                     </tr>
                   ))}

@@ -771,7 +771,7 @@ export default function GoldLoanDetails() {
                     <button
                       type="button"
                       onClick={startCamera}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                      className="bg-[#B44814] hover:bg-[#9A3412] text-white px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <Camera className="w-2.5 h-2.5" />
                       <span>कॅमेरा</span>
@@ -877,25 +877,25 @@ export default function GoldLoanDetails() {
               </div>
               
               <div className="overflow-x-auto max-h-[50vh]">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-slate-50 text-slate-700 text-[10px] uppercase font-bold sticky top-0 border-b border-slate-200">
+                <table className="w-full text-left border-collapse leading-tight">
+                  <thead className="bg-[#5A1A14] text-amber-50 text-[10px] uppercase font-bold sticky top-0 border-b border-amber-400/30">
                     <tr>
-                      <th className="p-1 border text-center w-8">फोटो</th>
-                      <th className="p-1.5 border">नाव</th>
-                      <th className="p-1 border text-center">नग</th>
-                      <th className="p-1 border text-right">Net Wt</th>
-                      <th className="p-1 border text-center">कॅरेट</th>
-                      <th className="p-1 border text-right">दर / g</th>
-                      <th className="p-1.5 border text-right">सिस्टीम (₹)</th>
-                      <th className="p-1.5 border text-right font-bold text-amber-950 bg-amber-50/50">सोनार (₹)</th>
-                      <th className="p-1.5 border">व्हॅल्यूअर</th>
-                      <th className="p-1 border text-center w-16">कृती</th>
+                      <th className="p-1 border text-center w-8 whitespace-nowrap">फोटो</th>
+                      <th className="p-1.5 border whitespace-nowrap">नाव</th>
+                      <th className="p-1 border text-center whitespace-nowrap">नग</th>
+                      <th className="p-1 border text-right whitespace-nowrap">Net Wt</th>
+                      <th className="p-1 border text-center whitespace-nowrap">कॅरेट</th>
+                      <th className="p-1 border text-right whitespace-nowrap">दर / g</th>
+                      <th className="p-1.5 border text-right whitespace-nowrap">सिस्टीम (₹)</th>
+                      <th className="p-1.5 border text-right font-bold text-amber-950 bg-amber-50/50 whitespace-nowrap">सोनार (₹)</th>
+                      <th className="p-1.5 border whitespace-nowrap">व्हॅल्यूअर</th>
+                      <th className="p-1 border text-center w-16 whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
                   <tbody className="text-[11px] text-gray-800 font-mono">
                     {goldDetails.map(g => (
                       <tr key={g.goldLoanDetailID} className="border-b hover:bg-amber-50/30 transition-colors">
-                        <td className="p-1 border text-center">
+                        <td className="p-1 border text-center align-middle">
                           {g.imagePath ? (
                             <button
                               type="button"
@@ -909,26 +909,26 @@ export default function GoldLoanDetails() {
                             <span className="text-slate-300 text-[9px] font-sans">-</span>
                           )}
                         </td>
-                        <td className="p-1.5 border font-sans font-medium text-gray-900">{g.ornamentName}</td>
-                        <td className="p-1 border text-center">{g.quantity}</td>
-                        <td className="p-1 border text-right font-bold text-amber-900">{g.netWeight.toFixed(3)}g</td>
-                        <td className="p-1 border text-center font-bold text-amber-800">{g.purity}K</td>
-                        <td className="p-1 border text-right">₹{g.goldRatePerGram.toFixed(0)}</td>
-                        <td className="p-1.5 border text-right font-bold text-emerald-700">₹{g.estimatedValue.toLocaleString('en-IN')}</td>
-                        <td className="p-1.5 border text-right font-black text-amber-950 bg-amber-50/30">
+                        <td className="p-1.5 border font-sans font-medium text-gray-900 align-middle">{g.ornamentName}</td>
+                        <td className="p-1 border text-center align-middle">{g.quantity}</td>
+                        <td className="p-1 border text-right font-bold text-amber-900 align-middle">{g.netWeight.toFixed(3)}g</td>
+                        <td className="p-1 border text-center font-bold text-amber-800 align-middle">{g.purity}K</td>
+                        <td className="p-1 border text-right align-middle">₹{g.goldRatePerGram.toFixed(0)}</td>
+                        <td className="p-1.5 border text-right font-bold text-emerald-700 align-middle">₹{g.estimatedValue.toLocaleString('en-IN')}</td>
+                        <td className="p-1.5 border text-right font-black text-amber-950 bg-amber-50/30 align-middle">
                           ₹{(g.valuerValuation || g.estimatedValue).toLocaleString('en-IN')}
                         </td>
-                        <td className="p-1.5 border font-sans text-[10px] text-slate-700">
+                        <td className="p-1.5 border font-sans text-[10px] text-slate-700 align-middle">
                           {g.valuerName ? (
                             <span>{g.valuerName} {g.valuationReceiptNo ? `(#${g.valuationReceiptNo})` : ''}</span>
                           ) : '-'}
                         </td>
-                        <td className="p-1 border text-center font-sans">
+                        <td className="p-1 border text-center font-sans align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
                               onClick={() => handleEdit(g)}
-                              className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-1 py-0.5 rounded text-[10px] font-bold border border-blue-200 cursor-pointer"
+                              className="bg-amber-50 text-[#9A3412] hover:bg-amber-100 px-1 py-0.5 rounded text-[10px] font-bold border border-amber-200 cursor-pointer"
                             >
                               बदला
                             </button>

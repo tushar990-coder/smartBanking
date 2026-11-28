@@ -1194,7 +1194,7 @@ export const FdMisInterestPayout: React.FC = () => {
       {/* Top ERP Header Banner matching CBS theme */}
       <div className="bg-primary px-3 py-2 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs rounded-sm">
         <div className="flex items-center gap-2">
-          <ArrowRightLeft className="w-5 h-5 text-blue-100 shrink-0" />
+          <ArrowRightLeft className="w-5 h-5 text-amber-100 shrink-0" />
           <div>
             <h1 className="text-sm font-bold tracking-wide flex items-center gap-2">
               मुदत ठेव मासिक व्याज ट्रान्सफर व परतावा
@@ -1202,7 +1202,7 @@ export const FdMisInterestPayout: React.FC = () => {
                 FD MIS Payout
               </span>
             </h1>
-            <p className="text-[10px] text-blue-100 font-normal">
+            <p className="text-[10px] text-amber-100 font-normal">
               दरमहा ठेवीदारांच्या बचत खात्यात, रोख किंवा बँक लेजरद्वारे मासिक व्याज वर्ग करणे व कर्जात वळती
             </p>
           </div>
@@ -1372,7 +1372,7 @@ export const FdMisInterestPayout: React.FC = () => {
               <span className="font-bold text-gray-700 flex items-center gap-1">
                 व्याज गणना पद्धत:
                 {isSchemeSyncedMethod && (
-                  <span className="text-[10px] bg-blue-50 text-primary border border-blue-200 px-1.5 py-0.2 rounded-sm font-semibold">
+                  <span className="text-[10px] bg-amber-50 text-primary border border-amber-200 px-1.5 py-0.2 rounded-sm font-semibold">
                     योजनेनुसार ऑटो
                   </span>
                 )}
@@ -1510,7 +1510,7 @@ export const FdMisInterestPayout: React.FC = () => {
               {totalSelectedBankDisb > 0 && (
                 <>
                   <span className="text-gray-300">|</span>
-                  <span>बँक वर्ग: <strong className="text-indigo-700 font-bold">₹ {totalSelectedBankDisb.toLocaleString('en-IN')}</strong></span>
+                  <span>बँक वर्ग: <strong className="text-[#9A3412] font-bold">₹ {totalSelectedBankDisb.toLocaleString('en-IN')}</strong></span>
                 </>
               )}
               {totalSelectedLoanAdj > 0 && (
@@ -1568,20 +1568,20 @@ export const FdMisInterestPayout: React.FC = () => {
           {/* Clean 8-Column Grid Table */}
           <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto max-h-[580px] overflow-y-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-gray-100 text-gray-700 uppercase font-bold tracking-wider text-[10px] sticky top-0 z-10 border-b border-gray-200">
+              <table className="w-full text-left text-[11px] border-collapse leading-tight">
+                <thead className="bg-[#5A1A14] text-amber-50 uppercase font-bold tracking-wider text-[10px] sticky top-0 z-10 border-b border-amber-400/30">
                   <tr>
-                    <th className="p-2 w-10 text-center">निवड</th>
-                    <th className="p-2 min-w-[190px]">FD खाते क्र. व खातेदार</th>
-                    <th className="p-2 text-right min-w-[110px]">ठेव मुद्दल व दर</th>
-                    <th className="p-2 text-center min-w-[85px]">कालावधी</th>
-                    <th className="p-2 text-right min-w-[130px]">देय मासिक व्याज (₹)</th>
-                    <th className="p-2 min-w-[205px]">जमा लेजर (Cash / Saving / Bank)</th>
-                    <th className="p-2 min-w-[240px]">वाटप प्रकार (जुना क्र. व CIF)</th>
-                    <th className="p-2 text-center w-24">स्थिती</th>
+                    <th className="px-2 py-1.5 w-10 text-center whitespace-nowrap">निवड</th>
+                    <th className="px-2 py-1.5 min-w-[190px] whitespace-nowrap">FD खाते क्र. व खातेदार</th>
+                    <th className="px-2 py-1.5 text-right min-w-[110px] whitespace-nowrap">ठेव मुद्दल व दर</th>
+                    <th className="px-2 py-1.5 text-center min-w-[85px] whitespace-nowrap">कालावधी</th>
+                    <th className="px-2 py-1.5 text-right min-w-[130px] whitespace-nowrap">देय मासिक व्याज (₹)</th>
+                    <th className="px-2 py-1.5 min-w-[205px] whitespace-nowrap">जमा लेजर (Cash / Saving / Bank)</th>
+                    <th className="px-2 py-1.5 min-w-[240px] whitespace-nowrap">वाटप प्रकार (जुना क्र. व CIF)</th>
+                    <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">स्थिती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 font-medium">
+                <tbody className="divide-y divide-amber-100 font-medium">
                   {filteredPreview.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="p-6 text-center text-gray-400 font-semibold">
@@ -1597,12 +1597,12 @@ export const FdMisInterestPayout: React.FC = () => {
                       return (
                         <tr
                           key={item.fdAccountID}
-                          className={`transition-colors hover:bg-blue-50/40 ${
-                            item.isSelected ? 'bg-blue-50/30' : (isDisabled ? 'bg-gray-50/70 opacity-60' : '')
+                          className={`transition-colors hover:bg-amber-50/40 ${
+                            item.isSelected ? 'bg-amber-50/30' : (isDisabled ? 'bg-gray-50/70 opacity-60' : '')
                           }`}
                         >
                           {/* 1. Checkbox */}
-                          <td className="p-2 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             <input
                               type="checkbox"
                               checked={item.isSelected}
@@ -1613,7 +1613,7 @@ export const FdMisInterestPayout: React.FC = () => {
                           </td>
 
                           {/* 2. FD Account & Customer */}
-                          <td className="p-2">
+                          <td className="px-2 py-1 align-middle">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-gray-900">{item.accountNo}</span>
                               {(item.oldAccountNo || item.legacyAccountNumber) && (
@@ -1629,13 +1629,13 @@ export const FdMisInterestPayout: React.FC = () => {
                           </td>
 
                           {/* 3. Deposit Amount & Rate */}
-                          <td className="p-2 text-right">
+                          <td className="px-2 py-1 text-right align-middle">
                             <div className="font-bold text-gray-900">₹ {item.depositPrincipal.toLocaleString('en-IN')}</div>
                             <div className="text-[11px] font-semibold text-primary">{item.interestRate}% वार्षिक</div>
                           </td>
 
                           {/* 4. Exact Calendar Days */}
-                          <td className="p-2 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             <div className="font-bold text-gray-800">{item.elapsedDays} दिवस</div>
                             {item.isBrokenPeriod && (
                               <span className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 px-1 py-0.2 rounded-sm font-semibold inline-block mt-0.5">
@@ -1645,7 +1645,7 @@ export const FdMisInterestPayout: React.FC = () => {
                           </td>
 
                           {/* 5. Gross Monthly Interest (Editable with Reset for manual edits) */}
-                          <td className="p-2 text-right">
+                          <td className="px-2 py-1 text-right align-middle">
                             <div className="flex items-center justify-end gap-1">
                               <span className="text-gray-500 font-bold">₹</span>
                               <input
@@ -1671,7 +1671,7 @@ export const FdMisInterestPayout: React.FC = () => {
                           </td>
 
                           {/* 6. Dynamic Ledger Selection (Saving / Cash / Bank / Suspense / Loan) */}
-                          <td className="p-2">
+                          <td className="px-2 py-1 align-middle">
                             {item.isLienMarked && item.disbursementMode === 'LoanRecovery' ? (
                               <div className="text-amber-800 bg-amber-50/70 border border-amber-200 rounded-sm px-2 py-1">
                                 <span className="font-bold block text-[11px]">🔒 तारण कर्ज वळती</span>
@@ -1740,7 +1740,7 @@ export const FdMisInterestPayout: React.FC = () => {
                           </td>
 
                           {/* 7. वाटप प्रकार — Auto-shows Old Account No + CIF No + Saving Account No when Saving Ledger is selected */}
-                          <td className="p-2">
+                          <td className="px-2 py-1 align-middle">
                             {item.disbursementMode === 'SavingTransfer' ? (
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between gap-1">
@@ -1817,7 +1817,7 @@ export const FdMisInterestPayout: React.FC = () => {
                               </div>
                             ) : item.disbursementMode === 'Bank' ? (
                               <div className="space-y-0.5">
-                                <span className="inline-block bg-indigo-50 text-indigo-900 border border-indigo-200 px-2 py-0.5 rounded-sm font-bold text-[11px]">
+                                <span className="inline-block bg-orange-50 text-[#5A1A14] border border-amber-200 px-2 py-0.5 rounded-sm font-bold text-[11px]">
                                   बँक वर्ग ₹ {item.netDisbursedAmount.toLocaleString('en-IN')}
                                 </span>
                                 <div className="text-[10px] text-gray-600 font-semibold">
@@ -1846,13 +1846,13 @@ export const FdMisInterestPayout: React.FC = () => {
                           </td>
 
                           {/* 8. Status */}
-                          <td className="p-2 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             {item.isAlreadyPaid ? (
                               <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-gray-200">
                                 <CheckCircle2 size={11} className="text-gray-500" /> जमा झाले
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 bg-blue-50 text-primary text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-blue-200">
+                              <span className="inline-flex items-center gap-1 bg-amber-50 text-primary text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-amber-200">
                                 वाटप तयार
                               </span>
                             )}
@@ -1897,22 +1897,22 @@ export const FdMisInterestPayout: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto max-h-[550px] overflow-y-auto border border-gray-200 rounded-sm">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-gray-100 text-gray-700 uppercase font-bold tracking-wider text-[10px] sticky top-0 z-10 border-b border-gray-200">
+            <table className="w-full text-left text-[11px] border-collapse leading-tight">
+              <thead className="bg-[#5A1A14] text-amber-50 uppercase font-bold tracking-wider text-[10px] sticky top-0 z-10 border-b border-amber-400/30">
                 <tr>
-                  <th className="p-2">वाटप दिनांक</th>
-                  <th className="p-2">व्हाउचर क्र.</th>
-                  <th className="p-2">FD खाते क्र.</th>
-                  <th className="p-2">खातेदार</th>
-                  <th className="p-2 text-right">ठेव मुद्दल</th>
-                  <th className="p-2 text-center">व्याजदर / दिवस</th>
-                  <th className="p-2 text-right">मासिक व्याज</th>
-                  <th className="p-2">वाटप प्रकार / बचत खाते</th>
-                  <th className="p-2">वळती कर्ज खाते</th>
-                  <th className="p-2 text-center">स्थिती</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">वाटप दिनांक</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">व्हाउचर क्र.</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">FD खाते क्र.</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">खातेदार</th>
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap">ठेव मुद्दल</th>
+                  <th className="px-2 py-1.5 text-center whitespace-nowrap">व्याजदर / दिवस</th>
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap">मासिक व्याज</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">वाटप प्रकार / बचत खाते</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">वळती कर्ज खाते</th>
+                  <th className="px-2 py-1.5 text-center whitespace-nowrap">स्थिती</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 font-medium">
+              <tbody className="divide-y divide-amber-100 font-medium">
                 {filteredRegister.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="p-6 text-center text-gray-400 font-semibold">
@@ -1922,9 +1922,9 @@ export const FdMisInterestPayout: React.FC = () => {
                 ) : (
                   filteredRegister.map((r) => (
                     <tr key={r.payoutID} className="hover:bg-gray-50/50">
-                      <td className="p-2 font-mono">{r.payoutDate ? r.payoutDate.split('T')[0] : '-'}</td>
-                      <td className="p-2 font-bold text-primary font-mono">{r.voucherNo || '-'}</td>
-                      <td className="p-2">
+                      <td className="px-2 py-1 font-mono align-middle">{r.payoutDate ? r.payoutDate.split('T')[0] : '-'}</td>
+                      <td className="px-2 py-1 font-bold text-primary font-mono align-middle">{r.voucherNo || '-'}</td>
+                      <td className="px-2 py-1 align-middle">
                         <div className="font-bold text-gray-800">{r.accountNo}</div>
                         {(r.oldAccountNo || r.legacyAccountNumber) && (
                           <div className="text-[10px] text-amber-900 font-bold bg-amber-50 border border-amber-200 px-1 py-0.2 rounded-xs inline-block mt-0.5">
@@ -1932,13 +1932,13 @@ export const FdMisInterestPayout: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="p-2 text-gray-800 font-semibold">{r.customerName}</td>
-                      <td className="p-2 text-right font-bold text-gray-800">₹ {r.depositPrincipal.toLocaleString('en-IN')}</td>
-                      <td className="p-2 text-center font-bold text-gray-700">
+                      <td className="px-2 py-1 text-gray-800 font-semibold align-middle">{r.customerName}</td>
+                      <td className="px-2 py-1 text-right font-bold text-gray-800 align-middle">₹ {r.depositPrincipal.toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-1 text-center font-bold text-gray-700 align-middle">
                         {r.interestRate}% {r.elapsedDays ? `(${r.elapsedDays} दि.)` : ''}
                       </td>
-                      <td className="p-2 text-right font-bold text-primary">₹ {r.grossInterest.toLocaleString('en-IN')}</td>
-                      <td className="p-2 text-emerald-800 font-bold">
+                      <td className="px-2 py-1 text-right font-bold text-primary align-middle">₹ {r.grossInterest.toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-1 text-emerald-800 font-bold align-middle">
                         {r.disbursementMode === 'SavingTransfer'
                           ? `${r.targetSavingAccountNo || '-'}${r.targetSavingOldAccountNo ? ` (जुना: ${r.targetSavingOldAccountNo})` : ''}`
                           : r.disbursementMode === 'Cash'
@@ -1947,8 +1947,8 @@ export const FdMisInterestPayout: React.FC = () => {
                           ? 'बँक ट्रान्सफर'
                           : r.disbursementMode}
                       </td>
-                      <td className="p-2 text-amber-800 font-bold">{r.targetLoanAccountNo || '-'}</td>
-                      <td className="p-2 text-center">
+                      <td className="px-2 py-1 text-amber-800 font-bold align-middle">{r.targetLoanAccountNo || '-'}</td>
+                      <td className="px-2 py-1 text-center align-middle">
                         <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded-sm text-[10px] font-bold">
                           ✓ यशस्वी
                         </span>
@@ -2003,8 +2003,8 @@ export const FdMisInterestPayout: React.FC = () => {
                 )}
                 {totalSelectedBankDisb > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-indigo-700 font-medium">बँक वर्ग (Bank Ledger):</span>
-                    <span className="font-bold text-indigo-800">₹ {totalSelectedBankDisb.toLocaleString('en-IN')}</span>
+                    <span className="text-[#9A3412] font-medium">बँक वर्ग (Bank Ledger):</span>
+                    <span className="font-bold text-[#7C2418]">₹ {totalSelectedBankDisb.toLocaleString('en-IN')}</span>
                   </div>
                 )}
                 {totalSelectedLoanAdj > 0 && (
@@ -2081,7 +2081,7 @@ export const FdMisInterestPayout: React.FC = () => {
             </div>
 
             <div className="p-4 space-y-3 text-xs">
-              <div className="bg-blue-50/60 border border-blue-200 rounded-sm p-2 text-gray-800">
+              <div className="bg-amber-50/60 border border-amber-200 rounded-sm p-2 text-gray-800">
                 FD खाते क्र: <b>{searchModalItem.accountNo}</b> | खातेदार: <b>{searchModalItem.customerName}</b> | CIF: <b>{searchModalItem.cifNo || '-'}</b>
               </div>
 
@@ -2117,7 +2117,7 @@ export const FdMisInterestPayout: React.FC = () => {
                       <div
                         key={sb.savingAccountID || sb.id}
                         onClick={() => handleSelectSearchedSb(sb)}
-                        className="p-2 hover:bg-blue-50/50 cursor-pointer flex items-center justify-between transition"
+                        className="p-2 hover:bg-amber-50/50 cursor-pointer flex items-center justify-between transition"
                       >
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">

@@ -791,7 +791,7 @@ export default function Sec101CaseFilingMaster({
       {/* Petition Print Modal */}
       {showPetitionPrint && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 print:static print:bg-white print:p-0">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-8 shadow-2xl space-y-6 print:shadow-none print:max-h-none print:p-2 print:overflow-visible">
+          <div className="bg-white rounded-2xl max-w-[97vw] xl:max-w-[1460px] w-full max-h-[90vh] overflow-y-auto p-8 shadow-2xl space-y-6 print:shadow-none print:max-h-none print:p-2 print:overflow-visible">
             <div className="text-center font-bold text-sm text-slate-900 border-b-2 border-slate-900 pb-3 space-y-1">
               <p className="text-base font-extrabold uppercase">{courtName || 'मा. सहाय्यक निबंधक, सहकारी संस्था यांचेकडे'}</p>
               <p className="text-xs text-slate-600">
@@ -850,38 +850,38 @@ export default function Sec101CaseFilingMaster({
                 ३. <strong>थकबाकी विवरण (Form 'M' Statement of Dues — दिनांक {filingDate} अखेर):</strong>
               </p>
 
-              <table className="w-full border text-xs border-slate-300">
-                <thead className="bg-slate-100 font-bold">
+              <table className="w-full border text-[11px] border-slate-300 leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] font-bold text-amber-50">
                   <tr>
-                    <th className="border p-2">अ.क्र.</th>
-                    <th className="border p-2">तपशील</th>
-                    <th className="border p-2 text-right">रक्कम (₹)</th>
+                    <th className="border px-2 py-1.5 whitespace-nowrap">अ.क्र.</th>
+                    <th className="border px-2 py-1.5 whitespace-nowrap">तपशील</th>
+                    <th className="border px-2 py-1.5 text-right whitespace-nowrap">रक्कम (₹)</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="border p-2 text-center">१</td>
-                    <td className="border p-2">थकीत मुद्दल रक्कम (Principal Dues)</td>
-                    <td className="border p-2 text-right">₹{Number(principalClaim || 0).toLocaleString('en-IN')}</td>
+                    <td className="border px-2 py-1 text-center align-middle">१</td>
+                    <td className="border px-2 py-1 align-middle">थकीत मुद्दल रक्कम (Principal Dues)</td>
+                    <td className="border px-2 py-1 text-right align-middle">₹{Number(principalClaim || 0).toLocaleString('en-IN')}</td>
                   </tr>
                   <tr>
-                    <td className="border p-2 text-center">२</td>
-                    <td className="border p-2">थकीत नियमित व्याज (Interest @ {interestRate}%)</td>
-                    <td className="border p-2 text-right">₹{Number(interestClaim || 0).toLocaleString('en-IN')}</td>
+                    <td className="border px-2 py-1 text-center align-middle">२</td>
+                    <td className="border px-2 py-1 align-middle">थकीत नियमित व्याज (Interest @ {interestRate}%)</td>
+                    <td className="border px-2 py-1 text-right align-middle">₹{Number(interestClaim || 0).toLocaleString('en-IN')}</td>
                   </tr>
                   <tr>
-                    <td className="border p-2 text-center">३</td>
-                    <td className="border p-2">दंडव्याज (Penal Interest @ {penalRate}%)</td>
-                    <td className="border p-2 text-right">₹{Number(penalInterestClaim || 0).toLocaleString('en-IN')}</td>
+                    <td className="border px-2 py-1 text-center align-middle">३</td>
+                    <td className="border px-2 py-1 align-middle">दंडव्याज (Penal Interest @ {penalRate}%)</td>
+                    <td className="border px-2 py-1 text-right align-middle">₹{Number(penalInterestClaim || 0).toLocaleString('en-IN')}</td>
                   </tr>
                   <tr>
-                    <td className="border p-2 text-center">४</td>
-                    <td className="border p-2">नोटीस व कायदेशीर खर्च (Legal/Notice Charges)</td>
-                    <td className="border p-2 text-right">₹{Number(otherChargesClaim || 0).toLocaleString('en-IN')}</td>
+                    <td className="border px-2 py-1 text-center align-middle">४</td>
+                    <td className="border px-2 py-1 align-middle">नोटीस व कायदेशीर खर्च (Legal/Notice Charges)</td>
+                    <td className="border px-2 py-1 text-right align-middle">₹{Number(otherChargesClaim || 0).toLocaleString('en-IN')}</td>
                   </tr>
-                  <tr className="bg-blue-50 font-bold text-blue-900 text-sm">
+                  <tr className="bg-amber-50 font-bold text-[#5A1A14] text-sm">
                     <td className="border p-2 text-center" colSpan={2}>एकूण दावा वसुली रक्कम (Total Claim Amount)</td>
-                    <td className="border p-2 text-right">₹{calculatedTotalClaim.toLocaleString('en-IN')}</td>
+                    <td className="border px-2 py-1 text-right align-middle">₹{calculatedTotalClaim.toLocaleString('en-IN')}</td>
                   </tr>
                 </tbody>
               </table>

@@ -256,7 +256,7 @@ export default function CustomerListReport() {
             <div className="flex items-center gap-1.5 flex-wrap">
               <h1 className="text-xs sm:text-sm font-bold text-gray-900 flex items-center gap-1.5">
                 खातेदार यादी अहवाल (Customer / CIF Master List)
-                <span className="text-[9px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded-full">
+                <span className="text-[9px] bg-amber-100 text-[#7C2418] font-semibold px-1.5 py-0.5 rounded-full">
                   कोर बँकिंग सीबीएस
                 </span>
               </h1>
@@ -430,7 +430,7 @@ export default function CustomerListReport() {
       {reportData && (
         <div className="bg-white px-3 py-1.5 rounded border border-gray-200 shadow-2xs flex flex-wrap items-center justify-between text-xs gap-2 no-print">
           <div className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-blue-600" />
+            <Users className="w-3.5 h-3.5 text-[#B44814]" />
             <span className="text-gray-600 text-[11px] font-medium">एकूण खातेदार:</span>
             <span className="font-bold text-gray-900 text-xs">{reportData.totalCustomers.toLocaleString('en-IN')}</span>
           </div>
@@ -473,9 +473,9 @@ export default function CustomerListReport() {
           <div className="h-3 w-px bg-gray-200 hidden sm:block"></div>
 
           <div className="flex items-center gap-1.5">
-            <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+            <Building2 className="w-3.5 h-3.5 text-[#B44814]" />
             <span className="text-gray-600 text-[11px] font-medium">वैयक्तिक / इतर:</span>
-            <span className="font-bold text-indigo-700 text-xs">{reportData.individualCount} / {reportData.commercialCount}</span>
+            <span className="font-bold text-[#9A3412] text-xs">{reportData.individualCount} / {reportData.commercialCount}</span>
           </div>
         </div>
       )}
@@ -529,7 +529,7 @@ export default function CustomerListReport() {
               {displayedRows.map((r, idx) => (
                 <tr 
                   key={r.customerID || idx} 
-                  className={`border-b border-gray-300 hover:bg-blue-50/50 transition-colors ${
+                  className={`border-b border-gray-300 hover:bg-amber-50/50 transition-colors ${
                     idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'
                   }`}
                 >
@@ -613,7 +613,7 @@ export default function CustomerListReport() {
                 <td colSpan={10} className="p-1 border border-gray-400">
                   एकूण खातेदार संख्या: <strong className="text-primary font-bold">{displayedRows.length}</strong> 
                   {' '}| सक्रिय: <strong className="text-emerald-700 font-bold">{displayedRows.filter(x => x.status === 'Active').length}</strong>
-                  {' '}| केवायसी पूर्ण: <strong className="text-blue-700 font-bold">{displayedRows.filter(x => x.kycStatus === 'Verified' || x.kycStatus === 'पूर्ण').length}</strong>
+                  {' '}| केवायसी पूर्ण: <strong className="text-[#9A3412] font-bold">{displayedRows.filter(x => x.kycStatus === 'Verified' || x.kycStatus === 'पूर्ण').length}</strong>
                   {' '}| केवायसी अपूर्ण: <strong className="text-amber-700 font-bold">{displayedRows.filter(x => !(x.kycStatus === 'Verified' || x.kycStatus === 'पूर्ण')).length}</strong>
                 </td>
               </tr>

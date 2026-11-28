@@ -226,22 +226,22 @@ export default function CbsReportLayout({
       : 'A4 portrait';
 
   return (
-    <div className="cbs-report-wrapper p-2 sm:p-4 bg-slate-100 min-h-screen print:p-0 print:bg-white print:min-h-0">
+    <div className="cbs-report-wrapper p-2 sm:p-4 cbs-page-canvas min-h-screen print:p-0 print:bg-white print:min-h-0">
       <style>{`@media print { @page { size: ${pageSizeCss}; margin: 6mm 8mm 6mm 8mm; } }`}</style>
       
       {/* 1. Sleek Unified CBS Action Toolbar (Hidden on Print) */}
-      <div className="cbs-toolbar bg-white px-3 py-1.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 no-print flex flex-wrap items-center justify-between gap-2">
+      <div className="cbs-toolbar bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-[0_4px_16px_rgba(124,36,24,0.06)] border border-amber-200/85 border-b-2 border-b-[#B44814] mb-3 no-print flex flex-wrap items-center justify-between gap-2">
         
         {/* Left: Report Title & Paper Indicator */}
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+          <div className="w-6 h-6 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-[#9A3412]">
             <FileText size={13} className="stroke-[2.5]" />
           </div>
           <div>
-            <h2 className="text-xs font-bold text-gray-900 leading-none flex items-center gap-1">
+            <h2 className="text-xs font-extrabold text-[#4A1410] leading-none flex items-center gap-1">
               <span>{reportTitle}</span>
               {reportSubtitle && (
-                <span className="text-[10px] font-normal text-slate-500 hidden md:inline">({reportSubtitle})</span>
+                <span className="text-[10px] font-medium text-[#8C5E4F] hidden md:inline">({reportSubtitle})</span>
               )}
             </h2>
           </div>
@@ -259,14 +259,14 @@ export default function CbsReportLayout({
           
           {/* Paper Sizing Selector */}
           {allowPaperSizeToggle && (
-            <div className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-300 text-[10.5px]">
+            <div className="flex items-center bg-[#FFF8F1] p-0.5 rounded-lg border border-amber-200 text-[10.5px]">
               <button
                 type="button"
                 onClick={() => setPaperSize('a4-portrait')}
-                className={`px-1.5 py-0.5 rounded-xs font-medium cursor-pointer transition-colors ${
+                className={`px-1.5 py-0.5 rounded font-medium cursor-pointer transition-colors ${
                   paperSize === 'a4-portrait' 
-                    ? 'bg-primary text-white font-bold shadow-2xs' 
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-[#9A3412] text-white font-bold shadow-2xs' 
+                    : 'text-[#6E493C] hover:text-[#4A1410]'
                 }`}
                 title="A4 पोर्ट्रेट कागद (६ ते ८ कॉलम्स)"
               >
@@ -276,10 +276,10 @@ export default function CbsReportLayout({
               <button
                 type="button"
                 onClick={() => setPaperSize('a4-landscape')}
-                className={`px-1.5 py-0.5 rounded-xs font-medium cursor-pointer transition-colors ${
+                className={`px-1.5 py-0.5 rounded font-medium cursor-pointer transition-colors ${
                   paperSize === 'a4-landscape' 
-                    ? 'bg-primary text-white font-bold shadow-2xs' 
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-[#9A3412] text-white font-bold shadow-2xs' 
+                    : 'text-[#6E493C] hover:text-[#4A1410]'
                 }`}
                 title="A4 लँडस्केप कागद (८ ते १० कॉलम्स)"
               >
@@ -289,10 +289,10 @@ export default function CbsReportLayout({
               <button
                 type="button"
                 onClick={() => setPaperSize('legal-landscape')}
-                className={`px-1.5 py-0.5 rounded-xs font-medium cursor-pointer transition-colors ${
+                className={`px-1.5 py-0.5 rounded font-medium cursor-pointer transition-colors ${
                   paperSize === 'legal-landscape' 
-                    ? 'bg-primary text-white font-bold shadow-2xs' 
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-[#9A3412] text-white font-bold shadow-2xs' 
+                    : 'text-[#6E493C] hover:text-[#4A1410]'
                 }`}
                 title="Legal लँडस्केप कागद (१० ते १५ कॉलम्स)"
               >

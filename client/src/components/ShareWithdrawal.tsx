@@ -389,7 +389,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
         <div className="text-xs font-bold text-primary flex items-center gap-1.5">
           <span>📤</span> शेअर परतावा / काढून घेणे (Share Withdrawal & Refund)
         </div>
-        <div className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-sm border border-blue-200">
+        <div className="text-[10px] bg-amber-100 text-[#7C2418] font-bold px-2 py-0.5 rounded-sm border border-amber-200">
           शेअर मॉड्युल (Share Capital Module)
         </div>
       </div>
@@ -464,7 +464,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
                         </span>
                       )}
                     </div>
-                    <div className="flex justify-between items-center bg-blue-50/80 border border-blue-200 p-3 rounded-sm mt-2 shadow-xs">
+                    <div className="flex justify-between items-center bg-amber-50/80 border border-amber-200 p-3 rounded-sm mt-2 shadow-xs">
                       <div>
                         <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wide">उपलब्ध शेअर्स (Available Shares)</p>
                         <p className="text-xl font-black text-primary">{shareAccount.totalShareCount}</p>
@@ -502,10 +502,10 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
                   <p className="text-[10px] text-amber-700 mt-1">त्यांच्या नावावर कोणतेही शेअर्स उपलब्ध नाहीत.</p>
                 </div>
               ) : (
-                <div className="text-center py-8 flex-1 flex flex-col justify-center items-center bg-blue-50/40 rounded border border-dashed border-blue-200 p-3">
+                <div className="text-center py-8 flex-1 flex flex-col justify-center items-center bg-amber-50/40 rounded border border-dashed border-amber-200 p-3">
                   <span className="text-2xl mb-1">👈</span>
-                  <p className="text-blue-900 font-bold text-xs">कृपया वरील ड्रॉपडाऊनमधून सभासद निवडा.</p>
-                  <p className="text-[10px] text-blue-600 mt-0.5">(Select a member from above to view share holding)</p>
+                  <p className="text-[#5A1A14] font-bold text-xs">कृपया वरील ड्रॉपडाऊनमधून सभासद निवडा.</p>
+                  <p className="text-[10px] text-[#B44814] mt-0.5">(Select a member from above to view share holding)</p>
                 </div>
               )}
             </div>
@@ -576,7 +576,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
                       <button
                         type="button"
                         onClick={() => { setPaymentMode('Transfer'); setBankLedgerId(0); }}
-                        className={`flex-1 py-1 px-2 rounded text-xs font-bold border cursor-pointer transition-all ${paymentMode === 'Transfer' ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100'}`}
+                        className={`flex-1 py-1 px-2 rounded text-xs font-bold border cursor-pointer transition-all ${paymentMode === 'Transfer' ? 'bg-[#B44814] text-white border-[#9A3412] shadow-xs' : 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100'}`}
                       >
                         🔄 बचत खात्यात (Transfer)
                       </button>
@@ -597,13 +597,13 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
 
                   {/* Conditional Saving Account Dropdown for Transfer */}
                   {paymentMode === 'Transfer' && (
-                    <div className="p-2 bg-indigo-50/70 border border-indigo-200 rounded-sm space-y-1">
-                      <label className="block text-[10px] font-bold text-indigo-900">परतावा जमा करण्याचे बचत खाते (Saving A/c to Credit) *</label>
+                    <div className="p-2 bg-orange-50/70 border border-amber-200 rounded-sm space-y-1">
+                      <label className="block text-[10px] font-bold text-[#5A1A14]">परतावा जमा करण्याचे बचत खाते (Saving A/c to Credit) *</label>
                       {memberSavingAccounts.length > 0 ? (
                         <select
                           value={selectedSavingAccountId}
                           onChange={(e) => setSelectedSavingAccountId(e.target.value === '' ? '' : parseInt(e.target.value))}
-                          className="w-full border border-indigo-300 px-2 py-1 rounded-sm text-xs bg-white font-bold text-indigo-950 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          className="w-full border border-amber-300 px-2 py-1 rounded-sm text-xs bg-white font-bold text-[#4A1410] disabled:bg-gray-100 disabled:cursor-not-allowed"
                         >
                           {memberSavingAccounts.map((acc: any) => (
                             <option key={acc.savingAccountID} value={acc.savingAccountID}>

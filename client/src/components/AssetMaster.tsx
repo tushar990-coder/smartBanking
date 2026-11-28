@@ -703,12 +703,12 @@ const AssetMaster: React.FC = () => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-blue-50 text-blue-700 border border-blue-200 rounded">
+          <div className="p-2 bg-amber-50 text-[#9A3412] border border-amber-200 rounded">
             <DollarSign className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण मूळ किंमत (Cost)</div>
-            <div className="text-sm font-black text-blue-900 font-mono">₹{totalOriginalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-sm font-black text-[#5A1A14] font-mono">₹{totalOriginalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
         </div>
 
@@ -1085,21 +1085,21 @@ const AssetMaster: React.FC = () => {
 
           {/* Assets Grid */}
           <div className="overflow-x-auto border border-gray-200 rounded-sm shadow-2xs">
-            <table className="w-full text-[11px] border-collapse">
+            <table className="w-full text-[11px] border-collapse leading-tight">
               <thead>
-                <tr className="bg-slate-100 text-primary border-b-2 border-primary font-bold text-left">
-                  <th className="px-2.5 py-2">#</th>
-                  <th className="px-2.5 py-2">शाखा (Branch)</th>
-                  <th className="px-2.5 py-2">कोड (Code)</th>
-                  <th className="px-2.5 py-2">नाव (Name)</th>
-                  <th className="px-2.5 py-2">वर्ग (Category)</th>
-                  <th className="px-2.5 py-2">खरेदी तारीख</th>
-                  <th className="px-2.5 py-2 text-right">मूळ किंमत</th>
-                  <th className="px-2.5 py-2 text-right">पुस्तकी मूल्य (WDV)</th>
-                  <th className="px-2.5 py-2 text-center">स्थिती</th>
+                <tr className="bg-[#5A1A14] text-primary border-b-2 border-primary font-bold text-left text-amber-50">
+                  <th className="px-2.5 py-1.5 whitespace-nowrap">#</th>
+                  <th className="px-2.5 py-1.5 whitespace-nowrap">शाखा (Branch)</th>
+                  <th className="px-2.5 py-1.5 whitespace-nowrap">कोड (Code)</th>
+                  <th className="px-2.5 py-1.5 whitespace-nowrap">नाव (Name)</th>
+                  <th className="px-2.5 py-1.5 whitespace-nowrap">वर्ग (Category)</th>
+                  <th className="px-2.5 py-1.5 whitespace-nowrap">खरेदी तारीख</th>
+                  <th className="px-2.5 py-1.5 text-right whitespace-nowrap">मूळ किंमत</th>
+                  <th className="px-2.5 py-1.5 text-right whitespace-nowrap">पुस्तकी मूल्य (WDV)</th>
+                  <th className="px-2.5 py-1.5 text-center whitespace-nowrap">स्थिती</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-amber-100">
                 {loading ? (
                   <tr><td colSpan={9} className="text-center py-6 text-gray-400">लोड होत आहे...</td></tr>
                 ) : filteredAssets.length === 0 ? (
@@ -1117,19 +1117,19 @@ const AssetMaster: React.FC = () => {
                             : 'hover:bg-slate-50'
                         }`}
                       >
-                        <td className="px-2.5 py-2 text-gray-500">{idx + 1}</td>
-                        <td className="px-2.5 py-2">
+                        <td className="px-2.5 py-1 text-gray-500 align-middle">{idx + 1}</td>
+                        <td className="px-2.5 py-1 align-middle">
                           <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-slate-200">
                             {a.branch?.branchName || `शाखा ${a.branchID}`}
                           </span>
                         </td>
-                        <td className="px-2.5 py-2 font-mono font-bold text-primary">{a.assetCode}</td>
-                        <td className="px-2.5 py-2 font-medium">{a.assetName}</td>
-                        <td className="px-2.5 py-2 text-gray-600">{a.category?.categoryName || '-'}</td>
-                        <td className="px-2.5 py-2 text-gray-600">{new Date(a.purchaseDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
-                        <td className="px-2.5 py-2 text-right font-mono text-gray-700">₹{a.originalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="px-2.5 py-2 text-right font-mono font-bold text-slate-900">₹{a.currentBookValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="px-2.5 py-2 text-center">
+                        <td className="px-2.5 py-1 font-mono font-bold text-primary align-middle">{a.assetCode}</td>
+                        <td className="px-2.5 py-1 font-medium align-middle">{a.assetName}</td>
+                        <td className="px-2.5 py-1 text-gray-600 align-middle">{a.category?.categoryName || '-'}</td>
+                        <td className="px-2.5 py-1 text-gray-600 align-middle">{new Date(a.purchaseDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
+                        <td className="px-2.5 py-1 text-right font-mono text-gray-700 align-middle">₹{a.originalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2.5 py-1 text-right font-mono font-bold text-slate-900 align-middle">₹{a.currentBookValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2.5 py-1 text-center align-middle">
                           <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${
                             a.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
                             a.status === 'Suspended' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
@@ -1269,8 +1269,8 @@ const AssetMaster: React.FC = () => {
                         <div key={idx} className="relative text-xs">
                           {/* Dot indicator */}
                           <div className={`absolute -left-[19px] top-0.5 w-2.5 h-2.5 rounded-full border-2 border-white 
-                            ${item.type === 'Allocation' ? 'bg-indigo-500' :
-                              item.type === 'Transfer' ? 'bg-blue-500' :
+                            ${item.type === 'Allocation' ? 'bg-[#D97706]' :
+                              item.type === 'Transfer' ? 'bg-[#D97706]' :
                               item.type === 'Verification' ? 'bg-emerald-500' :
                               item.type === 'Maintenance' ? 'bg-orange-500' :
                               item.type === 'Depreciation' ? 'bg-purple-500' : 'bg-red-500'}`} />

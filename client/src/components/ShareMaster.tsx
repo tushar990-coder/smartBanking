@@ -950,12 +950,12 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Coins className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण शेअर्स संख्या</div>
-            <div className="text-sm font-black text-indigo-950">{summaryStats.totalShares}</div>
+            <div className="text-sm font-black text-[#4A1410]">{summaryStats.totalShares}</div>
           </div>
         </div>
 
@@ -1054,8 +1054,8 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                       🆕 प्रथम भाग वाटप (Initial Allotment)
                     </span>
                   ) : (
-                    <span className="text-[10px] font-bold bg-indigo-50 text-indigo-900 border border-indigo-200 px-2 py-0.5 rounded shadow-2xs flex items-center gap-1">
-                      <Coins className="w-3 h-3 text-indigo-600" />
+                    <span className="text-[10px] font-bold bg-orange-50 text-[#5A1A14] border border-amber-200 px-2 py-0.5 rounded shadow-2xs flex items-center gap-1">
+                      <Coins className="w-3 h-3 text-[#B44814]" />
                       ➕ अतिरिक्त शेअर्स वाटप (विद्यमान शेअर्स: {shareAccount.totalShareCount})
                     </span>
                   )}
@@ -1102,7 +1102,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                         ★ सभासद: {selectedMember.memberCode}
                       </span>
                     ) : (
-                      <span className="text-[10px] bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.5 rounded font-semibold">
+                      <span className="text-[10px] bg-amber-50 text-[#7C2418] border border-amber-200 px-1.5 py-0.5 rounded font-semibold">
                         खातेदार (नवीन शेअर वाटप)
                       </span>
                     )}
@@ -1185,7 +1185,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
               <div>
                 <label className={labelClass}>
                   <span>शेअर्स नं. पासून (From Share No)</span>
-                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                  <span className="text-[10px] text-[#B44814] font-bold ml-1">[Auto]</span>
                 </label>
                 <input
                   type="text"
@@ -1198,7 +1198,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
               <div>
                 <label className={labelClass}>
                   <span>शेअर्स नं. पर्यंत (To Share No)</span>
-                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                  <span className="text-[10px] text-[#B44814] font-bold ml-1">[Auto]</span>
                 </label>
                 <input
                   type="text"
@@ -1481,18 +1481,18 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
           {/* Tab 1: Certificates View */}
           {memberHistoryTab === 'certificates' && (
             <div className="overflow-x-auto border border-gray-200 rounded-sm">
-              <table className="w-full border-collapse text-xs">
-                <thead className="bg-slate-100 text-gray-700 font-bold border-b border-gray-300">
+              <table className="w-full border-collapse text-[11px] leading-tight">
+                <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
                   <tr>
-                    <th className="border-r border-gray-200 p-1.5 text-left">सर्टिफिकेट क्र.</th>
-                    <th className="border-r border-gray-200 p-1.5 text-left">दिनांक</th>
-                    <th className="border-r border-gray-200 p-1.5 text-right">शेअर्स संख्या</th>
-                    <th className="border-r border-gray-200 p-1.5 text-right">रक्कम (₹)</th>
-                    <th className="border-r border-gray-200 p-1.5 text-center">स्थिती</th>
-                    <th className="p-1.5 text-center w-28">कृती</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-left whitespace-nowrap">सर्टिफिकेट क्र.</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-left whitespace-nowrap">दिनांक</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-right whitespace-nowrap">शेअर्स संख्या</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-right whitespace-nowrap">रक्कम (₹)</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-center whitespace-nowrap">स्थिती</th>
+                    <th className="p-1.5 text-center w-28 whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                   {certificates.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="p-6 text-center text-gray-400 font-bold">
@@ -1502,18 +1502,18 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                   ) : (
                     certificates.map((cert) => (
                       <tr key={cert.certificateId} className={`hover:bg-primary/5 transition-colors ${cert.status === 'Cancelled' ? 'bg-red-50 text-red-800 line-through opacity-70' : ''}`}>
-                        <td className="p-1.5 border-r border-gray-200 font-bold font-mono text-primary">{cert.certificateNo}</td>
-                        <td className="p-1.5 border-r border-gray-200 font-mono">{cert.issueDate}</td>
-                        <td className="p-1.5 border-r border-gray-200 text-right font-bold text-gray-900">{cert.numberOfShares}</td>
-                        <td className="p-1.5 border-r border-gray-200 text-right font-bold text-emerald-700">₹{cert.totalAmount.toFixed(2)}</td>
-                        <td className="p-1.5 border-r border-gray-200 text-center">
+                        <td className="p-1.5 border-r border-gray-200 font-bold font-mono text-primary align-middle">{cert.certificateNo}</td>
+                        <td className="p-1.5 border-r border-gray-200 font-mono align-middle">{cert.issueDate}</td>
+                        <td className="p-1.5 border-r border-gray-200 text-right font-bold text-gray-900 align-middle">{cert.numberOfShares}</td>
+                        <td className="p-1.5 border-r border-gray-200 text-right font-bold text-emerald-700 align-middle">₹{cert.totalAmount.toFixed(2)}</td>
+                        <td className="p-1.5 border-r border-gray-200 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             cert.status === 'Active' || cert.status === 'Issued' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300'
                           }`}>
                             {cert.status}
                           </span>
                         </td>
-                        <td className="p-1.5 text-center space-x-1 whitespace-nowrap">
+                        <td className="p-1.5 text-center space-x-1 whitespace-nowrap align-middle">
                           <button 
                             type="button"
                             onClick={() => setPreviewCertificate(cert)}
@@ -1542,18 +1542,18 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
           {/* Tab 2: Passbook Ledger View */}
           {memberHistoryTab === 'ledger' && (
             <div className="overflow-x-auto border border-gray-200 rounded-sm">
-              <table className="w-full border-collapse text-xs">
-                <thead className="bg-slate-100 text-gray-700 font-bold border-b border-gray-300">
+              <table className="w-full border-collapse text-[11px] leading-tight">
+                <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
                   <tr>
-                    <th className="border-r border-gray-200 p-1.5 text-left">दिनांक</th>
-                    <th className="border-r border-gray-200 p-1.5 text-center">प्रकार</th>
-                    <th className="border-r border-gray-200 p-1.5 text-right">शेअर्स</th>
-                    <th className="border-r border-gray-200 p-1.5 text-right">रक्कम (₹)</th>
-                    <th className="border-r border-gray-200 p-1.5 text-center">व्हाउचर</th>
-                    <th className="p-1.5 text-center w-24">कृती</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-left whitespace-nowrap">दिनांक</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-center whitespace-nowrap">प्रकार</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-right whitespace-nowrap">शेअर्स</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-right whitespace-nowrap">रक्कम (₹)</th>
+                    <th className="border-r border-amber-400/25 p-1.5 text-center whitespace-nowrap">व्हाउचर</th>
+                    <th className="p-1.5 text-center w-24 whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                   {memberTransactions.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="p-6 text-center text-gray-400 font-bold">
@@ -1565,16 +1565,16 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                       const isAllotment = t.transactionType === 'Allotment';
                       return (
                         <tr key={t.transactionId} className="hover:bg-primary/5 transition-colors">
-                          <td className="p-1.5 border-r border-gray-200 font-mono">{t.transactionDate ? t.transactionDate.split('T')[0] : '-'}</td>
-                          <td className="p-1.5 border-r border-gray-200 text-center">
+                          <td className="p-1.5 border-r border-gray-200 font-mono align-middle">{t.transactionDate ? t.transactionDate.split('T')[0] : '-'}</td>
+                          <td className="p-1.5 border-r border-gray-200 text-center align-middle">
                             <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
                               {t.transactionType}
                             </span>
                           </td>
-                          <td className="p-1.5 border-r border-gray-200 text-right font-bold font-mono text-emerald-800">+{t.numberOfShares}</td>
-                          <td className="p-1.5 border-r border-gray-200 text-right font-bold font-mono text-primary">₹{t.amount.toFixed(2)}</td>
-                          <td className="p-1.5 border-r border-gray-200 text-center font-mono text-[10px] text-gray-700">{t.voucherNo || '-'}</td>
-                          <td className="p-1.5 text-center space-x-1 whitespace-nowrap">
+                          <td className="p-1.5 border-r border-gray-200 text-right font-bold font-mono text-emerald-800 align-middle">+{t.numberOfShares}</td>
+                          <td className="p-1.5 border-r border-gray-200 text-right font-bold font-mono text-primary align-middle">₹{t.amount.toFixed(2)}</td>
+                          <td className="p-1.5 border-r border-gray-200 text-center font-mono text-[10px] text-gray-700 align-middle">{t.voucherNo || '-'}</td>
+                          <td className="p-1.5 text-center space-x-1 whitespace-nowrap align-middle">
                             <button
                               type="button"
                               onClick={() => handleOpenEditTxn(t)}
@@ -1587,7 +1587,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                               <button
                                 type="button"
                                 onClick={() => setPrintingVoucherId(t.voucherId ?? null)}
-                                className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold border border-indigo-300 cursor-pointer transition-colors"
+                                className="px-1.5 py-0.5 bg-orange-50 hover:bg-orange-100 text-[#7C2418] rounded text-[10px] font-bold border border-amber-300 cursor-pointer transition-colors"
                                 title="जमा पावती / व्हाउचर प्रिंट करा"
                               >
                                 🖨️
@@ -1620,7 +1620,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
       {/* ========================================================================= */}
       {showAllTxnModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1679,46 +1679,46 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-10">अ.क्र.</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left w-24">दिनांक</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left">सभासदाचे नाव</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-center w-28">प्रकार</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-right w-20">शेअर्स</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-right w-24">रक्कम (₹)</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-center w-36">व्हाउचर क्र.</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left">शेरा</th>
-                      <th className="px-2 py-1.5 text-center w-20">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-10 whitespace-nowrap">अ.क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left w-24 whitespace-nowrap">दिनांक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">सभासदाचे नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-28 whitespace-nowrap">प्रकार</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right w-20 whitespace-nowrap">शेअर्स</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right w-24 whitespace-nowrap">रक्कम (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-36 whitespace-nowrap">व्हाउचर क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">शेरा</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredAllTransactions.map((t, idx) => (
                       <tr key={t.transactionId} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500">{idx + 1}</td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 font-mono">{t.transactionDate ? t.transactionDate.split('T')[0] : '-'}</td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 font-bold text-gray-900">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center text-gray-500 align-middle">{idx + 1}</td>
+                        <td className="px-2 py-1 border-r border-gray-200 font-mono align-middle">{t.transactionDate ? t.transactionDate.split('T')[0] : '-'}</td>
+                        <td className="px-2 py-1 border-r border-gray-200 font-bold text-gray-900 align-middle">
                           {t.memberName} ({t.memberCode || t.accountNo})
                         </td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                           <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
                             {t.transactionType}
                           </span>
                         </td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-emerald-800 align-middle">
                           +{t.numberOfShares}
                         </td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-primary">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-primary align-middle">
                           ₹{t.amount.toFixed(2)}
                         </td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 text-center font-mono text-[10px] text-gray-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono text-[10px] text-gray-700 align-middle">
                           {t.voucherNo || '-'}
                         </td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 text-gray-700 text-[11px]">
+                        <td className="px-2 py-1 border-r border-gray-200 text-gray-700 text-[11px] align-middle">
                           {t.narration || '-'}
                         </td>
-                        <td className="px-2 py-1.5 text-center space-x-1 whitespace-nowrap">
+                        <td className="px-2 py-1 text-center space-x-1 whitespace-nowrap align-middle">
                           <button
                             type="button"
                             onClick={() => handleOpenEditTxn(t)}
@@ -1731,7 +1731,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                             <button
                               type="button"
                               onClick={() => setPrintingVoucherId(t.voucherId ?? null)}
-                              className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold border border-indigo-300 cursor-pointer transition-colors"
+                              className="px-1.5 py-0.5 bg-orange-50 hover:bg-orange-100 text-[#7C2418] rounded text-[10px] font-bold border border-amber-300 cursor-pointer transition-colors"
                               title="जमा पावती / व्हाउचर प्रिंट करा"
                             >
                               🖨️
@@ -1967,7 +1967,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
       {/* 🖨️ MODAL 4: VOUCHER / RECEIPT PRINT */}
       {printingVoucherId && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-4xl w-full max-h-[92vh] overflow-y-auto relative">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] overflow-y-auto relative">
             <VoucherPrint voucherId={printingVoucherId} onBack={() => setPrintingVoucherId(null)} />
           </div>
         </div>
@@ -1976,7 +1976,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
       {/* 📋 MODAL 4: PENDING MEMBERSHIP APPLICATIONS LIST FOR 1-CLICK ALLOTMENT */}
       {showPendingModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded shadow-2xl max-w-5xl w-full h-[85vh] flex flex-col overflow-hidden border border-slate-300">
+          <div className="bg-white rounded shadow-2xl max-w-[97vw] xl:max-w-[1460px] w-full h-[85vh] flex flex-col overflow-hidden border border-slate-300">
             {/* Top Ribbon */}
             <div className="px-4 py-2.5 bg-amber-600 text-white flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2">
@@ -2057,36 +2057,37 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                 }
 
                 return (
-                  <table className="w-full text-left border-collapse text-[11px]">
+                  <table className="w-full text-left border-collapse text-[11px] leading-tight">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 sticky top-0 font-bold z-10">
-                        <th className="p-2">सभासद क्र.</th>
-                        <th className="p-2">CIF कोड</th>
-                        <th className="p-2">सभासदाचे पूर्ण नाव</th>
-                        <th className="p-2">शाखा</th>
-                        <th className="p-2">मोबाईल व गाव</th>
-                        <th className="p-2">अर्ज / नोंदणी दिनांक</th>
-                        <th className="p-2 text-center">कृती</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 sticky top-0 font-bold z-10">
+                        <th className="px-2 py-1.5 whitespace-nowrap">सभासद क्र.</th>
+                        <th className="px-2 py-1.5 whitespace-nowrap">CIF कोड</th>
+                        <th className="px-2 py-1.5 whitespace-nowrap">सभासदाचे पूर्ण नाव</th>
+                        <th className="px-2 py-1.5 whitespace-nowrap">शाखा</th>
+                        <th className="px-2 py-1.5 whitespace-nowrap">मोबाईल</th>
+                        <th className="px-2 py-1.5 whitespace-nowrap">गाव</th>
+                        <th className="px-2 py-1.5 whitespace-nowrap">अर्ज / नोंदणी दिनांक</th>
+                        <th className="px-2 py-1.5 text-center whitespace-nowrap">कृती</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-amber-100">
                       {filtered.map((m) => (
-                        <tr key={m.memberID} className="hover:bg-amber-50/50 transition-colors">
-                          <td className="p-2 font-mono font-bold text-primary flex items-center gap-1">
-                            <Sparkles className="w-3 h-3 text-amber-500" />
-                            <span>{m.memberCode}</span>
+                        <tr key={m.memberID} className="odd:bg-white even:bg-[#FFFBF7] hover:bg-amber-50/80 transition-colors">
+                          <td className="px-2 py-1 font-mono font-bold text-[#7C2418] whitespace-nowrap align-middle">
+                            <div className="inline-flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+                              <span>{m.memberCode}</span>
+                            </div>
                           </td>
-                          <td className="p-2 font-mono font-semibold text-slate-600">{m.cifNo || '-'}</td>
-                          <td className="p-2 font-bold text-slate-900">{m.fullName || `${m.firstName} ${m.lastName}`}</td>
-                          <td className="p-2 text-slate-600">{m.branchName || '-'}</td>
-                          <td className="p-2 text-slate-600">
-                            <div className="font-medium text-slate-800">{m.mobileNo || '-'}</div>
-                            <div className="text-[10px] text-slate-400">{m.village || '-'}</div>
-                          </td>
-                          <td className="p-2 font-mono text-slate-600">
+                          <td className="px-2 py-1 font-mono font-semibold text-slate-600 whitespace-nowrap align-middle">{m.cifNo || '-'}</td>
+                          <td className="px-2 py-1 font-bold text-[#4A1410] max-w-[220px] truncate align-middle" title={m.fullName || `${m.firstName} ${m.lastName}`}>{m.fullName || `${m.firstName} ${m.lastName}`}</td>
+                          <td className="px-2 py-1 text-slate-600 whitespace-nowrap align-middle">{m.branchName || '-'}</td>
+                          <td className="px-2 py-1 font-mono text-slate-700 whitespace-nowrap align-middle">{m.mobileNo || '-'}</td>
+                          <td className="px-2 py-1 text-slate-600 max-w-[130px] truncate align-middle" title={m.village || '-'}>{m.village || '-'}</td>
+                          <td className="px-2 py-1 font-mono text-slate-600 whitespace-nowrap align-middle">
                             {m.joiningDate ? m.joiningDate.split('T')[0] : '-'}
                           </td>
-                          <td className="p-2 text-center">
+                          <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
                             <button
                               type="button"
                               onClick={() => {

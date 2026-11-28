@@ -429,7 +429,7 @@ const MemberClosure: React.FC = () => {
               onClick={handleCloseMember}
               className={`w-full px-4 py-2 rounded-sm font-bold shadow-xs transition-colors text-xs uppercase tracking-wide flex items-center justify-center gap-2 ${
                 closureInfo.canClose
-                  ? 'bg-primary hover:bg-[#004a75] text-white cursor-pointer'
+                  ? 'bg-primary hover:bg-[#7C2418] text-white cursor-pointer'
                   : 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed'
               }`}
               disabled={loading || !closureInfo.canClose}

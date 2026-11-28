@@ -496,12 +496,12 @@ export default function RdSchemeMaster() {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Percent className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सरासरी व्याजदर (% Avg)</div>
-            <div className="text-sm font-black text-indigo-950">{avgInterestRate}% p.a.</div>
+            <div className="text-sm font-black text-[#4A1410]">{avgInterestRate}% p.a.</div>
           </div>
         </div>
 
@@ -537,7 +537,7 @@ export default function RdSchemeMaster() {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          isEditing ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          isEditing ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -593,7 +593,7 @@ export default function RdSchemeMaster() {
                     योजना कोड (Scheme Code) <span className="text-red-500">*</span>
                   </label>
                   <div className="flex items-center gap-1">
-                    <span className="text-[9px] bg-indigo-50 text-indigo-700 font-bold px-1 rounded border border-indigo-200">
+                    <span className="text-[9px] bg-orange-50 text-[#9A3412] font-bold px-1 rounded border border-amber-200">
                       {isEditing ? 'फिक्स्ड' : allowManualCode ? 'मॅन्युअल' : 'CBS 501+'}
                     </span>
                     {!isEditing && (
@@ -613,7 +613,7 @@ export default function RdSchemeMaster() {
                   value={formData.schemeCode}
                   onChange={handleChange}
                   readOnly={!allowManualCode && !isEditing}
-                  className={`${inputClass} font-mono font-bold text-indigo-700 ${
+                  className={`${inputClass} font-mono font-bold text-[#9A3412] ${
                     !allowManualCode && !isEditing ? 'bg-slate-100 cursor-not-allowed select-none' : ''
                   }`}
                   placeholder="उदा. 501"
@@ -983,7 +983,7 @@ export default function RdSchemeMaster() {
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1053,22 +1053,22 @@ export default function RdSchemeMaster() {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजनेचे नाव & कोड</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-28">लागू व्याप्ती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी (महिने)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याज / दंड कपात</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड देयता खाते</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">योजनेचे नाव & कोड</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-28 whitespace-nowrap">लागू व्याप्ती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">कालावधी (महिने)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याज / दंड कपात</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">मॅप्ड देयता खाते</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredSchemes.map((s) => (
                       <tr key={s.rdSchemeID} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
@@ -1093,13 +1093,13 @@ export default function RdSchemeMaster() {
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           <div className="font-bold text-gray-900 text-xs">{s.schemeName}</div>
                           <div className="text-[10px] text-gray-500 font-mono mt-0.5">
-                            कोड: <span className="font-bold text-indigo-700">{s.schemeCode}</span>
+                            कोड: <span className="font-bold text-[#9A3412]">{s.schemeCode}</span>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                           {!s.branchID ? (
                             <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1">
                               🌐 सर्व शाखा
@@ -1110,16 +1110,16 @@ export default function RdSchemeMaster() {
                             </span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                           <div className="text-gray-800 font-bold text-[11px]">{s.durationMonths} महिने</div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                           <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
                           <div className="text-purple-700 text-[9px] font-bold">{s.interestMethod || 'चक्रवाढ'} | {s.compoundingFrequency || 'त्रैमासिक'}</div>
                           <div className="text-amber-800 text-[9px] font-mono font-bold">थकीत दंड: ₹{s.penaltyAmount ?? 0}/१०० रु.</div>
                           <div className="text-rose-700 text-[9px] font-mono">कपात: {s.prematurePenaltyRate}%</div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           {s.rdLiabilityLedger?.ledgerName ? (
                             <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 font-bold" title={s.rdLiabilityLedger.ledgerName}>
                               {s.rdLiabilityLedger.ledgerName}
@@ -1128,7 +1128,7 @@ export default function RdSchemeMaster() {
                             <span className="text-gray-400 italic">डिफॉल्ट आरडी ठेव लेजर</span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             s.isActive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                           }`}>

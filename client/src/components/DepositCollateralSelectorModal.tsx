@@ -189,7 +189,7 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3">
-      <div className="bg-white rounded-lg shadow-2xl border border-primary/20 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div className="bg-white rounded-lg shadow-2xl border border-primary/20 w-full max-w-[97vw] xl:max-w-[1460px] max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
         
         {/* Header */}
         <div className="bg-primary text-white px-4 py-3 flex items-center justify-between">
@@ -267,11 +267,11 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
               <p className="text-xs text-gray-500 mt-1">
                 या कर्जदाराच्या नावावर सदर योजनेशी सुसंगत कोणतीही सक्रिय (Active) ठेव उपलब्ध नाही.
               </p>
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-left text-xs text-blue-900 space-y-1 shadow-2xs">
-                <p className="font-semibold text-blue-950 flex items-center gap-1.5">
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded text-left text-xs text-[#5A1A14] space-y-1 shadow-2xs">
+                <p className="font-semibold text-[#4A1410] flex items-center gap-1.5">
                   💡 आरंभिक शिल्लक (Opening Balance) नोंदणीसाठी सूचना:
                 </p>
-                <p className="text-[11px] text-blue-800 leading-relaxed">
+                <p className="text-[11px] text-[#7C2418] leading-relaxed">
                   जर ठेवीची जुनी एन्ट्री किंवा मायग्रेशन अजून व्हायचे बाकी असेल, तरी आपण <strong>'तारण नंतर जोडा'</strong> पर्याय वापरून कर्ज नोंदणी पूर्ण करू शकता. ठेवीचे मायग्रेशन पूर्ण झाल्यावर हे कर्ज खाते 'Edit' करून ठेव तारण लिंक करता येईल.
                 </p>
               </div>
@@ -287,10 +287,10 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
             </div>
           ) : (
             <div className="overflow-x-auto border border-gray-200 rounded-sm">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 text-gray-800 font-bold border-b border-gray-200 select-none">
+              <table className="w-full text-left text-[11px] border-collapse leading-tight">
+                <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30 select-none">
                   <tr>
-                    <th className="p-2.5 text-center w-12">
+                    <th className="px-2 py-1.5.5 text-center w-12 whitespace-nowrap">
                       <div className="flex items-center justify-center">
                         <input
                           type="checkbox"
@@ -302,17 +302,17 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
                         />
                       </div>
                     </th>
-                    <th className="p-2.5">खाते / पावती क्र.</th>
-                    <th className="p-2.5 text-center w-32">जुना ठेव क्र. (Old No.)</th>
-                    <th className="p-2.5">योजना</th>
-                    <th className="p-2.5 text-right">ठेव रक्कम / शिल्लक (₹)</th>
-                    <th className="p-2.5 text-center">व्याजदर</th>
-                    <th className="p-2.5 text-center">मुदत दिनांक</th>
-                    <th className="p-2.5 text-right font-bold text-blue-900 bg-blue-50/50">पात्र कर्ज ({maxLtv}%)</th>
-                    <th className="p-2.5 text-center">बोजा स्थिती (Lien)</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">खाते / पावती क्र.</th>
+                    <th className="px-2 py-1.5.5 text-center w-32 whitespace-nowrap">जुना ठेव क्र. (Old No.)</th>
+                    <th className="px-2 py-1.5.5 whitespace-nowrap">योजना</th>
+                    <th className="px-2 py-1.5.5 text-right whitespace-nowrap">ठेव रक्कम / शिल्लक (₹)</th>
+                    <th className="px-2 py-1.5.5 text-center whitespace-nowrap">व्याजदर</th>
+                    <th className="px-2 py-1.5.5 text-center whitespace-nowrap">मुदत दिनांक</th>
+                    <th className="px-2 py-1.5.5 text-right font-bold text-[#5A1A14] bg-amber-50/50 whitespace-nowrap">पात्र कर्ज ({maxLtv}%)</th>
+                    <th className="px-2 py-1.5.5 text-center whitespace-nowrap">बोजा स्थिती (Lien)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-amber-100">
                   {filteredDeposits.map((dep) => {
                     const depId = getDepositId(dep);
                     const isSelected = Boolean(selectedMap[depId]);
@@ -332,7 +332,7 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
                       >
                         {/* Checkbox column - stop propagation so clicking directly on checkbox toggles exactly once */}
                         <td 
-                          className="p-2.5 text-center"
+                          className="px-2 py-1 text-center align-middle"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <input 
@@ -349,12 +349,12 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
                         </td>
 
                         {/* CBS Account No */}
-                        <td className="p-2.5 font-mono font-bold text-gray-900">
+                        <td className="px-2 py-1 font-mono font-bold text-gray-900 align-middle">
                           {dep.accountNo}
                         </td>
 
                         {/* Old / Legacy Account No */}
-                        <td className="p-2.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           {dep.legacyAccountNumber ? (
                             <span className="inline-block px-2 py-0.5 font-mono font-bold text-xs bg-amber-100 text-amber-900 border border-amber-300 rounded shadow-2xs">
                               {dep.legacyAccountNumber}
@@ -365,32 +365,32 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
                         </td>
 
                         {/* Scheme Name */}
-                        <td className="p-2.5 text-gray-700">
+                        <td className="px-2 py-1 text-gray-700 align-middle">
                           {dep.schemeName}
                         </td>
 
                         {/* Deposit Amount / Balance */}
-                        <td className="p-2.5 text-right font-mono font-bold text-gray-900">
+                        <td className="px-2 py-1 text-right font-mono font-bold text-gray-900 align-middle">
                           ₹ {(dep.currentBalance || dep.depositAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
 
                         {/* Interest Rate */}
-                        <td className="p-2.5 text-center font-mono font-semibold text-emerald-700">
+                        <td className="px-2 py-1 text-center font-mono font-semibold text-emerald-700 align-middle">
                           {dep.interestRate}%
                         </td>
 
                         {/* Maturity Date */}
-                        <td className="p-2.5 text-center text-gray-600 font-mono">
+                        <td className="px-2 py-1 text-center text-gray-600 font-mono align-middle">
                           {dep.maturityDate ? new Date(dep.maturityDate).toLocaleDateString('en-GB') : '-'}
                         </td>
 
                         {/* Eligible Loan Limit */}
-                        <td className="p-2.5 text-right font-mono font-bold text-blue-800 bg-blue-50/40">
+                        <td className="px-2 py-1 text-right font-mono font-bold text-[#7C2418] bg-amber-50/40 align-middle">
                           ₹ {dep.maxEligibleLoan.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
 
                         {/* Lien Status */}
-                        <td className="p-2.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           {isLocked ? (
                             <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
                               <Lock className="w-3 h-3" />
@@ -427,7 +427,7 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
             </div>
             <div>
               <span className="text-gray-500">कमाल मंजूर कर्ज मर्यादा:</span>{' '}
-              <strong className="text-blue-700 font-bold font-mono">
+              <strong className="text-[#9A3412] font-bold font-mono">
                 ₹ {totalMaxLoanLimit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </strong>
             </div>

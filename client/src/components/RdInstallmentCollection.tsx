@@ -431,7 +431,7 @@ export default function RdInstallmentCollection({
         <style>
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; font-size: 12px; color: #111; }
           .header { text-align: center; margin-bottom: 16px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-          .header h2 { margin: 0 0 4px 0; font-size: 18px; color: #1e3a8a; }
+          .header h2 { margin: 0 0 4px 0; font-size: 18px; color: #7C2418; }
           .header p { margin: 0; font-size: 13px; font-weight: bold; }
           .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; background: #f8fafc; padding: 10px; border: 1px solid #cbd5e1; }
           table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
@@ -445,7 +445,7 @@ export default function RdInstallmentCollection({
       </head>
       <body>
         <div class="no-print" style="margin-bottom: 12px; text-align: right;">
-          <button onclick="window.print()" style="padding: 6px 14px; background: #2563eb; color: #fff; font-weight: bold; border: none; border-radius: 4px; cursor: pointer;">🖨️ प्रिंट करा (Print)</button>
+          <button onclick="window.print()" style="padding: 6px 14px; background: #B44814; color: #fff; font-weight: bold; border: none; border-radius: 4px; cursor: pointer;">🖨️ प्रिंट करा (Print)</button>
         </div>
         <div class="header">
           <h2>आरडी हप्ता परतफेड वेळापत्रक (RD Installment Schedule)</h2>
@@ -1163,7 +1163,7 @@ export default function RdInstallmentCollection({
   };
 
   const labelClass = "block text-xs font-semibold text-slate-700 mb-1.5";
-  const inputClass = "w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 focus:outline-none bg-white text-slate-900 font-medium transition duration-150";
+  const inputClass = "w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#B44814]/20 focus:border-[#9A3412] focus:outline-none bg-white text-slate-900 font-medium transition duration-150";
 
   const selectedBulkCount = Object.values(bulkRows).filter((r) => r.selected).length;
 
@@ -1172,7 +1172,7 @@ export default function RdInstallmentCollection({
       {/* Header Bar */}
       <div className="bg-white p-3.5 md:p-4 rounded-xl shadow-xs border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100">
+          <div className="p-2.5 bg-orange-50 text-[#B44814] rounded-lg border border-amber-100">
             <Coins className="w-5 h-5" />
           </div>
           <div>
@@ -1180,7 +1180,7 @@ export default function RdInstallmentCollection({
               <h1 className="text-base font-bold text-slate-800">
                 मासिक आरडी हप्ता संकलन (RD Installment Collection)
               </h1>
-              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded border border-indigo-100">
+              <span className="px-2 py-0.5 bg-orange-50 text-[#9A3412] text-[10px] font-bold rounded border border-amber-100">
                 हप्ता संकलन
               </span>
             </div>
@@ -1198,7 +1198,7 @@ export default function RdInstallmentCollection({
               onClick={() => { setIsBulk(false); setError(''); setSuccess(''); }}
               className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
                 !isBulk 
-                  ? 'bg-indigo-600 text-white shadow-xs' 
+                  ? 'bg-[#B44814] text-white shadow-xs' 
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
               }`}
             >
@@ -1211,7 +1211,7 @@ export default function RdInstallmentCollection({
               onClick={() => { setIsBulk(true); setError(''); setSuccess(''); }}
               className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
                 isBulk 
-                  ? 'bg-indigo-600 text-white shadow-xs' 
+                  ? 'bg-[#B44814] text-white shadow-xs' 
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
               }`}
             >
@@ -1281,7 +1281,7 @@ export default function RdInstallmentCollection({
         /* Single Account Collection Form */
         <div className="bg-white p-5 rounded-xl shadow-xs border border-slate-200 max-w-xl mx-auto space-y-4 w-full">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-            <Coins className="w-4 h-4 text-indigo-600" />
+            <Coins className="w-4 h-4 text-[#B44814]" />
             <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
               हप्ता जमा फॉर्म (Single Collection)
             </h2>
@@ -1306,9 +1306,9 @@ export default function RdInstallmentCollection({
                       });
                       setShowMultiRdModal(true);
                     }}
-                    className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold flex items-center gap-1 cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                    className="text-[10px] text-[#9A3412] hover:text-[#5A1A14] font-bold flex items-center gap-1 cursor-pointer bg-orange-50 hover:bg-orange-100 px-2 py-0.5 rounded border border-amber-200 transition-colors"
                   >
-                    <Layers className="w-3 h-3 text-indigo-600" />
+                    <Layers className="w-3 h-3 text-[#B44814]" />
                     <span>खातेदाराची {customerMatchingRds.length} आरडी खाती उपलब्ध (खाते निवडा ⚡)</span>
                   </button>
                 )}
@@ -1341,8 +1341,8 @@ export default function RdInstallmentCollection({
             )}
 
             {selectedAcc && (
-              <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 space-y-2.5 text-xs text-slate-700 shadow-2xs">
-                <div className="flex justify-between items-center border-b border-indigo-100 pb-2">
+              <div className="bg-orange-50/70 border border-amber-200 rounded-xl p-3.5 space-y-2.5 text-xs text-slate-700 shadow-2xs">
+                <div className="flex justify-between items-center border-b border-amber-100 pb-2">
                   <div>
                     <span className="text-slate-500 text-[11px] font-semibold">खातेदार नाव: </span>
                     <span className="font-bold text-slate-900 text-xs">{selectedAcc.memberName}</span>
@@ -1357,7 +1357,7 @@ export default function RdInstallmentCollection({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <span className="text-slate-500 text-[11px] block">मासिक हप्ता:</span>
-                    <strong className="text-indigo-700 font-mono font-bold text-xs">
+                    <strong className="text-[#9A3412] font-mono font-bold text-xs">
                       ₹ {selectedAcc.installmentAmount?.toLocaleString('en-IN')}
                     </strong>
                   </div>
@@ -1371,9 +1371,9 @@ export default function RdInstallmentCollection({
                 </div>
 
                 {/* Progress bar */}
-                <div className="w-full bg-indigo-100 rounded-full h-1.5 overflow-hidden">
+                <div className="w-full bg-orange-100 rounded-full h-1.5 overflow-hidden">
                   <div
-                    className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                    className="bg-[#B44814] h-1.5 rounded-full transition-all duration-300"
                     style={{
                       width: `${Math.min(
                         100,
@@ -1397,12 +1397,12 @@ export default function RdInstallmentCollection({
                 </div>
 
                 {/* हप्ता चार्ट बटणे व समरी बार */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-indigo-100">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-100">
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setShowScheduleModal(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-bold text-[11px] shadow-xs transition-all cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#B44814] hover:bg-[#9A3412] text-white rounded-md font-bold text-[11px] shadow-xs transition-all cursor-pointer"
                       title="संपूर्ण हप्ता परतफेड वेळापत्रक चार्ट पहा"
                     >
                       <Calendar className="w-3.5 h-3.5" />
@@ -1417,7 +1417,7 @@ export default function RdInstallmentCollection({
                     <button
                       type="button"
                       onClick={() => setIsInlineScheduleOpen(!isInlineScheduleOpen)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-300 rounded-md font-semibold text-[10.5px] transition-all cursor-pointer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-orange-50 text-[#9A3412] border border-amber-300 rounded-md font-semibold text-[10.5px] transition-all cursor-pointer"
                       title="फॉर्मवरच हप्ते यादी दाखवा / लपवा"
                     >
                       {isInlineScheduleOpen ? (
@@ -1457,30 +1457,30 @@ export default function RdInstallmentCollection({
 
                 {/* Inline Collapsible Mini Schedule Table */}
                 {isInlineScheduleOpen && (
-                  <div className="mt-2 pt-2 border-t border-indigo-200/60 animate-in fade-in duration-150">
+                  <div className="mt-2 pt-2 border-t border-amber-200/60 animate-in fade-in duration-150">
                     <div className="flex items-center justify-between pb-1.5">
-                      <span className="text-[11px] font-bold text-indigo-950 flex items-center gap-1">
+                      <span className="text-[11px] font-bold text-[#4A1410] flex items-center gap-1">
                         <span>📋</span> हप्ता वेळापत्रक संक्षिप्त यादी
                       </span>
                       {loadingSchedule && (
-                        <span className="text-[10px] text-indigo-600 font-medium animate-pulse">
+                        <span className="text-[10px] text-[#B44814] font-medium animate-pulse">
                           माहिती लोड होत आहे...
                         </span>
                       )}
                     </div>
-                    <div className="max-h-56 overflow-y-auto border border-indigo-200 rounded-lg bg-white shadow-2xs">
-                      <table className="w-full text-left text-[11px] border-collapse">
-                        <thead className="bg-slate-100 sticky top-0 border-b border-slate-200 text-slate-700 font-bold">
+                    <div className="max-h-56 overflow-y-auto border border-amber-200 rounded-lg bg-white shadow-2xs">
+                      <table className="w-full text-left text-[11px] border-collapse leading-tight">
+                        <thead className="bg-[#5A1A14] sticky top-0 border-b border-amber-400/30 text-amber-50 font-bold">
                           <tr>
-                            <th className="py-1 px-2 text-center w-12">हप्ता</th>
-                            <th className="py-1 px-2 text-center">देय दिनांक</th>
-                            <th className="py-1 px-2 text-right">रक्कम (₹)</th>
-                            <th className="py-1 px-2 text-center">भरणा दिनांक</th>
-                            <th className="py-1 px-2 text-center">पावती क्र.</th>
-                            <th className="py-1 px-2 text-center">स्थिती</th>
+                            <th className="py-1 px-2 text-center w-12 whitespace-nowrap">हप्ता</th>
+                            <th className="py-1 px-2 text-center whitespace-nowrap">देय दिनांक</th>
+                            <th className="py-1 px-2 text-right whitespace-nowrap">रक्कम (₹)</th>
+                            <th className="py-1 px-2 text-center whitespace-nowrap">भरणा दिनांक</th>
+                            <th className="py-1 px-2 text-center whitespace-nowrap">पावती क्र.</th>
+                            <th className="py-1 px-2 text-center whitespace-nowrap">स्थिती</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 font-mono text-[10.5px]">
+                        <tbody className="divide-y divide-amber-100 font-mono text-[10.5px]">
                           {schedule.map((s) => {
                             const isPaid = s.status === 'Paid';
                             const isPartial = s.status === 'Partial';
@@ -1490,7 +1490,7 @@ export default function RdInstallmentCollection({
                             return (
                               <tr
                                 key={s.installmentNo}
-                                className={`hover:bg-indigo-50/40 ${
+                                className={`hover:bg-orange-50/40 ${
                                   !isPaid && !isOverdue && !isPartial && s.installmentNo === (selectedAcc.totalPaidInstallments + 1)
                                     ? 'bg-amber-50/70 font-semibold'
                                     : isPartial
@@ -1498,16 +1498,16 @@ export default function RdInstallmentCollection({
                                     : ''
                                 }`}
                               >
-                                <td className="py-1 px-2 text-center font-bold text-slate-800">
+                                <td className="py-1 px-2 text-center font-bold text-slate-800 align-middle">
                                   #{s.installmentNo}
                                   {isExt && (
                                     <span className="block text-[8.5px] text-purple-700 font-sans font-bold">वाढीव</span>
                                   )}
                                 </td>
-                                <td className="py-1 px-2 text-center text-slate-700">
+                                <td className="py-1 px-2 text-center text-slate-700 align-middle">
                                   {s.dueDate ? new Date(s.dueDate).toLocaleDateString('en-GB') : '-'}
                                 </td>
-                                <td className="py-1 px-2 text-right font-bold text-slate-800">
+                                <td className="py-1 px-2 text-right font-bold text-slate-800 align-middle">
                                   {isPartial ? (
                                     <span title={`अपेक्षित: ₹${s.expectedAmount} | बाकी: ₹${remDue}`}>
                                       ₹{Number(s.paidAmount || 0).toLocaleString('en-IN')} <span className="text-[9px] text-slate-500 font-normal">/ ₹{Number(s.expectedAmount || 0).toLocaleString('en-IN')}</span>
@@ -1516,13 +1516,13 @@ export default function RdInstallmentCollection({
                                     `₹ ${Number(s.expectedAmount || 0).toLocaleString('en-IN')}`
                                   )}
                                 </td>
-                                <td className="py-1 px-2 text-center text-slate-600">
+                                <td className="py-1 px-2 text-center text-slate-600 align-middle">
                                   {s.paidDate ? new Date(s.paidDate).toLocaleDateString('en-GB') : '-'}
                                 </td>
-                                <td className="py-1 px-2 text-center text-slate-700 font-medium">
+                                <td className="py-1 px-2 text-center text-slate-700 font-medium align-middle">
                                   {s.voucherNo || (isPaid ? 'जमा' : isPartial ? 'अंशतः' : '-')}
                                 </td>
-                                <td className="py-1 px-2 text-center">
+                                <td className="py-1 px-2 text-center align-middle">
                                   <span
                                     className={`px-1.5 py-0.2 rounded text-[9.5px] font-bold ${
                                       isPaid
@@ -1616,7 +1616,7 @@ export default function RdInstallmentCollection({
 
             {/* Conditional Bank Transfer Section */}
             {payMode === 'Bank' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-blue-50/70 border border-blue-200 rounded-xl shadow-2xs items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-amber-50/70 border border-amber-200 rounded-xl shadow-2xs items-end">
                 <div>
                   <BankLedgerSelect
                     ledgers={allLedgers}
@@ -1801,7 +1801,7 @@ export default function RdInstallmentCollection({
                           setDepositAmount(selectedAcc.installmentAmount * count);
                           setDepositInputRaw(null);
                         }}
-                        className="text-[10px] text-indigo-600 hover:text-indigo-800 underline font-semibold cursor-pointer"
+                        className="text-[10px] text-[#B44814] hover:text-[#7C2418] underline font-semibold cursor-pointer"
                       >
                         (पूर्वनिर्धारित करा)
                       </button>
@@ -1841,7 +1841,7 @@ export default function RdInstallmentCollection({
                             setDepositInputRaw(null);
                             setIsCustomAmount(false);
                           }}
-                          className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-[10px] cursor-pointer"
+                          className="px-2 py-0.5 bg-[#B44814] hover:bg-[#9A3412] text-white rounded font-bold text-[10px] cursor-pointer"
                         >
                           नियमित ₹{(selectedAcc.installmentAmount * count).toLocaleString('en-IN')}
                         </button>
@@ -1893,12 +1893,12 @@ export default function RdInstallmentCollection({
                 const preview = getLiveAllocationPreview();
                 if (!preview || preview.allocations.length === 0) return null;
                 return (
-                  <div className="mt-2 p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-lg text-xs space-y-1.5">
-                    <div className="text-[11px] font-bold text-indigo-900 flex items-center justify-between">
+                  <div className="mt-2 p-2.5 bg-orange-50/70 border border-amber-200 rounded-lg text-xs space-y-1.5">
+                    <div className="text-[11px] font-bold text-[#5A1A14] flex items-center justify-between">
                       <span>📊 हप्ता वाटप तपशील (Waterfall Allocation Preview):</span>
-                      <span className="text-[10px] text-indigo-700">FIFO नियमानुसार आधीचे बाकी हप्ते प्रथम पूर्ण</span>
+                      <span className="text-[10px] text-[#9A3412]">FIFO नियमानुसार आधीचे बाकी हप्ते प्रथम पूर्ण</span>
                     </div>
-                    <div className="divide-y divide-indigo-100 bg-white rounded border border-indigo-100 overflow-hidden text-[11px]">
+                    <div className="divide-y divide-amber-100 bg-white rounded border border-amber-100 overflow-hidden text-[11px]">
                       {preview.allocations.map((alloc) => (
                         <div key={alloc.instNo} className="p-1.5 px-2.5 flex justify-between items-center gap-2">
                           <span className="font-semibold text-slate-800">
@@ -1975,7 +1975,7 @@ export default function RdInstallmentCollection({
                 <button
                   type="submit"
                   disabled={loading || !selectedAcc}
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition duration-200 text-xs shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  className="w-full py-2.5 bg-[#B44814] hover:bg-[#9A3412] text-white font-bold rounded-lg transition duration-200 text-xs shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
                   <span>{loading ? 'प्रक्रिया होत आहे...' : 'हप्ता जमा करा (Collect Installment)'}</span>
@@ -1989,10 +1989,10 @@ export default function RdInstallmentCollection({
         <div className="bg-white p-4 md:p-5 rounded-xl shadow-xs border border-slate-200 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-indigo-600" />
+              <Layers className="w-4 h-4 text-[#B44814]" />
               <h2 className="text-sm font-bold text-slate-800">एकत्रित हप्ता संकलन यादी (Bulk Collection List)</h2>
               {selectedBulkCount > 0 && (
-                <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-full text-[10px] border border-indigo-100">
+                <span className="px-2.5 py-0.5 bg-orange-50 text-[#9A3412] font-bold rounded-full text-[10px] border border-amber-100">
                   {selectedBulkCount} खाती निवडली
                 </span>
               )}
@@ -2004,7 +2004,7 @@ export default function RdInstallmentCollection({
                 <select
                   value={bulkPayMode}
                   onChange={(e) => setBulkPayMode(e.target.value as 'Cash' | 'Bank')}
-                  className="text-xs border border-slate-300 rounded px-2 py-0.5 bg-white text-slate-900 font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                  className="text-xs border border-slate-300 rounded px-2 py-0.5 bg-white text-slate-900 font-semibold focus:ring-1 focus:ring-[#B44814] focus:outline-none"
                 >
                   <option value="Cash">💵 रोख (Cash)</option>
                   <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
@@ -2018,7 +2018,7 @@ export default function RdInstallmentCollection({
                   type="date"
                   value={collectionDate || activeBusinessDate}
                   onChange={(e) => setCollectionDate(e.target.value)}
-                  className={`text-xs border border-slate-300 rounded px-2 py-0.5 focus:ring-1 focus:ring-indigo-500 focus:outline-none font-medium ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed text-slate-800 select-none' : 'bg-white text-slate-900'}`}
+                  className={`text-xs border border-slate-300 rounded px-2 py-0.5 focus:ring-1 focus:ring-[#B44814] focus:outline-none font-medium ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed text-slate-800 select-none' : 'bg-white text-slate-900'}`}
                   disabled={!allowDateOverride}
                   readOnly={!allowDateOverride}
                 />
@@ -2032,7 +2032,7 @@ export default function RdInstallmentCollection({
               <button
                 onClick={handleBulkSubmit}
                 disabled={loading || selectedBulkCount === 0}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition duration-200 disabled:opacity-50 shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 bg-[#B44814] hover:bg-[#9A3412] text-white text-xs font-bold rounded-lg transition duration-200 disabled:opacity-50 shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
                 <span>{loading ? 'प्रक्रिया होत आहे...' : 'निवडलेले हप्ते जमा करा'}</span>
@@ -2041,7 +2041,7 @@ export default function RdInstallmentCollection({
           </div>
 
           {bulkPayMode === 'Bank' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-blue-50/70 border border-blue-200 rounded-xl items-end">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-amber-50/70 border border-amber-200 rounded-xl items-end">
               <div>
                 <BankLedgerSelect
                   ledgers={allLedgers}
@@ -2069,26 +2069,26 @@ export default function RdInstallmentCollection({
           )}
 
           <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse leading-tight">
               <thead>
-                <tr className="bg-slate-50 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
-                  <th className="py-2.5 px-3 w-12 text-center">
+                <tr className="bg-[#5A1A14] text-amber-50 text-[11px] font-bold uppercase tracking-wider border-b border-amber-400/30">
+                  <th className="py-1.5.5 px-2 w-12 text-center whitespace-nowrap">
                     <input
                       type="checkbox"
                       onChange={(e) => handleSelectAllBulk(e.target.checked)}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                      className="rounded border-slate-300 text-[#B44814] focus:ring-[#B44814] h-4 w-4 cursor-pointer"
                       title="सर्व निवडा"
                     />
                   </th>
-                  <th className="py-2.5 px-3">खाते क्रमांक / नाव</th>
-                  <th className="py-2.5 px-3 text-center">मासिक हप्ता (₹)</th>
-                  <th className="py-2.5 px-3 text-center">भरलेले / एकूण महिने</th>
-                  <th className="py-2.5 px-3 text-center w-28">हप्ते (Qty)</th>
-                  <th className="py-2.5 px-3 text-center w-28">दंड (₹)</th>
-                  <th className="py-2.5 px-3 text-right">एकूण जमा (₹)</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">खाते क्रमांक / नाव</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">मासिक हप्ता (₹)</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">भरलेले / एकूण महिने</th>
+                  <th className="py-1.5.5 px-2 text-center w-28 whitespace-nowrap">हप्ते (Qty)</th>
+                  <th className="py-1.5.5 px-2 text-center w-28 whitespace-nowrap">दंड (₹)</th>
+                  <th className="py-1.5.5 px-2 text-right whitespace-nowrap">एकूण जमा (₹)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+              <tbody className="divide-y divide-amber-100 text-xs text-slate-700">
                 {accounts.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-slate-500 font-medium">
@@ -2101,16 +2101,16 @@ export default function RdInstallmentCollection({
                     const subtotal = acc.installmentAmount * row.count + row.penalty;
                     return (
                       <tr key={acc.rdAccountID} className="hover:bg-slate-50/80 transition duration-150">
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-1.5 px-2 text-center align-middle">
                           <input
                             type="checkbox"
                             checked={row.selected}
                             onChange={(e) => handleBulkRowChange(acc.rdAccountID, 'selected', e.target.checked)}
-                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                            className="rounded border-slate-300 text-[#B44814] focus:ring-[#B44814] h-4 w-4 cursor-pointer"
                           />
                         </td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-800">
-                          <div className="font-mono font-bold text-indigo-700 flex items-center gap-1.5">
+                        <td className="py-1.5 px-2 font-semibold text-slate-800 align-middle">
+                          <div className="font-mono font-bold text-[#9A3412] flex items-center gap-1.5">
                             <span>{acc.accountNo}</span>
                             {(acc.legacyAccountNumber || (acc as any).LegacyAccountNumber) && (
                               <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9px]">
@@ -2123,7 +2123,7 @@ export default function RdInstallmentCollection({
                                 selectRdAccount(acc);
                                 setShowScheduleModal(true);
                               }}
-                              className="p-0.5 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-100 rounded transition-colors ml-1 cursor-pointer"
+                              className="p-0.5 text-[#B44814] hover:text-[#5A1A14] hover:bg-orange-100 rounded transition-colors ml-1 cursor-pointer"
                               title="हप्ता वेळापत्रक चार्ट पहा"
                             >
                               <Calendar className="w-3.5 h-3.5" />
@@ -2133,35 +2133,35 @@ export default function RdInstallmentCollection({
                             {acc.memberName} ({acc.schemeName})
                           </div>
                         </td>
-                        <td className="py-2.5 px-3 text-center font-bold text-indigo-700">
+                        <td className="py-1.5 px-2 text-center font-bold text-[#9A3412] align-middle">
                           ₹{acc.installmentAmount?.toLocaleString('en-IN')}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-medium">
+                        <td className="py-1.5 px-2 text-center font-medium align-middle">
                           {acc.totalPaidInstallments} / {acc.durationMonths}
                         </td>
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-1.5 px-2 text-center align-middle">
                           <input
                             type="number"
                             value={row.count}
                             onChange={(e) =>
                               handleBulkRowChange(acc.rdAccountID, 'count', Math.max(1, parseInt(e.target.value, 10) || 1))
                             }
-                            className="w-16 px-2 py-1 bg-white border border-slate-300 rounded-lg text-center text-slate-800 text-xs focus:outline-none focus:border-indigo-600 font-bold"
+                            className="w-16 px-2 py-1 bg-white border border-slate-300 rounded-lg text-center text-slate-800 text-xs focus:outline-none focus:border-[#9A3412] font-bold"
                             min="1"
                           />
                         </td>
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-1.5 px-2 text-center align-middle">
                           <input
                             type="number"
                             value={row.penalty}
                             onChange={(e) =>
                               handleBulkRowChange(acc.rdAccountID, 'penalty', Math.max(0, parseFloat(e.target.value) || 0))
                             }
-                            className="w-16 px-2 py-1 bg-white border border-slate-300 rounded-lg text-center text-slate-800 text-xs focus:outline-none focus:border-indigo-600 font-medium"
+                            className="w-16 px-2 py-1 bg-white border border-slate-300 rounded-lg text-center text-slate-800 text-xs focus:outline-none focus:border-[#9A3412] font-medium"
                             min="0"
                           />
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                        <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-700 align-middle">
                           ₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                       </tr>
@@ -2221,9 +2221,9 @@ export default function RdInstallmentCollection({
       {/* Interactive Multi-RD Account Selector Modal (CIF-First) */}
       {showMultiRdModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full overflow-hidden border border-indigo-200">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full overflow-hidden border border-amber-200">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-indigo-700 via-indigo-800 to-purple-900 px-4 py-3 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-[#7C2418] via-[#B44814] to-purple-900 px-4 py-3 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="p-1.5 bg-white/10 rounded-lg">
                   <Coins className="w-5 h-5 text-amber-300" />
@@ -2231,11 +2231,11 @@ export default function RdInstallmentCollection({
                 <div>
                   <div className="font-bold text-sm flex items-center gap-2">
                     <span>आरडी खाते निवडा (Select RD Account)</span>
-                    <span className="text-[10px] bg-amber-400 text-indigo-950 font-black px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] bg-amber-400 text-[#4A1410] font-black px-2 py-0.5 rounded-full">
                       एकूण {customerMatchingRds.length} आरडी खाती
                     </span>
                   </div>
-                  <p className="text-xs text-indigo-200 mt-0.5">
+                  <p className="text-xs text-amber-200 mt-0.5">
                     खातेदार: <strong className="text-white">{multiRdCustomerInfo?.name || 'खातेदार'}</strong>
                     {multiRdCustomerInfo?.cifNo && multiRdCustomerInfo.cifNo !== '-' && (
                       <span className="ml-2 font-mono text-amber-200">
@@ -2274,12 +2274,12 @@ export default function RdInstallmentCollection({
                       }}
                       className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                         isCurrent
-                          ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-400 shadow-sm'
-                          : 'bg-white hover:bg-indigo-50/40 border-slate-200 hover:border-indigo-300 shadow-2xs'
+                          ? 'bg-orange-50/80 border-[#B44814] ring-2 ring-[#B44814] shadow-sm'
+                          : 'bg-white hover:bg-orange-50/40 border-slate-200 hover:border-amber-300 shadow-2xs'
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-lg mt-0.5 ${isCurrent ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <div className={`p-2 rounded-lg mt-0.5 ${isCurrent ? 'bg-[#B44814] text-white' : 'bg-slate-100 text-slate-600'}`}>
                           <CreditCard className="w-4 h-4" />
                         </div>
                         <div>
@@ -2313,7 +2313,7 @@ export default function RdInstallmentCollection({
                       <div className="flex items-center gap-3 sm:text-right w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
                         <div>
                           <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">मासिक हप्ता रक्कम</div>
-                          <div className="text-sm font-black text-indigo-700">
+                          <div className="text-sm font-black text-[#9A3412]">
                             ₹ {(acc.installmentAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </div>
                         </div>
@@ -2326,8 +2326,8 @@ export default function RdInstallmentCollection({
                           }}
                           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                             isCurrent
-                              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                              : 'bg-white hover:bg-indigo-600 hover:text-white text-indigo-700 border border-indigo-300'
+                              ? 'bg-[#B44814] text-white hover:bg-[#9A3412]'
+                              : 'bg-white hover:bg-[#B44814] hover:text-white text-[#9A3412] border border-amber-300'
                           }`}
                         >
                           <CheckCircle className="w-3.5 h-3.5" />
@@ -2360,9 +2360,9 @@ export default function RdInstallmentCollection({
       {/* Full-Featured RD Installment Schedule Chart Modal */}
       {showScheduleModal && selectedAcc && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 animate-in fade-in duration-150">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-300">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-[97vw] xl:max-w-[1460px] max-h-[92vh] flex flex-col overflow-hidden border border-slate-300">
             {/* Modal Header */}
-            <div className="bg-indigo-700 text-white p-3.5 flex justify-between items-center rounded-t-xl shadow-xs">
+            <div className="bg-[#9A3412] text-white p-3.5 flex justify-between items-center rounded-t-xl shadow-xs">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-white/10 rounded-lg">
                   <Calendar className="w-5 h-5 text-white" />
@@ -2379,7 +2379,7 @@ export default function RdInstallmentCollection({
                       </span>
                     )}
                   </h2>
-                  <p className="text-[11px] text-indigo-100 mt-0.5 flex flex-wrap items-center gap-2">
+                  <p className="text-[11px] text-amber-100 mt-0.5 flex flex-wrap items-center gap-2">
                     <span>खातेदार: <strong className="text-white">{selectedAcc.memberName || selectedAcc.customerName || '-'}</strong></span>
                     <span>•</span>
                     <span>योजना: <strong className="text-white">{selectedAcc.schemeName}</strong></span>
@@ -2401,7 +2401,7 @@ export default function RdInstallmentCollection({
             </div>
 
             {/* Modal KPI Summaries */}
-            <div className="bg-indigo-50/60 p-3 border-b border-indigo-100 grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+            <div className="bg-orange-50/60 p-3 border-b border-amber-100 grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
               <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
                 <span className="text-slate-500 text-[10.5px] block font-medium">एकूण हप्ते (Total)</span>
                 <div className="flex items-baseline justify-between mt-1">
@@ -2452,21 +2452,21 @@ export default function RdInstallmentCollection({
             {/* Modal Body / CBS Schedule Table */}
             <div className="flex-1 overflow-auto p-4 bg-slate-50/50">
               <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
-                <table className="w-full text-xs text-left border-collapse">
+                <table className="w-full text-[11px] text-left border-collapse leading-tight">
                   <thead>
-                    <tr className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300 text-[11px] uppercase tracking-wider">
-                      <th className="py-2 px-2.5 text-center w-12 border-r border-slate-200">हप्ता</th>
-                      <th className="py-2 px-3 text-center border-r border-slate-200">देय दिनांक (Due Date)</th>
-                      <th className="py-2 px-3 text-right border-r border-slate-200">अपेक्षित हप्ता (₹)</th>
-                      <th className="py-2 px-3 text-center border-r border-slate-200">भरणा दिनांक (Paid Date)</th>
-                      <th className="py-2 px-3 text-right border-r border-slate-200">भरलेली रक्कम (₹)</th>
-                      <th className="py-2 px-2.5 text-center border-r border-slate-200">विलंब दिवस</th>
-                      <th className="py-2 px-2.5 text-right border-r border-slate-200">दंड आकारणी (₹)</th>
-                      <th className="py-2 px-3 text-center border-r border-slate-200">व्हाउचर क्र.</th>
-                      <th className="py-2 px-3 text-center">हप्ता स्थिती</th>
+                    <tr className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30 text-[11px] uppercase tracking-wider">
+                      <th className="py-1.5 px-2.5 text-center w-12 border-r border-amber-400/25 whitespace-nowrap">हप्ता</th>
+                      <th className="py-1.5 px-2 text-center border-r border-amber-400/25 whitespace-nowrap">देय दिनांक (Due Date)</th>
+                      <th className="py-1.5 px-2 text-right border-r border-amber-400/25 whitespace-nowrap">अपेक्षित हप्ता (₹)</th>
+                      <th className="py-1.5 px-2 text-center border-r border-amber-400/25 whitespace-nowrap">भरणा दिनांक (Paid Date)</th>
+                      <th className="py-1.5 px-2 text-right border-r border-amber-400/25 whitespace-nowrap">भरलेली रक्कम (₹)</th>
+                      <th className="py-1.5 px-2.5 text-center border-r border-amber-400/25 whitespace-nowrap">विलंब दिवस</th>
+                      <th className="py-1.5 px-2.5 text-right border-r border-amber-400/25 whitespace-nowrap">दंड आकारणी (₹)</th>
+                      <th className="py-1.5 px-2 text-center border-r border-amber-400/25 whitespace-nowrap">व्हाउचर क्र.</th>
+                      <th className="py-1.5 px-2 text-center whitespace-nowrap">हप्ता स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200 text-[11.5px] font-mono">
+                  <tbody className="divide-y divide-amber-100 text-[11.5px] font-mono">
                     {schedule.map((s) => {
                       const isPaid = s.status === 'Paid';
                       const isPartial = s.status === 'Partial';
@@ -2478,11 +2478,11 @@ export default function RdInstallmentCollection({
                       return (
                         <tr
                           key={s.installmentNo}
-                          className={`hover:bg-indigo-50/50 transition-colors ${
+                          className={`hover:bg-orange-50/50 transition-colors ${
                             isCurrentNext ? 'bg-amber-50/80 font-bold' : isPaid ? 'bg-emerald-50/20' : isPartial ? 'bg-orange-50/50' : ''
                           }`}
                         >
-                          <td className="py-2 px-2.5 text-center font-bold text-slate-900 border-r border-slate-200">
+                          <td className="py-1 px-2.5 text-center font-bold text-slate-900 border-r border-slate-200 align-middle">
                             #{s.installmentNo}
                             {isCurrentNext && (
                               <span className="block text-[9px] text-amber-700 uppercase font-sans font-extrabold">
@@ -2495,16 +2495,16 @@ export default function RdInstallmentCollection({
                               </span>
                             )}
                           </td>
-                          <td className="py-2 px-3 text-center text-slate-700 border-r border-slate-200">
+                          <td className="py-1 px-2 text-center text-slate-700 border-r border-slate-200 align-middle">
                             {s.dueDate ? new Date(s.dueDate).toLocaleDateString('en-GB') : '-'}
                           </td>
-                          <td className="py-2 px-3 text-right font-bold text-slate-900 border-r border-slate-200">
+                          <td className="py-1 px-2 text-right font-bold text-slate-900 border-r border-slate-200 align-middle">
                             ₹ {Number(s.expectedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
-                          <td className="py-2 px-3 text-center text-slate-700 border-r border-slate-200">
+                          <td className="py-1 px-2 text-center text-slate-700 border-r border-slate-200 align-middle">
                             {s.paidDate ? new Date(s.paidDate).toLocaleDateString('en-GB') : '-'}
                           </td>
-                          <td className="py-2 px-3 text-right font-bold border-r border-slate-200">
+                          <td className="py-1 px-2 text-right font-bold border-r border-slate-200 align-middle">
                             {s.paidAmount > 0 ? (
                               <span className={isPaid ? "text-emerald-700" : "text-orange-700"}>
                                 ₹ {Number(s.paidAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -2518,14 +2518,14 @@ export default function RdInstallmentCollection({
                               <span className="text-slate-400 font-normal">-</span>
                             )}
                           </td>
-                          <td className="py-2 px-2.5 text-center text-slate-700 border-r border-slate-200">
+                          <td className="py-1 px-2.5 text-center text-slate-700 border-r border-slate-200 align-middle">
                             {s.overdueDays > 0 ? (
                               <span className="text-rose-700 font-bold">{s.overdueDays} दिवस</span>
                             ) : (
                               <span className="text-slate-400">-</span>
                             )}
                           </td>
-                          <td className="py-2 px-2.5 text-right font-bold border-r border-slate-200">
+                          <td className="py-1 px-2.5 text-right font-bold border-r border-slate-200 align-middle">
                             {s.penaltyCharged > 0 ? (
                               <span className="text-rose-700">
                                 ₹ {Number(s.penaltyCharged).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -2534,10 +2534,10 @@ export default function RdInstallmentCollection({
                               <span className="text-slate-400 font-normal">-</span>
                             )}
                           </td>
-                          <td className="py-2 px-3 text-center font-bold text-slate-800 border-r border-slate-200">
+                          <td className="py-1 px-2 text-center font-bold text-slate-800 border-r border-slate-200 align-middle">
                             {s.voucherNo || (isPaid ? 'जमा' : isPartial ? 'अंशतः' : '-')}
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-2 text-center align-middle">
                             <span
                               className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                                 isPaid
@@ -2593,7 +2593,7 @@ export default function RdInstallmentCollection({
                   type="button"
                   onClick={handlePrintSchedule}
                   disabled={schedule.length === 0}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                  className="px-3.5 py-1.5 bg-[#B44814] hover:bg-[#9A3412] text-white font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>वेळापत्रक प्रिंट करा (Print)</span>
@@ -2649,7 +2649,7 @@ export default function RdInstallmentCollection({
                 {postMaturityConfirmModal.accountsInfo.map((info, idx) => (
                   <div key={idx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="font-mono font-bold text-indigo-800">{info.accountNo}</span>
+                      <span className="font-mono font-bold text-[#7C2418]">{info.accountNo}</span>
                       {info.legacyNo && (
                         <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[10px]">
                           🏷️ जुने आरडी: {info.legacyNo}

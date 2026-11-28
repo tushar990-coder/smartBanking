@@ -3029,7 +3029,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                                 {acc.installmentAmount > 0 && ` | हप्ता: ₹${(acc.installmentAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
                                                             </div>
                                                             {cardSplit.postedInterest > 0 && (
-                                                                <div className={`text-[9.5px] font-mono mt-0.5 ${isSelected ? 'text-amber-100' : 'text-sky-800 font-semibold'}`}>
+                                                                <div className={`text-[9.5px] font-mono mt-0.5 ${isSelected ? 'text-amber-100' : 'text-[#7C2418] font-semibold'}`}>
                                                                     मुद्दल: ₹{cardSplit.purePrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} + व्याज: ₹{cardSplit.postedInterest.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                                                                 </div>
                                                             )}
@@ -3673,8 +3673,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             )}
 
                             {/* STEP 3: Amount & Allocation Split Panel */}
-                            <div className="bg-sky-50/40 border border-sky-200/80 rounded-sm p-3 space-y-2.5">
-                                <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-sky-200/70">
+                            <div className="bg-amber-50/40 border border-amber-200/80 rounded-sm p-3 space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-amber-200/70">
                                     <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
                                         <Coins className="w-3.5 h-3.5 text-primary" />
                                         <span>३. रक्कम व वसुली विभागणी (Amount & Allocation)</span>
@@ -3685,10 +3685,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             <button
                                                 type="button"
                                                 onClick={() => applyQuickAmount('1_INST')}
-                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-sky-100/80 text-sky-900 hover:bg-sky-200/90 border border-sky-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
+                                                className="px-2.5 py-1 text-[10.5px] font-bold bg-amber-100/80 text-[#5A1A14] hover:bg-amber-200/90 border border-amber-300 rounded-sm transition-colors flex items-center gap-1 cursor-pointer"
                                                 title="१ हप्ता मुद्दल + सर्व व्याज व फी"
                                             >
-                                                <Zap className="w-3 h-3 text-sky-700" />
+                                                <Zap className="w-3 h-3 text-[#9A3412]" />
                                                 <span>१ हप्ता</span>
                                             </button>
                                             <button
@@ -3724,9 +3724,9 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                                 {/* Total Amount + 5 Split Inputs Grid */}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 items-end">
-                                    <div className="p-1.5 rounded-sm bg-sky-50/90 border border-sky-200">
+                                    <div className="p-1.5 rounded-sm bg-amber-50/90 border border-amber-200">
                                         <div className="flex items-center justify-between mb-0.5">
-                                            <label className="block text-[11px] font-bold text-sky-950">
+                                            <label className="block text-[11px] font-bold text-[#4A1410]">
                                                 एकूण जमा (Total ₹) <span className="text-rose-600">*</span>
                                             </label>
                                             {totalFeesAmount > 0 && (
@@ -3743,15 +3743,15 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             min="0"
                                             disabled={isPassingMode}
                                             placeholder="0.00"
-                                            className={`w-full border border-sky-400 px-2 py-1 rounded-sm font-mono font-bold text-xs text-right h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-500 ${
-                                                isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-sky-950'
+                                            className={`w-full border border-amber-400 px-2 py-1 rounded-sm font-mono font-bold text-xs text-right h-[30px] focus:outline-none focus:ring-1 focus:ring-[#B44814] ${
+                                                isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-[#4A1410]'
                                             }`}
                                         />
                                     </div>
 
-                                    <div className="p-1.5 rounded-sm bg-indigo-50/70 border border-indigo-200">
+                                    <div className="p-1.5 rounded-sm bg-orange-50/70 border border-amber-200">
                                         <div className="flex items-center justify-between mb-0.5">
-                                            <label className="text-[11px] font-bold text-indigo-950">मुद्दल (Principal ₹)</label>
+                                            <label className="text-[11px] font-bold text-[#4A1410]">मुद्दल (Principal ₹)</label>
                                             {duesSummary && duesSummary.paikiThakbaki > 0 && (
                                                 <span className="text-[9.5px] font-mono font-bold text-orange-700" title="थकीत मुद्दल">
                                                     थकीत: ₹{duesSummary.paikiThakbaki.toLocaleString('en-IN')}
@@ -3766,7 +3766,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             min="0"
                                             disabled={isPassingMode}
                                             placeholder="0.00"
-                                            className={`${inputClass} h-[30px] text-right font-mono font-bold border-indigo-300 text-indigo-950 bg-white focus:border-indigo-500`}
+                                            className={`${inputClass} h-[30px] text-right font-mono font-bold border-amber-300 text-[#4A1410] bg-white focus:border-[#B44814]`}
                                         />
                                     </div>
 
@@ -4264,14 +4264,14 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                                 {/* 2. Four Key KPI Tiles (2x2 Grid) in Soft Pastel Shades */}
                                 <div className="grid grid-cols-2 gap-2">
-                                    <div className="p-2 rounded-sm bg-sky-50/80 border border-sky-200 flex flex-col justify-between">
+                                    <div className="p-2 rounded-sm bg-amber-50/80 border border-amber-200 flex flex-col justify-between">
                                         <div>
-                                            <div className="text-[10px] font-bold text-sky-900">चालू मुद्दल बाकी</div>
-                                            <div className="text-sm font-black font-mono text-sky-950 mt-0.5">
+                                            <div className="text-[10px] font-bold text-[#5A1A14]">चालू मुद्दल बाकी</div>
+                                            <div className="text-sm font-black font-mono text-[#4A1410] mt-0.5">
                                                 ₹{duesSummary.yeneBaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                             </div>
                                         </div>
-                                        <div className="text-[9.5px] font-bold text-sky-900 mt-1 leading-snug bg-white/85 px-1.5 py-0.5 rounded-xs border border-sky-200/80 font-mono flex flex-wrap items-center gap-x-1">
+                                        <div className="text-[9.5px] font-bold text-[#5A1A14] mt-1 leading-snug bg-white/85 px-1.5 py-0.5 rounded-xs border border-amber-200/80 font-mono flex flex-wrap items-center gap-x-1">
                                             <span className="whitespace-nowrap">मुद्दल: ₹{duesSummary.purePrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                                             {(duesSummary.postedInterestInPrincipal > 0 || duesSummary.postedRecoveryChargesInPrincipal === 0) && (
                                                 <span className="whitespace-nowrap">+ व्याज: ₹{duesSummary.postedInterestInPrincipal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
@@ -4301,8 +4301,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         </div>
                                     </div>
 
-                                    <div className="p-2 rounded-sm bg-indigo-50/70 border border-indigo-200">
-                                        <div className="flex items-center justify-between text-[10px] font-bold text-indigo-900">
+                                    <div className="p-2 rounded-sm bg-orange-50/70 border border-amber-200">
+                                        <div className="flex items-center justify-between text-[10px] font-bold text-[#5A1A14]">
                                             <span>मंजूर / एकूण वाटप</span>
                                             {accountDetails?.disbursementCount && accountDetails.disbursementCount > 1 ? (
                                                 <span className="px-1 rounded-sm bg-amber-100 text-amber-900 text-[9px]">
@@ -4310,11 +4310,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 </span>
                                             ) : null}
                                         </div>
-                                        <div className="text-xs font-bold font-mono text-indigo-950 mt-0.5">
+                                        <div className="text-xs font-bold font-mono text-[#4A1410] mt-0.5">
                                             ₹{duesSummary.totalDisbursed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </div>
                                         {(accountDetails?.pendingSanctionedAmount || 0) > 0 && (
-                                            <div className="text-[9.5px] text-indigo-800 font-semibold mt-0.5">
+                                            <div className="text-[9.5px] text-[#7C2418] font-semibold mt-0.5">
                                                 शिल्लक मंजुरी: ₹{accountDetails?.pendingSanctionedAmount?.toLocaleString('en-IN')}
                                             </div>
                                         )}
@@ -4349,8 +4349,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         </span>
                                     </div>
 
-                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-sky-50/60">
-                                        <span className="text-sky-950 font-semibold">व्याज आकारणी दिवस</span>
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-amber-50/60">
+                                        <span className="text-[#4A1410] font-semibold">व्याज आकारणी दिवस</span>
                                         <span className="font-mono font-bold text-primary">
                                             {duesSummary.days} दिवस
                                         </span>
@@ -4373,16 +4373,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         </span>
                                     </div>
 
-                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-blue-50/60">
-                                        <span className="text-blue-950 font-semibold">
+                                    <div className="px-2.5 py-1.5 flex items-center justify-between bg-amber-50/60">
+                                        <span className="text-[#4A1410] font-semibold">
                                             वसूलपात्र मुद्दल
                                             {!duesSummary.isMultiInstallmentLoan && duesSummary.postedInterestInPrincipal > 0 && (
-                                                <span className="text-[10px] text-blue-800/80 font-normal ml-1">
+                                                <span className="text-[10px] text-[#7C2418]/80 font-normal ml-1">
                                                     (मुद्दल ₹{duesSummary.purePrincipal.toLocaleString('en-IN')} + व्याज ₹{duesSummary.postedInterestInPrincipal.toLocaleString('en-IN')})
                                                 </span>
                                             )}
                                         </span>
-                                        <span className="font-mono font-bold text-blue-950">
+                                        <span className="font-mono font-bold text-[#4A1410]">
                                             ₹{duesSummary.vasulpatra.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>
                                     </div>
@@ -4519,7 +4519,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             {/* Installment Schedule Modal Window - Matching Smart Banking ERP Theme */}
             {showInstallmentModal && selectedAccount && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-2 animate-in fade-in duration-150">
-                    <div className="bg-white rounded-sm shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-300">
+                    <div className="bg-white rounded-sm shadow-2xl w-full max-w-[97vw] xl:max-w-[1460px] max-h-[92vh] flex flex-col overflow-hidden border border-gray-300">
                         {/* Modal Header */}
                         <div className="bg-primary text-white p-2.5 flex justify-between items-center rounded-t-sm shadow-xs border-b border-primary/30">
                             <div className="flex items-center gap-2.5">
@@ -4665,7 +4665,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         </div>
 
                                         {/* 5. Pending Principal Balance */}
-                                        <div className="bg-blue-50/40 p-2 rounded-sm border border-blue-200 shadow-xs flex flex-col justify-between">
+                                        <div className="bg-amber-50/40 p-2 rounded-sm border border-amber-200 shadow-xs flex flex-col justify-between">
                                             <div className="flex items-center justify-between text-primary">
                                                 <span className="text-[10px] font-bold uppercase tracking-wider">शिल्लक मुद्दल (Balance)</span>
                                                 <Calendar size={13} />
@@ -4736,7 +4736,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     })}
                                 </div>
                                 <div className="text-[11px] text-gray-600 font-medium flex flex-wrap items-center gap-2">
-                                    <span className="px-2 py-0.5 rounded-sm bg-sky-50 border border-sky-200 text-sky-950">
+                                    <span className="px-2 py-0.5 rounded-sm bg-amber-50 border border-amber-200 text-[#4A1410]">
                                         कर्ज वाटप दिनांक: <strong className="font-mono font-bold text-primary">{formatDateSafe(accountDetails?.disbursementDate || selectedAccount.loanDisbursementDate || selectedAccount.openingDate)}</strong>
                                     </span>
                                     <span>|</span>
@@ -4748,23 +4748,23 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                             {/* Detailed Schedule Table */}
                             <div className="bg-white rounded-sm border border-gray-300 shadow-xs overflow-hidden flex-1 max-h-[420px] overflow-y-auto">
-                                <table className="w-full text-[11px] text-center border-collapse">
-                                    <thead className="bg-gray-100 text-primary border-b-2 border-primary sticky top-0 shadow-xs z-10 font-bold">
+                                <table className="w-full text-[11px] text-center border-collapse leading-tight">
+                                    <thead className="bg-[#5A1A14] text-amber-50 border-b-2 border-primary sticky top-0 shadow-xs z-10 font-bold text-amber-50">
                                         <tr>
-                                            <th className="p-1.5 border-r border-gray-300 w-12">हप्ता क्र.</th>
-                                            <th className="p-1.5 border-r border-gray-300">देय दिनांक (Due Date)</th>
-                                            <th className="p-1.5 border-r border-gray-300 text-right">सुरुवातीची बाकी</th>
-                                            <th className="p-1.5 border-r border-gray-300 text-right text-primary font-bold">मुद्दल हप्ता (₹)</th>
-                                            <th className="p-1.5 border-r border-gray-300 text-right text-orange-800 font-bold">हप्ता व्याज (₹)</th>
-                                            <th className="p-1.5 border-r border-gray-300 text-right bg-primary/10 text-primary font-bold">एकूण हप्ता (EMI ₹)</th>
-                                            <th className="p-1.5 border-r border-gray-300 text-right text-emerald-800 font-bold">भरलेली मुद्दल (₹)</th>
-                                            <th className="p-1.5 border-r border-gray-300 text-right text-rose-700 font-bold">शिल्लक मुद्दल (₹)</th>
-                                            <th className="p-1.5 border-r border-gray-300 text-right text-gray-800 font-bold">अखेरची बाकी (₹)</th>
-                                            <th className="p-1.5 border-r border-gray-300">पावती / दिनांक</th>
-                                            <th className="p-1.5 min-w-[130px]">हप्ता स्थिती (Status)</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 w-12 whitespace-nowrap">हप्ता क्र.</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 whitespace-nowrap">देय दिनांक (Due Date)</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">सुरुवातीची बाकी</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 text-right text-amber-200 font-bold whitespace-nowrap">मुद्दल हप्ता (₹)</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 text-right text-orange-800 font-bold whitespace-nowrap">हप्ता व्याज (₹)</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 text-right bg-primary/10 text-amber-200 font-bold whitespace-nowrap">एकूण हप्ता (EMI ₹)</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 text-right text-emerald-200 font-bold whitespace-nowrap">भरलेली मुद्दल (₹)</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 text-right text-rose-200 font-bold whitespace-nowrap">शिल्लक मुद्दल (₹)</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 text-right text-amber-50 font-bold whitespace-nowrap">अखेरची बाकी (₹)</th>
+                                            <th className="p-1.5 border-r border-amber-400/25 whitespace-nowrap">पावती / दिनांक</th>
+                                            <th className="p-1.5 min-w-[130px] whitespace-nowrap">हप्ता स्थिती (Status)</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-200">
+                                    <tbody className="divide-y divide-amber-100">
                                         {(() => {
                                             const schedule = accountDetails?.schedule || [];
                                             const collectionDateObj = parseDateSafe(formData.collectionDate || new Date());
@@ -4818,43 +4818,43 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         }`}
                                                     >
                                                         {/* Installment No */}
-                                                        <td className="p-1 border-r border-gray-200 font-bold text-gray-700">
+                                                        <td className="p-1 border-r border-gray-200 font-bold text-gray-700 align-middle">
                                                             #{row.installmentNo}
                                                         </td>
                                                         {/* Due Date */}
-                                                        <td className="p-1 border-r border-gray-200 font-mono font-medium">
+                                                        <td className="p-1 border-r border-gray-200 font-mono font-medium align-middle">
                                                             {formatDateSafe(row.dueDate)}
                                                         </td>
                                                         {/* Opening Balance */}
-                                                        <td className="p-1 border-r border-gray-200 text-right text-gray-600 font-mono">
+                                                        <td className="p-1 border-r border-gray-200 text-right text-gray-600 font-mono align-middle">
                                                             ₹ {((row.openingBalance ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         {/* Principal Amount */}
-                                                        <td className="p-1 border-r border-gray-200 text-right font-bold text-primary font-mono">
+                                                        <td className="p-1 border-r border-gray-200 text-right font-bold text-primary font-mono align-middle">
                                                             ₹ {row.principalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         {/* Interest Amount */}
-                                                        <td className="p-1 border-r border-gray-200 text-right font-semibold text-orange-800 font-mono">
+                                                        <td className="p-1 border-r border-gray-200 text-right font-semibold text-orange-800 font-mono align-middle">
                                                             ₹ {row.interestAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         {/* Total EMI */}
-                                                        <td className="p-1 border-r border-gray-200 text-right font-bold text-primary bg-primary/5 font-mono">
+                                                        <td className="p-1 border-r border-gray-200 text-right font-bold text-primary bg-primary/5 font-mono align-middle">
                                                             ₹ {row.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         {/* Paid Principal */}
-                                                        <td className="p-1 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono">
+                                                        <td className="p-1 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono align-middle">
                                                             ₹ {paidPrincipal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         {/* Remaining Principal */}
-                                                        <td className="p-1 border-r border-gray-200 text-right font-bold text-rose-700 font-mono">
+                                                        <td className="p-1 border-r border-gray-200 text-right font-bold text-rose-700 font-mono align-middle">
                                                             ₹ {remainingPrincipal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         {/* Closing Balance */}
-                                                        <td className="p-1 border-r border-gray-200 text-right font-semibold text-gray-800 font-mono">
+                                                        <td className="p-1 border-r border-gray-200 text-right font-semibold text-gray-800 font-mono align-middle">
                                                             ₹ {((row.closingBalance ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         {/* Receipt No & Paid Date */}
-                                                        <td className="p-1 border-r border-gray-200 text-[10px]">
+                                                        <td className="p-1 border-r border-gray-200 text-[10px] align-middle">
                                                             {row.receiptNo || row.paidDate ? (
                                                                 <div className="flex flex-col items-center">
                                                                     {row.receiptNo && (
@@ -4873,7 +4873,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                             )}
                                                         </td>
                                                         {/* Status Badge */}
-                                                        <td className="p-1">
+                                                        <td className="p-1 align-middle">
                                                             {isPaid ? (
                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                                                                     <CheckCircle size={10} /> पूर्ण भरला (Nil)
@@ -4985,7 +4985,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                 return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-2">
-                    <div className="bg-white rounded-sm shadow-xl w-full max-w-6xl flex flex-col max-h-[90vh]">
+                    <div className="bg-white rounded-sm shadow-xl w-full max-w-[97vw] xl:max-w-[1460px] flex flex-col max-h-[90vh]">
                         <div className="bg-primary text-white p-2 px-3 flex justify-between items-center rounded-t-sm">
                             <h2 className="text-sm font-bold flex items-center gap-2">
                                 <FileText size={16} />
@@ -5040,16 +5040,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                         </div>
                         
                         <div className="p-2 flex-1 overflow-auto bg-gray-50">
-                            <table className="w-full text-[11px] text-left border-collapse bg-white shadow-sm rounded-sm overflow-hidden">
-                                <thead className="bg-gray-100 text-primary border-b-2 border-primary">
+                            <table className="w-full text-[11px] text-left border-collapse bg-white shadow-sm rounded-sm overflow-hidden leading-tight">
+                                <thead className="bg-[#5A1A14] text-amber-50 border-b-2 border-primary text-amber-50">
                                     <tr>
-                                        <th className="p-1 border-r font-bold">दिनांक</th>
-                                        <th className="p-1 border-r font-bold">पावती क्र.</th>
-                                        <th className="p-1 border-r font-bold">सभासद / खाते</th>
-                                        <th className="p-1 border-r font-bold text-right">एकूण रक्कम</th>
-                                        <th className="p-1 border-r font-bold">मोड</th>
-                                        <th className="p-1 border-r font-bold">शेरा</th>
-                                        <th className="p-1 font-bold text-center">कृती (Action)</th>
+                                        <th className="p-1 border-r font-bold whitespace-nowrap">दिनांक</th>
+                                        <th className="p-1 border-r font-bold whitespace-nowrap">पावती क्र.</th>
+                                        <th className="p-1 border-r font-bold whitespace-nowrap">सभासद / खाते</th>
+                                        <th className="p-1 border-r font-bold text-right whitespace-nowrap">एकूण रक्कम</th>
+                                        <th className="p-1 border-r font-bold whitespace-nowrap">मोड</th>
+                                        <th className="p-1 border-r font-bold whitespace-nowrap">शेरा</th>
+                                        <th className="p-1 font-bold text-center whitespace-nowrap">कृती (Action)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -5061,20 +5061,20 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             ? ` | इतर फी: ₹${cFeesSum.toFixed(2)} (${(c.fees || []).map(f => f.ledger?.ledgerName || `#${f.ledgerID}`).join(', ')})`
                                             : '';
                                         return (
-                                            <tr key={c.loanCollectionID} className="border-b hover:bg-blue-50/30 transition-colors">
-                                                <td className="p-1 border-r">
+                                            <tr key={c.loanCollectionID} className="border-b hover:bg-amber-50/30 transition-colors">
+                                                <td className="p-1 border-r align-middle">
                                                     {isEditing ? (
                                                         <input type="date" value={editData.collectionDate?.split('T')[0] || ''} onChange={e => setEditData({...editData, collectionDate: e.target.value})} className="border p-0.5 text-[11px] h-[22px] w-full" />
                                                     ) : new Date(c.collectionDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                                                 </td>
-                                                <td className="p-1 border-r font-semibold">{c.receiptNo}</td>
-                                                <td className="p-1 border-r">
+                                                <td className="p-1 border-r font-semibold align-middle">{c.receiptNo}</td>
+                                                <td className="p-1 border-r align-middle">
                                                     <div>{c.loanAccount?.customer ? `${c.loanAccount.customer.firstName || ''} ${c.loanAccount.customer.lastName || ''}`.trim() : `${c.loanAccount?.member?.firstName || ''} ${c.loanAccount?.member?.lastName || ''}`.trim()}</div>
                                                     <span className="text-[10px] text-gray-500 font-mono block">
                                                         {c.loanAccount?.loanAccountNo} {c.loanAccount?.legacyAccountNumber ? `| जुना क्र: ${c.loanAccount.legacyAccountNumber}` : ''} {c.loanAccount?.customer?.cifNo ? `| CIF: ${c.loanAccount.customer.cifNo}` : (c.loanAccount?.member?.memberCode ? `| ${c.loanAccount.member.memberCode}` : '')}
                                                     </span>
                                                 </td>
-                                                <td className="p-1 border-r text-right font-bold text-green-700" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | मेंबर व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}${cFeeTip}`}>
+                                                <td className="p-1 border-r text-right font-bold text-green-700 align-middle" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | मेंबर व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}${cFeeTip}`}>
                                                     <div>₹{cGrandTotal.toFixed(2)}</div>
                                                     {cFeesSum > 0 && (
                                                         <span className="text-[9.5px] font-normal text-amber-800 block">
@@ -5082,7 +5082,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="p-1 border-r min-w-[140px]">
+                                                <td className="p-1 border-r min-w-[140px] align-middle">
                                                     {isEditing ? (
                                                         (c.paymentMode === 'Saving Transfer' || c.paymentMode === 'Saving' || c.paymentMode === 'Pigmy Transfer' || c.paymentMode === 'Pigmy') ? (
                                                             <div className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded-sm text-[10px] font-bold text-slate-700 inline-flex items-center gap-1" title="खाते वर्ग (Transfer) पावतीची पेमेंट पद्धत बदलता येत नाही">
@@ -5128,12 +5128,13 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         )
                                                     ) : c.paymentMode}
                                                 </td>
-                                                <td className="p-1 border-r text-gray-500">
+                                                <td className="p-1 border-r text-gray-500 align-middle">
                                                     {isEditing ? (
                                                         <input type="text" value={editData.remarks || ''} onChange={e => setEditData({...editData, remarks: e.target.value})} className="border p-0.5 text-[11px] h-[22px] w-full" placeholder="शेरा..." />
                                                     ) : c.remarks}
                                                 </td>
-                                                <td className="p-1 text-center flex justify-center gap-1">
+                                                <td className="px-1.5 py-1 text-center whitespace-nowrap align-middle">
+                                                    <div className="inline-flex items-center justify-center gap-1">
                                                     {isEditing ? (
                                                         <>
                                                             <button type="button" onClick={handleSaveEdit} className="bg-green-600 hover:bg-green-700 text-white p-1 rounded-sm shadow-sm" title="Save"><Save size={12} /></button>
@@ -5160,6 +5161,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                             
                                                         </>
                                                     )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         )
@@ -5287,28 +5289,28 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     </span>
                                 </div>
                                 <div className="max-h-48 overflow-y-auto">
-                                    <table className="w-full text-[11px] text-left border-collapse">
-                                        <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold">
+                                    <table className="w-full text-[11px] text-left border-collapse leading-tight">
+                                        <thead className="bg-[#5A1A14] border-b border-amber-400/30 text-amber-50 font-semibold">
                                             <tr>
-                                                <th className="p-2 border-r border-gray-200">ठेव प्रकार</th>
-                                                <th className="p-2 border-r border-gray-200 font-mono">खाते क्र.</th>
-                                                <th className="p-2 border-r border-gray-200 text-right">बोजा रक्कम (₹)</th>
-                                                <th className="p-2 text-center">स्थिती</th>
+                                                <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">ठेव प्रकार</th>
+                                                <th className="px-2 py-1.5 border-r border-amber-400/25 font-mono whitespace-nowrap">खाते क्र.</th>
+                                                <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">बोजा रक्कम (₹)</th>
+                                                <th className="px-2 py-1.5 text-center whitespace-nowrap">स्थिती</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-gray-100">
+                                        <tbody className="divide-y divide-amber-100">
                                             {lienPromptData.activeCollaterals.map((c, idx) => (
                                                 <tr key={idx} className="hover:bg-emerald-50/30">
-                                                    <td className="p-2 border-r border-gray-100 font-medium text-gray-800">
+                                                    <td className="px-2 py-1 border-r border-gray-100 font-medium text-gray-800 align-middle">
                                                         {getCollateralTypeName(c.collateralType)}
                                                     </td>
-                                                    <td className="p-2 border-r border-gray-100 font-mono font-semibold text-primary">
+                                                    <td className="px-2 py-1 border-r border-gray-100 font-mono font-semibold text-primary align-middle">
                                                         {c.depositAccountNo}
                                                     </td>
-                                                    <td className="p-2 border-r border-gray-100 text-right font-mono font-bold text-gray-800">
+                                                    <td className="px-2 py-1 border-r border-gray-100 text-right font-mono font-bold text-gray-800 align-middle">
                                                         ₹{(c.lienAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                     </td>
-                                                    <td className="p-2 text-center">
+                                                    <td className="px-2 py-1 text-center align-middle">
                                                         <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-300">
                                                             बोजा नोंदवला
                                                         </span>
@@ -5730,11 +5732,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                         {/* Modal Body */}
                         <div className="p-4 space-y-3 bg-rose-50/40">
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 font-mono text-xs">
-                                <div className="bg-sky-50/80 p-2.5 rounded-sm border border-sky-200 shadow-2xs">
-                                    <div className="font-sans text-[10.5px] text-sky-900 font-bold">
+                                <div className="bg-amber-50/80 p-2.5 rounded-sm border border-amber-200 shadow-2xs">
+                                    <div className="font-sans text-[10.5px] text-[#5A1A14] font-bold">
                                         एकूण जमा (Total ₹)
                                     </div>
-                                    <div className="text-sm font-black text-sky-950 mt-0.5">
+                                    <div className="text-sm font-black text-[#4A1410] mt-0.5">
                                         ₹{enteredTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                     </div>
                                 </div>

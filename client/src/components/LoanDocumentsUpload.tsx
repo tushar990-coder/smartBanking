@@ -495,7 +495,7 @@ export default function LoanDocumentsUpload({ onNavigate, initialLoanAccountId }
             <h1 className="text-sm md:text-base font-bold tracking-wide">
               कर्ज तारण दस्तऐवज व सोने दागिने कस्टडी ट्रॅकिंग (Loan Collateral &amp; Gold Custody Tracker)
             </h1>
-            <p className="text-[10.5px] text-blue-100 font-normal">
+            <p className="text-[10.5px] text-amber-100 font-normal">
               ७/१२ उतारा, केवायसी, तारण दस्तऐवज अपलोड आणि सोने दागिने पाकीट (तिजोरी / संस्था लॉकर / बँक लॉकर / पुनर्गहाण / सुपूर्दगी) ट्रॅकिंग
             </p>
           </div>
@@ -632,7 +632,7 @@ export default function LoanDocumentsUpload({ onNavigate, initialLoanAccountId }
                         ? 'text-purple-800'
                         : isReleased
                         ? 'text-emerald-700'
-                        : 'text-blue-900'
+                        : 'text-[#5A1A14]'
                     }`}
                   >
                     📍 {custodyDetails.custodyLocationDisplay}
@@ -761,7 +761,7 @@ export default function LoanDocumentsUpload({ onNavigate, initialLoanAccountId }
                             onClick={() => setTargetCustodyStatus(opt.id as any)}
                             className={`px-2 py-1.5 rounded border text-[11px] font-bold cursor-pointer text-center ${
                               targetCustodyStatus === opt.id
-                                ? 'bg-blue-50 border-primary text-primary ring-1 ring-primary'
+                                ? 'bg-amber-50 border-primary text-primary ring-1 ring-primary'
                                 : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                             } disabled:opacity-50`}
                           >
@@ -1008,22 +1008,22 @@ export default function LoanDocumentsUpload({ onNavigate, initialLoanAccountId }
                     तारण ठेवलेले सोन्याचे दागिने ({(custodyDetails.ornaments || []).length})
                   </h3>
                   <div className="overflow-x-auto">
-                    <table className="min-w-full border-collapse text-[11px]">
-                      <thead className="bg-slate-100">
+                    <table className="min-w-full border-collapse text-[11px] leading-tight">
+                      <thead className="bg-[#5A1A14] text-amber-50">
                         <tr>
-                          <th className="border px-2 py-1 text-left">दागिना</th>
-                          <th className="border px-1.5 py-1 text-center">नग</th>
-                          <th className="border px-2 py-1 text-right">निव्वळ वजन (g)</th>
-                          <th className="border px-2 py-1 text-right">मूल्यांकन (₹)</th>
+                          <th className="border px-2 py-1 text-left whitespace-nowrap">दागिना</th>
+                          <th className="border px-1.5 py-1 text-center whitespace-nowrap">नग</th>
+                          <th className="border px-2 py-1 text-right whitespace-nowrap">निव्वळ वजन (g)</th>
+                          <th className="border px-2 py-1 text-right whitespace-nowrap">मूल्यांकन (₹)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(custodyDetails.ornaments || []).map((g: any) => (
                           <tr key={g.goldLoanDetailID}>
-                            <td className="border px-2 py-1 font-medium">{g.ornamentName} ({g.purity}K)</td>
-                            <td className="border px-1.5 py-1 text-center">{g.quantity}</td>
-                            <td className="border px-2 py-1 text-right font-mono">{fmtWt(g.netWeight)}</td>
-                            <td className="border px-2 py-1 text-right font-mono">
+                            <td className="border px-2 py-1 font-medium align-middle">{g.ornamentName} ({g.purity}K)</td>
+                            <td className="border px-1.5 py-1 text-center align-middle">{g.quantity}</td>
+                            <td className="border px-2 py-1 text-right font-mono align-middle">{fmtWt(g.netWeight)}</td>
+                            <td className="border px-2 py-1 text-right font-mono align-middle">
                               ₹{fmtAmt(g.valuerValuation || g.estimatedValue)}
                             </td>
                           </tr>
@@ -1126,31 +1126,31 @@ export default function LoanDocumentsUpload({ onNavigate, initialLoanAccountId }
                 </h2>
 
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs text-left border-collapse">
-                    <thead className="bg-slate-100 text-slate-700 text-[11px]">
+                  <table className="min-w-full text-[11px] text-left border-collapse leading-tight">
+                    <thead className="bg-[#5A1A14] text-amber-50 text-[11px]">
                       <tr>
-                        <th className="border border-slate-200 px-2.5 py-1.5">प्रकार</th>
-                        <th className="border border-slate-200 px-2.5 py-1.5">वर्णन</th>
-                        <th className="border border-slate-200 px-2.5 py-1.5">दिनांक</th>
-                        <th className="border border-slate-200 px-2.5 py-1.5 text-center">कृती</th>
+                        <th className="border border-amber-400/25 px-2.5 py-1.5 whitespace-nowrap">प्रकार</th>
+                        <th className="border border-amber-400/25 px-2.5 py-1.5 whitespace-nowrap">वर्णन</th>
+                        <th className="border border-amber-400/25 px-2.5 py-1.5 whitespace-nowrap">दिनांक</th>
+                        <th className="border border-amber-400/25 px-2.5 py-1.5 text-center whitespace-nowrap">कृती</th>
                       </tr>
                     </thead>
                     <tbody>
                       {documents.map((d) => (
                         <tr key={d.loanDocumentID} className="hover:bg-slate-50 text-[11px]">
-                          <td className="border border-slate-200 px-2.5 py-1.5 font-semibold text-primary">
+                          <td className="border border-slate-200 px-2.5 py-1 font-semibold text-primary align-middle">
                             {d.documentType}
                           </td>
-                          <td className="border border-slate-200 px-2.5 py-1.5">{d.documentName || '-'}</td>
-                          <td className="border border-slate-200 px-2.5 py-1.5 font-mono">
+                          <td className="border border-slate-200 px-2.5 py-1 align-middle">{d.documentName || '-'}</td>
+                          <td className="border border-slate-200 px-2.5 py-1 font-mono align-middle">
                             {new Date(d.uploadedDate).toLocaleDateString('en-GB')}
                           </td>
-                          <td className="border border-slate-200 px-2.5 py-1.5 text-center space-x-3">
+                          <td className="border border-slate-200 px-2.5 py-1 text-center space-x-3 align-middle">
                             <a
                               href={d.filePath}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-0.5 text-blue-700 font-bold hover:underline"
+                              className="inline-flex items-center gap-0.5 text-[#9A3412] font-bold hover:underline"
                             >
                               <ExternalLink size={12} /> पहा
                             </a>

@@ -57,7 +57,7 @@ const TreeNode: React.FC<{ node: ReportNode, level: number }> = ({ node, level }
     <React.Fragment>
       <tr className={`border-b transition-colors ${
         isHead 
-          ? 'bg-blue-50/75 hover:bg-blue-100/60 font-bold text-gray-950 border-gray-400 print:bg-slate-100/90' 
+          ? 'bg-amber-50/75 hover:bg-amber-100/60 font-bold text-gray-950 border-gray-400 print:bg-slate-100/90' 
           : 'bg-white hover:bg-slate-50 font-normal text-gray-800 border-gray-200'
       }`}>
         <td className={`py-1 px-1.5 text-right border-r border-gray-900 w-[24%] align-top font-mono ${
@@ -76,7 +76,7 @@ const TreeNode: React.FC<{ node: ReportNode, level: number }> = ({ node, level }
           ) : (
             <span className="mr-1 w-3.5 inline-block print:hidden"></span>
           )}
-          <span className={`font-mono mr-1.5 ${isHead ? 'text-blue-900 font-bold' : 'text-gray-500 font-normal'}`}>
+          <span className={`font-mono mr-1.5 ${isHead ? 'text-[#5A1A14] font-bold' : 'text-gray-500 font-normal'}`}>
             {node.isGroup 
               ? (node.displayOrder && node.displayOrder > 0 ? `${node.displayOrder} -` : (node.code ? `${node.code} -` : '')) 
               : `${node.code || node.id} -`}

@@ -897,7 +897,7 @@ export default function RdWithdrawalMaturity({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
           <div className="bg-white p-2.5 rounded-sm border border-slate-200">
             <span className="block text-[11px] text-slate-500">१. एकूण जमा मुद्दल (Principal)</span>
-            <span className="text-sm font-bold text-blue-700">₹ {formatINR(liveSettlement.principal)}</span>
+            <span className="text-sm font-bold text-[#9A3412]">₹ {formatINR(liveSettlement.principal)}</span>
           </div>
 
           <div className="bg-white p-2.5 rounded-sm border border-slate-200">
@@ -983,7 +983,7 @@ export default function RdWithdrawalMaturity({
               </span>
             )}
             {liveSettlement.extraExpenseDebit > 0 && (
-              <span className="bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded font-medium">
+              <span className="bg-amber-50 text-[#7C2418] border border-amber-200 px-2 py-0.5 rounded font-medium">
                 अतिरिक्त व्याज खर्च नावे (Dr): ₹{formatINR(liveSettlement.extraExpenseDebit)}
               </span>
             )}
@@ -1041,80 +1041,80 @@ export default function RdWithdrawalMaturity({
 
           {showVoucherPreview && (
             <div className="mt-2 bg-white border border-slate-200 rounded-sm overflow-hidden">
-              <table className="w-full text-[11px]">
-                <thead className="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <table className="w-full text-[11px] leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30">
                   <tr>
-                    <th className="text-left px-2.5 py-1.5">लेजर खाते (GL Account)</th>
-                    <th className="text-center px-2 py-1.5 w-16">प्रकार</th>
-                    <th className="text-right px-2.5 py-1.5 w-28">नावे (Dr ₹)</th>
-                    <th className="text-right px-2.5 py-1.5 w-28">जमा (Cr ₹)</th>
+                    <th className="text-left px-2.5 py-1.5 whitespace-nowrap">लेजर खाते (GL Account)</th>
+                    <th className="text-center px-2 py-1.5 w-16 whitespace-nowrap">प्रकार</th>
+                    <th className="text-right px-2.5 py-1.5 w-28 whitespace-nowrap">नावे (Dr ₹)</th>
+                    <th className="text-right px-2.5 py-1.5 w-28 whitespace-nowrap">जमा (Cr ₹)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-amber-100">
                   {liveSettlement.principal > 0 && (
                     <tr>
-                      <td className="px-2.5 py-1 font-medium text-slate-800">
+                      <td className="px-2.5 py-1 font-medium text-slate-800 align-middle">
                         {rdLiabilityName} <span className="text-slate-400">(मुद्दल निर्लेखन)</span>
                       </td>
-                      <td className="px-2 py-1 text-center font-bold text-rose-700">Dr</td>
-                      <td className="px-2.5 py-1 text-right font-semibold">{formatINR(liveSettlement.principal)}</td>
-                      <td className="px-2.5 py-1 text-right text-slate-400">-</td>
+                      <td className="px-2 py-1 text-center font-bold text-rose-700 align-middle">Dr</td>
+                      <td className="px-2.5 py-1 text-right font-semibold align-middle">{formatINR(liveSettlement.principal)}</td>
+                      <td className="px-2.5 py-1 text-right text-slate-400 align-middle">-</td>
                     </tr>
                   )}
                   {liveSettlement.payableDebit > 0 && (
                     <tr>
-                      <td className="px-2.5 py-1 font-medium text-slate-800">
+                      <td className="px-2.5 py-1 font-medium text-slate-800 align-middle">
                         {intPayableName} <span className="text-slate-400">(तरतूद निर्लेखन)</span>
                       </td>
-                      <td className="px-2 py-1 text-center font-bold text-rose-700">Dr</td>
-                      <td className="px-2.5 py-1 text-right font-semibold">{formatINR(liveSettlement.payableDebit)}</td>
-                      <td className="px-2.5 py-1 text-right text-slate-400">-</td>
+                      <td className="px-2 py-1 text-center font-bold text-rose-700 align-middle">Dr</td>
+                      <td className="px-2.5 py-1 text-right font-semibold align-middle">{formatINR(liveSettlement.payableDebit)}</td>
+                      <td className="px-2.5 py-1 text-right text-slate-400 align-middle">-</td>
                     </tr>
                   )}
                   {liveSettlement.extraExpenseDebit > 0 && (
                     <tr>
-                      <td className="px-2.5 py-1 font-medium text-slate-800">
+                      <td className="px-2.5 py-1 font-medium text-slate-800 align-middle">
                         {intExpenseName} <span className="text-slate-400">(चालू व्याज खर्च)</span>
                       </td>
-                      <td className="px-2 py-1 text-center font-bold text-rose-700">Dr</td>
-                      <td className="px-2.5 py-1 text-right font-semibold">
+                      <td className="px-2 py-1 text-center font-bold text-rose-700 align-middle">Dr</td>
+                      <td className="px-2.5 py-1 text-right font-semibold align-middle">
                         {formatINR(liveSettlement.extraExpenseDebit)}
                       </td>
-                      <td className="px-2.5 py-1 text-right text-slate-400">-</td>
+                      <td className="px-2.5 py-1 text-right text-slate-400 align-middle">-</td>
                     </tr>
                   )}
                   {liveSettlement.finalPayout > 0 && (
                     <tr className="bg-emerald-50/40">
-                      <td className="px-2.5 py-1 font-bold text-emerald-900">
+                      <td className="px-2.5 py-1 font-bold text-emerald-900 align-middle">
                         {resolveSettlementCreditLedgerLabel()} <span className="text-emerald-700">(अंतिम परतावा)</span>
                       </td>
-                      <td className="px-2 py-1 text-center font-bold text-emerald-700">Cr</td>
-                      <td className="px-2.5 py-1 text-right text-slate-400">-</td>
-                      <td className="px-2.5 py-1 text-right font-bold text-emerald-800">
+                      <td className="px-2 py-1 text-center font-bold text-emerald-700 align-middle">Cr</td>
+                      <td className="px-2.5 py-1 text-right text-slate-400 align-middle">-</td>
+                      <td className="px-2.5 py-1 text-right font-bold text-emerald-800 align-middle">
                         {formatINR(liveSettlement.finalPayout)}
                       </td>
                     </tr>
                   )}
                   {liveSettlement.clawbackExpenseCredit > 0 && (
                     <tr>
-                      <td className="px-2.5 py-1 font-medium text-slate-800">
+                      <td className="px-2.5 py-1 font-medium text-slate-800 align-middle">
                         {intExpenseName} <span className="text-slate-400">(जास्तीची तरतूद परत / Clawback)</span>
                       </td>
-                      <td className="px-2 py-1 text-center font-bold text-emerald-700">Cr</td>
-                      <td className="px-2.5 py-1 text-right text-slate-400">-</td>
-                      <td className="px-2.5 py-1 text-right font-semibold">
+                      <td className="px-2 py-1 text-center font-bold text-emerald-700 align-middle">Cr</td>
+                      <td className="px-2.5 py-1 text-right text-slate-400 align-middle">-</td>
+                      <td className="px-2.5 py-1 text-right font-semibold align-middle">
                         {formatINR(liveSettlement.clawbackExpenseCredit)}
                       </td>
                     </tr>
                   )}
                   {liveSettlement.principalPenalty > 0 && (
                     <tr>
-                      <td className="px-2.5 py-1 font-medium text-slate-800">
+                      <td className="px-2.5 py-1 font-medium text-slate-800 align-middle">
                         {penaltyLedgerName} <span className="text-slate-400">(मुद्दलातून दंड वजावट)</span>
                       </td>
-                      <td className="px-2 py-1 text-center font-bold text-emerald-700">Cr</td>
-                      <td className="px-2.5 py-1 text-right text-slate-400">-</td>
-                      <td className="px-2.5 py-1 text-right font-semibold">
+                      <td className="px-2 py-1 text-center font-bold text-emerald-700 align-middle">Cr</td>
+                      <td className="px-2.5 py-1 text-right text-slate-400 align-middle">-</td>
+                      <td className="px-2.5 py-1 text-right font-semibold align-middle">
                         {formatINR(liveSettlement.principalPenalty)}
                       </td>
                     </tr>
@@ -1280,7 +1280,7 @@ export default function RdWithdrawalMaturity({
                 )}
                 <div className="flex justify-between">
                   <span>एकूण जमा मुद्दल:</span>
-                  <span className="font-bold text-blue-700">₹ {formatINR(selectedAcc.totalDepositedAmount)}</span>
+                  <span className="font-bold text-[#9A3412]">₹ {formatINR(selectedAcc.totalDepositedAmount)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>जमा व्याज (Accrued):</span>
@@ -1452,7 +1452,7 @@ export default function RdWithdrawalMaturity({
                       <button
                         type="submit"
                         disabled={loading || !!selectedAcc.isLienMarked || !liveSettlement.isBalanced}
-                        className="px-5 py-1.5 bg-primary hover:bg-[#004a75] text-white font-semibold rounded-sm text-xs shadow-sm transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-5 py-1.5 bg-primary hover:bg-[#7C2418] text-white font-semibold rounded-sm text-xs shadow-sm transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {loading
                           ? 'प्रक्रिया चालू आहे...'

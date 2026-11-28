@@ -407,7 +407,7 @@ export default function BranchMaster({ onNavigateToOpeningBalance }: BranchMaste
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 rounded-sm shadow-xs border transition-all duration-300 mb-3 ${
-          editingId ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editingId ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -630,20 +630,20 @@ export default function BranchMaster({ onNavigateToOpeningBalance }: BranchMaste
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
+          <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap leading-tight">
             <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
-                <th className="p-2 text-center border-r border-gray-200 w-24">प्रकार (Type)</th>
-                <th className="p-2 border-r border-gray-200 w-24">शाखा कोड</th>
-                <th className="p-2 border-r border-gray-200">शाखेचे नाव</th>
-                <th className="p-2 border-r border-gray-200">रोख व IBT खाते (Cash & IBT)</th>
-                <th className="p-2 border-r border-gray-200">मोबाईल / ईमेल</th>
-                <th className="p-2 border-r border-gray-200">पत्ता / IFSC</th>
-                <th className="p-2 text-center border-r border-gray-200 w-20">स्थिती</th>
-                <th className="p-2 text-center w-36">क्रिया (Actions)</th>
+              <tr className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
+                <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-24 whitespace-nowrap">प्रकार (Type)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-24 whitespace-nowrap">शाखा कोड</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">शाखेचे नाव</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">रोख व IBT खाते (Cash & IBT)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">मोबाईल / ईमेल</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">पत्ता / IFSC</th>
+                <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-20 whitespace-nowrap">स्थिती</th>
+                <th className="px-2 py-1.5 text-center w-36 whitespace-nowrap">क्रिया (Actions)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-amber-100 bg-white">
               {filteredBranches.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-6 text-center text-gray-400 italic">
@@ -654,17 +654,17 @@ export default function BranchMaster({ onNavigateToOpeningBalance }: BranchMaste
                 filteredBranches.map((b) => {
                   const isHo = (b.branchType || '').toLowerCase() === 'headoffice';
                   return (
-                    <tr key={b.branchID} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="p-2 border-r border-gray-200 text-center">
+                    <tr key={b.branchID} className="hover:bg-amber-50/50 transition-colors">
+                      <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          isHo ? 'bg-purple-100 text-purple-900 border border-purple-300' : 'bg-blue-100 text-blue-800 border border-blue-200'
+                          isHo ? 'bg-purple-100 text-purple-900 border border-purple-300' : 'bg-amber-100 text-[#7C2418] border border-amber-200'
                         }`}>
                           {isHo ? '👑 Head Office' : '🏢 Branch'}
                         </span>
                       </td>
-                      <td className="p-2 border-r border-gray-200 font-bold text-primary font-mono">{b.branchCode}</td>
-                      <td className="p-2 border-r border-gray-200 font-bold text-gray-900">{b.branchName}</td>
-                      <td className="p-2 border-r border-gray-200 text-emerald-800 font-medium">
+                      <td className="px-2 py-1 border-r border-gray-200 font-bold text-primary font-mono align-middle">{b.branchCode}</td>
+                      <td className="px-2 py-1 border-r border-gray-200 font-bold text-gray-900 align-middle">{b.branchName}</td>
+                      <td className="px-2 py-1 border-r border-gray-200 text-emerald-800 font-medium align-middle">
                         <div className="flex flex-col gap-0.5">
                           {b.defaultCashLedger ? (
                             <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200 text-[10px] font-semibold flex items-center gap-1">
@@ -676,28 +676,28 @@ export default function BranchMaster({ onNavigateToOpeningBalance }: BranchMaste
                             </span>
                           )}
                           {b.defaultIbtLedger && (
-                            <span className="bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 text-[9px] font-semibold flex items-center gap-1">
+                            <span className="bg-amber-50 text-[#7C2418] px-1.5 py-0.5 rounded border border-amber-200 text-[9px] font-semibold flex items-center gap-1">
                               <span>🔄</span> {b.defaultIbtLedger.ledgerName}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="p-2 border-r border-gray-200 text-gray-700">
+                      <td className="px-2 py-1 border-r border-gray-200 text-gray-700 align-middle">
                         <div>📞 {b.mobileNo || '-'}</div>
                         <div className="text-[10px] text-gray-500">✉️ {b.email || '-'}</div>
                       </td>
-                      <td className="p-2 border-r border-gray-200 text-gray-600">
+                      <td className="px-2 py-1 border-r border-gray-200 text-gray-600 align-middle">
                         <div>{b.address || '-'}</div>
                         <div className="text-[10px] text-gray-500 font-mono">IFSC: {b.ifscCode || '-'}</div>
                       </td>
-                      <td className="p-2 border-r border-gray-200 text-center">
+                      <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           b.isActive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300'
                         }`}>
                           {b.isActive ? 'सक्रिय' : 'निष्क्रिय'}
                         </span>
                       </td>
-                      <td className="p-2 text-center">
+                      <td className="px-2 py-1 text-center align-middle">
                         <div className="flex items-center justify-center gap-1">
                           {onNavigateToOpeningBalance && (
                             <button
@@ -712,7 +712,7 @@ export default function BranchMaster({ onNavigateToOpeningBalance }: BranchMaste
                           )}
                           <button 
                             onClick={() => handleEdit(b)}
-                            className="px-2 py-0.5 bg-blue-50 text-primary hover:bg-blue-100 border border-blue-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer"
+                            className="px-2 py-0.5 bg-amber-50 text-primary hover:bg-amber-100 border border-amber-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer"
                           >
                             संपादन
                           </button>

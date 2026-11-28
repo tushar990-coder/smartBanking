@@ -113,7 +113,7 @@ const VoucherApproval: React.FC = () => {
         <h2 className="text-2xl font-bold text-gray-800">वाउचर पासिंग (Voucher Passing)</h2>
         <button 
           onClick={fetchPendingVouchers}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+          className="bg-[#B44814] text-white px-4 py-2 rounded hover:bg-[#9A3412] transition"
         >
           Refresh List
         </button>
@@ -146,7 +146,7 @@ const VoucherApproval: React.FC = () => {
                   <span className={`ml-4 px-2 py-1 rounded text-xs font-bold ${
                     v.voucherType === 'Receipt' ? 'bg-green-100 text-green-800' :
                     v.voucherType === 'Payment' ? 'bg-red-100 text-red-800' :
-                    'bg-blue-100 text-blue-800'
+                    'bg-amber-100 text-[#7C2418]'
                   }`}>
                     {v.voucherType}
                   </span>
@@ -165,22 +165,22 @@ const VoucherApproval: React.FC = () => {
                   </p>
 
                   <div className="mt-4">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-gray-100">
+                    <table className="w-full text-[11px] text-left leading-tight border-collapse">
+                      <thead className="bg-[#5A1A14] text-amber-50">
                         <tr>
-                          <th className="px-2 py-1">Ledger</th>
-                          <th className="px-2 py-1 text-right">Debit (Dr)</th>
-                          <th className="px-2 py-1 text-right">Credit (Cr)</th>
+                          <th className="px-2 py-1 whitespace-nowrap">Ledger</th>
+                          <th className="px-2 py-1 text-right whitespace-nowrap">Debit (Dr)</th>
+                          <th className="px-2 py-1 text-right whitespace-nowrap">Credit (Cr)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {v.voucherDetails?.map((vd, idx) => (
                           <tr key={idx} className="border-b">
-                            <td className="px-2 py-1">{vd.ledger?.ledgerName}</td>
-                            <td className="px-2 py-1 text-right text-red-600 font-medium">
+                            <td className="px-2 py-1 align-middle">{vd.ledger?.ledgerName}</td>
+                            <td className="px-2 py-1 text-right text-red-600 font-medium align-middle">
                               {vd.drCr === 'Dr' ? vd.amount.toFixed(2) : ''}
                             </td>
-                            <td className="px-2 py-1 text-right text-green-600 font-medium">
+                            <td className="px-2 py-1 text-right text-green-600 font-medium align-middle">
                               {vd.drCr === 'Cr' ? vd.amount.toFixed(2) : ''}
                             </td>
                           </tr>

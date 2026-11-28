@@ -33,9 +33,9 @@ export default function FdRdDashboard({ onNavigate }: FdRdDashboardProps) {
       icon: AnimatedAccountCloseIcon,
       tab: 'fd-withdrawal',
       params: {},
-      gradient: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 55%, #1D4ED8 100%)',
-      shadowColor: 'rgba(29, 140, 248, 0.40)',
-      accentHex: '#1D74F5',
+      gradient: 'linear-gradient(135deg, #EA580C 0%, #B44814 55%, #7C2418 100%)',
+      shadowColor: 'rgba(180, 72, 20, 0.38)',
+      accentHex: '#9A3412',
     },
     {
       id: 'fd-accrual',
@@ -57,9 +57,9 @@ export default function FdRdDashboard({ onNavigate }: FdRdDashboardProps) {
       icon: AnimatedReportsIcon,
       tab: 'fd-reports',
       params: {},
-      gradient: 'linear-gradient(135deg, #22D3EE 0%, #0891B2 55%, #0369A1 100%)',
-      shadowColor: 'rgba(8, 145, 178, 0.38)',
-      accentHex: '#0E7490',
+      gradient: 'linear-gradient(135deg, #2DD4BF 0%, #0D9488 55%, #0F766E 100%)',
+      shadowColor: 'rgba(13, 148, 136, 0.36)',
+      accentHex: '#0F766E',
     },
   ];
 
@@ -69,10 +69,10 @@ export default function FdRdDashboard({ onNavigate }: FdRdDashboardProps) {
       titleMr="मुदत ठेव विभाग मुख्य हब"
       subtitleMr="नवीन मुदत ठेव नोंदणी • नूतनीकरण व परतावा • व्याज तरतूद व अहवाल व्यवस्थापन"
       heroIcon={AnimatedDepositIcon}
-      heroEmblemGradient="linear-gradient(135deg, #4ADE80 0%, #22C55E 52%, #15803D 100%)"
-      heroGlowGradient="linear-gradient(135deg, #22C55E 0%, #06B6D4 55%, #2563EB 100%)"
-      underlineGradient="linear-gradient(90deg, #22C55E 0%, #06B6D4 50%, #2563EB 100%)"
-      accentSparkleColor="#22C55E"
+      heroEmblemGradient="linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)"
+      heroGlowGradient="linear-gradient(135deg, #8C2D19 0%, #D97706 60%, #F59E0B 100%)"
+      underlineGradient="linear-gradient(90deg, #7C2418 0%, #D97706 55%, #F59E0B 100%)"
+      accentSparkleColor="#D97706"
       items={fdActionButtons}
       onNavigate={onNavigate}
     />

@@ -338,11 +338,11 @@ export default function LoanOutstandingReport() {
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
       {/* Format Selector: General vs Yene Baki V Vasuli */}
       <div className="flex items-center gap-1">
-        <label className="text-[10.5px] font-bold text-blue-900 whitespace-nowrap">फॉरमॅट:</label>
+        <label className="text-[10.5px] font-bold text-[#5A1A14] whitespace-nowrap">फॉरमॅट:</label>
         <select
           value={reportFormat}
           onChange={e => setReportFormat(e.target.value as 'format2' | 'format1')}
-          className="h-6 border border-blue-400 bg-blue-50/80 text-blue-950 font-bold rounded px-1 text-[10.5px] focus:outline-none focus:border-primary shadow-2xs cursor-pointer"
+          className="h-6 border border-amber-400 bg-amber-50/80 text-[#4A1410] font-bold rounded px-1 text-[10.5px] focus:outline-none focus:border-primary shadow-2xs cursor-pointer"
         >
           <option value="format1">जनरल (General)</option>
           <option value="format2">येणे बाकी व वसुली रिपोर्ट (Yene Baki V Vasuli)</option>
@@ -487,7 +487,7 @@ export default function LoanOutstandingReport() {
           </div>
           <div>
             <span className="text-slate-500 block text-[9px] uppercase font-semibold">आज अखेर व्याज जमा</span>
-            <strong className="text-indigo-800 font-mono text-[11px]">
+            <strong className="text-[#7C2418] font-mono text-[11px]">
               ₹ {fmtCurrency(totalFilteredInterestPaid, isMarathiDigits)}
             </strong>
           </div>

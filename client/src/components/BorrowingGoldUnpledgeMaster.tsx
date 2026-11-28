@@ -275,19 +275,19 @@ export default function BorrowingGoldUnpledgeMaster({ onNavigate }: BorrowingGol
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-100 text-slate-700">
+              <table className="w-full text-[11px] leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] text-amber-50">
                   <tr>
-                    <th className="px-3 py-2 text-center">निवडा</th>
-                    <th className="px-3 py-2 text-left">पाकीट क्र.</th>
-                    <th className="px-3 py-2 text-left">मूळ कर्जदार व कर्ज क्र.</th>
-                    <th className="px-3 py-2 text-right">निव्वळ वजन</th>
-                    <th className="px-3 py-2 text-right">घेतलेली रक्कम</th>
-                    <th className="px-3 py-2 text-center">स्प्रेड (%)</th>
-                    <th className="px-3 py-2 text-center">पाकीट स्थिती</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">निवडा</th>
+                    <th className="px-2 py-1.5 text-left whitespace-nowrap">पाकीट क्र.</th>
+                    <th className="px-2 py-1.5 text-left whitespace-nowrap">मूळ कर्जदार व कर्ज क्र.</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">निव्वळ वजन</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">घेतलेली रक्कम</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">स्प्रेड (%)</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">पाकीट स्थिती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-amber-100">
                   {filteredPledges.map((p: any) => {
                     const isMemberClosed = p.loanStatus === 'Closed' || Number(p.loanPrincipalBalance || 0) <= 0;
                     const isPledged = p.pledgeStatus === 'Pledged';
@@ -296,7 +296,7 @@ export default function BorrowingGoldUnpledgeMaster({ onNavigate }: BorrowingGol
                         key={p.borrowingPledgeID}
                         className={isMemberClosed && isPledged ? 'bg-rose-50/70' : 'hover:bg-slate-50'}
                       >
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           {isPledged ? (
                             <input
                               type="checkbox"
@@ -307,13 +307,13 @@ export default function BorrowingGoldUnpledgeMaster({ onNavigate }: BorrowingGol
                             <span className="text-emerald-600 font-bold">✓</span>
                           )}
                         </td>
-                        <td className="px-3 py-2 font-bold text-slate-900">
+                        <td className="px-2 py-1 font-bold text-slate-900 align-middle">
                           <div>{p.packetNumber}</div>
                           {p.lenderPledgeReceiptNo && (
                             <div className="text-[10px] text-slate-500">पावती: {p.lenderPledgeReceiptNo}</div>
                           )}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-1 align-middle">
                           <div className="font-semibold text-slate-800">{p.borrowerName}</div>
                           <div className="text-[10px] text-slate-500">
                             {p.loanAccountNo} • बाकी: ₹{fmtAmt(p.loanPrincipalBalance)}
@@ -324,12 +324,12 @@ export default function BorrowingGoldUnpledgeMaster({ onNavigate }: BorrowingGol
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-right font-semibold">{fmtWt(p.netWeight)} ग्रॅम</td>
-                        <td className="px-3 py-2 text-right">₹{fmtAmt(p.allocatedBorrowedAmount)}</td>
-                        <td className="px-3 py-2 text-center font-bold text-emerald-700">
+                        <td className="px-2 py-1 text-right font-semibold align-middle">{fmtWt(p.netWeight)} ग्रॅम</td>
+                        <td className="px-2 py-1 text-right align-middle">₹{fmtAmt(p.allocatedBorrowedAmount)}</td>
+                        <td className="px-2 py-1 text-center font-bold text-emerald-700 align-middle">
                           {p.interestSpreadPercent >= 0 ? `+${p.interestSpreadPercent}%` : `${p.interestSpreadPercent}%`}
                         </td>
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           {isPledged ? (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
                               पुनर्गहाण ({fmtDate(p.pledgedDate)})

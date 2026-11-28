@@ -1150,10 +1150,10 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
       {/* CENTER FULL-HEIGHT SCROLLABLE SINGLE-LINE GRID */}
       <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-lg shadow-2xs flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 overflow-auto">
-          <table className="w-full border-collapse text-left">
+          <table className="w-full border-collapse text-left leading-tight">
             <thead className="bg-primary text-white sticky top-0 z-10 text-[11px] font-bold select-none">
               <tr className="h-7">
-                <th className="w-8 px-2 text-center border-r border-white/15">
+                <th className="w-8 px-2 text-center border-r border-white/15 whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={allFilteredSelected}
@@ -1180,7 +1180,7 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                 <th className="w-32 px-2 text-right whitespace-nowrap">रक्कम (₹)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-[11.5px]">
+            <tbody className="divide-y divide-amber-100 text-[11.5px]">
               {loadingAccounts ? (
                 <tr>
                   <td colSpan={11} className="py-12 text-center text-slate-500 font-semibold">
@@ -1221,7 +1221,7 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                           : 'bg-slate-50/50 hover:bg-slate-100/60'
                       }`}
                     >
-                      <td className="px-2 py-0.5 text-center border-r border-slate-100">
+                      <td className="px-2 py-0.5 text-center border-r border-slate-100 align-middle">
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -1229,20 +1229,20 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                           className="w-3.5 h-3.5 rounded accent-primary cursor-pointer"
                         />
                       </td>
-                      <td className="px-2 py-0.5 text-center text-slate-500 font-semibold border-r border-slate-100">
+                      <td className="px-2 py-0.5 text-center text-slate-500 font-semibold border-r border-slate-100 align-middle">
                         {idx + 1}
                       </td>
-                      <td className="px-2 py-0.5 font-extrabold text-slate-900 border-r border-slate-100">
+                      <td className="px-2 py-0.5 font-extrabold text-slate-900 border-r border-slate-100 align-middle">
                         {row.oldAccountNo || '-'}
                       </td>
-                      <td className="px-2 py-0.5 font-mono text-[10.5px] text-slate-600 border-r border-slate-100">
+                      <td className="px-2 py-0.5 font-mono text-[10.5px] text-slate-600 border-r border-slate-100 align-middle">
                         {row.accountNo}
                       </td>
-                      <td className="px-2 py-0.5 font-mono text-[10.5px] text-slate-600 border-r border-slate-100">
+                      <td className="px-2 py-0.5 font-mono text-[10.5px] text-slate-600 border-r border-slate-100 align-middle">
                         {row.cifNo || '-'}
                       </td>
                       <td
-                        className="px-2.5 py-0.5 font-bold text-slate-800 border-r border-slate-100 max-w-[250px] truncate"
+                        className="px-2.5 py-0.5 font-bold text-slate-800 border-r border-slate-100 max-w-[250px] truncate align-middle"
                         title={row.customerName}
                       >
                         {row.customerName}
@@ -1252,10 +1252,10 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                           </span>
                         )}
                       </td>
-                      <td className="px-2 py-0.5 text-center text-slate-600 border-r border-slate-100">
+                      <td className="px-2 py-0.5 text-center text-slate-600 border-r border-slate-100 align-middle">
                         {fmtDate(row.openingDate)}
                       </td>
-                      <td className="px-2 py-0.5 text-right font-bold text-slate-800 border-r border-slate-100">
+                      <td className="px-2 py-0.5 text-right font-bold text-slate-800 border-r border-slate-100 align-middle">
                         {fmtMoney(row.currentBalance)}
                       </td>
                       {direction === 'DEBIT' && (
@@ -1269,7 +1269,7 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                         </td>
                       )}
                       {contraUiMode === 'SCHEME_TO_SCHEME' && (
-                        <td className="px-2 py-0.5 border-r border-slate-100">
+                        <td className="px-2 py-0.5 border-r border-slate-100 align-middle">
                           {row.matchedTargetSavingAccountID ? (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold">
                               ✓ #{row.matchedTargetOldAccountNo || row.matchedTargetAccountNo}
@@ -1281,7 +1281,7 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                           )}
                         </td>
                       )}
-                      <td className="px-1.5 py-0.5 text-right">
+                      <td className="px-1.5 py-0.5 text-right align-middle">
                         <input
                           ref={(el) => {
                             amountInputRefs.current[idx] = el;
@@ -1540,7 +1540,7 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
       {/* SAVED BULK TRANSFER BATCHES MODAL (यादी पहा) */}
       {showBatchesModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[88vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-[97vw] xl:max-w-[1460px] max-h-[88vh] flex flex-col overflow-hidden">
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1622,19 +1622,19 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                   निवडलेल्या कालावधीत कोणताही बचत बल्क ट्रान्सफर बॅच सापडला नाही.
                 </div>
               ) : (
-                <table className="w-full border-collapse text-xs">
+                <table className="w-full border-collapse text-[11px] leading-tight">
                   <thead>
-                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 h-8">
-                      <th className="w-8 px-2"></th>
-                      <th className="px-2 text-left">व्हाउचर क्र.</th>
-                      <th className="px-2 text-center">दिनांक</th>
-                      <th className="px-2 text-left">तपशिल</th>
-                      <th className="px-2 text-center">खाती</th>
-                      <th className="px-2 text-right">एकूण रक्कम (₹)</th>
-                      <th className="px-2 text-center">स्थिती</th>
+                    <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 h-8">
+                      <th className="w-8 px-2 whitespace-nowrap"></th>
+                      <th className="px-2 text-left whitespace-nowrap">व्हाउचर क्र.</th>
+                      <th className="px-2 text-center whitespace-nowrap">दिनांक</th>
+                      <th className="px-2 text-left whitespace-nowrap">तपशिल</th>
+                      <th className="px-2 text-center whitespace-nowrap">खाती</th>
+                      <th className="px-2 text-right whitespace-nowrap">एकूण रक्कम (₹)</th>
+                      <th className="px-2 text-center whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-amber-100">
                     {batches.map((b) => {
                       const expanded = expandedVoucherIds.has(b.voucherId);
                       return (
@@ -1643,19 +1643,19 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                             onClick={() => toggleExpandVoucher(b.voucherId)}
                             className="h-8 hover:bg-slate-50 cursor-pointer"
                           >
-                            <td className="px-2 text-center text-slate-500">
+                            <td className="px-2 text-center text-slate-500 align-middle">
                               {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </td>
-                            <td className="px-2 font-mono font-bold text-primary">{b.voucherNo}</td>
-                            <td className="px-2 text-center">{fmtDate(b.voucherDate)}</td>
-                            <td className="px-2 max-w-md truncate font-medium text-slate-700">
+                            <td className="px-2 font-mono font-bold text-primary align-middle">{b.voucherNo}</td>
+                            <td className="px-2 text-center align-middle">{fmtDate(b.voucherDate)}</td>
+                            <td className="px-2 max-w-md truncate font-medium text-slate-700 align-middle">
                               {b.narration || '-'}
                             </td>
-                            <td className="px-2 text-center font-bold">{b.savingLineCount}</td>
-                            <td className="px-2 text-right font-extrabold text-slate-900">
+                            <td className="px-2 text-center font-bold align-middle">{b.savingLineCount}</td>
+                            <td className="px-2 text-right font-extrabold text-slate-900 align-middle">
                               ₹ {fmtMoney(b.totalAmount)}
                             </td>
-                            <td className="px-2 text-center">
+                            <td className="px-2 text-center align-middle">
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold ${
                                   b.status === 'Approved'
@@ -1672,25 +1672,25 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                               <td colSpan={7} className="bg-slate-50 px-6 py-2 border-b border-slate-200">
                                 <table className="w-full text-[11px] bg-white border border-slate-200 rounded">
                                   <thead>
-                                    <tr className="bg-slate-100 text-slate-600 h-6">
-                                      <th className="px-2 text-left">जुना नं.</th>
-                                      <th className="px-2 text-left">CBS खाते नं.</th>
-                                      <th className="px-2 text-left">CIF</th>
-                                      <th className="px-2 text-left">खातेदाराचे नाव</th>
-                                      <th className="px-2 text-left">ठेव लेजर</th>
-                                      <th className="px-2 text-center">जमा/नावे</th>
-                                      <th className="px-2 text-right">रक्कम (₹)</th>
+                                    <tr className="bg-[#5A1A14] text-amber-50 h-6">
+                                      <th className="px-2 text-left whitespace-nowrap">जुना नं.</th>
+                                      <th className="px-2 text-left whitespace-nowrap">CBS खाते नं.</th>
+                                      <th className="px-2 text-left whitespace-nowrap">CIF</th>
+                                      <th className="px-2 text-left whitespace-nowrap">खातेदाराचे नाव</th>
+                                      <th className="px-2 text-left whitespace-nowrap">ठेव लेजर</th>
+                                      <th className="px-2 text-center whitespace-nowrap">जमा/नावे</th>
+                                      <th className="px-2 text-right whitespace-nowrap">रक्कम (₹)</th>
                                     </tr>
                                   </thead>
-                                  <tbody className="divide-y divide-slate-100">
+                                  <tbody className="divide-y divide-amber-100">
                                     {b.items.map((it, idx) => (
                                       <tr key={`${it.savingAccountId}_${idx}`} className="h-6">
-                                        <td className="px-2 font-bold">{it.oldAccountNo || '-'}</td>
-                                        <td className="px-2 font-mono">{it.accountNo}</td>
-                                        <td className="px-2 font-mono">{it.cifNo}</td>
-                                        <td className="px-2 font-semibold">{it.customerName}</td>
-                                        <td className="px-2">{it.ledgerName}</td>
-                                        <td className="px-2 text-center font-bold">
+                                        <td className="px-2 font-bold align-middle">{it.oldAccountNo || '-'}</td>
+                                        <td className="px-2 font-mono align-middle">{it.accountNo}</td>
+                                        <td className="px-2 font-mono align-middle">{it.cifNo}</td>
+                                        <td className="px-2 font-semibold align-middle">{it.customerName}</td>
+                                        <td className="px-2 align-middle">{it.ledgerName}</td>
+                                        <td className="px-2 text-center font-bold align-middle">
                                           <span
                                             className={
                                               it.drCr === 'Cr' ? 'text-emerald-700' : 'text-rose-700'
@@ -1699,7 +1699,7 @@ const SavingBulkTransferMaster: React.FC<SavingBulkTransferMasterProps> = ({ onN
                                             {it.drCr === 'Cr' ? 'जमा (Cr)' : 'नावे (Dr)'}
                                           </span>
                                         </td>
-                                        <td className="px-2 text-right font-bold">
+                                        <td className="px-2 text-right font-bold align-middle">
                                           {fmtMoney(it.amount)}
                                         </td>
                                       </tr>

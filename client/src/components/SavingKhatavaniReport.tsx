@@ -261,7 +261,7 @@ export default function SavingKhatavaniReport() {
       </div>
       <div>
         <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">किमान शिल्लक मर्यादा</span>
-        <strong className="text-indigo-800 font-mono text-[11px]">
+        <strong className="text-[#7C2418] font-mono text-[11px]">
           ₹ {fmtCurrency(reportData.minimumBalance ?? 0)}
         </strong>
       </div>

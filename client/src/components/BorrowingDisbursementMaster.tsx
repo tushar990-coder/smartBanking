@@ -221,7 +221,7 @@ export default function BorrowingDisbursementMaster({ onNavigate }: BorrowingDis
             <h1 className="text-sm md:text-base font-bold">
               २. बाह्य कर्ज रक्कम उचल व सोने पुनर्गहाण वाटप (Borrowing Loan Disbursement)
             </h1>
-            <p className="text-[10.5px] text-blue-100">
+            <p className="text-[10.5px] text-amber-100">
               मंजूर खात्यातून निधी जमा करा, बँक कपात नोंदवा, सोने पाकिटे पुनर्गहाण जोडा व हप्ता वेळापत्रक सक्रिय करा
             </p>
           </div>
@@ -303,7 +303,7 @@ export default function BorrowingDisbursementMaster({ onNavigate }: BorrowingDis
                   required
                   value={form.grossDisbursedAmount}
                   onChange={(e) => setForm((p) => ({ ...p, grossDisbursedAmount: e.target.value }))}
-                  className="w-full border border-slate-300 rounded px-2 py-1.5 font-mono font-bold text-blue-900"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 font-mono font-bold text-[#5A1A14]"
                 />
               </div>
 
@@ -352,7 +352,7 @@ export default function BorrowingDisbursementMaster({ onNavigate }: BorrowingDis
             )}
 
             {/* Settlement Mode */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 p-2.5 bg-blue-50/40 border border-blue-200 rounded">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 p-2.5 bg-amber-50/40 border border-amber-200 rounded">
               <div>
                 <label className="block font-bold text-slate-700 mb-0.5">जमा माध्यम (Receipt Mode) *</label>
                 <select

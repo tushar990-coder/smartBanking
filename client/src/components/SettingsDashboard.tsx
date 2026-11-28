@@ -204,17 +204,17 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
   };
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-75px)] bg-gray-50 p-2 text-[11px] font-sans">
+    <div className="flex flex-col min-h-[calc(100vh-75px)] cbs-page-canvas p-2 text-[11px] font-sans">
       {/* Top Main Categories Navigation */}
-      <div className="bg-white p-1.5 rounded-sm shadow-sm border border-gray-200 mb-2 flex space-x-1 flex-shrink-0 overflow-x-auto">
+      <div className="bg-[#FFFBF7]/95 p-1.5 rounded-lg shadow-xs border border-amber-200/80 mb-2 flex space-x-1 flex-shrink-0 overflow-x-auto">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => handleTabChange(tab.id)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all flex items-center shrink-0 cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center shrink-0 cursor-pointer ${
               activeTab === tab.id
-                ? 'bg-primary text-white shadow-xs'
-                : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+                ? 'cbs-btn-primary text-white shadow-xs'
+                : 'bg-amber-50/60 text-[#6E493C] hover:bg-amber-100/70 hover:text-[#4A1410] border border-amber-200/70'
             }`}
           >
             <span className="mr-1.5 text-sm">{tab.icon}</span>
@@ -226,8 +226,8 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       {/* Main Workspace Layout */}
       <div className="flex flex-col md:flex-row flex-1 gap-2">
         {/* Left Submenu Navigation Sidebar */}
-        <div className="w-full md:w-52 bg-white border border-gray-200 rounded-sm shadow-2xs flex-shrink-0 flex flex-col p-1.5 overflow-y-auto">
-          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 py-1 border-b border-gray-100 mb-1">
+        <div className="w-full md:w-52 bg-[#FFFBF7]/95 border border-amber-200/80 rounded-lg shadow-2xs flex-shrink-0 flex flex-col p-1.5 overflow-y-auto">
+          <div className="text-[10px] font-bold text-[#9A6852] uppercase tracking-wider px-2 py-1 border-b border-amber-200/70 mb-1">
             सेटिंग्ज प्रकार (Category)
           </div>
           {subTabs[activeTab]?.filter(subTab => subTab.id !== 'demand-settings' || canViewSettings).map(subTab => (
@@ -236,7 +236,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
               onClick={() => setActiveSubTab(subTab.id)}
               className={`w-full text-left px-2.5 py-1.5 text-[11px] font-semibold rounded-sm mb-0.5 transition-all flex items-center cursor-pointer ${
                 activeSubTab === subTab.id
-                  ? 'bg-blue-50/90 text-primary border-l-3 border-primary shadow-2xs font-bold'
+                  ? 'bg-amber-50/90 text-primary border-l-3 border-primary shadow-2xs font-bold'
                   : 'text-gray-700 hover:bg-gray-100/80 hover:text-gray-900'
               }`}
             >

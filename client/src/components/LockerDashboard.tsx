@@ -157,32 +157,32 @@ export default function LockerDashboard({ onNavigate }: LockerDashboardProps) {
         };
       case 'blue':
         return {
-          bgGrad: 'from-sky-50/40 via-slate-50 to-blue-50/30',
-          accentBg: 'bg-sky-400/10',
-          textDark: 'text-blue-950',
-          textSub: 'text-sky-800',
-          badgeBg: 'bg-blue-100 text-blue-800 border-blue-300',
-          cardBorder: 'border-sky-200/80 shadow-sky-100',
-          btnBorder: 'border-sky-200/90 shadow-blue-950/30 group-hover:shadow-blue-500/50',
-          bannerGrad: 'from-slate-950 via-[#005689] to-blue-900',
-          bannerBorder: 'border-sky-400/30',
-          bannerMetricBg: 'bg-blue-900/40 border-sky-400/30',
-          bannerSubText: 'text-sky-200',
-          featureIconBg: 'bg-sky-50 text-blue-700 border-sky-200',
-          featureCardBorder: 'border-sky-200/80 hover:border-sky-400',
-          backBtnHover: 'hover:bg-sky-50 hover:text-blue-800 hover:border-sky-300',
-          accentText: 'text-blue-700',
-          progressGrad: 'from-blue-500 to-indigo-600',
-          tableHeadBg: 'bg-blue-50/70 text-blue-950 border-blue-200',
+          bgGrad: 'from-[#FDF2EE]/60 via-[#FFFBF7] to-[#FEF3E2]/60',
+          accentBg: 'bg-amber-400/10',
+          textDark: 'text-[#4A1410]',
+          textSub: 'text-[#7C2418]',
+          badgeBg: 'bg-amber-100 text-[#7C2418] border-amber-300',
+          cardBorder: 'border-amber-200/80 shadow-amber-200',
+          btnBorder: 'border-amber-200/90 shadow-[#5A1A14]/25 group-hover:shadow-[#7C2418]/45',
+          bannerGrad: 'from-[#5A1A14] via-[#9A3412] to-[#D97706]',
+          bannerBorder: 'border-amber-400/30',
+          bannerMetricBg: 'bg-[#5A1A14]/40 border-amber-400/30',
+          bannerSubText: 'text-amber-200',
+          featureIconBg: 'bg-amber-50 text-[#9A3412] border-amber-200',
+          featureCardBorder: 'border-amber-200/80 hover:border-amber-400',
+          backBtnHover: 'hover:bg-amber-50 hover:text-[#7C2418] hover:border-amber-300',
+          accentText: 'text-[#9A3412]',
+          progressGrad: 'from-[#7C2418] to-[#D97706]',
+          tableHeadBg: 'bg-amber-50/70 text-[#4A1410] border-amber-200',
           gradients: [
-            'from-sky-400 via-blue-600 to-blue-950',
-            'from-cyan-400 via-blue-600 to-indigo-950',
-            'from-blue-400 via-indigo-600 to-blue-950',
-            'from-sky-500 via-blue-700 to-slate-900',
-            'from-cyan-500 via-blue-600 to-blue-950',
-            'from-blue-400 via-blue-600 to-sky-950',
-            'from-sky-400 via-indigo-600 to-blue-950',
-            'from-indigo-400 via-blue-700 to-slate-950'
+            'from-amber-200 via-[#B44814] to-[#D97706]',
+            'from-cyan-400 via-[#B44814] to-[#D97706]',
+            'from-amber-200 via-[#B44814] to-[#D97706]',
+            'from-[#7C2418] via-[#B44814] to-slate-900',
+            'from-cyan-500 via-[#B44814] to-[#D97706]',
+            'from-amber-200 via-[#B44814] to-[#D97706]',
+            'from-amber-200 via-[#B44814] to-[#D97706]',
+            'from-amber-200 via-[#B44814] to-slate-950'
           ]
         };
       case 'wine-red':
@@ -410,11 +410,11 @@ export default function LockerDashboard({ onNavigate }: LockerDashboardProps) {
             className={`bg-white border border-slate-200/90 rounded-xl p-3.5 shadow-2xs hover:shadow-md ${themeCfg.featureCardBorder} transition-all cursor-pointer flex justify-between items-center group`}
           >
             <div>
-              <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">🔴 वाटप झालेले</span>
-              <p className="text-2xl font-black text-blue-800 mt-0.5">{summary.allottedLockers}</p>
+              <span className="text-[10px] font-bold text-[#9A3412] uppercase tracking-wider">🔴 वाटप झालेले</span>
+              <p className="text-2xl font-black text-[#7C2418] mt-0.5">{summary.allottedLockers}</p>
               <span className="text-[10px] text-slate-500 font-medium">सक्रिय खातेदार</span>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 text-[#9A3412] border border-amber-200 flex items-center justify-center font-bold group-hover:bg-[#B44814] group-hover:text-white transition-colors">
               <UserCheck size={20} />
             </div>
           </div>
@@ -518,9 +518,9 @@ export default function LockerDashboard({ onNavigate }: LockerDashboardProps) {
                 <div className="text-[10px] text-emerald-800 font-bold">उपलब्ध</div>
                 <div className="text-sm font-black text-emerald-700">{summary.availableLockers}</div>
               </div>
-              <div className="p-2 bg-blue-50/60 rounded-lg border border-blue-100">
-                <div className="text-[10px] text-blue-800 font-bold">वाटप</div>
-                <div className="text-sm font-black text-blue-800">{summary.allottedLockers}</div>
+              <div className="p-2 bg-amber-50/60 rounded-lg border border-amber-100">
+                <div className="text-[10px] text-[#7C2418] font-bold">वाटप</div>
+                <div className="text-sm font-black text-[#7C2418]">{summary.allottedLockers}</div>
               </div>
               <div className="p-2 bg-amber-50/60 rounded-lg border border-amber-100">
                 <div className="text-[10px] text-amber-800 font-bold">दुरुस्ती/इतर</div>
@@ -583,19 +583,19 @@ export default function LockerDashboard({ onNavigate }: LockerDashboardProps) {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full text-left text-[11px] border-collapse leading-tight">
               <thead>
-                <tr className="bg-slate-100/80 text-slate-700 border-b border-slate-200 font-extrabold">
-                  <th className="py-2.5 px-3">तारीख</th>
-                  <th className="py-2.5 px-3">खाते क्र.</th>
-                  <th className="py-2.5 px-3">लॉकर क्र.</th>
-                  <th className="py-2.5 px-3">व्यक्तीचे नाव</th>
-                  <th className="py-2.5 px-3 text-center">Time In</th>
-                  <th className="py-2.5 px-3 text-center">Time Out</th>
-                  <th className="py-2.5 px-3">अधिकारी</th>
+                <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 font-extrabold">
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">तारीख</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">खाते क्र.</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">लॉकर क्र.</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">व्यक्तीचे नाव</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">Time In</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">Time Out</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">अधिकारी</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
+              <tbody className="divide-y divide-amber-100 text-slate-700">
                 {safeVisits.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-6 text-center text-slate-400 font-medium">
@@ -605,13 +605,13 @@ export default function LockerDashboard({ onNavigate }: LockerDashboardProps) {
                 ) : (
                   safeVisits.map((v) => (
                     <tr key={v.visitID} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-2 px-3 font-semibold text-slate-700">{new Date(v.visitDate).toLocaleDateString('en-GB')}</td>
+                      <td className="py-1 px-2 font-semibold text-slate-700 align-middle">{new Date(v.visitDate).toLocaleDateString('en-GB')}</td>
                       <td className={`py-2 px-3 font-mono font-bold ${themeCfg.accentText}`}>{v.lockerAccountNo}</td>
-                      <td className="py-2 px-3 font-bold text-slate-800">{v.cabinetNo} - {v.lockerNo}</td>
-                      <td className="py-2 px-3 font-bold text-slate-800">{v.operatorName}</td>
+                      <td className="py-1 px-2 font-bold text-slate-800 align-middle">{v.cabinetNo} - {v.lockerNo}</td>
+                      <td className="py-1 px-2 font-bold text-slate-800 align-middle">{v.operatorName}</td>
                       <td className={`py-2 px-3 text-center font-bold ${themeCfg.badgeBg} rounded`}>{v.timeIn}</td>
-                      <td className="py-2 px-3 text-center font-bold text-slate-600">{v.timeOut || <span className="text-amber-600 font-normal">आत आहेत...</span>}</td>
-                      <td className="py-2 px-3 text-slate-600">{v.bankOfficerName}</td>
+                      <td className="py-1 px-2 text-center font-bold text-slate-600 align-middle">{v.timeOut || <span className="text-amber-600 font-normal">आत आहेत...</span>}</td>
+                      <td className="py-1 px-2 text-slate-600 align-middle">{v.bankOfficerName}</td>
                     </tr>
                   ))
                 )}

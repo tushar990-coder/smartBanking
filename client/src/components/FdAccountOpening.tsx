@@ -1487,7 +1487,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     if (status === 'Active') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     if (status === 'Matured') return 'bg-amber-50 text-amber-700 border-amber-200';
     if (status === 'Closed') return 'bg-slate-100 text-slate-600 border-slate-200';
-    return 'bg-blue-50 text-blue-700 border-blue-200';
+    return 'bg-amber-50 text-[#9A3412] border-amber-200';
   };
 
   const formatCustomerLabel = (m: any) => {
@@ -2080,11 +2080,11 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
                     {/* Dynamic Interactive Receipt Rows Grid */}
                     <div className="overflow-x-auto border border-gray-200 rounded-sm bg-white shadow-2xs">
-                      <table className="w-full text-left text-[11px] border-collapse">
+                      <table className="w-full text-left text-[11px] border-collapse leading-tight">
                         <thead>
                           <tr className="bg-primary/10 text-gray-800 font-bold border-b border-primary/20">
-                            <th className="py-1.5 px-2 text-center w-8">#</th>
-                            <th className="py-1.5 px-2 w-48">
+                            <th className="py-1.5 px-2 text-center w-8 whitespace-nowrap">#</th>
+                            <th className="py-1.5 px-2 w-48 whitespace-nowrap">
                               <div className="flex items-center justify-between gap-1">
                                 <span>पावती / खाते क्र.</span>
                                 <button
@@ -2097,16 +2097,16 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                 </button>
                               </div>
                             </th>
-                            <th className="py-1.5 px-2 w-32">जुना पावती क्र.</th>
-                            <th className="py-1.5 px-2 w-36 text-right">ठेव रक्कम (₹) *</th>
-                            <th className="py-1.5 px-2 w-36">कालावधी</th>
-                            <th className="py-1.5 px-2 text-center w-20">व्याजदर</th>
-                            <th className="py-1.5 px-2 text-center w-28">मुदतपूर्ती तारीख</th>
-                            <th className="py-1.5 px-2 text-right w-32">मुदतपूर्ती (₹)</th>
-                            <th className="py-1.5 px-2 text-center w-12">क्रिया</th>
+                            <th className="py-1.5 px-2 w-32 whitespace-nowrap">जुना पावती क्र.</th>
+                            <th className="py-1.5 px-2 w-36 text-right whitespace-nowrap">ठेव रक्कम (₹) *</th>
+                            <th className="py-1.5 px-2 w-36 whitespace-nowrap">कालावधी</th>
+                            <th className="py-1.5 px-2 text-center w-20 whitespace-nowrap">व्याजदर</th>
+                            <th className="py-1.5 px-2 text-center w-28 whitespace-nowrap">मुदतपूर्ती तारीख</th>
+                            <th className="py-1.5 px-2 text-right w-32 whitespace-nowrap">मुदतपूर्ती (₹)</th>
+                            <th className="py-1.5 px-2 text-center w-12 whitespace-nowrap">क्रिया</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-amber-100">
                           {receiptRows.length === 0 ? (
                             <tr>
                               <td colSpan={9} className="text-center py-8 text-slate-500 bg-slate-50/60">
@@ -2124,10 +2124,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           ) : (
                             receiptRows.map((row, idx) => (
                               <tr key={row.id} className="hover:bg-primary/5 transition-colors">
-                                <td className="py-1 px-2 text-center font-bold text-slate-500 bg-slate-50/50">
+                                <td className="py-1 px-2 text-center font-bold text-slate-500 bg-slate-50/50 align-middle">
                                   {idx + 1}
                                 </td>
-                                <td className="py-1 px-2">
+                                <td className="py-1 px-2 align-middle">
                                   <input
                                     type="text"
                                     value={row.accountNo}
@@ -2136,7 +2136,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                     className="w-full border border-primary/30 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-primary bg-primary/5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
                                   />
                                 </td>
-                                <td className="py-1 px-2">
+                                <td className="py-1 px-2 align-middle">
                                   <input
                                     type="text"
                                     value={row.legacyAccountNumber}
@@ -2145,7 +2145,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                     className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                                   />
                                 </td>
-                                <td className="py-1 px-2 text-right">
+                                <td className="py-1 px-2 text-right align-middle">
                                   <input
                                     type="number"
                                     value={row.depositAmount}
@@ -2161,7 +2161,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                     }`}
                                   />
                                 </td>
-                                <td className="py-1 px-2">
+                                <td className="py-1 px-2 align-middle">
                                   <div className="flex gap-1 items-center">
                                     <input
                                       type="number"
@@ -2182,20 +2182,20 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                                     </select>
                                   </div>
                                 </td>
-                                <td className="py-1 px-2 text-center">
+                                <td className="py-1 px-2 text-center align-middle">
                                   <span className="inline-block px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded font-bold font-mono text-[11px]">
                                     {row.interestRate} %
                                   </span>
                                 </td>
-                                <td className="py-1 px-2 text-center font-mono text-slate-700 text-xs">
+                                <td className="py-1 px-2 text-center font-mono text-slate-700 text-xs align-middle">
                                   {row.maturityDate ? new Date(row.maturityDate).toLocaleDateString('en-GB') : '-'}
                                 </td>
-                                <td className="py-1 px-2 text-right">
+                                <td className="py-1 px-2 text-right align-middle">
                                   <span className="font-extrabold text-emerald-900 font-mono text-xs">
                                     ₹ {Number(row.maturityAmount || 0).toLocaleString('en-IN')}
                                   </span>
                                 </td>
-                                <td className="py-1 px-2 text-center">
+                                <td className="py-1 px-2 text-center align-middle">
                                   <button
                                     type="button"
                                     onClick={() => handleDeleteReceiptRow(idx)}
@@ -2727,19 +2727,19 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
             </div>
 
             <div className="overflow-x-auto border border-gray-200 rounded-sm">
-              <table className="w-full text-[11px] border-collapse">
+              <table className="w-full text-[11px] border-collapse leading-tight">
                 <thead>
                   <tr className="bg-primary text-white font-semibold border-b border-primary/20">
-                    <th className="px-3 py-2 text-left font-mono">पावती क्र. (Account No)</th>
-                    <th className="px-3 py-2 text-left">खातेदाराचे नाव & CIF / कोड</th>
-                    <th className="px-3 py-2 text-left">ठेव योजना (Scheme)</th>
-                    <th className="px-3 py-2 text-right">ठेव रक्कम (₹)</th>
-                    <th className="px-3 py-2 text-center">व्याजदर</th>
-                    <th className="px-3 py-2 text-center">भरणा पद्धत</th>
-                    <th className="px-3 py-2 text-right">मुदतपूर्ती रक्कम (₹)</th>
-                    <th className="px-3 py-2 text-center">तारीख</th>
-                    <th className="px-3 py-2 text-center">स्थिती</th>
-                    <th className="px-3 py-2 text-center w-32">कारवाई</th>
+                    <th className="px-2 py-1.5 text-left font-mono whitespace-nowrap">पावती क्र. (Account No)</th>
+                    <th className="px-2 py-1.5 text-left whitespace-nowrap">खातेदाराचे नाव & CIF / कोड</th>
+                    <th className="px-2 py-1.5 text-left whitespace-nowrap">ठेव योजना (Scheme)</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">ठेव रक्कम (₹)</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">व्याजदर</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">भरणा पद्धत</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">मुदतपूर्ती रक्कम (₹)</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">तारीख</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">स्थिती</th>
+                    <th className="px-2 py-1.5 text-center w-32 whitespace-nowrap">कारवाई</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2750,7 +2750,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   ) : (
                     filteredList.map((fd: any) => (
                       <tr key={fd.fdAccountID} className="hover:bg-primary/5 border-b border-gray-100 transition-colors">
-                        <td className="px-3 py-1.5 font-mono text-primary">
+                        <td className="px-2 py-1 font-mono text-primary align-middle">
                           <div className="font-bold flex items-center gap-1.5">
                             <span>{fd.receiptNo || fd.accountNo}</span>
                             {(fd.renewalCycleNo || 0) > 0 && (
@@ -2770,15 +2770,15 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-1.5 font-bold text-gray-800">
+                        <td className="px-2 py-1 font-bold text-gray-800 align-middle">
                           {fd.customerName || fd.memberName}{' '}
                           <span className="text-[10px] text-gray-500 font-normal">({fd.cifNo || fd.memberCode || ''})</span>
                         </td>
-                        <td className="px-3 py-1.5 font-medium">{fd.schemeName}</td>
-                        <td className="px-3 py-1.5 text-right font-extrabold text-emerald-800">{formatCurrency(fd.depositAmount)}</td>
-                        <td className="px-3 py-1.5 text-center font-bold">{fd.interestRate}%</td>
-                        <td className="px-3 py-1.5 text-center font-bold text-gray-700">{fd.paymentMode || 'Cash'}</td>
-                        <td className="px-3 py-1.5 text-right font-extrabold text-primary">
+                        <td className="px-2 py-1 font-medium align-middle">{fd.schemeName}</td>
+                        <td className="px-2 py-1 text-right font-extrabold text-emerald-800 align-middle">{formatCurrency(fd.depositAmount)}</td>
+                        <td className="px-2 py-1 text-center font-bold align-middle">{fd.interestRate}%</td>
+                        <td className="px-2 py-1 text-center font-bold text-gray-700 align-middle">{fd.paymentMode || 'Cash'}</td>
+                        <td className="px-2 py-1 text-right font-extrabold text-primary align-middle">
                           <div>{formatCurrency(fd.maturityAmount)}</div>
                           {(fd.monthlyInterestAmount > 0 || fd.interestType === 'MIS' || fd.interestType === 'Monthly Interest') && (
                             <div className="text-[10px] text-emerald-700 font-bold">
@@ -2786,13 +2786,13 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-1.5 text-center text-[10px]">{formatDate(fd.openingDate)}</td>
-                        <td className="px-3 py-1.5 text-center">
+                        <td className="px-2 py-1 text-center text-[10px] align-middle">{formatDate(fd.openingDate)}</td>
+                        <td className="px-2 py-1 text-center align-middle">
                           <span className={`inline-block px-2 py-0.2 rounded-full text-[10px] font-bold ${getStatusColor(fd.status)}`}>
                             {fd.status}
                           </span>
                         </td>
-                        <td className="px-3 py-1.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"

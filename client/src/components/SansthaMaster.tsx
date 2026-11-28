@@ -420,12 +420,12 @@ export default function SansthaMaster() {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">केवायसी नियम</div>
-            <div className="text-xs font-black text-indigo-950">
+            <div className="text-xs font-black text-[#4A1410]">
               {formData.isMobileCompulsory && formData.isAadhaarCompulsory ? 'कडक (Strict KYC)' : 'सामान्य (Standard)'}
             </div>
           </div>
@@ -619,7 +619,7 @@ export default function SansthaMaster() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
             {/* Rule 1: Mobile Compulsory */}
-            <label className="flex items-start gap-2.5 cursor-pointer bg-slate-50 hover:bg-blue-50/50 p-2.5 rounded-sm border border-slate-200 transition select-none">
+            <label className="flex items-start gap-2.5 cursor-pointer bg-slate-50 hover:bg-amber-50/50 p-2.5 rounded-sm border border-slate-200 transition select-none">
               <input
                 type="checkbox"
                 name="isMobileCompulsory"
@@ -636,7 +636,7 @@ export default function SansthaMaster() {
             </label>
 
             {/* Rule 2: Aadhaar Compulsory */}
-            <label className="flex items-start gap-2.5 cursor-pointer bg-slate-50 hover:bg-blue-50/50 p-2.5 rounded-sm border border-slate-200 transition select-none">
+            <label className="flex items-start gap-2.5 cursor-pointer bg-slate-50 hover:bg-amber-50/50 p-2.5 rounded-sm border border-slate-200 transition select-none">
               <input
                 type="checkbox"
                 name="isAadhaarCompulsory"
@@ -653,7 +653,7 @@ export default function SansthaMaster() {
             </label>
 
             {/* Rule 3: PAN Compulsory */}
-            <label className="flex items-start gap-2.5 cursor-pointer bg-slate-50 hover:bg-blue-50/50 p-2.5 rounded-sm border border-slate-200 transition select-none">
+            <label className="flex items-start gap-2.5 cursor-pointer bg-slate-50 hover:bg-amber-50/50 p-2.5 rounded-sm border border-slate-200 transition select-none">
               <input
                 type="checkbox"
                 name="isPanCompulsory"
@@ -712,7 +712,7 @@ export default function SansthaMaster() {
               className={`flex items-start gap-2.5 p-2.5 rounded-sm border transition select-none self-start mt-1 ${
                 formData.fdRenewalReceiptPolicy === 'RETAIN_ORIGINAL'
                   ? 'bg-slate-100 border-slate-200 opacity-70 cursor-not-allowed'
-                  : 'cursor-pointer bg-slate-50 hover:bg-blue-50/50 border-slate-200'
+                  : 'cursor-pointer bg-slate-50 hover:bg-amber-50/50 border-slate-200'
               }`}
             >
               <input
@@ -776,7 +776,7 @@ export default function SansthaMaster() {
               ५. अधिकृत भागभांडवल व उपविधी नोंदवही (Authorised Share Capital &amp; Bye-Law Register)
             </h2>
           </div>
-          <span className="text-[10px] bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded font-semibold">
+          <span className="text-[10px] bg-amber-50 text-[#7C2418] border border-amber-200 px-2 py-0.5 rounded font-semibold">
             ताळेबंद (Form &apos;N&apos;) वैधानिक मेमो नोंद — एकूण देयता बेरजेत समाविष्ट नाही
           </span>
         </div>
@@ -946,19 +946,19 @@ export default function SansthaMaster() {
 
         {/* History Table */}
         <div className="border border-slate-200 rounded-sm overflow-x-auto">
-          <table className="w-full text-[11px] border-collapse">
-            <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+          <table className="w-full text-[11px] border-collapse leading-tight">
+            <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
               <tr>
-                <th className="px-2.5 py-1.5 text-left">प्रभावी दिनांक</th>
-                <th className="px-2.5 py-1.5 text-right">अधिकृत भागभांडवल (₹)</th>
-                <th className="px-2.5 py-1.5 text-right">दर्शनी मूल्य (₹)</th>
-                <th className="px-2.5 py-1.5 text-right">अधिकृत शेअर्स</th>
-                <th className="px-2.5 py-1.5 text-left">ठराव / निबंधक मंजुरी</th>
-                <th className="px-2.5 py-1.5 text-left">शेरा</th>
-                <th className="px-2.5 py-1.5 text-center w-24">कृती</th>
+                <th className="px-2.5 py-1.5 text-left whitespace-nowrap">प्रभावी दिनांक</th>
+                <th className="px-2.5 py-1.5 text-right whitespace-nowrap">अधिकृत भागभांडवल (₹)</th>
+                <th className="px-2.5 py-1.5 text-right whitespace-nowrap">दर्शनी मूल्य (₹)</th>
+                <th className="px-2.5 py-1.5 text-right whitespace-nowrap">अधिकृत शेअर्स</th>
+                <th className="px-2.5 py-1.5 text-left whitespace-nowrap">ठराव / निबंधक मंजुरी</th>
+                <th className="px-2.5 py-1.5 text-left whitespace-nowrap">शेरा</th>
+                <th className="px-2.5 py-1.5 text-center w-24 whitespace-nowrap">कृती</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-amber-100">
               {capLoading ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-4 text-center text-slate-500">लोड होत आहे...</td>
@@ -971,8 +971,8 @@ export default function SansthaMaster() {
                 </tr>
               ) : (
                 capOverview.history.map((item, idx) => (
-                  <tr key={item.historyID} className={idx === 0 ? 'bg-blue-50/40 font-semibold' : 'hover:bg-slate-50'}>
-                    <td className="px-2.5 py-1.5 font-mono">
+                  <tr key={item.historyID} className={idx === 0 ? 'bg-amber-50/40 font-semibold' : 'hover:bg-slate-50'}>
+                    <td className="px-2.5 py-1 font-mono align-middle">
                       {item.effectiveDate ? item.effectiveDate.split('T')[0].split('-').reverse().join('/') : '-'}
                       {idx === 0 && (
                         <span className="ml-1.5 text-[9.5px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded font-bold">
@@ -980,25 +980,25 @@ export default function SansthaMaster() {
                         </span>
                       )}
                     </td>
-                    <td className="px-2.5 py-1.5 text-right font-mono font-bold text-slate-900">
+                    <td className="px-2.5 py-1 text-right font-mono font-bold text-slate-900 align-middle">
                       ₹ {Number(item.authorizedCapitalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="px-2.5 py-1.5 text-right font-mono">
+                    <td className="px-2.5 py-1 text-right font-mono align-middle">
                       ₹ {Number(item.shareFaceValue || 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="px-2.5 py-1.5 text-right font-mono">
+                    <td className="px-2.5 py-1 text-right font-mono align-middle">
                       {Number(item.authorizedShareCount || 0).toLocaleString('en-IN')}
                     </td>
-                    <td className="px-2.5 py-1.5 text-slate-700">
+                    <td className="px-2.5 py-1 text-slate-700 align-middle">
                       {[item.resolutionNo, item.registrarApprovalNo].filter(Boolean).join(' • ') || '-'}
                     </td>
-                    <td className="px-2.5 py-1.5 text-slate-600">{item.remarks || '-'}</td>
-                    <td className="px-2.5 py-1.5 text-center">
+                    <td className="px-2.5 py-1 text-slate-600 align-middle">{item.remarks || '-'}</td>
+                    <td className="px-2.5 py-1 text-center align-middle">
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
                           onClick={() => handleEditCapitalRow(item)}
-                          className="p-1 text-blue-700 hover:bg-blue-100 rounded cursor-pointer"
+                          className="p-1 text-[#9A3412] hover:bg-amber-100 rounded cursor-pointer"
                           title="दुरुस्त करा"
                         >
                           <Pencil className="w-3.5 h-3.5" />

@@ -337,11 +337,13 @@ const NpaStatementReport: React.FC<NpaStatementReportProps> = ({ onBack }) => {
               </tr>
               <tr className={isGrossNpaViolated ? 'bg-rose-50/50 print:bg-transparent' : ''}>
                 <td className="border border-slate-500 py-1.5 px-2 text-center font-semibold">२</td>
-                <td className="border border-slate-500 py-1.5 px-2.5 font-medium flex justify-between items-center">
-                  <span>एकूण एन.पी.ए. खाते बाकी (Gross NPA — मुद्दल: ₹{fmtLakh(statement?.npaPrincipal)} लाख)</span>
-                  {isGrossNpaViolated && (
-                    <span className="text-[10px] text-rose-600 font-black no-print">(१०% मर्यादा ओलांडली!)</span>
-                  )}
+                <td className="border border-slate-500 py-1.5 px-2.5 font-medium align-middle">
+                  <div className="flex justify-between items-center gap-2">
+                    <span>एकूण एन.पी.ए. खाते बाकी (Gross NPA — मुद्दल: ₹{fmtLakh(statement?.npaPrincipal)} लाख)</span>
+                    {isGrossNpaViolated && (
+                      <span className="text-[10px] text-rose-600 font-black no-print whitespace-nowrap">(१०% मर्यादा ओलांडली!)</span>
+                    )}
+                  </div>
                 </td>
                 <td className={`border border-slate-500 py-1.5 px-2.5 text-right font-mono font-black ${isGrossNpaViolated ? 'text-rose-700' : ''}`}>
                   ₹ {fmtLakh(statement?.grossNpa)}
@@ -418,13 +420,15 @@ const NpaStatementReport: React.FC<NpaStatementReportProps> = ({ onBack }) => {
               </tr>
               <tr className={isNetNpaViolated ? 'bg-rose-50/50 print:bg-transparent' : 'bg-slate-50'}>
                 <td className="border border-slate-500 py-1.5 px-2 text-center font-semibold">७</td>
-                <td className="border border-slate-500 py-1.5 px-2.5 font-bold flex justify-between items-center">
-                  <span>
-                    निव्वळ एन.पी.ए. (Net NPA) <span className="text-[10px] text-slate-500">(२ − ४ − ५)</span>
-                  </span>
-                  {isNetNpaViolated && (
-                    <span className="text-[10px] text-rose-600 font-black no-print">(५% मर्यादा ओलांडली!)</span>
-                  )}
+                <td className="border border-slate-500 py-1.5 px-2.5 font-bold align-middle">
+                  <div className="flex justify-between items-center gap-2">
+                    <span>
+                      निव्वळ एन.पी.ए. (Net NPA) <span className="text-[10px] text-slate-500">(२ − ४ − ५)</span>
+                    </span>
+                    {isNetNpaViolated && (
+                      <span className="text-[10px] text-rose-600 font-black no-print whitespace-nowrap">(५% मर्यादा ओलांडली!)</span>
+                    )}
+                  </div>
                 </td>
                 <td className={`border border-slate-500 py-1.5 px-2.5 text-right font-mono font-black ${isNetNpaViolated ? 'text-rose-700' : ''}`}>
                   ₹ {fmtLakh(statement?.netNpa)}

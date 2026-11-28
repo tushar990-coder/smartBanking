@@ -441,7 +441,7 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
               <div>
                 <div className="text-slate-500">व्यवहार प्रकार</div>
-                <div className="font-bold text-indigo-700">
+                <div className="font-bold text-[#9A3412]">
                   {passingData.transactionType === 'Disbursement' ? 'बाह्य कर्ज उचल (Disbursement)' : 'हप्ता परतफेड (Repayment)'}
                 </div>
               </div>
@@ -465,27 +465,27 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
               </div>
             </div>
 
-            <div className="text-xs bg-indigo-50/50 border border-indigo-100 rounded-lg p-3">
-              <div className="font-bold text-indigo-900 mb-1">तपशील (Narration):</div>
+            <div className="text-xs bg-orange-50/50 border border-amber-100 rounded-lg p-3">
+              <div className="font-bold text-[#5A1A14] mb-1">तपशील (Narration):</div>
               <div className="text-slate-700">{passingData.voucher?.narration}</div>
             </div>
 
-            <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
-              <thead className="bg-slate-100 text-slate-700">
+            <table className="w-full text-[11px] border border-slate-200 rounded-lg overflow-hidden leading-tight border-collapse">
+              <thead className="bg-[#5A1A14] text-amber-50">
                 <tr>
-                  <th className="text-left px-3 py-2">जनरल लेजर खाते (GL Ledger)</th>
-                  <th className="text-right px-3 py-2">नावे (Debit ₹)</th>
-                  <th className="text-right px-3 py-2">जमा (Credit ₹)</th>
+                  <th className="text-left px-2 py-1.5 whitespace-nowrap">जनरल लेजर खाते (GL Ledger)</th>
+                  <th className="text-right px-2 py-1.5 whitespace-nowrap">नावे (Debit ₹)</th>
+                  <th className="text-right px-2 py-1.5 whitespace-nowrap">जमा (Credit ₹)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-amber-100">
                 {(passingData.voucher?.voucherDetails || []).map((vd: any) => (
                   <tr key={vd.voucherDetailID}>
-                    <td className="px-3 py-2 font-medium text-slate-800">{vd.ledgerName}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-rose-700">
+                    <td className="px-2 py-1 font-medium text-slate-800 align-middle">{vd.ledgerName}</td>
+                    <td className="px-2 py-1 text-right font-semibold text-rose-700 align-middle">
                       {vd.drCr === 'Dr' ? fmtAmt(vd.amount) : '—'}
                     </td>
-                    <td className="px-3 py-2 text-right font-semibold text-emerald-700">
+                    <td className="px-2 py-1 text-right font-semibold text-emerald-700 align-middle">
                       {vd.drCr === 'Cr' ? fmtAmt(vd.amount) : '—'}
                     </td>
                   </tr>
@@ -556,7 +556,7 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
             <button
               type="button"
               onClick={() => onNavigate('borrowing-reports', { borrowingId: selectedAccount.borrowingID, subTab: 'ledger' })}
-              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-lg text-xs font-bold"
+              className="px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-[#7C2418] border border-amber-200 rounded-lg text-xs font-bold"
             >
               📖 खाते खतावणी पाहा
             </button>
@@ -633,10 +633,10 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
                 {preview?.accruedDays ?? selectedAccount.accruedDays ?? 0} दिवस ({fmtDate(preview?.interestFromDate)})
               </div>
             </div>
-            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2.5">
-              <div className="text-[11px] text-indigo-700 font-medium">ठरलेला हप्ता (EMI)</div>
-              <div className="text-sm font-black text-indigo-900">₹{fmtAmt(selectedAccount.installmentAmount)}</div>
-              <div className="text-[10px] text-indigo-700">
+            <div className="bg-orange-50 border border-amber-200 rounded-lg p-2.5">
+              <div className="text-[11px] text-[#9A3412] font-medium">ठरलेला हप्ता (EMI)</div>
+              <div className="text-sm font-black text-[#5A1A14]">₹{fmtAmt(selectedAccount.installmentAmount)}</div>
+              <div className="text-[10px] text-[#9A3412]">
                 {selectedAccount.installmentType} • {selectedAccount.installmentFrequency}
               </div>
             </div>
@@ -679,7 +679,7 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
                   कोणत्याही थकीत/देय हप्त्यावरील "भरा" बटनावर क्लिक करून रक्कम फॉर्ममध्ये घ्या
                 </p>
               </div>
-              {previewLoading && <span className="text-[11px] text-indigo-600 font-semibold">गणना सुरू...</span>}
+              {previewLoading && <span className="text-[11px] text-[#B44814] font-semibold">गणना सुरू...</span>}
             </div>
 
             {schedules.length === 0 ? (
@@ -688,21 +688,21 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
               </div>
             ) : (
               <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
-                <table className="w-full text-[11px]">
-                  <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10">
+                <table className="w-full text-[11px] leading-tight border-collapse">
+                  <thead className="bg-[#5A1A14] text-amber-50 sticky top-0 z-10">
                     <tr>
-                      <th className="px-2.5 py-2 text-left">#</th>
-                      <th className="px-2.5 py-2 text-left">देय तारीख</th>
-                      <th className="px-2.5 py-2 text-right">मुद्दल देय</th>
-                      <th className="px-2.5 py-2 text-right">व्याज देय</th>
-                      <th className="px-2.5 py-2 text-right">एकूण हप्ता</th>
-                      <th className="px-2.5 py-2 text-right">भरलेले</th>
-                      <th className="px-2.5 py-2 text-right">बाकी देय</th>
-                      <th className="px-2.5 py-2 text-center">स्थिती</th>
-                      <th className="px-2.5 py-2 text-center">कृती</th>
+                      <th className="px-2.5 py-1.5 text-left whitespace-nowrap">#</th>
+                      <th className="px-2.5 py-1.5 text-left whitespace-nowrap">देय तारीख</th>
+                      <th className="px-2.5 py-1.5 text-right whitespace-nowrap">मुद्दल देय</th>
+                      <th className="px-2.5 py-1.5 text-right whitespace-nowrap">व्याज देय</th>
+                      <th className="px-2.5 py-1.5 text-right whitespace-nowrap">एकूण हप्ता</th>
+                      <th className="px-2.5 py-1.5 text-right whitespace-nowrap">भरलेले</th>
+                      <th className="px-2.5 py-1.5 text-right whitespace-nowrap">बाकी देय</th>
+                      <th className="px-2.5 py-1.5 text-center whitespace-nowrap">स्थिती</th>
+                      <th className="px-2.5 py-1.5 text-center whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-amber-100">
                     {schedules.map((row: any) => {
                       const paidSum = Number(row.principalPaid || 0) + Number(row.interestPaid || 0);
                       const remDue =
@@ -739,35 +739,35 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
                               : 'hover:bg-slate-50'
                           }
                         >
-                          <td className="px-2.5 py-2 font-bold text-slate-800">#{row.installmentNo}</td>
-                          <td className="px-2.5 py-2 font-medium text-slate-700">
+                          <td className="px-2.5 py-1 font-bold text-slate-800 align-middle">#{row.installmentNo}</td>
+                          <td className="px-2.5 py-1 font-medium text-slate-700 align-middle">
                             <div>{fmtDate(row.dueDate)}</div>
                             {row.paidDate && (
                               <div className="text-[10px] text-emerald-700">भरणा: {fmtDate(row.paidDate)}</div>
                             )}
                           </td>
-                          <td className="px-2.5 py-2 text-right">₹{fmtAmt(row.principalDue)}</td>
-                          <td className="px-2.5 py-2 text-right">₹{fmtAmt(row.interestDue)}</td>
-                          <td className="px-2.5 py-2 text-right font-bold text-slate-900">
+                          <td className="px-2.5 py-1 text-right align-middle">₹{fmtAmt(row.principalDue)}</td>
+                          <td className="px-2.5 py-1 text-right align-middle">₹{fmtAmt(row.interestDue)}</td>
+                          <td className="px-2.5 py-1 text-right font-bold text-slate-900 align-middle">
                             ₹{fmtAmt(row.totalInstallmentAmount)}
                           </td>
-                          <td className="px-2.5 py-2 text-right text-emerald-700 font-semibold">
+                          <td className="px-2.5 py-1 text-right text-emerald-700 font-semibold align-middle">
                             {paidSum > 0 ? `₹${fmtAmt(paidSum)}` : '—'}
                           </td>
-                          <td className="px-2.5 py-2 text-right font-bold text-rose-700">
+                          <td className="px-2.5 py-1 text-right font-bold text-rose-700 align-middle">
                             {remDue > 0 ? `₹${fmtAmt(remDue)}` : '₹0.00'}
                           </td>
-                          <td className="px-2.5 py-2 text-center">
+                          <td className="px-2.5 py-1 text-center align-middle">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeCls}`}>
                               {statusMr}
                             </span>
                           </td>
-                          <td className="px-2.5 py-2 text-center">
+                          <td className="px-2.5 py-1 text-center align-middle">
                             {row.status !== 'Paid' ? (
                               <button
                                 type="button"
                                 onClick={() => handleQuickPayScheduleRow(row)}
-                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded text-[10px] font-bold"
+                                className="px-2 py-1 bg-orange-50 hover:bg-orange-100 text-[#7C2418] border border-amber-200 rounded text-[10px] font-bold"
                               >
                                 भरा →
                               </button>
@@ -895,7 +895,7 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
                       onClick={() => setForm((prev) => ({ ...prev, paymentMode: m }))}
                       className={`px-3 py-1 rounded text-[11px] font-bold border ${
                         form.paymentMode === m
-                          ? 'bg-indigo-600 text-white border-indigo-700'
+                          ? 'bg-[#B44814] text-white border-[#7C2418]'
                           : 'bg-white text-slate-700 border-slate-300'
                       }`}
                     >
@@ -1084,42 +1084,42 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
             </h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-100 text-slate-700">
+            <table className="w-full text-[11px] leading-tight border-collapse">
+              <thead className="bg-[#5A1A14] text-amber-50">
                 <tr>
-                  <th className="px-3 py-2 text-left">परतफेड क्र.</th>
-                  <th className="px-3 py-2 text-left">तारीख</th>
-                  <th className="px-3 py-2 text-left">प्रकार / हप्ते</th>
-                  <th className="px-3 py-2 text-right">मुद्दल (₹)</th>
-                  <th className="px-3 py-2 text-right">व्याज व शुल्क (₹)</th>
-                  <th className="px-3 py-2 text-right">एकूण भरणा (₹)</th>
-                  <th className="px-3 py-2 text-left">मोड / व्हाउचर</th>
-                  <th className="px-3 py-2 text-center">पावती</th>
+                  <th className="px-2 py-1.5 text-left whitespace-nowrap">परतफेड क्र.</th>
+                  <th className="px-2 py-1.5 text-left whitespace-nowrap">तारीख</th>
+                  <th className="px-2 py-1.5 text-left whitespace-nowrap">प्रकार / हप्ते</th>
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap">मुद्दल (₹)</th>
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap">व्याज व शुल्क (₹)</th>
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap">एकूण भरणा (₹)</th>
+                  <th className="px-2 py-1.5 text-left whitespace-nowrap">मोड / व्हाउचर</th>
+                  <th className="px-2 py-1.5 text-center whitespace-nowrap">पावती</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-amber-100">
                 {pastRepayments.map((r: any) => (
                   <tr key={r.borrowingRepaymentID} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-bold text-slate-800">{r.repaymentNo || `#${r.borrowingRepaymentID}`}</td>
-                    <td className="px-3 py-2">{fmtDate(r.repaymentDate)}</td>
-                    <td className="px-3 py-2">
-                      <span className="font-semibold text-indigo-700">{r.repaymentType}</span>
+                    <td className="px-2 py-1 font-bold text-slate-800 align-middle">{r.repaymentNo || `#${r.borrowingRepaymentID}`}</td>
+                    <td className="px-2 py-1 align-middle">{fmtDate(r.repaymentDate)}</td>
+                    <td className="px-2 py-1 align-middle">
+                      <span className="font-semibold text-[#9A3412]">{r.repaymentType}</span>
                       {r.installmentsCovered && (
                         <div className="text-[10px] text-emerald-700 font-semibold">{r.installmentsCovered}</div>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right font-semibold">₹{fmtAmt(r.principalPaid)}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1 text-right font-semibold align-middle">₹{fmtAmt(r.principalPaid)}</td>
+                    <td className="px-2 py-1 text-right align-middle">
                       ₹{fmtAmt(Number(r.interestPaid || 0) + Number(r.penalOrChargesPaid || 0))}
                     </td>
-                    <td className="px-3 py-2 text-right font-bold text-emerald-800">₹{fmtAmt(r.totalPaid)}</td>
-                    <td className="px-3 py-2 text-[11px]">
+                    <td className="px-2 py-1 text-right font-bold text-emerald-800 align-middle">₹{fmtAmt(r.totalPaid)}</td>
+                    <td className="px-2 py-1 text-[11px] align-middle">
                       <div>{r.paymentMode} {r.referenceNo ? `(${r.referenceNo})` : ''}</div>
                       <div className="text-slate-500">
                         {r.voucherNo} • <span className="font-semibold">{r.voucherStatus}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-center">
+                    <td className="px-2 py-1 text-center align-middle">
                       <button
                         type="button"
                         onClick={() =>
@@ -1187,37 +1187,37 @@ export default function BorrowingRepaymentMaster({ onNavigate }: BorrowingRepaym
                 )}
               </div>
 
-              <table className="w-full border border-slate-400 text-xs">
-                <thead className="bg-slate-100">
+              <table className="w-full border border-slate-400 text-[11px] leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] text-amber-50">
                   <tr>
-                    <th className="border border-slate-300 px-3 py-1.5 text-left">तपशील</th>
-                    <th className="border border-slate-300 px-3 py-1.5 text-right">रक्कम (₹)</th>
+                    <th className="border border-amber-400/25 px-2 py-1.5 text-left whitespace-nowrap">तपशील</th>
+                    <th className="border border-amber-400/25 px-2 py-1.5 text-right whitespace-nowrap">रक्कम (₹)</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="border border-slate-300 px-3 py-1.5">मुद्दल परतफेड (Principal Repaid)</td>
-                    <td className="border border-slate-300 px-3 py-1.5 text-right font-semibold">
+                    <td className="border border-slate-300 px-2 py-1 align-middle">मुद्दल परतफेड (Principal Repaid)</td>
+                    <td className="border border-slate-300 px-2 py-1 text-right font-semibold align-middle">
                       ₹{fmtAmt(printRepayment.principalPaid)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="border border-slate-300 px-3 py-1.5">व्याज परतफेड (Interest Paid)</td>
-                    <td className="border border-slate-300 px-3 py-1.5 text-right font-semibold">
+                    <td className="border border-slate-300 px-2 py-1 align-middle">व्याज परतफेड (Interest Paid)</td>
+                    <td className="border border-slate-300 px-2 py-1 text-right font-semibold align-middle">
                       ₹{fmtAmt(printRepayment.interestPaid)}
                     </td>
                   </tr>
                   {Number(printRepayment.penalOrChargesPaid || 0) > 0 && (
                     <tr>
-                      <td className="border border-slate-300 px-3 py-1.5">दंड / बँक शुल्क (Charges)</td>
-                      <td className="border border-slate-300 px-3 py-1.5 text-right font-semibold">
+                      <td className="border border-slate-300 px-2 py-1 align-middle">दंड / बँक शुल्क (Charges)</td>
+                      <td className="border border-slate-300 px-2 py-1 text-right font-semibold align-middle">
                         ₹{fmtAmt(printRepayment.penalOrChargesPaid)}
                       </td>
                     </tr>
                   )}
                   <tr className="bg-slate-100 font-black">
-                    <td className="border border-slate-300 px-3 py-2">एकूण अदा केलेली रक्कम (Total Paid)</td>
-                    <td className="border border-slate-300 px-3 py-2 text-right text-sm">
+                    <td className="border border-slate-300 px-2 py-1 align-middle">एकूण अदा केलेली रक्कम (Total Paid)</td>
+                    <td className="border border-slate-300 px-2 py-1 text-right text-sm align-middle">
                       ₹{fmtAmt(printRepayment.totalPaid)}
                     </td>
                   </tr>

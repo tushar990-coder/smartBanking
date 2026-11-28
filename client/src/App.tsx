@@ -518,7 +518,14 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('app-theme') || 'blue';
+    const migrated = localStorage.getItem('app-theme-pastel-v1');
+    if (!migrated) {
+      localStorage.setItem('app-theme-pastel-v1', '1');
+      localStorage.setItem('app-theme', 'pastel-maroon');
+      localStorage.setItem('app-bg-theme', 'pastel-warm');
+      return 'pastel-maroon';
+    }
+    return localStorage.getItem('app-theme') || 'pastel-maroon';
   });
 
   useEffect(() => {
@@ -688,24 +695,24 @@ function App() {
         {/* Network Disconnection Status Monitor Banner */}
         <NetworkStatusBanner />
 
-        {/* Global Header - Slim & Compact Ribbon (Mobile Responsive) */}
-        <header className="h-9 bg-white border-b border-gray-200 flex justify-between items-center px-2 sm:px-3 shrink-0 shadow-2xs z-10 print:hidden text-xs">
-          <div className="flex items-center space-x-1.5 sm:space-x-2 font-medium text-gray-700 min-w-0">
+        {/* Global Header - Slim & Compact Ribbon (Warm Ivory Pastel Theme) */}
+        <header className="h-9 bg-[#FFFBF7]/95 backdrop-blur-md border-b border-amber-200/85 flex justify-between items-center px-2 sm:px-3 shrink-0 shadow-2xs z-10 print:hidden text-xs">
+          <div className="flex items-center space-x-1.5 sm:space-x-2 font-medium text-[#5C3A2E] min-w-0">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-1 rounded hover:bg-gray-100 text-gray-600 hover:text-primary transition-colors focus:outline-none shrink-0"
+              className="p-1 rounded hover:bg-amber-100/70 text-[#8C5E4F] hover:text-[#7C2418] transition-colors focus:outline-none shrink-0 cursor-pointer"
               title={isSidebarOpen ? "साईडबार बंद करा (Close Sidebar)" : "साईडबार उघडा (Open Sidebar)"}
             >
               {isSidebarOpen ? <ChevronLeft size={16} /> : <Menu size={16} />}
             </button>
             <div className="flex items-center space-x-1 truncate">
-              <span className="text-gray-400 text-xs">👤</span>
-              <span className="font-semibold text-primary truncate text-[11px] sm:text-xs">
-                {user.username} <span className="hidden sm:inline text-[10px] text-gray-500 font-normal">({user.role})</span>
+              <span className="text-[#B45309] text-xs">👤</span>
+              <span className="font-bold text-[#5A1A14] truncate text-[11px] sm:text-xs">
+                {user.username} <span className="hidden sm:inline text-[10px] text-[#8C5E4F] font-normal">({user.role})</span>
               </span>
             </div>
             <div className="hidden sm:flex items-center space-x-1">
-              <span className="text-gray-400 text-xs">🏢</span>
+              <span className="text-[#B45309] text-xs">🏢</span>
               {(user.role === 'Admin' || user.role === 'SuperAdmin' || user.role === 'Super Admin' || user.role === 'SystemAdmin' || user.role === 'HeadOffice' || user.role === 'HO_Manager' || user.role === 'HO Manager' || user.role === 'Auditor' || user.role === 'GeneralManager' || user.role === 'CEO' || user.role === 'Chairman') && headerBranches.length > 0 ? (
                 <select
                   value={user.branchID}
@@ -721,7 +728,7 @@ function App() {
                       }
                     }
                   }}
-                  className="text-[11px] font-bold text-primary border border-gray-300 rounded px-1.5 py-0 outline-none focus:border-primary cursor-pointer bg-blue-50/50 hover:bg-blue-100/50 transition-colors h-6"
+                  className="text-[11px] font-bold text-[#7C2418] border border-amber-300/80 rounded px-1.5 py-0 outline-none focus:border-[#B44814] cursor-pointer bg-amber-50/70 hover:bg-amber-100/70 transition-colors h-6"
                 >
                   {headerBranches.map((b: any) => (
                     <option key={b.branchID} value={b.branchID}>
@@ -730,18 +737,18 @@ function App() {
                   ))}
                 </select>
               ) : (
-                <span className="font-bold text-gray-800 bg-gray-100 px-1.5 py-0 rounded border border-gray-300 text-[11px] flex items-center gap-1 shadow-2xs h-6">
+                <span className="font-bold text-[#5A1A14] bg-amber-50/80 px-1.5 py-0 rounded border border-amber-200/80 text-[11px] flex items-center gap-1 shadow-2xs h-6">
                   <span>🔒</span> {user.branchName || 'Main Branch'}
                 </span>
               )}
             </div>
-            <div className="hidden md:flex items-center space-x-1 text-[11px]">
-              <span className="text-gray-400">📅</span>
+            <div className="hidden md:flex items-center space-x-1 text-[11px] text-[#6E493C]">
+              <span className="text-[#B45309]">📅</span>
               <span>FY: {user.financialYearCode}</span>
             </div>
             <div className="hidden lg:flex items-center space-x-1 text-[11px]">
-              <span className="text-gray-400">📆</span>
-              <span className="text-green-700 font-bold">{user.businessDate}</span>
+              <span className="text-[#B45309]">📆</span>
+              <span className="text-emerald-700 font-bold">{user.businessDate}</span>
             </div>
             <button 
               onClick={() => handleNavigate('system-update')}
@@ -758,22 +765,23 @@ function App() {
             <NotificationCenter onNavigate={handleNavigate} branchId={user?.branchID || 1} />
             <button
               onClick={() => setShowSupportModal(true)}
-              className="px-2 sm:px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded text-[11px] font-bold hover:bg-amber-100 transition-colors border border-amber-300 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs cursor-pointer"
+              className="px-2 sm:px-2.5 py-0.5 bg-amber-50 text-[#9A3412] rounded text-[11px] font-bold hover:bg-amber-100 transition-colors border border-amber-300 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs cursor-pointer"
               title="सपोर्ट / तक्रार नोंदणी (Helpdesk and Support Center)"
             >
-              <Headset size={12} className="text-amber-600 shrink-0" />
+              <Headset size={12} className="text-[#D97706] shrink-0" />
               <span className="hidden sm:inline">सपोर्ट / तक्रार</span>
             </button>
             <div className="hidden md:flex items-center space-x-1">
-              <label className="text-[10px] font-bold text-gray-500">Theme:</label>
+              <label className="text-[10px] font-bold text-[#8C5E4F]">Theme:</label>
               <select 
                 value={theme}
                 onChange={(e) => {
                   setTheme(e.target.value);
                   window.dispatchEvent(new Event('storage'));
                 }}
-                className="text-[10px] border border-gray-300 rounded px-1.5 py-0 outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer bg-gray-50 h-5.5"
+                className="text-[10px] border border-amber-300/80 text-[#5A1A14] font-semibold rounded px-1.5 py-0 outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] cursor-pointer bg-white h-5.5"
               >
+                <option value="pastel-maroon">Pastel Maroon Gold (डीफॉल्ट)</option>
                 <option value="wine-red">Wine Red (वाइन रेड)</option>
                 <option value="green">Emerald Green (अमला)</option>
                 <option value="blue">Corporate Blue (निळा)</option>
@@ -781,15 +789,15 @@ function App() {
             </div>
             <button 
               onClick={() => setShowChangePasswordModal(true)}
-              className="px-2 sm:px-2.5 py-0.5 bg-blue-50 text-primary rounded text-[11px] font-bold hover:bg-blue-100 transition-colors border border-blue-200 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs cursor-pointer"
+              className="px-2 sm:px-2.5 py-0.5 bg-orange-50 text-[#7C2418] rounded text-[11px] font-bold hover:bg-orange-100 transition-colors border border-orange-200 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs cursor-pointer"
               title="पासवर्ड बदला (Change Password)"
             >
-              <KeyRound size={12} className="shrink-0" />
+              <KeyRound size={12} className="text-[#B44814] shrink-0" />
               <span className="hidden sm:inline">पासवर्ड बदला</span>
             </button>
             <button 
               onClick={logout}
-              className="px-2 sm:px-2.5 py-0.5 bg-red-50 text-red-600 rounded text-[11px] font-bold hover:bg-red-100 hover:text-red-700 transition-colors border border-red-200 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs"
+              className="px-2 sm:px-2.5 py-0.5 bg-rose-50 text-rose-700 rounded text-[11px] font-bold hover:bg-rose-100 hover:text-rose-800 transition-colors border border-rose-200 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs cursor-pointer"
               title="लॉगआउट (Logout)"
             >
               <LogOut size={13} className="shrink-0" />
@@ -801,9 +809,12 @@ function App() {
         <div key={`${activeTab}-${lastMemberId || 'clean'}-${navKey}-${user?.branchID || 0}`} className="flex-1 w-full overflow-y-auto">
           {/* Quick return to Khatedar 360 Sticky Banner */}
           {activeTab !== 'member-360' && activeTab !== 'customer-360' && activeTab !== 'khatedar-360' && Boolean(new URLSearchParams(window.location.search).get('customerId') || new URLSearchParams(window.location.search).get('memberId') || lastMemberId) && (
-            <div className="bg-primary text-white px-3.5 py-1.5 flex items-center justify-between shadow-xs border-b border-white/20 font-sans shrink-0 sticky top-0 z-30 animate-in fade-in duration-200">
+            <div
+              className="text-white px-3.5 py-1.5 flex items-center justify-between shadow-xs border-b border-amber-300/40 font-sans shrink-0 sticky top-0 z-30 animate-in fade-in duration-200"
+              style={{ background: 'linear-gradient(90deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+            >
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                <span className="w-2 h-2 rounded-full bg-amber-300 animate-ping"></span>
                 <span className="text-xs font-bold tracking-wide">
                   खातेदार ३६०° वरून उघडलेला फॉर्म (Navigated from Khatedar 360°)
                 </span>
@@ -814,7 +825,7 @@ function App() {
                   const cId = params.get('customerId') || params.get('memberId') || sessionStorage.getItem('last_khatedar360_customer_id') || lastMemberId;
                   handleNavigate('member-360', cId ? { customerId: cId } : undefined);
                 }}
-                className="px-3 py-1 bg-white text-primary hover:bg-slate-100 font-extrabold text-xs rounded shadow-xs transition-all flex items-center gap-1.5 cursor-pointer border border-white/30"
+                className="px-3 py-1 bg-white text-[#7C2418] hover:bg-amber-50 font-extrabold text-xs rounded shadow-xs transition-all flex items-center gap-1.5 cursor-pointer border border-amber-200/60"
               >
                 <ArrowLeft size={14} />
                 <span>खातेदार ३६०° वर परत जा (Back to Khatedar 360°)</span>

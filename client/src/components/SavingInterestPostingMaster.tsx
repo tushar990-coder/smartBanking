@@ -214,7 +214,7 @@ const SavingInterestPostingMaster: React.FC = () => {
               name="periodStart"
               value={dateRange.periodStart}
               onChange={handleDateChange}
-              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs"
+              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs"
               required
             />
           </div>
@@ -226,7 +226,7 @@ const SavingInterestPostingMaster: React.FC = () => {
               name="periodEnd"
               value={dateRange.periodEnd}
               onChange={handleDateChange}
-              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs"
+              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs"
               required
             />
           </div>
@@ -238,7 +238,7 @@ const SavingInterestPostingMaster: React.FC = () => {
               name="postingDate"
               value={postingDate}
               onChange={(e) => setPostingDate(e.target.value)}
-              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs font-mono"
+              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs font-mono"
               required
             />
           </div>
@@ -247,7 +247,7 @@ const SavingInterestPostingMaster: React.FC = () => {
             <button
               type="submit"
               disabled={loading || posting}
-              className="bg-primary hover:bg-[#004a75] text-white px-3 py-1 rounded-sm font-medium shadow-sm transition-colors text-xs disabled:opacity-50"
+              className="bg-primary hover:bg-[#7C2418] text-white px-3 py-1 rounded-sm font-medium shadow-sm transition-colors text-xs disabled:opacity-50"
             >
               {loading ? 'मोजत आहे...' : 'व्याज मोजा (Calculate)'}
             </button>
@@ -308,10 +308,10 @@ const SavingInterestPostingMaster: React.FC = () => {
           <table className="min-w-full divide-y divide-gray-200 text-xs text-center">
             <thead className="bg-primary text-white">
               <tr>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">आर्थिक वर्ष (Financial Year)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">पासून तारीख (Start Date)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">पर्यंत तारीख (End Date)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-right">एकूण व्याज (Total Posted)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-left">आर्थिक वर्ष (Financial Year)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-left">पासून तारीख (Start Date)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-left">पर्यंत तारीख (End Date)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 font-medium text-right">एकूण व्याज (Total Posted)</th>
                 <th className="px-2 py-1.5 font-medium text-center">केव्हा जतन झाले (Posted On)</th>
               </tr>
             </thead>

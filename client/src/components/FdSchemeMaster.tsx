@@ -728,12 +728,12 @@ const FdSchemeMaster: React.FC = () => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Percent className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सरासरी व्याजदर (% Avg)</div>
-            <div className="text-sm font-black text-indigo-950">{avgInterestRate}% p.a.</div>
+            <div className="text-sm font-black text-[#4A1410]">{avgInterestRate}% p.a.</div>
           </div>
         </div>
 
@@ -770,7 +770,7 @@ const FdSchemeMaster: React.FC = () => {
         ref={formContainerRef}
         onSubmit={handleSubmit} 
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         {/* Section 1: Basic Information & Interest Rates */}
@@ -986,15 +986,15 @@ const FdSchemeMaster: React.FC = () => {
           {/* Conditional View: Tenor Slabs Grid Table */}
           {formData.schemeDurationModel === 'Slab' && (
             <div className="pt-2 border-t border-gray-200 space-y-2 animate-in fade-in duration-150">
-              <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-blue-50/70 border border-blue-200 rounded-sm">
-                <div className="text-[11px] text-blue-900 font-medium">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-amber-50/70 border border-amber-200 rounded-sm">
+                <div className="text-[11px] text-[#5A1A14] font-medium">
                   📊 <span className="font-bold">मुदत स्लॅबनिहाय व्याजदर रचना (Tenor Slab Matrix):</span> ठेवीचा कालावधी ज्या स्लॅबमध्ये बसेल, तो व्याजदर खाते उघडताना आपोआप लागू होईल.
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={handleLoadStandardSlabs}
-                    className="px-2.5 py-1 bg-white hover:bg-slate-50 text-blue-700 border border-blue-300 rounded text-[10px] font-bold shadow-2xs flex items-center gap-1 transition-colors cursor-pointer"
+                    className="px-2.5 py-1 bg-white hover:bg-slate-50 text-[#9A3412] border border-amber-300 rounded text-[10px] font-bold shadow-2xs flex items-center gap-1 transition-colors cursor-pointer"
                     title="सहकारी बँकांचे मानक स्लॅब्स (7 ते 1095 दिवस) आपोआप लोड करा"
                   >
                     ⚡ मानक स्लॅब्स लोड करा
@@ -1018,25 +1018,25 @@ const FdSchemeMaster: React.FC = () => {
               ) : (
                 <>
                   <div className="overflow-x-auto border border-gray-200 rounded-sm">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-100 text-gray-700 font-bold border-b border-gray-300">
+                  <table className="w-full text-left text-[11px] border-collapse leading-tight">
+                    <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
                       <tr>
-                        <th className="px-2 py-1.5 text-center w-10 border-r border-gray-200">#</th>
-                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">किमान दिवस (From) *</th>
-                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">कमाल दिवस (To) *</th>
-                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-32">सामान्य दर (% p.a.) *</th>
-                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-36">ज्येष्ठ नागरिक दर (%) *</th>
-                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-32">मुदतपूर्व कपात (%)</th>
-                        <th className="px-2 py-1.5 text-center w-16">कृती</th>
+                        <th className="px-2 py-1.5 text-center w-10 border-r border-amber-400/25 whitespace-nowrap">#</th>
+                        <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-28 whitespace-nowrap">किमान दिवस (From) *</th>
+                        <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-28 whitespace-nowrap">कमाल दिवस (To) *</th>
+                        <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-32 whitespace-nowrap">सामान्य दर (% p.a.) *</th>
+                        <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-36 whitespace-nowrap">ज्येष्ठ नागरिक दर (%) *</th>
+                        <th className="px-2 py-1.5 text-center border-r border-amber-400/25 w-32 whitespace-nowrap">मुदतपूर्व कपात (%)</th>
+                        <th className="px-2 py-1.5 text-center w-16 whitespace-nowrap">कृती</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200 bg-white text-[11px]">
+                    <tbody className="divide-y divide-amber-100 bg-white text-[11px]">
                       {slabs.map((slab, index) => (
                         <tr key={index} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="px-2 py-1 text-center font-bold text-gray-500 border-r border-gray-200">
+                          <td className="px-2 py-1 text-center font-bold text-gray-500 border-r border-gray-200 align-middle">
                             {index + 1}
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
@@ -1050,7 +1050,7 @@ const FdSchemeMaster: React.FC = () => {
                               <span className="text-[10px] text-gray-400">दिवस</span>
                             </div>
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
@@ -1064,7 +1064,7 @@ const FdSchemeMaster: React.FC = () => {
                               <span className="text-[10px] text-gray-400">दिवस</span>
                             </div>
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
@@ -1079,7 +1079,7 @@ const FdSchemeMaster: React.FC = () => {
                               <span className="text-[10px] text-emerald-600 font-bold">%</span>
                             </div>
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
@@ -1094,7 +1094,7 @@ const FdSchemeMaster: React.FC = () => {
                               <span className="text-[10px] text-amber-600 font-bold">%</span>
                             </div>
                           </td>
-                          <td className="px-2 py-1 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
@@ -1108,7 +1108,7 @@ const FdSchemeMaster: React.FC = () => {
                               <span className="text-[10px] text-rose-600 font-bold">%</span>
                             </div>
                           </td>
-                          <td className="px-2 py-1 text-center">
+                          <td className="px-2 py-1 text-center align-middle">
                             <button
                               type="button"
                               onClick={() => handleRemoveSlab(index)}
@@ -1235,17 +1235,17 @@ const FdSchemeMaster: React.FC = () => {
           </div>
 
           {formData.interestPayoutFrequency === 'Quarterly' && formData.interestType !== 'Cumulative' && (
-            <div className="p-2.5 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-100/70 border border-blue-300 rounded text-blue-950 text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-in fade-in duration-150">
+            <div className="p-2.5 bg-gradient-to-r from-[#FDF2EE] via-[#FFFBF7] to-[#FCE3BE]/70 border border-amber-300 rounded text-[#4A1410] text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-in fade-in duration-150">
               <div className="flex items-center gap-2">
                 <span className="text-base">💡</span>
                 <div>
-                  <span className="font-bold text-blue-950">त्रैमासिक व्याज परतावा (Quarterly Interest Payout) मार्गदर्शक:</span>
-                  <p className="text-[11px] text-blue-800">सदर योजनेत मुदतपूर्तीवेळी मूळ मुद्दल परत केली जाते व व्याज दर तीन महिन्यांनी (तिमाहीला) ग्राहकाच्या बचत खात्यात जमा केले जाते.</p>
+                  <span className="font-bold text-[#4A1410]">त्रैमासिक व्याज परतावा (Quarterly Interest Payout) मार्गदर्शक:</span>
+                  <p className="text-[11px] text-[#7C2418]">सदर योजनेत मुदतपूर्तीवेळी मूळ मुद्दल परत केली जाते व व्याज दर तीन महिन्यांनी (तिमाहीला) ग्राहकाच्या बचत खात्यात जमा केले जाते.</p>
                 </div>
               </div>
-              <div className="bg-white px-3 py-1 rounded border border-blue-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+              <div className="bg-white px-3 py-1 rounded border border-amber-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
                 <span className="text-slate-600">दर ₹ १,००,००० ठेवीवर अंदाजे दर तिमाही व्याज:</span>
-                <span className="text-blue-700 font-extrabold font-mono text-sm">
+                <span className="text-[#9A3412] font-extrabold font-mono text-sm">
                   ₹ {Math.round((100000 * (Number(formData.interestRate) || 0)) / 400).toLocaleString('en-IN')}
                 </span>
                 <span className="text-[10px] text-slate-500 font-normal">/ तिमाही</span>
@@ -1532,7 +1532,7 @@ const FdSchemeMaster: React.FC = () => {
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1591,22 +1591,22 @@ const FdSchemeMaster: React.FC = () => {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना कोड & नाव</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-28">लागू व्याप्ती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी & दर</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याज प्रकार</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड देयता लेजर</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">योजना कोड & नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-28 whitespace-nowrap">लागू व्याप्ती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">कालावधी & दर</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याज प्रकार</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">मॅप्ड देयता लेजर</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredSchemes.map((s) => (
                       <tr key={s.fdSchemeID} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
@@ -1628,7 +1628,7 @@ const FdSchemeMaster: React.FC = () => {
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           <div className="font-bold text-gray-900 font-mono">{s.schemeCode}</div>
                           <div className="text-gray-600 font-medium">{s.schemeName}</div>
                           <div className="mt-1 flex items-center gap-1">
@@ -1644,7 +1644,7 @@ const FdSchemeMaster: React.FC = () => {
                             )}
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                           {!s.branchID ? (
                             <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1">
                               🌐 सर्व शाखा
@@ -1655,10 +1655,10 @@ const FdSchemeMaster: React.FC = () => {
                             </span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                           {s.schemeDurationModel === 'Slab' ? (
                             <div>
-                              <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-300">
+                              <span className="bg-amber-100 text-[#7C2418] text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300">
                                 📊 {s.slabs?.length || 0} स्लॅब्स
                               </span>
                               <div className="text-emerald-700 font-bold font-mono text-[10px] mt-0.5">स्लॅबनिहाय दर</div>
@@ -1672,10 +1672,10 @@ const FdSchemeMaster: React.FC = () => {
                             </div>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-medium text-gray-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-medium text-gray-700 align-middle">
                           {s.interestType}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           {s.fdLiabilityLedger?.ledgerName ? (
                             <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 font-bold" title={s.fdLiabilityLedger.ledgerName}>
                               {s.fdLiabilityLedger.ledgerName}
@@ -1684,7 +1684,7 @@ const FdSchemeMaster: React.FC = () => {
                             <span className="text-gray-400 italic">डिफॉल्ट मुदत ठेव लेजर</span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             s.isActive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                           }`}>

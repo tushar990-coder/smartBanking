@@ -517,13 +517,13 @@ const InvestmentReports: React.FC = () => {
         <div className="border-r border-slate-300 pr-2">
           <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">जमा व्याज / प्राप्त / TDS</span>
           <strong className="text-amber-800 font-mono text-[11px]">
-            ₹{formatCurrency(totalRenewedReinvestedInt)} / <span className="text-indigo-700">₹{formatCurrency(totalRenewedNetReceived)}</span> / <span className="text-rose-700">₹{formatCurrency(totalRenewedTds)}</span>
+            ₹{formatCurrency(totalRenewedReinvestedInt)} / <span className="text-[#9A3412]">₹{formatCurrency(totalRenewedNetReceived)}</span> / <span className="text-rose-700">₹{formatCurrency(totalRenewedTds)}</span>
           </strong>
         </div>
         <div className="sm:text-right">
           <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">नवीन मुद्दल / मुदतपूर्ती</span>
           <strong className="text-emerald-800 font-mono text-[11.5px]">
-            ₹{formatCurrency(totalRenewedNewPrincipal)} / <span className="text-blue-900">₹{formatCurrency(totalRenewedExpectedMaturity)}</span>
+            ₹{formatCurrency(totalRenewedNewPrincipal)} / <span className="text-[#5A1A14]">₹{formatCurrency(totalRenewedExpectedMaturity)}</span>
           </strong>
         </div>
       </div>
@@ -549,7 +549,7 @@ const InvestmentReports: React.FC = () => {
         </div>
         <div className="sm:text-right">
           <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण पुस्तकी मूल्य (Book Value)</span>
-          <strong className="text-blue-900 font-mono text-xs">
+          <strong className="text-[#5A1A14] font-mono text-xs">
             ₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.bookValue || 0), 0))}
           </strong>
         </div>
@@ -796,10 +796,10 @@ const InvestmentReports: React.FC = () => {
         <div className="space-y-4">
           {dashboard && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100/80 border border-blue-200 rounded-sm p-3 shadow-2xs">
-                <p className="text-[10px] text-blue-700 font-bold uppercase">एकूण सक्रिय गुंतवणूक (Active Investments)</p>
-                <p className="text-xl font-black text-blue-900 mt-1">{dashboard.totalActiveAccounts} <span className="text-xs font-normal">खाती</span></p>
-                <p className="text-xs font-bold text-blue-800 mt-0.5">₹{formatCurrency(dashboard.totalInvestment)}</p>
+              <div className="bg-gradient-to-br from-[#FDF2EE] to-[#FCE3BE]/80 border border-amber-200 rounded-sm p-3 shadow-2xs">
+                <p className="text-[10px] text-[#9A3412] font-bold uppercase">एकूण सक्रिय गुंतवणूक (Active Investments)</p>
+                <p className="text-xl font-black text-[#5A1A14] mt-1">{dashboard.totalActiveAccounts} <span className="text-xs font-normal">खाती</span></p>
+                <p className="text-xs font-bold text-[#7C2418] mt-0.5">₹{formatCurrency(dashboard.totalInvestment)}</p>
               </div>
 
               <div className="bg-gradient-to-br from-green-50 to-green-100/80 border border-green-200 rounded-sm p-3 shadow-2xs">
@@ -847,7 +847,7 @@ const InvestmentReports: React.FC = () => {
                     <td className="border border-slate-900 py-1 px-3 font-bold text-slate-900">{a.institutionName || 'बँक / संस्था'}</td>
                     <td className="border border-slate-900 py-1 px-3 text-center">
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                        a.investmentType === 'Share' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                        a.investmentType === 'Share' ? 'bg-purple-100 text-purple-800' : 'bg-amber-100 text-[#7C2418]'
                       }`}>
                         {a.investmentType === 'Share' ? 'शेअर्स (Share)' : 'ठेव (Deposit)'}
                       </span>
@@ -959,12 +959,12 @@ const InvestmentReports: React.FC = () => {
                               <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-bold text-slate-900 cbs-num-cell">
                                 ₹{formatCurrency(a.expectedMaturityAmount)}
                               </td>
-                              <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-bold text-blue-900 cbs-num-cell">
+                              <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-bold text-[#5A1A14] cbs-num-cell">
                                 ₹{formatCurrency(a.bookValue)}
                               </td>
                               <td className="border border-slate-900 py-1 px-1 text-center">
                                 <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                                  a.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                                  a.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-[#7C2418]'
                                 }`}>
                                   {a.status}
                                 </span>
@@ -1115,7 +1115,7 @@ const InvestmentReports: React.FC = () => {
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold cbs-num-cell">₹{formatCurrency(a.principalAmount)}</td>
                     <td className="border border-slate-900 py-1.5 px-1 text-center font-mono text-emerald-800 font-bold">{a.interestRate > 0 ? `${a.interestRate}%` : 'लाभांश'}</td>
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-emerald-800 cbs-num-cell">₹{formatCurrency(a.accruedInterest)}</td>
-                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-blue-800 cbs-num-cell">₹{formatCurrency(a.receivedInterest)}</td>
+                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-[#7C2418] cbs-num-cell">₹{formatCurrency(a.receivedInterest)}</td>
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-amber-800 cbs-num-cell">
                       <div>₹{formatCurrency(a.status === 'Active' ? a.interestReceivable : 0)}</div>
                       {(a.reversedPostingInterest || 0) > 0 && (
@@ -1139,7 +1139,7 @@ const InvestmentReports: React.FC = () => {
                   <td className="border border-slate-900 py-2 px-2 text-right font-mono cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.principalAmount, 0))}</td>
                   <td className="border border-slate-900"></td>
                   <td className="border border-slate-900 py-2 px-2 text-right font-mono text-emerald-900 cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.accruedInterest, 0))}</td>
-                  <td className="border border-slate-900 py-2 px-2 text-right font-mono text-blue-900 cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.receivedInterest, 0))}</td>
+                  <td className="border border-slate-900 py-2 px-2 text-right font-mono text-[#5A1A14] cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.receivedInterest, 0))}</td>
                   <td className="border border-slate-900 py-2 px-2 text-right font-mono text-amber-900 cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + (a.status === 'Active' ? a.interestReceivable : 0), 0))}</td>
                   <td className="border border-slate-900 py-2 px-2 text-right font-mono text-primary cbs-num-cell">₹{formatCurrency(filteredAccounts.reduce((s, a) => s + a.bookValue, 0))}</td>
                 </tr>
@@ -1210,7 +1210,7 @@ const InvestmentReports: React.FC = () => {
 
           {/* Section B: Term / Fixed Deposit Investments */}
           <div className="border border-slate-900 rounded-xs overflow-hidden">
-            <div className="bg-blue-100/90 px-3 py-1.5 border-b border-slate-900 font-bold text-xs text-blue-950">
+            <div className="bg-amber-100/90 px-3 py-1.5 border-b border-slate-900 font-bold text-xs text-[#4A1410]">
               भाग ब: बँकांमधील ठेवी गुंतवणूक (Term & Fixed Deposits with Banks)
             </div>
             <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
@@ -1236,7 +1236,7 @@ const InvestmentReports: React.FC = () => {
                   </tr>
                 ) : (
                   depositAccounts.map((a, idx) => (
-                    <tr key={a.investmentAccountID} className="hover:bg-blue-50/50 border-b border-slate-300">
+                    <tr key={a.investmentAccountID} className="hover:bg-amber-50/50 border-b border-slate-300">
                       <td className="border border-slate-900 py-1.5 px-2 text-center font-bold">{idx + 1}</td>
                       <td className="border border-slate-900 py-1.5 px-3 font-semibold">{a.institutionName}</td>
                       <td className="border border-slate-900 py-1.5 px-2 text-center font-mono">{a.investmentNo}</td>
@@ -1252,7 +1252,7 @@ const InvestmentReports: React.FC = () => {
               </tbody>
               {depositAccounts.length > 0 && (
                 <tfoot>
-                  <tr className="bg-blue-100 font-bold text-xs border-t-2 border-slate-900 text-blue-950">
+                  <tr className="bg-amber-100 font-bold text-xs border-t-2 border-slate-900 text-[#4A1410]">
                     <td colSpan={6} className="border border-slate-900 py-1.5 px-2 text-right">एकूण ठेवी बेरीज (Total Deposits):</td>
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono cbs-num-cell">₹{formatCurrency(depositAccounts.reduce((s, a) => s + a.principalAmount, 0))}</td>
                     <td className="border border-slate-900 py-1.5 px-2 text-right font-mono text-emerald-900 cbs-num-cell">₹{formatCurrency(depositAccounts.reduce((s, a) => s + a.accruedInterest, 0))}</td>
@@ -1290,7 +1290,7 @@ const InvestmentReports: React.FC = () => {
                   <th colSpan={isFull ? 5 : 3} className="border border-slate-900 py-1 px-1.5 bg-amber-50 text-amber-950 border-l-2 border-l-slate-900">
                     जुनी गुंतवणूक पावती (Old Investment)
                   </th>
-                  <th colSpan={isFull ? 5 : 4} className="border border-slate-900 py-1 px-1.5 bg-indigo-50 text-indigo-950 border-l-2 border-l-slate-900">
+                  <th colSpan={isFull ? 5 : 4} className="border border-slate-900 py-1 px-1.5 bg-orange-50 text-[#4A1410] border-l-2 border-l-slate-900">
                     व्याज व TDS समायोजन (Interest &amp; TDS)
                   </th>
                   <th colSpan={isFull ? 6 : 4} className="border border-slate-900 py-1 px-1.5 bg-emerald-50 text-emerald-950 border-l-2 border-l-slate-900">
@@ -1312,11 +1312,11 @@ const InvestmentReports: React.FC = () => {
                   <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60">जुनी मुदत दि.</th>
                   <th className="border border-slate-900 py-1 px-1.5 bg-amber-50/60 text-right">जुनी मुद्दल (₹)</th>
 
-                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 border-l-2 border-l-slate-900">नूतनीकरण प्रकार</th>
-                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">जमा व्याज (₹)</th>
-                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">प्राप्त व्याज/परतावा (₹)</th>
-                  <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50 text-right">TDS (₹)</th>
-                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-indigo-50/50">जमा पद्धत</th>}
+                  <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50 border-l-2 border-l-slate-900">नूतनीकरण प्रकार</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50 text-right">जमा व्याज (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50 text-right">प्राप्त व्याज/परतावा (₹)</th>
+                  <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50 text-right">TDS (₹)</th>
+                  {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-orange-50/50">जमा पद्धत</th>}
 
                   <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50 border-l-2 border-l-slate-900">नवीन पावती क्र.</th>
                   {isFull && <th className="border border-slate-900 py-1 px-1.5 bg-emerald-50/50">नवीन CBS खाते क्र.</th>}
@@ -1384,8 +1384,8 @@ const InvestmentReports: React.FC = () => {
                         <span
                           className={`inline-block px-1 py-0.2 rounded text-[9.5px] font-bold border ${
                             isPrincipalOnly
-                              ? 'bg-sky-50 text-sky-800 border-sky-300'
-                              : 'bg-indigo-50 text-indigo-800 border-indigo-300'
+                              ? 'bg-amber-50 text-[#7C2418] border-amber-300'
+                              : 'bg-orange-50 text-[#7C2418] border-amber-300'
                           }`}
                         >
                           {isPrincipalOnly ? 'फक्त मुद्दल' : 'मुद्दल+व्याज'}
@@ -1395,7 +1395,7 @@ const InvestmentReports: React.FC = () => {
                         {row.reinvestedInterest > 0 ? formatCurrency(row.reinvestedInterest) : '-'}
                       </td>
                       <td
-                        className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-indigo-800"
+                        className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-semibold text-[#7C2418]"
                         title={row.totalCashOrBankReceived > 0 ? `जमा पद्धत: ${row.receiptModeLabel}` : undefined}
                       >
                         {row.totalCashOrBankReceived > 0 ? formatCurrency(row.totalCashOrBankReceived) : '-'}
@@ -1435,7 +1435,7 @@ const InvestmentReports: React.FC = () => {
                         {formatDate(row.newMaturityDate)}
                       </td>
 
-                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-blue-900 border-l-2 border-l-slate-900">
+                      <td className="border border-slate-900 py-0.5 px-1.5 text-right font-mono font-bold text-[#5A1A14] border-l-2 border-l-slate-900">
                         {formatCurrency(row.newExpectedMaturityAmount)}
                       </td>
                       <td className="border border-slate-900 py-0.5 px-1 text-center">
@@ -1464,10 +1464,10 @@ const InvestmentReports: React.FC = () => {
                       ₹{formatCurrency(totalRenewedOldPrincipal)}
                     </td>
                     <td className="border border-slate-900 py-1 px-1 border-l-2 border-l-slate-900"></td>
-                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-amber-950 bg-indigo-100/40">
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-amber-950 bg-orange-100/40">
                       ₹{formatCurrency(totalRenewedReinvestedInt)}
                     </td>
-                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-indigo-950 bg-indigo-100/40">
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-[#4A1410] bg-orange-100/40">
                       ₹{formatCurrency(totalRenewedNetReceived)}
                     </td>
                     <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-rose-950 bg-rose-100/40">
@@ -1479,7 +1479,7 @@ const InvestmentReports: React.FC = () => {
                       ₹{formatCurrency(totalRenewedNewPrincipal)}
                     </td>
                     <td className="border border-slate-900 py-1 px-1"></td>
-                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-blue-950 bg-blue-100/50 border-l-2 border-l-slate-900">
+                    <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-black text-[#4A1410] bg-amber-100/50 border-l-2 border-l-slate-900">
                       ₹{formatCurrency(totalRenewedExpectedMaturity)}
                     </td>
                     <td className="border border-slate-900 py-1 px-1"></td>

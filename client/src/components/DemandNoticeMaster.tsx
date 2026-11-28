@@ -213,7 +213,7 @@ export default function DemandNoticeMaster() {
             <button 
               type="submit" 
               disabled={loading}
-              className="bg-primary hover:bg-[#004a75] text-white px-5 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50 flex items-center gap-1"
+              className="bg-primary hover:bg-[#7C2418] text-white px-5 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50 flex items-center gap-1"
             >
               <span>{loading ? 'प्रक्रिया चालू आहे...' : '⚡ डिमान्ड तयार करा (Generate Demand)'}</span>
             </button>
@@ -240,11 +240,11 @@ export default function DemandNoticeMaster() {
           <table className="w-full text-[11px] border-collapse">
             <thead>
               <tr className="bg-primary text-white font-medium">
-                <th className="px-2 py-1.5 border-r border-blue-400 text-center w-12">अ.क्र.</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 text-left">डिमान्ड नोटीस क्र.</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 text-left">संस्था / मालक नाव</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 text-center">महिना / वर्ष</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 text-right">एकूण डिमान्ड रक्कम (₹)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 text-center w-12">अ.क्र.</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 text-left">डिमान्ड नोटीस क्र.</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 text-left">संस्था / मालक नाव</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 text-center">महिना / वर्ष</th>
+                <th className="px-2 py-1.5 border-r border-amber-400 text-right">एकूण डिमान्ड रक्कम (₹)</th>
                 <th className="px-2 py-1.5 text-center">स्थिती (Status)</th>
               </tr>
             </thead>
@@ -257,7 +257,7 @@ export default function DemandNoticeMaster() {
                 </tr>
               ) : (
                 filteredNotices.map((dn, idx) => (
-                  <tr key={dn.demandNoticeId || idx} className="hover:bg-blue-50/50 transition-colors">
+                  <tr key={dn.demandNoticeId || idx} className="hover:bg-amber-50/50 transition-colors">
                     <td className="px-2 py-1 border-r border-gray-200 text-center text-gray-500">{idx + 1}</td>
                     <td className="px-2 py-1 border-r border-gray-200 text-left font-semibold text-primary">
                       {dn.noticeNumber}

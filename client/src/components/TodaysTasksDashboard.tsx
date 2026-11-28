@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { resolveWriteBranchId } from '../utils/branchAccess';
@@ -6,7 +6,6 @@ import {
   CreditCard,
   Building2,
   Calendar,
-  UserCheck,
   FileText,
   Wallet,
   AlertTriangle,
@@ -30,14 +29,12 @@ import {
   Lock,
   Users,
   FileCheck,
-  ExternalLink,
-  Clock,
-  Sparkles,
   TrendingUp,
   FolderCheck,
   Filter,
-  ChevronRight,
-  Printer
+  Printer,
+  List,
+  Layers
 } from 'lucide-react';
 import FdReceiptPrintModal from './FdReceiptPrintModal';
 
@@ -60,8 +57,10 @@ export interface TaskItem {
   entityId?: string;
   priority?: string;
   moduleName?: string;
+  sectionTitleMr?: string;
   createdOn?: string;
   roleName?: string;
+  canComplete?: boolean;
 }
 
 export interface TaskSection {
@@ -74,12 +73,33 @@ export interface TaskSection {
   count: number;
   totalAmount?: number;
   priority: 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
-  badgeColor: string;
-  accentBg: string;
+  accentColor: string;
   targetTab: string;
   roles: string[];
   items: TaskItem[];
 }
+
+const KNOWN_MODULES = new Set([
+  'vouchers',
+  'loans',
+  'loanapplications',
+  'fd',
+  'rd',
+  'shares',
+  'pigmy',
+  'npa',
+  'locker',
+  'system'
+]);
+
+const normalizeModule = (val?: string | null) => (val || '').trim().toLowerCase();
+
+const formatDateSafe = (val?: string | null, fallback = 'आज') => {
+  if (!val) return fallback;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return fallback;
+  return d.toLocaleDateString('en-GB');
+};
 
 export default function TodaysTasksDashboard({
   onNavigate,
@@ -88,7 +108,9 @@ export default function TodaysTasksDashboard({
   branchId: propBranchId
 }: TodaysTasksDashboardProps) {
   const { user, globalBranchId } = useAuth();
-  // 1. Resolve Effective Branch ID dynamically
+  const gridSectionRef = useRef<HTMLDivElement | null>(null);
+
+  // Resolve Effective Branch ID dynamically
   const effectiveBranchId = useMemo<number>(() => {
     if (propBranchId && propBranchId > 0) return propBranchId;
     return resolveWriteBranchId(user, globalBranchId);
@@ -101,24 +123,20 @@ export default function TodaysTasksDashboard({
   const [searchQuery, setSearchQuery] = useState('');
   const [gridModuleFilter, setGridModuleFilter] = useState<string>('ALL');
 
-  // Modal States
+  // Category List Modal State (Click any card/count -> view ALL items in scrollable table)
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [categorySearch, setCategorySearch] = useState('');
+
+  // Modal & Data States
   const [isModalOpen, setIsModalOpen] = useState(showLoginModal);
   const [liveNotifications, setLiveNotifications] = useState<any[]>([]);
   const [borrowingDueEmis, setBorrowingDueEmis] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>('');
   const [selectedItemDetails, setSelectedItemDetails] = useState<TaskItem | null>(null);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
-
-  // Executive KPI Stats State
-  const [stats, setStats] = useState({
-    totalPending: 0,
-    urgentTasks: 0,
-    highPriorityTasks: 0,
-    totalAmount: 0,
-    completedToday: 0,
-    completionRate: 0
-  });
+  const [completedTodayCount, setCompletedTodayCount] = useState<number>(0);
 
   // CBS Auto-Renewal State
   const [autoRenewalCandidates, setAutoRenewalCandidates] = useState<any[]>([]);
@@ -138,6 +156,11 @@ export default function TodaysTasksDashboard({
   const [revertReason, setRevertReason] = useState('');
   const [showRevertDialog, setShowRevertDialog] = useState<any | null>(null);
 
+  // Sync login modal prop
+  useEffect(() => {
+    setIsModalOpen(showLoginModal);
+  }, [showLoginModal]);
+
   // Toast auto-clear
   useEffect(() => {
     if (successToast) {
@@ -155,7 +178,7 @@ export default function TodaysTasksDashboard({
         params: { branchId: effectiveBranchId }
       });
       if (!isMountedRef || isMountedRef.current) {
-        setAutoRenewalCandidates(res.data || []);
+        setAutoRenewalCandidates(Array.isArray(res.data) ? res.data : []);
       }
     } catch (err) {
       console.error('Failed to load auto-renewal candidates:', err);
@@ -173,7 +196,7 @@ export default function TodaysTasksDashboard({
       const res = await axios.get('/api/FdAccounts/AutoRenewalLogs', {
         params: { branchId: effectiveBranchId }
       });
-      setRenewalLogs(res.data || []);
+      setRenewalLogs(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error('Failed to load auto-renewal logs:', err);
     } finally {
@@ -181,42 +204,23 @@ export default function TodaysTasksDashboard({
     }
   };
 
-  // Fetch KPI Stats
-  const fetchStats = async (isMountedRef?: { current: boolean }) => {
-    try {
-      const res = await axios.get('/api/Notification/stats', {
-        params: { branchId: effectiveBranchId }
-      });
-      if (!isMountedRef || isMountedRef.current) {
-        if (res.data) {
-          setStats({
-            totalPending: res.data.totalPending ?? 0,
-            urgentTasks: res.data.urgentTasks ?? res.data.urgentCount ?? 0,
-            highPriorityTasks: res.data.highPriorityTasks ?? res.data.highCount ?? 0,
-            totalAmount: res.data.totalAmount ?? 0,
-            completedToday: res.data.completedToday ?? 0,
-            completionRate: res.data.completionRate ?? res.data.progressPercentage ?? 0
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch notification stats:', err);
-    }
-  };
-
-  // Fetch Live System Notifications
-  const fetchLiveNotifications = async (isMountedRef?: { current: boolean }) => {
+  // Fetch Live System Notifications & Borrowing Due EMIs
+  const fetchLiveNotifications = async (isMountedRef?: { current: boolean }, forceRefresh = false) => {
     try {
       if (isMountedRef && !isMountedRef.current) return;
       setLoading(true);
+      setLoadError('');
 
       // Trigger automatic live sync from real operational tables first
-      await axios.post(`/api/Notification/generate?branchId=${effectiveBranchId}`).catch(() => {});
+      await axios
+        .post(`/api/Notification/generate`, null, {
+          params: { branchId: effectiveBranchId, force: forceRefresh }
+        })
+        .catch(() => {});
 
       if (isMountedRef && !isMountedRef.current) return;
 
-      // Fetch active notifications and upcoming/overdue Bank Borrowing EMIs in parallel
-      const [res, brwEmiRes] = await Promise.all([
+      const [notifRes, brwEmiRes, statsRes] = await Promise.all([
         axios.get('/api/Notification', {
           params: { branchId: effectiveBranchId, status: 'Active' }
         }),
@@ -224,17 +228,39 @@ export default function TodaysTasksDashboard({
           .get('/api/Borrowings/upcoming-emis', {
             params: { branchId: effectiveBranchId, days: 7 }
           })
-          .catch(() => ({ data: { items: [] } }))
+          .catch(() => ({ data: { items: [] } })),
+        axios
+          .get('/api/Notification/stats', {
+            params: { branchId: effectiveBranchId }
+          })
+          .catch(() => ({ data: null }))
       ]);
 
       if (!isMountedRef || isMountedRef.current) {
-        setLiveNotifications(res.data || []);
-        setBorrowingDueEmis(brwEmiRes.data?.items || []);
-      }
+        const rawNotifs = Array.isArray(notifRes.data)
+          ? notifRes.data
+          : Array.isArray(notifRes.data?.items)
+          ? notifRes.data.items
+          : [];
+        const rawEmis = Array.isArray(brwEmiRes.data?.items)
+          ? brwEmiRes.data.items
+          : Array.isArray(brwEmiRes.data)
+          ? brwEmiRes.data
+          : [];
 
-      await fetchStats(isMountedRef);
-    } catch (err) {
+        setLiveNotifications(rawNotifs);
+        setBorrowingDueEmis(rawEmis);
+        setCompletedTodayCount(Number(statsRes.data?.completedToday ?? 0));
+      }
+    } catch (err: any) {
       console.error('Error loading live notifications:', err);
+      if (!isMountedRef || isMountedRef.current) {
+        setLoadError(
+          err?.response?.data?.message ||
+            err?.message ||
+            'आजची कामे लोड करताना सर्व्हर त्रुटी आली. कृपया पुन्हा रीफ्रेश करा.'
+        );
+      }
     } finally {
       if (!isMountedRef || isMountedRef.current) {
         setLoading(false);
@@ -244,7 +270,7 @@ export default function TodaysTasksDashboard({
 
   useEffect(() => {
     const isMountedRef = { current: true };
-    fetchLiveNotifications(isMountedRef);
+    fetchLiveNotifications(isMountedRef, false);
     if (!showLoginModal) {
       fetchAutoRenewalData(isMountedRef);
       axios
@@ -269,7 +295,7 @@ export default function TodaysTasksDashboard({
     return () => {
       isMountedRef.current = false;
     };
-  }, [effectiveBranchId]);
+  }, [effectiveBranchId, showLoginModal]);
 
   // Run Batch Auto-Renewal
   const handleRunBatch = async (specificIds?: number[]) => {
@@ -287,11 +313,11 @@ export default function TodaysTasksDashboard({
         branchID: effectiveBranchId,
         processDate: new Date().toISOString(),
         specificAccountIDs: specificIds,
-        executedBy: 'Manager-EOD'
+        executedBy: user?.username || 'Manager-EOD'
       });
       setBatchResult(res.data);
       await fetchAutoRenewalData();
-      await fetchLiveNotifications();
+      await fetchLiveNotifications(undefined, true);
     } catch (err: any) {
       alert(
         'बॅच रन करताना त्रुटी आली: ' +
@@ -345,14 +371,14 @@ export default function TodaysTasksDashboard({
     try {
       const res = await axios.post(`/api/FdAccounts/${targetId}/RevertAutoRenewal`, {
         revertReason: revertReason.trim(),
-        revertedBy: 'Manager'
+        revertedBy: user?.username || 'Manager'
       });
       alert(res.data?.message || 'नूतनीकरण यशस्वीरीत्या रद्द केले.');
       setShowRevertDialog(null);
       setRevertReason('');
       await fetchRenewalLogs();
       await fetchAutoRenewalData();
-      await fetchLiveNotifications();
+      await fetchLiveNotifications(undefined, true);
     } catch (err: any) {
       alert(
         'रिव्हर्ट करताना त्रुटी आली: ' +
@@ -363,29 +389,22 @@ export default function TodaysTasksDashboard({
     }
   };
 
-  // Mark a task as completed directly with optimistic update
-  const handleCompleteTask = async (taskId: string, e?: React.MouseEvent) => {
+  // Mark a system notification as completed
+  const handleCompleteTask = async (item: TaskItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (item.canComplete === false || !/^\d+$/.test(item.id)) {
+      handleActionClick(item.targetTab || 'borrowing-repayment', item.entityId);
+      return;
+    }
     try {
-      setCompletingTaskId(taskId);
-      await axios.post(`/api/Notification/${taskId}/complete`);
+      setCompletingTaskId(item.id);
+      await axios.post(`/api/Notification/${item.id}/complete`);
 
-      // Optimistic update
-      setLiveNotifications(prev => prev.filter(n => n.notificationID.toString() !== taskId));
-      setStats(prev => ({
-        ...prev,
-        totalPending: Math.max(0, prev.totalPending - 1),
-        completedToday: prev.completedToday + 1,
-        completionRate:
-          prev.totalPending + prev.completedToday > 0
-            ? Math.round(
-                ((prev.completedToday + 1) / (prev.totalPending + prev.completedToday)) * 100
-              )
-            : 100
-      }));
-
+      setLiveNotifications(prev => prev.filter(n => String(n.notificationID) !== item.id));
+      setCompletedTodayCount(prev => prev + 1);
       setSuccessToast('काम यशस्वीरित्या पूर्ण म्हणून चिन्हांकित केले!');
-      if (selectedItemDetails?.id === taskId) {
+
+      if (selectedItemDetails?.id === item.id) {
         setSelectedItemDetails(null);
       }
     } catch (err: any) {
@@ -395,370 +414,450 @@ export default function TodaysTasksDashboard({
     }
   };
 
-  // Filter helper by module
-  const getNotificationsByModule = (moduleName: string) => {
-    return liveNotifications.filter((n: any) => n.moduleName === moduleName);
-  };
-
-  // BUILD THE 10 BANKING TASK SECTIONS (Fully Audited & Connected)
+  // Build ALL Banking Task Sections (Case-insensitive + Catch-All so ZERO notifications are ever dropped!)
   const taskSections = useMemo<TaskSection[]>(() => {
-    const voucherNotifs = getNotificationsByModule('Vouchers');
-    const loanNotifs = getNotificationsByModule('Loans');
-    const loanAppNotifs = getNotificationsByModule('LoanApplications');
-    const fdNotifs = getNotificationsByModule('FD');
-    const rdNotifs = getNotificationsByModule('RD');
-    const shareNotifs = getNotificationsByModule('Shares');
-    const pigmyNotifs = getNotificationsByModule('Pigmy');
-    const npaNotifs = getNotificationsByModule('NPA');
-    const lockerNotifs = getNotificationsByModule('Locker');
-    const systemNotifs = getNotificationsByModule('System');
+    const byMod = (modKey: string) =>
+      liveNotifications.filter((n: any) => normalizeModule(n.moduleName) === modKey.toLowerCase());
+
+    const voucherNotifs = byMod('Vouchers');
+    const loanNotifs = byMod('Loans');
+    const loanAppNotifs = byMod('LoanApplications');
+    const fdNotifs = byMod('FD');
+    const rdNotifs = byMod('RD');
+    const shareNotifs = byMod('Shares');
+    const pigmyNotifs = byMod('Pigmy');
+    const npaNotifs = byMod('NPA');
+    const lockerNotifs = byMod('Locker');
+    const systemNotifs = byMod('System');
+    const otherNotifs = liveNotifications.filter(
+      (n: any) => !KNOWN_MODULES.has(normalizeModule(n.moduleName))
+    );
 
     const sections: TaskSection[] = [
       {
         id: 'voucher-pending',
         titleMr: '१. व्हाउचर मंजुरी प्रलंबित',
-        titleEn: '1. Voucher Approval Pending',
+        titleEn: 'Voucher Approval Pending',
         category: 'Accounts',
         moduleKey: 'Vouchers',
         icon: FileText,
         count: voucherNotifs.length,
-        totalAmount: voucherNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
+        totalAmount: voucherNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
         priority: 'URGENT',
-        badgeColor: 'bg-orange-50 text-orange-800 border-orange-200',
-        accentBg: 'border-l-4 border-l-orange-500',
-        targetTab: 'vouchers',
+        accentColor: '#EA580C',
+        targetTab: 'voucher-posting',
         roles: ['MANAGER', 'CASHIER'],
         items: voucherNotifs.map(n => ({
-          id: n.notificationID.toString(),
-          accountNo: n.entityID ? `Vouch #${n.entityID}` : undefined,
-          memberName: n.title,
-          details: n.description,
-          amount: n.amount,
-          dueDate: n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-IN') : 'आज',
-          status: 'मेकर-चेकर पडताळणी प्रलंबित',
-          targetTab: 'vouchers',
-          entityId: n.entityID,
-          priority: n.priority,
+          id: String(n.notificationID),
+          accountNo: n.entityID ? `Voucher #${n.entityID}` : undefined,
+          memberName: n.title || 'प्रलंबित व्हाउचर',
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'आज'),
+          status: 'मेकर-चेकर पासिंग प्रलंबित',
+          targetTab: n.targetTab || 'voucher-posting',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'URGENT',
           moduleName: 'Vouchers',
-          roleName: n.roleName
+          sectionTitleMr: 'व्हाउचर मंजुरी',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'loan-recovery',
         titleMr: '२. कर्ज वसुली व हप्ते थकीत',
-        titleEn: '2. Loan Overdue & Recovery',
+        titleEn: 'Loan Overdue & Recovery',
         category: 'Loans',
         moduleKey: 'Loans',
         icon: CreditCard,
         count: loanNotifs.length,
-        totalAmount: loanNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
-        priority: loanNotifs.some(n => n.priority === 'URGENT' || n.priority === 'HIGH')
-          ? 'URGENT'
-          : 'HIGH',
-        badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
-        accentBg: 'border-l-4 border-l-rose-500',
+        totalAmount: loanNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
+        priority: loanNotifs.some(n => n.priority === 'URGENT') ? 'URGENT' : 'HIGH',
+        accentColor: '#E11D48',
         targetTab: 'loan-collection',
         roles: ['MANAGER', 'LOANS'],
         items: loanNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: n.entityID ? `कर्ज #${n.entityID}` : undefined,
-          memberName: n.title.replace(/^.+?-\s*/, ''),
-          details: n.description,
-          amount: n.amount,
-          dueDate: n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-IN') : 'आज',
+          memberName: (n.title || 'कर्जदार').replace(/^.+?-\s*/, ''),
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'आज'),
           status: n.priority === 'URGENT' ? 'तातडीने वसुली आवश्यक' : 'हप्ता थकीत',
-          targetTab: 'loan-collection',
-          entityId: n.entityID,
-          priority: n.priority,
+          targetTab: n.targetTab || 'loan-collection',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'HIGH',
           moduleName: 'Loans',
-          roleName: n.roleName
+          sectionTitleMr: 'कर्ज वसुली',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'loan-application',
         titleMr: '३. कर्ज मागणी अर्ज मंजुरी / वाटप',
-        titleEn: '3. Loan Sanction / Disbursement',
+        titleEn: 'Loan Sanction / Disbursement',
         category: 'Loans',
         moduleKey: 'LoanApplications',
         icon: FileCheck,
         count: loanAppNotifs.length,
-        totalAmount: loanAppNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
+        totalAmount: loanAppNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
         priority: 'HIGH',
-        badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-        accentBg: 'border-l-4 border-l-indigo-500',
+        accentColor: '#4F46E5',
         targetTab: 'loan-process',
         roles: ['MANAGER', 'LOANS'],
         items: loanAppNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: n.entityID ? `अर्ज #${n.entityID}` : undefined,
-          memberName: n.title.replace(/^.+?-\s*/, ''),
-          details: n.description,
-          amount: n.amount,
-          dueDate: n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-IN') : 'आज',
+          memberName: (n.title || 'अर्जदार').replace(/^.+?-\s*/, ''),
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'आज'),
           status: 'मंजुरी / कर्ज वाटप प्रलंबित',
-          targetTab: 'loan-process',
-          entityId: n.entityID,
-          priority: n.priority,
+          targetTab: n.targetTab || 'loan-process',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'HIGH',
           moduleName: 'LoanApplications',
-          roleName: n.roleName
+          sectionTitleMr: 'कर्ज मागणी अर्ज',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'fd-maturity',
         titleMr: '४. मुदत ठेव (FD) मुदतपूर्ती',
-        titleEn: '4. FD Maturity Due',
+        titleEn: 'FD Maturity Due',
         category: 'Deposits',
         moduleKey: 'FD',
         icon: Building2,
         count: fdNotifs.length,
-        totalAmount: fdNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
+        totalAmount: fdNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
         priority: 'HIGH',
-        badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
-        accentBg: 'border-l-4 border-l-blue-500',
+        accentColor: '#B44814',
         targetTab: 'fd-withdrawal',
         roles: ['MANAGER', 'DEPOSITS'],
         items: fdNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: n.entityID ? `FD #${n.entityID}` : undefined,
-          memberName: n.title.replace(/^.+?-\s*/, ''),
-          details: n.description,
-          amount: n.amount,
-          dueDate: n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-IN') : 'आज',
+          memberName: (n.title || 'ठेवीदार').replace(/^.+?-\s*/, ''),
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'आज'),
           status: 'परतावा / ऑटो-नूतनीकरण पात्र',
-          targetTab: 'fd-withdrawal',
-          entityId: n.entityID,
-          priority: n.priority,
+          targetTab: n.targetTab || 'fd-withdrawal',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'HIGH',
           moduleName: 'FD',
-          roleName: n.roleName
+          sectionTitleMr: 'मुदत ठेव (FD)',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'rd-due',
         titleMr: '५. आवर्ती ठेव (RD) थकीत हप्ते',
-        titleEn: '5. RD Installment Due',
+        titleEn: 'RD Installment Due',
         category: 'Deposits',
         moduleKey: 'RD',
         icon: Calendar,
         count: rdNotifs.length,
-        totalAmount: rdNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
+        totalAmount: rdNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
         priority: 'MEDIUM',
-        badgeColor: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-        accentBg: 'border-l-4 border-l-cyan-500',
+        accentColor: '#0891B2',
         targetTab: 'rd-collection',
         roles: ['DEPOSITS', 'CASHIER'],
         items: rdNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: n.entityID ? `RD #${n.entityID}` : undefined,
-          memberName: n.title.replace(/^.+?-\s*/, ''),
-          details: n.description,
-          amount: n.amount,
-          dueDate: n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-IN') : 'चालू महिना',
+          memberName: (n.title || 'आरडी खातेदार').replace(/^.+?-\s*/, ''),
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'चालू महिना'),
           status: 'मासिक हप्ता प्रलंबित',
-          targetTab: 'rd-collection',
-          entityId: n.entityID,
-          priority: n.priority,
+          targetTab: n.targetTab || 'rd-collection',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'MEDIUM',
           moduleName: 'RD',
-          roleName: n.roleName
+          sectionTitleMr: 'आवर्ती ठेव (RD)',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'share-allotment',
         titleMr: '६. शेअर्स व सभासदत्व वाटप',
-        titleEn: '6. Share & Membership Allotment',
+        titleEn: 'Share & Membership Allotment',
         category: 'Shares',
         moduleKey: 'Shares',
         icon: Users,
         count: shareNotifs.length,
-        totalAmount: shareNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
+        totalAmount: shareNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
         priority: 'HIGH',
-        badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
-        accentBg: 'border-l-4 border-l-amber-500',
+        accentColor: '#D97706',
         targetTab: 'share-master',
         roles: ['MANAGER', 'SHARES'],
         items: shareNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: n.entityID ? `सभासद #${n.entityID}` : undefined,
-          memberName: n.title,
-          details: n.description,
-          amount: n.amount,
-          dueDate: n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-IN') : 'आज',
-          status: 'संचालक मंडळ मंजुरी / भाग दाखला',
-          targetTab: 'share-master',
-          entityId: n.entityID,
-          priority: n.priority,
+          memberName: (n.title || 'सभासद').replace(/^.+?-\s*/, ''),
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'आज'),
+          status: 'मंजुरी / भाग दाखला बाकी',
+          targetTab: n.targetTab || 'share-master',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'HIGH',
           moduleName: 'Shares',
-          roleName: n.roleName
+          sectionTitleMr: 'शेअर्स व सभासदत्व',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'pigmy-pending',
         titleMr: '७. पिग्मी / दैनिक ठेव बॅच पोस्टिंग',
-        titleEn: '7. Pigmy Voucher Posting',
+        titleEn: 'Pigmy Voucher Posting',
         category: 'Pigmy',
         moduleKey: 'Pigmy',
         icon: Wallet,
         count: pigmyNotifs.length,
-        totalAmount: pigmyNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
+        totalAmount: pigmyNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
         priority: 'HIGH',
-        badgeColor: 'bg-teal-50 text-teal-800 border-teal-200',
-        accentBg: 'border-l-4 border-l-teal-500',
+        accentColor: '#059669',
         targetTab: 'pigmy-daybook',
         roles: ['CASHIER', 'MANAGER'],
         items: pigmyNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: n.entityID ? `एजंट #${n.entityID}` : undefined,
-          memberName: n.title,
-          details: n.description,
-          amount: n.amount,
-          dueDate: 'आज',
-          status: 'कॅशियर सिंक / व्हाउचर पोस्टिंग बाकी',
-          targetTab: 'pigmy-daybook',
-          entityId: n.entityID,
-          priority: n.priority,
+          memberName: (n.title || 'पिग्मी एजंट').replace(/^.+?-\s*/, ''),
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'आज'),
+          status: 'एजंट भरणा / व्हाउचर पोस्टिंग बाकी',
+          targetTab: n.targetTab || 'pigmy-daybook',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'HIGH',
           moduleName: 'Pigmy',
-          roleName: n.roleName
+          sectionTitleMr: 'पिग्मी डे-बुक',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'npa-alert',
-        titleMr: '८. एन.पी.ए. (NPA) तातडीची नोटीस / वसुली',
-        titleEn: '8. NPA Recovery & Notices',
+        titleMr: '८. एन.पी.ए. (NPA) तातडीची वसुली',
+        titleEn: 'NPA Recovery & Notices',
         category: 'Audit',
         moduleKey: 'NPA',
         icon: AlertTriangle,
         count: npaNotifs.length,
-        totalAmount: npaNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
+        totalAmount: npaNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
         priority: 'URGENT',
-        badgeColor: 'bg-rose-50 text-rose-800 border-rose-200',
-        accentBg: 'border-l-4 border-l-red-600',
+        accentColor: '#DC2626',
         targetTab: 'npa-dashboard',
         roles: ['MANAGER', 'LOANS'],
         items: npaNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: n.entityID ? `खाते #${n.entityID}` : undefined,
-          memberName: n.title,
-          details: n.description,
-          amount: n.amount,
+          memberName: (n.title || 'NPA खाते').replace(/^.+?-\s*/, ''),
+          details: n.description || '',
+          amount: Number(n.amount || 0),
           dueDate: 'अति तातडीचे',
           status: 'कलम १०१ / कायदेशीर नोटीस',
-          targetTab: 'npa-dashboard',
-          entityId: n.entityID,
+          targetTab: n.targetTab || 'npa-dashboard',
+          entityId: n.entityID ? String(n.entityID) : undefined,
           priority: 'URGENT',
           moduleName: 'NPA',
-          roleName: n.roleName
+          sectionTitleMr: 'एन.पी.ए. (NPA)',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'locker-renewal',
         titleMr: '९. लॉकर भाडे नूतनीकरण थकीत',
-        titleEn: '9. Locker Rent Renewal Due',
+        titleEn: 'Locker Rent Renewal Due',
         category: 'Locker',
         moduleKey: 'Locker',
         icon: Lock,
         count: lockerNotifs.length,
-        totalAmount: lockerNotifs.reduce((acc, item) => acc + (item.amount || 0), 0),
+        totalAmount: lockerNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
         priority: 'MEDIUM',
-        badgeColor: 'bg-violet-50 text-violet-800 border-violet-200',
-        accentBg: 'border-l-4 border-l-violet-500',
+        accentColor: '#7C3AED',
         targetTab: 'locker-rent-renewal',
         roles: ['MANAGER', 'LOCKER', 'CASHIER'],
         items: lockerNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: n.entityID ? `लॉकर #${n.entityID}` : undefined,
-          memberName: n.title,
-          details: n.description,
-          amount: n.amount,
-          dueDate: n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-IN') : 'चालू मुदत',
+          memberName: (n.title || 'लॉकर धारक').replace(/^.+?-\s*/, ''),
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'चालू मुदत'),
           status: 'वार्षिक भाडे जमा करणे बाकी',
-          targetTab: 'locker-rent-renewal',
-          entityId: n.entityID,
-          priority: n.priority,
+          targetTab: n.targetTab || 'locker-rent-renewal',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'MEDIUM',
           moduleName: 'Locker',
-          roleName: n.roleName
+          sectionTitleMr: 'लॉकर भाडे',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'day-end-alert',
         titleMr: '१०. दिवस अखेर (Day-End Status)',
-        titleEn: '10. Day End Close Status',
+        titleEn: 'Day End Close Status',
         category: 'System',
         moduleKey: 'System',
         icon: Moon,
         count: systemNotifs.length,
+        totalAmount: 0,
         priority: 'URGENT',
-        badgeColor: 'bg-purple-50 text-purple-800 border-purple-200',
-        accentBg: 'border-l-4 border-l-purple-600',
+        accentColor: '#6D28D9',
         targetTab: 'day-end',
         roles: ['MANAGER', 'CASHIER'],
         items: systemNotifs.map(n => ({
-          id: n.notificationID.toString(),
+          id: String(n.notificationID),
           accountNo: 'शाखा दिवस अखेर',
-          memberName: n.title,
-          details: n.description,
+          memberName: n.title || 'दिवस अखेर इशारा',
+          details: n.description || '',
           dueDate: 'आज संध्याकाळी',
           status: 'डे-एंड प्रक्रिया बाकी',
-          targetTab: 'day-end',
-          entityId: n.entityID,
+          targetTab: n.targetTab || 'day-end',
+          entityId: n.entityID ? String(n.entityID) : undefined,
           priority: 'URGENT',
           moduleName: 'System',
-          roleName: n.roleName
+          sectionTitleMr: 'दिवस अखेर (EOD)',
+          roleName: n.roleName,
+          canComplete: true
         }))
       },
       {
         id: 'borrowing-emi-due',
         titleMr: '११. बाह्य कर्ज देय व थकीत हप्ते',
-        titleEn: '11. Bank Borrowing EMIs Due',
+        titleEn: 'Bank Borrowing EMIs Due',
         category: 'Borrowings',
         moduleKey: 'Borrowings',
         icon: Building2,
         count: borrowingDueEmis.length,
         totalAmount: borrowingDueEmis.reduce((acc, item) => acc + Number(item.totalDue || 0), 0),
         priority: borrowingDueEmis.some(x => x.isOverdue) ? 'URGENT' : 'HIGH',
-        badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
-        accentBg: 'border-l-4 border-l-amber-600',
+        accentColor: '#B45309',
         targetTab: 'borrowing-repayment',
         roles: ['MANAGER', 'CASHIER', 'LOANS'],
         items: borrowingDueEmis.map((b: any) => ({
           id: `brw-emi-${b.scheduleID || b.borrowingID}`,
-          accountNo: `${b.borrowingNo} (हप्ता #${b.installmentNo})`,
-          memberName: b.lenderName,
+          accountNo: `${b.borrowingNo || `BRW #${b.borrowingID}`} (हप्ता #${b.installmentNo || 1})`,
+          memberName: b.lenderName || 'बाह्य बँक / पतसंस्था',
           details: `मुद्दल: ₹${Number(b.principalDue || 0).toLocaleString('en-IN')} + व्याज: ₹${Number(b.interestDue || 0).toLocaleString('en-IN')}${b.externalLoanAccountNo ? ` • A/c: ${b.externalLoanAccountNo}` : ''}`,
           amount: Number(b.totalDue || 0),
-          dueDate: b.dueDate ? new Date(b.dueDate).toLocaleDateString('en-IN') : 'आज',
-          status: b.isOverdue ? `${b.overdueDays} दिवस थकीत!` : b.daysRemaining === 0 ? 'आज देय आहे' : `${b.daysRemaining} दिवसांत देय`,
+          dueDate: formatDateSafe(b.dueDate, 'आज'),
+          status: b.isOverdue
+            ? `${b.overdueDays} दिवस थकीत!`
+            : b.daysRemaining === 0
+            ? 'आज देय आहे'
+            : `${b.daysRemaining} दिवसांत देय`,
           targetTab: 'borrowing-repayment',
           entityId: String(b.borrowingID),
           priority: b.isOverdue ? 'URGENT' : 'HIGH',
           moduleName: 'Borrowings',
-          roleName: 'MANAGER'
+          sectionTitleMr: 'बाह्य कर्ज हप्ते',
+          roleName: 'MANAGER',
+          canComplete: false
         }))
       }
     ];
 
+    // Catch-all section so NO active DB notification is ever hidden from the list!
+    if (otherNotifs.length > 0) {
+      sections.push({
+        id: 'other-alerts',
+        titleMr: '१२. इतर प्रलंबित कामे व सूचना',
+        titleEn: 'Other Operational Alerts',
+        category: 'Other',
+        moduleKey: 'Other',
+        icon: Layers,
+        count: otherNotifs.length,
+        totalAmount: otherNotifs.reduce((acc, item) => acc + Number(item.amount || 0), 0),
+        priority: otherNotifs.some(n => n.priority === 'URGENT') ? 'URGENT' : 'MEDIUM',
+        accentColor: '#0284C7',
+        targetTab: 'dashboard',
+        roles: ['MANAGER', 'CASHIER', 'LOANS', 'DEPOSITS', 'SHARES', 'LOCKER'],
+        items: otherNotifs.map(n => ({
+          id: String(n.notificationID),
+          accountNo: n.entityID ? `${n.moduleName || 'Task'} #${n.entityID}` : n.moduleName || undefined,
+          memberName: n.title || 'प्रलंबित काम',
+          details: n.description || '',
+          amount: Number(n.amount || 0),
+          dueDate: formatDateSafe(n.dueDate, 'आज'),
+          status: 'प्रलंबित',
+          targetTab: n.targetTab || 'dashboard',
+          entityId: n.entityID ? String(n.entityID) : undefined,
+          priority: n.priority || 'MEDIUM',
+          moduleName: n.moduleName || 'Other',
+          sectionTitleMr: n.moduleName || 'इतर कामे',
+          roleName: n.roleName,
+          canComplete: true
+        }))
+      });
+    }
+
     return sections;
   }, [liveNotifications, borrowingDueEmis]);
+
+  // Exact Live KPI Stats derived directly from loaded taskSections (100% Parity with Lists!)
+  const liveStats = useMemo(() => {
+    const allItems = taskSections.flatMap(s => s.items);
+    const totalPending = allItems.length;
+    const urgentTasks = allItems.filter(i => i.priority === 'URGENT').length;
+    const highPriorityTasks = allItems.filter(i => i.priority === 'HIGH').length;
+    const totalAmount = allItems.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    const totalToday = totalPending + completedTodayCount;
+    const completionRate = totalToday > 0 ? Math.round((completedTodayCount / totalToday) * 100) : 100;
+
+    return {
+      totalPending,
+      urgentTasks,
+      highPriorityTasks,
+      totalAmount,
+      completedToday: completedTodayCount,
+      completionRate
+    };
+  }, [taskSections, completedTodayCount]);
 
   // Apply Role & Priority Filters
   const filteredSections = useMemo(() => {
     return taskSections.filter(section => {
-      // Role filter
       if (roleFilter !== 'ALL' && !section.roles.includes(roleFilter)) {
         return false;
       }
-      // Priority filter
-      if (selectedFilter === 'URGENT') return section.priority === 'URGENT';
-      if (selectedFilter === 'HIGH')
-        return section.priority === 'HIGH' || section.priority === 'URGENT';
+      if (selectedFilter === 'URGENT') {
+        return section.priority === 'URGENT' || section.items.some(i => i.priority === 'URGENT');
+      }
+      if (selectedFilter === 'HIGH') {
+        return (
+          section.priority === 'HIGH' ||
+          section.priority === 'URGENT' ||
+          section.items.some(i => i.priority === 'HIGH' || i.priority === 'URGENT')
+        );
+      }
       return true;
     });
   }, [taskSections, roleFilter, selectedFilter]);
 
-  // Flattened items for the Grid Table View
+  // Flattened items for Unified Grid Table View
   const allFilteredGridItems = useMemo(() => {
     let items: TaskItem[] = [];
     filteredSections.forEach(sec => {
       if (gridModuleFilter === 'ALL' || sec.moduleKey === gridModuleFilter) {
-        items = items.concat(sec.items);
+        let secItems = sec.items;
+        if (selectedFilter === 'URGENT') {
+          secItems = secItems.filter(i => i.priority === 'URGENT');
+        } else if (selectedFilter === 'HIGH') {
+          secItems = secItems.filter(i => i.priority === 'URGENT' || i.priority === 'HIGH');
+        }
+        items = items.concat(secItems);
       }
     });
 
@@ -766,13 +865,43 @@ export default function TodaysTasksDashboard({
       const q = searchQuery.toLowerCase().trim();
       items = items.filter(
         item =>
-          item.memberName.toLowerCase().includes(q) ||
-          item.details.toLowerCase().includes(q) ||
-          (item.accountNo && item.accountNo.toLowerCase().includes(q))
+          (item.memberName || '').toLowerCase().includes(q) ||
+          (item.details || '').toLowerCase().includes(q) ||
+          (item.accountNo || '').toLowerCase().includes(q) ||
+          (item.sectionTitleMr || '').toLowerCase().includes(q)
       );
     }
     return items;
-  }, [filteredSections, gridModuleFilter, searchQuery]);
+  }, [filteredSections, gridModuleFilter, selectedFilter, searchQuery]);
+
+  // Active Category Modal Section
+  const activeCategorySection = useMemo(() => {
+    if (!activeCategoryId) return null;
+    return taskSections.find(s => s.id === activeCategoryId) || null;
+  }, [activeCategoryId, taskSections]);
+
+  const activeCategoryFilteredItems = useMemo(() => {
+    if (!activeCategorySection) return [];
+    if (!categorySearch.trim()) return activeCategorySection.items;
+    const q = categorySearch.toLowerCase().trim();
+    return activeCategorySection.items.filter(
+      item =>
+        (item.memberName || '').toLowerCase().includes(q) ||
+        (item.details || '').toLowerCase().includes(q) ||
+        (item.accountNo || '').toLowerCase().includes(q)
+    );
+  }, [activeCategorySection, categorySearch]);
+
+  // Open Grid View smoothly with optional preset filters
+  const openGridWithFilter = (opts?: { moduleKey?: string; priority?: 'ALL' | 'URGENT' | 'HIGH' }) => {
+    setRoleFilter('ALL');
+    setGridModuleFilter(opts?.moduleKey ?? 'ALL');
+    setSelectedFilter(opts?.priority ?? 'ALL');
+    setViewMode('GRID');
+    setTimeout(() => {
+      gridSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  };
 
   // Navigate to Target Action
   const handleActionClick = (targetTab: string, entityId?: string) => {
@@ -794,559 +923,533 @@ export default function TodaysTasksDashboard({
     return `₹ ${Number(val).toLocaleString('en-IN')}`;
   };
 
-  const getSectionShade = (sectionId: string) => {
-    switch (sectionId) {
-      case 'voucher-pending':
-        return {
-          cardBorder: 'border-orange-200/90 hover:border-orange-300',
-          headerBg: 'bg-gradient-to-r from-orange-50 via-amber-50/70 to-orange-50/40 border-b border-orange-200/80',
-          iconBox: 'bg-orange-100/90 text-orange-700 border border-orange-200',
-          subtitle: 'text-orange-700/80',
-          countBadge: 'bg-orange-100 text-orange-800 border-orange-300',
-          totalBar: 'bg-orange-50/70 border-orange-200/70 text-orange-800',
-          itemCard: 'bg-orange-50/30 border-orange-100 hover:border-orange-300',
-          itemBadge: 'bg-orange-50 text-orange-800 border-orange-200',
-          moreBadge: 'bg-orange-50/80 border-orange-200 text-orange-800',
-          actionBtn: 'bg-orange-50 hover:bg-orange-100/90 text-orange-900 border border-orange-300'
-        };
-      case 'loan-recovery':
-        return {
-          cardBorder: 'border-rose-200/90 hover:border-rose-300',
-          headerBg: 'bg-gradient-to-r from-rose-50 via-pink-50/70 to-rose-50/40 border-b border-rose-200/80',
-          iconBox: 'bg-rose-100/90 text-rose-700 border border-rose-200',
-          subtitle: 'text-rose-700/80',
-          countBadge: 'bg-rose-100 text-rose-800 border-rose-300',
-          totalBar: 'bg-rose-50/70 border-rose-200/70 text-rose-800',
-          itemCard: 'bg-rose-50/30 border-rose-100 hover:border-rose-300',
-          itemBadge: 'bg-rose-50 text-rose-800 border-rose-200',
-          moreBadge: 'bg-rose-50/80 border-rose-200 text-rose-800',
-          actionBtn: 'bg-rose-50 hover:bg-rose-100/90 text-rose-900 border border-rose-300'
-        };
-      case 'loan-application':
-        return {
-          cardBorder: 'border-indigo-200/90 hover:border-indigo-300',
-          headerBg: 'bg-gradient-to-r from-indigo-50 via-blue-50/70 to-indigo-50/40 border-b border-indigo-200/80',
-          iconBox: 'bg-indigo-100/90 text-indigo-700 border border-indigo-200',
-          subtitle: 'text-indigo-700/80',
-          countBadge: 'bg-indigo-100 text-indigo-800 border-indigo-300',
-          totalBar: 'bg-indigo-50/70 border-indigo-200/70 text-indigo-800',
-          itemCard: 'bg-indigo-50/30 border-indigo-100 hover:border-indigo-300',
-          itemBadge: 'bg-indigo-50 text-indigo-800 border-indigo-200',
-          moreBadge: 'bg-indigo-50/80 border-indigo-200 text-indigo-800',
-          actionBtn: 'bg-indigo-50 hover:bg-indigo-100/90 text-indigo-900 border border-indigo-300'
-        };
-      case 'fd-maturity':
-        return {
-          cardBorder: 'border-sky-200/90 hover:border-sky-300',
-          headerBg: 'bg-gradient-to-r from-sky-50 via-blue-50/70 to-sky-50/40 border-b border-sky-200/80',
-          iconBox: 'bg-sky-100/90 text-sky-700 border border-sky-200',
-          subtitle: 'text-sky-700/80',
-          countBadge: 'bg-sky-100 text-sky-800 border-sky-300',
-          totalBar: 'bg-sky-50/70 border-sky-200/70 text-sky-800',
-          itemCard: 'bg-sky-50/30 border-sky-100 hover:border-sky-300',
-          itemBadge: 'bg-sky-50 text-sky-800 border-sky-200',
-          moreBadge: 'bg-sky-50/80 border-sky-200 text-sky-800',
-          actionBtn: 'bg-sky-50 hover:bg-sky-100/90 text-sky-900 border border-sky-300'
-        };
-      case 'rd-due':
-        return {
-          cardBorder: 'border-teal-200/90 hover:border-teal-300',
-          headerBg: 'bg-gradient-to-r from-teal-50 via-cyan-50/70 to-teal-50/40 border-b border-teal-200/80',
-          iconBox: 'bg-teal-100/90 text-teal-700 border border-teal-200',
-          subtitle: 'text-teal-700/80',
-          countBadge: 'bg-teal-100 text-teal-800 border-teal-300',
-          totalBar: 'bg-teal-50/70 border-teal-200/70 text-teal-800',
-          itemCard: 'bg-teal-50/30 border-teal-100 hover:border-teal-300',
-          itemBadge: 'bg-teal-50 text-teal-800 border-teal-200',
-          moreBadge: 'bg-teal-50/80 border-teal-200 text-teal-800',
-          actionBtn: 'bg-teal-50 hover:bg-teal-100/90 text-teal-900 border border-teal-300'
-        };
-      case 'share-allotment':
-        return {
-          cardBorder: 'border-amber-200/90 hover:border-amber-300',
-          headerBg: 'bg-gradient-to-r from-amber-50 via-yellow-50/70 to-amber-50/40 border-b border-amber-200/80',
-          iconBox: 'bg-amber-100/90 text-amber-700 border border-amber-200',
-          subtitle: 'text-amber-700/80',
-          countBadge: 'bg-amber-100 text-amber-800 border-amber-300',
-          totalBar: 'bg-amber-50/70 border-amber-200/70 text-amber-800',
-          itemCard: 'bg-amber-50/30 border-amber-100 hover:border-amber-300',
-          itemBadge: 'bg-amber-50 text-amber-800 border-amber-200',
-          moreBadge: 'bg-amber-50/80 border-amber-200 text-amber-800',
-          actionBtn: 'bg-amber-50 hover:bg-amber-100/90 text-amber-900 border border-amber-300'
-        };
-      case 'pigmy-pending':
-        return {
-          cardBorder: 'border-emerald-200/90 hover:border-emerald-300',
-          headerBg: 'bg-gradient-to-r from-emerald-50 via-green-50/70 to-emerald-50/40 border-b border-emerald-200/80',
-          iconBox: 'bg-emerald-100/90 text-emerald-700 border border-emerald-200',
-          subtitle: 'text-emerald-700/80',
-          countBadge: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-          totalBar: 'bg-emerald-50/70 border-emerald-200/70 text-emerald-800',
-          itemCard: 'bg-emerald-50/30 border-emerald-100 hover:border-emerald-300',
-          itemBadge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-          moreBadge: 'bg-emerald-50/80 border-emerald-200 text-emerald-800',
-          actionBtn: 'bg-emerald-50 hover:bg-emerald-100/90 text-emerald-900 border border-emerald-300'
-        };
-      case 'npa-alert':
-        return {
-          cardBorder: 'border-red-200/90 hover:border-red-300',
-          headerBg: 'bg-gradient-to-r from-red-50 via-rose-50/70 to-red-50/40 border-b border-red-200/80',
-          iconBox: 'bg-red-100/90 text-red-700 border border-red-200',
-          subtitle: 'text-red-700/80',
-          countBadge: 'bg-red-100 text-red-800 border-red-300',
-          totalBar: 'bg-red-50/70 border-red-200/70 text-red-800',
-          itemCard: 'bg-red-50/30 border-red-100 hover:border-red-300',
-          itemBadge: 'bg-red-50 text-red-800 border-red-200',
-          moreBadge: 'bg-red-50/80 border-red-200 text-red-800',
-          actionBtn: 'bg-red-50 hover:bg-red-100/90 text-red-900 border border-red-300'
-        };
-      case 'locker-renewal':
-        return {
-          cardBorder: 'border-violet-200/90 hover:border-violet-300',
-          headerBg: 'bg-gradient-to-r from-violet-50 via-purple-50/70 to-violet-50/40 border-b border-violet-200/80',
-          iconBox: 'bg-violet-100/90 text-violet-700 border border-violet-200',
-          subtitle: 'text-violet-700/80',
-          countBadge: 'bg-violet-100 text-violet-800 border-violet-300',
-          totalBar: 'bg-violet-50/70 border-violet-200/70 text-violet-800',
-          itemCard: 'bg-violet-50/30 border-violet-100 hover:border-violet-300',
-          itemBadge: 'bg-violet-50 text-violet-800 border-violet-200',
-          moreBadge: 'bg-violet-50/80 border-violet-200 text-violet-800',
-          actionBtn: 'bg-violet-50 hover:bg-violet-100/90 text-violet-900 border border-violet-300'
-        };
-      default:
-        return {
-          cardBorder: 'border-purple-200/90 hover:border-purple-300',
-          headerBg: 'bg-gradient-to-r from-purple-50 via-fuchsia-50/70 to-purple-50/40 border-b border-purple-200/80',
-          iconBox: 'bg-purple-100/90 text-purple-700 border border-purple-200',
-          subtitle: 'text-purple-700/80',
-          countBadge: 'bg-purple-100 text-purple-800 border-purple-300',
-          totalBar: 'bg-purple-50/70 border-purple-200/70 text-purple-800',
-          itemCard: 'bg-purple-50/30 border-purple-100 hover:border-purple-300',
-          itemBadge: 'bg-purple-50 text-purple-800 border-purple-200',
-          moreBadge: 'bg-purple-50/80 border-purple-200 text-purple-800',
-          actionBtn: 'bg-purple-50 hover:bg-purple-100/90 text-purple-900 border border-purple-300'
-        };
+  const renderPriorityPill = (priority?: string) => {
+    if (priority === 'URGENT') {
+      return (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 text-[9.5px] font-bold">
+          अति तातडीचे
+        </span>
+      );
     }
+    if (priority === 'HIGH') {
+      return (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 text-[9.5px] font-bold">
+          महत्त्वाचे
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-orange-100 text-[#9A3412] border border-orange-200 text-[9.5px] font-bold">
+        नियमित
+      </span>
+    );
   };
 
   return (
-    <div className={showLoginModal ? 'font-sans' : 'p-2.5 max-w-full h-full flex flex-col bg-slate-50/80 text-[11px] font-sans relative overflow-y-auto'}>
+    <div
+      className={
+        showLoginModal
+          ? 'font-sans'
+          : 'min-h-full w-full p-2.5 sm:p-3.5 text-[11px] font-sans relative'
+      }
+      style={
+        showLoginModal
+          ? undefined
+          : {
+              background:
+                'radial-gradient(circle at 12% 10%, #FDE8E1 0%, rgba(253,232,225,0) 45%), radial-gradient(circle at 88% 12%, #FDE6C4 0%, rgba(253,230,196,0) 44%), radial-gradient(circle at 78% 85%, #FCD9B6 0%, rgba(252,217,182,0) 44%), linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 46%, #FEF3E2 82%, #FCE3BE 100%)'
+            }
+      }
+    >
       {/* Toast Notification */}
       {successToast && (
-        <div className="fixed bottom-5 right-5 z-50 bg-emerald-50 text-emerald-900 border border-emerald-300 px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 text-xs font-semibold animate-bounce">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+        <div className="fixed bottom-5 right-5 z-50 bg-emerald-600 text-white border border-emerald-400 px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold">
+          <CheckCircle2 className="w-4 h-4 text-emerald-100" />
           <span>{successToast}</span>
         </div>
       )}
 
-      {/* Main Container */}
+      {/* Main Dashboard Container (NO overflow-hidden or h-full scroll trap!) */}
       {!showLoginModal && (
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200/90 overflow-hidden flex flex-col mb-4">
-        {/* ========================================================
-            HERO HEADER BANNER (Core Banking Command Center)
-           ======================================================== */}
-        <div className="bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-sky-50/90 border-b border-emerald-200/80 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-100/90 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-sm">
-              <FolderCheck className="w-4 h-4 text-emerald-700" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xs md:text-sm font-black tracking-wide text-slate-800 flex items-center gap-1.5">
-                  <span>आजची कामे डॅशबोर्ड (Core Banking Operations Command Center)</span>
-                </h2>
-                <span className="bg-emerald-100/90 text-emerald-800 border border-emerald-300 text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  डेटाबेस लाईव्ह
-                </span>
-                <span className="bg-sky-100/80 text-sky-800 border border-sky-200 text-[9px] font-bold px-2 py-0.5 rounded-full">
-                  शाखा #{effectiveBranchId}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-600 hidden sm:block">
-                दैनंदिन व्यवहार, प्रलंबित मंजुऱ्या, मुदतपूर्ती व कायदेशीर वसुली नियंत्रण कक्ष
-              </p>
-            </div>
-          </div>
-
-          {/* Top Controls: Refresh, View Mode Switch, Notifications Modal */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* View Mode Switcher */}
-            <div className="inline-flex rounded-md bg-white/90 p-0.5 border border-emerald-200 text-xs shadow-sm">
-              <button
-                type="button"
-                onClick={() => setViewMode('CARDS')}
-                className={`px-2 py-1 rounded flex items-center gap-1 text-[11px] font-bold transition-all cursor-pointer ${
-                  viewMode === 'CARDS'
-                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-sm'
-                    : 'text-slate-600 hover:bg-emerald-50/70'
-                }`}
-                title="१० विभागवार कार्ड्स दृश्य"
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span>कार्ड दृश्य</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('GRID')}
-                className={`px-2 py-1 rounded flex items-center gap-1 text-[11px] font-bold transition-all cursor-pointer ${
-                  viewMode === 'GRID'
-                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-sm'
-                    : 'text-slate-600 hover:bg-emerald-50/70'
-                }`}
-                title="सर्व प्रलंबित कामांची तपशीलवार यादी"
-              >
-                <ListFilter className="w-3.5 h-3.5" />
-                <span>तपशीलवार ग्रिड</span>
-              </button>
-            </div>
-
-            {/* Refresh Button */}
-            <button
-              type="button"
-              onClick={() => {
-                fetchLiveNotifications();
-                fetchAutoRenewalData();
-              }}
-              disabled={loading}
-              className="px-2.5 py-1 rounded bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200 shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-              title="डेटाबेसमधून कामांची ताजी स्थिती पुन्हा तपासा"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>रीफ्रेश</span>
-            </button>
-
-            {/* Pop-up modal opener */}
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(true)}
-              className="px-2.5 py-1 rounded bg-sky-100/90 hover:bg-sky-200/80 text-sky-900 border border-sky-300 text-xs font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer"
-            >
-              <Bell className="w-3.5 h-3.5 text-sky-700" />
-              <span>सूचना विंडो</span>
-            </button>
-          </div>
-        </div>
-
-        {/* ========================================================
-            EXECUTIVE KPI SUMMARY METRIC CARDS (शीर्ष सारांश - ५ निर्देशक)
-           ======================================================== */}
-        <div className="bg-slate-50/70 border-b border-slate-200/80 p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-          {/* 1. Total Pending */}
-          <div className="bg-gradient-to-br from-sky-50/90 via-white to-sky-50/40 p-2.5 rounded-md border border-sky-200/80 shadow-sm flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-sky-100/80 border border-sky-200 flex items-center justify-center text-sky-700 shrink-0">
-              <FolderCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-[10px] text-sky-800/80 font-semibold">एकूण प्रलंबित कामे</div>
-              <div className="text-base font-black text-slate-800 leading-tight">
-                {stats.totalPending}{' '}
-                <span className="text-[10px] font-normal text-slate-500">नोंदी</span>
-              </div>
-            </div>
-          </div>
-
-          {/* 2. Urgent / High Priority */}
-          <div className="bg-gradient-to-br from-rose-50/90 via-white to-rose-50/40 p-2.5 rounded-md border border-rose-200/80 shadow-sm flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-rose-100/80 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
-              <AlertTriangle className="w-4 h-4 animate-pulse" />
-            </div>
-            <div>
-              <div className="text-[10px] text-rose-700 font-semibold">अति तातडीची कामे</div>
-              <div className="text-base font-black text-rose-700 leading-tight">
-                {stats.urgentTasks + stats.highPriorityTasks}{' '}
-                <span className="text-[10px] font-normal text-rose-500">तातडीने</span>
-              </div>
-            </div>
-          </div>
-
-          {/* 3. Total Amount */}
-          <div className="bg-gradient-to-br from-emerald-50/90 via-white to-emerald-50/40 p-2.5 rounded-md border border-emerald-200/80 shadow-sm flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-emerald-100/80 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div className="overflow-hidden">
-              <div className="text-[10px] text-emerald-800/80 font-semibold">एकूण थकीत / मुदत रक्कम</div>
-              <div className="text-sm font-black text-emerald-700 leading-tight truncate">
-                ₹ {Number(stats.totalAmount).toLocaleString('en-IN')}
-              </div>
-            </div>
-          </div>
-
-          {/* 4. Completed Today */}
-          <div className="bg-gradient-to-br from-teal-50/90 via-white to-teal-50/40 p-2.5 rounded-md border border-teal-200/80 shadow-sm flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-teal-100/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0">
-              <CheckCircle className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-[10px] text-teal-800/80 font-semibold">आज पूर्ण झालेली कामे</div>
-              <div className="text-base font-black text-teal-800 leading-tight">
-                {stats.completedToday}{' '}
-                <span className="text-[10px] font-normal text-slate-500">पूर्ण</span>
-              </div>
-            </div>
-          </div>
-
-          {/* 5. Progress Bar */}
-          <div className="bg-gradient-to-br from-indigo-50/80 via-white to-sky-50/40 p-2.5 rounded-md border border-indigo-200/80 shadow-sm col-span-2 sm:col-span-1 flex flex-col justify-center">
-            <div className="flex justify-between items-center text-[10px] font-bold mb-1">
-              <span className="text-indigo-900/80">दैनिक कामे पूर्णता प्रगती</span>
-              <span className="text-indigo-700 font-black">{stats.completionRate}%</span>
-            </div>
-            <div className="w-full bg-indigo-100/60 rounded-full h-2 overflow-hidden border border-indigo-200/70">
-              <div
-                className="bg-gradient-to-r from-sky-400 to-emerald-400 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, Math.max(0, stats.completionRate))}%` }}
-              ></div>
-            </div>
-            <div className="text-[9px] text-slate-500 mt-1 flex justify-between">
-              <span>०%</span>
-              <span>लक्ष्य १००%</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ========================================================
-            ROLE-BASED TABS & QUICK PRIORITY FILTER BAR
-           ======================================================== */}
-        <div className="px-3 py-2 bg-gradient-to-r from-slate-50 via-emerald-50/30 to-sky-50/30 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
-          {/* Role Tabs */}
-          <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-            <span className="text-[10px] font-bold text-slate-600 mr-1 flex items-center gap-0.5">
-              <Filter className="w-3 h-3 text-emerald-600" /> विभाग:
-            </span>
-            {[
-              { key: 'ALL', label: 'सर्व कामे' },
-              { key: 'MANAGER', label: 'व्यवस्थापक (Manager)' },
-              { key: 'CASHIER', label: 'कॅशियर (Cashier)' },
-              { key: 'LOANS', label: 'कर्ज विभाग (Loans)' },
-              { key: 'DEPOSITS', label: 'ठेव विभाग (Deposits)' },
-              { key: 'SHARES', label: 'शेअर्स विभाग (Shares)' },
-              { key: 'LOCKER', label: 'लॉकर विभाग (Locker)' }
-            ].map(tab => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setRoleFilter(tab.key as any)}
-                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                  roleFilter === tab.key
-                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-sm font-bold'
-                    : 'bg-white text-slate-700 hover:bg-emerald-50/60 border border-slate-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Priority Quick Filter */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] font-bold text-slate-600 mr-0.5">प्राधान्य:</span>
-            <div className="inline-flex rounded bg-white p-0.5 border border-slate-200 text-xs shadow-sm">
-              <button
-                type="button"
-                onClick={() => setSelectedFilter('ALL')}
-                className={`px-2 py-0.5 rounded transition-all cursor-pointer text-[10px] font-bold ${
-                  selectedFilter === 'ALL'
-                    ? 'bg-sky-100 text-sky-900 border border-sky-300'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                सर्व
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedFilter('URGENT')}
-                className={`px-2 py-0.5 rounded transition-all cursor-pointer text-[10px] font-bold ${
-                  selectedFilter === 'URGENT'
-                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                    : 'text-rose-700 hover:bg-rose-50'
-                }`}
-              >
-                अति तातडीचे
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedFilter('HIGH')}
-                className={`px-2 py-0.5 rounded transition-all cursor-pointer text-[10px] font-bold ${
-                  selectedFilter === 'HIGH'
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                    : 'text-amber-700 hover:bg-amber-50'
-                }`}
-              >
-                महत्त्वाचे
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Dashboard Body Content */}
-        <div className="p-3 bg-slate-50/40">
+        <div className="max-w-[1680px] mx-auto space-y-3 pb-6">
           {/* ========================================================
-              🔄 CBS FD AUTO-RENEWAL ACTION CENTER (SOFT PASTEL SHADE)
+              PASTEL ROSE-IVORY-GOLD HERO HEADER BANNER (Operations Command Center)
              ======================================================== */}
-          <div className="mb-3.5 bg-gradient-to-r from-sky-50 via-indigo-50/70 to-emerald-50/70 text-slate-800 rounded-md p-3 shadow-sm border border-sky-200/90 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-sky-100/90 border border-sky-200 flex items-center justify-center text-sky-700 shadow-sm shrink-0">
-                <RotateCcw className={`w-4 h-4 ${runningBatch ? 'animate-spin' : ''}`} />
+          <div className="rounded-2xl shadow-[0_8px_24px_rgba(124,36,24,0.08)] border border-amber-300/75 overflow-hidden bg-white">
+            <div
+              className="relative text-[#5A1A14] px-4 py-2.5 pt-3 flex flex-wrap items-center justify-between gap-2.5 border-b border-amber-200/80"
+              style={{
+                background: 'linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FEF0D8 82%, #FCE0B8 100%)'
+              }}
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-[3px]"
+                style={{ background: 'linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%)' }}
+              />
+              <div className="flex items-center gap-2.5 min-w-0 relative z-10">
+                <div
+                  className="w-9 h-9 rounded-xl text-white border border-amber-200/60 flex items-center justify-center shadow-[0_6px_14px_rgba(154,52,18,0.24)] shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+                >
+                  <FolderCheck className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-xs sm:text-sm font-black tracking-wide text-[#4A1410] truncate">
+                      आजची कामे डॅशबोर्ड{' '}
+                      <span className="bg-gradient-to-r from-[#7C2418] via-[#B44814] to-[#D97706] bg-clip-text text-transparent">
+                        (Core Banking Operations)
+                      </span>
+                    </h2>
+                    <span className="bg-emerald-100/90 text-emerald-800 border border-emerald-300/80 text-[9.5px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      डेटाबेस लाईव्ह
+                    </span>
+                    <span className="bg-amber-100/90 text-[#7C2418] border border-amber-300/80 text-[9.5px] font-bold px-2 py-0.5 rounded-full">
+                      शाखा #{effectiveBranchId}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[#7A5243] font-medium hidden sm:block mt-0.5">
+                    कोणत्याही कार्ड किंवा एकूण संख्येवर क्लिक करून संपूर्ण प्रलंबित कामांची यादी थेट पहा व कारवाई करा
+                  </p>
+                </div>
               </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-xs font-black tracking-wide text-slate-800 flex items-center gap-1.5">
-                    <span>मुदत ठेव स्वयंचलित नूतनीकरण केंद्र (CBS FD Auto-Renewal Center)</span>
-                  </h3>
-                  <span className="bg-indigo-100/80 text-indigo-800 border border-indigo-200 text-[9px] font-bold px-2 py-0.5 rounded-full">
-                    आरबीआय १४-दिवसीय सवलत लागू
-                  </span>
-                  <span
-                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                      sansthaFdPolicy === 'RETAIN_ORIGINAL'
-                        ? 'bg-amber-100 text-amber-900 border-amber-300'
-                        : sansthaFdPolicy === 'NEXT_LEGACY'
-                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                        : 'bg-sky-100 text-sky-900 border-sky-300'
+
+              {/* Top Controls */}
+              <div className="flex items-center gap-2 flex-wrap relative z-10">
+                {/* View Mode Switcher */}
+                <div className="inline-flex rounded-lg bg-white/85 p-0.5 border border-amber-200/90 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('CARDS')}
+                    className={`px-2.5 py-1 rounded-md flex items-center gap-1 text-[11px] font-bold transition-all cursor-pointer ${
+                      viewMode === 'CARDS'
+                        ? 'bg-gradient-to-r from-[#7C2418] via-[#B44814] to-[#D97706] text-white shadow-xs'
+                        : 'text-[#6E493C] hover:bg-amber-50'
                     }`}
                   >
-                    पावती धोरण:{' '}
-                    {sansthaFdPolicy === 'RETAIN_ORIGINAL'
-                      ? 'मूळ पावती क्र. कायम (Same)'
-                      : sansthaFdPolicy === 'NEXT_LEGACY'
-                      ? 'पुढील जुना FD क्र. (Next)'
-                      : sansthaFdPolicy === 'HYBRID_CHOICE'
-                      ? 'हायब्रीड धोरण (Auto: नवीन क्र.)'
-                      : 'नवीन CBS पावती क्र.'}
-                  </span>
-                  {policyLoadError && (
-                    <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[9px] font-bold px-2 py-0.5 rounded-full">
-                      ⚠️ {policyLoadError}
-                    </span>
-                  )}
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>कार्ड दृश्य</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('GRID')}
+                    className={`px-2.5 py-1 rounded-md flex items-center gap-1 text-[11px] font-bold transition-all cursor-pointer ${
+                      viewMode === 'GRID'
+                        ? 'bg-gradient-to-r from-[#7C2418] via-[#B44814] to-[#D97706] text-white shadow-xs'
+                        : 'text-[#6E493C] hover:bg-amber-50'
+                    }`}
+                  >
+                    <ListFilter className="w-3.5 h-3.5" />
+                    <span>संपूर्ण यादी ({liveStats.totalPending})</span>
+                  </button>
                 </div>
-                <div className="text-[10px] text-slate-600 flex items-center gap-2 mt-0.5 flex-wrap">
-                  <span>
-                    पात्र खाती:{' '}
-                    <strong className="text-amber-700 font-extrabold">
-                      {autoRenewalCandidates.length} पावत्या
-                    </strong>
-                  </span>
-                  <span>•</span>
-                  <span>
-                    एकूण नूतनीकरण रक्कम:{' '}
-                    <strong className="text-emerald-700 font-extrabold">
-                      ₹{' '}
-                      {autoRenewalCandidates
-                        .reduce(
-                          (acc, c) =>
-                            acc + (c.projectedRenewedAmount || c.depositAmount || 0),
-                          0
-                        )
-                        .toLocaleString('en-IN')}
-                    </strong>
-                  </span>
-                  <span>•</span>
-                  <span className="text-[9px] text-sky-800 font-medium">
-                    प्रचलित व्याजदर स्लॅब स्वयंचलित लागू होतील
-                  </span>
+
+                {/* Live Force Refresh */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchLiveNotifications(undefined, true);
+                    fetchAutoRenewalData();
+                  }}
+                  disabled={loading}
+                  className="px-2.5 py-1.5 rounded-lg bg-white/90 hover:bg-amber-50 text-[#7C2418] text-[11px] font-bold border border-amber-300/80 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-2xs"
+                  title="डेटाबेसमधून कामांची ताजी स्थिती पुन्हा तपासा"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-[#B44814] ${loading ? 'animate-spin' : ''}`} />
+                  <span>रीफ्रेश</span>
+                </button>
+
+                {/* Pop-up modal opener */}
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-lg text-white text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs hover:brightness-105"
+                  style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+                >
+                  <Bell className="w-3.5 h-3.5 text-amber-100" />
+                  <span>सूचना विंडो</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Error Alert Banner (if API failed) */}
+            {loadError && (
+              <div className="px-4 py-2 bg-rose-50 border-b border-rose-200 flex items-center justify-between gap-2 text-rose-800 text-xs">
+                <div className="flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{loadError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchLiveNotifications(undefined, true)}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-[11px] font-bold cursor-pointer shrink-0"
+                >
+                  पुन्हा प्रयत्न करा
+                </button>
+              </div>
+            )}
+
+            {/* ========================================================
+                CLICKABLE EXECUTIVE KPI SUMMARY METRIC CARDS (5 Cards)
+               ======================================================== */}
+            <div className="bg-gradient-to-r from-[#FFF9F2] via-white to-[#FEF5E7] border-b border-amber-200/70 p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+              {/* 1. Total Pending -> Click opens full list */}
+              <button
+                type="button"
+                onClick={() => openGridWithFilter({ moduleKey: 'ALL', priority: 'ALL' })}
+                className="text-left bg-white hover:bg-amber-50/75 p-2.5 rounded-xl border border-amber-200/90 shadow-xs hover:shadow transition-all flex items-center gap-3 cursor-pointer group"
+                title="सर्व प्रलंबित कामांची संपूर्ण यादी पाहण्यासाठी क्लिक करा"
+              >
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform"
+                  style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+                >
+                  <FolderCheck className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] text-[#9A3412] font-bold flex items-center justify-between">
+                    <span>एकूण प्रलंबित कामे</span>
+                    <ArrowUpRight className="w-3 h-3 text-[#B44814] opacity-70 group-hover:opacity-100" />
+                  </div>
+                  <div className="text-base font-black text-[#4A1410] leading-tight">
+                    {liveStats.totalPending}{' '}
+                    <span className="text-[10px] font-semibold text-[#B44814]">यादी पहा ➔</span>
+                  </div>
+                </div>
+              </button>
+
+              {/* 2. Urgent / High Priority -> Click opens urgent/high list */}
+              <button
+                type="button"
+                onClick={() => openGridWithFilter({ moduleKey: 'ALL', priority: 'HIGH' })}
+                className="text-left bg-white hover:bg-rose-50/70 p-2.5 rounded-xl border border-rose-200/80 shadow-xs hover:shadow transition-all flex items-center gap-3 cursor-pointer group"
+                title="अति तातडीची व महत्त्वाची कामे पाहण्यासाठी क्लिक करा"
+              >
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#FB7185] to-[#E11D48] flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] text-rose-700 font-bold flex items-center justify-between">
+                    <span>अति तातडीची / महत्त्वाची</span>
+                    <ArrowUpRight className="w-3 h-3 text-rose-500 opacity-70 group-hover:opacity-100" />
+                  </div>
+                  <div className="text-base font-black text-rose-700 leading-tight">
+                    {liveStats.urgentTasks + liveStats.highPriorityTasks}{' '}
+                    <span className="text-[10px] font-semibold text-rose-500">तातडीने</span>
+                  </div>
+                </div>
+              </button>
+
+              {/* 3. Total Amount */}
+              <button
+                type="button"
+                onClick={() => openGridWithFilter({ moduleKey: 'ALL', priority: 'ALL' })}
+                className="text-left bg-white hover:bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200/80 shadow-xs hover:shadow transition-all flex items-center gap-3 cursor-pointer group"
+                title="रक्कमनिहाय सर्व प्रलंबित कामे पहा"
+              >
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#34D399] to-[#059669] flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <div className="text-[10px] text-emerald-800/85 font-bold">एकूण थकीत / देय रक्कम</div>
+                  <div className="text-sm font-black text-emerald-700 leading-tight truncate">
+                    ₹ {Number(liveStats.totalAmount).toLocaleString('en-IN')}
+                  </div>
+                </div>
+              </button>
+
+              {/* 4. Completed Today */}
+              <div className="bg-white p-2.5 rounded-xl border border-teal-200/80 shadow-xs flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#2DD4BF] to-[#0D9488] flex items-center justify-center text-white shadow-sm shrink-0">
+                  <CheckCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-[10px] text-teal-800/85 font-bold">आज पूर्ण झालेली कामे</div>
+                  <div className="text-base font-black text-[#4A1410] leading-tight">
+                    {liveStats.completedToday}{' '}
+                    <span className="text-[10px] font-normal text-[#8C5E4F]">पूर्ण</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Completion Progress */}
+              <div className="bg-white p-2.5 rounded-xl border border-amber-200/90 shadow-xs col-span-2 sm:col-span-1 flex flex-col justify-center">
+                <div className="flex justify-between items-center text-[10px] font-bold mb-1">
+                  <span className="text-[#7C2418]">दैनिक कामे पूर्णता प्रगती</span>
+                  <span className="text-[#9A3412] font-black">{liveStats.completionRate}%</span>
+                </div>
+                <div className="w-full bg-amber-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-2 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, liveStats.completionRate))}%`,
+                      background: 'linear-gradient(90deg, #B44814 0%, #D97706 55%, #10B981 100%)'
+                    }}
+                  />
+                </div>
+                <div className="text-[9px] text-[#8C5E4F] mt-1 flex justify-between font-medium">
+                  <span>०%</span>
+                  <span>लक्ष्य १००%</span>
                 </div>
               </div>
             </div>
 
-            {/* Quick Actions */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setShowAutoRenewalModal(true)}
-                className="px-2.5 py-1 rounded bg-white hover:bg-sky-50 text-sky-900 border border-sky-300 shadow-sm text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <Eye className="w-3.5 h-3.5 text-sky-700" />
-                <span>पात्र यादी पहा ({autoRenewalCandidates.length})</span>
-              </button>
+            {/* ========================================================
+                ROLE-BASED TABS & QUICK PRIORITY FILTER BAR
+               ======================================================== */}
+            <div className="px-3.5 py-2 bg-[#FFFBF7] border-b border-amber-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+              {/* Role Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+                <span className="text-[10px] font-bold text-[#7C2418] mr-1 flex items-center gap-1 shrink-0">
+                  <Filter className="w-3 h-3 text-[#B44814]" /> विभाग:
+                </span>
+                {[
+                  { key: 'ALL', label: 'सर्व कामे' },
+                  { key: 'MANAGER', label: 'व्यवस्थापक' },
+                  { key: 'CASHIER', label: 'कॅशियर' },
+                  { key: 'LOANS', label: 'कर्ज विभाग' },
+                  { key: 'DEPOSITS', label: 'ठेव विभाग' },
+                  { key: 'SHARES', label: 'शेअर्स विभाग' },
+                  { key: 'LOCKER', label: 'लॉकर विभाग' }
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setRoleFilter(tab.key as any)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      roleFilter === tab.key
+                        ? 'bg-[#7C2418] text-white shadow-xs'
+                        : 'bg-white text-[#5C3A2E] hover:bg-amber-50 border border-amber-200/80'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-              <button
-                type="button"
-                disabled={runningBatch || autoRenewalCandidates.length === 0}
-                onClick={() => handleRunBatch()}
-                className="px-3 py-1 rounded bg-emerald-100 hover:bg-emerald-200/90 active:scale-95 text-emerald-900 border border-emerald-300 text-xs font-extrabold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                title="पात्र सर्व मुदत ठेवींचे प्रचलित व्याजदराने ऑटो-नूतनीकरण करा"
-              >
-                <Play className="w-3.5 h-3.5 text-emerald-700 fill-emerald-700" />
-                <span>{runningBatch ? 'बॅच प्रक्रिया सुरु...' : '🚀 EOD बॅच रन करा'}</span>
-              </button>
+              {/* Priority Quick Filter */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-[#7C2418]">प्राधान्य:</span>
+                <div className="inline-flex rounded-lg bg-white p-0.5 border border-amber-200 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFilter('ALL')}
+                    className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer text-[10.5px] font-bold ${
+                      selectedFilter === 'ALL'
+                        ? 'bg-[#B44814] text-white'
+                        : 'text-[#6E493C] hover:text-[#4A1410]'
+                    }`}
+                  >
+                    सर्व
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFilter('URGENT')}
+                    className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer text-[10.5px] font-bold ${
+                      selectedFilter === 'URGENT'
+                        ? 'bg-rose-600 text-white'
+                        : 'text-rose-700 hover:bg-rose-50'
+                    }`}
+                  >
+                    अति तातडीचे
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFilter('HIGH')}
+                    className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer text-[10.5px] font-bold ${
+                      selectedFilter === 'HIGH'
+                        ? 'bg-amber-500 text-white'
+                        : 'text-amber-700 hover:bg-amber-50'
+                    }`}
+                  >
+                    महत्त्वाचे
+                  </button>
+                </div>
+              </div>
+            </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  fetchRenewalLogs();
-                  setShowLogsModal(true);
-                }}
-                className="px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 shadow-sm text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <History className="w-3.5 h-3.5 text-indigo-700" />
-                <span>इतिहास / रिव्हर्सल</span>
-              </button>
+            {/* ========================================================
+                CBS FD AUTO-RENEWAL ACTION CENTER
+               ======================================================== */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-[#FDF4EF] via-[#FFFBF7] to-[#FEF3E2] flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+                >
+                  <RotateCcw className={`w-4 h-4 ${runningBatch || autoRenewalLoading ? 'animate-spin' : ''}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-xs font-black tracking-wide text-[#4A1410]">
+                      मुदत ठेव स्वयंचलित नूतनीकरण केंद्र (CBS FD Auto-Renewal Center)
+                    </h3>
+                    <span className="bg-amber-100 text-[#7C2418] border border-amber-300/80 text-[9.5px] font-bold px-2 py-0.5 rounded-full">
+                      RBI १४-दिवसीय सवलत लागू
+                    </span>
+                    <span
+                      className={`text-[9.5px] font-bold px-2 py-0.5 rounded-full border ${
+                        sansthaFdPolicy === 'RETAIN_ORIGINAL'
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : sansthaFdPolicy === 'NEXT_LEGACY'
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                          : 'bg-orange-100 text-[#9A3412] border-orange-300'
+                      }`}
+                    >
+                      पावती धोरण:{' '}
+                      {sansthaFdPolicy === 'RETAIN_ORIGINAL'
+                        ? 'मूळ पावती क्र. कायम'
+                        : sansthaFdPolicy === 'NEXT_LEGACY'
+                        ? 'पुढील जुना FD क्र.'
+                        : sansthaFdPolicy === 'HYBRID_CHOICE'
+                        ? 'हायब्रीड धोरण'
+                        : 'नवीन CBS पावती क्र.'}
+                    </span>
+                    {policyLoadError && (
+                      <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[9.5px] font-bold px-2 py-0.5 rounded-full">
+                        ⚠️ {policyLoadError}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10.5px] text-[#6E493C] flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span>
+                      पात्र खाती:{' '}
+                      <strong className="text-[#9A3412] font-black">
+                        {autoRenewalCandidates.length} पावत्या
+                      </strong>
+                    </span>
+                    <span>•</span>
+                    <span>
+                      एकूण नूतनीकरण रक्कम:{' '}
+                      <strong className="text-emerald-700 font-black">
+                        ₹{' '}
+                        {autoRenewalCandidates
+                          .reduce(
+                            (acc, c) => acc + Number(c.projectedRenewedAmount || c.depositAmount || 0),
+                            0
+                          )
+                          .toLocaleString('en-IN')}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowAutoRenewalModal(true)}
+                  className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-50 text-[#7C2418] border border-amber-300/80 shadow-2xs text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-[#B44814]" />
+                  <span>पात्र यादी पहा ({autoRenewalCandidates.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={runningBatch || autoRenewalCandidates.length === 0}
+                  onClick={() => handleRunBatch()}
+                  className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-105 text-white text-[11px] font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Play className="w-3.5 h-3.5 fill-white" />
+                  <span>{runningBatch ? 'बॅच प्रक्रिया सुरु...' : 'EOD बॅच रन करा'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchRenewalLogs();
+                    setShowLogsModal(true);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-[#9A3412] border border-orange-200 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <History className="w-3.5 h-3.5 text-[#B44814]" />
+                  <span>इतिहास / रिव्हर्सल</span>
+                </button>
+              </div>
             </div>
           </div>
 
           {/* ========================================================
-              MODE 1: 10 CATEGORY CARD VIEW (कार्ड दृश्य)
+              LOADING STATE
              ======================================================== */}
-          {viewMode === 'CARDS' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 lg:grid-cols-4 gap-3">
+          {loading && liveNotifications.length === 0 && (
+            <div className="bg-white/90 rounded-xl border border-amber-200 p-10 text-center shadow-xs">
+              <RefreshCw className="w-7 h-7 animate-spin text-[#B44814] mx-auto mb-2" />
+              <p className="text-xs font-bold text-[#4A1410]">डेटाबेसमधून आजची कामे लोड होत आहेत...</p>
+            </div>
+          )}
+
+          {/* ========================================================
+              MODE 1: CATEGORY CARDS VIEW (कार्ड दृश्य — Click any card/count for full scrollable list!)
+             ======================================================== */}
+          {!loading && viewMode === 'CARDS' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {filteredSections.map(section => {
                 const IconComponent = section.icon;
-                const shade = getSectionShade(section.id);
                 return (
                   <div
                     key={section.id}
-                    className={`bg-white rounded-md border ${shade.cardBorder} shadow-sm hover:shadow transition-all duration-200 flex flex-col justify-between overflow-hidden group ${section.accentBg}`}
+                    className="bg-white/95 rounded-xl border border-amber-200/80 shadow-[0_4px_16px_rgba(124,36,24,0.06)] hover:shadow-[0_10px_24px_rgba(124,36,24,0.11)] hover:border-amber-300 transition-all duration-200 flex flex-col justify-between overflow-hidden"
+                    style={{ borderTop: `3px solid ${section.accentColor}` }}
                   >
-                    {/* Card Header using Distinct Soft Pastel Shade */}
-                    <div className={`${shade.headerBg} px-3 py-2 flex justify-between items-center`}>
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <div className={`p-1.5 rounded-md ${shade.iconBox} shrink-0 shadow-sm`}>
+                    {/* Card Header — Clicking Count Badge opens Full Scrollable List */}
+                    <div className="px-3 py-2 bg-gradient-to-r from-[#FDF4EF] to-[#FEF6EA] border-b border-amber-100 flex justify-between items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-white shadow-xs shrink-0"
+                          style={{ backgroundColor: section.accentColor }}
+                        >
                           <IconComponent className="w-3.5 h-3.5" />
                         </div>
-                        <div className="truncate">
+                        <div className="min-w-0">
                           <h3
-                            className="font-extrabold text-xs leading-tight text-slate-800 truncate"
+                            className="font-extrabold text-[11.5px] leading-tight text-[#4A1410] truncate"
                             title={section.titleMr}
                           >
                             {section.titleMr}
                           </h3>
-                          <span className={`text-[9px] ${shade.subtitle} block font-semibold truncate`}>
+                          <span className="text-[9.5px] text-[#8C5E4F] block font-semibold truncate">
                             {section.titleEn}
                           </span>
                         </div>
                       </div>
 
-                      <span
-                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ml-1 ${
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCategorySearch('');
+                          setActiveCategoryId(section.id);
+                        }}
+                        className={`text-[10.5px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0 cursor-pointer transition-all ${
                           section.count > 0
-                            ? `${shade.countBadge} font-black shadow-sm`
-                            : 'bg-white/80 text-slate-500 border-slate-200'
+                            ? 'bg-[#9A3412] hover:bg-[#7C2418] text-white border-[#7C2418] shadow-xs'
+                            : 'bg-[#FFF8F1] text-[#8C5E4F] border-amber-200 hover:bg-amber-50'
                         }`}
+                        title="या विभागातील सर्व कामांची संपूर्ण यादी पहा"
                       >
                         {section.count} नोंदी
-                      </span>
+                      </button>
                     </div>
 
                     {/* Card Body */}
                     <div className="p-2.5 flex-1 flex flex-col justify-between bg-white">
                       <div>
                         {fmtCurrency(section.totalAmount) && (
-                          <div className={`mb-2 p-1.5 rounded border flex justify-between items-center text-xs ${shade.totalBar}`}>
-                            <span className="text-[10px] text-slate-600 font-semibold">एकूण रक्कम:</span>
-                            <span className="text-xs font-extrabold">
+                          <div className="mb-2 px-2 py-1 rounded-lg bg-amber-50/75 border border-amber-200/75 flex justify-between items-center text-[11px]">
+                            <span className="text-[10px] text-[#6E493C] font-semibold">एकूण रक्कम:</span>
+                            <span className="font-black text-[#4A1410]">
                               {fmtCurrency(section.totalAmount)}
                             </span>
                           </div>
                         )}
 
-                        {/* Items Preview */}
+                        {/* Preview Items (Top 3) */}
                         <div className="space-y-1.5 mb-2">
                           {section.items.length === 0 ? (
-                            <div className="p-3 text-center text-[10px] text-slate-400 font-medium bg-slate-50/70 rounded border border-dashed border-slate-200">
-                              <CheckCircle className="w-4 h-4 text-emerald-500 mx-auto mb-1 opacity-70" />
+                            <div className="p-3.5 text-center text-[10.5px] text-[#8C5E4F] font-semibold bg-[#FFFBF7] rounded-lg border border-dashed border-amber-200">
+                              <CheckCircle className="w-4 h-4 text-emerald-500 mx-auto mb-1 opacity-75" />
                               कोणतीही प्रलंबित नोंद नाही
                             </div>
                           ) : (
@@ -1354,76 +1457,97 @@ export default function TodaysTasksDashboard({
                               {section.items.slice(0, 3).map(item => (
                                 <div
                                   key={item.id}
-                                  className={`p-1.5 rounded border transition-all text-xs flex flex-col justify-between ${shade.itemCard}`}
+                                  onClick={() => setSelectedItemDetails(item)}
+                                  className="p-1.5 rounded-lg border border-amber-100 hover:border-amber-300 hover:bg-amber-50/50 transition-all cursor-pointer"
                                 >
-                                  <div className="flex justify-between items-center font-semibold text-slate-800 mb-1 text-[11px]">
-                                    <span
-                                      className="truncate max-w-[130px]"
-                                      title={item.memberName}
-                                    >
-                                      👤 {item.memberName}
+                                  <div className="flex justify-between items-center gap-1 font-bold text-[#4A1410] text-[11px]">
+                                    <span className="truncate" title={item.memberName}>
+                                      {item.memberName}
                                     </span>
                                     {item.amount ? (
-                                      <span className={`font-bold text-[10px] px-1.5 py-0.2 rounded border shrink-0 ${shade.itemBadge}`}>
+                                      <span className="font-mono font-black text-[10px] text-[#9A3412] bg-orange-50 border border-orange-200/80 px-1.5 py-0.5 rounded shrink-0">
                                         ₹{Number(item.amount).toLocaleString('en-IN')}
                                       </span>
                                     ) : null}
                                   </div>
 
-                                  <div className="flex justify-between items-center text-[10px] text-slate-500 pt-1 border-t border-slate-200/60">
+                                  <div className="flex justify-between items-center text-[10px] text-[#7A5243] mt-1 pt-1 border-t border-amber-100/70 gap-1">
                                     <span
-                                      className="font-mono text-slate-600 bg-white px-1 py-0.2 rounded border border-slate-200 text-[9px] truncate max-w-[110px]"
+                                      className="font-mono text-[#6E493C] truncate"
                                       title={item.accountNo || item.details}
                                     >
                                       {item.accountNo || item.details}
                                     </span>
 
-                                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                                    <div className="flex items-center gap-1 shrink-0">
                                       <button
                                         type="button"
                                         onClick={e => {
                                           e.stopPropagation();
                                           setSelectedItemDetails(item);
                                         }}
-                                        className="px-1.5 py-0.2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-[9px] font-medium transition-all flex items-center gap-0.5 cursor-pointer shadow-sm"
+                                        className="px-1.5 py-0.5 bg-white hover:bg-amber-50 text-[#9A3412] border border-amber-200 rounded text-[9.5px] font-bold flex items-center gap-0.5 cursor-pointer"
                                         title="पूर्ण तपशील पहा"
                                       >
-                                        <Eye className="w-3 h-3 text-slate-500" />
-                                        <span>तपशील</span>
+                                        <Eye className="w-3 h-3" />
+                                        <span>पहा</span>
                                       </button>
-                                      <button
-                                        type="button"
-                                        disabled={completingTaskId === item.id}
-                                        onClick={e => handleCompleteTask(item.id, e)}
-                                        className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded transition-all cursor-pointer disabled:opacity-50"
-                                        title="हे काम पूर्ण झाले म्हणून चिन्हांकित करा"
-                                      >
-                                        <CheckCircle2 className="w-3 h-3" />
-                                      </button>
+                                      {item.canComplete !== false && (
+                                        <button
+                                          type="button"
+                                          disabled={completingTaskId === item.id}
+                                          onClick={e => handleCompleteTask(item, e)}
+                                          className="p-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded cursor-pointer disabled:opacity-50"
+                                          title="पूर्ण झाले चिन्हांकित करा"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
                               ))}
 
                               {section.items.length > 3 && (
-                                <div className={`text-center py-0.5 border rounded text-[9px] font-bold ${shade.moreBadge}`}>
-                                  + {section.items.length - 3} आणखी नोंदी
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCategorySearch('');
+                                    setActiveCategoryId(section.id);
+                                  }}
+                                  className="w-full text-center py-1 px-2 bg-amber-50 hover:bg-amber-100 text-[#7C2418] border border-amber-200 rounded-lg text-[10.5px] font-extrabold cursor-pointer transition-colors"
+                                >
+                                  + आणखी {section.items.length - 3} नोंदी — संपूर्ण यादी पहा (All {section.items.length})
+                                </button>
                               )}
                             </>
                           )}
                         </div>
                       </div>
 
-                      {/* Soft Pastel Shaded Action Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleActionClick(section.targetTab)}
-                        className={`w-full py-1.5 px-2 ${shade.actionBtn} active:scale-98 text-[11px] font-bold rounded flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer mt-1`}
-                      >
-                        <span>तपासा / कारवाई करा</span>
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Bottom Dual Action Bar: View Full List + Go to Screen */}
+                      <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-amber-100/80">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCategorySearch('');
+                            setActiveCategoryId(section.id);
+                          }}
+                          className="py-1.5 px-2 bg-[#FFF8F1] hover:bg-amber-100/80 text-[#7C2418] border border-amber-200/90 text-[10.5px] font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer"
+                        >
+                          <List className="w-3.5 h-3.5" />
+                          <span>यादी पहा ({section.count})</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleActionClick(section.targetTab)}
+                          className="py-1.5 px-2 hover:brightness-110 text-white text-[10.5px] font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                          style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+                        >
+                          <span>कारवाई करा</span>
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1432,178 +1556,175 @@ export default function TodaysTasksDashboard({
           )}
 
           {/* ========================================================
-              MODE 2: UNIFIED GRID TABLE VIEW (तपशीलवार ग्रिड)
+              MODE 2: UNIFIED SCROLLABLE GRID TABLE VIEW (तपशीलवार यादी)
              ======================================================== */}
           {viewMode === 'GRID' && (
-            <div className="bg-white rounded-md border border-slate-300 shadow-2xs overflow-hidden flex flex-col">
-              {/* Search & Filter Toolbar */}
-              <div className="p-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 flex-1 max-w-md">
-                  <div className="relative w-full">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      placeholder="खातेदार नाव, खाते क्र., किंवा तपशील शोधा..."
-                      className="w-full pl-8 pr-3 py-1 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                    {searchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setSearchQuery('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
+            <div
+              ref={gridSectionRef}
+              className="bg-white rounded-xl border border-amber-200/90 shadow-[0_8px_24px_rgba(124,36,24,0.08)] overflow-hidden flex flex-col"
+            >
+              {/* Search & Module Filter Toolbar */}
+              <div className="px-3.5 py-2.5 bg-gradient-to-r from-[#FDF2EE] via-[#FFFBF7] to-[#FEF3E2] border-b border-amber-200/80 flex flex-wrap items-center justify-between gap-2.5">
+                <div className="relative flex-1 min-w-[260px] max-w-md">
+                  <Search className="w-3.5 h-3.5 text-[#B44814] absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="खातेदार नाव, खाते क्र., विभाग किंवा तपशील शोधा..."
+                    className="w-full pl-8 pr-8 py-1 bg-white border border-amber-200 rounded-lg text-[11px] font-medium focus:outline-none focus:ring-1 focus:ring-[#B44814] focus:border-[#B44814] h-[28px]"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8C5E4F] hover:text-[#4A1410] cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={gridModuleFilter}
                     onChange={e => setGridModuleFilter(e.target.value)}
-                    className="border border-slate-300 rounded px-2.5 py-1 text-xs bg-white text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="border border-amber-200 rounded-lg px-2.5 py-1 text-[11px] bg-white text-[#4A1410] font-bold h-[28px] focus:outline-none focus:ring-1 focus:ring-[#B44814] cursor-pointer"
                   >
-                    <option value="ALL">सर्व १० विभाग (All Categories)</option>
-                    <option value="Vouchers">१. व्हाउचर (Vouchers)</option>
-                    <option value="Loans">२. कर्ज वसुली (Loans)</option>
-                    <option value="LoanApplications">३. कर्ज अर्ज (Loan Applications)</option>
-                    <option value="FD">४. मुदत ठेव (FD)</option>
-                    <option value="RD">५. आवर्ती ठेव (RD)</option>
-                    <option value="Shares">६. शेअर्स (Shares)</option>
-                    <option value="Pigmy">७. पिग्मी (Pigmy)</option>
-                    <option value="NPA">८. एन.पी.ए. (NPA)</option>
-                    <option value="Locker">९. लॉकर भाडे (Locker)</option>
-                    <option value="System">१०. दिवस अखेर (Day End)</option>
+                    <option value="ALL">सर्व विभाग ({liveStats.totalPending})</option>
+                    {taskSections.map(sec => (
+                      <option key={sec.id} value={sec.moduleKey}>
+                        {sec.titleMr} ({sec.count})
+                      </option>
+                    ))}
                   </select>
 
-                  <span className="text-[10px] text-slate-500 font-semibold">
-                    एकूण सापडलेल्या नोंदी: <strong>{allFilteredGridItems.length}</strong>
+                  <span className="px-2.5 py-1 rounded-lg bg-[#9A3412] text-white text-[10.5px] font-black">
+                    एकूण नोंदी: {allFilteredGridItems.length}
                   </span>
                 </div>
               </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto max-h-[580px] overflow-y-auto">
-                <table className="w-full border-collapse text-left text-xs">
-                  <thead className="bg-slate-100 text-slate-700 font-bold text-[10px] sticky top-0 border-b border-slate-200 z-10">
+              {/* Scrollable Compact Single-Line ERP Table */}
+              <div className="w-full overflow-auto max-h-[65vh]">
+                <table className="w-full border-collapse text-left text-[11px] whitespace-nowrap leading-tight">
+                  <thead className="bg-[#5A1A14] text-amber-50 font-bold text-[10.5px] sticky top-0 z-10">
                     <tr>
-                      <th className="p-2.5 text-center w-10">#</th>
-                      <th className="p-2.5">विभाग / प्रकार</th>
-                      <th className="p-2.5">प्राधान्य</th>
-                      <th className="p-2.5">खातेदार व कामाचा तपशील</th>
-                      <th className="p-2.5">खाते / संदर्भ क्र.</th>
-                      <th className="p-2.5 text-right">रक्कम</th>
-                      <th className="p-2.5 text-center">देय तारीख</th>
-                      <th className="p-2.5">स्थिती</th>
-                      <th className="p-2.5 text-center w-44">कृती केंद्र (Action)</th>
+                      <th className="py-1.5 px-2 text-center w-10 border-r border-white/10 whitespace-nowrap">#</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">विभाग / मॉड्यूल</th>
+                      <th className="py-1.5 px-2 text-center border-r border-white/10 whitespace-nowrap">प्राधान्य</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">खातेदार / शीर्षक</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">संदर्भ / खाते क्र.</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">कामाचा तपशील</th>
+                      <th className="py-1.5 px-2 text-right border-r border-white/10 whitespace-nowrap">रक्कम (₹)</th>
+                      <th className="py-1.5 px-2 text-center border-r border-white/10 whitespace-nowrap">देय तारीख</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">स्थिती</th>
+                      <th className="py-1.5 px-2 text-center sticky right-0 bg-[#5A1A14] z-20 whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-amber-100/80">
                     {allFilteredGridItems.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-8 text-center text-slate-400">
-                          <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-1.5 opacity-80" />
-                          <p className="font-bold text-xs text-slate-700">कोणतीही प्रलंबित कामे सापडली नाहीत.</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">
-                            सर्व व्यवहार अद्ययावत आहेत किंवा फिल्टरमध्ये बसणारी कामे नाहीत.
+                        <td colSpan={10} className="p-10 text-center text-[#8C5E4F]">
+                          <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-70" />
+                          <p className="font-bold text-[#5A1A14] text-xs">
+                            निवडलेल्या फिल्टरनुसार कोणतेही प्रलंबित काम आढळले नाही.
                           </p>
+                          {(gridModuleFilter !== 'ALL' || selectedFilter !== 'ALL' || roleFilter !== 'ALL' || searchQuery) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setGridModuleFilter('ALL');
+                                setSelectedFilter('ALL');
+                                setRoleFilter('ALL');
+                                setSearchQuery('');
+                              }}
+                              className="mt-2 px-3 py-1 bg-[#9A3412] hover:bg-[#7C2418] text-white rounded-lg text-[11px] font-bold cursor-pointer"
+                            >
+                              सर्व फिल्टर काढा (Show All)
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ) : (
-                      allFilteredGridItems.map((item, idx) => (
-                        <tr
-                          key={item.id}
-                          className="hover:bg-sky-50/50 transition-colors"
-                        >
-                          <td className="p-2.5 text-center text-slate-400 font-mono text-[10px]">
-                            {idx + 1}
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold border border-slate-200">
-                              {item.moduleName || 'System'}
-                            </span>
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-black border ${
-                                item.priority === 'URGENT'
-                                  ? 'bg-rose-100 text-rose-800 border-rose-200'
-                                  : item.priority === 'HIGH'
-                                  ? 'bg-amber-100 text-amber-800 border-amber-200'
-                                  : 'bg-slate-100 text-slate-700 border-slate-200'
-                              }`}
+                      allFilteredGridItems.map((item, idx) => {
+                        const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-[#FFFBF7]';
+                        return (
+                          <tr
+                            key={`${item.moduleName}-${item.id}-${idx}`}
+                            className={`h-[30px] ${rowBg} hover:bg-amber-50/80 transition-colors group`}
+                          >
+                            <td className="py-1 px-2 text-center font-bold text-[#8C5E4F] border-r border-amber-100/80 align-middle">
+                              {idx + 1}
+                            </td>
+                            <td className="py-1 px-2 font-bold text-[#7C2418] border-r border-amber-100/80 align-middle">
+                              {item.sectionTitleMr || item.moduleName}
+                            </td>
+                            <td className="py-1 px-2 text-center border-r border-amber-100/80 align-middle">
+                              {renderPriorityPill(item.priority)}
+                            </td>
+                            <td
+                              className="py-1 px-2 font-bold text-[#4A1410] border-r border-amber-100/80 max-w-[200px] truncate align-middle"
+                              title={item.memberName}
                             >
-                              {item.priority === 'URGENT'
-                                ? 'अति तातडीचे'
-                                : item.priority === 'HIGH'
-                                ? 'महत्त्वाचे'
-                                : 'सामान्य'}
-                            </span>
-                          </td>
-                          <td className="p-2.5">
-                            <div className="font-bold text-slate-800 text-[11px]">
-                              👤 {item.memberName}
-                            </div>
-                            <div className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
-                              {item.details}
-                            </div>
-                          </td>
-                          <td className="p-2.5 font-mono text-primary font-bold whitespace-nowrap text-[10px]">
-                            {item.accountNo || '-'}
-                          </td>
-                          <td className="p-2.5 text-right font-bold text-slate-900 whitespace-nowrap">
-                            {item.amount ? `₹ ${Number(item.amount).toLocaleString('en-IN')}` : '-'}
-                          </td>
-                          <td className="p-2.5 text-center text-slate-600 whitespace-nowrap text-[10px]">
-                            {item.dueDate || 'आज'}
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap">
-                            <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {item.memberName}
+                            </td>
+                            <td className="py-1 px-2 font-mono font-semibold text-[#9A3412] border-r border-amber-100/80 align-middle">
+                              {item.accountNo || '-'}
+                            </td>
+                            <td
+                              className="py-1 px-2 text-slate-600 border-r border-amber-100/80 max-w-[260px] truncate align-middle"
+                              title={item.details}
+                            >
+                              {item.details || '-'}
+                            </td>
+                            <td className="py-1 px-2 text-right font-mono font-bold text-emerald-700 border-r border-amber-100/80 align-middle">
+                              {item.amount ? `₹ ${Number(item.amount).toLocaleString('en-IN')}` : '-'}
+                            </td>
+                            <td className="py-1 px-2 text-center font-mono text-slate-700 border-r border-amber-100/80 align-middle">
+                              {item.dueDate || '-'}
+                            </td>
+                            <td className="py-1 px-2 text-slate-700 border-r border-amber-100/80 align-middle">
                               {item.status}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* 1-Click Action to Tab */}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleActionClick(item.targetTab || 'vouchers', item.entityId)
-                                }
-                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold rounded shadow-sm transition-all flex items-center gap-1 cursor-pointer"
-                                title="या कामावर थेट कारवाई करण्यासाठी फॉर्म उघडा"
-                              >
-                                <span>कारवाई</span>
-                                <ArrowUpRight className="w-3 h-3" />
-                              </button>
-
-                              {/* Details Modal */}
-                              <button
-                                type="button"
-                                onClick={() => setSelectedItemDetails(item)}
-                                className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded transition-all cursor-pointer"
-                                title="संपूर्ण तपशील पहा"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
-
-                              {/* Mark Complete */}
-                              <button
-                                type="button"
-                                disabled={completingTaskId === item.id}
-                                onClick={e => handleCompleteTask(item.id, e)}
-                                className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded transition-all cursor-pointer disabled:opacity-50"
-                                title="हे काम पूर्ण झाले म्हणून चिन्हांकित करा"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                            <td
+                              className={`py-0.5 px-2 text-center sticky right-0 ${rowBg} group-hover:bg-amber-50/80 z-10 shadow-[-4px_0_8px_rgba(90,26,20,0.06)]`}
+                            >
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedItemDetails(item)}
+                                  className="px-1.5 py-0.5 bg-white hover:bg-amber-100 text-[#9A3412] border border-amber-200 rounded text-[10px] font-bold cursor-pointer inline-flex items-center gap-0.5"
+                                  title="पूर्ण तपशील पहा"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span>पहा</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleActionClick(item.targetTab || 'vouchers', item.entityId)}
+                                  className="px-1.5 py-0.5 bg-[#B44814] hover:bg-[#7C2418] text-white rounded text-[10px] font-bold cursor-pointer inline-flex items-center gap-0.5"
+                                  title="संबंधित स्क्रीन उघडा"
+                                >
+                                  <span>{item.canComplete === false ? 'हप्ता भरा' : 'उघडा'}</span>
+                                  <ArrowUpRight className="w-3 h-3" />
+                                </button>
+                                {item.canComplete !== false && (
+                                  <button
+                                    type="button"
+                                    disabled={completingTaskId === item.id}
+                                    onClick={e => handleCompleteTask(item, e)}
+                                    className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded cursor-pointer disabled:opacity-50"
+                                    title="काम पूर्ण झाले म्हणून चिन्हांकित करा"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1611,122 +1732,342 @@ export default function TodaysTasksDashboard({
             </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* ========================================================
+          MODAL 0: FULL CATEGORY TASK LIST MODAL (Scrollable List for Clicked Category)
+         ======================================================== */}
+      {activeCategorySection && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/55 backdrop-blur-xs p-2 sm:p-4">
+          <div className="bg-white rounded-xl max-w-[97vw] xl:max-w-[1460px] w-full max-h-[88vh] shadow-2xl border border-amber-300/80 flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div
+              className="relative px-4 py-2.5 pt-3 text-[#4A1410] flex justify-between items-center gap-2 shrink-0 border-b border-amber-200/90"
+              style={{ background: 'linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FCE0B8 100%)' }}
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-[3px]"
+                style={{ background: 'linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%)' }}
+              />
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-white border border-white/40 shrink-0 shadow-xs"
+                  style={{ backgroundColor: activeCategorySection.accentColor }}
+                >
+                  <activeCategorySection.icon className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-black text-xs sm:text-sm text-[#4A1410] truncate">
+                    {activeCategorySection.titleMr} — संपूर्ण यादी ({activeCategorySection.count} नोंदी)
+                  </h3>
+                  <p className="text-[10px] text-[#7A5243] font-medium truncate">
+                    {activeCategorySection.titleEn}
+                    {fmtCurrency(activeCategorySection.totalAmount)
+                      ? ` • एकूण रक्कम: ${fmtCurrency(activeCategorySection.totalAmount)}`
+                      : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = activeCategorySection.targetTab;
+                    setActiveCategoryId(null);
+                    handleActionClick(target);
+                  }}
+                  className="px-2.5 py-1 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-xs hover:brightness-105"
+                  style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+                >
+                  <span>विभाग स्क्रीन उघडा</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveCategoryId(null)}
+                  className="p-1 rounded-lg hover:bg-amber-100/80 text-[#7C2418] hover:text-[#4A1410] cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Search Filter Strip */}
+            <div className="px-3.5 py-2 bg-gradient-to-r from-[#FDF2EE] to-[#FEF3E2] border-b border-amber-200/80 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="relative flex-1 min-w-[240px] max-w-md">
+                <Search className="w-3.5 h-3.5 text-[#B44814] absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={categorySearch}
+                  onChange={e => setCategorySearch(e.target.value)}
+                  placeholder="या यादीत खातेदार नाव, खाते क्र. किंवा तपशील शोधा..."
+                  className="w-full pl-8 pr-8 py-1 bg-white border border-amber-200 rounded-lg text-[11px] focus:outline-none focus:ring-1 focus:ring-[#B44814] h-[28px]"
+                />
+                {categorySearch && (
+                  <button
+                    type="button"
+                    onClick={() => setCategorySearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8C5E4F] hover:text-[#4A1410] cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <span className="text-[11px] font-bold text-[#6E493C]">
+                दाखवत आहे: <strong className="text-[#9A3412]">{activeCategoryFilteredItems.length}</strong> /{' '}
+                {activeCategorySection.count} नोंदी
+              </span>
+            </div>
+
+            {/* Scrollable Category Table (flex-1 min-h-0 guarantees vertical + horizontal scroll!) */}
+            <div className="flex-1 min-h-0 overflow-auto bg-white">
+              {activeCategoryFilteredItems.length === 0 ? (
+                <div className="p-12 text-center text-[#8C5E4F]">
+                  <CheckCircle className="w-9 h-9 text-emerald-500 mx-auto mb-2 opacity-75" />
+                  <p className="font-bold text-[#4A1410] text-xs">या विभागात कोणतीही प्रलंबित नोंद नाही.</p>
+                </div>
+              ) : (
+                <table className="w-full border-collapse text-left text-[11px] whitespace-nowrap leading-tight">
+                  <thead className="bg-[#5A1A14] text-amber-50 font-bold text-[10.5px] sticky top-0 z-10">
+                    <tr>
+                      <th className="py-1.5 px-2 text-center w-10 border-r border-white/10 whitespace-nowrap">#</th>
+                      <th className="py-1.5 px-2 text-center border-r border-white/10 whitespace-nowrap">प्राधान्य</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">खातेदार / शीर्षक</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">खाते / संदर्भ क्र.</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">तपशील</th>
+                      <th className="py-1.5 px-2 text-right border-r border-white/10 whitespace-nowrap">रक्कम (₹)</th>
+                      <th className="py-1.5 px-2 text-center border-r border-white/10 whitespace-nowrap">देय तारीख</th>
+                      <th className="py-1.5 px-2 border-r border-white/10 whitespace-nowrap">स्थिती</th>
+                      <th className="py-1.5 px-2 text-center sticky right-0 bg-[#5A1A14] z-20 whitespace-nowrap">कृती</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100/80">
+                    {activeCategoryFilteredItems.map((item, idx) => {
+                      const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-[#FFFBF7]';
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`h-[30px] ${rowBg} hover:bg-amber-50/80 transition-colors group`}
+                        >
+                          <td className="py-1 px-2 text-center font-bold text-[#8C5E4F] border-r border-amber-100/80 align-middle">
+                            {idx + 1}
+                          </td>
+                          <td className="py-1 px-2 text-center border-r border-amber-100/80 align-middle">
+                            {renderPriorityPill(item.priority)}
+                          </td>
+                          <td
+                            className="py-1 px-2 font-bold text-[#4A1410] border-r border-amber-100/80 max-w-[200px] truncate align-middle"
+                            title={item.memberName}
+                          >
+                            {item.memberName}
+                          </td>
+                          <td className="py-1 px-2 font-mono font-semibold text-[#9A3412] border-r border-amber-100/80 align-middle">
+                            {item.accountNo || '-'}
+                          </td>
+                          <td
+                            className="py-1 px-2 text-slate-600 border-r border-amber-100/80 max-w-[300px] truncate align-middle"
+                            title={item.details}
+                          >
+                            {item.details || '-'}
+                          </td>
+                          <td className="py-1 px-2 text-right font-mono font-bold text-emerald-700 border-r border-amber-100/80 align-middle">
+                            {item.amount ? `₹ ${Number(item.amount).toLocaleString('en-IN')}` : '-'}
+                          </td>
+                          <td className="py-1 px-2 text-center font-mono text-slate-700 border-r border-amber-100/80 align-middle">
+                            {item.dueDate || '-'}
+                          </td>
+                          <td className="py-1 px-2 text-slate-700 border-r border-amber-100/80 align-middle">
+                            {item.status}
+                          </td>
+                          <td
+                            className={`py-0.5 px-2 text-center sticky right-0 ${rowBg} group-hover:bg-amber-50/80 z-10 shadow-[-4px_0_8px_rgba(90,26,20,0.06)]`}
+                          >
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedItemDetails(item)}
+                                className="px-1.5 py-0.5 bg-white hover:bg-amber-100 text-[#9A3412] border border-amber-200 rounded text-[10px] font-bold cursor-pointer inline-flex items-center gap-0.5"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>पहा</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const target = item.targetTab || activeCategorySection.targetTab;
+                                  setActiveCategoryId(null);
+                                  handleActionClick(target, item.entityId);
+                                }}
+                                className="px-1.5 py-0.5 bg-[#B44814] hover:bg-[#7C2418] text-white rounded text-[10px] font-bold cursor-pointer inline-flex items-center gap-0.5"
+                              >
+                                <span>{item.canComplete === false ? 'हप्ता भरा' : 'उघडा'}</span>
+                                <ArrowUpRight className="w-3 h-3" />
+                              </button>
+                              {item.canComplete !== false && (
+                                <button
+                                  type="button"
+                                  disabled={completingTaskId === item.id}
+                                  onClick={e => handleCompleteTask(item, e)}
+                                  className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded cursor-pointer disabled:opacity-50"
+                                  title="पूर्ण झाले चिन्हांकित करा"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-4 py-2 bg-[#FFF8F1] border-t border-amber-200/80 flex justify-between items-center shrink-0">
+              <span className="text-[11px] font-bold text-[#6E493C]">
+                एकूण नोंदी: <strong className="text-[#4A1410]">{activeCategoryFilteredItems.length}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveCategoryId(null)}
+                className="px-4 py-1 bg-white hover:bg-amber-50 text-[#5C3A2E] border border-amber-200 rounded-lg text-xs font-bold cursor-pointer"
+              >
+                बंद करा
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ========================================================
           MODAL 1: FULL MEMBER & TASK DETAILS POPUP
          ======================================================== */}
       {selectedItemDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-md w-full shadow-xl border border-emerald-200 overflow-hidden">
-            <div className="p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border-b border-emerald-200 flex justify-between items-center">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-950/55 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl border border-amber-300/80 overflow-hidden">
+            <div
+              className="relative px-4 py-3 pt-3.5 text-[#4A1410] flex justify-between items-center border-b border-amber-200/80"
+              style={{ background: 'linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FCE0B8 100%)' }}
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-[3px]"
+                style={{ background: 'linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%)' }}
+              />
               <div className="flex items-center gap-2.5">
-                <div className="p-1.5 bg-emerald-100/90 border border-emerald-200 rounded-lg text-emerald-700">
-                  <Info className="w-4 h-4" />
+                <div
+                  className="p-1.5 text-white rounded-lg shadow-xs"
+                  style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+                >
+                  <Info className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-xs text-slate-800">सभासद व कामाचा पूर्ण तपशील</h3>
-                  <p className="text-[10px] text-slate-500">Complete Banking Task Details</p>
+                  <h3 className="font-bold text-xs text-[#4A1410]">सभासद व कामाचा पूर्ण तपशील</h3>
+                  <p className="text-[10px] text-[#7A5243]">Complete Banking Task Details</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedItemDetails(null)}
-                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-amber-100/80 text-[#7C2418] hover:text-[#4A1410] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-4 space-y-3 bg-slate-50/50 text-xs">
-              <div className="bg-white p-3.5 rounded-lg border border-slate-200 space-y-2">
-                <div className="flex justify-between items-center pb-1.5 border-b border-slate-100">
-                  <span className="text-slate-500 font-medium">विभाग / मॉड्यूल (Module):</span>
-                  <span className="font-bold text-slate-800 text-xs">
-                    {selectedItemDetails.moduleName || 'General'}
+            <div className="p-4 space-y-3 bg-[#FFFBF7] text-xs max-h-[65vh] overflow-y-auto">
+              <div className="bg-white p-3.5 rounded-lg border border-amber-200/80 space-y-2">
+                <div className="flex justify-between items-center pb-1.5 border-b border-amber-100">
+                  <span className="text-[#8C5E4F] font-medium">विभाग / मॉड्यूल:</span>
+                  <span className="font-bold text-[#4A1410]">
+                    {selectedItemDetails.sectionTitleMr || selectedItemDetails.moduleName || 'General'}
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center pb-1.5 border-b border-slate-100">
-                  <span className="text-slate-500 font-medium">खातेदार / सभासद (Member):</span>
-                  <span className="font-bold text-slate-800 text-xs">
-                    👤 {selectedItemDetails.memberName}
+                <div className="flex justify-between items-center pb-1.5 border-b border-amber-100 gap-2">
+                  <span className="text-[#8C5E4F] font-medium shrink-0">खातेदार / शीर्षक:</span>
+                  <span className="font-bold text-[#4A1410] text-right">
+                    {selectedItemDetails.memberName}
                   </span>
                 </div>
 
                 {selectedItemDetails.accountNo && (
-                  <div className="flex justify-between items-center pb-1.5 border-b border-slate-100">
-                    <span className="text-slate-500 font-medium">खाते / पावती क्र. (Account No):</span>
-                    <span className="font-mono text-sky-800 font-bold bg-sky-50 border border-sky-200 px-2 py-0.5 rounded text-[11px]">
+                  <div className="flex justify-between items-center pb-1.5 border-b border-amber-100">
+                    <span className="text-[#8C5E4F] font-medium">खाते / संदर्भ क्र.:</span>
+                    <span className="font-mono text-[#9A3412] font-bold bg-orange-50 border border-orange-200 px-2 py-0.5 rounded text-[11px]">
                       {selectedItemDetails.accountNo}
                     </span>
                   </div>
                 )}
 
                 {selectedItemDetails.amount ? (
-                  <div className="flex justify-between items-center pb-1.5 border-b border-slate-100">
-                    <span className="text-slate-500 font-medium">थकीत / एकूण रक्कम (Amount):</span>
-                    <span className="font-extrabold text-emerald-700 text-xs">
+                  <div className="flex justify-between items-center pb-1.5 border-b border-amber-100">
+                    <span className="text-[#8C5E4F] font-medium">थकीत / एकूण रक्कम:</span>
+                    <span className="font-black text-emerald-700">
                       ₹ {Number(selectedItemDetails.amount).toLocaleString('en-IN')}
                     </span>
                   </div>
                 ) : null}
 
                 {selectedItemDetails.dueDate && (
-                  <div className="flex justify-between items-center pb-1.5 border-b border-slate-100">
-                    <span className="text-slate-500 font-medium">मुदत तारीख (Due Date):</span>
-                    <span className="font-medium text-slate-700">{selectedItemDetails.dueDate}</span>
+                  <div className="flex justify-between items-center pb-1.5 border-b border-amber-100">
+                    <span className="text-[#8C5E4F] font-medium">मुदत / देय तारीख:</span>
+                    <span className="font-mono font-bold text-[#4A1410]">{selectedItemDetails.dueDate}</span>
                   </div>
                 )}
 
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-medium">काम स्थिती (Status):</span>
-                  <span className="font-medium text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                  <span className="text-[#8C5E4F] font-medium">काम स्थिती:</span>
+                  <span className="font-bold text-[#7C2418] bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                     {selectedItemDetails.status}
                   </span>
                 </div>
               </div>
 
-              <div className="bg-white p-3 rounded-lg border border-slate-200">
-                <span className="font-semibold text-slate-700 block mb-1 text-[11px]">
-                  वर्णन व आवश्यक कृती (Action Description):
+              <div className="bg-white p-3 rounded-lg border border-amber-200/80">
+                <span className="font-bold text-[#7C2418] block mb-1 text-[11px]">
+                  वर्णन व आवश्यक कृती:
                 </span>
-                <p className="text-slate-600 leading-relaxed text-xs">
-                  {selectedItemDetails.details}
+                <p className="text-[#5C3A2E] leading-relaxed text-xs whitespace-pre-wrap">
+                  {selectedItemDetails.details || 'अतिरिक्त तपशील उपलब्ध नाही.'}
                 </p>
               </div>
             </div>
 
-            <div className="p-3 bg-white border-t border-slate-200 flex justify-between items-center gap-2">
+            <div className="p-3 bg-white border-t border-amber-200/80 flex justify-between items-center gap-2">
               <button
                 type="button"
                 onClick={() => setSelectedItemDetails(null)}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-xs border border-slate-300 cursor-pointer"
+                className="px-3 py-1.5 bg-[#FFF8F1] hover:bg-amber-50 text-[#5C3A2E] font-bold rounded-lg text-xs border border-amber-200 cursor-pointer"
               >
                 बंद करा
               </button>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={completingTaskId === selectedItemDetails.id}
-                  onClick={() => handleCompleteTask(selectedItemDetails.id)}
-                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold rounded-lg text-xs flex items-center gap-1 shadow-sm cursor-pointer disabled:opacity-50"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>पूर्ण झाले</span>
-                </button>
+                {selectedItemDetails.canComplete !== false && (
+                  <button
+                    type="button"
+                    disabled={completingTaskId === selectedItemDetails.id}
+                    onClick={() => handleCompleteTask(selectedItemDetails)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>पूर्ण झाले</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
-                    const targetTab = selectedItemDetails.targetTab || 'vouchers';
+                    const targetTab = selectedItemDetails.targetTab || 'voucher-posting';
                     const entityId = selectedItemDetails.entityId;
                     setSelectedItemDetails(null);
+                    setActiveCategoryId(null);
                     handleActionClick(targetTab, entityId);
                   }}
-                  className="px-3.5 py-1.5 bg-sky-100 hover:bg-sky-200/80 text-sky-900 border border-sky-300 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  className="px-3.5 py-1.5 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs hover:brightness-105 cursor-pointer"
+                  style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
                 >
-                  <span>थेट नोंदणी करा</span>
+                  <span>थेट स्क्रीन उघडा</span>
                   <ArrowUpRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -1739,19 +2080,29 @@ export default function TodaysTasksDashboard({
           MODAL 2: LOGIN NOTIFICATIONS POPUP DIALOG
          ======================================================== */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-2xl w-full shadow-xl border border-emerald-200 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border-b border-emerald-200 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-100/90 border border-emerald-200 rounded-xl text-emerald-700">
-                  <Bell className="w-5 h-5 text-emerald-700" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/55 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full shadow-2xl border border-amber-300/80 overflow-hidden flex flex-col max-h-[88vh]">
+            <div
+              className="relative px-4 py-3 pt-3.5 text-[#4A1410] flex justify-between items-center shrink-0 border-b border-amber-200/80"
+              style={{ background: 'linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FCE0B8 100%)' }}
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-[3px]"
+                style={{ background: 'linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%)' }}
+              />
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="p-2 text-white rounded-xl shadow-xs"
+                  style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
+                >
+                  <Bell className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold tracking-tight text-slate-800">
-                    आजची कामे व महत्त्वाच्या सूचना (Today's Live Alerts)
+                  <h2 className="text-sm font-black tracking-tight text-[#4A1410]">
+                    आजची कामे व महत्त्वाच्या सूचना (Today&apos;s Live Alerts)
                   </h2>
-                  <p className="text-[11px] text-slate-600">
-                    डेटाबेसमधील लाईव्ह प्रलंबित कामे व दैनंदिन कार्यभार.
+                  <p className="text-[11px] text-[#7A5243]">
+                    डेटाबेसमधील लाईव्ह प्रलंबित कामे व दैनंदिन कार्यभार
                   </p>
                 </div>
               </div>
@@ -1761,68 +2112,79 @@ export default function TodaysTasksDashboard({
                   setIsModalOpen(false);
                   if (onCloseLoginModal) onCloseLoginModal();
                 }}
-                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-amber-100/80 text-[#7C2418] hover:text-[#4A1410] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-3 flex-1 bg-slate-50/50">
-              <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-3 flex items-start gap-3 text-xs text-amber-900">
+            <div className="p-4 overflow-y-auto min-h-0 space-y-3 flex-1 bg-[#FFFBF7]">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-900">
                 <Info className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
                 <div>
-                  <span className="font-semibold">महत्त्वाची टीप:</span> आजच्या व्यवहारापूर्वी
-                  व्हाउचर मंजुरी, कर्ज वसुली, एफ.डी. मुदतपूर्ती, एन.पी.ए. व दिवस अखेर तपासून घ्या.
+                  <span className="font-bold">महत्त्वाची टीप:</span> कोणत्याही विभागावर क्लिक करून त्यातील सर्व प्रलंबित कामांची यादी थेट पाहू शकता.
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                 {taskSections.map(sec => {
                   const SecIcon = sec.icon;
-                  const shade = getSectionShade(sec.id);
                   return (
-                    <div
+                    <button
                       key={sec.id}
+                      type="button"
                       onClick={() => {
                         setIsModalOpen(false);
                         if (onCloseLoginModal) onCloseLoginModal();
-                        handleActionClick(sec.targetTab);
+                        if (showLoginModal && onNavigate) {
+                          handleActionClick('todays-tasks');
+                        } else {
+                          setCategorySearch('');
+                          setActiveCategoryId(sec.id);
+                        }
                       }}
-                      className={`p-2.5 rounded-xl bg-white border ${shade.cardBorder} hover:bg-slate-50 transition-all cursor-pointer flex justify-between items-center group shadow-sm`}
+                      className="text-left p-2.5 rounded-xl bg-white border border-amber-200/80 hover:border-amber-400 hover:bg-amber-50/50 transition-all cursor-pointer flex justify-between items-center group shadow-2xs"
                     >
-                      <div className="flex items-center gap-2.5 overflow-hidden">
-                        <div className={`p-2 rounded-lg ${shade.iconBox} transition-colors shrink-0`}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className="p-2 rounded-lg text-white shrink-0"
+                          style={{ backgroundColor: sec.accentColor }}
+                        >
                           <SecIcon className="w-4 h-4" />
                         </div>
-                        <div className="truncate">
-                          <div className="font-bold text-xs text-slate-800 transition-colors truncate">
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-[#4A1410] truncate">
                             {sec.titleMr}
                           </div>
-                          <div className="text-[10px] text-slate-500">
+                          <div className="text-[10.5px] font-semibold text-[#9A3412]">
                             {sec.count} प्रलंबित नोंदी
                           </div>
                         </div>
                       </div>
-                      <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-700 group-hover:translate-x-0.5 transition-all shrink-0 ml-1" />
-                    </div>
+                      <ArrowUpRight className="w-4 h-4 text-[#B44814] group-hover:translate-x-0.5 transition-all shrink-0 ml-1" />
+                    </button>
                   );
                 })}
               </div>
             </div>
 
-            <div className="p-3.5 bg-white border-t border-slate-200 flex justify-between items-center">
-              <span className="text-xs text-slate-500 font-medium">
-                एकूण {liveNotifications.length} प्रलंबित कामे डेटाबेसमध्ये उपलब्ध आहेत
+            <div className="px-4 py-3 bg-white border-t border-amber-200/80 flex justify-between items-center shrink-0">
+              <span className="text-xs text-[#6E493C] font-bold">
+                एकूण <strong className="text-[#9A3412]">{liveStats.totalPending}</strong> प्रलंबित कामे उपलब्ध आहेत
               </span>
               <button
                 type="button"
                 onClick={() => {
                   setIsModalOpen(false);
                   if (onCloseLoginModal) onCloseLoginModal();
+                  if (showLoginModal && onNavigate) {
+                    onNavigate('todays-tasks');
+                  }
                 }}
-                className="px-4 py-1.5 bg-emerald-100 hover:bg-emerald-200/80 text-emerald-900 border border-emerald-300 font-bold text-xs rounded-lg shadow-sm transition-all cursor-pointer"
+                className="px-4 py-1.5 hover:brightness-105 text-white font-bold text-xs rounded-lg shadow-xs cursor-pointer"
+                style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
               >
-                डॅशबोर्ड पहा (View Dashboard)
+                आजची कामे पहा
               </button>
             </div>
           </div>
@@ -1833,82 +2195,84 @@ export default function TodaysTasksDashboard({
           MODAL 3: CANDIDATE LIST MODAL (पात्र मुदत ठेव यादी)
          ======================================================== */}
       {showAutoRenewalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[85vh] shadow-2xl border border-sky-200 flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="p-3 bg-gradient-to-r from-sky-50 via-indigo-50/80 to-emerald-50/70 border-b border-sky-200 flex justify-between items-center shrink-0">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/55 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl max-w-[97vw] xl:max-w-[1460px] w-full max-h-[85vh] shadow-2xl border border-amber-300/80 flex flex-col overflow-hidden">
+            <div
+              className="relative px-4 py-2.5 pt-3 text-[#4A1410] flex justify-between items-center shrink-0 border-b border-amber-200/80"
+              style={{ background: 'linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FCE0B8 100%)' }}
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-[3px]"
+                style={{ background: 'linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%)' }}
+              />
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-sky-100 border border-sky-200 text-sky-700">
-                  <RotateCcw className="w-4 h-4" />
-                </div>
+                <RotateCcw className="w-4 h-4 text-[#B44814]" />
                 <div>
-                  <h3 className="font-bold text-xs text-slate-800">स्वयंचलित नूतनीकरणास पात्र मुदत ठेव पावत्या</h3>
-                  <p className="text-[10px] text-slate-600">आज किंवा त्यापूर्वी मुदत संपलेली व ऑटो-रिन्यूअल सक्रिय असणारी खाती</p>
+                  <h3 className="font-bold text-xs text-[#4A1410]">स्वयंचलित नूतनीकरणास पात्र मुदत ठेव पावत्या</h3>
+                  <p className="text-[10px] text-[#7A5243]">आज किंवा त्यापूर्वी मुदत संपलेली व ऑटो-रिन्यूअल सक्रिय असणारी खाती</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAutoRenewalModal(false)}
-                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-amber-100/80 text-[#7C2418] hover:text-[#4A1410] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Body */}
-            <div className="p-3 overflow-y-auto flex-1 bg-slate-50/50 text-[11px]">
+            <div className="p-3 overflow-auto min-h-0 flex-1 bg-[#FFFBF7] text-[11px]">
               {autoRenewalCandidates.length === 0 ? (
-                <div className="text-center py-8 text-slate-500">
+                <div className="text-center py-8 text-[#8C5E4F]">
                   <CheckCheck className="w-8 h-8 text-emerald-500 mx-auto mb-1.5 opacity-80" />
-                  <p className="font-bold text-xs text-slate-700">सध्या स्वयंचलित नूतनीकरणास पात्र कोणतीही ठेव प्रलंबित नाही.</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">सर्व मुदत ठेवी नियमित किंवा अद्ययावत आहेत.</p>
+                  <p className="font-bold text-xs text-[#4A1410]">सध्या स्वयंचलित नूतनीकरणास पात्र कोणतीही ठेव प्रलंबित नाही.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-sm">
-                  <table className="w-full border-collapse text-left">
+                <div className="overflow-auto border border-amber-200/80 rounded-lg bg-white shadow-xs">
+                  <table className="w-full border-collapse text-left whitespace-nowrap leading-tight">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold text-[10px]">
-                        <th className="p-2">पावती / खाते क्र.</th>
-                        <th className="p-2">खातेदार नाव</th>
-                        <th className="p-2">मुदतपूर्ती तारीख</th>
-                        <th className="p-2 text-right">ठेव मुद्दल</th>
-                        <th className="p-2 text-right">अपेक्षित रक्कम</th>
-                        <th className="p-2 text-center">प्रचलित दर</th>
-                        <th className="p-2">पर्याय</th>
-                        <th className="p-2 text-center">कृती</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 font-bold text-[10.5px]">
+                        <th className="py-1.5 px-2 whitespace-nowrap">पावती / खाते क्र.</th>
+                        <th className="py-1.5 px-2 whitespace-nowrap">खातेदार नाव</th>
+                        <th className="py-1.5 px-2 text-center whitespace-nowrap">मुदतपूर्ती तारीख</th>
+                        <th className="py-1.5 px-2 text-right whitespace-nowrap">ठेव मुद्दल</th>
+                        <th className="py-1.5 px-2 text-right whitespace-nowrap">अपेक्षित रक्कम</th>
+                        <th className="py-1.5 px-2 text-center whitespace-nowrap">प्रचलित दर</th>
+                        <th className="py-1.5 px-2 whitespace-nowrap">पर्याय</th>
+                        <th className="py-1.5 px-2 text-center whitespace-nowrap">कृती</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-amber-100/80">
                       {autoRenewalCandidates.map(c => (
-                        <tr key={c.fdAccountID} className="hover:bg-sky-50/50 transition-colors">
-                          <td className="p-2 font-mono font-bold text-sky-800 text-xs">
+                        <tr key={c.fdAccountID} className="hover:bg-amber-50/60 transition-colors">
+                          <td className="py-1 px-2 font-mono font-bold text-[#9A3412] align-middle">
                             <div>{c.receiptNo || c.accountNo}</div>
                             {c.receiptNo && c.receiptNo !== c.accountNo && (
-                              <div className="text-[9px] text-slate-500 font-normal">CBS: {c.accountNo}</div>
+                              <div className="text-[9.5px] text-slate-500 font-normal">CBS: {c.accountNo}</div>
                             )}
                           </td>
-                          <td className="p-2">
-                            <div className="font-bold text-slate-800">{c.customerName}</div>
-                            {c.contactNo && <div className="text-[9px] text-slate-400">📱 {c.contactNo}</div>}
+                          <td className="py-1 px-2 align-middle">
+                            <div className="font-bold text-[#4A1410]">{c.customerName}</div>
+                            {c.contactNo && <div className="text-[9.5px] text-slate-500">📱 {c.contactNo}</div>}
                             {c.hasActiveLoan && (
-                              <span className="inline-block mt-0.5 px-1.5 py-0.2 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[9px] font-bold">
+                              <span className="inline-block mt-0.5 px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[9px] font-bold">
                                 ⚠️ सक्रिय कर्ज: ₹ {Number(c.activeLoanBalance).toLocaleString('en-IN')}
                               </span>
                             )}
                           </td>
-                          <td className="p-2 text-slate-600">
-                            {new Date(c.MaturityDate || c.maturityDate).toLocaleDateString('en-GB')}
+                          <td className="py-1 px-2 text-center font-mono text-slate-700 align-middle">
+                            {formatDateSafe(c.MaturityDate || c.maturityDate, '-')}
                           </td>
-                          <td className="p-2 text-right font-medium text-slate-700">
+                          <td className="py-1 px-2 text-right font-mono font-medium text-slate-700 align-middle">
                             ₹ {Number(c.depositAmount || 0).toLocaleString('en-IN')}
                           </td>
-                          <td className="p-2 text-right font-bold text-emerald-700">
+                          <td className="py-1 px-2 text-right font-mono font-bold text-emerald-700 align-middle">
                             ₹ {Number(c.projectedRenewedAmount || c.maturityAmount || 0).toLocaleString('en-IN')}
                           </td>
-                          <td className="p-2 text-center font-bold text-slate-800 bg-sky-50/60">
+                          <td className="py-1 px-2 text-center font-bold text-[#7C2418] bg-amber-50/50 align-middle">
                             {c.prevailingRate}%
                           </td>
-                          <td className="p-2 text-[10px]">
+                          <td className="py-1 px-2 text-[10px] align-middle">
                             {c.autoRenewalOption === 'PrincipalOnly' ? (
                               <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
                                 केवळ मुद्दल (व्याज SB मध्ये)
@@ -1918,16 +2282,16 @@ export default function TodaysTasksDashboard({
                                 मुद्दल + जमा व्याज
                               </span>
                             )}
-                            <div className="text-[9px] text-slate-400 mt-0.5">
+                            <div className="text-[9.5px] text-slate-500 mt-0.5">
                               नूतनीकरण: {c.autoRenewalCount}/{c.maxAutoRenewalCycles} वेळा
                             </div>
                           </td>
-                          <td className="p-2 text-center">
+                          <td className="py-1 px-2 text-center align-middle">
                             <button
                               type="button"
                               disabled={runningBatch}
                               onClick={() => handleRunBatch([c.fdAccountID])}
-                              className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 text-[10px] font-bold rounded shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                              className="px-2.5 py-1 bg-[#B44814] hover:bg-[#7C2418] text-white text-[10px] font-bold rounded shadow-xs cursor-pointer disabled:opacity-50"
                             >
                               नूतनीकरण करा
                             </button>
@@ -1940,17 +2304,13 @@ export default function TodaysTasksDashboard({
               )}
             </div>
 
-            {/* Footer */}
-            <div className="p-3 bg-white border-t border-slate-200 flex justify-between items-center shrink-0">
-              <span className="text-[11px] text-slate-600 font-medium">
-                एकूण पात्र खाती: <strong>{autoRenewalCandidates.length}</strong> | एकूण रक्कम:{' '}
-                <strong>
+            <div className="p-3 bg-white border-t border-amber-200/80 flex justify-between items-center shrink-0">
+              <span className="text-[11px] text-[#6E493C] font-semibold">
+                एकूण पात्र खाती: <strong className="text-[#4A1410]">{autoRenewalCandidates.length}</strong> | एकूण रक्कम:{' '}
+                <strong className="text-emerald-700">
                   ₹{' '}
                   {autoRenewalCandidates
-                    .reduce(
-                      (acc, c) => acc + (c.projectedRenewedAmount || c.depositAmount || 0),
-                      0
-                    )
+                    .reduce((acc, c) => acc + Number(c.projectedRenewedAmount || c.depositAmount || 0), 0)
                     .toLocaleString('en-IN')}
                 </strong>
               </span>
@@ -1958,7 +2318,7 @@ export default function TodaysTasksDashboard({
                 <button
                   type="button"
                   onClick={() => setShowAutoRenewalModal(false)}
-                  className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-semibold rounded transition-colors cursor-pointer"
+                  className="px-3 py-1 bg-[#FFF8F1] hover:bg-amber-50 text-[#5C3A2E] border border-amber-200 text-xs font-bold rounded-lg cursor-pointer"
                 >
                   बंद करा
                 </button>
@@ -1970,9 +2330,9 @@ export default function TodaysTasksDashboard({
                       setShowAutoRenewalModal(false);
                       handleRunBatch();
                     }}
-                    className="px-3.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 text-xs font-bold rounded shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <Play className="w-3.5 h-3.5 text-emerald-700 fill-emerald-700" />
+                    <Play className="w-3.5 h-3.5 fill-white" />
                     <span>सर्व {autoRenewalCandidates.length} पावत्यांची बॅच रन करा</span>
                   </button>
                 )}
@@ -1986,61 +2346,65 @@ export default function TodaysTasksDashboard({
           MODAL 4: BATCH RESULT SUMMARY MODAL
          ======================================================== */}
       {batchResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl border border-emerald-200 overflow-hidden">
-            <div className="p-3.5 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-200 flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/55 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl border border-amber-300/80 overflow-hidden">
+            <div
+              className="relative px-4 py-3 pt-3.5 text-[#4A1410] flex justify-between items-center border-b border-amber-200/80"
+              style={{ background: 'linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FCE0B8 100%)' }}
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-[3px]"
+                style={{ background: 'linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%)' }}
+              />
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-emerald-700" />
-                <h3 className="font-bold text-xs text-slate-800">स्वयंचलित नूतनीकरण बॅच निकाल (Execution Summary)</h3>
+                <h3 className="font-bold text-xs text-[#4A1410]">स्वयंचलित नूतनीकरण बॅच निकाल (Execution Summary)</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setBatchResult(null)}
-                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-amber-100/80 text-[#7C2418] hover:text-[#4A1410] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-4 space-y-3 text-xs bg-slate-50/60">
+            <div className="p-4 space-y-3 text-xs bg-[#FFFBF7]">
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-                  <div className="text-[10px] text-emerald-700 font-medium">यशस्वी</div>
+                  <div className="text-[10px] text-emerald-700 font-bold">यशस्वी</div>
                   <div className="text-base font-black text-emerald-800">{batchResult.successCount}</div>
                 </div>
                 <div className="p-2 bg-rose-50 border border-rose-200 rounded-lg">
-                  <div className="text-[10px] text-rose-700 font-medium">त्रुटी / अपयशी</div>
+                  <div className="text-[10px] text-rose-700 font-bold">त्रुटी / अपयशी</div>
                   <div className="text-base font-black text-rose-800">{batchResult.failedCount}</div>
                 </div>
-                <div className="p-2 bg-sky-50 border border-sky-200 rounded-lg">
-                  <div className="text-[10px] text-sky-700 font-medium">एकूण रक्कम</div>
-                  <div className="text-xs font-black text-sky-900">
+                <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="text-[10px] text-[#9A3412] font-bold">एकूण रक्कम</div>
+                  <div className="text-xs font-black text-[#4A1410]">
                     ₹ {Number(batchResult.totalRenewedAmount || 0).toLocaleString('en-IN')}
                   </div>
                 </div>
               </div>
 
               {batchResult.items && batchResult.items.length > 0 && (
-                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded bg-white p-2 divide-y divide-slate-100 text-[11px]">
+                <div className="max-h-56 overflow-y-auto border border-amber-200/80 rounded-lg bg-white p-2 divide-y divide-amber-100 text-[11px]">
                   {batchResult.items.map((it: any, idx: number) => (
-                    <div key={idx} className="py-1.5 flex justify-between items-center">
+                    <div key={idx} className="py-1.5 flex justify-between items-center gap-2">
                       <div>
-                        <div className="font-bold text-slate-800">
+                        <div className="font-bold text-[#4A1410]">
                           पावती: {it.oldReceiptNo || it.oldAccountNo} ➜{' '}
-                          <span className="text-sky-700 font-mono">{it.newReceiptNo || it.newAccountNo || '-'}</span>
+                          <span className="text-[#9A3412] font-mono">{it.newReceiptNo || it.newAccountNo || '-'}</span>
                           {it.renewalCycleNo > 0 && (
                             <span className="ml-1 text-[9px] bg-amber-100 text-amber-900 px-1 rounded">
                               सायकल #{it.renewalCycleNo}
                             </span>
                           )}
                         </div>
-                        {it.newAccountNo && it.newReceiptNo && it.newAccountNo !== it.newReceiptNo && (
-                          <div className="text-[9px] text-slate-500 font-mono">CBS संदर्भ: {it.newAccountNo}</div>
-                        )}
                         <div className="text-[10px] text-slate-500">{it.customerName}</div>
                         {it.voucherNo && (
                           <div className="text-[9.5px] text-amber-800 font-semibold mt-0.5">
-                            🧾 व्हाउचर: <span className="font-mono">{it.voucherNo}</span> ({it.voucherStatus || 'Pending'} — Pass Voucher ला मंजूर करा)
+                            🧾 व्हाउचर: <span className="font-mono">{it.voucherNo}</span> ({it.voucherStatus || 'Pending'})
                           </div>
                         )}
                         {it.errorMessage && (
@@ -2049,9 +2413,9 @@ export default function TodaysTasksDashboard({
                           </div>
                         )}
                       </div>
-                      <div className="text-right">
+                      <div className="text-right shrink-0">
                         <span
-                          className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                             it.status === 'Success'
                               ? 'bg-emerald-100 text-emerald-800'
                               : 'bg-rose-100 text-rose-800'
@@ -2079,7 +2443,7 @@ export default function TodaysTasksDashboard({
                               type="button"
                               disabled={loadingPrintId === it.newFdAccountID}
                               onClick={() => handleOpenBatchPrintModal(it, 'endorsement')}
-                              className="px-1.5 py-0.5 bg-sky-100 hover:bg-sky-200 text-sky-950 border border-sky-300 rounded text-[9.5px] font-bold cursor-pointer inline-flex items-center gap-0.5 disabled:opacity-50"
+                              className="px-1.5 py-0.5 bg-orange-100 hover:bg-orange-200 text-[#7C2418] border border-orange-300 rounded text-[9.5px] font-bold cursor-pointer inline-flex items-center gap-0.5 disabled:opacity-50"
                             >
                               <RotateCcw className="w-2.5 h-2.5" />
                               <span>शेरा</span>
@@ -2093,7 +2457,7 @@ export default function TodaysTasksDashboard({
               )}
             </div>
 
-            <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between gap-2">
+            <div className="p-3 bg-white border-t border-amber-200/80 flex items-center justify-between gap-2">
               {onNavigate && batchResult.successCount > 0 ? (
                 <button
                   type="button"
@@ -2101,7 +2465,7 @@ export default function TodaysTasksDashboard({
                     setBatchResult(null);
                     onNavigate('voucher-posting');
                   }}
-                  className="px-3.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 font-bold text-xs rounded transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 font-bold text-xs rounded-lg cursor-pointer"
                 >
                   📋 Pass Voucher (व्हाउचर पासिंग) ला जा
                 </button>
@@ -2111,7 +2475,7 @@ export default function TodaysTasksDashboard({
               <button
                 type="button"
                 onClick={() => setBatchResult(null)}
-                className="px-4 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 font-bold text-xs rounded transition-colors cursor-pointer"
+                className="px-4 py-1.5 bg-[#9A3412] hover:bg-[#7C2418] text-white font-bold text-xs rounded-lg cursor-pointer"
               >
                 समजले (Close)
               </button>
@@ -2124,56 +2488,61 @@ export default function TodaysTasksDashboard({
           MODAL 5: LOGS & 14-DAY REVERSAL MODAL
          ======================================================== */}
       {showLogsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[85vh] shadow-2xl border border-indigo-200 flex flex-col overflow-hidden">
-            <div className="p-3 bg-gradient-to-r from-indigo-50 via-sky-50 to-teal-50 border-b border-indigo-200 flex justify-between items-center shrink-0">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/55 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl max-w-[97vw] xl:max-w-[1460px] w-full max-h-[85vh] shadow-2xl border border-amber-300/80 flex flex-col overflow-hidden">
+            <div
+              className="relative px-4 py-2.5 pt-3 text-[#4A1410] flex justify-between items-center shrink-0 border-b border-amber-200/80"
+              style={{ background: 'linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 48%, #FCE0B8 100%)' }}
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-[3px]"
+                style={{ background: 'linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%)' }}
+              />
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-indigo-100 border border-indigo-200 text-indigo-700">
-                  <History className="w-4 h-4" />
-                </div>
+                <History className="w-4 h-4 text-[#B44814]" />
                 <div>
-                  <h3 className="font-bold text-xs text-slate-800">
+                  <h3 className="font-bold text-xs text-[#4A1410]">
                     स्वयंचलित नूतनीकरण ऑडिट इतिहास व १४-दिवसीय रिव्हर्सल
                   </h3>
-                  <p className="text-[10px] text-slate-600">
-                    आरबीआय मार्गदर्शक तत्त्वांनुसार १४ दिवसांत विनामूल्य रिव्हर्ट करण्याची सुविधा
+                  <p className="text-[10px] text-[#7A5243]">
+                    RBI मार्गदर्शक तत्त्वांनुसार १४ दिवसांत विनामूल्य रिव्हर्ट करण्याची सुविधा
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowLogsModal(false)}
-                className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-amber-100/80 text-[#7C2418] hover:text-[#4A1410] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-3 overflow-y-auto flex-1 bg-slate-50/50 text-[11px]">
+            <div className="p-3 overflow-auto min-h-0 flex-1 bg-[#FFFBF7] text-[11px]">
               {logsLoading ? (
-                <div className="text-center py-8 text-slate-500">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-1 text-indigo-600" />
+                <div className="text-center py-8 text-[#8C5E4F]">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-1 text-[#B44814]" />
                   <span>ऑडिट लॉग्स लोड होत आहेत...</span>
                 </div>
               ) : renewalLogs.length === 0 ? (
-                <div className="text-center py-8 text-slate-400">
+                <div className="text-center py-8 text-[#8C5E4F] font-semibold">
                   कोणतीही नूतनीकरण लॉग नोंद उपलब्ध नाही.
                 </div>
               ) : (
-                <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-sm">
-                  <table className="w-full border-collapse text-left">
+                <div className="overflow-auto border border-amber-200/80 rounded-lg bg-white shadow-xs">
+                  <table className="w-full border-collapse text-left whitespace-nowrap leading-tight">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold text-[10px]">
-                        <th className="p-2">दिनांक / वेळ</th>
-                        <th className="p-2">मूळ खाते ➜ नवीन खाते</th>
-                        <th className="p-2">खातेदार</th>
-                        <th className="p-2 text-right">नूतनीकृत रक्कम</th>
-                        <th className="p-2 text-center">व्याजदर</th>
-                        <th className="p-2 text-center">स्थिती</th>
-                        <th className="p-2 text-center">१४-दिवसीय रिव्हर्सल</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 font-bold text-[10.5px]">
+                        <th className="py-1.5 px-2 whitespace-nowrap">दिनांक</th>
+                        <th className="py-1.5 px-2 whitespace-nowrap">मूळ खाते ➜ नवीन खाते</th>
+                        <th className="py-1.5 px-2 whitespace-nowrap">खातेदार</th>
+                        <th className="py-1.5 px-2 text-right whitespace-nowrap">नूतनीकृत रक्कम</th>
+                        <th className="py-1.5 px-2 text-center whitespace-nowrap">व्याजदर</th>
+                        <th className="py-1.5 px-2 text-center whitespace-nowrap">स्थिती</th>
+                        <th className="py-1.5 px-2 text-center whitespace-nowrap">१४-दिवसीय रिव्हर्सल</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-amber-100/80">
                       {renewalLogs.map((l: any) => {
                         const batchDate = new Date(l.batchDate || l.executionTime);
                         const daysAgo = Math.floor(
@@ -2183,54 +2552,53 @@ export default function TodaysTasksDashboard({
                           !l.isReverted && daysAgo <= 14 && l.status === 'Success';
 
                         return (
-                          <tr key={l.logID} className="hover:bg-slate-50 transition-colors">
-                            <td className="p-2 text-slate-600 font-mono text-[10px]">
-                              {batchDate.toLocaleDateString('en-GB')}
+                          <tr key={l.logID} className="hover:bg-amber-50/60 transition-colors">
+                            <td className="py-1 px-2 text-slate-600 font-mono text-[10.5px] align-middle">
+                              {formatDateSafe(l.batchDate || l.executionTime, '-')}
                             </td>
-                            <td className="p-2 font-mono text-[10px]">
+                            <td className="py-1 px-2 font-mono text-[10.5px] align-middle">
                               <span className="text-slate-600">{l.oldAccountNo}</span> ➜{' '}
-                              <strong className="text-indigo-700">{l.newAccountNo}</strong>
+                              <strong className="text-[#9A3412]">{l.newAccountNo}</strong>
                             </td>
-                            <td className="p-2 font-semibold text-slate-800">{l.customerName}</td>
-                            <td className="p-2 text-right font-bold text-slate-900">
+                            <td className="py-1 px-2 font-bold text-[#4A1410] align-middle">{l.customerName}</td>
+                            <td className="py-1 px-2 text-right font-mono font-bold text-slate-900 align-middle">
                               ₹ {Number(l.renewedAmount || 0).toLocaleString('en-IN')}
                             </td>
-                            <td className="p-2 text-center font-bold text-slate-700">
+                            <td className="py-1 px-2 text-center font-bold text-slate-700 align-middle">
                               {l.appliedRate}%
                             </td>
-                            <td className="p-2 text-center">
+                            <td className="py-1 px-2 text-center align-middle">
                               {l.isReverted ? (
-                                <span className="bg-rose-100 text-rose-800 px-1.5 py-0.2 rounded text-[9px] font-bold">
+                                <span className="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded text-[9.5px] font-bold">
                                   रिव्हर्ट केले
                                 </span>
                               ) : (
-                                <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded text-[9px] font-bold">
+                                <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[9.5px] font-bold">
                                   सक्रिय (Active)
                                 </span>
                               )}
                             </td>
-                            <td className="p-2 text-center">
+                            <td className="py-1 px-2 text-center align-middle">
                               {l.isReverted ? (
                                 <span
-                                  className="text-[9px] text-slate-400 italic"
+                                  className="text-[10px] text-slate-500 italic"
                                   title={l.revertReason}
                                 >
                                   {l.revertReason
-                                    ? `कारण: ${l.revertReason.substring(0, 20)}...`
+                                    ? `कारण: ${l.revertReason.substring(0, 22)}...`
                                     : 'पूर्ववत केले'}
                                 </span>
                               ) : isEligibleForGraceReversal ? (
                                 <button
                                   type="button"
                                   onClick={() => setShowRevertDialog(l)}
-                                  className="px-2 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 rounded text-[10px] font-bold transition-all shadow-sm flex items-center gap-1 mx-auto cursor-pointer"
-                                  title={`नूतनीकरण होऊन ${daysAgo} दिवस झाले आहेत (१४ दिवसांची सवलत उपलब्ध)`}
+                                  className="px-2 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 rounded text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer"
                                 >
                                   <RotateCcw className="w-3 h-3" />
                                   <span>रिव्हर्ट ({14 - daysAgo} दिवस बाकी)</span>
                                 </button>
                               ) : (
-                                <span className="text-[9px] text-slate-400 italic">
+                                <span className="text-[10px] text-slate-400 italic">
                                   सवलत मुदत संपली ({daysAgo} दिवस)
                                 </span>
                               )}
@@ -2244,11 +2612,11 @@ export default function TodaysTasksDashboard({
               )}
             </div>
 
-            <div className="p-3 bg-white border-t border-slate-200 text-right">
+            <div className="p-3 bg-white border-t border-amber-200/80 text-right shrink-0">
               <button
                 type="button"
                 onClick={() => setShowLogsModal(false)}
-                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-semibold rounded transition-colors cursor-pointer"
+                className="px-4 py-1 bg-[#FFF8F1] hover:bg-amber-50 text-[#5C3A2E] border border-amber-200 text-xs font-bold rounded-lg cursor-pointer"
               >
                 बंद करा
               </button>
@@ -2258,34 +2626,34 @@ export default function TodaysTasksDashboard({
       )}
 
       {/* ========================================================
-          MODAL 6: REVERT CONFIRMATION DIALOG (१४-दिवसीय रिव्हर्सल कारण)
+          MODAL 6: REVERT CONFIRMATION DIALOG
          ======================================================== */}
       {showRevertDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl max-w-md w-full shadow-2xl border border-rose-200 overflow-hidden">
-            <div className="p-3 bg-gradient-to-r from-rose-50 to-pink-50 border-b border-rose-200 flex justify-between items-center">
+            <div className="p-3 bg-gradient-to-r from-rose-600 to-rose-700 text-white flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <RotateCcw className="w-4 h-4 text-rose-700" />
-                <h3 className="font-bold text-xs text-rose-900">
+                <RotateCcw className="w-4 h-4" />
+                <h3 className="font-bold text-xs">
                   १४-दिवसीय सवलतीत नूतनीकरण रद्द (Reversal)
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowRevertDialog(null)}
-                className="p-1 rounded-full hover:bg-rose-100 text-rose-600 transition-colors cursor-pointer"
+                className="p-1 rounded-full hover:bg-white/15 text-white/80 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-4 space-y-3 text-xs bg-slate-50/60">
-              <div className="bg-rose-50 border border-rose-200 p-2.5 rounded text-rose-900 leading-snug">
+            <div className="p-4 space-y-3 text-xs bg-slate-50/70">
+              <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-lg text-rose-900 leading-snug">
                 ⚠️ <strong>बँकिंग प्रक्रिया माहिती:</strong> नवीन पावती क्र.{' '}
                 <strong>{showRevertDialog.newAccountNo}</strong> रद्द होईल, अकाउंटिंग व्हाउचर उलट
                 (Reverse) होईल, आणि मूळ पावती क्र.{' '}
                 <strong>{showRevertDialog.oldAccountNo}</strong> मुदतपूर्ण (Matured) म्हणून पूर्ववत
-                केली जाईल जेणेकरून खातेदार संपूर्ण रक्कम विनादंड काढू शकेल.
+                केली जाईल.
               </div>
 
               <div>
@@ -2297,7 +2665,7 @@ export default function TodaysTasksDashboard({
                   onChange={e => setRevertReason(e.target.value)}
                   placeholder="उदा. ठेवीदाराने १४ दिवसांत रक्कम काढण्याची किंवा इतर मुदतीत ठेवण्याची विनंती केली..."
                   rows={3}
-                  className="w-full border border-gray-300 rounded p-2 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-rose-500 font-sans"
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-rose-500 font-sans"
                 />
               </div>
             </div>
@@ -2309,7 +2677,7 @@ export default function TodaysTasksDashboard({
                   setShowRevertDialog(null);
                   setRevertReason('');
                 }}
-                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-semibold rounded cursor-pointer"
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold rounded-lg cursor-pointer"
               >
                 रद्द करा
               </button>
@@ -2317,7 +2685,7 @@ export default function TodaysTasksDashboard({
                 type="button"
                 disabled={revertingId !== null || !revertReason.trim()}
                 onClick={() => handleRevert(showRevertDialog)}
-                className="px-3.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-300 text-xs font-bold rounded shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
               >
                 <span>{revertingId ? 'रिव्हर्ट होत आहे...' : 'नूतनीकरण रिव्हर्ट करा'}</span>
               </button>

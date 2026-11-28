@@ -913,12 +913,12 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-blue-50 text-blue-700 border border-blue-200 rounded">
+          <div className="p-2 bg-amber-50 text-[#9A3412] border border-amber-200 rounded">
             <Coins className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण शेअर रक्कम</div>
-            <div className="text-sm font-black text-blue-700 font-mono">₹{totalBatchAmount.toLocaleString('en-IN')}</div>
+            <div className="text-sm font-black text-[#9A3412] font-mono">₹{totalBatchAmount.toLocaleString('en-IN')}</div>
           </div>
         </div>
 
@@ -1110,23 +1110,23 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       {/* High Performance CBS Spreadsheet Grid */}
       <div className="bg-white rounded-sm border border-slate-200 shadow-xs flex-1 flex flex-col mb-3 overflow-hidden">
         <div className="overflow-x-auto max-h-[500px] scrollbar-thin">
-          <table className="w-full text-left border-collapse text-[11px]">
-            <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10 select-none">
+          <table className="w-full text-left border-collapse text-[11px] leading-tight">
+            <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30 sticky top-0 z-10 select-none">
               <tr>
-                <th className="py-2 px-1 text-center w-7 border-r border-slate-200">#</th>
-                <th className="py-2 px-2 w-36 text-center border-r border-slate-200">सभासद आयडी / कोड</th>
-                <th className="py-2 px-2 min-w-[260px] border-r border-slate-200">सभासदाचे नाव (Member Search) *</th>
-                <th className="py-2 px-2 w-20 text-center border-r border-slate-200">शेअर्स संख्या *</th>
-                <th className="py-2 px-2 w-18 text-center border-r border-slate-200">दर्शनी मूल्य (₹)</th>
-                <th className="py-2 px-2 w-24 text-right border-r border-slate-200">एकूण रक्कम (₹) *</th>
-                <th className="py-2 px-2 w-24 text-center border-r border-slate-200">शेअर क्र. पासून</th>
-                <th className="py-2 px-2 w-24 text-center border-r border-slate-200">शेअर क्र. पर्यंत</th>
-                <th className="py-2 px-2 w-24 text-center border-r border-slate-200">दाखला क्र.</th>
-                <th className="py-2 px-2 w-20 text-center border-r border-slate-200">लाभांश येणे (₹)</th>
-                <th className="py-2 px-2 text-center w-10">कृती</th>
+                <th className="py-1.5 px-1 text-center w-7 border-r border-amber-400/25 whitespace-nowrap">#</th>
+                <th className="py-1.5 px-2 w-36 text-center border-r border-amber-400/25 whitespace-nowrap">सभासद आयडी / कोड</th>
+                <th className="py-1.5 px-2 min-w-[260px] border-r border-amber-400/25 whitespace-nowrap">सभासदाचे नाव (Member Search) *</th>
+                <th className="py-1.5 px-2 w-20 text-center border-r border-amber-400/25 whitespace-nowrap">शेअर्स संख्या *</th>
+                <th className="py-1.5 px-2 w-18 text-center border-r border-amber-400/25 whitespace-nowrap">दर्शनी मूल्य (₹)</th>
+                <th className="py-1.5 px-2 w-24 text-right border-r border-amber-400/25 whitespace-nowrap">एकूण रक्कम (₹) *</th>
+                <th className="py-1.5 px-2 w-24 text-center border-r border-amber-400/25 whitespace-nowrap">शेअर क्र. पासून</th>
+                <th className="py-1.5 px-2 w-24 text-center border-r border-amber-400/25 whitespace-nowrap">शेअर क्र. पर्यंत</th>
+                <th className="py-1.5 px-2 w-24 text-center border-r border-amber-400/25 whitespace-nowrap">दाखला क्र.</th>
+                <th className="py-1.5 px-2 w-20 text-center border-r border-amber-400/25 whitespace-nowrap">लाभांश येणे (₹)</th>
+                <th className="py-1.5 px-2 text-center w-10 whitespace-nowrap">कृती</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-amber-100">
               {rows.map((row, index) => {
                 const isRowFilled = row.memberId !== '';
                 const isRowOverlapping = overlappingRowIds.has(row.id);
@@ -1138,13 +1138,13 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     }`}
                   >
                     {/* Row Index */}
-                    <td className="py-1 px-1 text-center font-mono font-bold text-slate-500 border-r border-slate-100 text-[10px]">
+                    <td className="py-1 px-1 text-center font-mono font-bold text-slate-500 border-r border-slate-100 text-[10px] align-middle">
                       {index + 1}
                     </td>
 
                     {/* Dedicated Member ID / Code Column */}
                     <td 
-                      className="py-1 px-2 border-r border-slate-100 text-center whitespace-nowrap"
+                      className="py-1 px-2 border-r border-slate-100 text-center whitespace-nowrap align-middle"
                       title={row.memberId ? `सभासद कोड: ${formatMemberCode(row.memberCode, row.memberId)} | CIF: ${row.cifNo || '-'} | Member ID: ${row.memberId}${row.legacyMemberNo ? ` | जुना क्र.: ${row.legacyMemberNo}` : ''}` : ''}
                     >
                       {row.memberId ? (
@@ -1165,7 +1165,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* Member Search Select */}
-                    <td className="py-1 px-1.5 border-r border-slate-100" title={row.memberId ? `${row.memberName} (${row.memberCode || '-'})` : ''}>
+                    <td className="py-1 px-1.5 border-r border-slate-100 align-middle" title={row.memberId ? `${row.memberName} (${row.memberCode || '-'})` : ''}>
                       <MemberSearchSelect
                         members={members}
                         value={row.memberId || undefined}
@@ -1177,7 +1177,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* Share Quantity */}
-                    <td className="py-1 px-1.5 border-r border-slate-100">
+                    <td className="py-1 px-1.5 border-r border-slate-100 align-middle">
                       <input
                         type="number"
                         min="1"
@@ -1189,7 +1189,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* Face Value */}
-                    <td className="py-1 px-1.5 border-r border-slate-100">
+                    <td className="py-1 px-1.5 border-r border-slate-100 align-middle">
                       <input
                         type="number"
                         value={row.faceValue}
@@ -1199,7 +1199,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* Total Amount (Editable & Bidirectional) */}
-                    <td className="py-1 px-1.5 border-r border-slate-100">
+                    <td className="py-1 px-1.5 border-r border-slate-100 align-middle">
                       <input
                         type="number"
                         min="1"
@@ -1211,7 +1211,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* From Share No */}
-                    <td className="py-1 px-1.5 border-r border-slate-100">
+                    <td className="py-1 px-1.5 border-r border-slate-100 align-middle">
                       <div className="flex flex-col items-center">
                         <input
                           type="number"
@@ -1231,7 +1231,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* To Share No */}
-                    <td className="py-1 px-1.5 border-r border-slate-100">
+                    <td className="py-1 px-1.5 border-r border-slate-100 align-middle">
                       <input
                         type="number"
                         value={row.toShareNo}
@@ -1242,7 +1242,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* Certificate No */}
-                    <td className="py-1 px-1.5 border-r border-slate-100">
+                    <td className="py-1 px-1.5 border-r border-slate-100 align-middle">
                       <input
                         type="text"
                         value={row.certificateNo}
@@ -1253,7 +1253,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* Dividend Payable */}
-                    <td className="py-1 px-1.5 border-r border-slate-100">
+                    <td className="py-1 px-1.5 border-r border-slate-100 align-middle">
                       <input
                         type="number"
                         value={row.dividendPayable}
@@ -1264,7 +1264,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                     </td>
 
                     {/* Actions */}
-                    <td className="py-1 px-1 text-center">
+                    <td className="py-1 px-1 text-center align-middle">
                       <button
                         type="button"
                         onClick={() => handleDeleteRow(row.id)}

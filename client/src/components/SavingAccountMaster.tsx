@@ -758,7 +758,7 @@ const SavingAccountMaster: React.FC = () => {
           <span className="text-base">👤</span>
           <div>
             <h1 className="text-sm font-bold tracking-wide">बचत खाते मास्टर (Saving Account Master)</h1>
-            <p className="text-[10px] text-blue-100 font-normal">नवीन बचत खाते उघडणे, संयुक्त खातेदार (Joint Holders), नॉमिनी व ऑटो-अकाउंट नं जनरेशन</p>
+            <p className="text-[10px] text-amber-100 font-normal">नवीन बचत खाते उघडणे, संयुक्त खातेदार (Joint Holders), नॉमिनी व ऑटो-अकाउंट नं जनरेशन</p>
           </div>
         </div>
 
@@ -766,7 +766,7 @@ const SavingAccountMaster: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowAccountsModal(true)}
-            className="px-2.5 py-0.5 bg-blue-800/60 hover:bg-blue-800 text-white font-semibold rounded-sm border border-blue-400/40 flex items-center gap-1 text-xs cursor-pointer"
+            className="px-2.5 py-0.5 bg-[#7C2418]/60 hover:bg-[#7C2418] text-white font-semibold rounded-sm border border-amber-400/40 flex items-center gap-1 text-xs cursor-pointer"
           >
             <span>📂 उघडलेली खाती ({accounts.length})</span>
           </button>
@@ -811,7 +811,7 @@ const SavingAccountMaster: React.FC = () => {
                   value={formData.branchID}
                   onChange={handleInputChange}
                   disabled={isEditMode}
-                  className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs bg-white disabled:bg-gray-100 disabled:text-gray-500 font-bold h-7"
+                  className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs bg-white disabled:bg-gray-100 disabled:text-gray-500 font-bold h-7"
                   required
                 >
                   {branches.map(b => (
@@ -866,7 +866,7 @@ const SavingAccountMaster: React.FC = () => {
                 className={`w-full border px-2 py-1 rounded-sm text-xs font-semibold h-7 transition-colors ${
                   duplicateLegacyAccount 
                     ? 'border-red-500 bg-red-50 text-red-900 focus:ring-red-400' 
-                    : 'border-amber-300 bg-amber-50/40 text-gray-900 focus:border-blue-500 focus:ring-blue-500'
+                    : 'border-amber-300 bg-amber-50/40 text-gray-900 focus:border-[#B44814] focus:ring-[#B44814]'
                 }`}
               />
               {duplicateLegacyAccount && (
@@ -879,7 +879,7 @@ const SavingAccountMaster: React.FC = () => {
             {/* Saving Account No - 3 cols */}
             <div className="lg:col-span-3">
               <div className="flex items-center justify-between mb-0.5">
-                <label className="block text-xs font-bold text-blue-900">
+                <label className="block text-xs font-bold text-[#5A1A14]">
                   बचत खाते क्र. (CBS A/c No) *
                 </label>
                 <div className="flex items-center gap-1">
@@ -895,7 +895,7 @@ const SavingAccountMaster: React.FC = () => {
                       type="button"
                       onClick={handleResetAccountNo}
                       title="ऑटो नंबरवर रिसेट करा"
-                      className="text-[10px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+                      className="text-[10px] text-[#9A3412] hover:text-[#5A1A14] font-bold underline cursor-pointer"
                     >
                       ↺ रीसेट
                     </button>
@@ -911,7 +911,7 @@ const SavingAccountMaster: React.FC = () => {
                 className={`w-full border px-2.5 py-1 rounded-sm text-xs font-mono font-bold shadow-xs h-7 transition-colors ${
                   isCustomAccountNo 
                     ? 'border-amber-400 bg-amber-50/50 text-amber-900 focus:ring-amber-400' 
-                    : 'border-blue-400 bg-blue-50/80 text-blue-900 focus:ring-blue-400'
+                    : 'border-amber-400 bg-amber-50/80 text-[#5A1A14] focus:ring-[#B44814]'
                 }`}
               />
             </div>
@@ -931,7 +931,7 @@ const SavingAccountMaster: React.FC = () => {
                 className={`w-full border px-2.5 py-1 rounded-sm focus:outline-none focus:ring-1 transition-colors text-xs disabled:bg-gray-100 disabled:text-gray-500 h-7 ${
                   ledgers.length === 0
                     ? 'border-amber-400 bg-amber-50/50 text-amber-900 focus:border-amber-500 focus:ring-amber-500 font-semibold'
-                    : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                    : 'border-gray-300 focus:border-[#B44814] focus:ring-[#B44814]'
                 }`}
                 required
               >
@@ -980,7 +980,7 @@ const SavingAccountMaster: React.FC = () => {
                 value={formData.accountType}
                 onChange={handleInputChange}
                 disabled={isEditMode}
-                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs disabled:bg-gray-100 disabled:text-gray-500 h-7"
+                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs disabled:bg-gray-100 disabled:text-gray-500 h-7"
               >
                 <option value="Personal">वैयक्तिक (Personal)</option>
                 <option value="Joint">संयुक्त (Joint)</option>
@@ -995,7 +995,7 @@ const SavingAccountMaster: React.FC = () => {
                 name="openingDate"
                 value={formData.openingDate}
                 onChange={handleInputChange}
-                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs font-semibold text-gray-800 bg-white h-7"
+                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs font-semibold text-gray-800 bg-white h-7"
                 required
               />
             </div>
@@ -1011,7 +1011,7 @@ const SavingAccountMaster: React.FC = () => {
                 onChange={handleInputChange}
                 onWheel={(e) => e.currentTarget.blur()}
                 onFocus={(e) => e.target.select()}
-                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs h-7"
+                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs h-7"
                 required
               />
             </div>
@@ -1026,7 +1026,7 @@ const SavingAccountMaster: React.FC = () => {
                 onChange={handleInputChange}
                 onWheel={(e) => e.currentTarget.blur()}
                 onFocus={(e) => e.target.select()}
-                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs font-semibold text-gray-800 h-7"
+                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs font-semibold text-gray-800 h-7"
                 required
               />
             </div>
@@ -1038,7 +1038,7 @@ const SavingAccountMaster: React.FC = () => {
                 name="status"
                 value={formData.status}
                 onChange={handleInputChange}
-                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs bg-white font-bold h-7"
+                className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs bg-white font-bold h-7"
               >
                 <option value="Active">● सक्रिय (Active)</option>
                 <option value="Frozen">🔒 फ्रीझ (Frozen)</option>
@@ -1102,14 +1102,14 @@ const SavingAccountMaster: React.FC = () => {
                 {Number(formData.openingBalance) > 0 && (
                   <>
                     <div className="lg:col-span-3">
-                      <label className="block text-xs font-semibold text-blue-900 mb-0.5">
+                      <label className="block text-xs font-semibold text-[#5A1A14] mb-0.5">
                         आरंभिक ठेव पेमेंट पद्धत (Payment Mode) *
                       </label>
                       <select
                         name="initialPaymentMode"
                         value={formData.initialPaymentMode}
                         onChange={handleInputChange}
-                        className="w-full border border-blue-400 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-500 transition-colors text-xs bg-white font-bold text-blue-950 h-7"
+                        className="w-full border border-amber-400 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#9A3412] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs bg-white font-bold text-[#4A1410] h-7"
                       >
                         <option value="Cash">💵 रोख (Cash)</option>
                         <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
@@ -1134,8 +1134,8 @@ const SavingAccountMaster: React.FC = () => {
 
           {/* Row 2: Joint Holders - Only shown when Account Type is Joint */}
           {formData.accountType === 'Joint' && (
-            <div className="border border-blue-200 rounded-sm p-2 bg-blue-50/50">
-              <h3 className="text-xs font-bold text-blue-700 mb-1.5 flex items-center gap-1">
+            <div className="border border-amber-200 rounded-sm p-2 bg-amber-50/50">
+              <h3 className="text-xs font-bold text-[#9A3412] mb-1.5 flex items-center gap-1">
                 <span>👥</span> सह-खातेदार (Joint Holders)
               </h3>
               <div className="flex items-center gap-2 mb-1.5">
@@ -1150,7 +1150,7 @@ const SavingAccountMaster: React.FC = () => {
                 <button
                   type="button"
                   onClick={addJointHolder}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-[5px] rounded-sm text-xs font-bold transition-colors whitespace-nowrap cursor-pointer"
+                  className="bg-[#B44814] hover:bg-[#9A3412] text-white px-3 py-[5px] rounded-sm text-xs font-bold transition-colors whitespace-nowrap cursor-pointer"
                 >
                   + जोडा
                 </button>
@@ -1160,7 +1160,7 @@ const SavingAccountMaster: React.FC = () => {
               {jointHolderCustomerIDs.length > 0 && (
                 <div className="space-y-0.5">
                   {jointHolderCustomerIDs.map((id, idx) => (
-                    <div key={id} className="flex items-center justify-between bg-white border border-blue-200 rounded-sm px-2 py-0.5 text-xs">
+                    <div key={id} className="flex items-center justify-between bg-white border border-amber-200 rounded-sm px-2 py-0.5 text-xs">
                       <span className="text-gray-800 font-medium">
                         {idx + 1}. {getCustomerLabel(id)}
                       </span>
@@ -1178,7 +1178,7 @@ const SavingAccountMaster: React.FC = () => {
               )}
 
               {jointHolderCustomerIDs.length === 0 && (
-                <p className="text-[10px] text-blue-500 italic">किमान एक सह-खातेदार जोडा.</p>
+                <p className="text-[10px] text-[#D97706] italic">किमान एक सह-खातेदार जोडा.</p>
               )}
             </div>
           )}
@@ -1197,7 +1197,7 @@ const SavingAccountMaster: React.FC = () => {
                   value={formData.nomineeName}
                   onChange={handleInputChange}
                   placeholder="नाव टाका..."
-                  className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs h-7"
+                  className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs h-7"
                 />
               </div>
               <div>
@@ -1206,7 +1206,7 @@ const SavingAccountMaster: React.FC = () => {
                   name="nomineeRelation"
                   value={formData.nomineeRelation}
                   onChange={handleInputChange}
-                  className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs bg-white h-7"
+                  className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs bg-white h-7"
                 >
                   <option value="">-- नाते निवडा --</option>
                   {relationOptions.map(rel => (
@@ -1222,7 +1222,7 @@ const SavingAccountMaster: React.FC = () => {
                   value={formData.nomineeAddress}
                   onChange={handleInputChange}
                   placeholder="पत्ता टाका..."
-                  className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs h-7"
+                  className="w-full border border-gray-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] transition-colors text-xs h-7"
                 />
               </div>
             </div>
@@ -1232,7 +1232,7 @@ const SavingAccountMaster: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="bg-primary hover:bg-[#004a75] text-white px-6 py-1.5 rounded-sm font-semibold shadow-xs transition-colors text-xs disabled:opacity-50 cursor-pointer"
+              className="bg-primary hover:bg-[#7C2418] text-white px-6 py-1.5 rounded-sm font-semibold shadow-xs transition-colors text-xs disabled:opacity-50 cursor-pointer"
             >
               {loading ? 'जतन करत आहे...' : (isEditMode ? 'अपडेट करा (Update)' : 'खाते उघडा (Create Account)')}
             </button>
@@ -1245,7 +1245,7 @@ const SavingAccountMaster: React.FC = () => {
         <div className="flex items-center space-x-2">
           <span className="text-base">📂</span>
           <h2 className="text-sm font-bold text-gray-800">उघडलेली बचत खाती (Saving Accounts Directory)</h2>
-          <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded-full">{filteredAccounts.length} खाती</span>
+          <span className="bg-amber-100 text-[#7C2418] text-xs font-bold px-2 py-0.5 rounded-full">{filteredAccounts.length} खाती</span>
         </div>
         
         <div className="flex items-center space-x-2">
@@ -1254,12 +1254,12 @@ const SavingAccountMaster: React.FC = () => {
             placeholder="नाव किंवा खाते क्र. शोधा..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="border border-gray-300 px-3 py-1 rounded-sm focus:outline-none focus:border-blue-500 text-xs w-52 bg-white"
+            className="border border-gray-300 px-3 py-1 rounded-sm focus:outline-none focus:border-[#B44814] text-xs w-52 bg-white"
           />
           <button
             type="button"
             onClick={() => setShowAccountsModal(true)}
-            className="bg-blue-700 hover:bg-blue-800 text-white text-xs px-4 py-1.5 rounded-sm shadow-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+            className="bg-[#9A3412] hover:bg-[#7C2418] text-white text-xs px-4 py-1.5 rounded-sm shadow-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
           >
             <span>🔍</span> सर्व खाती पॉपअप मध्ये पहा (Full Grid View)
           </button>
@@ -1313,40 +1313,40 @@ const SavingAccountMaster: React.FC = () => {
                   placeholder="नाव, खाते क्र. किंवा शाखा शोधा..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="border border-gray-300 px-3 py-1 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs w-full sm:w-80 bg-white font-medium"
+                  className="border border-gray-300 px-3 py-1 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] text-xs w-full sm:w-80 bg-white font-medium"
                   autoFocus
                 />
               </div>
               <div className="text-xs text-gray-600 font-medium">
-                * खात्यात बदल करण्यासाठी <span className="font-bold text-blue-700">✏️ बदल करा (Edit)</span> किंवा <span className="font-bold text-red-600">🗑️ डिलीट</span> बटण वापरा.
+                * खात्यात बदल करण्यासाठी <span className="font-bold text-[#9A3412]">✏️ बदल करा (Edit)</span> किंवा <span className="font-bold text-red-600">🗑️ डिलीट</span> बटण वापरा.
               </div>
             </div>
 
             {/* Modal Body - Complete 16+ Columns Table */}
             <div className="overflow-auto flex-1 p-2">
-              <table className="min-w-full divide-y divide-gray-200 text-xs text-center border border-gray-200">
-                <thead className="bg-gray-100 text-gray-800 sticky top-0 z-10 shadow-xs">
+              <table className="min-w-full divide-y divide-gray-200 text-[11px] text-center border border-gray-200 leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] text-amber-50 sticky top-0 z-10 shadow-xs">
                   <tr>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-center">अ. क्र.</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-left">शाखा (Branch)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-left">खाते क्र. (A/c No)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-left">खातेदार व सह-खातेदार (Customer Name)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-center">प्रकार (Type)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-left">ठेव प्रकार (Ledger)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-center">तारीख (Opening Date)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-right">आरंभी शिल्लक (OB ₹)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-right">चालू शिल्लक (Balance ₹)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-center">व्याज (%)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-right">किमान शिल्लक (Min Bal ₹)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-left">तारण होल्ड (Lien Hold)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-left">वारसदार नाव (Nominee Name)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-center">नाते (Relation)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-left">वारसदार पत्ता (Address)</th>
-                    <th className="px-2 py-2 border-r border-gray-300 font-bold text-center">स्थिती (Status)</th>
-                    <th className="px-2 py-2 font-bold text-center w-28 sticky right-0 bg-gray-100 shadow-xs">कृती (Actions)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center whitespace-nowrap">अ. क्र.</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">शाखा (Branch)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">खाते क्र. (A/c No)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">खातेदार व सह-खातेदार (Customer Name)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center whitespace-nowrap">प्रकार (Type)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">ठेव प्रकार (Ledger)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center whitespace-nowrap">तारीख (Opening Date)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-right whitespace-nowrap">आरंभी शिल्लक (OB ₹)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-right whitespace-nowrap">चालू शिल्लक (Balance ₹)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center whitespace-nowrap">व्याज (%)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-right whitespace-nowrap">किमान शिल्लक (Min Bal ₹)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">तारण होल्ड (Lien Hold)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">वारसदार नाव (Nominee Name)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center whitespace-nowrap">नाते (Relation)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">वारसदार पत्ता (Address)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-center whitespace-nowrap">स्थिती (Status)</th>
+                    <th className="px-2 py-1.5 font-bold text-center w-28 sticky right-0 bg-[#5A1A14] shadow-xs whitespace-nowrap">कृती (Actions)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-amber-100 bg-white">
                   {filteredAccounts.length === 0 ? (
                     <tr>
                       <td colSpan={17} className="px-4 py-8 text-center text-gray-500 font-medium">
@@ -1355,14 +1355,14 @@ const SavingAccountMaster: React.FC = () => {
                     </tr>
                   ) : (
                     filteredAccounts.map((acc: any, index: number) => (
-                      <tr key={acc.savingAccountID} className="hover:bg-blue-50/50 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-semibold text-gray-500">
+                      <tr key={acc.savingAccountID} className="hover:bg-amber-50/50 transition-colors">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-semibold text-gray-500 align-middle">
                           {index + 1}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-700 font-semibold whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-700 font-semibold whitespace-nowrap align-middle">
                           {acc.branchName || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary whitespace-nowrap font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-primary whitespace-nowrap font-mono align-middle">
                           <div>{acc.formattedAccountNo || format14DigitDisplay(acc.accountNo)}</div>
                           {(acc.oldAccountNo || acc.previousAccountNo) && (acc.oldAccountNo || acc.previousAccountNo) !== acc.accountNo && (
                             <div className="text-[10px] text-gray-500 font-sans font-normal">
@@ -1370,40 +1370,40 @@ const SavingAccountMaster: React.FC = () => {
                             </div>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-semibold text-gray-900 min-w-[180px]">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-semibold text-gray-900 min-w-[180px] align-middle">
                           <div>{acc.customerName}</div>
                           {acc.jointHolders && acc.jointHolders.length > 0 && (
-                            <div className="text-[10px] text-blue-600 mt-0.5">
+                            <div className="text-[10px] text-[#B44814] mt-0.5">
                               🤝 सह-खातेदार: {acc.jointHolders.map((jh: any) => jh.customerName).join(', ')}
                             </div>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <span className={`px-1.5 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded-sm ${
-                            acc.accountType === 'Joint' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
+                            acc.accountType === 'Joint' ? 'bg-amber-100 text-[#7C2418]' : 'bg-gray-100 text-gray-700'
                           }`}>
                             {acc.accountType === 'Joint' ? 'संयुक्त' : 'वैयक्तिक'}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-600 font-medium whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 font-medium whitespace-nowrap align-middle">
                           {ledgers.find(l => l.ledgerID === acc.ledgerID)?.ledgerName || 'बचत ठेव (Saving)'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap text-gray-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap text-gray-700 align-middle">
                           {formatDateDisplay(acc.openingDate)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-medium text-gray-700 whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-medium text-gray-700 whitespace-nowrap align-middle">
                           ₹{(acc.openingBalance || 0).toFixed(2)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-emerald-600 whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-emerald-600 whitespace-nowrap align-middle">
                           ₹{(acc.currentBalance || 0).toFixed(2)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-semibold text-gray-700 whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-semibold text-gray-700 whitespace-nowrap align-middle">
                           {acc.interestRate}%
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-semibold text-gray-800 whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-semibold text-gray-800 whitespace-nowrap align-middle">
                           ₹{(acc.minimumBalance || 0).toFixed(2)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left whitespace-nowrap align-middle">
                           {(acc.lienAmount || 0) > 0 ? (
                             <span className="text-amber-800 font-bold text-[11px]" title={acc.lienReason || ''}>
                               🔒 ₹{(acc.lienAmount || 0).toFixed(2)} {acc.lienReason ? `(${acc.lienReason})` : ''}
@@ -1412,16 +1412,16 @@ const SavingAccountMaster: React.FC = () => {
                             <span className="text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-800 font-medium whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-800 font-medium whitespace-nowrap align-middle">
                           {acc.nomineeName || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-700 whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center text-gray-700 whitespace-nowrap align-middle">
                           {acc.nomineeRelation || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-600 max-w-[150px] truncate" title={acc.nomineeAddress || ''}>
+                        <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 max-w-[150px] truncate align-middle" title={acc.nomineeAddress || ''}>
                           {acc.nomineeAddress || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <span className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded-sm ${
                             acc.status === 'Active' ? 'bg-green-100 text-green-800' :
                             acc.status === 'Frozen' ? 'bg-red-100 text-red-800 border border-red-300' :
@@ -1433,7 +1433,7 @@ const SavingAccountMaster: React.FC = () => {
                              acc.status === 'Dormant' ? '⚠️ सुप्त' : 'निष्क्रिय'}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 text-center sticky right-0 bg-white shadow-xs">
+                        <td className="px-2 py-1 text-center sticky right-0 bg-white shadow-xs align-middle">
                           <div className="flex justify-center space-x-1">
                             <button
                               type="button"
@@ -1441,7 +1441,7 @@ const SavingAccountMaster: React.FC = () => {
                                 handleEdit(acc);
                                 setShowAccountsModal(false);
                               }}
-                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded-sm text-[11px] font-bold border border-blue-200 transition-colors flex items-center gap-1 cursor-pointer"
+                              className="bg-amber-50 hover:bg-amber-100 text-[#9A3412] px-2 py-1 rounded-sm text-[11px] font-bold border border-amber-200 transition-colors flex items-center gap-1 cursor-pointer"
                               title="बदल करा (Edit)"
                             >
                               <span>✏️</span> बदल
@@ -1517,7 +1517,7 @@ const SavingAccountMaster: React.FC = () => {
                 );
               })()}
 
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded text-blue-950 font-bold text-xs">
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-[#4A1410] font-bold text-xs">
                 तुम्हाला या खातेदाराचे आणखी १ नवीन बचत खाते (Multiple Saving Account) उघडायचे आहे का?
               </div>
             </div>
@@ -1537,7 +1537,7 @@ const SavingAccountMaster: React.FC = () => {
                   setShowDuplicateConfirmModal(false);
                   executeSave();
                 }}
-                className="px-4 py-1.5 bg-primary hover:bg-[#004a75] text-white rounded-sm text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                className="px-4 py-1.5 bg-primary hover:bg-[#7C2418] text-white rounded-sm text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <span>✓</span>
                 <span>होय, नवीन खाते तयार करा</span>

@@ -192,16 +192,16 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
         savings: {
             title: 'बचत ठेव (SAVING) अहवाल',
             countLabel: '४ अहवाल उपलब्ध',
-            borderColor: 'border-blue-600',
-            headerBg: 'bg-blue-50/90',
-            headerBorder: 'border-blue-200',
-            headerText: 'text-blue-900',
-            iconColor: 'text-blue-600',
-            hoverBorder: 'hover:border-blue-500',
-            hoverBg: 'hover:bg-blue-50/50',
-            hoverText: 'hover:text-blue-900',
-            containerBg: 'bg-blue-50/20',
-            closeBtnHover: 'hover:bg-blue-100',
+            borderColor: 'border-orange-600',
+            headerBg: 'bg-orange-50/90',
+            headerBorder: 'border-orange-200',
+            headerText: 'text-orange-950',
+            iconColor: 'text-orange-700',
+            hoverBorder: 'hover:border-orange-500',
+            hoverBg: 'hover:bg-orange-50/60',
+            hoverText: 'hover:text-orange-950',
+            containerBg: 'bg-orange-50/20',
+            closeBtnHover: 'hover:bg-orange-100',
             reports: [
                 { id: 'saving-account-list-report', name: '१. बचत खाते यादी (Saving Account List)' },
                 { id: 'saving-khatavani-report', name: '२. बचत ठेव खतावणी (Saving Ledger Statement)' },
@@ -491,51 +491,51 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
             className="p-3.5 max-w-full min-h-full flex flex-col text-xs font-sans relative overflow-y-auto"
             style={{
                 background:
-                    'radial-gradient(circle at 12% 10%, #e4ecff 0%, rgba(228,236,255,0) 45%), radial-gradient(circle at 88% 12%, #bfdbfe 0%, rgba(191,219,254,0) 42%), radial-gradient(circle at 78% 85%, #a5f3fc 0%, rgba(165,243,252,0) 44%), radial-gradient(circle at 12% 88%, #ddd6fe 0%, rgba(221,214,254,0) 44%), linear-gradient(135deg, #eef2ff 0%, #f8fbff 44%, #e0f2fe 78%, #dbeafe 100%)',
+                    'radial-gradient(circle at 12% 10%, #FDE8E1 0%, rgba(253,232,225,0) 45%), radial-gradient(circle at 88% 12%, #FDE6C4 0%, rgba(253,230,196,0) 44%), radial-gradient(circle at 78% 85%, #FCD9B6 0%, rgba(252,217,182,0) 44%), radial-gradient(circle at 12% 88%, #F9DFD8 0%, rgba(249,223,216,0) 44%), linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 44%, #FEF3E2 78%, #FCE3BE 100%)',
             }}
         >
-            {/* Subtle Architectural Dot Grid & Ambient Aurora Orbs */}
+            {/* Subtle Architectural Dot Grid & Ambient Warm Pastel Orbs */}
             <div
-                className="absolute inset-0 opacity-[0.18] pointer-events-none"
+                className="absolute inset-0 opacity-[0.12] pointer-events-none"
                 style={{
-                    backgroundImage: 'radial-gradient(#3b82f6 0.8px, transparent 0.8px)',
+                    backgroundImage: 'radial-gradient(#B44814 0.8px, transparent 0.8px)',
                     backgroundSize: '28px 28px',
                 }}
             />
-            <div className="absolute -top-28 -left-28 w-80 h-80 bg-[#7C3AED]/12 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute top-1/3 -right-24 w-80 h-80 bg-[#06B6D4]/15 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-24 left-1/3 w-80 h-80 bg-[#2563EB]/12 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -top-28 -left-28 w-80 h-80 bg-[#9A3412]/8 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute top-1/3 -right-24 w-80 h-80 bg-[#F59E0B]/12 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 left-1/3 w-80 h-80 bg-[#D97706]/10 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 flex flex-col gap-3">
                 
-                {/* 1. Aurora Frosted Glass Top Navigation & Customer Search Bar */}
-                <div className="relative z-50 backdrop-blur-xl bg-white/85 border border-white/95 rounded-2xl shadow-[0_8px_28px_rgba(37,99,235,0.10)] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+                {/* 1. Warm Pastel Frosted Glass Top Navigation & Customer Search Bar */}
+                <div className="relative z-50 backdrop-blur-xl bg-white/88 border border-amber-200/80 rounded-2xl shadow-[0_8px_28px_rgba(124,36,24,0.08)] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                         <div
-                            className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-[0_6px_16px_rgba(37,99,235,0.32)] border border-white/40 shrink-0"
+                            className="w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-[0_6px_16px_rgba(154,52,18,0.28)] border border-amber-200/60 shrink-0"
                             style={{
-                                background: 'linear-gradient(135deg, #1D8CF8 0%, #2563EB 55%, #7C3AED 100%)',
+                                background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)',
                             }}
                         >
                             <Award className="w-4.5 h-4.5 text-white" />
                         </div>
                         <div>
-                            <h2 className="text-sm md:text-base font-extrabold text-[#0F2454] tracking-tight flex items-center gap-2">
+                            <h2 className="text-sm md:text-base font-extrabold text-[#5A1A14] tracking-tight flex items-center gap-2">
                                 <span>
                                     खातेदार{' '}
-                                    <span className="bg-gradient-to-r from-[#1D8CF8] via-[#2563EB] to-[#7C3AED] bg-clip-text text-transparent">
+                                    <span className="bg-gradient-to-r from-[#7C2418] via-[#B44814] to-[#D97706] bg-clip-text text-transparent">
                                         ३६०°
                                     </span>
                                 </span>
-                                <span className="text-xs font-semibold text-[#3B82F6]/80 hidden sm:inline">(Khatedar 360°)</span>
+                                <span className="text-xs font-semibold text-[#B45309]/85 hidden sm:inline">(Khatedar 360°)</span>
                             </h2>
-                            <p className="text-[11px] text-[#334E73] font-medium hidden sm:block">सर्वसमावेशक खातेदार माहिती, पोर्टफोलिओ शिल्लक व जलद व्यवहार</p>
+                            <p className="text-[11px] text-[#7A5243] font-medium hidden sm:block">सर्वसमावेशक खातेदार माहिती, पोर्टफोलिओ शिल्लक व जलद व्यवहार</p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2.5 w-full sm:w-auto relative z-50">
-                        <div className="w-full sm:w-84 md:w-96 flex items-center gap-2 bg-white/95 border border-blue-200/90 focus-within:border-[#2563EB] rounded-xl px-2.5 py-1 shadow-2xs relative z-50 transition-colors">
-                            <Search className="w-4 h-4 text-[#2563EB]/75 shrink-0" />
+                        <div className="w-full sm:w-84 md:w-96 flex items-center gap-2 bg-white/95 border border-amber-200/90 focus-within:border-[#B44814] rounded-xl px-2.5 py-1 shadow-2xs relative z-50 transition-colors">
+                            <Search className="w-4 h-4 text-[#B44814]/80 shrink-0" />
                             <div className="flex-1 text-slate-800 text-xs relative z-50">
                                 <CustomerSearchSelect
                                     customers={rawCustomers}
@@ -551,18 +551,18 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                             onClick={() => fetch360Data(true)}
                             disabled={loading || !selectedCustomerId}
                             title="रिफ्रेश करा (Refresh)"
-                            className="p-2 rounded-xl border border-blue-200/90 bg-white/95 hover:bg-blue-50 text-[#2563EB] hover:text-[#1D4ED8] shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                            className="p-2 rounded-xl border border-amber-200/90 bg-white/95 hover:bg-amber-50 text-[#9A3412] hover:text-[#7C2418] shadow-2xs transition-all cursor-pointer disabled:opacity-50"
                         >
-                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#2563EB]' : ''}`} />
+                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#B44814]' : ''}`} />
                         </button>
                     </div>
                 </div>
 
                 {/* 2. Loading State */}
                 {loading && !data && (
-                    <div className="backdrop-blur-xl bg-white/80 border border-white/95 rounded-2xl p-10 shadow-xs flex flex-col items-center justify-center">
-                        <div className="w-8 h-8 border-3 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
-                        <span className="text-xs text-[#1E3A8A] font-semibold mt-3">खातेदार ३६०° तपशील लोड होत आहे...</span>
+                    <div className="backdrop-blur-xl bg-white/85 border border-amber-200/80 rounded-2xl p-10 shadow-xs flex flex-col items-center justify-center">
+                        <div className="w-8 h-8 border-3 border-[#B44814] border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs text-[#5A1A14] font-semibold mt-3">खातेदार ३६०° तपशील लोड होत आहे...</span>
                     </div>
                 )}
 
@@ -590,9 +590,9 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                 {/* 4. Empty State */}
                 {!loading && !data && !error && (
-                    <div className="backdrop-blur-xl bg-white/75 border border-dashed border-blue-300 rounded-2xl p-14 text-center flex flex-col items-center justify-center">
-                        <Search size={36} className="stroke-[1.5] mb-2.5 text-[#3B82F6]" />
-                        <span className="text-xs md:text-sm font-bold text-[#1E3A8A]">कृपया प्रोफाइल पाहण्यासाठी वरील शोध बारमधून खातेदार निवडा.</span>
+                    <div className="backdrop-blur-xl bg-white/80 border border-dashed border-amber-300 rounded-2xl p-14 text-center flex flex-col items-center justify-center">
+                        <Search size={36} className="stroke-[1.5] mb-2.5 text-[#D97706]" />
+                        <span className="text-xs md:text-sm font-bold text-[#5A1A14]">कृपया प्रोफाइल पाहण्यासाठी वरील शोध बारमधून खातेदार निवडा.</span>
                     </div>
                 )}
 
@@ -600,29 +600,36 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                 {!loading && data && (
                     <div className="relative z-10 flex flex-col gap-3">
                         
-                        {/* Customer Profile Hero Aurora Glass Banner */}
+                        {/* Customer Profile Hero Pastel Rose-Ivory-Apricot Glass Banner */}
                         <div
-                            className="backdrop-blur-xl text-white rounded-2xl shadow-[0_12px_34px_rgba(30,58,138,0.22)] p-4 border border-white/25 relative overflow-hidden flex flex-wrap lg:flex-nowrap gap-3.5 items-center"
+                            className="backdrop-blur-xl text-[#5A1A14] rounded-2xl shadow-[0_10px_30px_rgba(124,36,24,0.10)] p-4 pt-4.5 border border-amber-300/75 relative overflow-hidden flex flex-wrap lg:flex-nowrap gap-3.5 items-center"
                             style={{
                                 background:
-                                    'linear-gradient(125deg, #0F2454 0%, #1E3A8A 42%, #2563EB 78%, #5B21B6 100%)',
+                                    'linear-gradient(125deg, #FCEAE4 0%, #FFF9F2 46%, #FEF0D8 82%, #FCE0B8 100%)',
                             }}
                         >
-                            {/* Ambient Aurora Glow Highlights */}
-                            <div className="absolute -top-10 right-12 w-72 h-36 bg-[#38BDF8]/25 rounded-full blur-3xl pointer-events-none" />
-                            <div className="absolute -bottom-12 left-1/3 w-72 h-32 bg-[#A855F7]/20 rounded-full blur-3xl pointer-events-none" />
+                            {/* Subtle Top Maroon-to-Saffron Accent Ribbon */}
+                            <div
+                                className="absolute top-0 left-0 right-0 h-[3px]"
+                                style={{
+                                    background: 'linear-gradient(90deg, #7C2418 0%, #B44814 50%, #D97706 100%)',
+                                }}
+                            />
+                            {/* Ambient Soft Pastel Highlights */}
+                            <div className="absolute -top-10 right-12 w-72 h-36 bg-[#F59E0B]/15 rounded-full blur-3xl pointer-events-none" />
+                            <div className="absolute -bottom-12 left-1/3 w-72 h-32 bg-[#9A3412]/8 rounded-full blur-3xl pointer-events-none" />
 
                             {/* Avatar / Photo */}
                             <div
-                                className="w-15 h-15 rounded-2xl p-0.5 shadow-[0_8px_20px_rgba(15,36,84,0.35)] flex items-center justify-center text-white font-black text-base shrink-0 relative z-10"
+                                className="w-15 h-15 rounded-2xl p-0.5 shadow-[0_8px_20px_rgba(124,36,24,0.20)] flex items-center justify-center text-white font-black text-base shrink-0 relative z-10"
                                 style={{
-                                    background: 'linear-gradient(135deg, #38BDF8 0%, #2563EB 55%, #C084FC 100%)',
+                                    background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)',
                                 }}
                             >
                                 {data.memberInfo.photoPath ? (
                                     <img src={data.memberInfo.photoPath} alt="Photo" className="w-full h-full rounded-[14px] object-cover" />
                                 ) : (
-                                    <div className="w-full h-full rounded-[14px] bg-[#0F2454]/80 flex items-center justify-center text-sky-200 tracking-wide">
+                                    <div className="w-full h-full rounded-[14px] bg-[#FFF8F1] flex items-center justify-center text-[#7C2418] tracking-wide">
                                         {`${(data.memberInfo?.firstName || 'K')[0]}${(data.memberInfo?.lastName || 'K')[0]}`}
                                     </div>
                                 )}
@@ -631,61 +638,61 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                             {/* Customer Details */}
                             <div className="flex-1 min-w-[280px] relative z-10">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    <h3 className="text-sm md:text-base font-extrabold tracking-tight text-white">
+                                    <h3 className="text-sm md:text-base font-extrabold tracking-tight text-[#4A1410]">
                                         {data.memberInfo.firstName} {data.memberInfo.middleName || ''} {data.memberInfo.lastName}
                                     </h3>
                                     {data.memberInfo.nickName && (
-                                        <span className="text-amber-200 text-xs font-semibold">({data.memberInfo.nickName})</span>
+                                        <span className="text-[#B45309] text-xs font-semibold">({data.memberInfo.nickName})</span>
                                     )}
 
                                     {data.memberInfo.cifNo && (
-                                        <span className="text-[10px] bg-sky-400/20 text-sky-100 border border-sky-300/40 px-2.5 py-0.5 rounded-full font-mono font-bold">
+                                        <span className="text-[10px] bg-amber-100/90 text-[#7C2418] border border-amber-300/80 px-2.5 py-0.5 rounded-full font-mono font-bold">
                                             CIF: {data.memberInfo.cifNo}
                                         </span>
                                     )}
 
                                     {(data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode) && (
-                                        <span className="text-[10px] bg-amber-400/20 text-amber-100 border border-amber-300/40 px-2.5 py-0.5 rounded-full font-mono font-bold">
+                                        <span className="text-[10px] bg-orange-100/90 text-[#9A3412] border border-orange-300/75 px-2.5 py-0.5 rounded-full font-mono font-bold">
                                             जुना खातेदार नं: {data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode}
                                         </span>
                                     )}
 
-                                    <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${data.memberInfo.status === 'Active' ? 'bg-emerald-400/25 text-emerald-100 border-emerald-300/45' : 'bg-rose-400/25 text-rose-100 border-rose-300/45'}`}>
+                                    <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${data.memberInfo.status === 'Active' ? 'bg-emerald-100/90 text-emerald-800 border-emerald-300/80' : 'bg-rose-100/90 text-rose-800 border-rose-300/80'}`}>
                                         {data.memberInfo.status === 'Active' ? 'सक्रीय (Active)' : 'निष्क्रिय (Inactive)'}
                                     </span>
                                 </div>
 
                                 {/* Demographics Grid */}
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-1.5 mt-2.5 text-[11px] text-blue-50/95 font-medium">
-                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">CIF नं:</span> {data.memberInfo.cifNo || '-'}</div>
-                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">जुना खातेदार नं:</span> {data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode || '-'}</div>
-                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">मोबाईल:</span> {data.memberInfo.mobileNo || '-'}</div>
-                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">आधार क्रमांक:</span> {data.memberInfo.aadhaarNo || '-'}</div>
-                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">शाखा:</span> {data.memberInfo.branchName || '-'}</div>
-                                    <div><span className="text-sky-200/75 block text-[10px] uppercase tracking-wider">नोंदणी तारीख:</span> {formatDate(data.memberInfo.joiningDate)}</div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-1.5 mt-2.5 text-[11px] text-[#4A1410] font-semibold">
+                                    <div><span className="text-[#8C4A32]/85 block text-[10px] font-bold uppercase tracking-wider">CIF नं:</span> {data.memberInfo.cifNo || '-'}</div>
+                                    <div><span className="text-[#8C4A32]/85 block text-[10px] font-bold uppercase tracking-wider">जुना खातेदार नं:</span> {data.memberInfo.legacyCustomerNo || data.memberInfo.oldMemberCode || '-'}</div>
+                                    <div><span className="text-[#8C4A32]/85 block text-[10px] font-bold uppercase tracking-wider">मोबाईल:</span> {data.memberInfo.mobileNo || '-'}</div>
+                                    <div><span className="text-[#8C4A32]/85 block text-[10px] font-bold uppercase tracking-wider">आधार क्रमांक:</span> {data.memberInfo.aadhaarNo || '-'}</div>
+                                    <div><span className="text-[#8C4A32]/85 block text-[10px] font-bold uppercase tracking-wider">शाखा:</span> {data.memberInfo.branchName || '-'}</div>
+                                    <div><span className="text-[#8C4A32]/85 block text-[10px] font-bold uppercase tracking-wider">नोंदणी तारीख:</span> {formatDate(data.memberInfo.joiningDate)}</div>
                                 </div>
                             </div>
 
                             {/* 4 Financial Stat Glass Panels */}
-                            <div className="flex gap-2 border-t lg:border-t-0 lg:border-l border-white/20 pt-3 lg:pt-0 lg:pl-3.5 w-full lg:w-auto justify-between lg:justify-end shrink-0 flex-wrap sm:flex-nowrap relative z-10">
-                                <div className="backdrop-blur-md bg-white/12 px-3 py-2 rounded-xl border border-white/20 text-right flex-1 sm:flex-none">
-                                    <div className="text-[10px] font-bold text-emerald-200 uppercase tracking-wider">एकूण ठेव (Deposits)</div>
-                                    <div className="text-sm font-black text-emerald-300 mt-0.5 font-mono">₹ {(data.balances?.totalDeposits || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div className="flex gap-2 border-t lg:border-t-0 lg:border-l border-amber-300/65 pt-3 lg:pt-0 lg:pl-3.5 w-full lg:w-auto justify-between lg:justify-end shrink-0 flex-wrap sm:flex-nowrap relative z-10">
+                                <div className="backdrop-blur-md bg-white/82 px-3 py-2 rounded-xl border border-emerald-200/90 text-right flex-1 sm:flex-none shadow-2xs">
+                                    <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">एकूण ठेव (Deposits)</div>
+                                    <div className="text-sm font-black text-emerald-800 mt-0.5 font-mono">₹ {(data.balances?.totalDeposits || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                 </div>
 
-                                <div className="backdrop-blur-md bg-white/12 px-3 py-2 rounded-xl border border-white/20 text-right flex-1 sm:flex-none">
-                                    <div className="text-[10px] font-bold text-purple-200 uppercase tracking-wider">भाग भांडवल (Shares)</div>
-                                    <div className="text-sm font-black text-purple-200 mt-0.5 font-mono">₹ {(data.balances?.shareCapital || data.portfolio?.shares?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div className="backdrop-blur-md bg-white/82 px-3 py-2 rounded-xl border border-purple-200/90 text-right flex-1 sm:flex-none shadow-2xs">
+                                    <div className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">भाग भांडवल (Shares)</div>
+                                    <div className="text-sm font-black text-purple-800 mt-0.5 font-mono">₹ {(data.balances?.shareCapital || data.portfolio?.shares?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                 </div>
 
-                                <div className="backdrop-blur-md bg-white/12 px-3 py-2 rounded-xl border border-white/20 text-right flex-1 sm:flex-none">
-                                    <div className="text-[10px] font-bold text-rose-200 uppercase tracking-wider">कर्ज बाकी (Loans)</div>
-                                    <div className="text-sm font-black text-rose-200 mt-0.5 font-mono">₹ {(data.balances?.totalLoansOutstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div className="backdrop-blur-md bg-white/82 px-3 py-2 rounded-xl border border-rose-200/90 text-right flex-1 sm:flex-none shadow-2xs">
+                                    <div className="text-[10px] font-bold text-rose-700 uppercase tracking-wider">कर्ज बाकी (Loans)</div>
+                                    <div className="text-sm font-black text-rose-800 mt-0.5 font-mono">₹ {(data.balances?.totalLoansOutstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                 </div>
 
-                                <div className="backdrop-blur-md bg-white/20 px-3 py-2 rounded-xl border border-cyan-300/50 text-right flex-1 sm:flex-none shadow-xs">
-                                    <div className="text-[10px] font-bold text-amber-100 uppercase tracking-wider">निव्वळ शिल्लक (Net)</div>
-                                    <div className="text-sm font-black text-amber-200 mt-0.5 font-mono">
+                                <div className="backdrop-blur-md bg-gradient-to-br from-[#FFF9EE] to-[#FDE8C8]/90 px-3 py-2 rounded-xl border border-amber-300/90 text-right flex-1 sm:flex-none shadow-xs">
+                                    <div className="text-[10px] font-bold text-[#9A3412] uppercase tracking-wider">निव्वळ शिल्लक (Net)</div>
+                                    <div className="text-sm font-black text-[#7C2418] mt-0.5 font-mono">
                                         ₹ {((data.balances?.totalDeposits || 0) + (data.balances?.shareCapital || data.portfolio?.shares?.balance || 0) - (data.balances?.totalLoansOutstanding || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                 </div>
@@ -694,10 +701,10 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                         {/* Section Header: Product Accounts */}
                         <div className="flex flex-wrap items-center justify-between gap-2 mt-0.5 px-1">
-                            <h4 className="text-xs font-extrabold text-[#0F2454] tracking-wider uppercase flex items-center gap-1.5">
+                            <h4 className="text-xs font-extrabold text-[#5A1A14] tracking-wider uppercase flex items-center gap-1.5">
                                 <span
                                     className="w-6 h-6 rounded-lg flex items-center justify-center text-white shadow-2xs"
-                                    style={{ background: 'linear-gradient(135deg, #1D8CF8 0%, #2563EB 100%)' }}
+                                    style={{ background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)' }}
                                 >
                                     <CreditCard size={13} />
                                 </span>
@@ -707,10 +714,10 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => onNavigate('employee-bank', getUniversalNavParams({ source: '360dashboard' }))}
-                                    className="text-[11px] font-bold text-[#1D4ED8] hover:text-[#0F2454] bg-white/90 hover:bg-blue-50 border border-blue-200/90 px-3 py-1 rounded-full flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                    className="text-[11px] font-bold text-[#7C2418] hover:text-[#5A1A14] bg-white/90 hover:bg-amber-50 border border-amber-200/90 px-3 py-1 rounded-full flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                                     title="या खातेदाराचा कर्मचारी व वैयक्तिक बँक तपशील पहा / बदला"
                                 >
-                                    <Landmark size={13} className="text-[#1D8CF8]" />
+                                    <Landmark size={13} className="text-[#B44814]" />
                                     <span>बँक व कर्मचारी तपशील</span>
                                 </button>
 
@@ -740,14 +747,14 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 items-start">
                                     
                                     {/* 1. SAVINGS DEPOSIT CARD */}
-                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#1D8CF8]/45 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(29,140,248,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-blue-100/80 bg-gradient-to-b from-[#eff6ff] to-white/70 border-t-[3px] border-t-[#1D8CF8]">
+                                    <div className="backdrop-blur-md bg-white/92 hover:bg-white border border-amber-200/70 hover:border-[#B44814]/50 rounded-2xl shadow-[0_6px_22px_rgba(124,36,24,0.07)] hover:shadow-[0_12px_28px_rgba(180,72,20,0.14)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-orange-100/80 bg-gradient-to-b from-[#FFF3EB] to-white/75 border-t-[3px] border-t-[#B44814]">
                                             <div className="flex justify-between items-center gap-1.5">
                                                 <div className="flex items-center gap-1.5 min-w-0">
-                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #38BDF8 0%, #1D8CF8 55%, #1D4ED8 100%)' }}>
+                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #EA580C 0%, #B44814 55%, #7C2418 100%)' }}>
                                                         <Wallet size={13} />
                                                     </span>
-                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="१. बचत ठेव (Savings)">१. बचत ठेव</span>
+                                                    <span className="text-xs font-extrabold text-[#5A1A14] truncate" title="१. बचत ठेव (Savings)">१. बचत ठेव</span>
                                                 </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.savings.statusColor)}`}>
                                                     {hasSavings ? 'सुरू' : 'शून्य'}
@@ -765,37 +772,37 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                             </div>
                                         </div>
 
-                                        <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
+                                        <div className="p-2 flex flex-col justify-between flex-1 bg-[#FFFBF7]/50">
                                             <div className="flex flex-col gap-1.5">
                                                 <button 
                                                     onClick={() => onNavigate('saving-account', getSavingNavParams())} 
-                                                    className="w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-blue-50/90 hover:bg-blue-100 text-blue-900 border-blue-200 hover:border-blue-300 group/btn"
+                                                    className="w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-orange-50/90 hover:bg-orange-100 text-orange-950 border-orange-200 hover:border-orange-300 group/btn"
                                                 >
                                                     <span className="truncate">{!hasSavings ? '+ नवीन बचत खाते' : 'नवे बचत खाते उघडा'}</span> 
-                                                    <ChevronRight size={13} className="text-blue-600 group-hover/btn:translate-x-0.5 transition-transform shrink-0" />
+                                                    <ChevronRight size={13} className="text-orange-700 group-hover/btn:translate-x-0.5 transition-transform shrink-0" />
                                                 </button>
 
                                                 {hasSavings && (
                                                     <>
-                                                        <button onClick={() => onNavigate('saving-transaction', getSavingNavParams('Deposit'))} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
-                                                            <span className="truncate group-hover/btn:text-blue-900">बचत जमा नोंदणी</span> 
-                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                        <button onClick={() => onNavigate('saving-transaction', getSavingNavParams('Deposit'))} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-orange-50/60 border border-amber-100/90 hover:border-orange-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate group-hover/btn:text-orange-950">बचत जमा नोंदणी</span> 
+                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-orange-700 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('saving-transaction', getSavingNavParams('Withdrawal'))} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
-                                                            <span className="truncate group-hover/btn:text-blue-900">बचत उचल नोंदणी</span> 
-                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                        <button onClick={() => onNavigate('saving-transaction', getSavingNavParams('Withdrawal'))} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-orange-50/60 border border-amber-100/90 hover:border-orange-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate group-hover/btn:text-orange-950">बचत उचल नोंदणी</span> 
+                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-orange-700 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('saving-posting')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
-                                                            <span className="truncate group-hover/btn:text-blue-900">व्याज जमा पोस्टिंग</span> 
-                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                        <button onClick={() => onNavigate('saving-posting')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-orange-50/60 border border-amber-100/90 hover:border-orange-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate group-hover/btn:text-orange-950">व्याज जमा पोस्टिंग</span> 
+                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-orange-700 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('saving-passbook', getSavingNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
-                                                            <span className="truncate group-hover/btn:text-blue-900">पासबुक प्रिंट करा</span> 
-                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                        <button onClick={() => onNavigate('saving-passbook', getSavingNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-orange-50/60 border border-amber-100/90 hover:border-orange-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate group-hover/btn:text-orange-950">पासबुक प्रिंट करा</span> 
+                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-orange-700 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('saving-closing', getSavingNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
-                                                            <span className="truncate group-hover/btn:text-blue-900">खाते बंद प्रक्रिया</span> 
-                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                        <button onClick={() => onNavigate('saving-closing', getSavingNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-orange-50/60 border border-amber-100/90 hover:border-orange-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate group-hover/btn:text-orange-950">खाते बंद प्रक्रिया</span> 
+                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-orange-700 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
                                                     </>
                                                 )}
@@ -807,8 +814,8 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                         onClick={() => setActiveReportModule(prev => prev === 'savings' ? null : 'savings')} 
                                                         className={`w-full text-left py-1.5 px-2 rounded-md font-bold text-[10.5px] flex items-center justify-between cursor-pointer transition-all shadow-2xs ${
                                                             activeReportModule === 'savings'
-                                                                ? 'bg-blue-600 text-white' 
-                                                                : 'bg-blue-50/90 border border-blue-200 text-blue-900 hover:bg-blue-100'
+                                                                ? 'bg-[#B44814] text-white' 
+                                                                : 'bg-orange-50/90 border border-orange-200 text-orange-950 hover:bg-orange-100'
                                                         }`}
                                                     >
                                                         <span className="flex items-center gap-1.5 truncate">
@@ -822,14 +829,14 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 2. FIXED DEPOSIT CARD */}
-                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#0891B2]/45 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(8,145,178,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-cyan-100/80 bg-gradient-to-b from-[#ecfeff] to-white/70 border-t-[3px] border-t-[#0891B2]">
+                                    <div className="backdrop-blur-md bg-white/92 hover:bg-white border border-amber-200/70 hover:border-[#0F766E]/45 rounded-2xl shadow-[0_6px_22px_rgba(124,36,24,0.07)] hover:shadow-[0_12px_28px_rgba(15,118,110,0.14)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-teal-100/80 bg-gradient-to-b from-[#F0FDFA] to-white/75 border-t-[3px] border-t-[#0F766E]">
                                             <div className="flex justify-between items-center gap-1.5">
                                                 <div className="flex items-center gap-1.5 min-w-0">
-                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #22D3EE 0%, #0891B2 55%, #0369A1 100%)' }}>
+                                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #2DD4BF 0%, #0D9488 55%, #0F766E 100%)' }}>
                                                         <Landmark size={13} />
                                                     </span>
-                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="२. मुदत ठेव (FD)">२. मुदत ठेव (FD)</span>
+                                                    <span className="text-xs font-extrabold text-[#5A1A14] truncate" title="२. मुदत ठेव (FD)">२. मुदत ठेव (FD)</span>
                                                 </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.fixedDeposits.statusColor)}`}>
                                                     {hasFD ? 'सुरू' : 'शून्य'}
@@ -904,14 +911,14 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 3. RECURRING DEPOSIT CARD */}
-                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#F59E0B]/50 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(245,158,11,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-amber-100/80 bg-gradient-to-b from-[#fffbeb] to-white/70 border-t-[3px] border-t-[#F59E0B]">
+                                    <div className="backdrop-blur-md bg-white/92 hover:bg-white border border-amber-200/70 hover:border-[#D97706]/50 rounded-2xl shadow-[0_6px_22px_rgba(124,36,24,0.07)] hover:shadow-[0_12px_28px_rgba(217,119,6,0.15)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-amber-100/80 bg-gradient-to-b from-[#FFFBEB] to-white/75 border-t-[3px] border-t-[#D97706]">
                                             <div className="flex justify-between items-center gap-1.5">
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                     <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 55%, #D97706 100%)' }}>
                                                         <Clock size={13} />
                                                     </span>
-                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="३. आवर्ती ठेव (RD)">३. आवर्ती ठेव (RD)</span>
+                                                    <span className="text-xs font-extrabold text-[#5A1A14] truncate" title="३. आवर्ती ठेव (RD)">३. आवर्ती ठेव (RD)</span>
                                                 </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.recurringDeposits.statusColor)}`}>
                                                     {hasRD ? 'सुरू' : 'शून्य'}
@@ -990,14 +997,14 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 4. PIGMY DEPOSIT CARD */}
-                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#22C55E]/50 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(34,197,94,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-emerald-100/80 bg-gradient-to-b from-[#ecfdf5] to-white/70 border-t-[3px] border-t-[#22C55E]">
+                                    <div className="backdrop-blur-md bg-white/92 hover:bg-white border border-amber-200/70 hover:border-[#16A34A]/50 rounded-2xl shadow-[0_6px_22px_rgba(124,36,24,0.07)] hover:shadow-[0_12px_28px_rgba(22,163,74,0.14)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-emerald-100/80 bg-gradient-to-b from-[#ECFDF5] to-white/75 border-t-[3px] border-t-[#16A34A]">
                                              <div className="flex justify-between items-center gap-1.5">
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                     <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #4ADE80 0%, #22C55E 55%, #15803D 100%)' }}>
                                                         <PiggyBank size={13} />
                                                     </span>
-                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="४. पिग्मी ठेव (Pigmy)">४. पिग्मी ठेव</span>
+                                                    <span className="text-xs font-extrabold text-[#5A1A14] truncate" title="४. पिग्मी ठेव (Pigmy)">४. पिग्मी ठेव</span>
                                                 </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.pigmy?.statusColor || 'Gray')}`}>
                                                     {hasPigmy ? 'सुरू' : 'शून्य'}
@@ -1076,14 +1083,14 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 5. LOAN DEPARTMENT CARD */}
-                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-rose-400/50 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(225,29,72,0.15)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-rose-100/80 bg-gradient-to-b from-[#fff1f2] to-white/70 border-t-[3px] border-t-rose-500">
+                                    <div className="backdrop-blur-md bg-white/92 hover:bg-white border border-amber-200/70 hover:border-rose-400/55 rounded-2xl shadow-[0_6px_22px_rgba(124,36,24,0.07)] hover:shadow-[0_12px_28px_rgba(190,18,60,0.14)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-rose-100/80 bg-gradient-to-b from-[#FFF1F2] to-white/75 border-t-[3px] border-t-rose-600">
                                             <div className="flex justify-between items-center gap-1.5">
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                     <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #FB7185 0%, #E11D48 55%, #BE123C 100%)' }}>
                                                         <Scale size={13} />
                                                     </span>
-                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="५. कर्ज विभाग (Loans)">५. कर्ज विभाग</span>
+                                                    <span className="text-xs font-extrabold text-[#5A1A14] truncate" title="५. कर्ज विभाग (Loans)">५. कर्ज विभाग</span>
                                                 </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.loans.statusColor)}`}>
                                                     {hasLoans ? (data.portfolio.loans.statusColor === 'Red' ? 'थकीत' : 'सुरू') : 'शून्य'}
@@ -1162,14 +1169,14 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     </div>
 
                                     {/* 6. SHARE CAPITAL CARD */}
-                                    <div className="backdrop-blur-md bg-white/90 hover:bg-white border border-white/95 hover:border-[#9333EA]/45 rounded-2xl shadow-[0_6px_22px_rgba(37,99,235,0.08)] hover:shadow-[0_12px_28px_rgba(147,51,234,0.16)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
-                                        <div className="p-2.5 border-b border-purple-100/80 bg-gradient-to-b from-[#faf5ff] to-white/70 border-t-[3px] border-t-[#9333EA]">
+                                    <div className="backdrop-blur-md bg-white/92 hover:bg-white border border-amber-200/70 hover:border-[#9333EA]/45 rounded-2xl shadow-[0_6px_22px_rgba(124,36,24,0.07)] hover:shadow-[0_12px_28px_rgba(147,51,234,0.14)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
+                                        <div className="p-2.5 border-b border-purple-100/80 bg-gradient-to-b from-[#FAF5FF] to-white/75 border-t-[3px] border-t-[#9333EA]">
                                             <div className="flex justify-between items-center gap-1.5">
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                     <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs" style={{ background: 'linear-gradient(135deg, #C084FC 0%, #9333EA 55%, #6B21A8 100%)' }}>
                                                         <Coins size={13} />
                                                     </span>
-                                                    <span className="text-xs font-extrabold text-[#0F2454] truncate" title="६. भाग भांडवल (Shares)">६. भाग भांडवल</span>
+                                                    <span className="text-xs font-extrabold text-[#5A1A14] truncate" title="६. भाग भांडवल (Shares)">६. भाग भांडवल</span>
                                                 </div>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.shares.statusColor)}`}>
                                                     {hasShares ? 'सुरू' : 'शून्य'}
@@ -1252,7 +1259,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                             const cfg = moduleReportsConfig[activeReportModule];
 
                             return (
-                                <div className={`bg-white/95 backdrop-blur-md border-2 ${cfg.borderColor} rounded-2xl shadow-[0_10px_30px_rgba(37,99,235,0.10)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200`}>
+                                <div className={`bg-white/95 backdrop-blur-md border-2 ${cfg.borderColor} rounded-2xl shadow-[0_10px_30px_rgba(124,36,24,0.10)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200`}>
                                     
                                     {/* Header matching original style */}
                                     <div className={`${cfg.headerBg} border-b ${cfg.headerBorder} px-3 py-1.5 flex items-center justify-between`}>
@@ -1298,22 +1305,22 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                         {/* Recent Transactions Accordion Tray */}
                         {showTransactions && data.recentTransactions && data.recentTransactions.length > 0 && (
-                            <div className="backdrop-blur-xl bg-white/92 border border-white/95 rounded-2xl shadow-[0_10px_30px_rgba(37,99,235,0.10)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                <div className="bg-gradient-to-r from-[#eef2ff] via-[#f8fbff] to-[#e0f2fe] border-b border-blue-200/75 px-3.5 py-2.5 flex items-center justify-between">
+                            <div className="backdrop-blur-xl bg-white/92 border border-amber-200/80 rounded-2xl shadow-[0_10px_30px_rgba(124,36,24,0.09)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="bg-gradient-to-r from-[#FDF2EE] via-[#FFFBF7] to-[#FEF3E2] border-b border-amber-200/80 px-3.5 py-2.5 flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <History className="w-4 h-4 text-[#2563EB]" />
-                                        <span className="text-xs md:text-sm font-extrabold text-[#0F2454]">अलिकडील व्यवहार इतिहास (Recent Transactions - Top 20)</span>
+                                        <History className="w-4 h-4 text-[#B44814]" />
+                                        <span className="text-xs md:text-sm font-extrabold text-[#5A1A14]">अलिकडील व्यवहार इतिहास (Recent Transactions - Top 20)</span>
                                     </div>
                                     <button
                                         onClick={() => setShowTransactions(false)}
-                                        className="text-xs text-[#1E40AF] hover:text-[#0F2454] font-bold px-2.5 py-1 rounded-lg hover:bg-white/70 cursor-pointer transition-colors"
+                                        className="text-xs text-[#9A3412] hover:text-[#5A1A14] font-bold px-2.5 py-1 rounded-lg hover:bg-white/75 cursor-pointer transition-colors"
                                     >
                                         ✕ लपवा
                                     </button>
                                 </div>
                                 <div className="overflow-x-auto max-h-80 overflow-y-auto">
                                     <table className="w-full text-xs text-left border-collapse">
-                                        <thead className="bg-[#eff6ff] text-[#1E3A8A] font-bold sticky top-0 border-b border-blue-200/75 z-10">
+                                        <thead className="bg-[#FEF6EC] text-[#7C2418] font-bold sticky top-0 border-b border-amber-200/80 z-10">
                                             <tr>
                                                 <th className="p-2.5">दिनांक व वेळ</th>
                                                 <th className="p-2.5">विभाग</th>
@@ -1323,11 +1330,11 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                 <th className="p-2.5">व्हाउचर / पावती क्र.</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-100">
+                                        <tbody className="divide-y divide-amber-100/80">
                                             {data.recentTransactions.map((tx, idx) => {
                                                 const isCredit = tx.transactionType.includes('जमा') || tx.transactionType.includes('Deposit') || tx.transactionType.includes('Collection');
                                                 return (
-                                                    <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                                                    <tr key={idx} className="hover:bg-amber-50/50 transition-colors">
                                                         <td className="p-2.5 text-slate-600 font-mono whitespace-nowrap">{tx.date}</td>
                                                         <td className="p-2.5 font-semibold text-slate-700">{tx.module}</td>
                                                         <td className="p-2.5">

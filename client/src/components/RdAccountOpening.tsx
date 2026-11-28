@@ -840,7 +840,7 @@ export default function RdAccountOpening({
             <h2 className="text-sm font-bold tracking-wide flex items-center gap-1.5">
               <span>📋 नवीन आवर्ती ठेव खाते नोंदणी (New RD Account Opening Master)</span>
             </h2>
-            <p className="text-[10px] text-blue-100 font-normal">नवीन आवर्ती ठेव खाते नोंदणी, हप्ता जमा आणि ऑटोमॅटिक पावती क्रमांक जनरेशन</p>
+            <p className="text-[10px] text-amber-100 font-normal">नवीन आवर्ती ठेव खाते नोंदणी, हप्ता जमा आणि ऑटोमॅटिक पावती क्रमांक जनरेशन</p>
           </div>
 
           {/* View Switcher Buttons */}
@@ -853,7 +853,7 @@ export default function RdAccountOpening({
                   className={`px-2.5 py-0.5 rounded-sm text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
                     view === 'form' 
                       ? 'bg-white text-primary font-bold border-white' 
-                      : 'bg-blue-800/60 hover:bg-blue-800 text-white border-blue-400/40'
+                      : 'bg-[#7C2418]/60 hover:bg-[#7C2418] text-white border-amber-400/40'
                   }`}
                 >
                   <span>✍️ नवीन अर्ज (New Form)</span>
@@ -865,7 +865,7 @@ export default function RdAccountOpening({
                   className={`px-2.5 py-0.5 rounded-sm text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
                     view === 'list' 
                       ? 'bg-white text-primary font-bold border-white' 
-                      : 'bg-blue-800/60 hover:bg-blue-800 text-white border-blue-400/40'
+                      : 'bg-[#7C2418]/60 hover:bg-[#7C2418] text-white border-amber-400/40'
                   }`}
                 >
                   <span>👁️ खाती यादी (Account List)</span>
@@ -933,7 +933,7 @@ export default function RdAccountOpening({
                   <div className="bg-slate-50/70 border border-slate-200 rounded p-2.5 space-y-2">
                     <div className="flex items-center justify-between border-b border-slate-200/80 pb-1.5">
                       <div className="flex items-center gap-1.5">
-                        <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">१</span>
+                        <span className="w-4 h-4 rounded-full bg-[#B44814] text-white flex items-center justify-center font-bold text-[10px]">१</span>
                         <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
                           खातेदार व योजना तपशील (Customer & Scheme)
                         </h3>
@@ -941,9 +941,9 @@ export default function RdAccountOpening({
                       <div className="flex items-center gap-1 text-[11px]">
                         <span className="text-slate-500 font-semibold">आरडी क्र.:</span>
                         {loadingAccountNo ? (
-                          <span className="text-indigo-600 font-bold animate-pulse text-[10px]">तयार होत आहे...</span>
+                          <span className="text-[#B44814] font-bold animate-pulse text-[10px]">तयार होत आहे...</span>
                         ) : (
-                          <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded text-[11px]">
+                          <span className="font-mono font-bold text-[#9A3412] bg-orange-50 border border-amber-200 px-1.5 py-0.5 rounded text-[11px]">
                             {nextAccountNo || '---'}
                           </span>
                         )}
@@ -989,7 +989,7 @@ export default function RdAccountOpening({
 
                     {/* Conditional Joint Member Selector */}
                     {formData.accountType === 'Joint' && (
-                      <div className="p-2 bg-indigo-50/70 border border-indigo-200 rounded text-xs space-y-1">
+                      <div className="p-2 bg-orange-50/70 border border-amber-200 rounded text-xs space-y-1">
                         <label className={labelClass}>संयुक्त खातेदार निवडा (Select Joint Customer) <span className="text-red-500">*</span></label>
                         <CustomerSearchSelect
                           customers={members.filter((m: any) => (m.customerID || m.memberID)?.toString() !== formData.memberID)}
@@ -1085,7 +1085,7 @@ export default function RdAccountOpening({
                             <span className={`text-[9px] font-bold px-1 py-0.2 rounded border ${
                               isCustomAccountNo
                                 ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                : 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                                : 'bg-orange-100 text-[#7C2418] border-amber-300'
                             }`}>
                               {isCustomAccountNo ? 'कस्टम' : 'ऑटो'}
                             </span>
@@ -1094,7 +1094,7 @@ export default function RdAccountOpening({
                                 type="button"
                                 onClick={handleResetAccountNo}
                                 title="ऑटो नंबरवर रिसेट करा"
-                                className="text-[9px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
+                                className="text-[9px] text-[#9A3412] hover:text-[#5A1A14] font-bold underline cursor-pointer"
                               >
                                 ↺ रीसेट
                               </button>
@@ -1111,7 +1111,7 @@ export default function RdAccountOpening({
                           className={`${inputClass} font-mono font-bold ${
                             isCustomAccountNo
                               ? 'border-amber-400 bg-amber-50/50 text-amber-900 focus:ring-amber-400'
-                              : 'border-indigo-300 bg-indigo-50/30 text-indigo-900 focus:ring-indigo-400'
+                              : 'border-amber-300 bg-orange-50/30 text-[#5A1A14] focus:ring-[#B44814]'
                           }`}
                         />
                       </div>
@@ -1150,7 +1150,7 @@ export default function RdAccountOpening({
                   {/* Section 2: हप्ता व भरणा तपशील */}
                   <div className="bg-slate-50/70 border border-slate-200 rounded p-2.5 space-y-2">
                     <div className="flex items-center gap-1.5 border-b border-slate-200/80 pb-1.5">
-                      <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">२</span>
+                      <span className="w-4 h-4 rounded-full bg-[#B44814] text-white flex items-center justify-center font-bold text-[10px]">२</span>
                       <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
                         हप्ता व भरणा तपशील (Installment & Payment Setup)
                       </h3>
@@ -1214,7 +1214,7 @@ export default function RdAccountOpening({
                           </select>
                         </div>
                       ) : formData.paymentMode === 'Bank' ? (
-                        <div className="sm:col-span-6 p-2 bg-blue-50/70 border border-blue-200 rounded">
+                        <div className="sm:col-span-6 p-2 bg-amber-50/70 border border-amber-200 rounded">
                           <BankLedgerSelect
                             value={formData.bankLedgerID}
                             onChange={(id) => setFormData((prev) => ({ ...prev, bankLedgerID: id }))}
@@ -1246,7 +1246,7 @@ export default function RdAccountOpening({
                   {/* Section 3: वारसदार, एजंट व पासबुक */}
                   <div className="bg-slate-50/70 border border-slate-200 rounded p-2.5 space-y-2">
                     <div className="flex items-center gap-1.5 border-b border-slate-200/80 pb-1.5">
-                      <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">३</span>
+                      <span className="w-4 h-4 rounded-full bg-[#B44814] text-white flex items-center justify-center font-bold text-[10px]">३</span>
                       <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
                         वारसदार, एजंट व इतर (Nominee, Agent & Remarks)
                       </h3>
@@ -1438,7 +1438,7 @@ export default function RdAccountOpening({
                         <button
                           type="submit"
                           disabled={loading}
-                          className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded shadow-xs text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                          className="w-full py-2 bg-[#B44814] hover:bg-[#9A3412] text-white font-bold rounded shadow-xs text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                         >
                           <Save className="w-4 h-4" />
                           <span>{loading ? 'जतन होत आहे...' : 'खाते उघडा (Open Account)'}</span>
@@ -1453,7 +1453,7 @@ export default function RdAccountOpening({
                         </button>
 
                         <div className="text-[10px] text-slate-500 flex items-start gap-1 pt-1 leading-tight">
-                          <Info className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+                          <Info className="w-3.5 h-3.5 text-[#B44814] shrink-0 mt-0.5" />
                           <span>
                             {formData.paymentMode === 'AutoDebit_Saving'
                               ? 'पहिला हप्ता बचत खात्यातून ऑटो-डेबिट होऊन व्हाउचर तयार होईल.'
@@ -1477,9 +1477,9 @@ export default function RdAccountOpening({
         <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-4 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
-              <List className="w-4 h-4 text-indigo-600" />
+              <List className="w-4 h-4 text-[#B44814]" />
               <h2 className="text-sm font-bold text-slate-800">उघडलेल्या आरडी खात्यांची यादी (RD Accounts)</h2>
-              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-full text-[10px] border border-indigo-100">
+              <span className="px-2 py-0.5 bg-orange-50 text-[#9A3412] font-bold rounded-full text-[10px] border border-amber-100">
                 {rdList.length}
               </span>
             </div>
@@ -1491,7 +1491,7 @@ export default function RdAccountOpening({
                 placeholder="खाते क्र. किंवा नाव शोधा..."
                 value={listSearch}
                 onChange={(e) => setListSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-[#B44814] focus:outline-none"
               />
             </div>
           </div>
@@ -1511,22 +1511,22 @@ export default function RdAccountOpening({
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse leading-tight">
               <thead>
-                <tr className="bg-slate-50 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
-                  <th className="py-2.5 px-3">खाते क्रमांक</th>
-                  <th className="py-2.5 px-3">खातेदार नाव</th>
-                  <th className="py-2.5 px-3">प्रकार</th>
-                  <th className="py-2.5 px-3">योजना</th>
-                  <th className="py-2.5 px-3 text-right">मासिक हप्ता (₹)</th>
-                  <th className="py-2.5 px-3 text-center">व्याजदर (%)</th>
-                  <th className="py-2.5 px-3 text-center">मुदतपूर्ती तारीख</th>
-                  <th className="py-2.5 px-3 text-right">मुदतपूर्ती रक्कम (₹)</th>
-                  <th className="py-2.5 px-3 text-center">स्थिती</th>
-                  <th className="py-2.5 px-3 text-center">क्रिया (Actions)</th>
+                <tr className="bg-[#5A1A14] text-amber-50 text-[11px] font-bold uppercase tracking-wider border-b border-amber-400/30">
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">खाते क्रमांक</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">खातेदार नाव</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">प्रकार</th>
+                  <th className="py-1.5.5 px-2 whitespace-nowrap">योजना</th>
+                  <th className="py-1.5.5 px-2 text-right whitespace-nowrap">मासिक हप्ता (₹)</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">व्याजदर (%)</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">मुदतपूर्ती तारीख</th>
+                  <th className="py-1.5.5 px-2 text-right whitespace-nowrap">मुदतपूर्ती रक्कम (₹)</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">स्थिती</th>
+                  <th className="py-1.5.5 px-2 text-center whitespace-nowrap">क्रिया (Actions)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+              <tbody className="divide-y divide-amber-100 text-xs text-slate-700">
                 {listLoading ? (
                   <tr>
                     <td colSpan={10} className="py-8 text-center text-slate-500">
@@ -1542,7 +1542,7 @@ export default function RdAccountOpening({
                 ) : (
                   filteredRdList.map((item) => (
                     <tr key={item.rdAccountID} className="hover:bg-slate-50 transition">
-                      <td className="py-2.5 px-3 font-mono font-bold text-indigo-700 whitespace-nowrap">
+                      <td className="py-1.5 px-2 font-mono font-bold text-[#9A3412] whitespace-nowrap align-middle">
                         <div>{(item as any).formattedAccountNo || (item.accountNo?.length === 14 ? `${item.accountNo.slice(0,3)}-${item.accountNo.slice(3,6)}-${item.accountNo.slice(6,13)}-${item.accountNo.slice(13)}` : item.accountNo)}</div>
                         {item.legacyAccountNumber && (
                           <div className="text-[10px] font-sans font-extrabold text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded-sm inline-block mt-0.5">
@@ -1550,29 +1550,29 @@ export default function RdAccountOpening({
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 font-semibold text-slate-800">
+                      <td className="py-1.5 px-2 font-semibold text-slate-800 align-middle">
                         <div>{item.memberName || '-'}</div>
-                        {item.jointMemberName && <div className="text-[10px] text-indigo-600 font-normal">संयुक्त: {item.jointMemberName}</div>}
+                        {item.jointMemberName && <div className="text-[10px] text-[#B44814] font-normal">संयुक्त: {item.jointMemberName}</div>}
                       </td>
-                      <td className="py-2.5 px-3">
+                      <td className="py-1.5 px-2 align-middle">
                         <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-medium border border-slate-200">
                           {item.accountType === 'Joint' ? 'संयुक्त' : item.accountType === 'Minor' ? 'अल्पवयीन' : 'वैयक्तिक'}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3">{item.schemeName || '-'}</td>
-                      <td className="py-2.5 px-3 text-right font-bold text-indigo-700">
+                      <td className="py-1.5 px-2 align-middle">{item.schemeName || '-'}</td>
+                      <td className="py-1.5 px-2 text-right font-bold text-[#9A3412] align-middle">
                         ₹{item.installmentAmount?.toLocaleString('en-IN')}
                       </td>
-                      <td className="py-2.5 px-3 text-center font-bold text-emerald-600">
+                      <td className="py-1.5 px-2 text-center font-bold text-emerald-600 align-middle">
                         {item.interestRate}%
                       </td>
-                      <td className="py-2.5 px-3 text-center font-medium">
+                      <td className="py-1.5 px-2 text-center font-medium align-middle">
                         {item.maturityDate ? new Date(item.maturityDate).toLocaleDateString('en-IN') : '-'}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                      <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-700 align-middle">
                         ₹{item.maturityAmount?.toLocaleString('en-IN')}
                       </td>
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-1.5 px-2 text-center align-middle">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1 ${
                           item.status === 'Active'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -1582,11 +1582,11 @@ export default function RdAccountOpening({
                           {item.status || 'Active'}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <td className="py-1.5 px-2 text-center whitespace-nowrap align-middle">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setPrintAccount(item)}
-                            className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded transition"
+                            className="p-1.5 bg-orange-50 text-[#B44814] hover:bg-orange-100 rounded transition"
                             title="पावती प्रिंट करा"
                           >
                             <Printer className="w-3.5 h-3.5" />
@@ -1616,7 +1616,7 @@ export default function RdAccountOpening({
           <div className="bg-white rounded-xl shadow-lg border border-slate-200 max-w-md w-full p-5 space-y-4">
             <h3 className="text-sm font-bold text-slate-800">खाते हटवण्याची खात्री करा (Delete Confirm)</h3>
             <p className="text-xs text-slate-600">
-              तुम्हाला नक्की आरडी खाते क्रमांक <strong className="font-mono text-indigo-700">{deleteConfirm.accountNo}</strong> हटवायचे आहे का?
+              तुम्हाला नक्की आरडी खाते क्रमांक <strong className="font-mono text-[#9A3412]">{deleteConfirm.accountNo}</strong> हटवायचे आहे का?
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -1642,18 +1642,18 @@ export default function RdAccountOpening({
           <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <Printer className="w-4 h-4 text-indigo-600" />
+                <Printer className="w-4 h-4 text-[#B44814]" />
                 <h3 className="text-sm font-bold text-slate-800">आरडी खाते पावती (RD Account Certificate)</h3>
               </div>
               <button onClick={() => setPrintAccount(null)} className="text-slate-400 hover:text-slate-600 font-bold">×</button>
             </div>
 
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
-              <div className="flex justify-between"><span className="text-slate-500">खाते क्रमांक:</span> <strong className="font-mono text-indigo-700">{printAccount.accountNo}</strong></div>
+              <div className="flex justify-between"><span className="text-slate-500">खाते क्रमांक:</span> <strong className="font-mono text-[#9A3412]">{printAccount.accountNo}</strong></div>
               <div className="flex justify-between"><span className="text-slate-500">खातेदार नाव:</span> <strong className="text-slate-800">{printAccount.memberName}</strong></div>
-              {printAccount.jointMemberName && <div className="flex justify-between"><span className="text-slate-500">संयुक्त खातेदार:</span> <strong className="text-indigo-600">{printAccount.jointMemberName}</strong></div>}
+              {printAccount.jointMemberName && <div className="flex justify-between"><span className="text-slate-500">संयुक्त खातेदार:</span> <strong className="text-[#B44814]">{printAccount.jointMemberName}</strong></div>}
               <div className="flex justify-between"><span className="text-slate-500">योजना:</span> <span>{printAccount.schemeName}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">मासिक हप्ता:</span> <strong className="text-indigo-700">₹{printAccount.installmentAmount?.toLocaleString('en-IN')}</strong></div>
+              <div className="flex justify-between"><span className="text-slate-500">मासिक हप्ता:</span> <strong className="text-[#9A3412]">₹{printAccount.installmentAmount?.toLocaleString('en-IN')}</strong></div>
               <div className="flex justify-between"><span className="text-slate-500">व्याजदर:</span> <strong className="text-emerald-600">{printAccount.interestRate}%</strong></div>
               <div className="flex justify-between"><span className="text-slate-500">मुदतपूर्ती तारीख:</span> <span>{printAccount.maturityDate ? new Date(printAccount.maturityDate).toLocaleDateString('en-IN') : '-'}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">मुदतपूर्ती रक्कम:</span> <strong className="text-emerald-700">₹{printAccount.maturityAmount?.toLocaleString('en-IN')}</strong></div>
@@ -1670,7 +1670,7 @@ export default function RdAccountOpening({
                 onClick={() => {
                   window.print();
                 }}
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-xs shadow-xs flex items-center gap-1.5"
+                className="px-4 py-1.5 bg-[#B44814] hover:bg-[#9A3412] text-white font-bold rounded text-xs shadow-xs flex items-center gap-1.5"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>प्रिंट काढा (Print)</span>
@@ -1746,26 +1746,26 @@ export default function RdAccountOpening({
               </div>
 
               <div className="p-3 overflow-y-auto max-h-[60vh]">
-                <table className="w-full text-xs text-left">
+                <table className="w-full text-[11px] text-left leading-tight border-collapse">
                   <thead className="bg-emerald-50 sticky top-0 border-b border-emerald-200 text-emerald-900 text-[11px]">
                     <tr>
-                      <th className="px-2.5 py-1.5 font-bold">हप्ता क्र.</th>
-                      <th className="px-2.5 py-1.5 font-bold">दिनांक</th>
-                      <th className="px-2.5 py-1.5 font-bold text-right">जमा रक्कम (₹)</th>
-                      <th className="px-2.5 py-1.5 font-bold text-right">नावे रक्कम</th>
-                      <th className="px-2.5 py-1.5 font-bold text-right">एकूण शिल्लक (₹)</th>
-                      <th className="px-2.5 py-1.5 font-bold text-right">व्याज (₹)</th>
+                      <th className="px-2.5 py-1.5 font-bold whitespace-nowrap">हप्ता क्र.</th>
+                      <th className="px-2.5 py-1.5 font-bold whitespace-nowrap">दिनांक</th>
+                      <th className="px-2.5 py-1.5 font-bold text-right whitespace-nowrap">जमा रक्कम (₹)</th>
+                      <th className="px-2.5 py-1.5 font-bold text-right whitespace-nowrap">नावे रक्कम</th>
+                      <th className="px-2.5 py-1.5 font-bold text-right whitespace-nowrap">एकूण शिल्लक (₹)</th>
+                      <th className="px-2.5 py-1.5 font-bold text-right whitespace-nowrap">व्याज (₹)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-50 text-[11px]">
                     {generateSchedule().map((row, idx) => (
                       <tr key={idx} className="hover:bg-emerald-50/40">
-                        <td className="px-2.5 py-1 font-semibold text-slate-700">{row.month}</td>
-                        <td className="px-2.5 py-1 text-slate-600">{row.date}</td>
-                        <td className="px-2.5 py-1 text-right font-mono text-slate-800">{row.deposit?.toLocaleString('en-IN')}</td>
-                        <td className="px-2.5 py-1 text-right font-mono text-slate-400">-</td>
-                        <td className="px-2.5 py-1 text-right font-mono font-bold text-slate-900">{row.balance?.toLocaleString('en-IN')}</td>
-                        <td className="px-2.5 py-1 text-right font-mono font-semibold text-emerald-700">{row.interest.toFixed(2)}</td>
+                        <td className="px-2.5 py-1 font-semibold text-slate-700 align-middle">{row.month}</td>
+                        <td className="px-2.5 py-1 text-slate-600 align-middle">{row.date}</td>
+                        <td className="px-2.5 py-1 text-right font-mono text-slate-800 align-middle">{row.deposit?.toLocaleString('en-IN')}</td>
+                        <td className="px-2.5 py-1 text-right font-mono text-slate-400 align-middle">-</td>
+                        <td className="px-2.5 py-1 text-right font-mono font-bold text-slate-900 align-middle">{row.balance?.toLocaleString('en-IN')}</td>
+                        <td className="px-2.5 py-1 text-right font-mono font-semibold text-emerald-700 align-middle">{row.interest.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>

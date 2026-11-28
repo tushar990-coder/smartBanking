@@ -206,7 +206,7 @@ const LockerReports: React.FC = () => {
                       <td className="py-2 px-3 font-mono text-slate-600">{l.keyNo}</td>
                       <td className="py-2 px-3 font-semibold">{l.typeName} ({l.typeCode})</td>
                       <td className="py-2 px-3 text-right font-bold text-emerald-700">₹{l.annualRent?.toFixed(2)}</td>
-                      <td className="py-2 px-3 text-right font-bold text-blue-700">₹{l.securityDeposit?.toFixed(2)}</td>
+                      <td className="py-2 px-3 text-right font-bold text-[#9A3412]">₹{l.securityDeposit?.toFixed(2)}</td>
                       <td className="py-2 px-3 text-center">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           l.status === 'Available' ? 'bg-emerald-100 text-emerald-800' :
@@ -265,7 +265,7 @@ const LockerReports: React.FC = () => {
                     <td className="py-2 px-3 text-slate-600">{a.nomineeName || '-'}</td>
                     <td className="py-2 px-3">{new Date(a.allotmentDate).toLocaleDateString('en-GB')}</td>
                     <td className="py-2 px-3 font-semibold">{new Date(a.expiryDate).toLocaleDateString('en-GB')}</td>
-                    <td className="py-2 px-3 text-right font-bold text-blue-700">₹{a.securityDepositAmount?.toFixed(2)}</td>
+                    <td className="py-2 px-3 text-right font-bold text-[#9A3412]">₹{a.securityDepositAmount?.toFixed(2)}</td>
                     <td className="py-2 px-3 text-right font-bold text-emerald-700">₹{a.annualRent?.toFixed(2)}</td>
                     <td className="py-2 px-3 text-center">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${

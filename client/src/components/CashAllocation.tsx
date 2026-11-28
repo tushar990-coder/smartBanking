@@ -487,17 +487,17 @@ export default function CashAllocation({ onNavigate, initialToCashierId }: CashA
                 </div>
               ) : (
                 <div className="overflow-x-auto flex-1">
-                  <table className="w-full text-left text-xs border-collapse">
+                  <table className="w-full text-left text-[11px] border-collapse leading-tight">
                     <thead>
-                      <tr className="bg-slate-50 text-gray-600 border-b border-gray-200">
-                        <th className="py-2.5 px-3 font-bold">कडून (From)</th>
-                        <th className="py-2.5 px-3 font-bold">कोणास (To)</th>
-                        <th className="py-2.5 px-3 font-bold">प्रकार</th>
-                        <th className="py-2.5 px-3 font-bold text-right">रक्कम</th>
-                        <th className="py-2.5 px-3 font-bold">शेरा</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30">
+                        <th className="py-1.5.5 px-2 font-bold whitespace-nowrap">कडून (From)</th>
+                        <th className="py-1.5.5 px-2 font-bold whitespace-nowrap">कोणास (To)</th>
+                        <th className="py-1.5.5 px-2 font-bold whitespace-nowrap">प्रकार</th>
+                        <th className="py-1.5.5 px-2 font-bold text-right whitespace-nowrap">रक्कम</th>
+                        <th className="py-1.5.5 px-2 font-bold whitespace-nowrap">शेरा</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-amber-100">
                       {allocations.map((a, idx) => {
                         const aId = a.id ?? a.Id ?? idx;
                         const fromName = a.fromCashierName ?? a.FromCashierName ?? '-';
@@ -507,22 +507,22 @@ export default function CashAllocation({ onNavigate, initialToCashierId }: CashA
                         const aRemarks = a.remarks ?? a.Remarks;
                         return (
                           <tr key={`ca-alloc-${aId}`} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-3 font-semibold text-gray-800">
+                            <td className="py-1.5 px-2 font-semibold text-gray-800 align-middle">
                               {fromName}
                             </td>
-                            <td className="py-2.5 px-3 font-semibold text-gray-800">
+                            <td className="py-1.5 px-2 font-semibold text-gray-800 align-middle">
                               {toName}
                             </td>
-                            <td className="py-2.5 px-3">
+                            <td className="py-1.5 px-2 align-middle">
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm bg-slate-100 text-gray-700 border border-gray-200">
                                 {aType === 'HEAD_TO_TELLER' ? 'तिजोरीतून वाटप' : 
                                  aType === 'TELLER_TO_HEAD' ? 'तिजोरीत परतावा' : 'काउंटर हस्तांतरण'}
                               </span>
                             </td>
-                            <td className="py-2.5 px-3 font-black text-right text-primary">
+                            <td className="py-1.5 px-2 font-black text-right text-primary align-middle">
                               {fmt(aAmt)}
                             </td>
-                            <td className="py-2.5 px-3 text-gray-500 text-[11px] truncate max-w-xs">
+                            <td className="py-1.5 px-2 text-gray-500 text-[11px] truncate max-w-xs align-middle">
                               {aRemarks || '-'}
                             </td>
                           </tr>

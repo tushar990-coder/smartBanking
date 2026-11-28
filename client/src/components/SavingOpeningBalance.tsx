@@ -675,12 +675,12 @@ const SavingOpeningBalance: React.FC = () => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Percent className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सरासरी व्याजदर</div>
-            <div className="text-sm font-black text-indigo-950">{avgRate}% p.a.</div>
+            <div className="text-sm font-black text-[#4A1410]">{avgRate}% p.a.</div>
           </div>
         </div>
 
@@ -716,7 +716,7 @@ const SavingOpeningBalance: React.FC = () => {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -802,7 +802,7 @@ const SavingOpeningBalance: React.FC = () => {
                           जुना CIF: {selectedCustomer.legacyCustomerNo}
                         </span>
                       ) : (
-                        <span className="text-blue-800 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                        <span className="text-[#7C2418] font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                           खातेदार (Customer)
                         </span>
                       )}
@@ -869,17 +869,17 @@ const SavingOpeningBalance: React.FC = () => {
 
             {/* Dynamic Joint Holders Selection: Rendered when Account Type is Joint */}
             {formData.accountType === 'Joint' && (
-              <div className="pt-2 border-t border-blue-200 animate-in fade-in duration-200">
-                <div className="border border-blue-300 rounded-sm p-2.5 bg-blue-50/70 space-y-2">
+              <div className="pt-2 border-t border-amber-200 animate-in fade-in duration-200">
+                <div className="border border-amber-300 rounded-sm p-2.5 bg-amber-50/70 space-y-2">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                    <h3 className="text-xs font-bold text-[#5A1A14] flex items-center gap-1.5">
                       <span className="text-sm">👥</span>
                       <span>सह-खातेदार (Joint Account Holders)</span>
-                      <span className="bg-blue-200 text-blue-900 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                      <span className="bg-amber-200 text-[#5A1A14] text-[10px] px-2 py-0.5 rounded-full font-bold">
                         {jointHolderCustomerIDs.length} जोडले
                       </span>
                     </h3>
-                    <span className="text-[10px] text-blue-700 italic font-medium">
+                    <span className="text-[10px] text-[#9A3412] italic font-medium">
                       * संयुक्त खात्यासाठी किमान एक सह-खातेदार निवडा
                     </span>
                   </div>
@@ -898,7 +898,7 @@ const SavingOpeningBalance: React.FC = () => {
                       type="button"
                       onClick={addJointHolder}
                       disabled={!selectedJointCustomerID}
-                      className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3.5 py-1 rounded-sm text-xs font-bold transition-colors whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 h-[28px]"
+                      className="bg-[#B44814] hover:bg-[#9A3412] disabled:opacity-50 text-white px-3.5 py-1 rounded-sm text-xs font-bold transition-colors whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 h-[28px]"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>जोडा (Add)</span>
@@ -909,9 +909,9 @@ const SavingOpeningBalance: React.FC = () => {
                   {jointHolderCustomerIDs.length > 0 ? (
                     <div className="space-y-1 pt-1">
                       {jointHolderCustomerIDs.map((id, idx) => (
-                        <div key={id} className="flex items-center justify-between bg-white border border-blue-200 rounded-sm px-2.5 py-1 text-xs shadow-2xs hover:border-blue-300 transition-colors">
+                        <div key={id} className="flex items-center justify-between bg-white border border-amber-200 rounded-sm px-2.5 py-1 text-xs shadow-2xs hover:border-amber-300 transition-colors">
                           <div className="flex items-center gap-2">
-                            <span className="bg-blue-100 text-blue-800 font-bold text-[10px] px-1.5 py-0.5 rounded-full">
+                            <span className="bg-amber-100 text-[#7C2418] font-bold text-[10px] px-1.5 py-0.5 rounded-full">
                               #{idx + 1}
                             </span>
                             <span className="text-gray-900 font-bold text-[11px]">
@@ -1190,7 +1190,7 @@ const SavingOpeningBalance: React.FC = () => {
                   <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-1 rounded-sm font-bold">
                     एकूण शिल्लक: ₹{filteredMigrated.reduce((s, a) => s + (a.openingBalance || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
-                  <div className="bg-blue-50 border border-blue-200 text-blue-800 px-2 py-1 rounded-sm font-bold">
+                  <div className="bg-amber-50 border border-amber-200 text-[#7C2418] px-2 py-1 rounded-sm font-bold">
                     संयुक्त खाती: {filteredMigrated.filter(a => a.accountType === 'Joint').length}
                   </div>
                 </div>
@@ -1211,37 +1211,37 @@ const SavingOpeningBalance: React.FC = () => {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs min-w-[1200px]">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300 text-[11px]">
+                <table className="w-full text-left border-collapse text-[11px] min-w-[1200px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30 text-[11px]">
                     <tr>
-                      <th className="px-2 py-2 border-r border-gray-200 text-center w-10">अ.क्र.</th>
-                      <th className="px-2 py-2 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[130px]">खाते क्र. व शाखा</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-center min-w-[110px] font-mono">CIF क्र.</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[180px]">खातेदार नाव (Customer Name)</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[160px]">खाते प्रकार व सह-खातेदार</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[140px]">योजना व लेजर (GL)</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-right min-w-[120px]">सुरुवातीची शिल्लक</th>
-                      <th className="px-2 py-2 border-r border-gray-200 text-center min-w-[100px]">दर व किमान शिल्लक</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-center min-w-[115px]">मागील व्याज दिनांक</th>
-                      <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[140px]">वारसदार व नाते</th>
-                      <th className="px-2 py-2 border-r border-gray-200 text-center min-w-[100px]">उघडल्याचा दिनांक</th>
-                      <th className="px-2 py-2 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-10 whitespace-nowrap">अ.क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left min-w-[130px] whitespace-nowrap">खाते क्र. व शाखा</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-center min-w-[110px] font-mono whitespace-nowrap">CIF क्र.</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left min-w-[180px] whitespace-nowrap">खातेदार नाव (Customer Name)</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left min-w-[160px] whitespace-nowrap">खाते प्रकार व सह-खातेदार</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left min-w-[140px] whitespace-nowrap">योजना व लेजर (GL)</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-right min-w-[120px] whitespace-nowrap">सुरुवातीची शिल्लक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center min-w-[100px] whitespace-nowrap">दर व किमान शिल्लक</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-center min-w-[115px] whitespace-nowrap">मागील व्याज दिनांक</th>
+                      <th className="px-2.5 py-1.5 border-r border-amber-400/25 text-left min-w-[140px] whitespace-nowrap">वारसदार व नाते</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center min-w-[100px] whitespace-nowrap">उघडल्याचा दिनांक</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredMigrated.map((acc, idx) => {
                       const schemeObj = safeArray(schemes).find(s => s.settingID === acc.settingID);
                       const ledgerObj = safeArray(ledgers).find(l => l.ledgerID === acc.ledgerID);
                       return (
                         <tr key={acc.savingAccountID} className="hover:bg-primary/5 transition-colors">
                           {/* 1. Sr. No. */}
-                          <td className="px-2 py-2 border-r border-gray-200 text-center font-mono text-gray-500 font-bold">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-mono text-gray-500 font-bold align-middle">
                             {idx + 1}
                           </td>
 
                           {/* 2. Actions */}
-                          <td className="px-2 py-2 border-r border-gray-200 text-center whitespace-nowrap">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                             <div className="flex items-center justify-center gap-1">
                               <button 
                                 type="button" 
@@ -1265,7 +1265,7 @@ const SavingOpeningBalance: React.FC = () => {
                           </td>
 
                           {/* 3. Account No & Branch */}
-                          <td className="px-2.5 py-2 border-r border-gray-200 text-left">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-left align-middle">
                             <div className="font-mono font-bold text-primary text-xs tracking-wide">{acc.accountNo}</div>
                             {(acc.oldAccountNo || acc.legacyAccountNumber) && (
                               <div className="text-[10px] text-amber-900 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 font-mono font-bold mt-0.5 inline-block">
@@ -1278,14 +1278,14 @@ const SavingOpeningBalance: React.FC = () => {
                           </td>
 
                           {/* 3.1 Dedicated CIF No */}
-                          <td className="px-2.5 py-2 border-r border-gray-200 text-center">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center align-middle">
                             <span className="font-mono font-bold text-xs text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/20 inline-block">
                               {acc.cifNo || acc.customer?.cifNo || '-'}
                             </span>
                           </td>
 
                           {/* 4. Customer Name */}
-                          <td className="px-2.5 py-2 border-r border-gray-200 text-left">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-left align-middle">
                             <div className="font-bold text-gray-900 leading-snug">
                               {acc.customerName}
                             </div>
@@ -1295,11 +1295,11 @@ const SavingOpeningBalance: React.FC = () => {
                           </td>
 
                           {/* 5. Account Type & Joint Holders */}
-                          <td className="px-2.5 py-2 border-r border-gray-200 text-left">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-left align-middle">
                             <div className="inline-block">
                               <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border ${
                                 acc.accountType === 'Joint'
-                                  ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                  ? 'bg-amber-100 text-[#7C2418] border-amber-300'
                                   : acc.accountType === 'Minor'
                                   ? 'bg-amber-100 text-amber-800 border-amber-300'
                                   : acc.accountType === 'Organization'
@@ -1313,8 +1313,8 @@ const SavingOpeningBalance: React.FC = () => {
                             {acc.accountType === 'Joint' && acc.jointHolders && acc.jointHolders.length > 0 && (
                               <div className="mt-1 space-y-0.5">
                                 {acc.jointHolders.map((jh: any, jIdx: number) => (
-                                  <div key={jh.savingAccountJointHolderID || jIdx} className="text-[10px] text-blue-900 bg-blue-50/90 px-1.5 py-0.5 rounded border border-blue-200 font-medium flex items-center gap-1">
-                                    <span className="font-bold text-blue-700">#{jIdx + 1}</span>
+                                  <div key={jh.savingAccountJointHolderID || jIdx} className="text-[10px] text-[#5A1A14] bg-amber-50/90 px-1.5 py-0.5 rounded border border-amber-200 font-medium flex items-center gap-1">
+                                    <span className="font-bold text-[#9A3412]">#{jIdx + 1}</span>
                                     <span>{jh.customerName || `${jh.customer?.firstName || ''} ${jh.customer?.lastName || ''}`.trim()}</span>
                                   </div>
                                 ))}
@@ -1323,7 +1323,7 @@ const SavingOpeningBalance: React.FC = () => {
                           </td>
 
                           {/* 6. Scheme & GL Liability Ledger */}
-                          <td className="px-2.5 py-2 border-r border-gray-200 text-left">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-left align-middle">
                             <div className="font-semibold text-gray-800">
                               {schemeObj?.schemeName || (acc.settingID ? `योजना #${acc.settingID}` : 'डिफॉल्ट दर')}
                             </div>
@@ -1333,20 +1333,20 @@ const SavingOpeningBalance: React.FC = () => {
                           </td>
 
                           {/* 7. Opening Balance */}
-                          <td className="px-2.5 py-2 border-r border-gray-200 text-right font-mono font-bold text-emerald-700 text-xs whitespace-nowrap">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-right font-mono font-bold text-emerald-700 text-xs whitespace-nowrap align-middle">
                             ₹{(acc.openingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
 
                           {/* 8. Interest Rate & Min Balance */}
-                          <td className="px-2 py-2 border-r border-gray-200 text-center font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-mono align-middle">
                             <div className="font-bold text-gray-900">{acc.interestRate ?? 4}% p.a.</div>
                             <div className="text-[10px] text-gray-500">किमान: ₹{Number(acc.minimumBalance ?? 0)}</div>
                           </td>
 
                           {/* 9. Last Interest Posting Date */}
-                          <td className="px-2 py-2 border-r border-gray-200 text-center font-mono whitespace-nowrap">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-mono whitespace-nowrap align-middle">
                             {acc.lastInterestPostingDate ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 inline-flex items-center gap-1">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-[#7C2418] border border-amber-200 inline-flex items-center gap-1">
                                 <span>📅</span> {acc.lastInterestPostingDate.split('T')[0]}
                               </span>
                             ) : (
@@ -1355,7 +1355,7 @@ const SavingOpeningBalance: React.FC = () => {
                           </td>
 
                           {/* 10. Nominee Details */}
-                          <td className="px-2.5 py-2 border-r border-gray-200 text-left">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-left align-middle">
                             {acc.nomineeName ? (
                               <div>
                                 <div className="font-bold text-gray-800">{acc.nomineeName}</div>
@@ -1369,12 +1369,12 @@ const SavingOpeningBalance: React.FC = () => {
                           </td>
 
                           {/* 11. Opening Date */}
-                          <td className="px-2 py-2 border-r border-gray-200 text-center font-mono text-gray-700 whitespace-nowrap">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center font-mono text-gray-700 whitespace-nowrap align-middle">
                             {acc.openingDate ? acc.openingDate.split('T')[0] : '-'}
                           </td>
 
                           {/* 12. Status */}
-                          <td className="px-2 py-2 text-center whitespace-nowrap">
+                          <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               acc.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                             }`}>

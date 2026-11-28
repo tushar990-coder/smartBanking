@@ -270,111 +270,111 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       className="relative w-full min-h-[calc(100vh-54px)] flex flex-col justify-between overflow-hidden select-none font-sans"
       style={{
         background:
-          'radial-gradient(circle at 18% 18%, #e4ecff 0%, rgba(228,236,255,0) 48%), radial-gradient(circle at 86% 14%, #bfdbfe 0%, rgba(191,219,254,0) 45%), radial-gradient(circle at 75% 78%, #67e8f9 0%, rgba(103,232,249,0) 44%), radial-gradient(circle at 14% 82%, #c4b5fd 0%, rgba(196,181,253,0) 46%), linear-gradient(135deg, #eef2ff 0%, #f8fbff 42%, #dbeafe 78%, #93c5fd 100%)',
+          'radial-gradient(circle at 16% 16%, rgba(251,214,205,0.62) 0%, rgba(251,214,205,0) 48%), radial-gradient(circle at 86% 14%, rgba(254,226,184,0.72) 0%, rgba(254,226,184,0) 46%), radial-gradient(circle at 76% 80%, rgba(253,213,155,0.58) 0%, rgba(253,213,155,0) 46%), radial-gradient(circle at 14% 82%, rgba(245,204,196,0.52) 0%, rgba(245,204,196,0) 48%), linear-gradient(135deg, #FDF2EE 0%, #FFFBF7 44%, #FEF3E2 80%, #FCE3BE 100%)',
       }}
     >
       {/* ========================================================================= */}
-      {/* CRISP VECTOR AURORA WAVE & AMBIENT LIGHT CANVAS (Image Color Palette)     */}
+      {/* SOFT FAINT PASTEL MAROON-PEACH-GOLD AMBIENT LIGHT & SILK WAVE CANVAS     */}
       {/* ========================================================================= */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {/* Soft Luminous Glow Orbs */}
+        {/* Soft Luminous Pastel Warm Orbs */}
         <div
-          className="absolute -top-24 -left-20 w-[420px] h-[420px] rounded-full opacity-45 blur-3xl"
-          style={{ background: 'radial-gradient(circle, #a5b4fc 0%, transparent 70%)' }}
+          className="absolute -top-24 -left-20 w-[440px] h-[440px] rounded-full opacity-35 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #E2A396 0%, transparent 70%)' }}
         />
         <div
-          className="absolute top-12 right-10 w-[460px] h-[460px] rounded-full opacity-45 blur-3xl"
-          style={{ background: 'radial-gradient(circle, #38bdf8 0%, transparent 70%)' }}
+          className="absolute top-12 right-8 w-[460px] h-[460px] rounded-full opacity-40 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #FCD396 0%, transparent 70%)' }}
         />
         <div
-          className="absolute bottom-16 left-1/3 w-[520px] h-[320px] rounded-full opacity-35 blur-3xl"
-          style={{ background: 'radial-gradient(circle, #2dd4bf 0%, transparent 72%)' }}
+          className="absolute bottom-14 left-1/3 w-[520px] h-[320px] rounded-full opacity-30 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #FDBA74 0%, transparent 72%)' }}
         />
 
-        {/* Subtle Architectural Dot Grid Texture */}
+        {/* Subtle Warm Copper Architectural Dot Grid Texture */}
         <div
-          className="absolute inset-0 opacity-[0.22]"
+          className="absolute inset-0 opacity-[0.16]"
           style={{
-            backgroundImage: 'radial-gradient(#3b82f6 0.85px, transparent 0.85px)',
+            backgroundImage: 'radial-gradient(#B45309 0.8px, transparent 0.8px)',
             backgroundSize: '28px 28px',
           }}
         />
 
-        {/* Flowing Multi-Color Aurora Ribbon Waves (Violet -> Cyan -> Emerald -> Royal Blue) */}
+        {/* Soft Faint Flowing Silk Ribbon Waves (Rose-Maroon -> Apricot -> Cream Gold) */}
         <svg
           viewBox="0 0 1440 520"
           preserveAspectRatio="none"
-          className="absolute bottom-0 left-0 w-full h-[64%] opacity-90"
+          className="absolute bottom-0 left-0 w-full h-[60%] opacity-90"
         >
           <defs>
-            <linearGradient id="auroraWave1" x1="0%" y1="50%" x2="100%" y2="30%">
-              <stop offset="0%" stopColor="#7C3AED" stopOpacity="0.48" />
-              <stop offset="32%" stopColor="#06B6D4" stopOpacity="0.42" />
-              <stop offset="65%" stopColor="#10B981" stopOpacity="0.34" />
-              <stop offset="100%" stopColor="#2563EB" stopOpacity="0.52" />
+            <linearGradient id="maroonWave1" x1="0%" y1="50%" x2="100%" y2="30%">
+              <stop offset="0%" stopColor="#A94438" stopOpacity="0.20" />
+              <stop offset="38%" stopColor="#D97742" stopOpacity="0.18" />
+              <stop offset="72%" stopColor="#F59E0B" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="#EA8C2E" stopOpacity="0.24" />
             </linearGradient>
-            <linearGradient id="auroraWave2" x1="0%" y1="60%" x2="100%" y2="40%">
-              <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.35" />
-              <stop offset="40%" stopColor="#22D3EE" stopOpacity="0.45" />
-              <stop offset="75%" stopColor="#3B82F6" stopOpacity="0.42" />
-              <stop offset="100%" stopColor="#1D4ED8" stopOpacity="0.58" />
+            <linearGradient id="maroonWave2" x1="0%" y1="60%" x2="100%" y2="40%">
+              <stop offset="0%" stopColor="#B9584A" stopOpacity="0.14" />
+              <stop offset="45%" stopColor="#F59E0B" stopOpacity="0.18" />
+              <stop offset="80%" stopColor="#FBBF24" stopOpacity="0.20" />
+              <stop offset="100%" stopColor="#D97706" stopOpacity="0.22" />
             </linearGradient>
-            <linearGradient id="auroraWave3" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.65" />
-              <stop offset="50%" stopColor="#E0F2FE" stopOpacity="0.45" />
-              <stop offset="100%" stopColor="#93C5FD" stopOpacity="0.55" />
+            <linearGradient id="maroonWave3" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.72" />
+              <stop offset="50%" stopColor="#FFF7ED" stopOpacity="0.55" />
+              <stop offset="100%" stopColor="#FDE6C4" stopOpacity="0.52" />
             </linearGradient>
           </defs>
 
           {/* Back Wave */}
           <path
             d="M0,260 C210,165 390,340 660,245 C920,155 1170,110 1440,195 L1440,520 L0,520 Z"
-            fill="url(#auroraWave1)"
+            fill="url(#maroonWave1)"
           />
-          {/* Mid Luminous Wave */}
+          {/* Mid Luminous Soft Wave */}
           <path
             d="M0,335 C260,235 480,385 780,280 C1050,185 1250,240 1440,150 L1440,520 L0,520 Z"
-            fill="url(#auroraWave2)"
+            fill="url(#maroonWave2)"
           />
-          {/* Foreground Soft Silk Wave */}
+          {/* Foreground Soft Ivory Silk Wave */}
           <path
             d="M0,400 C320,320 620,445 960,365 C1190,310 1330,335 1440,295 L1440,520 L0,520 Z"
-            fill="url(#auroraWave3)"
+            fill="url(#maroonWave3)"
           />
         </svg>
       </div>
 
       {/* ========================================================================= */}
-      {/* TOP-RIGHT MINIMAL CONTROLS STRIP (Zero Clunky Header Card)                */}
+      {/* TOP MINIMAL FROSTED CONTROLS STRIP                                        */}
       {/* ========================================================================= */}
       <div className="relative z-10 w-full px-4 sm:px-7 pt-3.5 flex items-center justify-between gap-2 flex-wrap">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/75 backdrop-blur-md border border-white/90 shadow-xs text-[11px] font-bold text-[#1E3A8A]">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 backdrop-blur-md border border-amber-200/80 shadow-xs text-[11px] font-bold text-[#6B2118]">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span>SMART BANKING CBS</span>
-          <span className="text-blue-300">•</span>
-          <span className="font-mono text-slate-600">FY {user?.financialYearCode || '2026-2027'}</span>
+          <span className="text-amber-300">•</span>
+          <span className="font-mono text-[#8C4A32]">FY {user?.financialYearCode || '2026-2027'}</span>
         </div>
 
         <div className="flex items-center gap-2">
           {isHOUser ? (
-            <div className="flex items-center gap-1.5 bg-white/85 backdrop-blur-md px-3 py-1 rounded-full border border-white shadow-xs">
-              <Building2 size={13} className="text-[#2563EB] shrink-0" />
+            <div className="flex items-center gap-1.5 bg-white/85 backdrop-blur-md px-3 py-1 rounded-full border border-amber-200/80 shadow-xs">
+              <Building2 size={13} className="text-[#B45309] shrink-0" />
               <select
                 value={selectedBranchId}
                 onChange={(e) => handleBranchSelect(e.target.value)}
-                className="bg-transparent text-slate-800 text-[11.5px] font-bold py-0 pr-1 outline-none cursor-pointer border-none focus:ring-0"
+                className="bg-transparent text-[#4A1914] text-[11.5px] font-bold py-0 pr-1 outline-none cursor-pointer border-none focus:ring-0"
               >
-                <option value="all">सर्व शाखा (All Branches)</option>
+                <option value="all" className="text-slate-900 bg-white">सर्व शाखा (All Branches)</option>
                 {branches.map((b: any) => (
-                  <option key={b.branchID} value={b.branchID.toString()}>
+                  <option key={b.branchID} value={b.branchID.toString()} className="text-slate-900 bg-white">
                     {b.branchName}
                   </option>
                 ))}
               </select>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 text-[11.5px] font-bold text-slate-700 bg-white/85 backdrop-blur-md px-3 py-1 rounded-full border border-white shadow-xs">
-              <Building2 size={13} className="text-[#2563EB] shrink-0" />
+            <div className="flex items-center gap-1.5 text-[11.5px] font-bold text-[#4A1914] bg-white/85 backdrop-blur-md px-3 py-1 rounded-full border border-amber-200/80 shadow-xs">
+              <Building2 size={13} className="text-[#B45309] shrink-0" />
               <span>{user?.branchName || 'मुख्य शाखा'}</span>
             </div>
           )}
@@ -383,7 +383,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             type="button"
             onClick={() => loadHeaderMeta(true)}
             disabled={isRefreshing}
-            className="w-7 h-7 rounded-full bg-white/85 backdrop-blur-md border border-white text-[#2563EB] hover:bg-white flex items-center justify-center transition-all cursor-pointer shadow-xs"
+            className="w-7 h-7 rounded-full bg-white/85 hover:bg-white backdrop-blur-md border border-amber-200/80 text-[#9A3412] flex items-center justify-center transition-all cursor-pointer shadow-xs"
             title="माहिती ताजी करा (Refresh)"
           >
             <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
@@ -392,57 +392,57 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {/* ========================================================================= */}
-      {/* CENTER PRESTIGIOUS INSTITUTION HERO (Clean, Airy, Zero Stat Cards)        */}
+      {/* CENTER PRESTIGIOUS INSTITUTION HERO (Soft Airy Warm Maroon & Gold)        */}
       {/* ========================================================================= */}
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-4 py-8 sm:py-10">
-        {/* Glowing Cooperative Bank Emblem */}
+        {/* Warm Maroon-Saffron Cooperative Bank Emblem */}
         <div className="relative mb-4">
           <div
-            className="absolute inset-0 rounded-3xl blur-xl opacity-45 scale-110"
-            style={{ background: 'linear-gradient(135deg, #2563EB 0%, #06B6D4 55%, #7C3AED 100%)' }}
+            className="absolute inset-0 rounded-3xl blur-xl opacity-35 scale-110"
+            style={{ background: 'linear-gradient(135deg, #8C2D19 0%, #D97706 60%, #F59E0B 100%)' }}
           />
           <div
-            className="relative w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-[22px] flex items-center justify-center text-white shadow-[0_12px_30px_rgba(37,99,235,0.35)] border border-white/40"
+            className="relative w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-[22px] flex items-center justify-center text-white shadow-[0_12px_28px_rgba(124,36,24,0.28)] border border-white/50"
             style={{
-              background: 'linear-gradient(135deg, #1D8CF8 0%, #2563EB 52%, #6D28D9 100%)',
+              background: 'linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)',
             }}
           >
-            <Landmark className="w-8 h-8 sm:w-9 sm:h-9" strokeWidth={2} />
+            <Landmark className="w-8 h-8 sm:w-9 sm:h-9 text-white" strokeWidth={2} />
           </div>
         </div>
 
-        {/* Subtle Tagline Pill */}
-        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/75 backdrop-blur-md border border-white/90 shadow-2xs text-[10.5px] font-bold tracking-wider uppercase text-[#1D4ED8] mb-2.5">
-          <Sparkles className="w-3 h-3 text-[#06B6D4]" />
-          <span>को-ऑपरेटिव्ह कोर बँकिंग प्रणाली</span>
+        {/* Subtle Warm Tagline Pill */}
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/80 backdrop-blur-md border border-amber-200/80 shadow-2xs text-[10.5px] font-bold tracking-wider uppercase text-[#9A3412] mb-2.5">
+          <Sparkles className="w-3 h-3 text-[#D97706]" />
+          <span>सुरक्षित को-ऑपरेटिव्ह कोर बँकिंग प्रणाली</span>
         </div>
 
         {/* Prestigious Institution Title */}
-        <h1 className="text-xl sm:text-3xl md:text-[34px] font-black text-[#0F2454] tracking-tight leading-snug max-w-4xl drop-shadow-[0_1px_12px_rgba(255,255,255,0.9)]">
+        <h1 className="text-xl sm:text-3xl md:text-[34px] font-black text-[#5A1A14] tracking-tight leading-snug max-w-4xl drop-shadow-[0_1px_12px_rgba(255,255,255,0.9)]">
           {sansthaName}
         </h1>
 
-        {/* Clean Accent Divider */}
+        {/* Clean Warm Gold Accent Divider */}
         <div
-          className="w-28 h-1 rounded-full my-3 opacity-90"
+          className="w-28 h-1 rounded-full my-3 opacity-85"
           style={{
-            background: 'linear-gradient(90deg, #7C3AED 0%, #06B6D4 50%, #2563EB 100%)',
+            background: 'linear-gradient(90deg, #7C2418 0%, #D97706 55%, #F59E0B 100%)',
           }}
         />
 
         {/* Branch & Registration Metadata Pills */}
-        <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-semibold text-slate-700">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 backdrop-blur-md border border-white/90 shadow-2xs text-[#1E3A8A]">
-            <Building2 className="w-3.5 h-3.5 text-[#1D8CF8]" />
+        <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-semibold text-[#5C3A2E]">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/82 backdrop-blur-md border border-amber-200/80 shadow-2xs text-[#6B2118]">
+            <Building2 className="w-3.5 h-3.5 text-[#D97706]" />
             <span>{activeBranchLabel}</span>
           </span>
           {sansthaInfo?.registrationNo && (
-            <span className="px-3 py-1 rounded-full bg-white/80 backdrop-blur-md border border-white/90 shadow-2xs font-mono text-[11px] text-slate-700">
+            <span className="px-3 py-1 rounded-full bg-white/82 backdrop-blur-md border border-amber-200/80 shadow-2xs font-mono text-[11px] text-[#5C3A2E]">
               रजि. नं.: {sansthaInfo.registrationNo}
             </span>
           )}
           {sansthaInfo?.registrationDate && (
-            <span className="px-3 py-1 rounded-full bg-white/80 backdrop-blur-md border border-white/90 shadow-2xs font-mono text-[11px] text-slate-700">
+            <span className="px-3 py-1 rounded-full bg-white/82 backdrop-blur-md border border-amber-200/80 shadow-2xs font-mono text-[11px] text-[#5C3A2E]">
               स्थापना दि.: {formatRegDate(sansthaInfo.registrationDate)}
             </span>
           )}
@@ -450,11 +450,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {/* ========================================================================= */}
-      {/* BOTTOM FLOATING ICON DOCK (Glossy Vibrant Icons — Exact Reference Shades) */}
+      {/* BOTTOM FLOATING WARM IVORY ICON DOCK                                      */}
       {/* ========================================================================= */}
       <div className="relative z-10 w-full px-3 sm:px-6 pb-5 sm:pb-6">
-        <div className="max-w-[1320px] mx-auto bg-white/92 backdrop-blur-xl rounded-[22px] border border-white shadow-[0_16px_45px_rgba(30,64,175,0.18)] px-2 py-3 sm:py-3.5">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-y-2 lg:gap-y-0 lg:divide-x divide-slate-200/75">
+        <div className="max-w-[1320px] mx-auto bg-white/94 backdrop-blur-xl rounded-[24px] border border-amber-200/75 shadow-[0_16px_42px_rgba(124,36,24,0.12)] px-2 py-3 sm:py-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-y-2 lg:gap-y-0 lg:divide-x divide-amber-200/55">
             {bottomDockIcons.map((item) => {
               const IconComp = item.icon;
               return (
@@ -463,7 +463,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   type="button"
                   onClick={() => handleNav(item.tab, item.params)}
                   title={`${item.titleMr} (${item.titleEn}) — ${item.subtitleMr}`}
-                  className="group flex flex-col items-center justify-center text-center px-2 py-2 rounded-xl transition-all duration-200 cursor-pointer hover:-translate-y-1.5 hover:bg-slate-50/90 focus:outline-none"
+                  className="group flex flex-col items-center justify-center text-center px-2 py-2 rounded-xl transition-all duration-200 cursor-pointer hover:-translate-y-1.5 hover:bg-amber-50/75 focus:outline-none"
                 >
                   {/* Glossy Gradient Squircle Icon */}
                   <div
@@ -477,7 +477,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   </div>
 
                   {/* Crisp Marathi Module Label */}
-                  <span className="mt-2.5 text-[12px] font-extrabold text-slate-800 group-hover:text-slate-950 leading-tight truncate max-w-full">
+                  <span className="mt-2.5 text-[12px] font-extrabold text-[#4A1914] group-hover:text-[#7C2418] leading-tight truncate max-w-full">
                     {item.titleMr}
                   </span>
 

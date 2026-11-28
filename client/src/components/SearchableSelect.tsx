@@ -318,7 +318,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const defaultWrapperClass = `w-full border border-slate-300 px-3 py-2 rounded-lg flex justify-between items-center transition duration-150 text-xs font-medium ${
     disabled
       ? 'bg-slate-100 border-slate-200 cursor-not-allowed opacity-70 text-slate-400'
-      : 'bg-white cursor-pointer hover:border-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none focus-within:border-indigo-600 focus-within:ring-2 focus-within:ring-indigo-500/20 text-slate-900'
+      : 'bg-white cursor-pointer hover:border-slate-400 focus:border-[#9A3412] focus:ring-2 focus:ring-[#B44814]/20 focus:outline-none focus-within:border-[#9A3412] focus-within:ring-2 focus-within:ring-[#B44814]/20 text-slate-900'
   }`;
 
   return (
@@ -329,7 +329,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         tabIndex={disabled ? -1 : (tabIndex ?? 0)}
         role="combobox"
         aria-expanded={isOpen}
-        className={className ? `${className} focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600` : defaultWrapperClass}
+        className={className ? `${className} focus:outline-none focus:ring-2 focus:ring-[#B44814]/20 focus:border-[#9A3412]` : defaultWrapperClass}
         onClick={() => {
           if (!disabled) setIsOpen(!isOpen);
         }}
@@ -369,7 +369,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 name={inputName}
                 aria-label={placeholder || "शोधा..."}
                 type="text"
-                className="w-full border border-slate-300 pl-3 pr-7 py-1.5 text-xs rounded-lg focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 bg-white font-medium"
+                className="w-full border border-slate-300 pl-3 pr-7 py-1.5 text-xs rounded-lg focus:outline-none focus:border-[#9A3412] focus:ring-2 focus:ring-[#B44814]/20 bg-white font-medium"
                 placeholder={searchPlaceholder}
                 value={searchTerm}
                 onChange={(e) => {
@@ -438,7 +438,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
             <div className="mt-1 flex items-center justify-between text-[10.5px] text-slate-500 px-1 font-semibold">
               <span>{countLabel}: <strong className="text-primary font-mono">{filteredOptions.length}</strong></span>
               <div className="flex items-center gap-2">
-                {searchTerm && <span className="text-[10px] text-indigo-600">सर्च: "{searchTerm}"</span>}
+                {searchTerm && <span className="text-[10px] text-[#B44814]">सर्च: "{searchTerm}"</span>}
                 {onQuickAdd && !disabled && (
                   <button
                     type="button"
@@ -486,10 +486,10 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   title={option.label + (option.subLabel ? `\n${option.subLabel}` : '')}
                   className={`px-3 py-2 cursor-pointer text-xs transition duration-100 ${
                     isSelected
-                      ? 'bg-indigo-100 text-indigo-950 font-semibold'
+                      ? 'bg-orange-100 text-[#4A1410] font-semibold'
                       : isHighlighted
-                        ? 'bg-indigo-50/90 text-slate-900 ring-1 ring-inset ring-indigo-200'
-                        : 'text-slate-700 hover:bg-indigo-50/80'
+                        ? 'bg-orange-50/90 text-slate-900 ring-1 ring-inset ring-amber-300'
+                        : 'text-slate-700 hover:bg-orange-50/80'
                   }`}
                   onMouseEnter={() => setHighlightedIndex(idx)}
                   onMouseDown={(e) => e.preventDefault()}
@@ -546,7 +546,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                       e.stopPropagation();
                       setMaxVisibleOptions((prev) => prev + 200);
                     }}
-                    className="px-2 py-0.5 bg-indigo-600 text-white rounded text-[10.5px] font-bold hover:bg-indigo-700 cursor-pointer"
+                    className="px-2 py-0.5 bg-[#B44814] text-white rounded text-[10.5px] font-bold hover:bg-[#9A3412] cursor-pointer"
                   >
                     ➕ पुढील २०० दाखवा
                   </button>

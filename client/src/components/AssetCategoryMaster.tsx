@@ -266,7 +266,7 @@ const AssetCategoryMaster: React.FC = () => {
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch) *</label>
                 <select name="branchID" value={formData.branchID} onChange={handleChange} required
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white">
                   {branches.map((b: any) => (
                     <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
                   ))}
@@ -276,7 +276,7 @@ const AssetCategoryMaster: React.FC = () => {
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">वर्ग कोड (Category Code) *</label>
                 <input type="text" name="categoryCode" value={formData.categoryCode} onChange={handleChange} required
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900"
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white font-bold text-[#5A1A14]"
                   placeholder="उदा. COMP, FURN, BLDG" />
               </div>
 
@@ -289,7 +289,7 @@ const AssetCategoryMaster: React.FC = () => {
                   value={formData.categoryName} 
                   onChange={handleChange} 
                   required
-                  className={`w-full border rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+                  className={`w-full border rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] ${
                     isEditMode ? 'border-primary bg-amber-50/40 font-semibold' : 'border-gray-300 bg-white'
                   }`}
                   placeholder="उदा. संगणक (Computers)" 
@@ -299,7 +299,7 @@ const AssetCategoryMaster: React.FC = () => {
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">उपयुक्त आयुष्य (महिने) *</label>
                 <input type="number" name="usefulLifeMonths" value={formData.usefulLifeMonths} onChange={handleChange} required min="1"
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" placeholder="36" />
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white" placeholder="36" />
               </div>
             </div>
 
@@ -308,13 +308,13 @@ const AssetCategoryMaster: React.FC = () => {
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">घसारा दर (Depreciation Rate %) *</label>
                 <input type="number" name="depreciationRate" value={formData.depreciationRate} onChange={handleChange} required step="0.01" min="0" max="100"
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-emerald-800" />
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white font-bold text-emerald-800" />
               </div>
 
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">घसारा पद्धत (Depreciation Method) *</label>
                 <select name="depreciationMethod" value={formData.depreciationMethod} onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white">
                   <option value="WDV">Written Down Value (WDV)</option>
                   <option value="SLM">Straight Line Method (SLM)</option>
                 </select>
@@ -323,7 +323,7 @@ const AssetCategoryMaster: React.FC = () => {
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">स्थिती (Status) *</label>
                 <select name="status" value={formData.status} onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white">
                   <option value="Active">Active (सक्रिय)</option>
                   <option value="Inactive">Inactive (निष्क्रिय)</option>
                 </select>
@@ -445,24 +445,24 @@ const AssetCategoryMaster: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="शोध (Search Code/Name)..."
-                className="w-full pl-7 pr-2 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                className="w-full pl-7 pr-2 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#B44814] bg-white"
               />
             </div>
           </div>
 
           <div className="overflow-x-auto border border-gray-200 rounded-sm">
-            <table className="w-full text-[11px] border-collapse">
+            <table className="w-full text-[11px] border-collapse leading-tight">
               <thead>
                 <tr className="bg-slate-900 text-white font-semibold border-b border-slate-800">
-                  <th className="px-3 py-2 text-left w-10">#</th>
-                  <th className="px-3 py-2 text-left">वर्ग कोड (Code)</th>
-                  <th className="px-3 py-2 text-left">मालमत्ता वर्ग नाव (Name)</th>
-                  <th className="px-3 py-2 text-left">मॅप्ड खाते (Asset GL Ledger)</th>
-                  <th className="px-3 py-2 text-right">उपयुक्त आयुष्य</th>
-                  <th className="px-3 py-2 text-right">घसारा दर (%)</th>
-                  <th className="px-3 py-2 text-left">घसारा पद्धत</th>
-                  <th className="px-3 py-2 text-center">स्थिती</th>
-                  <th className="px-3 py-2 text-center w-20">कृती</th>
+                  <th className="px-2 py-1.5 text-left w-10 whitespace-nowrap">#</th>
+                  <th className="px-2 py-1.5 text-left whitespace-nowrap">वर्ग कोड (Code)</th>
+                  <th className="px-2 py-1.5 text-left whitespace-nowrap">मालमत्ता वर्ग नाव (Name)</th>
+                  <th className="px-2 py-1.5 text-left whitespace-nowrap">मॅप्ड खाते (Asset GL Ledger)</th>
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap">उपयुक्त आयुष्य</th>
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap">घसारा दर (%)</th>
+                  <th className="px-2 py-1.5 text-left whitespace-nowrap">घसारा पद्धत</th>
+                  <th className="px-2 py-1.5 text-center whitespace-nowrap">स्थिती</th>
+                  <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">कृती</th>
                 </tr>
               </thead>
               <tbody>
@@ -472,10 +472,10 @@ const AssetCategoryMaster: React.FC = () => {
                   <tr><td colSpan={9} className="text-center py-4 text-gray-400">कोणतेही मालमत्ता वर्ग आढळले नाहीत.</td></tr>
                 ) : filteredCategories.map((c, idx) => (
                   <tr key={c.categoryID} className="hover:bg-emerald-50/50 border-b border-gray-100 transition-colors">
-                    <td className="px-3 py-1.5 font-bold text-gray-500">{idx + 1}</td>
-                    <td className="px-3 py-1.5 font-mono font-bold text-blue-900">{c.categoryCode}</td>
-                    <td className="px-3 py-1.5 font-bold text-gray-800">{c.categoryName}</td>
-                    <td className="px-3 py-1.5 font-medium">
+                    <td className="px-2 py-1 font-bold text-gray-500 align-middle">{idx + 1}</td>
+                    <td className="px-2 py-1 font-mono font-bold text-[#5A1A14] align-middle">{c.categoryCode}</td>
+                    <td className="px-2 py-1 font-bold text-gray-800 align-middle">{c.categoryName}</td>
+                    <td className="px-2 py-1 font-medium align-middle">
                       {c.assetLedger?.ledgerName ? (
                         <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold text-[10px]">
                           <BookOpen className="w-3 h-3 text-emerald-600" />
@@ -485,19 +485,19 @@ const AssetCategoryMaster: React.FC = () => {
                         <span className="text-gray-400 italic text-[10px]">मॅप्ड नाही</span>
                       )}
                     </td>
-                    <td className="px-3 py-1.5 text-right font-medium">{c.usefulLifeMonths} महिने</td>
-                    <td className="px-3 py-1.5 text-right font-extrabold text-emerald-700">{c.depreciationRate}%</td>
-                    <td className="px-3 py-1.5 font-medium">{c.depreciationMethod}</td>
-                    <td className="px-3 py-1.5 text-center">
+                    <td className="px-2 py-1 text-right font-medium align-middle">{c.usefulLifeMonths} महिने</td>
+                    <td className="px-2 py-1 text-right font-extrabold text-emerald-700 align-middle">{c.depreciationRate}%</td>
+                    <td className="px-2 py-1 font-medium align-middle">{c.depreciationMethod}</td>
+                    <td className="px-2 py-1 text-center align-middle">
                       <span className={`inline-block px-2 py-0.2 rounded-full text-[10px] font-bold ${c.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300'}`}>
                         {c.status === 'Active' ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="px-3 py-1.5 text-center">
+                    <td className="px-2 py-1 text-center align-middle">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => handleEdit(c)}
-                          className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors"
+                          className="p-1 text-[#B44814] hover:text-[#7C2418] hover:bg-amber-100 rounded transition-colors"
                           title="संपादित करा"
                         >
                           <Edit className="w-3.5 h-3.5" />
@@ -522,7 +522,7 @@ const AssetCategoryMaster: React.FC = () => {
       {/* SEARCH LIST MODAL POPUP */}
       {isListModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+          <div className="bg-white rounded-xl max-w-[97vw] xl:max-w-[1460px] w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
             <div className="px-4 py-3 bg-gradient-to-r from-slate-900 via-[#0E8A5A] to-emerald-950 text-white flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Package className="w-4 h-4 text-emerald-400" />
@@ -553,18 +553,18 @@ const AssetCategoryMaster: React.FC = () => {
             </div>
 
             <div className="p-3 overflow-y-auto flex-1">
-              <table className="w-full text-[11px] border-collapse">
+              <table className="w-full text-[11px] border-collapse leading-tight">
                 <thead>
                   <tr className="bg-slate-900 text-white font-semibold border-b border-slate-800">
-                    <th className="px-3 py-2 text-left w-10">#</th>
-                    <th className="px-3 py-2 text-left">वर्ग कोड (Code)</th>
-                    <th className="px-3 py-2 text-left">वर्ग नाव (Name)</th>
-                    <th className="px-3 py-2 text-left">मॅप्ड खाते (Asset GL Ledger)</th>
-                    <th className="px-3 py-2 text-right">उपयुक्त आयुष्य</th>
-                    <th className="px-3 py-2 text-right">घसारा दर (%)</th>
-                    <th className="px-3 py-2 text-left">घसारा पद्धत</th>
-                    <th className="px-3 py-2 text-center">स्थिती</th>
-                    <th className="px-3 py-2 text-center w-16">निवडा</th>
+                    <th className="px-2 py-1.5 text-left w-10 whitespace-nowrap">#</th>
+                    <th className="px-2 py-1.5 text-left whitespace-nowrap">वर्ग कोड (Code)</th>
+                    <th className="px-2 py-1.5 text-left whitespace-nowrap">वर्ग नाव (Name)</th>
+                    <th className="px-2 py-1.5 text-left whitespace-nowrap">मॅप्ड खाते (Asset GL Ledger)</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">उपयुक्त आयुष्य</th>
+                    <th className="px-2 py-1.5 text-right whitespace-nowrap">घसारा दर (%)</th>
+                    <th className="px-2 py-1.5 text-left whitespace-nowrap">घसारा पद्धत</th>
+                    <th className="px-2 py-1.5 text-center whitespace-nowrap">स्थिती</th>
+                    <th className="px-2 py-1.5 text-center w-16 whitespace-nowrap">निवडा</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -572,10 +572,10 @@ const AssetCategoryMaster: React.FC = () => {
                     <tr><td colSpan={9} className="text-center py-6 text-gray-400">कोणत्याही नोंदी सापडल्या नाहीत.</td></tr>
                   ) : filteredCategories.map((c, idx) => (
                     <tr key={c.categoryID} className="hover:bg-emerald-50/60 border-b border-gray-100 transition-colors">
-                      <td className="px-3 py-2 font-bold text-gray-500">{idx + 1}</td>
-                      <td className="px-3 py-2 font-mono font-bold text-blue-900">{c.categoryCode}</td>
-                      <td className="px-3 py-2 font-bold text-gray-800">{c.categoryName}</td>
-                      <td className="px-3 py-2 font-medium">
+                      <td className="px-2 py-1 font-bold text-gray-500 align-middle">{idx + 1}</td>
+                      <td className="px-2 py-1 font-mono font-bold text-[#5A1A14] align-middle">{c.categoryCode}</td>
+                      <td className="px-2 py-1 font-bold text-gray-800 align-middle">{c.categoryName}</td>
+                      <td className="px-2 py-1 font-medium align-middle">
                         {c.assetLedger?.ledgerName ? (
                           <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold text-[10px]">
                             <BookOpen className="w-3 h-3 text-emerald-600" />
@@ -585,15 +585,15 @@ const AssetCategoryMaster: React.FC = () => {
                           <span className="text-gray-400 italic text-[10px]">मॅप्ड नाही</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right font-medium">{c.usefulLifeMonths} महिने</td>
-                      <td className="px-3 py-2 text-right font-extrabold text-emerald-700">{c.depreciationRate}%</td>
-                      <td className="px-3 py-2 font-medium">{c.depreciationMethod}</td>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-2 py-1 text-right font-medium align-middle">{c.usefulLifeMonths} महिने</td>
+                      <td className="px-2 py-1 text-right font-extrabold text-emerald-700 align-middle">{c.depreciationRate}%</td>
+                      <td className="px-2 py-1 font-medium align-middle">{c.depreciationMethod}</td>
+                      <td className="px-2 py-1 text-center align-middle">
                         <span className={`inline-block px-2 py-0.2 rounded-full text-[10px] font-bold ${c.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
                           {c.status}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-2 py-1 text-center align-middle">
                         <button
                           onClick={() => handleEdit(c)}
                           className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"

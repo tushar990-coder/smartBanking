@@ -1736,12 +1736,12 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 </div>
 
                 <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-                    <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+                    <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
                         <Banknote className="w-4 h-4" />
                     </div>
                     <div>
                         <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण प्रत्यक्ष वाटप</div>
-                        <div className="text-sm font-black text-indigo-950">₹{totalDisbursedSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="text-sm font-black text-[#4A1410]">₹{totalDisbursedSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                     </div>
                 </div>
 
@@ -1993,10 +1993,10 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
                                 {/* Account Number & Legacy Number Row for New Loan Account */}
                                 {(sourceType === 'Application' || sourceType === 'Draft') && !newAccountData.loanAccountID && (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 bg-blue-50/60 border border-blue-200 rounded">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 bg-amber-50/60 border border-amber-200 rounded">
                                         <div>
                                             <div className="flex items-center justify-between mb-0.5">
-                                                <label className="text-[11px] font-bold text-blue-950 flex items-center gap-1">
+                                                <label className="text-[11px] font-bold text-[#4A1410] flex items-center gap-1">
                                                     नवीन कर्ज खाते क्र. (Loan A/c No) *
                                                 </label>
                                                 <div className="flex items-center gap-1.5">
@@ -2007,7 +2007,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                         type="button"
                                                         onClick={() => fetchNextLoanAccountNo(selectedBranchId, newAccountData.loanRateID)}
                                                         title="नवीन खाते क्रमांक रिफ्रेश करा"
-                                                        className="text-[9.5px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+                                                        className="text-[9.5px] text-[#9A3412] hover:text-[#5A1A14] font-bold underline cursor-pointer"
                                                     >
                                                         ↺ रिफ्रेश
                                                     </button>
@@ -2081,9 +2081,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         </div>
                                     </div>
 
-                                    <div className="bg-blue-50 p-1.5 rounded border border-blue-300">
-                                        <div className="text-[9.5px] font-bold text-blue-900 uppercase">शिल्लक मंजुरी मर्यादा</div>
-                                        <div className="text-xs font-black text-blue-900 font-mono mt-0.5">
+                                    <div className="bg-amber-50 p-1.5 rounded border border-amber-300">
+                                        <div className="text-[9.5px] font-bold text-[#5A1A14] uppercase">शिल्लक मंजुरी मर्यादा</div>
+                                        <div className="text-xs font-black text-[#5A1A14] font-mono mt-0.5">
                                             ₹{pendingSanctionedLimit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                         </div>
                                     </div>
@@ -2215,7 +2215,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         <button 
                                             type="button" 
                                             onClick={addDeductionRow} 
-                                            className="text-primary hover:text-blue-900 flex items-center gap-1 text-[10.5px] font-bold bg-white hover:bg-blue-50 border border-blue-200 px-2 py-0.5 rounded cursor-pointer transition shadow-2xs"
+                                            className="text-primary hover:text-[#5A1A14] flex items-center gap-1 text-[10.5px] font-bold bg-white hover:bg-amber-50 border border-amber-200 px-2 py-0.5 rounded cursor-pointer transition shadow-2xs"
                                         >
                                             <Plus className="w-3 h-3" /> + कपात जोडा
                                         </button>
@@ -2326,11 +2326,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         }
                                         if (isMember) {
                                             return (
-                                                <div className="p-1.5 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-900 flex items-center justify-between">
+                                                <div className="p-1.5 bg-amber-50 border border-amber-200 rounded text-[10px] text-[#5A1A14] flex items-center justify-between">
                                                     <span className="font-medium">
                                                         ℹ️ विद्यमान शेअर्स भांडवल: ₹{memberShareBalance.toLocaleString('en-IN')} (नवीन शेअर्स कपात शून्य).
                                                     </span>
-                                                    <span className="text-[9px] bg-blue-100 text-blue-800 border border-blue-300 px-1 py-0.2 rounded font-semibold font-mono">
+                                                    <span className="text-[9px] bg-amber-100 text-[#7C2418] border border-amber-300 px-1 py-0.2 rounded font-semibold font-mono">
                                                         Member
                                                     </span>
                                                 </div>
@@ -2353,38 +2353,38 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     const toNo = fromNo + qty - 1;
 
                                     return (
-                                        <div className="p-2 bg-blue-50/90 border border-blue-200 rounded text-[10.5px] shadow-2xs space-y-1">
-                                            <div className="font-bold text-blue-900 flex items-center justify-between border-b border-blue-200 pb-0.5">
+                                        <div className="p-2 bg-amber-50/90 border border-amber-200 rounded text-[10.5px] shadow-2xs space-y-1">
+                                            <div className="font-bold text-[#5A1A14] flex items-center justify-between border-b border-amber-200 pb-0.5">
                                                 <span className="flex items-center gap-1">
-                                                    <Percent className="w-3 h-3 text-blue-700" />
+                                                    <Percent className="w-3 h-3 text-[#9A3412]" />
                                                     ऑटो शेअर कपात वाटप (Auto Share Allocation)
                                                 </span>
-                                                <span className="text-[9.5px] bg-blue-100 text-blue-900 px-1.5 py-0.2 rounded font-mono font-bold">
+                                                <span className="text-[9.5px] bg-amber-100 text-[#5A1A14] px-1.5 py-0.2 rounded font-mono font-bold">
                                                     ₹{shareAmt.toLocaleString('en-IN')}
                                                 </span>
                                             </div>
                                             <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 text-[9.5px]">
-                                                <div className="bg-white p-1 rounded border border-blue-100">
+                                                <div className="bg-white p-1 rounded border border-amber-100">
                                                     <div className="text-gray-400">सभासद क्र.</div>
-                                                    <div className="font-bold text-blue-950 font-mono truncate">{applicantMember?.memberCode || 'Auto'}</div>
+                                                    <div className="font-bold text-[#4A1410] font-mono truncate">{applicantMember?.memberCode || 'Auto'}</div>
                                                 </div>
-                                                <div className="bg-white p-1 rounded border border-blue-100">
+                                                <div className="bg-white p-1 rounded border border-amber-100">
                                                     <div className="text-gray-400">वर्गवारी</div>
                                                     <div className="font-bold text-emerald-800">नियमित ('अ')</div>
                                                 </div>
-                                                <div className="bg-white p-1 rounded border border-blue-100">
+                                                <div className="bg-white p-1 rounded border border-amber-100">
                                                     <div className="text-gray-400">शेअर्स संख्या</div>
                                                     <div className="font-bold text-emerald-700">{qty} (₹100 दर)</div>
                                                 </div>
-                                                <div className="bg-white p-1 rounded border border-blue-100">
+                                                <div className="bg-white p-1 rounded border border-amber-100">
                                                     <div className="text-gray-400">सर्टिफिकेट क्र.</div>
-                                                    <div className="font-mono font-bold text-indigo-700 truncate">{certNo}</div>
+                                                    <div className="font-mono font-bold text-[#9A3412] truncate">{certNo}</div>
                                                 </div>
-                                                <div className="bg-white p-1 rounded border border-blue-100">
+                                                <div className="bg-white p-1 rounded border border-amber-100">
                                                     <div className="text-gray-400">नं. पासून</div>
                                                     <div className="font-mono font-bold text-gray-800">{fromNo}</div>
                                                 </div>
-                                                <div className="bg-white p-1 rounded border border-blue-100">
+                                                <div className="bg-white p-1 rounded border border-amber-100">
                                                     <div className="text-gray-400">नं. पर्यंत</div>
                                                     <div className="font-mono font-bold text-gray-800">{toNo}</div>
                                                 </div>
@@ -2731,8 +2731,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     </span>
                                 </div>
                                 <div className="px-1.5 py-0.5 border-r border-slate-100">
-                                    <span className="text-[9.5px] text-blue-600 block leading-tight">सध्याचे वाटप</span>
-                                    <span className="font-bold text-blue-800 font-mono text-[11.5px] leading-tight">
+                                    <span className="text-[9.5px] text-[#B44814] block leading-tight">सध्याचे वाटप</span>
+                                    <span className="font-bold text-[#7C2418] font-mono text-[11.5px] leading-tight">
                                         ₹{(formData.disbursementAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                     </span>
                                 </div>
@@ -2844,34 +2844,34 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         </div>
                                     ) : (
                                         <div className="flex-1 overflow-auto rounded border border-slate-200 shadow-2xs bg-white">
-                                            <table className="w-full text-left border-collapse text-[10.5px]">
-                                                <thead className="bg-slate-100 sticky top-0 shadow-2xs text-slate-700 font-bold border-b border-slate-300 z-10">
+                                            <table className="w-full text-left border-collapse text-[10.5px] leading-tight">
+                                                <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30 z-10">
                                                     <tr>
-                                                        <th className="py-1 px-1.5 border-r border-slate-200 text-center w-9">क्र.</th>
-                                                        <th className="py-1 px-2 border-r border-slate-200 text-center w-24">हप्ता दिनांक</th>
-                                                        <th className="py-1 px-2 border-r border-slate-200 text-right">मुद्दल (₹)</th>
-                                                        <th className="py-1 px-2 border-r border-slate-200 text-right">व्याज (₹)</th>
-                                                        <th className="py-1 px-2 border-r border-slate-200 text-right">एकूण हप्ता (₹)</th>
-                                                        <th className="py-1 px-2 text-right">बाकी शिल्लक (₹)</th>
+                                                        <th className="py-1 px-1.5 border-r border-amber-400/25 text-center w-9 whitespace-nowrap">क्र.</th>
+                                                        <th className="py-1 px-2 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">हप्ता दिनांक</th>
+                                                        <th className="py-1 px-2 border-r border-amber-400/25 text-right whitespace-nowrap">मुद्दल (₹)</th>
+                                                        <th className="py-1 px-2 border-r border-amber-400/25 text-right whitespace-nowrap">व्याज (₹)</th>
+                                                        <th className="py-1 px-2 border-r border-amber-400/25 text-right whitespace-nowrap">एकूण हप्ता (₹)</th>
+                                                        <th className="py-1 px-2 text-right whitespace-nowrap">बाकी शिल्लक (₹)</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-slate-100 font-mono text-[10px] text-slate-700">
+                                                <tbody className="divide-y divide-amber-100 font-mono text-[10px] text-slate-700">
                                                     {scheduleData.map((row, i) => (
                                                         <tr key={i} className="hover:bg-emerald-50/50 transition-colors">
-                                                            <td className="py-0.5 px-1.5 border-r border-slate-100 text-center font-bold text-slate-500 bg-slate-50/40">{row.instNo}</td>
-                                                            <td className="py-0.5 px-2 border-r border-slate-100 text-center text-slate-600 font-sans">
+                                                            <td className="py-0.5 px-1.5 border-r border-slate-100 text-center font-bold text-slate-500 bg-slate-50/40 align-middle">{row.instNo}</td>
+                                                            <td className="py-0.5 px-2 border-r border-slate-100 text-center text-slate-600 font-sans align-middle">
                                                                 {row.dueDate || '-'}
                                                             </td>
-                                                            <td className="py-0.5 px-2 border-r border-slate-100 text-right text-slate-800">
+                                                            <td className="py-0.5 px-2 border-r border-slate-100 text-right text-slate-800 align-middle">
                                                                 {Math.round(row.principal || 0).toLocaleString('en-IN')}
                                                             </td>
-                                                            <td className="py-0.5 px-2 border-r border-slate-100 text-right text-rose-600">
+                                                            <td className="py-0.5 px-2 border-r border-slate-100 text-right text-rose-600 align-middle">
                                                                 {Math.round(row.interest || 0).toLocaleString('en-IN')}
                                                             </td>
-                                                            <td className="py-0.5 px-2 border-r border-slate-100 text-right font-bold text-emerald-700 bg-emerald-50/20">
+                                                            <td className="py-0.5 px-2 border-r border-slate-100 text-right font-bold text-emerald-700 bg-emerald-50/20 align-middle">
                                                                 {Math.round(row.total || 0).toLocaleString('en-IN')}
                                                             </td>
-                                                            <td className="py-0.5 px-2 text-right text-slate-600">
+                                                            <td className="py-0.5 px-2 text-right text-slate-600 align-middle">
                                                                 {Math.round(row.balance || 0).toLocaleString('en-IN')}
                                                             </td>
                                                         </tr>

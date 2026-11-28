@@ -326,7 +326,7 @@ export default function DaybookSummary() {
                   voucherStatus === 'pending'
                     ? 'border-amber-500 text-amber-900 bg-amber-50 focus:border-amber-600 focus:ring-amber-500'
                     : voucherStatus === 'all'
-                    ? 'border-indigo-500 text-indigo-900 bg-indigo-50 focus:border-indigo-600 focus:ring-indigo-500'
+                    ? 'border-[#B44814] text-[#5A1A14] bg-orange-50 focus:border-[#9A3412] focus:ring-[#B44814]'
                     : 'border-emerald-600 text-emerald-900 bg-emerald-50 focus:border-emerald-700 focus:ring-emerald-600'
                 }`}
                 title="सारांश प्रकार निवडा (पक्की / कच्ची / एकत्रित)"
@@ -487,7 +487,7 @@ export default function DaybookSummary() {
                       voucherStatus === 'pending'
                         ? 'border-amber-800 bg-amber-200 print:bg-gray-100 text-amber-950 print:text-black'
                         : voucherStatus === 'all'
-                        ? 'border-indigo-800 bg-indigo-100 print:bg-gray-100 text-indigo-950 print:text-black'
+                        ? 'border-[#7C2418] bg-orange-100 print:bg-gray-100 text-[#4A1410] print:text-black'
                         : 'border-gray-900 bg-gray-200 print:bg-gray-100 text-gray-900'
                     }`}>
                       {voucherStatus === 'pending'
@@ -525,7 +525,7 @@ export default function DaybookSummary() {
                       <th className="border border-gray-800 p-1.5 align-middle text-center w-24" rowSpan={2}>
                         व्हाउचर क्र.
                       </th>
-                      <th className="border border-gray-800 p-1 text-center bg-blue-50/80 print:bg-gray-200" colSpan={3}>
+                      <th className="border border-gray-800 p-1 text-center bg-amber-50/80 print:bg-gray-200" colSpan={3}>
                         जमा (Receipts)
                       </th>
                       <th className="border border-gray-800 p-1 text-center bg-amber-50/80 print:bg-gray-200" colSpan={3}>
@@ -535,7 +535,7 @@ export default function DaybookSummary() {
                     <tr className="bg-gray-100 print:bg-gray-200 text-gray-900 border-b-2 border-gray-900 font-bold text-[10px]">
                       <th className="border border-gray-800 p-1 text-right w-20">रोख (₹)</th>
                       <th className="border border-gray-800 p-1 text-right w-20">वर्ग (₹)</th>
-                      <th className="border border-gray-800 p-1 text-right w-24 bg-blue-100/50 print:bg-gray-200 font-extrabold">
+                      <th className="border border-gray-800 p-1 text-right w-24 bg-amber-100/50 print:bg-gray-200 font-extrabold">
                         एकूण (₹)
                       </th>
                       <th className="border border-gray-800 p-1 text-right w-20">रोख (₹)</th>
@@ -561,7 +561,7 @@ export default function DaybookSummary() {
                             <td className="p-1 px-2 border border-gray-300 font-medium text-gray-800" title={ledger.ledgerName}>
                               <div className="font-bold text-gray-900">{ledger.ledgerName}</div>
                               {(ledger.memberDetails || ledger.narration) && (
-                                <div className="text-[9.5px] text-blue-900 print:text-black font-normal mt-0.5 flex items-start gap-1">
+                                <div className="text-[9.5px] text-[#5A1A14] print:text-black font-normal mt-0.5 flex items-start gap-1">
                                   <span className="font-semibold shrink-0">👤 सभासद / तपशील:</span>
                                   <span className="break-words">{ledger.memberDetails || ledger.narration}</span>
                                 </div>
@@ -579,7 +579,7 @@ export default function DaybookSummary() {
                             <td className="p-1 px-1.5 border border-gray-300 text-right font-mono">
                               {ledger.receiptTransfer > 0 ? formatAmount(ledger.receiptTransfer) : '-'}
                             </td>
-                            <td className="p-1 px-1.5 border border-gray-300 text-right font-mono font-bold bg-blue-50/40 print:bg-transparent">
+                            <td className="p-1 px-1.5 border border-gray-300 text-right font-mono font-bold bg-amber-50/40 print:bg-transparent">
                               {ledger.receiptTotal > 0 ? formatAmount(ledger.receiptTotal) : '-'}
                             </td>
                             <td className="p-1 px-1.5 border border-gray-300 text-right font-mono">
@@ -605,7 +605,7 @@ export default function DaybookSummary() {
                           <td className="p-1 px-1.5 border border-gray-800 text-right font-mono">
                             {formatAmount(group.ledgers.reduce((sum, l) => sum + l.receiptTransfer, 0))}
                           </td>
-                          <td className="p-1 px-1.5 border border-gray-800 text-right font-mono font-extrabold bg-blue-100/60 print:bg-transparent text-[11px]">
+                          <td className="p-1 px-1.5 border border-gray-800 text-right font-mono font-extrabold bg-amber-100/60 print:bg-transparent text-[11px]">
                             {formatAmount(group.ledgers.reduce((sum, l) => sum + l.receiptTotal, 0))}
                           </td>
                           <td className="p-1 px-1.5 border border-gray-800 text-right font-mono">
@@ -632,7 +632,7 @@ export default function DaybookSummary() {
                       <td className="p-1 px-1.5 border border-gray-800 text-right font-mono">
                         {formatAmount(data.totalReceiptsTransfer)}
                       </td>
-                      <td className="p-1 px-1.5 border border-gray-800 text-right font-mono font-extrabold text-[11px] bg-blue-100/70 print:bg-gray-200">
+                      <td className="p-1 px-1.5 border border-gray-800 text-right font-mono font-extrabold text-[11px] bg-amber-100/70 print:bg-gray-200">
                         {formatAmount(data.totalReceiptsCash + data.totalReceiptsTransfer)}
                       </td>
                       <td className="p-1 px-1.5 border border-gray-800 text-right font-mono">
@@ -647,7 +647,7 @@ export default function DaybookSummary() {
                     </tr>
 
                     {/* Opening Balance and Closing Cash Row */}
-                    <tr className="bg-blue-50/70 print:bg-gray-100 font-extrabold border-y border-gray-800 text-gray-900">
+                    <tr className="bg-amber-50/70 print:bg-gray-100 font-extrabold border-y border-gray-800 text-gray-900">
                       <td className="p-1 px-1.5 border border-gray-800 text-right uppercase text-[10.5px]" colSpan={2}>
                         📌 आरंभीची रोख शिल्लक (Opening Cash Balance)
                       </td>

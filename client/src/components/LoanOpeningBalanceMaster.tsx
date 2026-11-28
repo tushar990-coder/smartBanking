@@ -1818,12 +1818,12 @@ export default function LoanOpeningBalanceMaster() {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Award className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण मंजूर रक्कम (₹)</div>
-            <div className="text-sm font-black text-indigo-950">₹ {totalSanctioned.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="text-sm font-black text-[#4A1410]">₹ {totalSanctioned.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
         </div>
 
@@ -1857,7 +1857,7 @@ export default function LoanOpeningBalanceMaster() {
           
           {/* Section 1: Basic Info */}
           <div className={`p-3 rounded-sm shadow-xs border transition-all duration-300 ${
-            isEditing ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'bg-white border-gray-200 border-t-2 border-primary'
+            isEditing ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'bg-white border-gray-200 border-t-2 border-primary'
           }`}>
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2.5">
               <Users className="w-4 h-4 text-primary" />
@@ -1957,13 +1957,13 @@ export default function LoanOpeningBalanceMaster() {
               <button
                 type="button"
                 onClick={() => setShowInstallmentModal(true)}
-                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1 rounded-sm text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                className="bg-orange-50 hover:bg-orange-100 text-[#9A3412] border border-amber-200 px-3 py-1 rounded-sm text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
                 title="हप्ता परतफेड वेळापत्रक व हप्ता चार्ट पहा"
               >
-                <Scale className="w-3.5 h-3.5 text-indigo-600" />
+                <Scale className="w-3.5 h-3.5 text-[#B44814]" />
                 <span>📊 हप्ता चार्ट पहा (Installment Chart)</span>
                 {installmentChart.length > 0 && (
-                  <span className="bg-indigo-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold">
+                  <span className="bg-[#B44814] text-white text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold">
                     {installmentChart.length} हप्ते
                   </span>
                 )}
@@ -1976,7 +1976,7 @@ export default function LoanOpeningBalanceMaster() {
               </div>
               <div>
                 <label className={labelClass}>कर्ज वाटप रक्कम (₹) *</label>
-                <input type="number" step="0.01" name="disbursedAmount" value={formData.disbursedAmount} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-indigo-950 bg-indigo-50/40 border-indigo-300`} placeholder="0.00" title="प्रत्यक्ष वाटप केलेली रक्कम (व्याज व हप्ता गणनेचा आधार)" />
+                <input type="number" step="0.01" name="disbursedAmount" value={formData.disbursedAmount} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-[#4A1410] bg-orange-50/40 border-amber-300`} placeholder="0.00" title="प्रत्यक्ष वाटप केलेली रक्कम (व्याज व हप्ता गणनेचा आधार)" />
               </div>
               <div>
                 <label className={labelClass}>कर्ज वाटप दिनांक *</label>
@@ -2105,11 +2105,11 @@ export default function LoanOpeningBalanceMaster() {
                             value={formData.capitalizedInterestAmount} 
                             onChange={handleChange} 
                             onFocus={(e) => e.target.select()} 
-                            className={`${inputClass} font-bold text-blue-800 bg-blue-50/40 border-blue-300`} 
+                            className={`${inputClass} font-bold text-[#7C2418] bg-amber-50/40 border-amber-300`} 
                             placeholder="0.00" 
                             disabled={isEditing} 
                           />
-                          <div className="text-[10px] text-blue-700 mt-0.5">जुन्या सॉफ्टवेअरमधून मुद्दलात चढवलेले व्याज</div>
+                          <div className="text-[10px] text-[#9A3412] mt-0.5">जुन्या सॉफ्टवेअरमधून मुद्दलात चढवलेले व्याज</div>
                       </div>
 
                       <div>
@@ -2151,12 +2151,12 @@ export default function LoanOpeningBalanceMaster() {
 
                   {/* Capitalized Interest Alert & Policy Checkbox */}
                   {parseFloat(formData.capitalizedInterestAmount || '0') > 0 && (
-                    <div className="mt-2.5 p-2 bg-blue-50/90 border border-blue-200 rounded-sm">
-                      <div className="flex items-center gap-1.5 text-[10px] text-blue-900 font-bold mb-1">
-                        <AlertCircle className="w-3.5 h-3.5 text-blue-700" />
+                    <div className="mt-2.5 p-2 bg-amber-50/90 border border-amber-200 rounded-sm">
+                      <div className="flex items-center gap-1.5 text-[10px] text-[#5A1A14] font-bold mb-1">
+                        <AlertCircle className="w-3.5 h-3.5 text-[#9A3412]" />
                         <span>भांडवलीकृत व्याज नोंद: ₹{parseFloat(formData.capitalizedInterestAmount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                       </div>
-                      <label className="flex items-center gap-2 cursor-pointer text-[10px] text-blue-950 font-semibold">
+                      <label className="flex items-center gap-2 cursor-pointer text-[10px] text-[#4A1410] font-semibold">
                         <input 
                           type="checkbox" 
                           name="chargeInterestOnCapitalizedAmount" 
@@ -2207,7 +2207,7 @@ export default function LoanOpeningBalanceMaster() {
                             placeholder="0.00" 
                           />
                           {formData.openingDate && formData.maturityDate && new Date(formData.openingDate) > new Date(formData.maturityDate) && (
-                            <div className="text-[10px] text-indigo-700 font-semibold mt-0.5">
+                            <div className="text-[10px] text-[#9A3412] font-semibold mt-0.5">
                               ℹ️ मुदत संपल्यानंतरचे थकीत व्याज समाविष्ट
                             </div>
                           )}
@@ -2430,9 +2430,9 @@ export default function LoanOpeningBalanceMaster() {
               <button 
                 type="button" 
                 onClick={() => setShowInstallmentModal(true)} 
-                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3.5 py-2 rounded-sm font-bold shadow-2xs transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
+                className="bg-orange-50 hover:bg-orange-100 text-[#9A3412] border border-amber-200 px-3.5 py-2 rounded-sm font-bold shadow-2xs transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
               >
-                <Scale className="w-3.5 h-3.5 text-indigo-600" />
+                <Scale className="w-3.5 h-3.5 text-[#B44814]" />
                 <span>📊 हप्ता चार्ट पहा ({installmentChart.length} हप्ते)</span>
               </button>
             </div>
@@ -2465,7 +2465,7 @@ export default function LoanOpeningBalanceMaster() {
       {/* ========================================================================= */}
       {showInstallmentModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -2497,7 +2497,7 @@ export default function LoanOpeningBalanceMaster() {
             <div className="p-3 bg-slate-50 border-b border-gray-200 grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
               <div className="p-2 bg-white border border-slate-200 rounded-sm shadow-2xs">
                 <div className="text-[10px] text-gray-500 font-bold uppercase">मंजूर कर्ज रक्कम</div>
-                <div className="text-xs font-black text-indigo-950 font-mono">₹ {(parseFloat(formData.sanctionedAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                <div className="text-xs font-black text-[#4A1410] font-mono">₹ {(parseFloat(formData.sanctionedAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
               </div>
               <div className="p-2 bg-white border border-slate-200 rounded-sm shadow-2xs">
                 <div className="text-[10px] text-gray-500 font-bold uppercase">व्याज दर / मुदत</div>
@@ -2535,19 +2535,19 @@ export default function LoanOpeningBalanceMaster() {
 
             {/* Installment Table */}
             <div className="flex-1 overflow-y-auto p-3">
-              <table className="min-w-full divide-y divide-gray-200 text-xs text-center border border-gray-200 rounded-sm">
-                <thead className="bg-slate-100 sticky top-0 shadow-2xs font-bold text-gray-700">
+              <table className="min-w-full divide-y divide-gray-200 text-[11px] text-center border border-gray-200 rounded-sm leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs font-bold text-amber-50">
                   <tr>
-                    <th className="px-2 py-2 border-r border-gray-200 w-12">हप्ता क्र.</th>
-                    <th className="px-2 py-2 border-r border-gray-200">हप्ता दिनांक</th>
-                    <th className="px-2 py-2 border-r border-gray-200 text-right">मुद्दल (₹)</th>
-                    <th className="px-2 py-2 border-r border-gray-200 text-right">व्याज (₹)</th>
-                    <th className="px-2 py-2 border-r border-gray-200 text-right">एकूण हप्ता (₹)</th>
-                    <th className="px-2 py-2 border-r border-gray-200 text-right">बाकी शिल्लक (₹)</th>
-                    <th className="px-2 py-2">स्थिती</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 w-12 whitespace-nowrap">हप्ता क्र.</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">हप्ता दिनांक</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मुद्दल (₹)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">व्याज (₹)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">एकूण हप्ता (₹)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">बाकी शिल्लक (₹)</th>
+                    <th className="px-2 py-1.5 whitespace-nowrap">स्थिती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-amber-100 bg-white">
                   {installmentChart.map((row) => {
                     const repaidPrincipal = (parseFloat(formData.sanctionedAmount) || 0) - (parseFloat(formData.principalBalance) || 0);
                     let isPaid = false;
@@ -2580,13 +2580,13 @@ export default function LoanOpeningBalanceMaster() {
 
                     return (
                       <tr key={row.no} className={rowClass.trim()}>
-                        <td className="px-2 py-1.5 border-r border-gray-200 font-mono font-bold">{row.no}</td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 font-mono">{row.date}</td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono text-gray-800">{Math.round(row.principalValue || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right text-rose-600 font-mono">{Math.round(parseFloat(row.interest) || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono">{Math.round(parseFloat(row.total) || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right text-gray-700 font-mono">{Math.round(parseFloat(row.balance) || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-2 py-1 border-r border-gray-200 font-mono font-bold align-middle">{row.no}</td>
+                        <td className="px-2 py-1 border-r border-gray-200 font-mono align-middle">{row.date}</td>
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono text-gray-800 align-middle">{Math.round(row.principalValue || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1 border-r border-gray-200 text-right text-rose-600 font-mono align-middle">{Math.round(parseFloat(row.interest) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono align-middle">{Math.round(parseFloat(row.total) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1 border-r border-gray-200 text-right text-gray-700 font-mono align-middle">{Math.round(parseFloat(row.balance) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1 align-middle">
                           {isPaid && <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">भरलेला</span>}
                           {isOverdue && <span className="bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded-full font-bold">थकीत</span>}
                           {!isPaid && !isOverdue && <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-bold">भविष्य</span>}
@@ -2630,7 +2630,7 @@ export default function LoanOpeningBalanceMaster() {
       {/* ========================================================================= */}
       {showGoldModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 animate-in fade-in duration-200">
-          <div className="bg-white rounded-md shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-amber-300">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-[97vw] xl:max-w-[1460px] max-h-[92vh] flex flex-col overflow-hidden border border-amber-300">
             {/* Header */}
             <div className="bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 text-white px-4 py-2.5 flex justify-between items-center shadow-xs">
               <div className="flex items-center gap-2">
@@ -2978,7 +2978,7 @@ export default function LoanOpeningBalanceMaster() {
                       <button
                         type="button"
                         onClick={startCamera}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                        className="bg-[#B44814] hover:bg-[#9A3412] text-white px-2.5 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
                       >
                         <Camera className="w-3 h-3" />
                         <span>📷 थेट कॅमेऱ्याने फोटो घ्या</span>
@@ -3075,25 +3075,25 @@ export default function LoanOpeningBalanceMaster() {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left border-collapse">
+                  <table className="w-full text-[11px] text-left border-collapse leading-tight">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 font-bold text-[10px]">
-                        <th className="p-1.5 text-center w-8">अ.क्र.</th>
-                        <th className="p-1.5 text-center w-12">फोटो</th>
-                        <th className="p-1.5">दागिन्याचे नाव</th>
-                        <th className="p-1.5 text-center">कॅरेट</th>
-                        <th className="p-1.5 text-center">नग</th>
-                        <th className="p-1.5 text-right">ग्रॉस (g)</th>
-                        <th className="p-1.5 text-right">निव्वळ (g)</th>
-                        <th className="p-1.5 text-right">दर / g</th>
-                        <th className="p-1.5 text-right">सिस्टीम मूल्य (₹)</th>
-                        <th className="p-1.5 text-right font-bold text-amber-950 bg-amber-50/50">सोनाराचे मूल्य (₹)</th>
-                        <th className="p-1.5">सोनार / पावती</th>
-                        <th className="p-1.5">शेरा</th>
-                        <th className="p-1.5 text-center w-20">कृती</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 font-bold text-[10px]">
+                        <th className="p-1.5 text-center w-8 whitespace-nowrap">अ.क्र.</th>
+                        <th className="p-1.5 text-center w-12 whitespace-nowrap">फोटो</th>
+                        <th className="p-1.5 whitespace-nowrap">दागिन्याचे नाव</th>
+                        <th className="p-1.5 text-center whitespace-nowrap">कॅरेट</th>
+                        <th className="p-1.5 text-center whitespace-nowrap">नग</th>
+                        <th className="p-1.5 text-right whitespace-nowrap">ग्रॉस (g)</th>
+                        <th className="p-1.5 text-right whitespace-nowrap">निव्वळ (g)</th>
+                        <th className="p-1.5 text-right whitespace-nowrap">दर / g</th>
+                        <th className="p-1.5 text-right whitespace-nowrap">सिस्टीम मूल्य (₹)</th>
+                        <th className="p-1.5 text-right font-bold text-amber-950 bg-amber-50/50 whitespace-nowrap">सोनाराचे मूल्य (₹)</th>
+                        <th className="p-1.5 whitespace-nowrap">सोनार / पावती</th>
+                        <th className="p-1.5 whitespace-nowrap">शेरा</th>
+                        <th className="p-1.5 text-center w-20 whitespace-nowrap">कृती</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-[11px] font-mono">
+                    <tbody className="divide-y divide-amber-100 text-[11px] font-mono">
                       {goldItems.length === 0 ? (
                         <tr>
                           <td colSpan={13} className="p-6 text-center text-slate-400 font-sans italic">
@@ -3103,8 +3103,8 @@ export default function LoanOpeningBalanceMaster() {
                       ) : (
                         goldItems.map((item, idx) => (
                           <tr key={item.id} className="hover:bg-amber-50/30 transition-colors">
-                            <td className="p-1.5 text-center font-bold text-slate-500 font-sans">{idx + 1}</td>
-                            <td className="p-1 text-center font-sans">
+                            <td className="p-1.5 text-center font-bold text-slate-500 font-sans align-middle">{idx + 1}</td>
+                            <td className="p-1 text-center font-sans align-middle">
                               {item.imagePath ? (
                                 <button
                                   type="button"
@@ -3118,28 +3118,28 @@ export default function LoanOpeningBalanceMaster() {
                                 <span className="text-slate-300 text-[10px]">-</span>
                               )}
                             </td>
-                            <td className="p-1.5 font-bold text-slate-800 font-sans">{item.itemName}</td>
-                            <td className="p-1.5 text-center font-bold text-amber-800">{item.purity}</td>
-                            <td className="p-1.5 text-center font-semibold">{item.quantity}</td>
-                            <td className="p-1.5 text-right">{item.grossWeight.toFixed(2)} g</td>
-                            <td className="p-1.5 text-right font-bold text-amber-900">{item.netWeight.toFixed(2)} g</td>
-                            <td className="p-1.5 text-right">₹{item.ratePerGram.toLocaleString('en-IN')}</td>
-                            <td className="p-1.5 text-right font-semibold text-emerald-700">₹{item.valuationAmount.toLocaleString('en-IN')}</td>
-                            <td className="p-1.5 text-right font-black text-amber-950 bg-amber-50/40">
+                            <td className="p-1.5 font-bold text-slate-800 font-sans align-middle">{item.itemName}</td>
+                            <td className="p-1.5 text-center font-bold text-amber-800 align-middle">{item.purity}</td>
+                            <td className="p-1.5 text-center font-semibold align-middle">{item.quantity}</td>
+                            <td className="p-1.5 text-right align-middle">{item.grossWeight.toFixed(2)} g</td>
+                            <td className="p-1.5 text-right font-bold text-amber-900 align-middle">{item.netWeight.toFixed(2)} g</td>
+                            <td className="p-1.5 text-right align-middle">₹{item.ratePerGram.toLocaleString('en-IN')}</td>
+                            <td className="p-1.5 text-right font-semibold text-emerald-700 align-middle">₹{item.valuationAmount.toLocaleString('en-IN')}</td>
+                            <td className="p-1.5 text-right font-black text-amber-950 bg-amber-50/40 align-middle">
                               ₹{(item.valuerValuation || item.valuationAmount).toLocaleString('en-IN')}
                             </td>
-                            <td className="p-1.5 text-[10px] font-sans text-slate-700">
+                            <td className="p-1.5 text-[10px] font-sans text-slate-700 align-middle">
                               {item.valuerName ? (
                                 <span>{item.valuerName} {item.valuationReceiptNo ? `(#${item.valuationReceiptNo})` : ''}</span>
                               ) : '-'}
                             </td>
-                            <td className="p-1.5 text-slate-600 text-[10px] truncate max-w-[100px] font-sans">{item.remarks || '-'}</td>
-                            <td className="p-1.5 text-center font-sans">
+                            <td className="p-1.5 text-slate-600 text-[10px] truncate max-w-[100px] font-sans align-middle">{item.remarks || '-'}</td>
+                            <td className="p-1.5 text-center font-sans align-middle">
                               <div className="flex items-center justify-center gap-1">
                                 <button
                                   type="button"
                                   onClick={() => handleEditGoldItem(item)}
-                                  className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-200 cursor-pointer"
+                                  className="bg-amber-50 text-[#9A3412] hover:bg-amber-100 px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-200 cursor-pointer"
                                 >
                                   बदला
                                 </button>
@@ -3284,7 +3284,7 @@ export default function LoanOpeningBalanceMaster() {
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-6xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -3337,7 +3337,7 @@ export default function LoanOpeningBalanceMaster() {
                   onClick={() => setLoanFilterType('regular')}
                   className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
                     loanFilterType === 'regular'
-                      ? 'bg-indigo-700 text-white shadow-2xs'
+                      ? 'bg-[#9A3412] text-white shadow-2xs'
                       : 'text-slate-700 hover:bg-white/60'
                   }`}
                 >
@@ -3381,31 +3381,31 @@ export default function LoanOpeningBalanceMaster() {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">शाखा</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदार नाव</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज प्रकार</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left bg-slate-200/80 font-black text-slate-900" title="यादी जुना खाते क्र. च्या चढत्या क्रमाने (1, 2, 3...) लावली आहे">
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">शाखा</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खातेदार नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">कर्ज प्रकार</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खाते क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left bg-[#5A1A14]/80 font-black text-amber-50 whitespace-nowrap" title="यादी जुना खाते क्र. च्या चढत्या क्रमाने (1, 2, 3...) लावली आहे">
                         जुना खाते क्र. ⇅
                       </th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">मंजूर रक्कम (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">वाटप रक्कम (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">वाटप दिनांक</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">मुद्दल बाकी (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">व्याज बाकी (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">व्याज तरतूद (₹)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">NPA वर्ग</th>
-                      <th className="px-2 py-1.5 text-center w-24">दिनांक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मंजूर रक्कम (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">वाटप रक्कम (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">वाटप दिनांक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मुद्दल बाकी (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">व्याज बाकी (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">व्याज तरतूद (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">NPA वर्ग</th>
+                      <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">दिनांक</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredBalances.map((balance) => (
                       <tr key={balance.loanAccountID} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
@@ -3427,18 +3427,18 @@ export default function LoanOpeningBalanceMaster() {
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-600">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-gray-600 align-middle">
                           {balance.branch?.branchName || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-primary align-middle">
                           {balance.customer 
                             ? `${balance.customer.firstName || ''} ${balance.customer.lastName || ''}`.trim() 
                             : '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-700 align-middle">
                           {balance.loanRate?.loanCode} - {balance.loanRate?.shortName}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-gray-900 font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-gray-900 font-mono align-middle">
                           <div className="flex items-center gap-1">
                             <span>{format14DigitDisplay(balance.loanAccountNo)}</span>
                             {balance.isOpeningBalance ? (
@@ -3448,7 +3448,7 @@ export default function LoanOpeningBalanceMaster() {
                             )}
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-mono align-middle">
                           {balance.legacyAccountNumber ? (
                             <span className="font-extrabold text-slate-950 bg-slate-100 px-2 py-0.5 rounded border border-slate-300 shadow-2xs inline-block">
                               {balance.legacyAccountNumber}
@@ -3457,34 +3457,34 @@ export default function LoanOpeningBalanceMaster() {
                             <span className="text-gray-400 font-normal">-</span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-gray-800 align-middle">
                           {(balance.sanctionedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-indigo-950 bg-indigo-50/20">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-[#4A1410] bg-orange-50/20 align-middle">
                           {getDisbursedAmt(balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-slate-700 font-medium whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono text-slate-700 font-medium whitespace-nowrap align-middle">
                           {balance.loanDisbursementDate ? new Date(balance.loanDisbursementDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono align-middle">
                           <div className="font-bold text-emerald-700">
                             {balance.principalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </div>
                           {(balance.capitalizedInterestAmount || 0) > 0 && (
-                            <div className="text-[9px] text-blue-700 font-semibold">
+                            <div className="text-[9px] text-[#9A3412] font-semibold">
                               (समाविष्ट: ₹{(balance.capitalizedInterestAmount || 0).toLocaleString('en-IN')})
                             </div>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-amber-700 font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-amber-700 font-mono align-middle">
                           {balance.interestBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono text-purple-800 font-semibold">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono text-purple-800 font-semibold align-middle">
                           {(balance.interestProvisionBalance || 0) > 0 
                             ? `₹${(balance.interestProvisionBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` 
                             : '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold text-[10px]">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-bold text-[10px] align-middle">
                           {balance.initialNpaClassification && balance.initialNpaClassification !== 'Standard' ? (
                             <span className="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded border border-rose-300">
                               {balance.initialNpaClassification}
@@ -3493,7 +3493,7 @@ export default function LoanOpeningBalanceMaster() {
                             <span className="text-gray-500 font-normal">नियमित</span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 text-center font-mono text-gray-600">
+                        <td className="px-2 py-1 text-center font-mono text-gray-600 align-middle">
                           {new Date(balance.openingDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                         </td>
                       </tr>

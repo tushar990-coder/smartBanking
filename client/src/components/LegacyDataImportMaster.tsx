@@ -343,9 +343,9 @@ export default function LegacyDataImportMaster() {
         </h3>
         {activeStep === 1 && (
           <div className="pl-7 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="bg-blue-50/50 p-3 rounded-sm border border-blue-100">
+            <div className="bg-amber-50/50 p-3 rounded-sm border border-amber-100">
               <p className="text-xs text-gray-600 mb-2">First, fetch the financial years from the legacy database.</p>
-              <button onClick={importFinancialYears} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-sm text-xs font-medium w-full mb-3 shadow-sm transition-colors">
+              <button onClick={importFinancialYears} disabled={loading} className="bg-[#B44814] hover:bg-[#9A3412] text-white px-3 py-1 rounded-sm text-xs font-medium w-full mb-3 shadow-sm transition-colors">
                 Fetch Financial Years
               </button>
               
@@ -406,7 +406,7 @@ export default function LegacyDataImportMaster() {
                       </td>
                     </tr>
                     {legacyGroups[gName].map((ll) => (
-                      <tr key={ll.legacyId} className="border-b border-gray-200 hover:bg-blue-50/50 transition-colors">
+                      <tr key={ll.legacyId} className="border-b border-gray-200 hover:bg-amber-50/50 transition-colors">
                         <td className="px-2 py-1.5 font-medium text-gray-700 w-1/2 break-words border-r border-gray-200">
                           {ll.name} <span className="text-[10px] text-gray-500 font-normal ml-1">({ll.legacyId})</span>
                         </td>
@@ -437,7 +437,7 @@ export default function LegacyDataImportMaster() {
             </div>
 
             <div className="flex flex-wrap gap-2 items-center">
-              <button onClick={syncLedgers} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 rounded-sm text-xs font-bold shadow-sm transition-colors">
+              <button onClick={syncLedgers} disabled={loading} className="bg-[#B44814] hover:bg-[#9A3412] text-white px-4 py-1 rounded-sm text-xs font-bold shadow-sm transition-colors">
                 Save Mappings
               </button>
               <button onClick={() => setActiveStep(3)} disabled={loading} className="bg-green-600 hover:bg-green-700 text-white px-4 py-1 rounded-sm text-xs font-bold shadow-sm ml-auto transition-colors">
@@ -458,8 +458,8 @@ export default function LegacyDataImportMaster() {
         </h3>
         {activeStep === 3 && (
           <div className="pl-7">
-            <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-sm mb-3">
-              <p className="text-xs text-indigo-800">
+            <div className="bg-orange-50 border border-amber-100 p-3 rounded-sm mb-3">
+              <p className="text-xs text-[#7C2418]">
                 Import all Members, their Profile Details, and their associated Loan/Deposit accounts. 
                 <br/>The accounts will be linked to the Financial Year you selected earlier.
               </p>

@@ -1,4 +1,4 @@
-﻿# =========================================================================================
+# =========================================================================================
 # SmartBanking ERP - 1-Click Multi-App Master VPS Patch Package Builder
 # Automates: Build Frontend + Publish Backend + Database SQL Patch + Multi-Target Packaging + Reverse Patch Engine
 # =========================================================================================
@@ -719,18 +719,57 @@ function Invoke-SqlPatchStep {
 }
 
 function Invoke-RobustCopy {
-    param([string]$Source, [string]$Destination, [string[]]$ExtraArgs)
+    param(
+        [string]$Source,
+        [string]$Destination,
+        [string[]]$ExtraArgs = @(),
+        [int]$Retries = 3,
+        [int]$WaitSec = 2
+    )
     if (-not (Test-Path $Destination)) {
         New-Item -Path $Destination -ItemType Directory -Force | Out-Null
     }
-    $argsList = @($Source, $Destination, "/E", "/R:3", "/W:2", "/NP", "/NFL", "/NDL") + $ExtraArgs
+    $argsList = @($Source, $Destination, "/E", "/R:$Retries", "/W:$WaitSec", "/NP", "/NDL", "/NS", "/NC") + $ExtraArgs
     $copyOut = & robocopy @argsList 2>&1
     $rc = $LASTEXITCODE
     if ($rc -ge 8) {
-        $tail = @($copyOut | Select-Object -Last 10) -join " | "
-        throw "Robocopy FAILED (exit code $rc) copying '$Source' -> '$Destination'. Details: $tail"
+        $errLines = @($copyOut | Where-Object { $_ -match "ERROR|Access is denied|being used by another process|FAILED" } | Select-Object -First 8)
+        $summaryTail = @($copyOut | Select-Object -Last 8)
+        $detailText = (($errLines + $summaryTail) | Select-Object -Unique) -join " | "
+        throw "Robocopy FAILED (exit code $rc) copying '$Source' -> '$Destination'. Details: $detailText"
     }
     return $rc
+}
+
+function Set-AppOfflineFile {
+    param([string[]]$Folders, [bool]$Enable)
+    foreach ($folder in $Folders) {
+        if ([string]::IsNullOrWhiteSpace($folder) -or -not (Test-Path $folder)) { continue }
+        $offlineFile = Join-Path $folder "app_offline.htm"
+        try {
+            if ($Enable) {
+                $html = "<!doctype html><html><head><meta charset='utf-8'><title>Updating SmartBanking...</title></head><body style='font-family:sans-serif;text-align:center;padding:48px'><h2>SmartBanking ERP Update in Progress...</h2><p>Please refresh in 10 seconds.</p></body></html>"
+                [System.IO.File]::WriteAllText($offlineFile, $html, [System.Text.Encoding]::UTF8)
+            } else {
+                if (Test-Path $offlineFile) {
+                    Remove-Item -Path $offlineFile -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {}
+    }
+}
+
+function Stop-BackendLocksForTarget {
+    param([string[]]$AppPools, [switch]$StopW3Svc)
+    foreach ($pool in $AppPools) {
+        Invoke-IisAppPool -PoolName $pool -Action "stop"
+    }
+    if ($StopW3Svc) {
+        try { & net stop was /y 2>&1 | Out-Null } catch {}
+        try { & net stop w3svc /y 2>&1 | Out-Null } catch {}
+    }
+    Get-Process -Name "w3wp", "dotnet", "Bhisi.Api" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
 }
 
 function Invoke-IisAppPool {
@@ -873,27 +912,27 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             }
         }
 
-        # 1.5 Application Snapshot (Backend & Frontend for Instant Reverse Patch)
+        # 1.5 Application Snapshot (Backend & Frontend for Instant Reverse Patch - Fast Non-Blocking)
         Write-Host " [Step 1.5] Taking Application Snapshot (Backend & Frontend) for Instant Rollback..." -ForegroundColor Yellow
         try {
             foreach ($bFolder in $backendFolders) {
                 if (Test-Path $bFolder) {
                     $bkDest = Join-Path $targetRollbackDir "backend"
-                    Invoke-RobustCopy -Source $bFolder -Destination $bkDest -ExtraArgs @("/XD", "logs", "uploads", "wwwroot", "/XF", "appsettings.Development.json") | Out-Null
+                    Invoke-RobustCopy -Source $bFolder -Destination $bkDest -Retries 1 -WaitSec 1 -ExtraArgs @("/XD", "logs", "uploads", "wwwroot", "App_Data", "backups", "backup", "temp", "scratch", "Rollbacks", "/XF", "appsettings.Development.json", "*.log", "*.ldb", "*.lock", "app_offline.htm") | Out-Null
                     break
                 }
             }
             foreach ($fFolder in $frontendFolders) {
                 if (Test-Path $fFolder) {
                     $ftDest = Join-Path $targetRollbackDir "frontend"
-                    Invoke-RobustCopy -Source $fFolder -Destination $ftDest -ExtraArgs @() | Out-Null
+                    Invoke-RobustCopy -Source $fFolder -Destination $ftDest -Retries 1 -WaitSec 1 -ExtraArgs @() | Out-Null
                     break
                 }
             }
             Write-Host "  -> Application Snapshot Saved Successfully in Rollback Folder!" -ForegroundColor Green
             $statusObj.AppSnapshot = "OK"
         } catch {
-            Write-Host "  -> Application Snapshot Warning: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            Write-Host "  -> Application Snapshot Warning (non-fatal, continuing patch): $($_.Exception.Message)" -ForegroundColor DarkYellow
             $statusObj.AppSnapshot = "Warning"
         }
 
@@ -913,21 +952,33 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         Invoke-SqlPatchStep -StepLabel "[Step 2.7] Auto-Healing Daybook Orphan Loan Disbursements & Collections" -SqlPath $daybookOrphanHealSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
         Invoke-SqlPatchStep -StepLabel "[Step 2.8] Auto-Healing Verified Orphan FD SB Debit Transactions" -SqlPath $fdSbDebitHealSql -DatabaseName $target.TargetDatabase -Config $config | Out-Null
 
-        # 3. Stop IIS AppPools & Release Process Locks
-        Write-Host " [Step 3] Stopping IIS AppPools ($($allAppPools -join ', ')) & releasing file locks..." -ForegroundColor Yellow
-        foreach ($pool in $allAppPools) {
-            Invoke-IisAppPool -PoolName $pool -Action "stop"
-        }
-        Get-Process -Name "w3wp", "dotnet", "Bhisi.Api" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 2
+        # 3. Stop IIS AppPools, Place app_offline.htm & Release Process Locks
+        Write-Host " [Step 3] Placing app_offline.htm, stopping IIS AppPools ($($allAppPools -join ', ')) & releasing file locks..." -ForegroundColor Yellow
+        $stoppedW3Svc = $false
+        Set-AppOfflineFile -Folders $backendFolders -Enable $true
+        Stop-BackendLocksForTarget -AppPools $allAppPools
 
-        # 4. Deploy Backend Files (checks Robocopy exit code >= 8)
+        # 4. Deploy Backend Files (checks Robocopy exit code >= 8, auto-recovers locked DLLs via W3SVC stop)
         Write-Host " [Step 4] Deploying Backend API Binaries..." -ForegroundColor Yellow
-        foreach ($bFolder in $backendFolders) {
-            Invoke-RobustCopy -Source $backendSource -Destination $bFolder -ExtraArgs @("/XF", "appsettings.json", "appsettings.Production.json", "license.lic", "/XD", "logs", "uploads", "wwwroot") | Out-Null
-            Write-Host "  -> Backend Binaries Updated at: $bFolder" -ForegroundColor Green
+        $backendCopyArgs = @("/XF", "appsettings.json", "appsettings.Production.json", "license.lic", "app_offline.htm", "/XD", "logs", "uploads", "wwwroot", "App_Data")
+        try {
+            foreach ($bFolder in $backendFolders) {
+                try {
+                    Invoke-RobustCopy -Source $backendSource -Destination $bFolder -Retries 4 -WaitSec 2 -ExtraArgs $backendCopyArgs | Out-Null
+                } catch {
+                    Write-Host "  -> File lock detected at '$bFolder'. Stopping IIS (W3SVC/WAS) & retrying deploy..." -ForegroundColor DarkYellow
+                    $stoppedW3Svc = $true
+                    Stop-BackendLocksForTarget -AppPools $allAppPools -StopW3Svc
+                    Start-Sleep -Seconds 2
+                    Invoke-RobustCopy -Source $backendSource -Destination $bFolder -Retries 5 -WaitSec 2 -ExtraArgs $backendCopyArgs | Out-Null
+                }
+                Write-Host "  -> Backend Binaries Updated at: $bFolder" -ForegroundColor Green
+            }
+            $statusObj.Backend = "OK"
+        } finally {
+            # Always remove app_offline.htm so the API never remains offline
+            Set-AppOfflineFile -Folders $backendFolders -Enable $false
         }
-        $statusObj.Backend = "OK"
 
         # 4.5 Config Files Preserved Intact
         Write-Host " [Step 4.5] Existing server configuration (appsettings.json / appsettings.Production.json) preserved intact 100%." -ForegroundColor Gray
@@ -935,19 +986,20 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         # 5. Deploy Frontend Files (checks Robocopy exit code >= 8)
         Write-Host " [Step 5] Deploying Frontend Bundle (Cleaning old cached assets & refreshing web.config)..." -ForegroundColor Yellow
         foreach ($fFolder in $frontendFolders) {
-            Invoke-RobustCopy -Source $frontendSource -Destination $fFolder -ExtraArgs @("/PURGE") | Out-Null
+            Invoke-RobustCopy -Source $frontendSource -Destination $fFolder -Retries 3 -WaitSec 2 -ExtraArgs @("/PURGE") | Out-Null
             Write-Host "  -> Frontend Bundle Updated at: $fFolder" -ForegroundColor Green
         }
         $statusObj.Frontend = "OK"
 
-        # 6. Start IIS AppPools & Refresh IIS Cache
-        Write-Host " [Step 6] Restarting IIS AppPools ($($allAppPools -join ', ')) & IIS Cache..." -ForegroundColor Yellow
+        # 6. Start IIS Services & AppPools
+        Write-Host " [Step 6] Restarting IIS AppPools ($($allAppPools -join ', '))..." -ForegroundColor Yellow
+        if ($stoppedW3Svc) {
+            try { & net start was 2>&1 | Out-Null } catch {}
+            try { & net start w3svc 2>&1 | Out-Null } catch {}
+            Start-Sleep -Seconds 2
+        }
         foreach ($pool in $allAppPools) {
             Invoke-IisAppPool -PoolName $pool -Action "start"
-        }
-        $iisOut = cmd /c "iisreset" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  -> [WARNING] iisreset returned exit code $LASTEXITCODE : $($iisOut -join ' ')" -ForegroundColor Yellow
         }
 
         # 7. Post-Deploy Verification (Prevents silent stale deployment)
@@ -1065,12 +1117,28 @@ END;
     }
     catch {
         Write-Host " ERROR during update of $($target.SansthaName): $_" -ForegroundColor Red
+        try {
+            if ($backendFolders) { Set-AppOfflineFile -Folders $backendFolders -Enable $false }
+            if ($stoppedW3Svc) {
+                & net start was 2>&1 | Out-Null
+                & net start w3svc 2>&1 | Out-Null
+            }
+            if ($allAppPools) {
+                foreach ($pool in $allAppPools) { Invoke-IisAppPool -PoolName $pool -Action "start" }
+            }
+        } catch {}
         $statusObj.Verified = "FAILED"
         $statusObj.Status = "Failed: $_"
     }
 
     $results += $statusObj
 }
+
+# Final IIS health guarantee after all targets complete
+try {
+    & net start was 2>&1 | Out-Null
+    & net start w3svc 2>&1 | Out-Null
+} catch {}
 
 # Write Rollback Manifest
 $manifestData = [PSCustomObject]@{

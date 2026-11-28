@@ -473,7 +473,7 @@ export default function InterestWaiverRegister() {
                           )}
                         </td>
                         <td className="border border-gray-900 py-1 px-1.5 text-center text-[10px]">
-                          <span className={`px-1.5 py-0.5 rounded font-bold ${row.isOTS ? 'bg-purple-50 text-purple-800' : 'bg-blue-50 text-blue-800'}`}>
+                          <span className={`px-1.5 py-0.5 rounded font-bold ${row.isOTS ? 'bg-purple-50 text-purple-800' : 'bg-amber-50 text-[#7C2418]'}`}>
                             {row.isOTS ? 'OTS' : 'सूट'}
                           </span>
                         </td>

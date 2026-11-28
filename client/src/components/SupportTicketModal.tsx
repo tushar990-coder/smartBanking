@@ -438,7 +438,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({ isOpen, 
               <div className="bg-white border border-dashed border-gray-300 rounded-xl p-3.5 shadow-2xs">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-md bg-blue-50 text-primary">
+                    <div className="p-1.5 rounded-md bg-amber-50 text-primary">
                       <ImageIcon size={16} />
                     </div>
                     <div>
@@ -463,7 +463,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({ isOpen, 
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-primary border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                      className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-primary border border-amber-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
                     >
                       <Upload size={13} />
                       <span>फाईल्स निवडा (Browse)</span>
@@ -608,7 +608,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({ isOpen, 
                   {tickets.map((t) => {
                     const statusBadge = 
                       t.status === 'RESOLVED' ? { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', label: 'निराकरण झाले (Resolved)' } :
-                      t.status === 'IN_PROGRESS' ? { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'तपासणी सुरू (In Progress)' } :
+                      t.status === 'IN_PROGRESS' ? { bg: 'bg-amber-50', text: 'text-[#9A3412]', border: 'border-amber-300', label: 'तपासणी सुरू (In Progress)' } :
                       t.status === 'CLOSED' ? { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-300', label: 'बंद (Closed)' } :
                       { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-300', label: 'प्रलंबित (Open)' };
 
@@ -668,7 +668,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({ isOpen, 
                                   href={att.filePath}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="group relative inline-flex items-center gap-1.5 px-2 py-1 bg-blue-50/60 hover:bg-blue-100 text-primary rounded border border-blue-200 text-[11px] font-medium transition-all"
+                                  className="group relative inline-flex items-center gap-1.5 px-2 py-1 bg-amber-50/60 hover:bg-amber-100 text-primary rounded border border-amber-200 text-[11px] font-medium transition-all"
                                   title="स्क्रीनशॉट नवीन टॅबमध्ये उघडा"
                                 >
                                   <ExternalLink size={11} />

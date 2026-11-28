@@ -357,7 +357,7 @@ export default function AddLoanRecoveryExpenseModal({
         {/* Body */}
         <form onSubmit={handleSubmit} className="p-4 space-y-3 text-xs overflow-y-auto">
           {loadingData && (
-            <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-800 rounded-sm text-[11px] font-semibold">
+            <div className="px-3 py-1.5 bg-amber-50 border border-amber-200 text-[#7C2418] rounded-sm text-[11px] font-semibold">
               कर्ज खाती व उत्पन्नाची लेजर खाती लोड होत आहेत...
             </div>
           )}
@@ -576,7 +576,7 @@ export default function AddLoanRecoveryExpenseModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50/70 border border-blue-200 rounded-sm text-[10.5px] text-blue-900">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-50/70 border border-amber-200 rounded-sm text-[10.5px] text-[#5A1A14]">
             <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />
             <span>
               <strong>Maker-Checker:</strong> सेव्ह केल्यानंतर <strong>Pending Journal व्हाउचर</strong> तयार होईल. व्हाउचर पासिंग (Approval) केल्यावरच कर्जाच्या मुद्दलात रक्कम जमा होईल.

@@ -658,21 +658,21 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
       {/* Renewals Table */}
       <div className="bg-white rounded-lg shadow-xs border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full text-left text-[11px] border-collapse leading-tight">
             <thead>
-              <tr className="bg-slate-100/80 text-slate-700 border-b border-slate-200 font-bold">
-                <th className="py-2 px-3">खाते क्रमांक</th>
-                <th className="py-2 px-3">लॉकर क्र.</th>
-                <th className="py-2 px-3">सभासद नाव</th>
-                <th className="py-2 px-3">मुदत समाप्ती</th>
-                <th className="py-2 px-3 text-right">वार्षिक भाडे</th>
-                <th className="py-2 px-3 text-right">विलंब शुल्क</th>
-                <th className="py-2 px-3 text-right">एकूण देय</th>
-                <th className="py-2 px-3">ऑटो-डेबिट बचत खाते</th>
-                <th className="py-2 px-3 text-center">कृती</th>
+              <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 font-bold">
+                <th className="py-1.5 px-2 whitespace-nowrap">खाते क्रमांक</th>
+                <th className="py-1.5 px-2 whitespace-nowrap">लॉकर क्र.</th>
+                <th className="py-1.5 px-2 whitespace-nowrap">सभासद नाव</th>
+                <th className="py-1.5 px-2 whitespace-nowrap">मुदत समाप्ती</th>
+                <th className="py-1.5 px-2 text-right whitespace-nowrap">वार्षिक भाडे</th>
+                <th className="py-1.5 px-2 text-right whitespace-nowrap">विलंब शुल्क</th>
+                <th className="py-1.5 px-2 text-right whitespace-nowrap">एकूण देय</th>
+                <th className="py-1.5 px-2 whitespace-nowrap">ऑटो-डेबिट बचत खाते</th>
+                <th className="py-1.5 px-2 text-center whitespace-nowrap">कृती</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
+            <tbody className="divide-y divide-amber-100 text-slate-700">
               {filteredRenewals.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-6 text-center text-slate-400">
@@ -682,9 +682,9 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
               ) : (
                 filteredRenewals.map((r) => (
                   <tr key={r.allotmentID} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-2 px-3 font-mono font-bold text-emerald-800">{r.lockerAccountNo}</td>
-                    <td className="py-2 px-3 font-bold text-slate-800">{r.cabinetNo} - {r.lockerNo}</td>
-                    <td className="py-2 px-3">
+                    <td className="py-1 px-2 font-mono font-bold text-emerald-800 align-middle">{r.lockerAccountNo}</td>
+                    <td className="py-1 px-2 font-bold text-slate-800 align-middle">{r.cabinetNo} - {r.lockerNo}</td>
+                    <td className="py-1 px-2 align-middle">
                       <span className="font-bold text-slate-800 block">{r.memberName}</span>
                       <div className="flex flex-wrap items-center gap-1 mt-0.5">
                         <span className="text-[10px] text-slate-500">{r.memberPhone || '-'}</span>
@@ -700,7 +700,7 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
                         )}
                       </div>
                     </td>
-                    <td className="py-2 px-3">
+                    <td className="py-1 px-2 align-middle">
                       <span className={`font-bold ${r.isOverdue ? 'text-rose-600' : 'text-slate-800'}`}>
                         {new Date(r.expiryDate).toLocaleDateString('en-GB')}
                       </span>
@@ -710,10 +710,10 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
                         </span>
                       )}
                     </td>
-                    <td className="py-2 px-3 text-right font-semibold text-slate-700">₹{r.baseRent?.toFixed(2)}</td>
-                    <td className="py-2 px-3 text-right font-semibold text-rose-700">₹{r.lateFee?.toFixed(2)}</td>
-                    <td className="py-2 px-3 text-right font-black text-emerald-700 text-sm">₹{r.totalPayable?.toFixed(2)}</td>
-                    <td className="py-2 px-3">
+                    <td className="py-1 px-2 text-right font-semibold text-slate-700 align-middle">₹{r.baseRent?.toFixed(2)}</td>
+                    <td className="py-1 px-2 text-right font-semibold text-rose-700 align-middle">₹{r.lateFee?.toFixed(2)}</td>
+                    <td className="py-1 px-2 text-right font-black text-emerald-700 text-sm align-middle">₹{r.totalPayable?.toFixed(2)}</td>
+                    <td className="py-1 px-2 align-middle">
                       {r.isAutoDebitEnabled && r.linkedSavingAccountNo ? (
                         <div className="text-[11px]">
                           <span className="text-purple-700 font-bold flex items-center gap-0.5">
@@ -727,7 +727,7 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
                         <span className="text-slate-400 text-[10px]">रोख / मॅन्युअल</span>
                       )}
                     </td>
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-1 px-2 text-center align-middle">
                       <button
                         onClick={() => openPayModal(r)}
                         className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-md shadow-2xs text-xs flex items-center gap-1 mx-auto"
@@ -803,7 +803,7 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
               </div>
 
               {(payData.paymentMode === 'Bank' || payData.paymentMode === 'Transfer') && (
-                <div className="bg-blue-50/70 p-2.5 rounded-lg border border-blue-200 space-y-2">
+                <div className="bg-amber-50/70 p-2.5 rounded-lg border border-amber-200 space-y-2">
                   <BankLedgerSelect
                     value={payData.bankLedgerID}
                     onChange={(id) => setPayData({ ...payData, bankLedgerID: id })}

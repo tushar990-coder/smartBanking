@@ -361,25 +361,25 @@ export default function CashDenominationEntry({ onNavigate, initialCashierId }: 
               <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between">
                 {/* Denomination Input Table */}
                 <div className="overflow-x-auto mb-4 border border-gray-200 rounded-sm">
-                  <table className="w-full text-xs border-collapse">
+                  <table className="w-full text-[11px] border-collapse leading-tight">
                     <thead>
-                      <tr className="bg-slate-50 text-gray-700 border-b border-gray-200">
-                        <th className="py-2 px-3 text-left font-bold">नोटा / नाणी (Denomination)</th>
-                        <th className="py-2 px-3 text-center font-bold">नगांची संख्या (Count)</th>
-                        <th className="py-2 px-3 text-right font-bold">एकूण रक्कम (₹)</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30">
+                        <th className="py-1.5 px-2 text-left font-bold whitespace-nowrap">नोटा / नाणी (Denomination)</th>
+                        <th className="py-1.5 px-2 text-center font-bold whitespace-nowrap">नगांची संख्या (Count)</th>
+                        <th className="py-1.5 px-2 text-right font-bold whitespace-nowrap">एकूण रक्कम (₹)</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-amber-100">
                       {denominationsList.map((item) => {
                         const countVal = (counts as any)[item.key];
                         const lineTotal = item.isCoin ? (Number(countVal) || 0) : (countVal * item.value);
 
                         return (
                           <tr key={item.key} className="hover:bg-slate-50/60 transition-colors">
-                            <td className="py-2 px-3 font-bold text-gray-800">
+                            <td className="py-1 px-2 font-bold text-gray-800 align-middle">
                               {item.label}
                             </td>
-                            <td className="py-2 px-3 text-center w-36">
+                            <td className="py-1 px-2 text-center w-36 align-middle">
                               <input 
                                 type="number"
                                 min="0"
@@ -389,7 +389,7 @@ export default function CashDenominationEntry({ onNavigate, initialCashierId }: 
                                 className="w-24 text-center py-1 px-2 border border-gray-300 rounded-sm font-bold text-gray-900 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 bg-white"
                               />
                             </td>
-                            <td className="py-2 px-3 text-right font-black text-gray-900">
+                            <td className="py-1 px-2 text-right font-black text-gray-900 align-middle">
                               {fmt(lineTotal)}
                             </td>
                           </tr>

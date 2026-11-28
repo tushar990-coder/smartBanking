@@ -431,7 +431,7 @@ export default function MemberSearchSelect({
       }
       return (
         <div className="flex items-center gap-1.5 overflow-hidden text-xs py-0.5 w-full">
-          <span className="text-[11px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-sky-100 text-sky-950 border border-sky-300">
+          <span className="text-[11px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-amber-100 text-[#4A1410] border border-amber-300">
             {cifCode}
           </span>
           {!isCustomerMode && memCode && (
@@ -464,7 +464,7 @@ export default function MemberSearchSelect({
     return (
       <div className="flex items-center justify-between py-1.5 px-1 w-full gap-3 hover:bg-transparent">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="px-2 py-0.5 rounded font-mono font-bold text-[11px] shrink-0 bg-sky-100 text-sky-950 border border-sky-300">
+          <span className="px-2 py-0.5 rounded font-mono font-bold text-[11px] shrink-0 bg-amber-100 text-[#4A1410] border border-amber-300">
             {cifCode}
           </span>
           {!isCustomerMode && memCode && (
@@ -535,12 +535,12 @@ export default function MemberSearchSelect({
             minHeight: compact ? '26px' : '28px',
             height: compact ? '26px' : '28px',
             fontSize: '11px',
-            borderColor: state.isFocused ? '#004a75' : '#d1d5db',
+            borderColor: state.isFocused ? '#7C2418' : '#d1d5db',
             borderRadius: '2px',
-            boxShadow: state.isFocused ? '0 0 0 1px #004a75' : 'none',
+            boxShadow: state.isFocused ? '0 0 0 1px #7C2418' : 'none',
             backgroundColor: isDisabled ? '#f8fafc' : '#ffffff',
             '&:hover': {
-              borderColor: '#004a75'
+              borderColor: '#7C2418'
             }
           }),
           valueContainer: (base) => ({
@@ -583,7 +583,7 @@ export default function MemberSearchSelect({
           option: (base, state) => ({
             ...base,
             padding: '6px 10px',
-            backgroundColor: state.isSelected ? '#e0f2fe' : state.isFocused ? '#f8fafc' : '#ffffff',
+            backgroundColor: state.isSelected ? '#FEF3E2' : state.isFocused ? '#f8fafc' : '#ffffff',
             color: '#0f172a',
             cursor: 'pointer',
             borderBottom: '1px solid #f1f5f9'

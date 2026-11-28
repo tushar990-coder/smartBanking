@@ -441,7 +441,7 @@ const DataImportMaster: React.FC = () => {
           <select 
             value={selectedModule} 
             onChange={(e) => setSelectedModule(e.target.value)}
-            className="w-full md:w-1/2 border border-gray-300 px-2 py-1.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs"
+            className="w-full md:w-1/2 border border-gray-300 px-2 py-1.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] text-xs"
           >
             {modules.map(m => (
               <option key={m.id} value={m.id}>{m.name}</option>
@@ -455,7 +455,7 @@ const DataImportMaster: React.FC = () => {
           <select 
             value={selectedBranch} 
             onChange={(e) => setSelectedBranch(e.target.value)}
-            className="w-full md:w-1/2 border border-gray-300 px-2 py-1.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs"
+            className="w-full md:w-1/2 border border-gray-300 px-2 py-1.5 rounded-sm focus:outline-none focus:border-[#B44814] focus:ring-1 focus:ring-[#B44814] text-xs"
           >
             {branches.map(b => (
               <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
@@ -464,14 +464,14 @@ const DataImportMaster: React.FC = () => {
         </div>
 
         {/* Step 1: Download Template */}
-        <div className="border border-blue-200 bg-blue-50/30 p-3 rounded-sm flex flex-col md:flex-row items-center justify-between gap-3">
+        <div className="border border-amber-200 bg-amber-50/30 p-3 rounded-sm flex flex-col md:flex-row items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-bold text-blue-800">१. सॅम्पल फाईल डाउनलोड करा (Download Template)</h3>
-            <p className="text-xs text-blue-600 mt-1">सर्वप्रथम सॅम्पल Excel फाईल डाउनलोड करा आणि त्या फॉरमॅटमध्येच तुमचा डेटा भरा.</p>
+            <h3 className="text-sm font-bold text-[#7C2418]">१. सॅम्पल फाईल डाउनलोड करा (Download Template)</h3>
+            <p className="text-xs text-[#B44814] mt-1">सर्वप्रथम सॅम्पल Excel फाईल डाउनलोड करा आणि त्या फॉरमॅटमध्येच तुमचा डेटा भरा.</p>
           </div>
           <button 
             onClick={handleDownloadTemplate}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-sm font-medium shadow-sm transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
+            className="bg-[#B44814] hover:bg-[#9A3412] text-white px-4 py-1.5 rounded-sm font-medium shadow-sm transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
           >
             <span>⬇️</span> डाउनलोड (Download)
           </button>

@@ -507,7 +507,7 @@ export default function Sec101LegalReports({
                       <td className="p-2.5 text-[10px]">{e.paymentMode || '-'}</td>
                       <td className="p-2.5">
                         <div className="flex flex-col gap-0.5 items-start">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-sm ${e.capitalizeToLoanPrincipal ? 'bg-blue-100 text-blue-900' : (e.isDebitedToBorrower ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700')}`}>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-sm ${e.capitalizeToLoanPrincipal ? 'bg-amber-100 text-[#5A1A14]' : (e.isDebitedToBorrower ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700')}`}>
                             {e.capitalizeToLoanPrincipal
                               ? (e.isPrincipalApplied ? 'कर्ज मुद्दल नावे (लागू)' : 'कर्ज मुद्दल नावे (प्रलंबित)')
                               : (e.isDebitedToBorrower ? 'कर्जदार नावे (येणे खर्च)' : 'संस्था खर्च')}

@@ -367,7 +367,7 @@ const ShareCertificateReport: React.FC<Props> = ({ onBack }) => {
     }
     if (status === 'Transferred') {
       return (
-        <span className="bg-sky-50 text-sky-800 px-2 py-0.5 rounded-sm text-[10px] font-bold border border-sky-200">
+        <span className="bg-amber-50 text-[#7C2418] px-2 py-0.5 rounded-sm text-[10px] font-bold border border-amber-200">
           हस्तांतरित (Transferred)
         </span>
       );
@@ -478,12 +478,12 @@ const ShareCertificateReport: React.FC<Props> = ({ onBack }) => {
 
         {/* 4 Stat Summary Cards (Compact Soft Shades with Left Accent Border) */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 no-print">
-          <div className="bg-sky-50/70 p-2.5 rounded-sm border border-sky-200 border-l-4 border-l-sky-500 shadow-2xs flex items-center justify-between">
+          <div className="bg-amber-50/70 p-2.5 rounded-sm border border-amber-200 border-l-4 border-l-[#B44814] shadow-2xs flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold text-sky-800 uppercase tracking-wider">एकूण प्रमाणपत्रे (Total Certificates)</p>
-              <p className="text-base font-black text-sky-900 mt-0.5">{totalCerts.toLocaleString('en-IN')}</p>
+              <p className="text-[10px] font-bold text-[#7C2418] uppercase tracking-wider">एकूण प्रमाणपत्रे (Total Certificates)</p>
+              <p className="text-base font-black text-[#5A1A14] mt-0.5">{totalCerts.toLocaleString('en-IN')}</p>
             </div>
-            <span className="text-lg bg-white border border-sky-200 w-8 h-8 rounded-sm flex items-center justify-center">📜</span>
+            <span className="text-lg bg-white border border-amber-200 w-8 h-8 rounded-sm flex items-center justify-center">📜</span>
           </div>
 
           <div className="bg-emerald-50/70 p-2.5 rounded-sm border border-emerald-200 border-l-4 border-l-emerald-500 shadow-2xs flex items-center justify-between">
@@ -494,12 +494,12 @@ const ShareCertificateReport: React.FC<Props> = ({ onBack }) => {
             <span className="text-lg bg-white border border-emerald-200 w-8 h-8 rounded-sm flex items-center justify-center">✅</span>
           </div>
 
-          <div className="bg-indigo-50/70 p-2.5 rounded-sm border border-indigo-200 border-l-4 border-l-indigo-500 shadow-2xs flex items-center justify-between">
+          <div className="bg-orange-50/70 p-2.5 rounded-sm border border-amber-200 border-l-4 border-l-[#B44814] shadow-2xs flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider">एकूण वितरित शेअर्स (Active Shares)</p>
-              <p className="text-base font-black text-indigo-900 mt-0.5">{totalActiveShares.toLocaleString('en-IN')}</p>
+              <p className="text-[10px] font-bold text-[#7C2418] uppercase tracking-wider">एकूण वितरित शेअर्स (Active Shares)</p>
+              <p className="text-base font-black text-[#5A1A14] mt-0.5">{totalActiveShares.toLocaleString('en-IN')}</p>
             </div>
-            <span className="text-lg bg-white border border-indigo-200 w-8 h-8 rounded-sm flex items-center justify-center">📊</span>
+            <span className="text-lg bg-white border border-amber-200 w-8 h-8 rounded-sm flex items-center justify-center">📊</span>
           </div>
 
           <div className="bg-amber-50/70 p-2.5 rounded-sm border border-amber-200 border-l-4 border-l-amber-500 shadow-2xs flex items-center justify-between">

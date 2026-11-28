@@ -617,12 +617,12 @@ const InvestmentAccountOpening: React.FC = () => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <PieChart className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">शेअर्स भांडवल गुंतवणूक (Shares)</div>
-            <div className="text-sm font-black text-indigo-900">₹{formatCurrency(totalShareAmt)}</div>
+            <div className="text-sm font-black text-[#5A1A14]">₹{formatCurrency(totalShareAmt)}</div>
           </div>
         </div>
 
@@ -681,8 +681,8 @@ const InvestmentAccountOpening: React.FC = () => {
               {selectedScheme && (
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                   isShareMode 
-                    ? 'bg-indigo-50 text-indigo-800 border-indigo-300' 
-                    : 'bg-blue-50 text-blue-800 border-blue-300'
+                    ? 'bg-orange-50 text-[#7C2418] border-amber-300' 
+                    : 'bg-amber-50 text-[#7C2418] border-amber-300'
                 }`}>
                   {isShareMode ? '📊 शेअर्स भांडवल गुंतवणूक' : '🏛️ बँक मुदत ठेव गुंतवणूक'}
                 </span>
@@ -971,7 +971,7 @@ const InvestmentAccountOpening: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-gray-500 text-[10px] block">मुदतपूर्ती तारीख (Maturity):</span>
-                      <span className="font-bold text-indigo-900 font-mono">{formatDate(calcData.maturityDate)}</span>
+                      <span className="font-bold text-[#5A1A14] font-mono">{formatDate(calcData.maturityDate)}</span>
                     </div>
                     <div>
                       <span className="text-gray-500 text-[10px] block">अपेक्षित मुदतपूर्ती रक्कम:</span>
@@ -983,13 +983,13 @@ const InvestmentAccountOpening: React.FC = () => {
             </div>
           ) : (
             /* SHARE CAPITAL INVESTMENT PARAMETERS */
-            <div className="bg-indigo-50/40 p-3.5 rounded-sm border border-indigo-200 border-t-2 border-indigo-800 space-y-2.5 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between border-b border-indigo-200 pb-1.5">
+            <div className="bg-orange-50/40 p-3.5 rounded-sm border border-amber-200 border-t-2 border-[#7C2418] space-y-2.5 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Coins className="w-4 h-4 text-indigo-800" />
-                  <h2 className="text-xs font-bold text-indigo-900">२. शेअर्स संख्या व दाखला क्रमांक (Shares Quantity & Certificate Details)</h2>
+                  <Coins className="w-4 h-4 text-[#7C2418]" />
+                  <h2 className="text-xs font-bold text-[#5A1A14]">२. शेअर्स संख्या व दाखला क्रमांक (Shares Quantity & Certificate Details)</h2>
                 </div>
-                <span className="text-[10px] bg-indigo-100 text-indigo-900 font-bold px-2 py-0.5 rounded border border-indigo-300">
+                <span className="text-[10px] bg-orange-100 text-[#5A1A14] font-bold px-2 py-0.5 rounded border border-amber-300">
                   🏛️ कायमस्वरूपी भांडवली शेअर्स
                 </span>
               </div>
@@ -1008,7 +1008,7 @@ const InvestmentAccountOpening: React.FC = () => {
                     onFocus={(e) => e.target.select()}
                     required
                     placeholder="उदा. 50"
-                    className={`${inputClass} font-bold text-indigo-900 font-mono`}
+                    className={`${inputClass} font-bold text-[#5A1A14] font-mono`}
                   />
                 </div>
 
@@ -1051,7 +1051,7 @@ const InvestmentAccountOpening: React.FC = () => {
                     onChange={handleChange}
                     required
                     placeholder="उदा. CERT/DCC/589"
-                    className={`${inputClass} font-mono font-bold text-indigo-950`}
+                    className={`${inputClass} font-mono font-bold text-[#4A1410]`}
                   />
                 </div>
               </div>
@@ -1059,8 +1059,8 @@ const InvestmentAccountOpening: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                 <div>
                   <label className={labelClass}>लाभांश प्राप्ती नोंद</label>
-                  <div className="px-2 py-1 bg-white border border-indigo-200 rounded-sm h-[28px] flex items-center gap-1.5 text-[11px] text-indigo-900 font-bold">
-                    <TrendingUp className="w-3.5 h-3.5 text-indigo-700" />
+                  <div className="px-2 py-1 bg-white border border-amber-200 rounded-sm h-[28px] flex items-center gap-1.5 text-[11px] text-[#5A1A14] font-bold">
+                    <TrendingUp className="w-3.5 h-3.5 text-[#9A3412]" />
                     <span>वार्षिक सर्वसाधारण सभेच्या (AGM) ठरावानुसार लाभांश जमा केला जाईल.</span>
                   </div>
                 </div>
@@ -1081,15 +1081,15 @@ const InvestmentAccountOpening: React.FC = () => {
           )}
 
           {/* Section 3: Payment Mode & Bank GL Account */}
-          <div className="bg-blue-50/40 p-3.5 rounded-sm border border-blue-200 border-t-2 border-blue-700 space-y-2.5">
-            <div className="flex items-center justify-between border-b border-blue-200 pb-1.5">
+          <div className="bg-amber-50/40 p-3.5 rounded-sm border border-amber-200 border-t-2 border-[#7C2418] space-y-2.5">
+            <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
               <div className="flex items-center gap-1.5">
-                <Landmark className="w-4 h-4 text-blue-800" />
-                <h2 className="text-xs font-bold text-blue-950">
+                <Landmark className="w-4 h-4 text-[#7C2418]" />
+                <h2 className="text-xs font-bold text-[#4A1410]">
                   ३. रक्कम अदा / व्यवहार पद्धत (Payment Mode & GL Account)
                 </h2>
               </div>
-              <span className="text-[10px] bg-blue-100 text-blue-900 font-bold px-2 py-0.5 rounded border border-blue-300">
+              <span className="text-[10px] bg-amber-100 text-[#5A1A14] font-bold px-2 py-0.5 rounded border border-amber-300">
                 Payment Voucher (Cr)
               </span>
             </div>
@@ -1103,7 +1103,7 @@ const InvestmentAccountOpening: React.FC = () => {
                   name="paymentMode"
                   value={formData.paymentMode}
                   onChange={handleChange}
-                  className={`${inputClass} font-bold text-blue-950 border-blue-300`}
+                  className={`${inputClass} font-bold text-[#4A1410] border-amber-300`}
                 >
                   <option value="Bank">🏦 बँक खाते (Bank Account)</option>
                   <option value="Cash">💵 रोख (Cash)</option>
@@ -1157,7 +1157,7 @@ const InvestmentAccountOpening: React.FC = () => {
               type="submit"
               disabled={saving}
               className={`px-6 py-2 ${
-                isShareMode ? 'bg-indigo-800 hover:bg-indigo-900' : 'bg-primary hover:opacity-90'
+                isShareMode ? 'bg-[#7C2418] hover:bg-[#5A1A14]' : 'bg-primary hover:opacity-90'
               } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
             >
               <Save className="w-4 h-4" />
@@ -1179,7 +1179,7 @@ const InvestmentAccountOpening: React.FC = () => {
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-6xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1248,7 +1248,7 @@ const InvestmentAccountOpening: React.FC = () => {
                     type="button"
                     onClick={() => setFilterType('Share')}
                     className={`px-2.5 py-0.5 rounded-xs transition-colors cursor-pointer ${
-                      filterType === 'Share' ? 'bg-indigo-800 text-white' : 'text-gray-600 hover:bg-slate-100'
+                      filterType === 'Share' ? 'bg-[#7C2418] text-white' : 'text-gray-600 hover:bg-slate-100'
                     }`}
                   >
                     📊 शेअर्स
@@ -1271,24 +1271,24 @@ const InvestmentAccountOpening: React.FC = () => {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-10">#</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left">खाते क्रमांक</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left">पावती / दाखला क्र.</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left">संस्था / बँक</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left">योजना</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-center">गुंतवणूक तारीख</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-right">मुद्दल रक्कम ₹</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-center">व्याज / दर्शनी मूल्य</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-center">मुदतपूर्ती तारीख</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-right">मुदतपूर्ती रक्कम ₹</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-center">स्थिती</th>
-                      <th className="px-3 py-1.5 text-center w-14">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-10 whitespace-nowrap">#</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खाते क्रमांक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">पावती / दाखला क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">संस्था / बँक</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">योजना</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">गुंतवणूक तारीख</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मुद्दल रक्कम ₹</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याज / दर्शनी मूल्य</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">मुदतपूर्ती तारीख</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मुदतपूर्ती रक्कम ₹</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">स्थिती</th>
+                      <th className="px-2 py-1.5 text-center w-14 whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {loading ? (
                       <tr>
                         <td colSpan={12} className="px-6 py-10 text-center text-gray-500 font-bold">
@@ -1306,8 +1306,8 @@ const InvestmentAccountOpening: React.FC = () => {
                         const isShare = a.investmentType === 'Share' || a.durationMonths === 0;
                         return (
                           <tr key={a.investmentAccountID || idx} className="hover:bg-primary/5 transition-colors">
-                            <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500">{idx + 1}</td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 font-mono font-bold text-primary">
+                            <td className="px-2 py-1 border-r border-gray-200 text-center text-gray-500 align-middle">{idx + 1}</td>
+                            <td className="px-2 py-1 border-r border-gray-200 font-mono font-bold text-primary align-middle">
                               <div>{a.investmentNo}</div>
                               {a.oldInvestmentNo && (
                                 <div className="text-[10px] text-amber-700 font-bold">
@@ -1315,30 +1315,30 @@ const InvestmentAccountOpening: React.FC = () => {
                                 </div>
                               )}
                             </td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 font-mono font-bold text-purple-900">{a.depositReceiptNo || '-'}</td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 font-medium text-gray-900">{a.institutionName}</td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 text-gray-700">
+                            <td className="px-2 py-1 border-r border-gray-200 font-mono font-bold text-purple-900 align-middle">{a.depositReceiptNo || '-'}</td>
+                            <td className="px-2 py-1 border-r border-gray-200 font-medium text-gray-900 align-middle">{a.institutionName}</td>
+                            <td className="px-2 py-1 border-r border-gray-200 text-gray-700 align-middle">
                               <div>{a.schemeName}</div>
                               <span className={`inline-block text-[9px] font-bold px-1 rounded border mt-0.5 ${
-                                isShare ? 'bg-indigo-50 text-indigo-800 border-indigo-200' : 'bg-blue-50 text-blue-800 border-blue-200'
+                                isShare ? 'bg-orange-50 text-[#7C2418] border-amber-200' : 'bg-amber-50 text-[#7C2418] border-amber-200'
                               }`}>
                                 {isShare ? 'शेअर्स' : 'मुदत ठेव'}
                               </span>
                             </td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 text-center text-gray-700">{formatDate(a.investmentDate)}</td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 text-right font-bold text-emerald-800 font-mono">
+                            <td className="px-2 py-1 border-r border-gray-200 text-center text-gray-700 align-middle">{formatDate(a.investmentDate)}</td>
+                            <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-emerald-800 font-mono align-middle">
                               ₹{formatCurrency(a.principalAmount)}
                             </td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 text-center font-bold font-mono">
+                            <td className="px-2 py-1 border-r border-gray-200 text-center font-bold font-mono align-middle">
                               {isShare ? `₹${a.interestRate}` : `${a.interestRate}%`}
                             </td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 text-center text-gray-700">
+                            <td className="px-2 py-1 border-r border-gray-200 text-center text-gray-700 align-middle">
                               {isShare ? <span className="text-gray-400 font-medium">कायमस्वरूपी</span> : formatDate(a.maturityDate)}
                             </td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-900">
+                            <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-gray-900 align-middle">
                               ₹{formatCurrency(a.expectedMaturityAmount || a.principalAmount)}
                             </td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 text-center">
+                            <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                                 a.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-rose-50 text-rose-700 border-rose-300'
                               }`}>
@@ -1350,7 +1350,7 @@ const InvestmentAccountOpening: React.FC = () => {
                                 </span>
                               )}
                             </td>
-                            <td className="px-3 py-1.5 text-center">
+                            <td className="px-2 py-1 text-center align-middle">
                               <button
                                 type="button"
                                 onClick={() => handleDeleteAccount(a.investmentAccountID, a.investmentNo)}

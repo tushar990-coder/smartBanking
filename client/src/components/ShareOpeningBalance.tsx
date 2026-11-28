@@ -772,7 +772,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
             <button
               type="button"
               onClick={onSwitchToBulk}
-              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+              className="px-2.5 py-1 bg-orange-50 hover:bg-orange-100 text-[#9A3412] border border-amber-200 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
               title="बल्क ग्रिड मोडवर जा (Bulk Grid Migration)"
             >
               <Layers className="w-3.5 h-3.5" />
@@ -831,12 +831,12 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Award className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण शेअर्स संख्या</div>
-            <div className="text-sm font-black text-indigo-950">{totalSharesCount.toLocaleString('en-IN')}</div>
+            <div className="text-sm font-black text-[#4A1410]">{totalSharesCount.toLocaleString('en-IN')}</div>
           </div>
         </div>
 
@@ -896,7 +896,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
       <div
         ref={formRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1050,14 +1050,14 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
                   />
                 </div>
                 {selectedMember && (
-                  <div className="mt-1 flex items-center justify-between text-[11px] bg-sky-50/70 border border-sky-200 px-2 py-1 rounded text-sky-950 font-bold shadow-2xs">
+                  <div className="mt-1 flex items-center justify-between text-[11px] bg-amber-50/70 border border-amber-200 px-2 py-1 rounded text-[#4A1410] font-bold shadow-2xs">
                     <div className="flex items-center gap-1.5 truncate">
-                      <span className="text-sky-700">👤 खातेदार:</span>
+                      <span className="text-[#9A3412]">👤 खातेदार:</span>
                       <span className="font-extrabold text-gray-900">
                         {selectedMember.fullName || [selectedMember.firstName, selectedMember.middleName, selectedMember.lastName].filter(Boolean).join(' ') || (selectedMember as any).name || (selectedMember as any).customerName}
                       </span>
                       {selectedMember.cifNo && (
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-300 ml-1">
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-[#5A1A14] border border-amber-300 ml-1">
                           CIF: {selectedMember.cifNo}
                         </span>
                       )}
@@ -1210,7 +1210,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
               {/* Certificate No */}
               <div>
                 <label className={labelClass}>
-                  सर्टिफिकेट नं. (Certificate No) <span className="text-[10px] text-indigo-700 font-bold ml-1 bg-indigo-50 px-1 py-0.2 rounded border border-indigo-200">CERT-xxxx</span>
+                  सर्टिफिकेट नं. (Certificate No) <span className="text-[10px] text-[#9A3412] font-bold ml-1 bg-orange-50 px-1 py-0.2 rounded border border-amber-200">CERT-xxxx</span>
                 </label>
                 <input 
                   type="text" 
@@ -1321,7 +1321,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-6xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1362,7 +1362,7 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
                   type="button"
                   onClick={handleResequenceMemberCodes}
                   disabled={loading}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  className="bg-[#B44814] hover:bg-[#9A3412] disabled:opacity-50 text-white px-3 py-1.5 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
                   title="सर्व सभासद कोड १ ते N सलग अचूक क्रमाने रीसेट करा"
                 >
                   <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
@@ -1393,22 +1393,22 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-16">तारीख</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">सभासद कोड (Code)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-28">जुना सभासद क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200">सभासद (Member)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">सर्टिफिकेट नं.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right w-16">शेअर्स</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right w-20">दर्शनी मूल्य</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right w-24">एकूण रक्कम</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right w-24">देणे लाभांश</th>
-                      <th className="px-2 py-1.5 text-center w-24">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-16 whitespace-nowrap">तारीख</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">सभासद कोड (Code)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-28 whitespace-nowrap">जुना सभासद क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 whitespace-nowrap">सभासद (Member)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">सर्टिफिकेट नं.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right w-16 whitespace-nowrap">शेअर्स</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right w-20 whitespace-nowrap">दर्शनी मूल्य</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right w-24 whitespace-nowrap">एकूण रक्कम</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right w-24 whitespace-nowrap">देणे लाभांश</th>
+                      <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px]">
+                  <tbody className="divide-y divide-amber-100 text-[11px]">
                     {filteredBalances.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="text-center py-8 text-gray-400 font-bold">
@@ -1427,34 +1427,34 @@ const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBul
                             isSelected ? 'bg-amber-100 font-bold' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'
                           }`}
                         >
-                          <td className="px-2 py-1.5 border-r border-gray-200 whitespace-nowrap text-gray-600 font-mono text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap text-gray-600 font-mono text-center align-middle">
                             {new Date(b.openingDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 font-bold text-primary font-mono text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 font-bold text-primary font-mono text-center align-middle">
                             {b.memberNo || (b.cifNo ? b.cifNo.replace(/\D/g, '').replace(/^0+/, '') : b.memberId)}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-gray-600 font-semibold text-center font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-gray-600 font-semibold text-center font-mono align-middle">
                             {b.legacyMemberNo || '-'}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 font-medium text-gray-900">
+                          <td className="px-2 py-1 border-r border-gray-200 font-medium text-gray-900 align-middle">
                             {b.cifNo ? `${b.cifNo} - ` : ''}{b.memberName}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-gray-700 font-mono text-[10px] text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 text-gray-700 font-mono text-[10px] text-center align-middle">
                             {b.certificateNo || '-'}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-gray-900 font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-gray-900 font-mono align-middle">
                             {b.shareQuantity}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-right text-gray-600 font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-right text-gray-600 font-mono align-middle">
                             ₹{b.faceValue.toFixed(2)}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono align-middle">
                             ₹{b.shareAmount.toFixed(2)}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-amber-700 font-mono">
+                          <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-amber-700 font-mono align-middle">
                             ₹{(b.dividendPayable || 0).toFixed(2)}
                           </td>
-                          <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                          <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
                             <div className="flex items-center justify-center gap-1">
                               <button 
                                 type="button"

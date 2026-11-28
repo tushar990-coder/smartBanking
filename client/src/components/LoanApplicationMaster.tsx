@@ -1919,7 +1919,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
               <span className="text-gray-300">|</span>
               <span>मागणी रक्कम: <b className="text-emerald-700 font-mono">₹{totalRequestedAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</b></span>
               <span className="text-gray-300">|</span>
-              <span>सरासरी व्याज: <b className="text-indigo-900 font-mono">{avgRate}%</b></span>
+              <span>सरासरी व्याज: <b className="text-[#5A1A14] font-mono">{avgRate}%</b></span>
               <span className="text-gray-300">|</span>
               <span>योजना: <b className="text-amber-800">{activeSchemesCount}</b></span>
             </div>
@@ -1993,7 +1993,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
           isPassingMode
             ? 'border-amber-300 ring-2 ring-amber-400/20 bg-amber-50/10'
             : isEditing 
-            ? 'border-primary ring-2 ring-primary/20 bg-blue-50/15' 
+            ? 'border-primary ring-2 ring-primary/20 bg-amber-50/15' 
             : 'border-gray-200'
         }`}
       >
@@ -2109,7 +2109,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
 
                 {/* Ultra-Compact Selected Customer Profile Banner */}
                 {selectedMember && (
-                  <div className="p-1.5 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/80 border border-primary/25 rounded shadow-2xs flex flex-wrap items-center justify-between gap-1.5 text-[10.5px]">
+                  <div className="p-1.5 bg-gradient-to-r from-[#FDF2EE]/90 via-slate-50 to-[#FEF3E2]/80 border border-primary/25 rounded shadow-2xs flex flex-wrap items-center justify-between gap-1.5 text-[10.5px]">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <div className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center font-bold text-[9px] shrink-0">
                         <User className="w-3 h-3" />
@@ -2243,7 +2243,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                       name="interestRate"
                       value={formData.interestRate || ''}
                       onChange={handleInputChange}
-                      className={`${inputClass} font-bold text-indigo-900 font-mono`}
+                      className={`${inputClass} font-bold text-[#5A1A14] font-mono`}
                       required
                     />
                   </div>
@@ -2789,8 +2789,8 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                 </div>
                 {/* Metric 4 */}
                 <div className="px-1.5 py-0.5">
-                  <span className="text-[9.5px] text-indigo-500 block leading-tight">एकूण परतफेड</span>
-                  <span className="font-bold text-indigo-900 font-mono text-[11.5px] leading-tight">
+                  <span className="text-[9.5px] text-[#D97706] block leading-tight">एकूण परतफेड</span>
+                  <span className="font-bold text-[#5A1A14] font-mono text-[11.5px] leading-tight">
                     ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0) : 0).toLocaleString('en-IN')}
                   </span>
                 </div>
@@ -2809,7 +2809,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                       व्याज पद्धत: <strong className="text-emerald-800 font-semibold">{currentRate?.interestCalculationMethod || 'Flat (फ्लॅट)'}</strong>
                     </span>
                     <span>
-                      हप्ता प्रकार: <strong className={isFlat ? 'text-blue-700' : (isDeclining ? 'text-amber-800' : 'text-emerald-700')}>
+                      हप्ता प्रकार: <strong className={isFlat ? 'text-[#9A3412]' : (isDeclining ? 'text-amber-800' : 'text-emerald-700')}>
                         {isFlat ? 'फ्लॅट हप्ता' : (isDeclining ? 'समान मुद्दल (घटणारा हप्ता)' : 'समान हप्ता (EMI)')}
                       </strong>
                     </span>
@@ -2837,34 +2837,34 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                 </div>
               ) : (
                 <div className="flex-1 overflow-auto rounded border border-slate-200 shadow-2xs bg-white">
-                  <table className="w-full text-left border-collapse text-[10.5px]">
-                    <thead className="bg-slate-100 sticky top-0 shadow-2xs text-slate-700 font-bold border-b border-slate-300 z-10">
+                  <table className="w-full text-left border-collapse text-[10.5px] leading-tight">
+                    <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30 z-10">
                       <tr>
-                        <th className="py-1 px-1.5 border-r border-slate-200 text-center w-9">क्र.</th>
-                        <th className="py-1 px-2 border-r border-slate-200 text-center w-24">हप्ता दिनांक</th>
-                        <th className="py-1 px-2 border-r border-slate-200 text-right">मुद्दल (₹)</th>
-                        <th className="py-1 px-2 border-r border-slate-200 text-right">व्याज (₹)</th>
-                        <th className="py-1 px-2 border-r border-slate-200 text-right">एकूण हप्ता (₹)</th>
-                        <th className="py-1 px-2 text-right">बाकी शिल्लक (₹)</th>
+                        <th className="py-1 px-1.5 border-r border-amber-400/25 text-center w-9 whitespace-nowrap">क्र.</th>
+                        <th className="py-1 px-2 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">हप्ता दिनांक</th>
+                        <th className="py-1 px-2 border-r border-amber-400/25 text-right whitespace-nowrap">मुद्दल (₹)</th>
+                        <th className="py-1 px-2 border-r border-amber-400/25 text-right whitespace-nowrap">व्याज (₹)</th>
+                        <th className="py-1 px-2 border-r border-amber-400/25 text-right whitespace-nowrap">एकूण हप्ता (₹)</th>
+                        <th className="py-1 px-2 text-right whitespace-nowrap">बाकी शिल्लक (₹)</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono text-[10px] text-slate-700">
+                    <tbody className="divide-y divide-amber-100 font-mono text-[10px] text-slate-700">
                       {scheduleData.map((row, i) => (
                         <tr key={i} className="hover:bg-emerald-50/50 transition-colors">
-                          <td className="py-0.5 px-1.5 border-r border-slate-100 text-center font-bold text-slate-500 bg-slate-50/40">{row.instNo}</td>
-                          <td className="py-0.5 px-2 border-r border-slate-100 text-center text-slate-600 font-sans">
+                          <td className="py-0.5 px-1.5 border-r border-slate-100 text-center font-bold text-slate-500 bg-slate-50/40 align-middle">{row.instNo}</td>
+                          <td className="py-0.5 px-2 border-r border-slate-100 text-center text-slate-600 font-sans align-middle">
                             {row.dueDate || '-'}
                           </td>
-                          <td className="py-0.5 px-2 border-r border-slate-100 text-right text-slate-800">
+                          <td className="py-0.5 px-2 border-r border-slate-100 text-right text-slate-800 align-middle">
                             {Math.round(row.principal || 0).toLocaleString('en-IN')}
                           </td>
-                          <td className="py-0.5 px-2 border-r border-slate-100 text-right text-rose-600">
+                          <td className="py-0.5 px-2 border-r border-slate-100 text-right text-rose-600 align-middle">
                             {Math.round(row.interest || 0).toLocaleString('en-IN')}
                           </td>
-                          <td className="py-0.5 px-2 border-r border-slate-100 text-right font-bold text-emerald-700 bg-emerald-50/20">
+                          <td className="py-0.5 px-2 border-r border-slate-100 text-right font-bold text-emerald-700 bg-emerald-50/20 align-middle">
                             {Math.round(row.total || 0).toLocaleString('en-IN')}
                           </td>
-                          <td className="py-0.5 px-2 text-right text-slate-600">
+                          <td className="py-0.5 px-2 text-right text-slate-600 align-middle">
                             {Math.round(row.balance || 0).toLocaleString('en-IN')}
                           </td>
                         </tr>
@@ -2933,7 +2933,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -3012,24 +3012,24 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">शाखा</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">अर्ज क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">अर्जदार खातेदार नाव व CIF</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज योजना</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">मागणी रक्कम</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">अर्ज दिनांक</th>
-                      <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-24 whitespace-nowrap">शाखा</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">अर्ज क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">अर्जदार खातेदार नाव व CIF</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">कर्ज योजना</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">मागणी रक्कम</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">व्याजदर (%)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">अर्ज दिनांक</th>
+                      <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">स्थिती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {filteredApps.map((app) => (
                       <tr key={app.loanApplicationID} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
@@ -3046,10 +3046,10 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                             <button 
                               type="button" 
                               onClick={() => setPrintApplication(app)} 
-                              className="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer shadow-2xs"
+                              className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-[#7C2418] border border-amber-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer shadow-2xs"
                               title="कर्ज मागणी अर्ज प्रिंट करा (Print Loan Application)"
                             >
-                              <Printer className="w-3 h-3 text-blue-600" />
+                              <Printer className="w-3 h-3 text-[#B44814]" />
                               <span>प्रिंट</span>
                             </button>
                             <button 
@@ -3063,15 +3063,15 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center whitespace-nowrap align-middle">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-[#9A3412] border border-amber-200">
                             {app.branch?.branchName || (branches.find(b => b.branchID === app.branchID)?.branchName) || 'मुख्य शाखा'}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-primary">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-mono font-bold text-primary align-middle">
                           {app.applicationNo}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           <div className="font-bold text-gray-900">
                             {app.customer ? `${app.customer.firstName || ''} ${app.customer.lastName || ''}`.trim() : '-'}
                           </div>
@@ -3079,19 +3079,19 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                             {app.customer?.cifNo ? `CIF: ${app.customer.cifNo}` : ''} {(app.customer as any)?.mobileNo ? `| मो.: ${(app.customer as any).mobileNo}` : ''}
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-gray-800 align-middle">
                           {app.loanRate?.shortName || app.loanRate?.loanType || app.loanType || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">
+                        <td className="px-2 py-1 border-r border-gray-200 text-right font-mono font-bold text-emerald-700 align-middle">
                           ₹{(app.requestedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono align-middle">
                           {app.interestRate || 0}%
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-gray-600">
+                        <td className="px-2 py-1 border-r border-gray-200 text-center font-mono text-gray-600 align-middle">
                           {app.applicationDate ? new Date(app.applicationDate).toLocaleDateString('en-GB') : '-'}
                         </td>
-                        <td className="px-2 py-1.5 text-center">
+                        <td className="px-2 py-1 text-center align-middle">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                             नोंदणीकृत
                           </span>
@@ -3184,7 +3184,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                   </div>
                   <div>
                     <span className="text-gray-500 block">बचत जमा (Savings):</span>
-                    <span className="font-bold text-blue-700 font-mono">₹{(selectedGuarantorForModal.savingsBalance || 0).toLocaleString('en-IN')}</span>
+                    <span className="font-bold text-[#9A3412] font-mono">₹{(selectedGuarantorForModal.savingsBalance || 0).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
               </div>
@@ -3193,11 +3193,11 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-amber-50 p-2.5 rounded-sm border border-amber-200 text-center">
                 <div>
                   <div className="text-gray-600 text-[10px] font-bold">स्वतःचे कर्ज / बाकी</div>
-                  <div className="font-black text-indigo-950 text-xs font-mono">₹{(selectedGuarantorForModal.ownTotalBalance || 0).toLocaleString('en-IN')}</div>
+                  <div className="font-black text-[#4A1410] text-xs font-mono">₹{(selectedGuarantorForModal.ownTotalBalance || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
                   <div className="text-gray-600 text-[10px] font-bold">चालू जामीन कर्जे</div>
-                  <div className="font-black text-blue-900 text-xs">{selectedGuarantorForModal.activeGuaranteedLoansCount} खाते</div>
+                  <div className="font-black text-[#5A1A14] text-xs">{selectedGuarantorForModal.activeGuaranteedLoansCount} खाते</div>
                 </div>
                 <div>
                   <div className="text-gray-600 text-[10px] font-bold">प्रलंबित जामीन अर्ज</div>
@@ -3211,29 +3211,29 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
 
               {/* Own Loans */}
               {((selectedGuarantorForModal.ownLoans && selectedGuarantorForModal.ownLoans.length > 0) || (selectedGuarantorForModal.ownApplications && selectedGuarantorForModal.ownApplications.length > 0)) && (
-                <div className="border border-indigo-200 bg-indigo-50/40 p-2.5 rounded-sm">
-                  <h4 className="font-bold text-indigo-900 mb-1 border-b border-indigo-200 pb-1 text-[11px]">
+                <div className="border border-amber-200 bg-orange-50/40 p-2.5 rounded-sm">
+                  <h4 className="font-bold text-[#5A1A14] mb-1 border-b border-amber-200 pb-1 text-[11px]">
                     १. जामीनदाराची स्वतःची / सह-कर्जदार कर्ज खाती (Own Loans)
                   </h4>
                   {selectedGuarantorForModal.ownLoans && selectedGuarantorForModal.ownLoans.length > 0 && (
-                    <table className="w-full border-collapse border border-indigo-200 mb-2 text-[10px] bg-white">
+                    <table className="w-full border-collapse border border-amber-200 mb-2 text-[10px] bg-white leading-tight">
                       <thead>
-                        <tr className="bg-indigo-100 font-bold text-indigo-900">
-                          <th className="border p-1 text-left">खाते क्र.</th>
-                          <th className="border p-1 text-left">कर्जदार</th>
-                          <th className="border p-1 text-left">प्रकार</th>
-                          <th className="border p-1 text-right">मंजूर रक्कम</th>
-                          <th className="border p-1 text-right">सध्याची बाकी</th>
+                        <tr className="bg-orange-100 font-bold text-[#5A1A14]">
+                          <th className="border p-1 text-left whitespace-nowrap">खाते क्र.</th>
+                          <th className="border p-1 text-left whitespace-nowrap">कर्जदार</th>
+                          <th className="border p-1 text-left whitespace-nowrap">प्रकार</th>
+                          <th className="border p-1 text-right whitespace-nowrap">मंजूर रक्कम</th>
+                          <th className="border p-1 text-right whitespace-nowrap">सध्याची बाकी</th>
                         </tr>
                       </thead>
                       <tbody className="font-mono">
                         {selectedGuarantorForModal.ownLoans.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-indigo-50/50">
-                            <td className="border p-1 font-bold text-primary">{item.loanAccountNo}</td>
-                            <td className="border p-1 font-semibold text-gray-800 font-sans">{item.borrowerName}</td>
-                            <td className="border p-1 font-sans">{item.loanType}</td>
-                            <td className="border p-1 text-right">₹{(item.sanctionedAmount || 0).toLocaleString('en-IN')}</td>
-                            <td className="border p-1 text-right font-bold text-rose-700">₹{(item.currentBalance || 0).toLocaleString('en-IN')}</td>
+                          <tr key={idx} className="hover:bg-orange-50/50">
+                            <td className="border p-1 font-bold text-primary align-middle">{item.loanAccountNo}</td>
+                            <td className="border p-1 font-semibold text-gray-800 font-sans align-middle">{item.borrowerName}</td>
+                            <td className="border p-1 font-sans align-middle">{item.loanType}</td>
+                            <td className="border p-1 text-right align-middle">₹{(item.sanctionedAmount || 0).toLocaleString('en-IN')}</td>
+                            <td className="border p-1 text-right font-bold text-rose-700 align-middle">₹{(item.currentBalance || 0).toLocaleString('en-IN')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -3248,24 +3248,24 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                 {selectedGuarantorForModal.guaranteedLoans.length === 0 ? (
                   <p className="text-gray-400 italic mb-2 text-[11px]">कोणतेही चालू जामीन कर्ज खाते नाही.</p>
                 ) : (
-                  <table className="w-full border-collapse border border-gray-300 mb-2 text-[10px] bg-white">
+                  <table className="w-full border-collapse border border-gray-300 mb-2 text-[10px] bg-white leading-tight">
                     <thead>
-                      <tr className="bg-slate-100 font-bold text-gray-700">
-                        <th className="border p-1 text-left">खाते क्र.</th>
-                        <th className="border p-1 text-left">मुख्य कर्जदार</th>
-                        <th className="border p-1 text-left">प्रकार</th>
-                        <th className="border p-1 text-right">मंजूर रक्कम</th>
-                        <th className="border p-1 text-right">सध्याची बाकी</th>
+                      <tr className="bg-[#5A1A14] font-bold text-amber-50">
+                        <th className="border p-1 text-left whitespace-nowrap">खाते क्र.</th>
+                        <th className="border p-1 text-left whitespace-nowrap">मुख्य कर्जदार</th>
+                        <th className="border p-1 text-left whitespace-nowrap">प्रकार</th>
+                        <th className="border p-1 text-right whitespace-nowrap">मंजूर रक्कम</th>
+                        <th className="border p-1 text-right whitespace-nowrap">सध्याची बाकी</th>
                       </tr>
                     </thead>
                     <tbody className="font-mono">
                       {selectedGuarantorForModal.guaranteedLoans.map((item, idx) => (
                         <tr key={idx} className="hover:bg-slate-50">
-                          <td className="border p-1 font-bold text-primary">{item.loanAccountNo}</td>
-                          <td className="border p-1 font-semibold text-gray-800 font-sans">{item.borrowerName}</td>
-                          <td className="border p-1 font-sans">{item.loanType}</td>
-                          <td className="border p-1 text-right">₹{(item.sanctionedAmount || 0).toLocaleString('en-IN')}</td>
-                          <td className="border p-1 text-right font-bold text-rose-700">₹{(item.currentBalance || 0).toLocaleString('en-IN')}</td>
+                          <td className="border p-1 font-bold text-primary align-middle">{item.loanAccountNo}</td>
+                          <td className="border p-1 font-semibold text-gray-800 font-sans align-middle">{item.borrowerName}</td>
+                          <td className="border p-1 font-sans align-middle">{item.loanType}</td>
+                          <td className="border p-1 text-right align-middle">₹{(item.sanctionedAmount || 0).toLocaleString('en-IN')}</td>
+                          <td className="border p-1 text-right font-bold text-rose-700 align-middle">₹{(item.currentBalance || 0).toLocaleString('en-IN')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -3352,24 +3352,24 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                 {selectedDirectorForModal.recommendedLoans.length === 0 ? (
                   <p className="text-gray-400 italic mb-2 text-[11px]">कोणतेही चालू शिफारस केलेले कर्ज खाते नाही.</p>
                 ) : (
-                  <table className="w-full border-collapse border border-gray-300 mb-2 text-[10px] bg-white">
+                  <table className="w-full border-collapse border border-gray-300 mb-2 text-[10px] bg-white leading-tight">
                     <thead>
                       <tr className="bg-purple-50 font-bold text-purple-900">
-                        <th className="border p-1 text-left">खाते क्र.</th>
-                        <th className="border p-1 text-left">कर्जदार नाव</th>
-                        <th className="border p-1 text-left">प्रकार</th>
-                        <th className="border p-1 text-right">मंजूर रक्कम</th>
-                        <th className="border p-1 text-right">सध्याची बाकी</th>
+                        <th className="border p-1 text-left whitespace-nowrap">खाते क्र.</th>
+                        <th className="border p-1 text-left whitespace-nowrap">कर्जदार नाव</th>
+                        <th className="border p-1 text-left whitespace-nowrap">प्रकार</th>
+                        <th className="border p-1 text-right whitespace-nowrap">मंजूर रक्कम</th>
+                        <th className="border p-1 text-right whitespace-nowrap">सध्याची बाकी</th>
                       </tr>
                     </thead>
                     <tbody className="font-mono">
                       {selectedDirectorForModal.recommendedLoans.map((item, idx) => (
                         <tr key={idx} className="hover:bg-purple-50/50">
-                          <td className="border p-1 font-bold text-primary">{item.loanAccountNo}</td>
-                          <td className="border p-1 font-semibold text-gray-800 font-sans">{item.borrowerName}</td>
-                          <td className="border p-1 font-sans">{item.loanType}</td>
-                          <td className="border p-1 text-right">₹{(item.sanctionedAmount || 0).toLocaleString('en-IN')}</td>
-                          <td className="border p-1 text-right font-bold text-rose-700">₹{(item.currentBalance || 0).toLocaleString('en-IN')}</td>
+                          <td className="border p-1 font-bold text-primary align-middle">{item.loanAccountNo}</td>
+                          <td className="border p-1 font-semibold text-gray-800 font-sans align-middle">{item.borrowerName}</td>
+                          <td className="border p-1 font-sans align-middle">{item.loanType}</td>
+                          <td className="border p-1 text-right align-middle">₹{(item.sanctionedAmount || 0).toLocaleString('en-IN')}</td>
+                          <td className="border p-1 text-right font-bold text-rose-700 align-middle">₹{(item.currentBalance || 0).toLocaleString('en-IN')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -3396,7 +3396,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
       {/* ========================================================================= */}
       {showGoldModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-3 animate-in fade-in duration-200">
-          <div className="bg-white rounded-md shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden border border-amber-300">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-[97vw] xl:max-w-[1460px] max-h-[95vh] flex flex-col overflow-hidden border border-amber-300">
             {/* Header */}
             <div className="bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 text-white px-4 py-2.5 flex justify-between items-center shadow-xs">
               <div className="flex items-center gap-2">
@@ -3753,7 +3753,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                       <button
                         type="button"
                         onClick={startCamera}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                        className="bg-[#B44814] hover:bg-[#9A3412] text-white px-2.5 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
                       >
                         <Camera className="w-3 h-3" />
                         <span>📷 थेट कॅमेऱ्याने फोटो घ्या</span>
@@ -3850,25 +3850,25 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left border-collapse">
+                  <table className="w-full text-[11px] text-left border-collapse leading-tight">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 font-bold text-[10px]">
-                        <th className="p-1.5 text-center w-8">अ.क्र.</th>
-                        <th className="p-1.5 text-center w-12">फोटो</th>
-                        <th className="p-1.5">दागिन्याचे नाव</th>
-                        <th className="p-1.5 text-center">कॅरेट</th>
-                        <th className="p-1.5 text-center">नग</th>
-                        <th className="p-1.5 text-right">ग्रॉस (g)</th>
-                        <th className="p-1.5 text-right">निव्वळ (g)</th>
-                        <th className="p-1.5 text-right">दर / g</th>
-                        <th className="p-1.5 text-right">सिस्टीम मूल्य (₹)</th>
-                        <th className="p-1.5 text-right font-bold text-amber-950 bg-amber-50/50">सोनाराचे मूल्य (₹)</th>
-                        <th className="p-1.5">सोनार / पावती</th>
-                        <th className="p-1.5">शेरा</th>
-                        <th className="p-1.5 text-center w-20">कृती</th>
+                      <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 font-bold text-[10px]">
+                        <th className="p-1.5 text-center w-8 whitespace-nowrap">अ.क्र.</th>
+                        <th className="p-1.5 text-center w-12 whitespace-nowrap">फोटो</th>
+                        <th className="p-1.5 whitespace-nowrap">दागिन्याचे नाव</th>
+                        <th className="p-1.5 text-center whitespace-nowrap">कॅरेट</th>
+                        <th className="p-1.5 text-center whitespace-nowrap">नग</th>
+                        <th className="p-1.5 text-right whitespace-nowrap">ग्रॉस (g)</th>
+                        <th className="p-1.5 text-right whitespace-nowrap">निव्वळ (g)</th>
+                        <th className="p-1.5 text-right whitespace-nowrap">दर / g</th>
+                        <th className="p-1.5 text-right whitespace-nowrap">सिस्टीम मूल्य (₹)</th>
+                        <th className="p-1.5 text-right font-bold text-amber-950 bg-amber-50/50 whitespace-nowrap">सोनाराचे मूल्य (₹)</th>
+                        <th className="p-1.5 whitespace-nowrap">सोनार / पावती</th>
+                        <th className="p-1.5 whitespace-nowrap">शेरा</th>
+                        <th className="p-1.5 text-center w-20 whitespace-nowrap">कृती</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-[11px] font-mono">
+                    <tbody className="divide-y divide-amber-100 text-[11px] font-mono">
                       {goldItems.length === 0 ? (
                         <tr>
                           <td colSpan={13} className="p-6 text-center text-slate-400 font-sans italic">
@@ -3878,8 +3878,8 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                       ) : (
                         goldItems.map((item, idx) => (
                           <tr key={item.id} className="hover:bg-amber-50/30 transition-colors">
-                            <td className="p-1.5 text-center font-bold text-slate-500 font-sans">{idx + 1}</td>
-                            <td className="p-1 text-center font-sans">
+                            <td className="p-1.5 text-center font-bold text-slate-500 font-sans align-middle">{idx + 1}</td>
+                            <td className="p-1 text-center font-sans align-middle">
                               {item.imagePath ? (
                                 <button
                                   type="button"
@@ -3893,28 +3893,28 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                                 <span className="text-slate-300 text-[10px]">-</span>
                               )}
                             </td>
-                            <td className="p-1.5 font-bold text-slate-800 font-sans">{item.itemName}</td>
-                            <td className="p-1.5 text-center font-bold text-amber-800">{item.purity}</td>
-                            <td className="p-1.5 text-center font-semibold">{item.quantity}</td>
-                            <td className="p-1.5 text-right">{item.grossWeight.toFixed(2)} g</td>
-                            <td className="p-1.5 text-right font-bold text-amber-900">{item.netWeight.toFixed(2)} g</td>
-                            <td className="p-1.5 text-right">₹{item.ratePerGram.toLocaleString('en-IN')}</td>
-                            <td className="p-1.5 text-right font-semibold text-emerald-700">₹{item.valuationAmount.toLocaleString('en-IN')}</td>
-                            <td className="p-1.5 text-right font-black text-amber-950 bg-amber-50/40">
+                            <td className="p-1.5 font-bold text-slate-800 font-sans align-middle">{item.itemName}</td>
+                            <td className="p-1.5 text-center font-bold text-amber-800 align-middle">{item.purity}</td>
+                            <td className="p-1.5 text-center font-semibold align-middle">{item.quantity}</td>
+                            <td className="p-1.5 text-right align-middle">{item.grossWeight.toFixed(2)} g</td>
+                            <td className="p-1.5 text-right font-bold text-amber-900 align-middle">{item.netWeight.toFixed(2)} g</td>
+                            <td className="p-1.5 text-right align-middle">₹{item.ratePerGram.toLocaleString('en-IN')}</td>
+                            <td className="p-1.5 text-right font-semibold text-emerald-700 align-middle">₹{item.valuationAmount.toLocaleString('en-IN')}</td>
+                            <td className="p-1.5 text-right font-black text-amber-950 bg-amber-50/40 align-middle">
                               ₹{(item.valuerValuation || item.valuationAmount).toLocaleString('en-IN')}
                             </td>
-                            <td className="p-1.5 text-[10px] font-sans text-slate-700">
+                            <td className="p-1.5 text-[10px] font-sans text-slate-700 align-middle">
                               {item.valuerName ? (
                                 <span>{item.valuerName} {item.valuationReceiptNo ? `(#${item.valuationReceiptNo})` : ''}</span>
                               ) : '-'}
                             </td>
-                            <td className="p-1.5 text-slate-600 text-[10px] truncate max-w-[100px] font-sans">{item.remarks || '-'}</td>
-                            <td className="p-1.5 text-center font-sans">
+                            <td className="p-1.5 text-slate-600 text-[10px] truncate max-w-[100px] font-sans align-middle">{item.remarks || '-'}</td>
+                            <td className="p-1.5 text-center font-sans align-middle">
                               <div className="flex items-center justify-center gap-1">
                                 <button
                                   type="button"
                                   onClick={() => handleEditGoldItem(item)}
-                                  className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-200 cursor-pointer"
+                                  className="bg-amber-50 text-[#9A3412] hover:bg-amber-100 px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-200 cursor-pointer"
                                 >
                                   बदला
                                 </button>

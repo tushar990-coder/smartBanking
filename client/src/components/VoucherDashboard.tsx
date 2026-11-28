@@ -71,9 +71,9 @@ export default function VoucherDashboard({ onNavigate }: VoucherDashboardProps) 
       icon: AnimatedPassbookIcon,
       tab: 'voucher-batch-print',
       params: {},
-      gradient: 'linear-gradient(135deg, #22D3EE 0%, #0891B2 55%, #0369A1 100%)',
-      shadowColor: 'rgba(8, 145, 178, 0.38)',
-      accentHex: '#0E7490',
+      gradient: 'linear-gradient(135deg, #2DD4BF 0%, #0D9488 55%, #0F766E 100%)',
+      shadowColor: 'rgba(13, 148, 136, 0.36)',
+      accentHex: '#0F766E',
     },
   ];
 
@@ -83,10 +83,10 @@ export default function VoucherDashboard({ onNavigate }: VoucherDashboardProps) 
       titleMr="व्हाऊचर्स व रोख हिशोब मुख्य हब"
       subtitleMr="रोख जमा पावती • पेमेंट व्हाऊचर • जर्नल नोंदी • व्हाऊचर पासिंग व बॅच प्रिंटिंग व्यवस्थापन"
       heroIcon={AnimatedTransferIcon}
-      heroEmblemGradient="linear-gradient(135deg, #C084FC 0%, #9333EA 52%, #6B21A8 100%)"
-      heroGlowGradient="linear-gradient(135deg, #9333EA 0%, #2563EB 55%, #06B6D4 100%)"
-      underlineGradient="linear-gradient(90deg, #9333EA 0%, #2563EB 50%, #06B6D4 100%)"
-      accentSparkleColor="#9333EA"
+      heroEmblemGradient="linear-gradient(135deg, #7C2418 0%, #B44814 55%, #D97706 100%)"
+      heroGlowGradient="linear-gradient(135deg, #8C2D19 0%, #D97706 60%, #F59E0B 100%)"
+      underlineGradient="linear-gradient(90deg, #7C2418 0%, #D97706 55%, #F59E0B 100%)"
+      accentSparkleColor="#D97706"
       items={voucherActionButtons}
       onNavigate={onNavigate}
     />

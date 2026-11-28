@@ -267,7 +267,7 @@ export default function CompanyBranchMaster() {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3 rounded-sm shadow-2xs border transition-all duration-300 mb-2 ${
-          editingId ? 'border-primary ring-2 ring-primary/20 shadow-md bg-blue-50/10' : 'border-gray-200'
+          editingId ? 'border-primary ring-2 ring-primary/20 shadow-md bg-amber-50/10' : 'border-gray-200'
         }`}
       >
         <div className="text-[11px] font-bold text-primary border-b border-gray-200 pb-1.5 mb-2.5 flex items-center justify-between">
@@ -434,7 +434,7 @@ export default function CompanyBranchMaster() {
             )}
             <button 
               type="submit" 
-              className="bg-primary hover:bg-[#004a75] text-white px-4 py-1.5 rounded-sm text-xs font-bold transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+              className="bg-primary hover:bg-[#7C2418] text-white px-4 py-1.5 rounded-sm text-xs font-bold transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
             >
               {editingId ? <Edit3 size={12} /> : <Plus size={12} />}
               {editingId ? "अपडेट करा" : "जतन करा"}
@@ -466,16 +466,16 @@ export default function CompanyBranchMaster() {
         </div>
 
         <div className="overflow-x-auto flex-1">
-          <table className="w-full text-[11px] border-collapse">
+          <table className="w-full text-[11px] border-collapse leading-tight">
             <thead>
               <tr className="bg-primary text-white font-medium">
-                <th className="p-1.5 border border-gray-300 text-left">कोड</th>
-                <th className="p-1.5 border border-gray-300 text-left">शाखेचे नाव</th>
-                <th className="p-1.5 border border-gray-300 text-left">संपूर्ण पत्ता</th>
-                <th className="p-1.5 border border-gray-300 text-left">शहर / जिल्हा</th>
-                <th className="p-1.5 border border-gray-300 text-left">संपर्क (मोबाईल / ई-मेल)</th>
-                <th className="p-1.5 border border-gray-300 text-center">स्थिती</th>
-                <th className="p-1.5 border border-gray-300 text-center">क्रिया (Actions)</th>
+                <th className="p-1.5 border border-amber-400/25 text-left whitespace-nowrap">कोड</th>
+                <th className="p-1.5 border border-amber-400/25 text-left whitespace-nowrap">शाखेचे नाव</th>
+                <th className="p-1.5 border border-amber-400/25 text-left whitespace-nowrap">संपूर्ण पत्ता</th>
+                <th className="p-1.5 border border-amber-400/25 text-left whitespace-nowrap">शहर / जिल्हा</th>
+                <th className="p-1.5 border border-amber-400/25 text-left whitespace-nowrap">संपर्क (मोबाईल / ई-मेल)</th>
+                <th className="p-1.5 border border-amber-400/25 text-center whitespace-nowrap">स्थिती</th>
+                <th className="p-1.5 border border-amber-400/25 text-center whitespace-nowrap">क्रिया (Actions)</th>
               </tr>
             </thead>
             <tbody>
@@ -485,41 +485,43 @@ export default function CompanyBranchMaster() {
                 </tr>
               ) : (
                 filteredBranches.map((b) => (
-                  <tr key={b.branchID} className="border-b border-gray-200 hover:bg-blue-50/50 transition-colors">
-                    <td className="p-1.5 border-r border-gray-200 font-bold text-primary uppercase">{b.branchCode}</td>
-                    <td className="p-1.5 border-r border-gray-200 font-bold text-gray-800">{b.branchName}</td>
-                    <td className="p-1.5 border-r border-gray-200 text-gray-600">{b.address || '-'}</td>
-                    <td className="p-1.5 border-r border-gray-200 text-gray-700">
+                  <tr key={b.branchID} className="border-b border-gray-200 hover:bg-amber-50/50 transition-colors">
+                    <td className="p-1.5 border-r border-gray-200 font-bold text-primary uppercase align-middle">{b.branchCode}</td>
+                    <td className="p-1.5 border-r border-gray-200 font-bold text-gray-800 align-middle">{b.branchName}</td>
+                    <td className="p-1.5 border-r border-gray-200 text-gray-600 align-middle">{b.address || '-'}</td>
+                    <td className="p-1.5 border-r border-gray-200 text-gray-700 align-middle">
                       {[b.city, b.district, b.state].filter(Boolean).join(', ') || '-'}
                       {b.pincode && <span className="text-[10px] font-mono text-gray-500 block">पिन: {b.pincode}</span>}
                     </td>
-                    <td className="p-1.5 border-r border-gray-200 text-gray-700">
+                    <td className="p-1.5 border-r border-gray-200 text-gray-700 align-middle">
                       {b.mobileNo && <div>📞 {b.mobileNo}</div>}
                       {b.email && <div className="text-[10px] text-gray-500">✉️ {b.email}</div>}
                       {!b.mobileNo && !b.email && '-'}
                     </td>
-                    <td className="p-1.5 border-r border-gray-200 text-center">
+                    <td className="p-1.5 border-r border-gray-200 text-center align-middle">
                       <span className={`px-2 py-0.5 rounded-xs text-[9px] font-bold ${
                         b.status ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300'
                       }`}>
                         {b.status ? 'सक्रिय' : 'निष्क्रिय'}
                       </span>
                     </td>
-                    <td className="p-1.5 text-center flex justify-center space-x-1.5">
-                      <button 
-                        onClick={() => handleEdit(b)}
-                        className="px-2 py-0.5 bg-blue-50 text-primary hover:bg-blue-100 border border-blue-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <Edit3 size={11} />
-                        संपादन
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(b.branchID)}
-                        className="px-2 py-0.5 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <Trash2 size={11} />
-                        डिलीट
-                      </button>
+                    <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
+                      <div className="inline-flex items-center justify-center gap-1.5">
+                        <button 
+                          onClick={() => handleEdit(b)}
+                          className="px-2 py-0.5 bg-amber-50 text-primary hover:bg-amber-100 border border-amber-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <Edit3 size={11} />
+                          संपादन
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(b.branchID)}
+                          className="px-2 py-0.5 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <Trash2 size={11} />
+                          डिलीट
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

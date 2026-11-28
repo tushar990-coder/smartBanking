@@ -99,9 +99,9 @@ const NpaDashboard: React.FC<NpaDashboardProps> = ({ onNavigate }) => {
   const isNetNpaViolated = statement ? statement.netNpaPercent > 5 : false;
 
   return (
-    <div className="p-2 sm:p-3 max-w-7xl mx-auto bg-slate-50/70 min-h-[calc(100vh-3.15rem)] flex flex-col gap-2.5 font-sans text-xs text-slate-800">
+    <div className="p-2 sm:p-3 max-w-7xl mx-auto cbs-page-canvas min-h-[calc(100vh-3.15rem)] flex flex-col gap-2.5 font-sans text-xs text-[#4A1410]">
       {/* ERP Header Bar */}
-      <div className="bg-white px-3 py-2 rounded-sm shadow-xs border border-slate-300 border-t-2 border-t-primary flex flex-wrap items-center justify-between gap-2">
+      <div className="cbs-top-banner px-3 py-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-sm bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
             <AlertOctagon size={14} />

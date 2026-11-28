@@ -515,7 +515,7 @@ export default function ClosedLoanAccountsReport() {
       </div>
       <div>
         <span className="text-slate-500 block text-[9px] uppercase font-semibold">व्याज + दंड वसूल</span>
-        <strong className="text-indigo-800 font-mono text-[11px]">
+        <strong className="text-[#7C2418] font-mono text-[11px]">
           ₹ {fmtCurrency(totalFilteredInterestPaid + totalFilteredPenaltyPaid, isMarathiDigits)}
         </strong>
       </div>

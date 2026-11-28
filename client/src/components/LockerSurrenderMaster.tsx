@@ -589,7 +589,7 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase">जमा अनामत रक्कम</span>
-                    <p className="font-bold text-blue-700">₹{selectedAllotment.securityDepositAmount?.toFixed(2)}</p>
+                    <p className="font-bold text-[#9A3412]">₹{selectedAllotment.securityDepositAmount?.toFixed(2)}</p>
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase">मुदत स्थिती</span>
@@ -697,7 +697,7 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
                       value={formData.depositAmount}
                       onChange={handleChange}
                       disabled={isPassing}
-                      className={`${inputClass} font-bold text-blue-700`}
+                      className={`${inputClass} font-bold text-[#9A3412]`}
                     />
                   </div>
                   <div>
@@ -824,21 +824,21 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
 
           <div className="bg-white rounded-lg shadow-xs border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-[11px] border-collapse leading-tight">
                 <thead>
-                  <tr className="bg-slate-100/80 text-slate-700 border-b border-slate-200 font-bold">
-                    <th className="py-2 px-3">समर्पण दिनांक</th>
-                    <th className="py-2 px-3">खाते क्रमांक</th>
-                    <th className="py-2 px-3">लॉकर क्र.</th>
-                    <th className="py-2 px-3">सभासद नाव</th>
-                    <th className="py-2 px-3 text-right">मूळ डिपॉझिट</th>
-                    <th className="py-2 px-3 text-right">थकीत वजावट</th>
-                    <th className="py-2 px-3 text-right">परतावा रक्कम</th>
-                    <th className="py-2 px-3">पेमेंट मोड</th>
-                    <th className="py-2 px-3">व्हाऊचर क्रमांक</th>
+                  <tr className="bg-[#5A1A14] text-amber-50 border-b border-amber-400/30 font-bold">
+                    <th className="py-1.5 px-2 whitespace-nowrap">समर्पण दिनांक</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">खाते क्रमांक</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">लॉकर क्र.</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">सभासद नाव</th>
+                    <th className="py-1.5 px-2 text-right whitespace-nowrap">मूळ डिपॉझिट</th>
+                    <th className="py-1.5 px-2 text-right whitespace-nowrap">थकीत वजावट</th>
+                    <th className="py-1.5 px-2 text-right whitespace-nowrap">परतावा रक्कम</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">पेमेंट मोड</th>
+                    <th className="py-1.5 px-2 whitespace-nowrap">व्हाऊचर क्रमांक</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
+                <tbody className="divide-y divide-amber-100 text-slate-700">
                   {filteredSurrenders.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="py-6 text-center text-slate-400">
@@ -848,15 +848,15 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
                   ) : (
                     filteredSurrenders.map((s) => (
                       <tr key={s.surrenderID} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-2 px-3 font-semibold">{new Date(s.surrenderDate).toLocaleDateString('en-GB')}</td>
-                        <td className="py-2 px-3 font-mono font-bold text-rose-800">{s.lockerAccountNo}</td>
-                        <td className="py-2 px-3 font-bold text-slate-800">{s.lockerNo}</td>
-                        <td className="py-2 px-3 font-bold text-slate-800">{s.memberName}</td>
-                        <td className="py-2 px-3 text-right font-bold text-blue-700">₹{s.depositAmount?.toFixed(2)}</td>
-                        <td className="py-2 px-3 text-right font-semibold text-rose-700">₹{(s.unpaidRentDeduction + s.damagePenaltyDeduction)?.toFixed(2)}</td>
-                        <td className="py-2 px-3 text-right font-black text-emerald-800 text-sm">₹{s.netRefundAmount?.toFixed(2)}</td>
-                        <td className="py-2 px-3 font-semibold text-slate-600">{s.refundPaymentMode}</td>
-                        <td className="py-2 px-3 font-mono text-[11px] text-purple-700">{s.voucherNo || '-'}</td>
+                        <td className="py-1 px-2 font-semibold align-middle">{new Date(s.surrenderDate).toLocaleDateString('en-GB')}</td>
+                        <td className="py-1 px-2 font-mono font-bold text-rose-800 align-middle">{s.lockerAccountNo}</td>
+                        <td className="py-1 px-2 font-bold text-slate-800 align-middle">{s.lockerNo}</td>
+                        <td className="py-1 px-2 font-bold text-slate-800 align-middle">{s.memberName}</td>
+                        <td className="py-1 px-2 text-right font-bold text-[#9A3412] align-middle">₹{s.depositAmount?.toFixed(2)}</td>
+                        <td className="py-1 px-2 text-right font-semibold text-rose-700 align-middle">₹{(s.unpaidRentDeduction + s.damagePenaltyDeduction)?.toFixed(2)}</td>
+                        <td className="py-1 px-2 text-right font-black text-emerald-800 text-sm align-middle">₹{s.netRefundAmount?.toFixed(2)}</td>
+                        <td className="py-1 px-2 font-semibold text-slate-600 align-middle">{s.refundPaymentMode}</td>
+                        <td className="py-1 px-2 font-mono text-[11px] text-purple-700 align-middle">{s.voucherNo || '-'}</td>
                       </tr>
                     ))
                   )}

@@ -1100,8 +1100,8 @@ const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNav
             <Landmark className="w-3.5 h-3.5 text-primary" />
             ठेवी: <strong className="font-mono text-slate-950">{accounts.length}</strong>
           </span>
-          <span className="px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-900 font-semibold inline-flex items-center gap-1.5">
-            <TrendingUp className="w-3.5 h-3.5 text-indigo-600" />
+          <span className="px-2.5 py-1 rounded-md bg-orange-50 text-[#5A1A14] font-semibold inline-flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5 text-[#B44814]" />
             मुद्दल: <strong className="font-mono">₹{fmt(totalPrincipal)}</strong>
           </span>
           <span className="px-2.5 py-1 rounded-md bg-amber-50 text-amber-900 font-semibold inline-flex items-center gap-1.5">
@@ -1232,7 +1232,7 @@ const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNav
                     </span>
                   )}
                   {selectedAccount.depositReceiptNo && (
-                    <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200 font-mono font-semibold text-[10px]">
+                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-[#7C2418] border border-amber-200 font-mono font-semibold text-[10px]">
                       पावती: {selectedAccount.depositReceiptNo}
                     </span>
                   )}
@@ -1286,9 +1286,9 @@ const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNav
                   </div>
                 </div>
 
-                <div className="bg-indigo-50/60 rounded-md px-3 py-2 border border-indigo-200/70">
-                  <div className="text-[10.5px] text-indigo-700 font-semibold">शिल्लक येणे व्याज (Receivable)</div>
-                  <div className="text-sm font-mono font-black text-indigo-900 mt-0.5">
+                <div className="bg-orange-50/60 rounded-md px-3 py-2 border border-amber-200/70">
+                  <div className="text-[10.5px] text-[#9A3412] font-semibold">शिल्लक येणे व्याज (Receivable)</div>
+                  <div className="text-sm font-mono font-black text-[#5A1A14] mt-0.5">
                     ₹{fmt(selectedAccount.interestReceivable || 0)}
                   </div>
                   {(selectedAccount.pendingAccruedInterest || 0) > 0 && (
@@ -1581,7 +1581,7 @@ const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNav
                                     setEnablePostingReversal(fullRecv > 0);
                                     syncReversePostingAmount(fullRecv);
                                   }}
-                                  className="text-[10.5px] font-bold text-indigo-800 hover:underline cursor-pointer"
+                                  className="text-[10.5px] font-bold text-[#7C2418] hover:underline cursor-pointer"
                                 >
                                   ↺ पूर्ण (₹{fmt(selectedAccount.interestReceivable || 0)})
                                 </button>
@@ -1852,10 +1852,10 @@ const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNav
                     </div>
 
                     {renewalPreview && (
-                      <div className="bg-indigo-50/70 border border-indigo-200 rounded-md p-2.5 grid grid-cols-3 gap-2 text-[11px]">
+                      <div className="bg-orange-50/70 border border-amber-200 rounded-md p-2.5 grid grid-cols-3 gap-2 text-[11px]">
                         <div>
                           <span className="text-slate-500 block text-[10px]">नवीन मुदतपूर्ती दि.</span>
-                          <strong className="font-mono text-indigo-950">{formatDate(renewalPreview.newMaturityIso)}</strong>
+                          <strong className="font-mono text-[#4A1410]">{formatDate(renewalPreview.newMaturityIso)}</strong>
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[10px]">अपेक्षित नवीन व्याज</span>
@@ -1863,7 +1863,7 @@ const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNav
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[10px]">नवीन मुदतपूर्ती रक्कम</span>
-                          <strong className="font-mono text-blue-900">₹{fmt(renewalPreview.expectedMaturityAmount)}</strong>
+                          <strong className="font-mono text-[#5A1A14]">₹{fmt(renewalPreview.expectedMaturityAmount)}</strong>
                         </div>
                       </div>
                     )}
@@ -1914,7 +1914,7 @@ const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNav
                                 setReferenceNo('');
                               }
                             }}
-                            className={`${ctrl} font-bold text-blue-950`}
+                            className={`${ctrl} font-bold text-[#4A1410]`}
                           >
                             <option value="Bank">🏦 बँक खाते (Bank Account)</option>
                             <option value="Cash">💵 रोख खाते (Branch Cash)</option>
@@ -1983,7 +1983,7 @@ const InvestmentMaturityClaim: React.FC<InvestmentMaturityClaimProps> = ({ onNav
                     {settlement.standingReceivable > 0 && (
                       <div className="flex justify-between items-center py-1.5">
                         <dt className="text-slate-600">शिल्लक येणे व्याज (Receivable)</dt>
-                        <dd className="font-mono font-semibold text-indigo-800">₹{fmt(settlement.standingReceivable)}</dd>
+                        <dd className="font-mono font-semibold text-[#7C2418]">₹{fmt(settlement.standingReceivable)}</dd>
                       </div>
                     )}
 

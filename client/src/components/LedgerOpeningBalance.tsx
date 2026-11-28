@@ -230,12 +230,12 @@ export default function LedgerOpeningBalance({ defaultFilter = 'All' }: LedgerOp
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-blue-50 text-blue-700 border border-blue-200 rounded">
+          <div className="p-2 bg-amber-50 text-[#9A3412] border border-amber-200 rounded">
             <IndianRupee className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण Dr शिल्लक (नावे)</div>
-            <div className="text-sm font-black text-blue-900">₹{totalDr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="text-sm font-black text-[#5A1A14]">₹{totalDr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
         </div>
 
@@ -318,18 +318,18 @@ export default function LedgerOpeningBalance({ defaultFilter = 'All' }: LedgerOp
 
         {/* Ledger Table */}
         <div className="overflow-x-auto border border-gray-200 rounded-sm">
-          <table className="min-w-full divide-y divide-gray-200 text-xs text-left border-collapse">
-            <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+          <table className="min-w-full divide-y divide-gray-200 text-[11px] text-left border-collapse leading-tight">
+            <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
               <tr>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-center w-14">ID</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-left">खात्याचे नाव (Ledger Name)</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-left">गट (Account Group)</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-left">प्रकार (Type)</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-right w-64">सुरुवातीची शिल्लक (Opening Balance ₹)</th>
-                <th className="px-2 py-1.5 text-center w-28">कृती</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-14 whitespace-nowrap">ID</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खात्याचे नाव (Ledger Name)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">गट (Account Group)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">प्रकार (Type)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-right w-64 whitespace-nowrap">सुरुवातीची शिल्लक (Opening Balance ₹)</th>
+                <th className="px-2 py-1.5 text-center w-28 whitespace-nowrap">कृती</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+            <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
               {loading ? (
                 <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500 font-bold">माहिती लोड होत आहे...</td></tr>
               ) : filteredLedgers.length === 0 ? (
@@ -337,16 +337,16 @@ export default function LedgerOpeningBalance({ defaultFilter = 'All' }: LedgerOp
               ) : (
                 filteredLedgers.map(ledger => (
                   <tr key={ledger.ledgerID} className={`transition-colors ${editingId === ledger.ledgerID ? 'bg-amber-50/60 ring-1 ring-primary/30' : 'hover:bg-primary/5'}`}>
-                    <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-gray-600">{ledger.ledgerID}</td>
-                    <td className="px-2 py-1.5 border-r border-gray-200 font-bold text-gray-900">{ledger.ledgerName}</td>
-                    <td className="px-2 py-1.5 border-r border-gray-200 text-gray-700 font-medium">{ledger.accountGroup?.groupName || '-'}</td>
-                    <td className="px-2 py-1.5 border-r border-gray-200 text-gray-600">{ledger.accountType || ledger.reportType || '-'}</td>
-                    <td className="px-2 py-1.5 border-r border-gray-200 text-right">
-                      <span className={`font-mono font-bold ${ledger.openingBalanceType === 'Dr' ? 'text-blue-700' : 'text-emerald-700'}`}>
+                    <td className="px-2 py-1 border-r border-gray-200 text-center font-mono font-bold text-gray-600 align-middle">{ledger.ledgerID}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 font-bold text-gray-900 align-middle">{ledger.ledgerName}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-gray-700 font-medium align-middle">{ledger.accountGroup?.groupName || '-'}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-gray-600 align-middle">{ledger.accountType || ledger.reportType || '-'}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-right align-middle">
+                      <span className={`font-mono font-bold ${ledger.openingBalanceType === 'Dr' ? 'text-[#9A3412]' : 'text-emerald-700'}`}>
                         ₹{ledger.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} <span className="text-[10px] px-1 py-0.2 rounded bg-slate-100 border border-slate-300">{ledger.openingBalanceType}</span>
                       </span>
                     </td>
-                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                    <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
                       <button
                         type="button"
                         onClick={() => {

@@ -805,7 +805,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
       );
     }
     return (
-      <span className="inline-block px-1.5 py-0.5 rounded-sm text-[10px] leading-none font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 whitespace-nowrap">
+      <span className="inline-block px-1.5 py-0.5 rounded-sm text-[10px] leading-none font-bold bg-orange-50 text-[#7C2418] border border-amber-200 whitespace-nowrap">
         येणे व्याज बाकी
       </span>
     );
@@ -1184,7 +1184,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                       हप्ता थकीत: {categoryCounts.installment}
                     </span>
                     {categoryCounts.dues > 0 && (
-                      <span className="px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-[10px] leading-none">
+                      <span className="px-1.5 py-0.5 rounded-sm bg-orange-50 text-[#7C2418] border border-amber-200 font-bold text-[10px] leading-none">
                         येणे व्याज: {categoryCounts.dues}
                       </span>
                     )}
@@ -1243,9 +1243,9 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
         {/* Scrollable Dense Grid Container */}
         <div className="flex-1 min-h-0 overflow-auto slim-scrollbar">
           <table className="min-w-full border-collapse text-[11px] leading-tight">
-            <thead className="bg-slate-100 text-slate-800 sticky top-0 z-10 border-b-2 border-primary/30 font-bold whitespace-nowrap">
+            <thead className="bg-[#5A1A14] text-amber-50 sticky top-0 z-10 border-b-2 border-primary/30 font-bold whitespace-nowrap">
               <tr>
-                <th className="w-8 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                <th className="w-8 px-1.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
@@ -1255,41 +1255,41 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                     title="सर्व दिसणारी खाती निवडा / निवड काढा"
                   />
                 </th>
-                <th className="w-9 px-1.5 py-1.5 border-r border-slate-200 text-center">अ.नं.</th>
-                <th className="w-14 px-1.5 py-1.5 border-r border-slate-200 text-center">जुना नं.</th>
-                <th className="w-28 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                <th className="w-9 px-1.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">अ.नं.</th>
+                <th className="w-14 px-1.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">जुना नं.</th>
+                <th className="w-28 px-1.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">
                   कर्ज खाते नं.
                 </th>
-                <th className="w-20 px-1.5 py-1.5 border-r border-slate-200 text-center">CIF नं.</th>
-                <th className="px-2 py-1.5 border-r border-slate-200 text-left min-w-[170px]">
+                <th className="w-20 px-1.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">CIF नं.</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left min-w-[170px] whitespace-nowrap">
                   कर्जदाराचे नाव
                 </th>
-                <th className="w-32 px-1.5 py-1.5 border-r border-slate-200 text-left">
+                <th className="w-32 px-1.5 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">
                   कर्ज प्रकार
                 </th>
-                <th className="w-28 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                <th className="w-28 px-1.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">
                   थकबाकी स्थिती
                 </th>
-                <th className="w-20 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                <th className="w-20 px-1.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">
                   कर्ज दि.
                 </th>
-                <th className="w-20 px-1.5 py-1.5 border-r border-slate-200 text-center">
+                <th className="w-20 px-1.5 py-1.5 border-r border-amber-400/25 text-center whitespace-nowrap">
                   थकबाकी दि.
                 </th>
-                <th className="w-24 px-1.5 py-1.5 border-r border-slate-200 text-right">
+                <th className="w-24 px-1.5 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">
                   चालू मुद्दल
                 </th>
-                <th className="w-20 px-1.5 py-1.5 border-r border-slate-200 text-right">
+                <th className="w-20 px-1.5 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">
                   येणे व्याज
                 </th>
-                <th className="w-24 px-1.5 py-1.5 border-r border-slate-200 text-right">
+                <th className="w-24 px-1.5 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">
                   थकबाकी रक्कम
                 </th>
-                <th className="w-22 px-1.5 py-1.5 text-right">नावे रक्कम (₹)</th>
+                <th className="w-22 px-1.5 py-1.5 text-right whitespace-nowrap">नावे रक्कम (₹)</th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-200 bg-white">
+            <tbody className="divide-y divide-amber-100 bg-white">
               {loadingCandidates ? (
                 <tr>
                   <td colSpan={14} className="px-4 py-16 text-center text-slate-500 font-bold">
@@ -1336,7 +1336,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                       }`}
                     >
                       <td
-                        className="px-1.5 py-0.5 border-r border-slate-200 text-center"
+                        className="px-1.5 py-0.5 border-r border-slate-200 text-center align-middle"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
@@ -1347,24 +1347,24 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                         />
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-600">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-600 align-middle">
                         {idx + 1}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono font-black text-primary">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono font-black text-primary align-middle">
                         {row.legacyAccountNumber || '-'}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-800">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-800 align-middle">
                         {row.loanAccountNo}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-600">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-600 align-middle">
                         {row.cifNo || '-'}
                       </td>
 
                       <td
-                        className="px-2 py-0.5 border-r border-slate-200 text-left max-w-[240px] truncate"
+                        className="px-2 py-0.5 border-r border-slate-200 text-left max-w-[240px] truncate align-middle"
                         title={row.customerName || ''}
                       >
                         <span className="font-bold text-slate-900">{row.customerName || '-'}</span>
@@ -1379,38 +1379,38 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                       </td>
 
                       <td
-                        className="px-1.5 py-0.5 border-r border-slate-200 text-left max-w-[140px] truncate font-medium text-slate-800"
+                        className="px-1.5 py-0.5 border-r border-slate-200 text-left max-w-[140px] truncate font-medium text-slate-800 align-middle"
                         title={row.loanType}
                       >
                         {row.loanType}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center align-middle">
                         {renderOverdueCategoryBadge(row)}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-700">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono text-slate-700 align-middle">
                         {formatDisplayDate(row.loanDate)}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono font-bold text-rose-700">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-center font-mono font-bold text-rose-700 align-middle">
                         {formatDisplayDate(row.overdueDate || row.maturityDate)}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono text-slate-700">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono text-slate-700 align-middle">
                         {formatAmount(row.principalBalance)}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono text-amber-800 font-semibold">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono text-amber-800 font-semibold align-middle">
                         {bookedInterestSum > 0.009 ? formatAmount(bookedInterestSum) : '0.00'}
                       </td>
 
-                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono font-bold text-slate-900">
+                      <td className="px-1.5 py-0.5 border-r border-slate-200 text-right font-mono font-bold text-slate-900 align-middle">
                         {formatAmount(row.overdueAmount)}
                       </td>
 
                       <td
-                        className="px-1.5 py-0.5 text-right"
+                        className="px-1.5 py-0.5 text-right align-middle"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
@@ -1507,7 +1507,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
       {/* 'यादी पहा' — Saved Bulk Charge Batches Modal */}
       {showBatchListModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 print:static print:bg-transparent print:p-0">
-          <div className="bg-white rounded-sm border-t-4 border-t-primary w-full max-w-5xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden print:max-h-none print:shadow-none print:border-none">
+          <div className="bg-white rounded-sm border-t-4 border-t-primary w-full max-w-[97vw] xl:max-w-[1460px] max-h-[90vh] shadow-2xl flex flex-col overflow-hidden print:max-h-none print:shadow-none print:border-none">
             <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between print:hidden">
               <div className="font-bold text-sm text-primary flex items-center gap-2">
                 <FileText className="w-4 h-4" />
@@ -1587,19 +1587,19 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                   निवडलेल्या कालावधीत कोणतीही वसुली खर्च नावे नोंद सापडली नाही.
                 </div>
               ) : (
-                <table className="min-w-full border border-slate-300 border-collapse text-xs">
-                  <thead className="bg-slate-100 font-bold text-slate-800">
+                <table className="min-w-full border border-slate-300 border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] font-bold text-amber-50">
                     <tr>
-                      <th className="px-2 py-2 border border-slate-300 w-10"></th>
-                      <th className="px-2.5 py-2 border border-slate-300 text-left">दिनांक</th>
-                      <th className="px-2.5 py-2 border border-slate-300 text-left">व्हाउचर क्र.</th>
-                      <th className="px-2.5 py-2 border border-slate-300 text-left">
+                      <th className="px-2 py-1.5 border border-amber-400/25 w-10 whitespace-nowrap"></th>
+                      <th className="px-2.5 py-1.5 border border-amber-400/25 text-left whitespace-nowrap">दिनांक</th>
+                      <th className="px-2.5 py-1.5 border border-amber-400/25 text-left whitespace-nowrap">व्हाउचर क्र.</th>
+                      <th className="px-2.5 py-1.5 border border-amber-400/25 text-left whitespace-nowrap">
                         जमा उत्पन्न लेजर (Cr)
                       </th>
-                      <th className="px-2.5 py-2 border border-slate-300 text-center">खातेदार</th>
-                      <th className="px-2.5 py-2 border border-slate-300 text-right">एकूण रक्कम</th>
-                      <th className="px-2.5 py-2 border border-slate-300 text-center">स्थिती</th>
-                      <th className="px-2.5 py-2 border border-slate-300 text-center print:hidden">
+                      <th className="px-2.5 py-1.5 border border-amber-400/25 text-center whitespace-nowrap">खातेदार</th>
+                      <th className="px-2.5 py-1.5 border border-amber-400/25 text-right whitespace-nowrap">एकूण रक्कम</th>
+                      <th className="px-2.5 py-1.5 border border-amber-400/25 text-center whitespace-nowrap">स्थिती</th>
+                      <th className="px-2.5 py-1.5 border border-amber-400/25 text-center print:hidden whitespace-nowrap">
                         कृती
                       </th>
                     </tr>
@@ -1617,29 +1617,29 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                             }
                             className="hover:bg-slate-50 cursor-pointer border-b border-slate-200"
                           >
-                            <td className="px-2 py-1.5 border border-slate-200 text-center">
+                            <td className="px-2 py-1 border border-slate-200 text-center align-middle">
                               {isOpen ? (
                                 <ChevronDown className="w-3.5 h-3.5 inline text-primary" />
                               ) : (
                                 <ChevronRight className="w-3.5 h-3.5 inline text-slate-500" />
                               )}
                             </td>
-                            <td className="px-2.5 py-1.5 border border-slate-200 font-mono">
+                            <td className="px-2.5 py-1 border border-slate-200 font-mono align-middle">
                               {formatDisplayDate(b.expenseDate)}
                             </td>
-                            <td className="px-2.5 py-1.5 border border-slate-200 font-mono font-bold text-slate-900">
+                            <td className="px-2.5 py-1 border border-slate-200 font-mono font-bold text-slate-900 align-middle">
                               {b.voucherNo}
                             </td>
-                            <td className="px-2.5 py-1.5 border border-slate-200 font-bold text-slate-800">
+                            <td className="px-2.5 py-1 border border-slate-200 font-bold text-slate-800 align-middle">
                               {b.incomeLedgerName || '-'}
                             </td>
-                            <td className="px-2.5 py-1.5 border border-slate-200 text-center font-mono font-bold">
+                            <td className="px-2.5 py-1 border border-slate-200 text-center font-mono font-bold align-middle">
                               {b.accountCount}
                             </td>
-                            <td className="px-2.5 py-1.5 border border-slate-200 text-right font-mono font-black text-primary">
+                            <td className="px-2.5 py-1 border border-slate-200 text-right font-mono font-black text-primary align-middle">
                               ₹{formatAmount(b.totalAmount)}
                             </td>
-                            <td className="px-2.5 py-1.5 border border-slate-200 text-center">
+                            <td className="px-2.5 py-1 border border-slate-200 text-center align-middle">
                               <span
                                 className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border ${
                                   isApproved
@@ -1651,7 +1651,7 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                               </span>
                             </td>
                             <td
-                              className="px-2.5 py-1.5 border border-slate-200 text-center print:hidden"
+                              className="px-2.5 py-1 border border-slate-200 text-center print:hidden align-middle"
                               onClick={(e) => e.stopPropagation()}
                             >
                               {!isApproved && onNavigate && (
@@ -1673,37 +1673,37 @@ export default function LoanBulkChargesMaster({ onNavigate }: LoanBulkChargesMas
                             <tr className="bg-slate-50/90">
                               <td colSpan={8} className="p-2.5 border border-slate-300">
                                 <table className="min-w-full border border-slate-200 bg-white text-[11px]">
-                                  <thead className="bg-slate-100 font-bold">
+                                  <thead className="bg-[#5A1A14] font-bold text-amber-50">
                                     <tr>
-                                      <th className="px-2 py-1 border text-center w-12">अ. नं.</th>
-                                      <th className="px-2 py-1 border text-center">कर्ज खाते नं.</th>
-                                      <th className="px-2 py-1 border text-left">कर्जदाराचे नाव</th>
-                                      <th className="px-2 py-1 border text-center">CIF क्र.</th>
-                                      <th className="px-2 py-1 border text-center">कर्ज प्रकार</th>
-                                      <th className="px-2 py-1 border text-right">नावे रक्कम (₹)</th>
+                                      <th className="px-2 py-1 border text-center w-12 whitespace-nowrap">अ. नं.</th>
+                                      <th className="px-2 py-1 border text-center whitespace-nowrap">कर्ज खाते नं.</th>
+                                      <th className="px-2 py-1 border text-left whitespace-nowrap">कर्जदाराचे नाव</th>
+                                      <th className="px-2 py-1 border text-center whitespace-nowrap">CIF क्र.</th>
+                                      <th className="px-2 py-1 border text-center whitespace-nowrap">कर्ज प्रकार</th>
+                                      <th className="px-2 py-1 border text-right whitespace-nowrap">नावे रक्कम (₹)</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {b.items.map((it, i) => (
                                       <tr key={it.expenseId}>
-                                        <td className="px-2 py-1 border text-center font-mono">
+                                        <td className="px-2 py-1 border text-center font-mono align-middle">
                                           {i + 1}
                                         </td>
-                                        <td className="px-2 py-1 border text-center font-mono font-bold text-primary">
+                                        <td className="px-2 py-1 border text-center font-mono font-bold text-primary align-middle">
                                           {it.legacyAccountNumber
                                             ? `${it.legacyAccountNumber} (${it.loanAccountNo})`
                                             : it.loanAccountNo}
                                         </td>
-                                        <td className="px-2 py-1 border font-semibold">
+                                        <td className="px-2 py-1 border font-semibold align-middle">
                                           {it.customerName || '-'}
                                         </td>
-                                        <td className="px-2 py-1 border text-center font-mono">
+                                        <td className="px-2 py-1 border text-center font-mono align-middle">
                                           {it.cifNo || '-'}
                                         </td>
-                                        <td className="px-2 py-1 border text-center">
+                                        <td className="px-2 py-1 border text-center align-middle">
                                           {it.loanType}
                                         </td>
-                                        <td className="px-2 py-1 border text-right font-mono font-bold">
+                                        <td className="px-2 py-1 border text-right font-mono font-bold align-middle">
                                           ₹{formatAmount(it.amount)}
                                         </td>
                                       </tr>

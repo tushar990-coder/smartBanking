@@ -1067,8 +1067,8 @@ export default function SwanidhiReport() {
 
               {/* Standard Asset Provision 0.40% Informational Note (Not inflated into Swanidhi) */}
               {stdProvInfo?.shortfallNote && (
-                <div className="mt-1.5 px-2.5 py-1.5 bg-sky-50 border border-sky-200 rounded-xs text-[10px] text-sky-900 flex items-start gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-sky-700 shrink-0 mt-0.5" />
+                <div className="mt-1.5 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded-xs text-[10px] text-[#5A1A14] flex items-start gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-[#9A3412] shrink-0 mt-0.5" />
                   <span>{stdProvInfo.shortfallNote}</span>
                 </div>
               )}

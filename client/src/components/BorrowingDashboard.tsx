@@ -69,7 +69,7 @@ export default function BorrowingDashboard({ onNavigate }: BorrowingDashboardPro
             <h1 className="text-sm md:text-base font-bold">
               बाह्य कर्जे व सोने पुनर्गहाण मुख्य डॅशबोर्ड (Bank &amp; Patsanstha Borrowings Hub)
             </h1>
-            <p className="text-[10.5px] text-blue-100">
+            <p className="text-[10.5px] text-amber-100">
               खाते उघडणे (Sanction) → निधी उचल (Disbursement) → हप्ता वेळापत्रक व परतफेड (Loan Repaid) → दागिने सुटका व खतावणी
             </p>
           </div>
@@ -93,7 +93,7 @@ export default function BorrowingDashboard({ onNavigate }: BorrowingDashboardPro
           <button
             type="button"
             onClick={() => nav('borrowing-repayment')}
-            className="px-2.5 py-1 rounded bg-white text-primary hover:bg-blue-50 font-bold flex items-center gap-1 cursor-pointer"
+            className="px-2.5 py-1 rounded bg-white text-primary hover:bg-amber-50 font-bold flex items-center gap-1 cursor-pointer"
           >
             <Banknote size={13} /> ३. हप्ता भरणा (Repaid)
           </button>
@@ -124,7 +124,7 @@ export default function BorrowingDashboard({ onNavigate }: BorrowingDashboardPro
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
           <div className="bg-white border border-slate-300 rounded-sm p-2.5 shadow-2xs">
             <div className="text-[10px] text-slate-500 font-bold">मंजूर बाह्य कर्ज मर्यादा</div>
-            <div className="text-sm font-extrabold text-blue-900 font-mono">₹{fmtAmt(kpis.totalSanctionedAmount)}</div>
+            <div className="text-sm font-extrabold text-[#5A1A14] font-mono">₹{fmtAmt(kpis.totalSanctionedAmount)}</div>
             <div className="text-[10px] text-amber-700 font-semibold">
               {kpis.sanctionedAccountsCount} खाती उचल प्रलंबित (Sanctioned)
             </div>
@@ -175,7 +175,7 @@ export default function BorrowingDashboard({ onNavigate }: BorrowingDashboardPro
       {/* 5-Stage Module Quick Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         {[
-          { tab: 'borrowing-account', title: '१. नवीन खाते उघडणे', sub: 'मंजुरी अटी व EMI तक्ता', icon: PlusCircle, color: 'text-blue-700 bg-blue-50 border-blue-200' },
+          { tab: 'borrowing-account', title: '१. नवीन खाते उघडणे', sub: 'मंजुरी अटी व EMI तक्ता', icon: PlusCircle, color: 'text-[#9A3412] bg-amber-50 border-amber-200' },
           { tab: 'borrowing-disbursement', title: '२. कर्ज रक्कम उचल', sub: 'निधी जमा व सोने पुनर्गहाण', icon: ArrowDownCircle, color: 'text-amber-800 bg-amber-50 border-amber-200' },
           { tab: 'borrowing-repayment', title: '३. हप्ता भरणा (Repaid)', sub: 'EMI ट्रॅकिंग व परतफेड', icon: Banknote, color: 'text-emerald-800 bg-emerald-50 border-emerald-200' },
           { tab: 'borrowing-custody', title: '४. सोने पाकीट सुटका', sub: 'दागिने परत तिजोरीत घ्या', icon: Unlock, color: 'text-purple-800 bg-purple-50 border-purple-200' },

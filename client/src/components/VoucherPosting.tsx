@@ -1282,11 +1282,11 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
               className={`px-2.5 py-1 rounded-sm text-[11px] border transition-all cursor-pointer h-[26px] flex items-center gap-1 ${
                 typeFilter === 'JV_CONTRA'
                   ? 'bg-primary text-white border-primary font-bold shadow-2xs'
-                  : 'bg-white text-indigo-800 border-gray-300 hover:border-primary/50 font-semibold'
+                  : 'bg-white text-[#7C2418] border-gray-300 hover:border-primary/50 font-semibold'
               }`}
             >
               <span>जर्नल/कॉन्ट्रा</span>
-              <span className={`font-mono text-[10px] ${typeFilter === 'JV_CONTRA' ? 'text-white' : 'text-indigo-700'}`}>
+              <span className={`font-mono text-[10px] ${typeFilter === 'JV_CONTRA' ? 'text-white' : 'text-[#9A3412]'}`}>
                 ({journalsCount})
               </span>
             </button>
@@ -1382,10 +1382,10 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
         {/* COMPACT SINGLE-LINE 10-COLUMN VOUCHER TABLE */}
         <div className="overflow-x-auto min-h-[380px]">
-          <table className="min-w-full divide-y divide-gray-200 text-[11px] border-collapse">
-            <thead className="bg-slate-100 text-slate-800 sticky top-0 z-10 border-b border-slate-300 font-bold whitespace-nowrap">
+          <table className="min-w-full divide-y divide-gray-200 text-[11px] border-collapse leading-tight">
+            <thead className="bg-[#5A1A14] text-amber-50 sticky top-0 z-10 border-b border-amber-400/30 font-bold whitespace-nowrap">
               <tr>
-                <th className="px-1.5 py-1.5 border-r border-gray-200 w-8 text-center">
+                <th className="px-1.5 py-1.5 border-r border-amber-400/25 w-8 text-center whitespace-nowrap">
                   <input
                     type="checkbox"
                     className="w-3.5 h-3.5 accent-primary rounded-sm cursor-pointer align-middle"
@@ -1394,19 +1394,19 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                     title={`सर्व ${filteredVouchers.length} व्हाउचर्स निवडा (Select All)`}
                   />
                 </th>
-                <th className="px-2 py-1.5 border-r border-gray-200 w-[92px] text-left">तारीख</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-left">व्हाउचर क्र.</th>
-                <th className="px-1.5 py-1.5 border-r border-gray-200 w-[72px] text-left">प्रकार</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदार / सभासद</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र. / CIF</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-left">लेजर खाते</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 text-left">तपशील (Narration)</th>
-                <th className="px-2 py-1.5 border-r border-gray-200 w-28 text-right">रक्कम (₹)</th>
-                <th className="px-1.5 py-1.5 w-[150px] text-center">कृती (Action)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-[92px] text-left whitespace-nowrap">तारीख</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">व्हाउचर क्र.</th>
+                <th className="px-1.5 py-1.5 border-r border-amber-400/25 w-[72px] text-left whitespace-nowrap">प्रकार</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खातेदार / सभासद</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खाते क्र. / CIF</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">लेजर खाते</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">तपशील (Narration)</th>
+                <th className="px-2 py-1.5 border-r border-amber-400/25 w-28 text-right whitespace-nowrap">रक्कम (₹)</th>
+                <th className="px-1.5 py-1.5 w-[150px] text-center whitespace-nowrap">कृती (Action)</th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-200 bg-white text-gray-800">
+            <tbody className="divide-y divide-amber-100 bg-white text-gray-800">
               {(activeTab === 'PENDING' ? loading : loadingApproved) && currentDataset.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-4 py-14 text-center text-gray-500 font-bold">
@@ -1462,7 +1462,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                   } else if (v.voucherType === 'Payment') {
                     typeBadgeStyle = 'bg-rose-50 text-rose-800 border-rose-200';
                   } else if (v.voucherType === 'Journal') {
-                    typeBadgeStyle = 'bg-indigo-50 text-indigo-800 border-indigo-200';
+                    typeBadgeStyle = 'bg-orange-50 text-[#7C2418] border-amber-200';
                   } else if (v.voucherType === 'Contra') {
                     typeBadgeStyle = 'bg-amber-50 text-amber-800 border-amber-200';
                   }
@@ -1711,7 +1711,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                       <span className="text-amber-800 font-bold">| जुना: {acc.oldAccountNo}</span>
                                     )}
                                     {acc.receiptNo && (
-                                      <span className="text-indigo-700 font-semibold">| पावती: {acc.receiptNo}</span>
+                                      <span className="text-[#9A3412] font-semibold">| पावती: {acc.receiptNo}</span>
                                     )}
                                   </span>
                                 ))}
@@ -1734,18 +1734,18 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
                             <div className="overflow-x-auto bg-white border border-gray-200 rounded-sm shadow-2xs">
                               <table className="min-w-full divide-y divide-gray-200 text-[11px]">
-                                <thead className="bg-slate-100 text-slate-700 font-bold">
+                                <thead className="bg-[#5A1A14] text-amber-50 font-bold">
                                   <tr>
-                                    <th className="px-3 py-1.5 text-left border-r border-gray-200">खाते (Ledger Name)</th>
-                                    <th className="px-3 py-1.5 text-left border-r border-gray-200 w-56">खातेदार / सीआयएफ (CIF ID)</th>
-                                    <th className="px-3 py-1.5 text-right border-r border-gray-200 w-36">नावे (Dr ₹)</th>
-                                    <th className="px-3 py-1.5 text-right w-36">जमा (Cr ₹)</th>
+                                    <th className="px-2 py-1.5 text-left border-r border-amber-400/25 whitespace-nowrap">खाते (Ledger Name)</th>
+                                    <th className="px-2 py-1.5 text-left border-r border-amber-400/25 w-56 whitespace-nowrap">खातेदार / सीआयएफ (CIF ID)</th>
+                                    <th className="px-2 py-1.5 text-right border-r border-amber-400/25 w-36 whitespace-nowrap">नावे (Dr ₹)</th>
+                                    <th className="px-2 py-1.5 text-right w-36 whitespace-nowrap">जमा (Cr ₹)</th>
                                   </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-100 bg-white">
+                                <tbody className="divide-y divide-amber-100 bg-white">
                                   {v.voucherDetails?.map((vd, idx) => (
                                     <tr key={idx} className="hover:bg-slate-50">
-                                      <td className="px-3 py-1.5 text-gray-900 font-bold border-r border-gray-200">
+                                      <td className="px-2 py-1 text-gray-900 font-bold border-r border-gray-200 align-middle">
                                         <span>{vd.ledger?.ledgerName || 'Unknown Ledger'}</span>
                                         {vd.narration ? (
                                           <span className="text-gray-500 font-normal italic ml-1.5 text-[10.5px]">
@@ -1753,7 +1753,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                           </span>
                                         ) : null}
                                       </td>
-                                      <td className="px-3 py-1.5 text-gray-700 border-r border-gray-200 font-medium">
+                                      <td className="px-2 py-1 text-gray-700 border-r border-gray-200 font-medium align-middle">
                                         {(() => {
                                           const ledgerName = vd.ledger?.ledgerName || '';
                                           const accountType = vd.ledger?.accountType || '';
@@ -1810,7 +1810,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                                 )}
                                                 {chgLoanNo && (
                                                   <div className="flex flex-wrap items-center gap-1">
-                                                    <span className="px-1.5 py-0.2 rounded-sm bg-blue-100 text-blue-950 border border-blue-300 font-mono font-bold text-[10px]">
+                                                    <span className="px-1.5 py-0.2 rounded-sm bg-amber-100 text-[#4A1410] border border-amber-300 font-mono font-bold text-[10px]">
                                                       🏷️ कर्ज नावे: {chgLoanNo}{chgExpLabel ? ` (${chgExpLabel})` : ''}
                                                     </span>
                                                   </div>
@@ -1833,10 +1833,10 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                           return <span className="text-gray-400 font-mono">-</span>;
                                         })()}
                                       </td>
-                                      <td className="px-3 py-1.5 text-right text-rose-700 font-mono font-bold border-r border-gray-200">
+                                      <td className="px-2 py-1 text-right text-rose-700 font-mono font-bold border-r border-gray-200 align-middle">
                                         {vd.drCr === 'Dr' ? `₹${vd.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                                       </td>
-                                      <td className="px-3 py-1.5 text-right text-emerald-700 font-mono font-bold">
+                                      <td className="px-2 py-1 text-right text-emerald-700 font-mono font-bold align-middle">
                                         {vd.drCr === 'Cr' ? `₹${vd.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                                       </td>
                                     </tr>
@@ -2038,7 +2038,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
           ======================================================== */}
       {printingVoucherId && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-sm max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl border border-gray-300 relative">
+          <div className="bg-white rounded-sm max-w-[97vw] xl:max-w-[1460px] w-full max-h-[95vh] overflow-y-auto shadow-2xl border border-gray-300 relative">
             <VoucherPrint voucherId={printingVoucherId} onBack={() => setPrintingVoucherId(null)} />
           </div>
         </div>

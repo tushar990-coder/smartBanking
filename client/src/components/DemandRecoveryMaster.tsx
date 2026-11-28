@@ -530,7 +530,7 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                       <label
                         key={n.demandNoticeId}
                         className={`flex items-center justify-between p-1.5 rounded border cursor-pointer ${
-                          checked ? 'border-primary bg-blue-50/70' : 'border-slate-200 hover:bg-slate-50'
+                          checked ? 'border-primary bg-amber-50/70' : 'border-slate-200 hover:bg-slate-50'
                         }`}
                       >
                         <div className="flex items-center gap-2">
@@ -703,16 +703,16 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                   वरील यादीतून किमान एक प्रलंबित डिमान्ड नोटीस निवडा.
                 </div>
               ) : (
-                <table className="min-w-full border-collapse text-xs">
+                <table className="min-w-full border-collapse text-[11px] leading-tight">
                   <thead className="bg-primary text-white sticky top-0 z-10">
                     <tr>
-                      <th className="border border-slate-400/40 px-2 py-1.5 w-10 text-center">✓</th>
-                      <th className="border border-slate-400/40 px-2 py-1.5 w-24 text-left">नोटीस क्र.</th>
-                      <th className="border border-slate-400/40 px-2 py-1.5 w-20 text-center">Emp Code</th>
-                      <th className="border border-slate-400/40 px-2 py-1.5 text-left">खातेदाराचे नाव (CIF)</th>
-                      <th className="border border-slate-400/40 px-2 py-1.5 w-28 text-right">शिल्लक डिमान्ड</th>
-                      <th className="border border-slate-400/40 px-2 py-1.5 w-36 text-right">प्रत्यक्ष पगार कपात ₹</th>
-                      <th className="border border-slate-400/40 px-2 py-1.5 w-44 text-center">Sequence वाटप</th>
+                      <th className="border border-slate-400/40 px-2 py-1.5 w-10 text-center whitespace-nowrap">✓</th>
+                      <th className="border border-slate-400/40 px-2 py-1.5 w-24 text-left whitespace-nowrap">नोटीस क्र.</th>
+                      <th className="border border-slate-400/40 px-2 py-1.5 w-20 text-center whitespace-nowrap">Emp Code</th>
+                      <th className="border border-slate-400/40 px-2 py-1.5 text-left whitespace-nowrap">खातेदाराचे नाव (CIF)</th>
+                      <th className="border border-slate-400/40 px-2 py-1.5 w-28 text-right whitespace-nowrap">शिल्लक डिमान्ड</th>
+                      <th className="border border-slate-400/40 px-2 py-1.5 w-36 text-right whitespace-nowrap">प्रत्यक्ष पगार कपात ₹</th>
+                      <th className="border border-slate-400/40 px-2 py-1.5 w-44 text-center whitespace-nowrap">Sequence वाटप</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -721,8 +721,8 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                       const isShort = row.isSelected && row.actualReceivedAmount < row.pendingAmount - 0.01;
                       return (
                         <React.Fragment key={row.demandMemberDetailId}>
-                          <tr className={`${isShort ? 'bg-amber-50/70' : 'bg-white'} hover:bg-blue-50/30`}>
-                            <td className="border border-slate-200 px-2 py-1 text-center">
+                          <tr className={`${isShort ? 'bg-amber-50/70' : 'bg-white'} hover:bg-amber-50/30`}>
+                            <td className="border border-slate-200 px-2 py-1 text-center align-middle">
                               <input
                                 type="checkbox"
                                 checked={row.isSelected}
@@ -730,11 +730,11 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                                 className="w-3.5 h-3.5 accent-primary"
                               />
                             </td>
-                            <td className="border border-slate-200 px-2 py-1 font-mono text-[10px]">
+                            <td className="border border-slate-200 px-2 py-1 font-mono text-[10px] align-middle">
                               {row.noticeNumber}
                             </td>
-                            <td className="border border-slate-200 px-2 py-1 text-center font-mono">{row.empCode}</td>
-                            <td className="border border-slate-200 px-2 py-1 font-semibold">
+                            <td className="border border-slate-200 px-2 py-1 text-center font-mono align-middle">{row.empCode}</td>
+                            <td className="border border-slate-200 px-2 py-1 font-semibold align-middle">
                               {row.memberName} <span className="text-[10px] text-slate-500">({row.cifNo})</span>
                               {row.isMember === false && (
                                 <span className="ml-1 px-1 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
@@ -742,10 +742,10 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                                 </span>
                               )}
                             </td>
-                            <td className="border border-slate-200 px-2 py-1 text-right font-mono font-semibold">
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono font-semibold align-middle">
                               ₹{fmtDec(row.pendingAmount)}
                             </td>
-                            <td className="border border-slate-200 p-1">
+                            <td className="border border-slate-200 p-1 align-middle">
                               <input
                                 type="number"
                                 min={0}
@@ -759,7 +759,7 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                                 }`}
                               />
                             </td>
-                            <td className="border border-slate-200 px-2 py-1 text-center">
+                            <td className="border border-slate-200 px-2 py-1 text-center align-middle">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -793,7 +793,7 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                                         <span className="font-semibold">
                                           {it.displaySubLabel || it.columnHeaderMr}
                                           {it.subRowIndex > 0 && (
-                                            <span className="ml-1 text-[9px] px-1 rounded bg-indigo-100 text-indigo-800">
+                                            <span className="ml-1 text-[9px] px-1 rounded bg-orange-100 text-[#7C2418]">
                                               RD Sub-Row
                                             </span>
                                           )}
@@ -823,17 +823,17 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
       ) : (
         /* History Tab */
         <div className="bg-white border border-slate-300 rounded shadow-sm overflow-x-auto">
-          <table className="min-w-full border-collapse text-xs">
+          <table className="min-w-full border-collapse text-[11px] leading-tight">
             <thead className="bg-primary text-white">
               <tr>
-                <th className="border border-slate-400/40 px-2 py-2 text-left">दिनांक</th>
-                <th className="border border-slate-400/40 px-2 py-2 text-left">व्हाउचर क्र.</th>
-                <th className="border border-slate-400/40 px-2 py-2 text-left">नोटीस / नियोक्ता</th>
-                <th className="border border-slate-400/40 px-2 py-2 text-center">पद्धत</th>
-                <th className="border border-slate-400/40 px-2 py-2 text-center">कर्मचारी</th>
-                <th className="border border-slate-400/40 px-2 py-2 text-right">प्राप्त रक्कम</th>
-                <th className="border border-slate-400/40 px-2 py-2 text-center">व्हाउचर स्थिती</th>
-                <th className="border border-slate-400/40 px-2 py-2 text-center">पावती / प्रिंट</th>
+                <th className="border border-slate-400/40 px-2 py-1.5 text-left whitespace-nowrap">दिनांक</th>
+                <th className="border border-slate-400/40 px-2 py-1.5 text-left whitespace-nowrap">व्हाउचर क्र.</th>
+                <th className="border border-slate-400/40 px-2 py-1.5 text-left whitespace-nowrap">नोटीस / नियोक्ता</th>
+                <th className="border border-slate-400/40 px-2 py-1.5 text-center whitespace-nowrap">पद्धत</th>
+                <th className="border border-slate-400/40 px-2 py-1.5 text-center whitespace-nowrap">कर्मचारी</th>
+                <th className="border border-slate-400/40 px-2 py-1.5 text-right whitespace-nowrap">प्राप्त रक्कम</th>
+                <th className="border border-slate-400/40 px-2 py-1.5 text-center whitespace-nowrap">व्हाउचर स्थिती</th>
+                <th className="border border-slate-400/40 px-2 py-1.5 text-center whitespace-nowrap">पावती / प्रिंट</th>
               </tr>
             </thead>
             <tbody>
@@ -844,20 +844,20 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
               ) : (
                 history.map((h) => (
                   <tr key={h.demandRecoveryId} className="hover:bg-slate-50">
-                    <td className="border border-slate-200 px-2 py-1.5 font-mono">{(h.recoveryDate || '').split('T')[0]}</td>
-                    <td className="border border-slate-200 px-2 py-1.5 font-mono font-bold text-primary">
+                    <td className="border border-slate-200 px-2 py-1 font-mono align-middle">{(h.recoveryDate || '').split('T')[0]}</td>
+                    <td className="border border-slate-200 px-2 py-1 font-mono font-bold text-primary align-middle">
                       {h.voucherNo || '-'}
                     </td>
-                    <td className="border border-slate-200 px-2 py-1.5">
+                    <td className="border border-slate-200 px-2 py-1 align-middle">
                       <span className="font-semibold">{h.employerName}</span>{' '}
                       <span className="text-[10px] text-slate-500">({h.noticeNumber})</span>
                     </td>
-                    <td className="border border-slate-200 px-2 py-1.5 text-center">{h.paymentMode}</td>
-                    <td className="border border-slate-200 px-2 py-1.5 text-center font-bold">{h.recoveredMemberCount}</td>
-                    <td className="border border-slate-200 px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
+                    <td className="border border-slate-200 px-2 py-1 text-center align-middle">{h.paymentMode}</td>
+                    <td className="border border-slate-200 px-2 py-1 text-center font-bold align-middle">{h.recoveredMemberCount}</td>
+                    <td className="border border-slate-200 px-2 py-1 text-right font-mono font-bold text-emerald-700 align-middle">
                       ₹{fmtDec(h.totalReceivedAmount)}
                     </td>
-                    <td className="border border-slate-200 px-2 py-1.5 text-center">
+                    <td className="border border-slate-200 px-2 py-1 text-center align-middle">
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           h.voucherStatus === 'Approved'
@@ -868,7 +868,7 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                         {h.voucherStatus || 'Pending'}
                       </span>
                     </td>
-                    <td className="border border-slate-200 px-2 py-1.5 text-center">
+                    <td className="border border-slate-200 px-2 py-1 text-center align-middle">
                       <button
                         type="button"
                         onClick={() => openAllocationReceipt(h.demandRecoveryId)}
@@ -888,7 +888,7 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
       {/* Allocation Receipt Modal */}
       {receiptModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-3">
-          <div className="bg-white rounded shadow-xl border border-slate-300 w-full max-w-4xl max-h-[85vh] flex flex-col">
+          <div className="bg-white rounded shadow-xl border border-slate-300 w-full max-w-[97vw] xl:max-w-[1460px] max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-4 py-2 bg-primary text-white">
               <div className="font-bold">
                 वसुली पोचपावती तपशील — व्हाउचर: {receiptModal.recovery?.voucherNo}
@@ -911,21 +911,21 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
               </div>
             </div>
             <div className="p-3 overflow-auto flex-1">
-              <table className="min-w-full border-collapse text-xs">
-                <thead className="bg-slate-100">
+              <table className="min-w-full border-collapse text-[11px] leading-tight">
+                <thead className="bg-[#5A1A14] text-amber-50">
                   <tr>
-                    <th className="border border-slate-300 px-2 py-1 text-center">Emp Code</th>
-                    <th className="border border-slate-300 px-2 py-1 text-left">खातेदाराचे नाव</th>
-                    <th className="border border-slate-300 px-2 py-1 text-left">Sequence नुसार जमा तपशील</th>
-                    <th className="border border-slate-300 px-2 py-1 text-right">एकूण जमा</th>
+                    <th className="border border-amber-400/25 px-2 py-1 text-center whitespace-nowrap">Emp Code</th>
+                    <th className="border border-amber-400/25 px-2 py-1 text-left whitespace-nowrap">खातेदाराचे नाव</th>
+                    <th className="border border-amber-400/25 px-2 py-1 text-left whitespace-nowrap">Sequence नुसार जमा तपशील</th>
+                    <th className="border border-amber-400/25 px-2 py-1 text-right whitespace-nowrap">एकूण जमा</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(receiptModal.memberGroups || []).map((g: any) => (
                     <tr key={g.demandMemberDetailId}>
-                      <td className="border border-slate-300 px-2 py-1 text-center font-mono">{g.empCode}</td>
-                      <td className="border border-slate-300 px-2 py-1 font-semibold">{g.memberName}</td>
-                      <td className="border border-slate-300 px-2 py-1 space-y-0.5">
+                      <td className="border border-slate-300 px-2 py-1 text-center font-mono align-middle">{g.empCode}</td>
+                      <td className="border border-slate-300 px-2 py-1 font-semibold align-middle">{g.memberName}</td>
+                      <td className="border border-slate-300 px-2 py-1 space-y-0.5 align-middle">
                         {(g.items || []).map((it: any) => (
                           <div key={it.demandRecoveryAllocationId} className="text-[11px]">
                             <span className="font-bold text-primary">#{it.sequenceOrder}</span>{' '}
@@ -934,7 +934,7 @@ export default function DemandRecoveryMaster({ initialNoticeId, onNavigate }: De
                           </div>
                         ))}
                       </td>
-                      <td className="border border-slate-300 px-2 py-1 text-right font-mono font-bold text-emerald-700">
+                      <td className="border border-slate-300 px-2 py-1 text-right font-mono font-bold text-emerald-700 align-middle">
                         ₹{fmtDec(g.totalAllocated)}
                       </td>
                     </tr>

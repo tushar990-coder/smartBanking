@@ -828,12 +828,12 @@ const convertMarathiDigits = (val: string): string => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">ताळेबंद खाती (Balance Sheet)</div>
-            <div className="text-sm font-black text-indigo-950">{balanceSheetCount}</div>
+            <div className="text-sm font-black text-[#4A1410]">{balanceSheetCount}</div>
           </div>
         </div>
 
@@ -869,7 +869,7 @@ const convertMarathiDigits = (val: string): string => {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 mb-3.5 ${
-          editId ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editId ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1180,20 +1180,20 @@ const convertMarathiDigits = (val: string): string => {
         {/* 📊 CLEAN FLAT TABLE VIEW (Default - Simple, Direct, No Clutter) */}
         {viewMode === 'flat' ? (
           <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-xs text-left">
+            <table className="min-w-full divide-y divide-gray-200 text-[11px] text-left leading-tight border-collapse">
               <thead className="bg-primary text-white sticky top-0 z-10 shadow-xs">
                 <tr>
-                  <th className="px-2.5 py-2 border-r border-blue-400 font-bold text-center w-20">खाते क्र. (ID)</th>
-                  <th className="px-3 py-2 border-r border-blue-400 font-bold text-left">खात्याचे नाव (मराठी)</th>
-                  <th className="px-3 py-2 border-r border-blue-400 font-bold text-left">इंग्रजी नाव (English)</th>
-                  <th className="px-3 py-2 border-r border-blue-400 font-bold text-left">खाते गट (Account Group)</th>
-                  <th className="px-2.5 py-2 border-r border-blue-400 font-bold text-center w-28">पत्रक (Report)</th>
-                  <th className="px-2.5 py-2 border-r border-blue-400 font-bold text-center w-32">प्रकार (Type)</th>
-                  <th className="px-2.5 py-2 border-r border-blue-400 font-bold text-center w-20">स्थिती</th>
-                  <th className="px-2.5 py-2 font-bold text-center w-28">कृती (Actions)</th>
+                  <th className="px-2.5 py-1.5 border-r border-amber-400 font-bold text-center w-20 whitespace-nowrap">खाते क्र. (ID)</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400 font-bold text-left whitespace-nowrap">खात्याचे नाव (मराठी)</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400 font-bold text-left whitespace-nowrap">इंग्रजी नाव (English)</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400 font-bold text-left whitespace-nowrap">खाते गट (Account Group)</th>
+                  <th className="px-2.5 py-1.5 border-r border-amber-400 font-bold text-center w-28 whitespace-nowrap">पत्रक (Report)</th>
+                  <th className="px-2.5 py-1.5 border-r border-amber-400 font-bold text-center w-32 whitespace-nowrap">प्रकार (Type)</th>
+                  <th className="px-2.5 py-1.5 border-r border-amber-400 font-bold text-center w-20 whitespace-nowrap">स्थिती</th>
+                  <th className="px-2.5 py-1.5 font-bold text-center w-28 whitespace-nowrap">कृती (Actions)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
+              <tbody className="divide-y divide-amber-100 bg-white">
                 {filteredFlatLedgers.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-8 text-center text-gray-500 font-medium">
@@ -1207,20 +1207,20 @@ const convertMarathiDigits = (val: string): string => {
                     return (
                       <tr 
                         key={ledger.ledgerID} 
-                        className={`hover:bg-blue-50/50 transition-colors ${
+                        className={`hover:bg-amber-50/50 transition-colors ${
                           isRowEditing ? 'bg-amber-50/70 font-semibold' : ''
                         }`}
                       >
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-primary bg-slate-50/50">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-center font-mono font-bold text-primary bg-slate-50/50 align-middle">
                           {ledger.ledgerID}
                         </td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 text-left font-bold text-gray-900">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-gray-900 align-middle">
                           {ledger.ledgerName}
                         </td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 text-left font-sans text-gray-600 text-[11px]">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left font-sans text-gray-600 text-[11px] align-middle">
                           {ledger.ledgerNameEnglish || '-'}
                         </td>
-                        <td className="px-3 py-1.5 border-r border-gray-200 text-left">
+                        <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                           {grp ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-medium">
                               <span className="font-mono font-bold text-primary">{grp.displayOrder ? `${grp.displayOrder} - ` : ''}</span>
@@ -1230,21 +1230,21 @@ const convertMarathiDigits = (val: string): string => {
                             <span className="text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-center align-middle">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold inline-block ${
                             ledger.reportType === 'नफातोटा पत्रक' 
                               ? 'bg-purple-100 text-purple-800 border border-purple-200' 
-                              : 'bg-blue-50 text-blue-800 border border-blue-200'
+                              : 'bg-amber-50 text-[#7C2418] border border-amber-200'
                           }`}>
                             {ledger.reportType || 'ताळेबंद'}
                           </span>
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono text-[11px] text-gray-700">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-center font-mono text-[11px] text-gray-700 align-middle">
                           <span className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-[10px] font-semibold">
                             {ledger.accountType || 'GL'}
                           </span>
                         </td>
-                        <td className="px-2.5 py-1.5 border-r border-gray-200 text-center">
+                        <td className="px-2.5 py-1 border-r border-gray-200 text-center align-middle">
                           <span className={`px-2 py-0.5 inline-flex text-[10px] font-bold rounded-full ${
                             ledger.isActive 
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
@@ -1253,7 +1253,7 @@ const convertMarathiDigits = (val: string): string => {
                             {ledger.isActive ? 'सक्रिय' : 'निष्क्रिय'}
                           </span>
                         </td>
-                        <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
+                        <td className="px-2.5 py-1 text-center whitespace-nowrap align-middle">
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button"
@@ -1285,19 +1285,19 @@ const convertMarathiDigits = (val: string): string => {
         ) : (
           /* 🌳 TREE HIERARCHY VIEW (Optional Alternative) */
           <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-xs text-left">
+            <table className="min-w-full divide-y divide-gray-200 text-[11px] text-left leading-tight border-collapse">
               <thead className="bg-primary text-white sticky top-0 z-10 shadow-xs">
                 <tr>
-                  <th className="px-2.5 py-2 border-r border-blue-400 font-bold text-center w-24">क्र. (ID)</th>
-                  <th className="px-3 py-2 border-r border-blue-400 font-bold text-left">खात्याचे / गटाचे नाव</th>
-                  <th className="px-3 py-2 border-r border-blue-400 font-bold text-left">इंग्रजी नाव</th>
-                  <th className="px-2.5 py-2 border-r border-blue-400 font-bold text-center w-28">पत्रक</th>
-                  <th className="px-2.5 py-2 border-r border-blue-400 font-bold text-center w-36">प्रकार</th>
-                  <th className="px-2.5 py-2 border-r border-blue-400 font-bold text-center w-24">स्थिती</th>
-                  <th className="px-2.5 py-2 font-bold text-center w-28">कृती</th>
+                  <th className="px-2.5 py-1.5 border-r border-amber-400 font-bold text-center w-24 whitespace-nowrap">क्र. (ID)</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400 font-bold text-left whitespace-nowrap">खात्याचे / गटाचे नाव</th>
+                  <th className="px-2 py-1.5 border-r border-amber-400 font-bold text-left whitespace-nowrap">इंग्रजी नाव</th>
+                  <th className="px-2.5 py-1.5 border-r border-amber-400 font-bold text-center w-28 whitespace-nowrap">पत्रक</th>
+                  <th className="px-2.5 py-1.5 border-r border-amber-400 font-bold text-center w-36 whitespace-nowrap">प्रकार</th>
+                  <th className="px-2.5 py-1.5 border-r border-amber-400 font-bold text-center w-24 whitespace-nowrap">स्थिती</th>
+                  <th className="px-2.5 py-1.5 font-bold text-center w-28 whitespace-nowrap">कृती</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
+              <tbody className="divide-y divide-amber-100 bg-white">
                 {treeDisplayItems.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-gray-500 font-medium">
@@ -1310,7 +1310,7 @@ const convertMarathiDigits = (val: string): string => {
                       const group = item.data as AccountGroup;
                       return (
                         <tr key={item.id} className="bg-slate-100/90 border-t border-b border-slate-300 font-semibold">
-                          <td className="px-2.5 py-1.5 border-r border-slate-200 text-center font-mono font-bold text-slate-600 bg-slate-200/60">
+                          <td className="px-2.5 py-1 border-r border-slate-200 text-center font-mono font-bold text-slate-600 bg-slate-200/60 align-middle">
                             {group.groupCode || group.groupID}
                           </td>
                           <td className="px-3 py-1.5 border-r border-slate-200 text-left font-bold text-slate-800" colSpan={6}>
@@ -1338,14 +1338,14 @@ const convertMarathiDigits = (val: string): string => {
                       return (
                         <tr 
                           key={item.id} 
-                          className={`hover:bg-blue-50/50 transition-colors ${
+                          className={`hover:bg-amber-50/50 transition-colors ${
                             isRowEditing ? 'bg-amber-50/70 font-semibold' : ''
                           }`}
                         >
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-primary bg-slate-50/50">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center font-mono font-bold text-primary bg-slate-50/50 align-middle">
                             {ledger.ledgerID}
                           </td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 text-left font-medium text-gray-900">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-gray-900 align-middle">
                             <div className="flex items-center gap-1.5">
                               {item.depth > 0 && (
                                 <span className="text-slate-300 font-mono" style={{ marginLeft: `${item.depth * 1.25}rem` }}>
@@ -1355,18 +1355,18 @@ const convertMarathiDigits = (val: string): string => {
                               <span className="font-bold text-gray-800">{ledger.ledgerName}</span>
                             </div>
                           </td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 text-left font-sans text-gray-600 text-[11px]">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left font-sans text-gray-600 text-[11px] align-middle">
                             {ledger.ledgerNameEnglish || '-'}
                           </td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center align-middle">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-[#7C2418] border border-amber-200">
                               {ledger.reportType || 'ताळेबंद'}
                             </span>
                           </td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono text-[11px] text-gray-700">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center font-mono text-[11px] text-gray-700 align-middle">
                             {ledger.accountType || 'GL'}
                           </td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center align-middle">
                             <span className={`px-2 py-0.5 inline-flex text-[10px] font-bold rounded-full ${
                               ledger.isActive 
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
@@ -1375,7 +1375,7 @@ const convertMarathiDigits = (val: string): string => {
                               {ledger.isActive ? 'सक्रिय' : 'निष्क्रिय'}
                             </span>
                           </td>
-                          <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
+                          <td className="px-2.5 py-1 text-center whitespace-nowrap align-middle">
                             <div className="flex items-center justify-center gap-1">
                               <button 
                                 type="button"
@@ -1409,7 +1409,7 @@ const convertMarathiDigits = (val: string): string => {
       {/* 📋 POP-UP MODAL LIST (Matching SavingOpeningBalance.tsx) */}
       {showListModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-5">
-          <div className="bg-white rounded-sm shadow-2xl border border-gray-200 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-sm shadow-2xl border border-gray-200 w-full max-w-[97vw] xl:max-w-[1460px] max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             
             {/* Modal Header */}
             <div className="p-3 bg-primary text-white flex items-center justify-between">
@@ -1465,20 +1465,20 @@ const convertMarathiDigits = (val: string): string => {
 
             {/* Modal Table Content (Flat Clean Table) */}
             <div className="overflow-auto flex-1 p-3">
-              <table className="min-w-full divide-y divide-gray-200 text-xs text-left">
-                <thead className="bg-slate-200 text-gray-800 sticky top-0 z-10 shadow-2xs">
+              <table className="min-w-full divide-y divide-gray-200 text-[11px] text-left leading-tight border-collapse">
+                <thead className="bg-[#5A1A14] text-amber-50 sticky top-0 z-10 shadow-2xs">
                   <tr>
-                    <th className="px-2.5 py-2 border-r border-gray-300 font-bold text-center w-20">खाते क्र.</th>
-                    <th className="px-3 py-2 border-r border-gray-300 font-bold text-left">खात्याचे नाव (Marathi)</th>
-                    <th className="px-3 py-2 border-r border-gray-300 font-bold text-left">इंग्रजी नाव (English)</th>
-                    <th className="px-3 py-2 border-r border-gray-300 font-bold text-left">खाते गट (Group)</th>
-                    <th className="px-2.5 py-2 border-r border-gray-300 font-bold text-center w-28">पत्रक</th>
-                    <th className="px-2.5 py-2 border-r border-gray-300 font-bold text-center w-32">प्रकार</th>
-                    <th className="px-2.5 py-2 border-r border-gray-300 font-bold text-center w-20">स्थिती</th>
-                    <th className="px-2.5 py-2 font-bold text-center w-20">कृती</th>
+                    <th className="px-2.5 py-1.5 border-r border-amber-400/25 font-bold text-center w-20 whitespace-nowrap">खाते क्र.</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">खात्याचे नाव (Marathi)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">इंग्रजी नाव (English)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 font-bold text-left whitespace-nowrap">खाते गट (Group)</th>
+                    <th className="px-2.5 py-1.5 border-r border-amber-400/25 font-bold text-center w-28 whitespace-nowrap">पत्रक</th>
+                    <th className="px-2.5 py-1.5 border-r border-amber-400/25 font-bold text-center w-32 whitespace-nowrap">प्रकार</th>
+                    <th className="px-2.5 py-1.5 border-r border-amber-400/25 font-bold text-center w-20 whitespace-nowrap">स्थिती</th>
+                    <th className="px-2.5 py-1.5 font-bold text-center w-20 whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-amber-100 bg-white">
                   {filteredFlatLedgers.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-8 text-center text-gray-500 font-medium">
@@ -1489,33 +1489,33 @@ const convertMarathiDigits = (val: string): string => {
                     filteredFlatLedgers.map((ledger) => {
                       const grp = groupMap.get(ledger.groupID);
                       return (
-                        <tr key={ledger.ledgerID} className="hover:bg-blue-50/50">
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-primary">
+                        <tr key={ledger.ledgerID} className="hover:bg-amber-50/50">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center font-mono font-bold text-primary align-middle">
                             {ledger.ledgerID}
                           </td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 text-left font-bold text-gray-800">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-gray-800 align-middle">
                             {ledger.ledgerName}
                           </td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 text-left text-gray-600 text-[11px]">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 text-[11px] align-middle">
                             {ledger.ledgerNameEnglish || '-'}
                           </td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 text-left">
+                          <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                             {grp ? `${grp.displayOrder ? grp.displayOrder + ' - ' : ''}${grp.groupName}` : '-'}
                           </td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center text-[11px]">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center text-[11px] align-middle">
                             {ledger.reportType || 'ताळेबंद'}
                           </td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center text-[11px]">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center text-[11px] align-middle">
                             {ledger.accountType || 'GL'}
                           </td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center">
+                          <td className="px-2.5 py-1 border-r border-gray-200 text-center align-middle">
                             <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded ${
                               ledger.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                             }`}>
                               {ledger.isActive ? 'सक्रिय' : 'निष्क्रिय'}
                             </span>
                           </td>
-                          <td className="px-2.5 py-1.5 text-center">
+                          <td className="px-2.5 py-1 text-center align-middle">
                             <button
                               type="button"
                               onClick={() => handleEdit(ledger)}

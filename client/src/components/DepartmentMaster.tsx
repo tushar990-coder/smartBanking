@@ -198,7 +198,7 @@ export default function DepartmentMaster() {
       <div 
         ref={formContainerRef}
         className={`bg-white p-2.5 rounded-sm shadow-2xs border transition-all duration-300 mb-2 ${
-          editingId ? 'border-primary ring-2 ring-primary/20 shadow-md bg-blue-50/10' : 'border-gray-200'
+          editingId ? 'border-primary ring-2 ring-primary/20 shadow-md bg-amber-50/10' : 'border-gray-200'
         }`}
       >
         <div className="text-[11px] font-bold text-primary border-b border-gray-200 pb-1 mb-2 flex items-center justify-between">
@@ -288,7 +288,7 @@ export default function DepartmentMaster() {
             )}
             <button 
               type="submit" 
-              className="bg-primary hover:bg-[#004a75] text-white px-4 py-1 rounded-sm text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+              className="bg-primary hover:bg-[#7C2418] text-white px-4 py-1 rounded-sm text-xs font-bold transition-colors shadow-2xs cursor-pointer"
             >
               {editingId ? "अपडेट करा" : "जतन करा"}
             </button>
@@ -315,14 +315,14 @@ export default function DepartmentMaster() {
         </div>
 
         <div className="overflow-x-auto flex-1">
-          <table className="w-full text-[11px] border-collapse">
+          <table className="w-full text-[11px] border-collapse leading-tight">
             <thead>
               <tr className="bg-primary text-white font-medium">
-                <th className="p-1.5 border border-gray-300 text-left">विभाग कोड</th>
-                <th className="p-1.5 border border-gray-300 text-left">विभागाचे नाव</th>
-                <th className="p-1.5 border border-gray-300 text-left">माहिती</th>
-                <th className="p-1.5 border border-gray-300 text-center">स्थिती</th>
-                <th className="p-1.5 border border-gray-300 text-center">क्रिया (Actions)</th>
+                <th className="p-1.5 border border-amber-400/25 text-left whitespace-nowrap">विभाग कोड</th>
+                <th className="p-1.5 border border-amber-400/25 text-left whitespace-nowrap">विभागाचे नाव</th>
+                <th className="p-1.5 border border-amber-400/25 text-left whitespace-nowrap">माहिती</th>
+                <th className="p-1.5 border border-amber-400/25 text-center whitespace-nowrap">स्थिती</th>
+                <th className="p-1.5 border border-amber-400/25 text-center whitespace-nowrap">क्रिया (Actions)</th>
               </tr>
             </thead>
             <tbody>
@@ -332,30 +332,32 @@ export default function DepartmentMaster() {
                 </tr>
               ) : (
                 filteredDepartments.map((d) => (
-                  <tr key={d.departmentID} className="border-b border-gray-200 hover:bg-blue-50/50 transition-colors">
-                    <td className="p-1.5 border-r border-gray-200 font-bold text-primary">{d.departmentCode}</td>
-                    <td className="p-1.5 border-r border-gray-200 font-bold text-gray-800">{d.departmentName}</td>
-                    <td className="p-1.5 border-r border-gray-200 text-gray-600">{d.description || '-'}</td>
-                    <td className="p-1.5 border-r border-gray-200 text-center">
+                  <tr key={d.departmentID} className="border-b border-gray-200 hover:bg-amber-50/50 transition-colors">
+                    <td className="p-1.5 border-r border-gray-200 font-bold text-primary align-middle">{d.departmentCode}</td>
+                    <td className="p-1.5 border-r border-gray-200 font-bold text-gray-800 align-middle">{d.departmentName}</td>
+                    <td className="p-1.5 border-r border-gray-200 text-gray-600 align-middle">{d.description || '-'}</td>
+                    <td className="p-1.5 border-r border-gray-200 text-center align-middle">
                       <span className={`px-2 py-0.5 rounded-xs text-[9px] font-bold ${
                         d.status ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300'
                       }`}>
                         {d.status ? 'सक्रिय' : 'निष्क्रिय'}
                       </span>
                     </td>
-                    <td className="p-1.5 text-center flex justify-center space-x-1.5">
-                      <button 
-                        onClick={() => handleEdit(d)}
-                        className="px-2 py-0.5 bg-blue-50 text-primary hover:bg-blue-100 border border-blue-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer"
-                      >
-                        संपादन
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(d.departmentID)}
-                        className="px-2 py-0.5 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer"
-                      >
-                        डिलीट
-                      </button>
+                    <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
+                      <div className="inline-flex items-center justify-center gap-1.5">
+                        <button 
+                          onClick={() => handleEdit(d)}
+                          className="px-2 py-0.5 bg-amber-50 text-primary hover:bg-amber-100 border border-amber-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer"
+                        >
+                          संपादन
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(d.departmentID)}
+                          className="px-2 py-0.5 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer"
+                        >
+                          डिलीट
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

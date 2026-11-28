@@ -186,7 +186,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       badge: natureText,
       badgeColor: l.accountGroup?.natureOfGroup === 'Expenses' ? 'bg-rose-50 text-rose-700 border-rose-200' :
                   l.accountGroup?.natureOfGroup === 'Income' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                  l.accountGroup?.natureOfGroup === 'Assets' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                  l.accountGroup?.natureOfGroup === 'Assets' ? 'bg-amber-50 text-[#9A3412] border-amber-200' :
                   'bg-slate-100 text-slate-700 border-slate-200'
     };
   };
@@ -1620,7 +1620,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 rounded-sm shadow-xs border transition-all duration-300 mb-3 ${
-          editingVoucherId !== null ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editingVoucherId !== null ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1715,7 +1715,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                     onClick={() => handleVoucherPaymentModeChange('Bank')}
                     className={`px-2.5 py-1 rounded-sm text-[11px] font-bold border transition-all cursor-pointer ${
                       voucherPaymentMode === 'Bank'
-                        ? 'bg-blue-600 text-white border-blue-700 shadow-2xs'
+                        ? 'bg-[#B44814] text-white border-[#7C2418] shadow-2xs'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                     }`}
                   >
@@ -1735,7 +1735,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                     <button
                       type="button"
                       onClick={handleSwitchToLoanRecoveryChargeMode}
-                      className="px-2.5 py-1 rounded-sm text-[11px] font-bold border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300 transition-all cursor-pointer shadow-2xs"
+                      className="px-2.5 py-1 rounded-sm text-[11px] font-bold border bg-amber-50 hover:bg-amber-100 text-[#5A1A14] border-amber-300 transition-all cursor-pointer shadow-2xs"
                       title="थकबाकीदार कर्जाचे वसूली खर्च किंवा पोसटेज खर्च थेट कर्जाच्या मुद्दलात (Dr कर्ज / Cr उत्पन्न - Journal) जोडण्यासाठी तयार करा"
                     >
                       🏷️ कर्जात वसूली/पोसटेज खर्च
@@ -1766,7 +1766,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                       type="button"
                       tabIndex={-1}
                       onClick={handleSwitchToLoanRecoveryChargeMode}
-                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-[#5A1A14] border border-amber-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
                       title="थकबाकीदार कर्ज वसूली/पोसटेज खर्च (Dr कर्ज / Cr उत्पन्न)"
                     >
                       <span>🏷️ कर्जात वसूली/पोसटेज खर्च</span>
@@ -1806,19 +1806,19 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
             )}
 
             <div className="overflow-x-auto border border-gray-200 rounded-sm max-h-[420px] shadow-2xs">
-              <table className="min-w-full divide-y divide-gray-200 text-[11px] text-center border-collapse">
-                <thead className="bg-slate-100 text-slate-800 font-bold sticky top-0 z-10 shadow-xs border-b border-slate-300">
+              <table className="min-w-full divide-y divide-gray-200 text-[11px] text-center border-collapse leading-tight">
+                <thead className="bg-[#5A1A14] text-amber-50 font-bold sticky top-0 z-10 shadow-xs border-b border-amber-400/30">
                   <tr>
-                    <th className="p-2 border-r border-slate-300 text-center w-16">Cr / Dr</th>
-                    <th className="p-2 border-r border-slate-300 text-left">खाते (Ledger Name & Code)</th>
-                    <th className="p-2 border-r border-slate-300 text-right w-36">रक्कम (Amount ₹)</th>
-                    <th className="p-2 text-center w-16">कृती</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-16 whitespace-nowrap">Cr / Dr</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">खाते (Ledger Name & Code)</th>
+                    <th className="px-2 py-1.5 border-r border-amber-400/25 text-right w-36 whitespace-nowrap">रक्कम (Amount ₹)</th>
+                    <th className="px-2 py-1.5 text-center w-16 whitespace-nowrap">कृती</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-amber-100 bg-white">
                   {details.map((detail, index) => (
-                    <tr key={index} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="p-2 border-r border-gray-200 text-center">
+                    <tr key={index} className="hover:bg-amber-50/50 transition-colors">
+                      <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                         <select 
                           value={detail.drCr} 
                           onChange={e => handleDetailChange(index, 'drCr', e.target.value)} 
@@ -1830,7 +1830,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                         </select>
                       </td>
 
-                      <td className="p-2 border-r border-gray-200 text-left min-w-[280px]">
+                      <td className="px-2 py-1 border-r border-gray-200 text-left min-w-[280px] align-middle">
                         {detail.isLocked && (voucherType === 'Receipt' || voucherType === 'Payment') && voucherPaymentMode === 'Bank' ? (
                           <BankLedgerSelect
                             label=""
@@ -1840,7 +1840,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                             disabled={isPassingMode}
                             onChange={(bankLId, selectedLedger) => handleLockedBankLedgerSelect(index, bankLId, selectedLedger)}
                             placeholder="-- बँक जी.एल. खाते निवडा (Select Bank GL Account) --"
-                            className="w-full border border-blue-400 px-2 py-1 rounded-sm text-[11px] bg-blue-50/40 font-bold text-slate-800 focus:outline-none focus:border-primary h-[28px]"
+                            className="w-full border border-amber-400 px-2 py-1 rounded-sm text-[11px] bg-amber-50/40 font-bold text-slate-800 focus:outline-none focus:border-primary h-[28px]"
                           />
                         ) : (
                           <SearchableSelect
@@ -1870,7 +1870,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                             )}
                             <div className="flex items-center justify-between gap-2">
                               {detail.ledgerBalance !== undefined ? (
-                                <p className="text-[10.5px] font-bold text-indigo-700">
+                                <p className="text-[10.5px] font-bold text-[#9A3412]">
                                   शिल्लक (Balance): ₹{Number(detail.ledgerBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {detail.ledgerBalanceType || ''}
                                 </p>
                               ) : <span />}
@@ -1980,13 +1980,13 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                           const dispLoanNo = selectedChgLoan?.loanAccountNo || detail.chargeLoanAccount?.loanAccountNo || '';
                           const dispOldNo = selectedChgLoan?.legacyAccountNumber || detail.chargeLoanAccount?.legacyAccountNumber || '';
                           return (
-                            <div className="mt-1.5 p-1.5 bg-blue-50/70 border border-blue-200 rounded-sm space-y-1.5 text-left">
+                            <div className="mt-1.5 p-1.5 bg-amber-50/70 border border-amber-200 rounded-sm space-y-1.5 text-left">
                               <div className="flex flex-wrap items-center justify-between gap-1 text-[10.5px]">
-                                <span className="font-bold text-blue-900">
+                                <span className="font-bold text-[#5A1A14]">
                                   🏷️ कर्जात वसूली / पोसटेज खर्च जोडायचा असल्यास कर्ज खाते निवडा (Dr मुद्दल नावे):
                                 </span>
                                 {selectedChgLoan && (
-                                  <span className="font-mono font-bold text-blue-950">
+                                  <span className="font-mono font-bold text-[#4A1410]">
                                     चालू मुद्दल: ₹{Number(selectedChgLoan.principalBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                   </span>
                                 )}
@@ -2003,8 +2003,8 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                     searchPlaceholder="कर्ज खाते क्र., जुना नं., नाव शोधा..."
                                     placeholder="-- कर्ज खाते निवडा (ऐच्छिक / वसूली-पोसटेज खर्चासाठी) --"
                                     className={isPassingMode
-                                      ? "w-full border border-blue-300 px-2 py-1 rounded-sm text-[11px] bg-slate-100 font-bold text-gray-700 cursor-not-allowed flex justify-between items-center h-[28px]"
-                                      : "w-full border border-blue-400 px-2 py-1 rounded-sm text-[11px] bg-white flex justify-between items-center hover:border-blue-600 cursor-pointer h-[28px]"
+                                      ? "w-full border border-amber-300 px-2 py-1 rounded-sm text-[11px] bg-slate-100 font-bold text-gray-700 cursor-not-allowed flex justify-between items-center h-[28px]"
+                                      : "w-full border border-amber-400 px-2 py-1 rounded-sm text-[11px] bg-white flex justify-between items-center hover:border-[#9A3412] cursor-pointer h-[28px]"
                                     }
                                   />
                                 </div>
@@ -2020,7 +2020,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                         return next;
                                       });
                                     }}
-                                    className="w-full h-[28px] border border-blue-300 rounded-sm px-1.5 text-[10.5px] font-bold bg-white disabled:bg-slate-100"
+                                    className="w-full h-[28px] border border-amber-300 rounded-sm px-1.5 text-[10.5px] font-bold bg-white disabled:bg-slate-100"
                                   >
                                     <option value="RECOVERY_EXPENSE">वसूली खर्च</option>
                                     <option value="POSTAGE_EXPENSE">पोसटेज / टपाल खर्च</option>
@@ -2030,7 +2030,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                 </div>
                               </div>
                               {(dispLoanNo || dispOldNo) && (
-                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-blue-950 font-mono">
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-[#4A1410] font-mono">
                                   <span className="font-bold">खाते: {dispLoanNo}</span>
                                   {dispOldNo && (
                                     <span className="px-1.5 py-0.2 rounded-sm bg-amber-100 text-amber-950 border border-amber-300 font-bold">
@@ -2079,7 +2079,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                         )}
                       </td>
 
-                      <td className="p-2 border-r border-gray-200">
+                      <td className="px-2 py-1 border-r border-gray-200 align-middle">
                         <input 
                           type="number" 
                           min="0" 
@@ -2099,7 +2099,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                         />
                       </td>
 
-                      <td className="p-2 text-center">
+                      <td className="px-2 py-1 text-center align-middle">
                         {!isPassingMode && !detail.isLocked ? (
                           <button 
                             type="button" 
@@ -2221,7 +2221,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
       {/* 📜 4. REGISTERED VOUCHERS LIST MODAL POPUP */}
       {isListModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4 backdrop-blur-2xs">
-          <div className="bg-white rounded-sm shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-300 border-t-4 border-t-primary animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-sm shadow-2xl w-full max-w-[97vw] xl:max-w-[1460px] max-h-[92vh] flex flex-col overflow-hidden border border-gray-300 border-t-4 border-t-primary animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -2302,19 +2302,19 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
             {/* Modal Body Table */}
             <div className="p-3 overflow-y-auto flex-1 bg-slate-50">
               <div className="overflow-x-auto bg-white rounded-sm shadow-xs border border-gray-200">
-                <table className="w-full text-[11px] text-center border-collapse whitespace-nowrap">
-                  <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
+                <table className="w-full text-[11px] text-center border-collapse whitespace-nowrap leading-tight">
+                  <thead className="bg-[#5A1A14] text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="p-2 border-r border-gray-200 text-left">शाखा (Branch)</th>
-                      <th className="p-2 border-r border-gray-200 text-left">तारीख (Date)</th>
-                      <th className="p-2 border-r border-gray-200 text-left">प्रकार (Type)</th>
-                      <th className="p-2 border-r border-gray-200 text-left">नंबर (No)</th>
-                      <th className="p-2 border-r border-gray-200 text-left">तपशील (Narration)</th>
-                      <th className="p-2 border-r border-gray-200 text-right">रक्कम (Amount ₹)</th>
-                      <th className="p-2 text-center w-36">क्रिया (Actions)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">शाखा (Branch)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">तारीख (Date)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">प्रकार (Type)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">नंबर (No)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">तपशील (Narration)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-right whitespace-nowrap">रक्कम (Amount ₹)</th>
+                      <th className="px-2 py-1.5 text-center w-36 whitespace-nowrap">क्रिया (Actions)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
+                  <tbody className="divide-y divide-amber-100 bg-white">
                     {paginatedVouchers.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="p-8 text-center text-gray-400 italic">
@@ -2324,36 +2324,36 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                     ) : (
                       paginatedVouchers.map(v => (
                         <React.Fragment key={v.voucherID}>
-                          <tr className="hover:bg-blue-50/60 cursor-pointer transition-colors" onClick={() => toggleVoucher(v.voucherID)}>
-                            <td className="p-2 border-r border-gray-200 text-left text-gray-700 font-bold">
+                          <tr className="hover:bg-amber-50/60 cursor-pointer transition-colors" onClick={() => toggleVoucher(v.voucherID)}>
+                            <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-700 font-bold align-middle">
                               {(v as any).branch?.branchName || '-'}
                             </td>
-                            <td className="p-2 border-r border-gray-200 text-left text-gray-900 font-medium">
+                            <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-900 font-medium align-middle">
                               <span className="mr-1 text-gray-400 font-mono">{expandedVoucherId === v.voucherID ? '▼' : '▶'}</span>
                               {new Date(v.voucherDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                             </td>
-                            <td className="p-2 border-r border-gray-200 text-left">
+                            <td className="px-2 py-1 border-r border-gray-200 text-left align-middle">
                               <span className={`px-2 py-0.5 inline-flex text-[10px] font-bold rounded ${
                                 v.voucherType === 'Receipt' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
                                 v.voucherType === 'Payment' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
                                 v.voucherType === 'Journal' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
-                                'bg-blue-100 text-blue-800 border border-blue-300'
+                                'bg-amber-100 text-[#7C2418] border border-amber-300'
                               }`}>
                                 {v.voucherType}
                               </span>
                             </td>
-                            <td className="p-2 border-r border-gray-200 text-left font-bold text-primary font-mono">{v.voucherNo}</td>
-                            <td className="p-2 border-r border-gray-200 text-left text-gray-600 truncate max-w-[200px]" title={v.narration || ''}>
+                            <td className="px-2 py-1 border-r border-gray-200 text-left font-bold text-primary font-mono align-middle">{v.voucherNo}</td>
+                            <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 truncate max-w-[200px] align-middle" title={v.narration || ''}>
                               {v.narration || '-'}
                             </td>
-                            <td className="p-2 border-r border-gray-200 text-right font-bold text-gray-900 font-mono">
+                            <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-gray-900 font-mono align-middle">
                               ₹{v.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
-                            <td className="p-2 text-center">
+                            <td className="px-2 py-1 text-center align-middle">
                               <div className="flex items-center justify-center gap-1">
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); setPrintingVoucherId(v.voucherID); }} 
-                                  className="px-2 py-0.5 rounded-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5"
+                                  className="px-2 py-0.5 rounded-sm bg-orange-50 hover:bg-orange-100 text-[#9A3412] border border-amber-200 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5"
                                   title="प्रिंट करा"
                                 >
                                   <Printer size={11} />
@@ -2362,7 +2362,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                 
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); setIsListModalOpen(false); handleEdit(v); }} 
-                                  className="px-2 py-0.5 rounded-sm bg-blue-50 hover:bg-blue-100 text-primary border border-blue-200 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5"
+                                  className="px-2 py-0.5 rounded-sm bg-amber-50 hover:bg-amber-100 text-primary border border-amber-200 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-0.5"
                                   title="बदला"
                                 >
                                   <Edit2 size={11} />
@@ -2392,14 +2392,14 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                   <span>व्हाउचर मधील खाती व खतावणी तपशील (Ledger Breakdown):</span>
                                 </div>
                                 <table className="w-full bg-white border border-gray-200 rounded-sm text-[11px] shadow-xs">
-                                  <thead className="bg-slate-100 text-slate-700 font-bold text-left">
+                                  <thead className="bg-[#5A1A14] text-amber-50 font-bold text-left">
                                     <tr>
-                                      <th className="p-1.5 border-r border-gray-200">खाते (Ledger Name)</th>
-                                      <th className="p-1.5 border-r border-gray-200 text-right w-32">नावे रक्कम (Dr ₹)</th>
-                                      <th className="p-1.5 text-right w-32">जमा रक्कम (Cr ₹)</th>
+                                      <th className="p-1.5 border-r border-amber-400/25 whitespace-nowrap">खाते (Ledger Name)</th>
+                                      <th className="p-1.5 border-r border-amber-400/25 text-right w-32 whitespace-nowrap">नावे रक्कम (Dr ₹)</th>
+                                      <th className="p-1.5 text-right w-32 whitespace-nowrap">जमा रक्कम (Cr ₹)</th>
                                     </tr>
                                   </thead>
-                                  <tbody className="divide-y divide-gray-100">
+                                  <tbody className="divide-y divide-amber-100">
                                     {v.voucherDetails && v.voucherDetails.map((vd, i) => {
                                       const linkedCust = vd.customer || vd.member?.customer;
                                       const custCif = linkedCust?.cifNo || (linkedCust as any)?.CIFNo || '';
@@ -2411,7 +2411,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                       const linkedSavOldNo = vd.savingAccount?.oldAccountNo || vd.savingAccount?.previousAccountNo || vd.savingAccount?.legacyAccountNumber || '';
                                       return (
                                         <tr key={i} className="hover:bg-slate-50">
-                                          <td className="p-1.5 border-r border-gray-200 text-gray-900 font-medium">
+                                          <td className="p-1.5 border-r border-gray-200 text-gray-900 font-medium align-middle">
                                             <div>{vd.ledger?.ledgerName || 'Unknown Ledger'}</div>
                                             {linkedSavAccNo && (
                                               <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
@@ -2428,7 +2428,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                             {(custCif || custName) && (
                                               <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
                                                 {custCif && (
-                                                  <span className="px-1.5 py-0.5 rounded font-mono font-bold bg-sky-100 text-sky-950 border border-sky-200">
+                                                  <span className="px-1.5 py-0.5 rounded font-mono font-bold bg-amber-100 text-[#4A1410] border border-amber-200">
                                                     {custCif}
                                                   </span>
                                                 )}
@@ -2443,10 +2443,10 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                               </div>
                                             )}
                                           </td>
-                                          <td className="p-1.5 border-r border-gray-200 text-right text-emerald-700 font-bold font-mono">
+                                          <td className="p-1.5 border-r border-gray-200 text-right text-emerald-700 font-bold font-mono align-middle">
                                             {vd.drCr === 'Dr' ? `₹${vd.amount.toFixed(2)}` : '-'}
                                           </td>
-                                          <td className="p-1.5 text-right text-primary font-bold font-mono">
+                                          <td className="p-1.5 text-right text-primary font-bold font-mono align-middle">
                                             {vd.drCr === 'Cr' ? `₹${vd.amount.toFixed(2)}` : '-'}
                                           </td>
                                         </tr>

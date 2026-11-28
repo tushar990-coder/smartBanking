@@ -343,12 +343,12 @@ const InvestmentInstitutionMaster: React.FC = () => {
         </div>
 
         <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          <div className="p-2 bg-orange-50 text-[#9A3412] border border-amber-200 rounded">
             <Landmark className="w-4 h-4" />
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">बँका व सहकारी संस्था</div>
-            <div className="text-sm font-black text-indigo-950">{banksCount}</div>
+            <div className="text-sm font-black text-[#4A1410]">{banksCount}</div>
           </div>
         </div>
 
@@ -384,7 +384,7 @@ const InvestmentInstitutionMaster: React.FC = () => {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-amber-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -557,7 +557,7 @@ const InvestmentInstitutionMaster: React.FC = () => {
       {/* ========================================================================= */}
       {showListModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[97vw] xl:max-w-[1460px] w-full max-h-[90vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -616,21 +616,21 @@ const InvestmentInstitutionMaster: React.FC = () => {
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <table className="w-full text-left border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#5A1A14] sticky top-0 shadow-2xs text-amber-50 font-bold border-b border-amber-400/30">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-10">अ.क्र.</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left w-20">संस्था आयडी</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left">संस्थेचे नाव</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left w-32">प्रकार</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left w-32">शाखा (संस्थेची)</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left w-32">संपर्क व्यक्ती</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-left w-28">मोबाईल</th>
-                      <th className="px-3 py-1.5 border-r border-gray-200 text-center w-20">स्थिती</th>
-                      <th className="px-3 py-1.5 text-center w-24">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-10 whitespace-nowrap">अ.क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left w-20 whitespace-nowrap">संस्था आयडी</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left whitespace-nowrap">संस्थेचे नाव</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left w-32 whitespace-nowrap">प्रकार</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left w-32 whitespace-nowrap">शाखा (संस्थेची)</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left w-32 whitespace-nowrap">संपर्क व्यक्ती</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-left w-28 whitespace-nowrap">मोबाईल</th>
+                      <th className="px-2 py-1.5 border-r border-amber-400/25 text-center w-20 whitespace-nowrap">स्थिती</th>
+                      <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">कृती</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                  <tbody className="divide-y divide-amber-100 text-[11px] bg-white">
                     {loading ? (
                       <tr>
                         <td colSpan={9} className="px-6 py-10 text-center text-gray-500 font-bold">
@@ -654,25 +654,25 @@ const InvestmentInstitutionMaster: React.FC = () => {
                     ) : (
                       filteredInstitutions.map((inst, idx) => (
                         <tr key={inst.institutionID || idx} className="hover:bg-primary/5 transition-colors">
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500">{idx + 1}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 font-mono font-bold text-primary">#{inst.institutionID}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 font-bold text-gray-900">{inst.institutionName}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200">
+                          <td className="px-2 py-1 border-r border-gray-200 text-center text-gray-500 align-middle">{idx + 1}</td>
+                          <td className="px-2 py-1 border-r border-gray-200 font-mono font-bold text-primary align-middle">#{inst.institutionID}</td>
+                          <td className="px-2 py-1 border-r border-gray-200 font-bold text-gray-900 align-middle">{inst.institutionName}</td>
+                          <td className="px-2 py-1 border-r border-gray-200 align-middle">
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
                               {inst.institutionType}
                             </span>
                           </td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 text-gray-700">{inst.institutionBranchName || '-'}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 text-gray-700">{inst.contactPerson || '-'}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 font-mono text-gray-700">{inst.mobileNumber || '-'}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200 text-center">
+                          <td className="px-2 py-1 border-r border-gray-200 text-gray-700 align-middle">{inst.institutionBranchName || '-'}</td>
+                          <td className="px-2 py-1 border-r border-gray-200 text-gray-700 align-middle">{inst.contactPerson || '-'}</td>
+                          <td className="px-2 py-1 border-r border-gray-200 font-mono text-gray-700 align-middle">{inst.mobileNumber || '-'}</td>
+                          <td className="px-2 py-1 border-r border-gray-200 text-center align-middle">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                               inst.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-rose-50 text-rose-700 border-rose-300'
                             }`}>
                               {inst.isActive ? 'सक्रिय' : 'निष्क्रिय'}
                             </span>
                           </td>
-                          <td className="px-3 py-1.5 text-center space-x-1 whitespace-nowrap">
+                          <td className="px-2 py-1 text-center space-x-1 whitespace-nowrap align-middle">
                             <button
                               type="button"
                               onClick={() => handleEdit(inst)}
